@@ -1,0 +1,89 @@
+global:
+  imagePullSecrets: []
+  domain: "ers.internal.corp"
+
+# Global database settings mapped to secrets
+postgres:
+  host: "postgres"
+  port: 5432
+  db: "ers_db"
+  secretName: "ers-db-secret"
+
+redis:
+  host: "redis"
+  port: 6379
+
+neo4j:
+  host: "neo4j"
+  port: 7687
+  secretName: "ers-neo4j-secret"
+
+services:
+  api-gateway:
+    enabled: true
+    image:
+      repository: internal.registry/ers/api-gateway
+      tag: latest
+    port: 8000
+    replicas: 2
+    livenessProbe: { path: "/health", port: 8000 }
+    readinessProbe: { path: "/ready", port: 8000 }
+    resources:
+      limits: { cpu: "500m", memory: "512Mi" }
+      requests: { cpu: "100m", memory: "256Mi" }
+
+  data-fabric:
+    enabled: true
+    image: { repository: internal.registry/ers/data-fabric, tag: latest }
+    port: 8001
+    replicas: 2
+
+  ers-predict:
+    enabled: true
+    image: { repository: internal.registry/ers/predict, tag: latest }
+    port: 8002
+    replicas: 2
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+    resources:
+      limits: { cpu: "2000m", memory: "4Gi" }
+      requests: { cpu: "500m", memory: "1Gi" }
+
+  layer3-agents:
+    enabled: true
+    image: { repository: internal.registry/ers/agents, tag: latest }
+    port: 8007
+    replicas: 2
+    hpa:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 8
+      targetCPUUtilizationPercentage: 80
+    resources:
+      limits: { cpu: "2000m", memory: "2Gi" }
+      requests: { cpu: "500m", memory: "1Gi" }
+
+  frontend:
+    enabled: true
+    image: { repository: internal.registry/ers/frontend, tag: latest }
+    port: 80
+    replicas: 3
+    ingress:
+      enabled: true
+      host: "app.ers.internal.corp"
+
+persistentVolumes:
+  neo4j-data:
+    size: 100Gi
+    storageClass: standard
+  pg-data:
+    size: 200Gi
+    storageClass: standard
+
+featureFlags:
+  ENABLE_GENERATIVE_AI: "true"
+  ENABLE_DIGITAL_TWIN: "true"
+  ENFORCE_TIER3_GOVERNANCE: "true"

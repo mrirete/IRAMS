@@ -1,0 +1,35 @@
+name: Deploy to Production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: 
+      name: production
+      url: https://app.ers.internal.corp
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Update KubeConfig
+        run: aws eks update-kubeconfig --name ers-cluster-prod --region us-east-1
+        
+      - name: Deploy via Helm
+        run: |
+          # In production, we assume images are tagged with the release version
+          helm upgrade --install ers-platform ./infrastructure/helm/ers-platform \
+            --namespace production \
+            --create-namespace \
+            --set global.domain="app.ers.internal.corp" \
+            --wait \
+            --timeout 15m

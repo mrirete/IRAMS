@@ -1,0 +1,271 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════
+ * Role Permission Templates — Single Source of Truth
+ * ═══════════════════════════════════════════════════════════════════
+ * 
+ * Hardcoded role-based permission templates aligned with:
+ *   - ISO 55000 Asset Management Framework
+ *   - SAP Activity Codes (01-Create, 02-Change, 03-Display, 06-Delete)
+ *   - NIST Cybersecurity Framework (least-privilege, fail-closed)
+ * 
+ * These templates are the AUTHORITATIVE source for permission resolution.
+ * DB-stored permissions in reference_codes.properties.permissions are
+ * used only for custom/dynamic roles not defined here.
+ * 
+ * User-level overrides (from users.permission_overrides) are merged
+ * on top of these baselines at runtime.
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+import { ModulePermissions } from '../types';
+
+// ═══ Permission Tier Primitives ═══
+
+export const FULL_ACCESS: ModulePermissions = {
+    view: true, create: true, edit: true, delete: true,
+    approve: true, authorize: true, viewCosts: true, assign: true,
+    spendingLimit: 1000000
+};
+
+export const BASIC_ACCESS: ModulePermissions = {
+    view: true, create: true, edit: true, delete: false,
+    approve: false, authorize: false, viewCosts: false, assign: false,
+    spendingLimit: 0
+};
+
+export const VIEW_ONLY_PERM: ModulePermissions = {
+    view: true, create: false, edit: false, delete: false,
+    approve: false, authorize: false, viewCosts: false, assign: false,
+    spendingLimit: 0
+};
+
+export const NO_ACCESS_PERM: ModulePermissions = {
+    view: false, create: false, edit: false, delete: false,
+    approve: false, authorize: false, viewCosts: false, assign: false,
+    spendingLimit: 0
+};
+
+// ═══ Role Permission Templates (Authoritative Baselines) ═══
+
+export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePermissions>> = {
+
+    // ────────────────────────────────────────────────────────
+    // SYS_ADMIN: Unrestricted access to ALL modules
+    // ────────────────────────────────────────────────────────
+    SYS_ADMIN: {
+        dashboard: FULL_ACCESS, assets: FULL_ACCESS, requests: FULL_ACCESS,
+        workOrders: FULL_ACCESS, inventory: FULL_ACCESS, readings: FULL_ACCESS,
+        analytics: FULL_ACCESS, admin: FULL_ACCESS, contacts: FULL_ACCESS,
+        vendors: FULL_ACCESS, pm: FULL_ACCESS, purchasing: FULL_ACCESS,
+        scheduling: FULL_ACCESS, taskLibrary: FULL_ACCESS, finops: FULL_ACCESS,
+        safety: FULL_ACCESS, moc: FULL_ACCESS, notifications: FULL_ACCESS,
+        reliability: FULL_ACCESS, integrity: FULL_ACCESS, sustain: FULL_ACCESS,
+        audits: FULL_ACCESS,
+    },
+
+    // ────────────────────────────────────────────────────────
+    // PLANNER: Full core + Scheduling + Purchasing + Vendors
+    // Cost visibility enabled for financial planning
+    // ────────────────────────────────────────────────────────
+    PLANNER: {
+        dashboard: { ...BASIC_ACCESS, viewCosts: true },
+        assets: { ...BASIC_ACCESS, viewCosts: true },
+        requests: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 10000 },
+        workOrders: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 10000 },
+        pm: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true },
+        scheduling: { ...BASIC_ACCESS, approve: true, assign: true },
+        inventory: { ...BASIC_ACCESS, viewCosts: true },
+        purchasing: { ...BASIC_ACCESS, approve: true, viewCosts: true, spendingLimit: 25000 },
+        readings: VIEW_ONLY_PERM,
+        analytics: { ...VIEW_ONLY_PERM, viewCosts: true },
+        contacts: BASIC_ACCESS,
+        vendors: { ...BASIC_ACCESS, approve: true, viewCosts: true },
+        taskLibrary: BASIC_ACCESS,
+        // Premium — Blocked
+        finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
+        moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
+        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        audits: VIEW_ONLY_PERM,
+    },
+
+    // ────────────────────────────────────────────────────────
+    // RELIABILITY_ENG: Core + Condition Data + Analytics + Safety (view)
+    // Focused on reliability analysis, failure coding, RCA
+    // ────────────────────────────────────────────────────────
+    RELIABILITY_ENG: {
+        dashboard: BASIC_ACCESS,
+        assets: BASIC_ACCESS,
+        requests: { ...BASIC_ACCESS, spendingLimit: 5000 },
+        workOrders: BASIC_ACCESS,
+        pm: BASIC_ACCESS,
+        scheduling: VIEW_ONLY_PERM,
+        inventory: VIEW_ONLY_PERM, // Reliability views inventory; Planner/Storekeeper manages it (SAP MM separation)
+        purchasing: VIEW_ONLY_PERM,
+        readings: BASIC_ACCESS,
+        analytics: VIEW_ONLY_PERM,
+        contacts: VIEW_ONLY_PERM,
+        vendors: VIEW_ONLY_PERM,
+        taskLibrary: BASIC_ACCESS,
+        safety: VIEW_ONLY_PERM,
+        notifications: BASIC_ACCESS, // Core system feature — all roles need notification access
+        // Premium suites — Reliability Eng gets view into these tiers
+        finops: NO_ACCESS_PERM, moc: NO_ACCESS_PERM,
+        admin: NO_ACCESS_PERM,
+        reliability: FULL_ACCESS, integrity: FULL_ACCESS, sustain: NO_ACCESS_PERM,
+        audits: FULL_ACCESS,
+    },
+
+    // ────────────────────────────────────────────────────────
+    // SUPERVISOR: Core + approve/assign on work modules
+    // Can approve work, assign technicians, manage schedules
+    // ────────────────────────────────────────────────────────
+    SUPERVISOR: {
+        dashboard: BASIC_ACCESS,
+        assets: BASIC_ACCESS,
+        requests: { ...BASIC_ACCESS, approve: true, assign: true, spendingLimit: 5000 },
+        workOrders: { ...BASIC_ACCESS, approve: true, assign: true, spendingLimit: 5000 },
+        pm: { ...BASIC_ACCESS, approve: true, assign: true },
+        scheduling: { ...BASIC_ACCESS, approve: true, assign: true },
+        inventory: BASIC_ACCESS,
+        purchasing: VIEW_ONLY_PERM,
+        readings: BASIC_ACCESS,
+        analytics: VIEW_ONLY_PERM,
+        contacts: VIEW_ONLY_PERM,
+        vendors: VIEW_ONLY_PERM,
+        taskLibrary: VIEW_ONLY_PERM,
+        // Premium — Blocked
+        finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
+        moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
+        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        audits: VIEW_ONLY_PERM,
+    },
+
+    // ────────────────────────────────────────────────────────
+    // MANAGER: Operational authority — approve work, view costs,
+    // manage team assignments, full audit access
+    // ────────────────────────────────────────────────────────
+    MANAGER: {
+        dashboard: { ...BASIC_ACCESS, viewCosts: true },
+        assets: { ...BASIC_ACCESS, viewCosts: true },
+        requests: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 25000 },
+        workOrders: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 25000 },
+        pm: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true },
+        scheduling: { ...BASIC_ACCESS, approve: true, assign: true },
+        inventory: { ...BASIC_ACCESS, viewCosts: true },
+        purchasing: { ...BASIC_ACCESS, approve: true, viewCosts: true, spendingLimit: 50000 },
+        readings: BASIC_ACCESS,
+        analytics: { ...VIEW_ONLY_PERM, viewCosts: true },
+        contacts: BASIC_ACCESS,
+        vendors: { ...BASIC_ACCESS, approve: true, viewCosts: true },
+        taskLibrary: BASIC_ACCESS,
+        safety: VIEW_ONLY_PERM,
+        moc: { ...BASIC_ACCESS, approve: true },
+        notifications: BASIC_ACCESS,
+        audits: { ...BASIC_ACCESS, approve: true, viewCosts: true },
+        // Premium — Blocked
+        finops: VIEW_ONLY_PERM, admin: NO_ACCESS_PERM,
+        reliability: VIEW_ONLY_PERM, integrity: VIEW_ONLY_PERM, sustain: VIEW_ONLY_PERM,
+    },
+
+    // ────────────────────────────────────────────────────────
+    // EXECUTIVE: Strategic oversight — view all modules,
+    // approve high-value items, full cost visibility
+    // ────────────────────────────────────────────────────────
+    EXECUTIVE: {
+        dashboard: { ...VIEW_ONLY_PERM, viewCosts: true },
+        assets: { ...VIEW_ONLY_PERM, viewCosts: true },
+        requests: { ...VIEW_ONLY_PERM, approve: true, viewCosts: true, spendingLimit: 100000 },
+        workOrders: { ...VIEW_ONLY_PERM, approve: true, authorize: true, viewCosts: true, spendingLimit: 100000 },
+        pm: { ...VIEW_ONLY_PERM, viewCosts: true },
+        scheduling: VIEW_ONLY_PERM,
+        inventory: { ...VIEW_ONLY_PERM, viewCosts: true },
+        purchasing: { ...VIEW_ONLY_PERM, approve: true, authorize: true, viewCosts: true, spendingLimit: 250000 },
+        readings: VIEW_ONLY_PERM,
+        analytics: { ...VIEW_ONLY_PERM, viewCosts: true },
+        contacts: VIEW_ONLY_PERM,
+        vendors: { ...VIEW_ONLY_PERM, viewCosts: true },
+        taskLibrary: VIEW_ONLY_PERM,
+        safety: VIEW_ONLY_PERM,
+        moc: { ...VIEW_ONLY_PERM, approve: true, authorize: true },
+        notifications: VIEW_ONLY_PERM,
+        audits: { ...VIEW_ONLY_PERM, approve: true, viewCosts: true },
+        finops: { ...VIEW_ONLY_PERM, viewCosts: true },
+        admin: NO_ACCESS_PERM,
+        reliability: VIEW_ONLY_PERM, integrity: VIEW_ONLY_PERM, sustain: VIEW_ONLY_PERM,
+    },
+
+    // ────────────────────────────────────────────────────────
+    // TECHNICIAN: Work execution focus
+    // View + Create requests, Edit WOs (complete tasks)
+    // ────────────────────────────────────────────────────────
+    TECHNICIAN: {
+        dashboard: VIEW_ONLY_PERM,
+        assets: { ...VIEW_ONLY_PERM, edit: true },
+        requests: BASIC_ACCESS,
+        workOrders: { ...VIEW_ONLY_PERM, edit: true },
+        pm: VIEW_ONLY_PERM,
+        scheduling: VIEW_ONLY_PERM,
+        inventory: VIEW_ONLY_PERM,
+        readings: BASIC_ACCESS,
+        taskLibrary: VIEW_ONLY_PERM,
+        // Blocked
+        purchasing: NO_ACCESS_PERM, analytics: NO_ACCESS_PERM,
+        contacts: NO_ACCESS_PERM, vendors: NO_ACCESS_PERM,
+        finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
+        moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
+        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        audits: VIEW_ONLY_PERM, // Baseline so invited users can access the module
+    },
+
+    // ────────────────────────────────────────────────────────
+    // REQUESTER: Minimal access — Dashboard + Requests only
+    // End users who submit maintenance requests
+    // ────────────────────────────────────────────────────────
+    REQUESTER: {
+        dashboard: VIEW_ONLY_PERM,
+        assets: VIEW_ONLY_PERM,
+        requests: BASIC_ACCESS,
+        // Everything else blocked
+        workOrders: NO_ACCESS_PERM, pm: NO_ACCESS_PERM, scheduling: NO_ACCESS_PERM,
+        inventory: NO_ACCESS_PERM, purchasing: NO_ACCESS_PERM, readings: NO_ACCESS_PERM,
+        analytics: NO_ACCESS_PERM, contacts: NO_ACCESS_PERM, vendors: NO_ACCESS_PERM,
+        finops: NO_ACCESS_PERM, taskLibrary: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
+        moc: NO_ACCESS_PERM, notifications: VIEW_ONLY_PERM, admin: NO_ACCESS_PERM,
+        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        audits: VIEW_ONLY_PERM, // Baseline so invited users can access the module
+    },
+
+    // ────────────────────────────────────────────────────────
+    // INTERNAL: View-only on basic work modules
+    // Company staff with view access for transparency
+    // ────────────────────────────────────────────────────────
+    INTERNAL: {
+        dashboard: VIEW_ONLY_PERM,
+        assets: VIEW_ONLY_PERM,
+        requests: { ...VIEW_ONLY_PERM, create: true },
+        workOrders: VIEW_ONLY_PERM,
+        inventory: VIEW_ONLY_PERM,
+        // Blocked
+        pm: NO_ACCESS_PERM, scheduling: NO_ACCESS_PERM, purchasing: NO_ACCESS_PERM,
+        readings: NO_ACCESS_PERM, analytics: NO_ACCESS_PERM, contacts: NO_ACCESS_PERM,
+        vendors: NO_ACCESS_PERM, finops: NO_ACCESS_PERM, taskLibrary: NO_ACCESS_PERM,
+        safety: NO_ACCESS_PERM, moc: NO_ACCESS_PERM, notifications: VIEW_ONLY_PERM,
+        admin: NO_ACCESS_PERM,
+        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        audits: VIEW_ONLY_PERM, // Baseline so invited users can access the module
+    },
+};
+
+// Fallback for unknown/new roles (fail-closed per NIST/ISO 55000)
+export const BASE_PACKAGE_DEFAULTS: Record<string, ModulePermissions> = {
+    dashboard: BASIC_ACCESS, assets: BASIC_ACCESS, requests: BASIC_ACCESS,
+    workOrders: BASIC_ACCESS, inventory: VIEW_ONLY_PERM, contacts: VIEW_ONLY_PERM,
+    pm: BASIC_ACCESS, scheduling: BASIC_ACCESS, purchasing: VIEW_ONLY_PERM,
+    vendors: VIEW_ONLY_PERM, taskLibrary: VIEW_ONLY_PERM,
+    // Premium — Restricted by default
+    finops: NO_ACCESS_PERM, analytics: NO_ACCESS_PERM, readings: NO_ACCESS_PERM,
+    safety: NO_ACCESS_PERM, moc: NO_ACCESS_PERM,
+    notifications: VIEW_ONLY_PERM, admin: NO_ACCESS_PERM,
+    reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+    audits: VIEW_ONLY_PERM,
+};

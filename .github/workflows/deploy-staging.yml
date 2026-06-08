@@ -1,0 +1,32 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ "develop" ]
+  workflow_dispatch:
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+          
+      - name: Update KubeConfig
+        run: aws eks update-kubeconfig --name ers-cluster-staging --region us-east-1
+        
+      - name: Deploy via Helm
+        run: |
+          helm upgrade --install ers-platform ./infrastructure/helm/ers-platform \
+            --namespace staging \
+            --create-namespace \
+            --set global.domain="staging.ers.internal.corp" \
+            --wait \
+            --timeout 10m

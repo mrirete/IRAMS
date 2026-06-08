@@ -1,0 +1,61 @@
+name: Build and Test ERS
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+      - name: Run Pytest
+        env:
+          PYTHONPATH: src
+        run: |
+          pytest tests/ --cov=src --cov-report=xml
+          
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          cd src/frontend
+          npm ci
+      - name: Run TS Tests
+        run: |
+          cd src/frontend
+          npm run test
+          
+  docker-build:
+    needs: [python-tests, frontend-tests]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [api-gateway, data-fabric, predict, analyze, comply, vision, work, agents, frontend]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build image
+        run: |
+          docker build \
+            -f infrastructure/docker/Dockerfile.${{ matrix.service == 'frontend' && 'frontend' || 'python' }} \
+            -t ers-${{ matrix.service }}:${{ github.sha }} .
+          # In reality, we'd push to ECR/ACR/GCR here if on main

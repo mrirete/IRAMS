@@ -1,0 +1,33 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 0 * * *' # Daily at midnight
+
+jobs:
+  sast-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run Bandit (Python SAST)
+        uses: jpetrucciani/bandit-check@main
+        with:
+          path: 'src/'
+  
+  trivy-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Build test image
+        run: docker build -f infrastructure/docker/Dockerfile.python -t ers-python-base .
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'ers-python-base'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'

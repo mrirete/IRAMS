@@ -1,0 +1,139 @@
+# ──────────────────────────────────────────────────────────────
+# ERS Data Quality Scoring Configuration
+# ──────────────────────────────────────────────────────────────
+# This file defines per-record-type required fields, statistical
+# accuracy ranges per asset_class/parameter, expected refresh
+# intervals, and cross-system consistency mappings.
+
+weights:
+  completeness: 0.25
+  accuracy: 0.25
+  timeliness: 0.25
+  consistency: 0.25
+
+ai_confidence_penalty:
+  threshold: 60          # DQS score below which penalty activates
+  formula: "linear"      # penalty = (threshold - dqs) %
+
+# ──── COMPLETENESS: Required fields per record_type ──────────
+completeness:
+  work_order:
+    required_fields:
+      - equipment_id
+      - failure_mode
+      - cause_code
+      - action_taken
+      - labor_hours
+      - parts_used
+      - completion_date
+  thickness_reading:
+    required_fields:
+      - cml_id
+      - reading_date
+      - measured_thickness
+      - method
+      - inspector_id
+  equipment_registry:
+    required_fields:
+      - asset_id
+      - governing_code
+      - design_pressure
+      - design_temperature
+      - nominal_thickness
+      - corrosion_allowance
+  asset:
+    required_fields:
+      - name
+      - asset_class
+      - criticality_rank
+      - taxonomy_code
+      - location
+  iow_exceedance:
+    required_fields:
+      - iow_id
+      - start_time
+      - end_time
+      - duration_min
+      - max_deviation
+
+# ──── ACCURACY: Statistical ranges per asset_class/parameter ─
+accuracy:
+  iqr_multiplier: 1.5    # Values beyond Q1-1.5*IQR or Q3+1.5*IQR
+  penalty_per_outlier: 25 # Points deducted per outlier field
+  max_penalty: 100
+  parameter_ranges:
+    Pump:
+      design_pressure:
+        min: 10
+        max: 2000
+        unit: psi
+      design_temperature:
+        min: -50
+        max: 650
+        unit: degF
+      vibration_mm_s:
+        min: 0
+        max: 30
+    Pressure Vessel:
+      design_pressure:
+        min: 15
+        max: 5000
+        unit: psi
+      design_temperature:
+        min: -325
+        max: 1500
+        unit: degF
+      nominal_thickness:
+        min: 0.125
+        max: 6.0
+        unit: inches
+    Piping:
+      design_pressure:
+        min: 15
+        max: 10000
+        unit: psi
+      nominal_thickness:
+        min: 0.065
+        max: 3.0
+        unit: inches
+    Storage Tank:
+      design_pressure:
+        min: 0
+        max: 15
+        unit: psi
+      nominal_thickness:
+        min: 0.1875
+        max: 2.0
+        unit: inches
+
+# ──── TIMELINESS: Expected refresh intervals per source type ─
+timeliness:
+  expected_intervals_seconds:
+    cmms: 86400          # 24 h
+    historian: 60        # 1 min
+    scada: 10            # 10 s
+    iot: 30              # 30 s
+    erp: 604800          # 7 days
+    file: 2592000        # 30 days
+    mes: 3600            # 1 h
+  default_interval_seconds: 86400
+
+# ──── CONSISTENCY: Cross-system reference checks ─────────────
+consistency:
+  reference_checks:
+    - name: asset_exists_in_cmms
+      source_field: external_id
+      target_system: cmms
+      description: "Asset external_id must match a record in CMMS"
+    - name: equipment_has_asset
+      source_field: asset_id
+      target_system: ers_assets
+      description: "Equipment registry must link to a valid asset"
+    - name: cml_has_equipment
+      source_field: equipment_id
+      target_system: ers_equipment_registry
+      description: "CML must link to a valid equipment record"
+    - name: inspector_exists
+      source_field: inspector_id
+      target_system: ers_users
+      description: "Inspector must be a registered user"

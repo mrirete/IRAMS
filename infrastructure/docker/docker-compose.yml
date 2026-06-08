@@ -1,0 +1,171 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ers_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ers_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ers_admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Set NEO4J_PASSWORD in .env}
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?Set MINIO_PASSWORD in .env}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  api-gateway:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000" ]
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_URL=postgresql+asyncpg://${POSTGRES_USER:-ers_admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ers_db}
+      - REDIS_URL=redis://redis:6379/0
+      - NEO4J_URI=bolt://neo4j:7687
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      neo4j:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  data-fabric:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.layer1_data_fabric.main:app", "--host", "0.0.0.0", "--port", "8001" ]
+    environment:
+      - DB_URL=postgresql+asyncpg://ers_admin:ers_password@postgres:5432/ers_db
+      - REDIS_URL=redis://redis:6379/1
+
+  ers-predict:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.layer2_modules.ers_predict.main:app", "--host", "0.0.0.0", "--port", "8002" ]
+    environment:
+      - REDIS_URL=redis://redis:6379/2
+
+  ers-analyze:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.layer2_modules.ers_analyze.main:app", "--host", "0.0.0.0", "--port", "8003" ]
+
+  ers-comply:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.layer2_modules.ers_comply.main:app", "--host", "0.0.0.0", "--port", "8004" ]
+
+  ers-vision:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.layer2_modules.ers_vision.main:app", "--host", "0.0.0.0", "--port", "8005" ]
+
+  ers-work:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.layer2_modules.ers_work.main:app", "--host", "0.0.0.0", "--port", "8006" ]
+    environment:
+      - DB_URL=postgresql+asyncpg://ers_admin:ers_password@postgres:5432/ers_db
+
+  layer3-agents:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.layer3_agents.main:app", "--host", "0.0.0.0", "--port", "8007" ]
+    environment:
+      - REDIS_URL=redis://redis:6379/3
+      - NEO4J_URI=bolt://neo4j:7687
+
+  cmms-writeback:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "celery", "-A", "src.layer4_integration.cmms_writeback.worker", "worker", "--loglevel=info" ]
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+
+  frontend:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api-gateway
+
+  # ── Relantern AI Service (Phase 5) ───────────────────────
+  # Backend proxy for Gemini API — keeps API key server-side.
+  # All frontend AI calls route through api-gateway → ers-ai.
+  ers-ai:
+    build:
+      context: ../../
+      dockerfile: infrastructure/docker/Dockerfile.python
+    command: [ "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8010" ]
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:?Set GEMINI_API_KEY in .env}
+      - SUPABASE_URL=${SUPABASE_URL:?Set SUPABASE_URL in .env}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY:?Set SUPABASE_SERVICE_KEY in .env}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000}
+      - REDIS_URL=redis://redis:6379/4
+    ports:
+      - "8010:8010"
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  pg_data:
+  neo4j_data:
+  minio_data:

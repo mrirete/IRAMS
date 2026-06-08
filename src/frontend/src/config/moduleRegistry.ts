@@ -1,0 +1,196 @@
+/**
+ * Module Registry — Central Source of Truth
+ * ══════════════════════════════════════════
+ * Defines every ERS module: id, tier, routes, sidebar items, dependencies.
+ * Used by LicenseContext, Sidebar, App.tsx, and GlobalSettingsPage.
+ */
+
+import {
+    Home, Wrench, Package,
+    ShieldCheck, RefreshCcw, Users, DollarSign, Shield,
+    FileBarChart, ClipboardCheck,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+// ── Types ────────────────────────────────────────────────
+
+export type ModuleId =
+    | 'core'        // Always on — Home, Assets, Admin
+    | 'work'        // Work Orders + Service Requests
+    | 'inventory'   // Inventory + BOM + PO
+    | 'people'      // People, Contacts, OrgChart, Vendors
+    | 'predict'     // ML Predictions
+    | 'analyze'     // RCA, Bad Actors
+    | 'plan'        // PM Planning & Scheduling
+    | 'comply'      // RBI, PSM, LOTO, Inspections
+    | 'audits'      // Standalone Audit Management (entry-level client system)
+    | 'vision'      // Computer Vision / AR
+    | 'sustain'     // Sustainability / ESG
+    | 'intelligence' // Knowledge Graph, Data Quality, Digital Twin
+    | 'finops'      // Financial Operations
+    | 'scheduling'  // Visual Scheduler
+    | 'reports'     // Enterprise analytics and interactive dashboards
+    ;
+
+export type ModuleTier = 'core' | 'reliability' | 'integrity' | 'intelligence' | 'sustainability' | 'financial';
+
+export interface SidebarChild {
+    id: string;
+    label: string;
+    path: string;
+}
+
+export interface ModuleDefinition {
+    id: ModuleId;
+    label: string;
+    description: string;
+    tier: ModuleTier;
+    icon: LucideIcon;
+    /** Top-level sidebar entry path, or null if using children */
+    path: string | null;
+    /** Accordion children (e.g. Comply sub-pages) */
+    children?: SidebarChild[];
+    /** Routes this module owns — used for gating */
+    routes: string[];
+    /** Other modules this depends on */
+    dependencies: ModuleId[];
+}
+
+// ── Tier Metadata ────────────────────────────────────────
+
+export const TIER_META: Record<ModuleTier, { label: string; color: string; bg: string; border: string }> = {
+    core: { label: 'Core', color: 'text-accent-cyan', bg: 'bg-accent-cyan/10', border: 'border-accent-cyan/30' },
+    reliability: { label: 'Reliability', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
+    integrity: { label: 'Integrity', color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
+    intelligence: { label: 'Intelligence', color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30' },
+    sustainability: { label: 'Sustainability', color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/30' },
+    financial: { label: 'Financial', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
+};
+
+// ── Registry ─────────────────────────────────────────────
+
+export const MODULE_REGISTRY: ModuleDefinition[] = [
+    {
+        id: 'core', label: 'Core Platform', description: 'Dashboard, Assets, Admin & Settings',
+        tier: 'core', icon: Home, path: '/',
+        routes: ['/', '/assets', '/admin', '/admin/connectors/new', '/admin/connectors/:id', '/admin/settings', '/data-quality', '/login', '/eam-admin', '/system-health', '/readings', '/notifications'],
+        dependencies: [],
+    },
+    {
+        id: 'work', label: 'Work Management',
+        description: 'Work Orders, Maintenance Requests, Recurring Work, Scheduling, Task Library, MoC',
+        tier: 'core', icon: Wrench, path: null,
+        children: [
+            { id: 'work-orders', label: 'Work Orders', path: '/work-orders' },
+            { id: 'requests', label: 'Maintenance Requests', path: '/requests' },
+            { id: 'recurring-work', label: 'Recurring Work / PM', path: '/recurring-work' },
+            { id: 'scheduling', label: 'Scheduling', path: '/scheduling' },
+            { id: 'task-library', label: 'Task Library', path: '/task-library' },
+            { id: 'moc', label: 'Management of Change', path: '/management-of-change' },
+        ],
+        routes: ['/work-orders', '/requests', '/recurring-work', '/scheduling', '/task-library', '/management-of-change'],
+        dependencies: ['core'],
+    },
+    {
+        id: 'inventory', label: 'Inventory & Spares',
+        description: 'Parts, BOM, Storerooms, Transactions, Purchase Orders',
+        tier: 'core', icon: Package, path: null,
+        children: [
+            { id: 'inventory', label: 'Inventory', path: '/inventory' },
+            { id: 'purchase-orders', label: 'Purchase Orders', path: '/purchase-orders' },
+        ],
+        routes: ['/inventory', '/purchase-orders'],
+        dependencies: ['core'],
+    },
+    {
+        id: 'people', label: 'People & Org',
+        description: 'Contacts, Vendors, Organization Chart',
+        tier: 'core', icon: Users, path: null,
+        children: [
+            { id: 'contacts', label: 'Users', path: '/contacts' },
+            { id: 'vendors', label: 'Vendors', path: '/vendors' },
+        ],
+        routes: ['/contacts', '/vendors'],
+        dependencies: ['core'],
+    },
+    {
+        id: 'predict', label: 'Reliability Tier',
+        description: 'Predictive analytics, failure analysis, vision, knowledge graph',
+        tier: 'reliability', icon: Shield, path: null,
+        children: [
+            { id: 'predict-dash', label: 'Predict', path: '/predict' },
+            { id: 'reliability-modelling', label: 'Reliability Modelling', path: '/reliability-modelling' },
+            { id: 'analyze-dash', label: 'Analyze', path: '/analyze' },
+            { id: 'rcm-dash', label: 'RCM', path: '/rcm' },
+            { id: 'vision-dash', label: 'Vision', path: '/vision' },
+            { id: 'knowledge-dash', label: 'Knowledge & Data', path: '/knowledge-graph' },
+        ],
+        routes: ['/predict', '/reliability-modelling', '/analyze', '/analyze/rca', '/rcm', '/vision', '/knowledge-graph'],
+        dependencies: ['core'],
+    },
+
+    {
+        id: 'comply', label: 'Integrity',
+        description: 'RBI, PSM, LOTO, Inspections, Corrosion Management',
+        tier: 'integrity', icon: ShieldCheck, path: null,
+        children: [
+            { id: 'loto', label: 'LOTO', path: '/comply/loto' },
+            { id: 'psm', label: 'PSM', path: '/comply/psm' },
+            { id: 'rbi', label: 'RBI', path: '/comply/rbi' },
+            { id: 'reg', label: 'Regulatory', path: '/comply/regulatory' },
+            { id: 'sched', label: 'Inspection Schedule', path: '/comply/inspection-schedule' },
+            { id: 'thick', label: 'Thickness Data', path: '/comply/thickness-data' },
+            { id: 'corr', label: 'Corrosion Rates', path: '/comply/corrosion-rates' },
+            { id: 'dm', label: 'Damage Mechanisms', path: '/comply/damage-mechanisms' },
+            { id: 'ffs', label: 'FFS', path: '/comply/ffs' },
+            { id: 'iow', label: 'IOW Dashboard', path: '/comply/iow-dashboard' },
+            { id: 'regprep', label: 'Regulatory Preparedness', path: '/comply/regulatory-preparedness' },
+        ],
+        routes: ['/comply/loto', '/comply/psm', '/comply/rbi', '/comply/regulatory',
+            '/comply/inspection-schedule', '/comply/thickness-data', '/comply/corrosion-rates',
+            '/comply/damage-mechanisms', '/comply/ffs', '/comply/iow-dashboard',
+            '/comply/regulatory-preparedness'],
+        dependencies: ['core'],
+    },
+    {
+        id: 'audits', label: 'Audits',
+        description: 'ISO 55001 Audit Management — Assessments, Templates, Scheduling, Corrective Actions',
+        tier: 'integrity', icon: ClipboardCheck, path: null,
+        children: [
+            { id: 'audit-assessments', label: 'Assessments', path: '/audits' },
+            { id: 'audit-templates', label: 'Templates', path: '/audits/templates' },
+            { id: 'audit-schedule', label: 'Schedule', path: '/audits/schedule' },
+            { id: 'audit-ca', label: 'Corrective Actions', path: '/audits/corrective-actions' },
+        ],
+        routes: ['/audits', '/audits/templates', '/audits/schedule', '/audits/corrective-actions'],
+        dependencies: ['core'],
+    },
+    {
+        id: 'sustain', label: 'Sustain', description: 'Emissions tracking, ESG compliance',
+        tier: 'sustainability', icon: RefreshCcw, path: '/sustain',
+        routes: ['/sustain'],
+        dependencies: ['core'],
+    },
+    {
+        id: 'finops', label: 'Financial Ops',
+        description: 'Budgeting, cost tracking, asset lifecycle costing',
+        tier: 'core', icon: DollarSign, path: '/finops',
+        routes: ['/finops'],
+        dependencies: ['core'],
+    },
+    {
+        id: 'reports', label: 'Reports',
+        description: 'Enterprise analytics and interactive dashboards',
+        tier: 'core', icon: FileBarChart, path: '/reports',
+        routes: ['/reports'],
+        dependencies: ['core'],
+    },
+];
+
+/** Lookup by module ID */
+export const MODULE_MAP = new Map(MODULE_REGISTRY.map(m => [m.id, m]));
+
+/** Get all routes owned by a module */
+export function getModuleForRoute(path: string): ModuleDefinition | undefined {
+    return MODULE_REGISTRY.find(m => m.routes.some(r => path.startsWith(r) || path === r));
+}

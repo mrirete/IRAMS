@@ -1,0 +1,1203 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  /* ── Relantern Slate Shell Palette ── */
+  --color-brand-950: #020617;
+  --color-brand-900: #0f172a;
+  --color-brand-800: #1e293b;
+  --color-brand-700: #334155;
+  --color-brand-600: #475569;
+  --color-brand-500: #64748b;
+  --color-brand-400: #94a3b8;
+  --color-brand-300: #cbd5e1;
+  --color-brand-200: #e2e8f0;
+  --color-brand-100: #f1f5f9;
+  --color-brand-50: #f8fafc;
+
+  /* ── Relantern Signature Yellow ── */
+  --color-relantern-700: #B47D15;
+  --color-relantern-600: #D4951A;
+  --color-relantern-500: #F5A623;
+  --color-relantern-400: #F7B84E;
+  --color-relantern-300: #FACB79;
+  --color-relantern-200: #FDE4B3;
+  --color-relantern-100: #FEF3DB;
+  --color-relantern-50: #FFFBF0;
+
+  /* ── Accents ── */
+  --color-accent-blue: #3b82f6;
+  --color-accent-cyan: #06b6d4;
+  --color-accent-alert: #ef4444;
+  --color-accent-warn: #f59e0b;
+  --color-accent-safe: #10b981;
+
+  --font-sans: 'Inter', 'Roboto', sans-serif;
+}
+
+@layer base {
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+  body {
+    @apply bg-brand-900 text-brand-100 font-sans antialiased;
+  }
+}
+
+/* ── Form Controls — always dark text on light backgrounds ── */
+/* Scoped to main app layout; login page uses its own dark-bg styles */
+.eam-app input,
+.eam-app textarea,
+.eam-app select {
+  color: #0f172a;
+}
+.eam-app input::placeholder,
+.eam-app textarea::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+/* ── Native <option> dropdowns — always dark text on white (OS-rendered) ── */
+option {
+  color: #0f172a !important;
+  background: white !important;
+}
+
+/* ── Relantern focus ring ── */
+*:focus-visible {
+  outline: 2px solid var(--color-relantern-500);
+  outline-offset: 2px;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-brand-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-relantern-500;
+}
+
+/* ── Sidebar slide-in animation ── */
+@keyframes slideInLeft {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.sidebar-enter {
+  animation: slideInLeft 0.25s ease-out;
+}
+
+.backdrop-enter {
+  animation: fadeIn 0.2s ease-out;
+}
+
+/* ── Hide scrollbar helper ── */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Unified Layout System Tokens ── */
+:root {
+  --ers-list-panel-width: 380px;
+  --ers-list-panel-min: 300px;
+  --ers-list-panel-max: 420px;
+  --ers-detail-header-height: 56px;
+  --ers-tab-height: 44px;
+  --ers-filter-bar-height: 48px;
+  --ers-content-gap: 16px;
+}
+
+/* Reusable detail-panel slide-in */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.ers-detail-panel-enter {
+  animation: slideInRight 0.2s ease-out;
+}
+
+/* Unified list panel */
+.ers-list-panel {
+  width: var(--ers-list-panel-width);
+  min-width: var(--ers-list-panel-min);
+  max-width: var(--ers-list-panel-max);
+  flex-shrink: 0;
+}
+@media (max-width: 1023px) {
+  .ers-list-panel { display: none; }
+  .ers-list-panel.ers-list-panel--force { display: flex; width: 100%; max-width: 100%; }
+}
+
+/* ── Responsive Table Wrapper ── */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+.table-responsive::-webkit-scrollbar {
+  height: 4px;
+}
+.table-responsive::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full;
+}
+
+/* ── Touch Target (WCAG 2.1 — 44×44px minimum) ── */
+.touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* ── Modal Responsive ── */
+.modal-responsive {
+  @apply fixed inset-0 z-50;
+}
+@media (min-width: 640px) {
+  .modal-responsive {
+    @apply inset-auto top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 max-w-lg w-full max-h-[85vh] rounded-xl;
+  }
+}
+
+/* ── Stack on Mobile Helper ── */
+@media (max-width: 639px) {
+  .stack-mobile {
+    flex-direction: column !important;
+  }
+  .stack-mobile > * {
+    width: 100% !important;
+  }
+}
+
+/* ── Fade scroll edge indicator ── */
+.scroll-fade-right {
+  mask-image: linear-gradient(to right, black 90%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 90%, transparent 100%);
+}
+
+/* ── Action bar collapse (overflow menu pattern) ── */
+@media (max-width: 639px) {
+  .action-bar-collapse > .action-secondary {
+    display: none;
+  }
+}
+
+/* ── Safe Area (notched devices) ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ── Pull-to-refresh spinner ── */
+@keyframes ptr-spin {
+  to { transform: rotate(360deg); }
+}
+.ptr-spinning {
+  animation: ptr-spin 0.8s linear infinite;
+}
+
+/* ── Native Input Controls — always visible on dark backgrounds ── */
+/* Date picker calendar icon */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.8) brightness(1.5);
+  opacity: 1;
+  cursor: pointer;
+}
+
+/* Number input spinners (always show) */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: inner-spin-button;
+  opacity: 0.6;
+  height: 28px;
+  cursor: pointer;
+}
+/* Only invert spinners on dark-background contexts (shell / login) — NOT on white-bg form inputs */
+.eam-app input[type="number"]::-webkit-inner-spin-button,
+.eam-app input[type="number"]::-webkit-outer-spin-button {
+  filter: none;
+  opacity: 0.5;
+}
+
+/* Select dropdown arrow — ensure bright on dark */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2.5 4.5l3.5 3.5 3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px;
+  padding-right: 32px !important;
+}
+
+/* ═══════════════════════════════════════════════
+   Phase 3 — Unified UI Polish & Micro-Interactions
+   ═══════════════════════════════════════════════ */
+
+/* ── Detail Panel Slide-In ── */
+@keyframes panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.unified-panel-enter {
+  animation: panel-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Header Fade-Down ── */
+@keyframes header-fade-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.unified-header-enter {
+  animation: header-fade-down 0.2s ease-out forwards;
+}
+
+/* ── Tab Indicator Slide ── */
+@keyframes tab-indicator {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+.unified-tab-active {
+  position: relative;
+}
+.unified-tab-active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-accent-blue, #3b82f6);
+  animation: tab-indicator 0.2s ease-out forwards;
+  transform-origin: left;
+}
+
+/* ── Active Row Highlight ── */
+.unified-row-active {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.06) 0%, rgba(59, 130, 246, 0.02) 100%) !important;
+  border-left: 3px solid var(--color-accent-blue, #3b82f6);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+/* Interactive row hover  */
+.unified-row-interactive {
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+}
+.unified-row-interactive:hover {
+  background: rgba(59, 130, 246, 0.04);
+  box-shadow: inset 0 -1px 0 0 rgba(148, 163, 184, 0.15);
+}
+
+/* ── Unified Empty State ── */
+.unified-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2rem;
+  text-align: center;
+  gap: 0.75rem;
+}
+.unified-empty-state-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  margin-bottom: 0.25rem;
+}
+.unified-empty-state-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #64748b;
+}
+.unified-empty-state-desc {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+/* ── Badge Pill Transition ── */
+.unified-badge {
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+.unified-badge:hover {
+  transform: scale(1.05);
+}
+
+/* ── Content Fade-In for tab switching ── */
+@keyframes content-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.unified-tab-content {
+  animation: content-fade-in 0.2s ease-out forwards;
+}
+
+/* ═══════════════════════════════════════════
+   Asset Hierarchy Tree Connector Lines
+   ═══════════════════════════════════════════ */
+
+/* Container for each hierarchy row — positions the connector lines */
+.hierarchy-row {
+  position: relative;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.hierarchy-row:hover {
+  background: rgba(16, 185, 129, 0.04);
+}
+.hierarchy-row.hierarchy-row--selected {
+  background: linear-gradient(90deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.02) 100%);
+}
+
+/* Vertical continuation line — runs through the full height of the row */
+.tree-vline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: #d1d5db;           /* slate-300 */
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Horizontal branch — the L-shaped connector to each child node */
+.tree-hbranch {
+  position: absolute;
+  pointer-events: none;
+  z-index: 1;
+}
+/* Vertical segment of the branch (top half) */
+.tree-hbranch::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  height: 50%;
+  border-radius: 1px;
+  background: #d1d5db;
+}
+/* Horizontal segment of the branch (from midpoint to right) */
+.tree-hbranch::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  border-radius: 1px;
+  background: #d1d5db;
+  transform: translateY(-50%);
+}
+
+/* Continuation line below mid-point for non-last children */
+.tree-vline-below {
+  position: absolute;
+  bottom: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: #d1d5db;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Hierarchy Card ── */
+.hierarchy-card {
+  position: relative;
+  z-index: 2;
+  border-radius: 10px;
+  transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
+  border: 1px solid transparent;
+}
+.hierarchy-card:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+  border-color: #e2e8f0;
+  transform: translateY(-1px);
+}
+.hierarchy-card.hierarchy-card--selected {
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15), 0 2px 8px rgba(0,0,0,0.06);
+}
+.hierarchy-card.hierarchy-card--location {
+  border-left: 3px solid #10b981;
+}
+.hierarchy-card.hierarchy-card--equipment {
+  border-left: 3px solid #3b82f6;
+}
+
+/* Fade-in for expanding children */
+@keyframes hierarchy-expand {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.hierarchy-expand-enter {
+  animation: hierarchy-expand 0.2s ease-out forwards;
+}
+
+/* ═══════════════════════════════════════════
+   Form Controls — .input-field base utility
+   ═══════════════════════════════════════════ */
+
+.input-field {
+  display: block;
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #0f172a;
+  background-color: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 0.625rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.15s ease;
+}
+.input-field:hover {
+  border-color: #cbd5e1;
+  background-color: #fafbfc;
+}
+.input-field:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+  background-color: #ffffff;
+}
+.input-field::placeholder {
+  color: #94a3b8;
+}
+
+/* ═══════════════════════════════════════════
+   Audit Module — Premium Section Styling
+   ═══════════════════════════════════════════ */
+
+/* Section card accent strips */
+.audit-section-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  transition: border-color 0.2s ease, box-shadow 0.25s ease;
+}
+.audit-section-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  border-radius: 4px 0 0 4px;
+  background: var(--section-accent, #6366f1);
+}
+.audit-section-card:hover,
+.audit-section-card[data-expanded="true"] {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+/* Field label enhanced */
+.audit-field-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #475569;
+  margin-bottom: 0.5rem;
+  padding-left: 0.125rem;
+}
+.audit-field-label .label-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--section-accent, #6366f1);
+  flex-shrink: 0;
+}
+.audit-field-label .label-required {
+  color: #ef4444;
+  font-weight: 800;
+  margin-left: -2px;
+}
+
+/* ISO standard badge */
+.audit-iso-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 800;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7f1d1d 0%, #991b1b 100%);
+  border-radius: 0.375rem;
+  letter-spacing: 0.02em;
+  box-shadow: 0 1px 3px rgba(127, 29, 29, 0.3);
+}
+
+/* ISO group card */
+.audit-iso-group {
+  border: 1.5px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  background: linear-gradient(135deg, #fafafa 0%, #f8fafc 100%);
+  position: relative;
+  overflow: hidden;
+}
+.audit-iso-group::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--iso-accent, #7f1d1d);
+  opacity: 0.6;
+}
+
+/* Section header icon container */
+.audit-section-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--icon-bg, #eff6ff);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease;
+}
+.audit-section-card:hover .audit-section-icon {
+  transform: scale(1.05);
+}
+
+/* ═══════════════════════════════════════════════
+   Phase M1 — Mobile-First Responsive Data Grids
+   ═══════════════════════════════════════════════ */
+
+/* Mobile Card — replaces table rows on small screens */
+.mobile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.mobile-card:active {
+  background: #f1f5f9;
+}
+.mobile-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.mobile-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.375rem 1rem;
+}
+.mobile-card-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.mobile-card-meta-label {
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+.mobile-card-meta-value {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+/* Show/hide helpers — table on sm+ (640px), cards on mobile only */
+.desktop-table { display: none; }
+.mobile-cards  { display: block; }
+@media (min-width: 640px) {
+  .desktop-table { display: block; }
+  .mobile-cards  { display: none; }
+}
+
+/* ═══════════════════════════════════════════════
+   Phase M2 — Floating Action Button (FAB)
+   ═══════════════════════════════════════════════ */
+
+@keyframes fab-pop-in {
+  from { opacity: 0; transform: scale(0.6) translateY(16px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.fab {
+  position: fixed;
+  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  right: 1.25rem;
+  z-index: 45;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #F5A623 0%, #D4951A 100%);
+  color: #ffffff;
+  box-shadow: 0 6px 20px rgba(212, 149, 26, 0.35), 0 2px 6px rgba(0,0,0,0.1);
+  cursor: pointer;
+  border: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  animation: fab-pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+.fab:active {
+  transform: scale(0.92);
+  box-shadow: 0 3px 10px rgba(212, 149, 26, 0.3);
+}
+/* Hide FAB on tablets and up — it's only for mobile one-hand reach */
+@media (min-width: 640px) {
+  .fab { display: none; }
+}
+
+/* ═══════════════════════════════════════════════
+   Phase M2b — Mobile Bottom Tab Navigation
+   ═══════════════════════════════════════════════ */
+
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-around;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-shadow: 0 -2px 12px rgba(0,0,0,0.06);
+}
+.mobile-bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.125rem;
+  padding: 0.5rem 0;
+  flex: 1;
+  min-height: 52px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #94a3b8;
+  transition: color 0.15s ease;
+  cursor: pointer;
+  background: none;
+  border: none;
+  position: relative;
+}
+.mobile-bottom-nav-item.active {
+  color: #F5A623;
+}
+.mobile-bottom-nav-item.active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 25%;
+  right: 25%;
+  height: 2.5px;
+  border-radius: 0 0 2px 2px;
+  background: #F5A623;
+}
+/* Hide on tablet+ */
+@media (min-width: 640px) {
+  .mobile-bottom-nav { display: none; }
+}
+
+/* Account for bottom nav height on mobile */
+@media (max-width: 639px) {
+  .eam-app main {
+    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Phase M3 — Tablet Master-Detail Drawer
+   ═══════════════════════════════════════════════ */
+
+/* Override default ers-list-panel hide on tablet to use a sliding drawer */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .ers-list-panel.ers-list-panel--tablet-drawer {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 320px;
+    max-width: 85vw;
+    z-index: 55;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.12);
+    animation: slideInLeft 0.25s ease-out;
+  }
+}
+
+/* Back-to-list button (visible on tablet/mobile when list is hidden) */
+.back-to-list-btn {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .back-to-list-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #3b82f6;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .back-to-list-btn:active {
+    background: #dbeafe;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Phase M4 — Modal Sticky Footer on Mobile
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 639px) {
+  .modal-actions-sticky {
+    position: sticky;
+    bottom: 0;
+    background: #ffffff;
+    border-top: 1px solid #e2e8f0;
+    padding: 0.75rem 1rem;
+    margin: 0 -1.5rem -1.5rem;
+    box-shadow: 0 -2px 8px rgba(0,0,0,0.05);
+    z-index: 2;
+  }
+  .modal-grid-responsive {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Phase M5 — Data Density Toggle (Desktop)
+   ═══════════════════════════════════════════════ */
+
+/* Compact (default) */
+.density-compact table tbody td { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.density-compact table tbody td { font-size: 0.75rem; }
+
+/* Spacious */
+.density-spacious table tbody td { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+.density-spacious table tbody td { font-size: 0.8125rem; }
+.density-spacious table thead th { padding-top: 0.625rem; padding-bottom: 0.625rem; font-size: 0.6875rem; }
+
+/* ═══════════════════════════════════════════════
+   Phase M2c — Enhanced Touch Targets (Mobile)
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 639px) {
+  /* Enforce 44px minimum on interactive elements */
+  .touch-target-mobile,
+  .mobile-cards button,
+  .mobile-cards a,
+  .mobile-bottom-nav-item {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  /* Status filter pills — taller on mobile for easy tapping */
+  .status-filter-pill {
+    min-height: 36px;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    font-size: 0.6875rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Phase 2 — Mobile Footer Totals (PO, etc.)
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 639px) {
+  .mobile-footer-totals {
+    flex-direction: column !important;
+    gap: 0.75rem;
+  }
+  .mobile-footer-totals > div {
+    text-align: left !important;
+  }
+  .mobile-footer-totals .footer-total-main {
+    border-left: none !important;
+    border-top: 1px solid #e2e8f0;
+    padding-left: 0 !important;
+    padding-top: 0.75rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Phase 2 — Calendar Cell Mobile Override
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 639px) {
+  .calendar-grid-cell {
+    min-height: 64px !important;
+    padding: 0.25rem !important;
+  }
+  .calendar-grid-cell .calendar-item-chip {
+    font-size: 8px;
+    padding: 1px 3px;
+  }
+  .calendar-day-header {
+    font-size: 0.625rem !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Phase 2 — Mobile Contact/Vendor Cards
+   ═══════════════════════════════════════════════ */
+
+.mobile-card-contact {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  min-height: 72px;
+}
+.mobile-card-contact:active {
+  background: #f8fafc;
+}
+.mobile-card-contact-avatar {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.875rem;
+  overflow: hidden;
+}
+.mobile-card-contact-body {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-card-contact-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile-card-contact-sub {
+  font-size: 0.6875rem;
+  color: #64748b;
+  margin-top: 0.125rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mobile-card-contact-badge {
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════
+   Invite Team — Pulsing Attention Indicator
+   ═══════════════════════════════════════════════ */
+
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.invite-ping {
+  animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ═══════════════════════════════════════════════
+   RCM Module — Premium Component Styles
+   ═══════════════════════════════════════════════ */
+
+/* ── RCM Accordion ── */
+@keyframes rcm-accordion-open {
+  from { opacity: 0; max-height: 0; transform: translateY(-4px); }
+  to   { opacity: 1; max-height: 2000px; transform: translateY(0); }
+}
+@keyframes rcm-accordion-close {
+  from { opacity: 1; max-height: 2000px; }
+  to   { opacity: 0; max-height: 0; }
+}
+.rcm-accordion-body {
+  overflow: hidden;
+  animation: rcm-accordion-open 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+.rcm-accordion-body--closing {
+  animation: rcm-accordion-close 0.2s ease-out forwards;
+}
+
+/* Accent strip on function cards */
+.rcm-fn-strip { position: relative; }
+.rcm-fn-strip::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 4px;
+  border-radius: 4px 0 0 4px;
+  background: var(--fn-accent, #3b82f6);
+}
+
+/* ── RCM Decision Wizard Steps ── */
+.rcm-decision-step {
+  position: relative;
+  padding-left: 2rem;
+}
+.rcm-decision-step::before {
+  content: '';
+  position: absolute;
+  left: 0.875rem;
+  top: 2rem;
+  bottom: 0;
+  width: 2px;
+  background: #e2e8f0;
+}
+.rcm-decision-step:last-child::before { display: none; }
+
+.rcm-step-dot {
+  position: absolute;
+  left: 0;
+  top: 0.25rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  font-weight: 800;
+  z-index: 2;
+  transition: all 0.2s ease;
+}
+.rcm-step-dot--active {
+  background: #06b6d4;
+  color: #0f172a;
+  box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.2);
+}
+.rcm-step-dot--completed {
+  background: #10b981;
+  color: white;
+}
+.rcm-step-dot--pending {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border: 1.5px solid #e2e8f0;
+}
+
+/* ── RCM Progress Tracker ── */
+.rcm-progress-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  position: relative;
+}
+.rcm-progress-step {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+  padding-top: 0.25rem;
+}
+.rcm-progress-step:hover .rcm-progress-circle {
+  transform: scale(1.1);
+}
+.rcm-progress-circle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6875rem;
+  font-weight: 800;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  z-index: 2;
+}
+.rcm-progress-circle--done {
+  background: #10b981;
+  color: white;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+.rcm-progress-circle--active {
+  background: #06b6d4;
+  color: #0f172a;
+  box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.2);
+  animation: rcm-pulse 2s ease-in-out infinite;
+}
+.rcm-progress-circle--pending {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border: 2px solid #e2e8f0;
+}
+@keyframes rcm-pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.15); }
+  50%      { box-shadow: 0 0 0 6px rgba(6, 182, 212, 0.25); }
+}
+/* Connector line between steps */
+.rcm-progress-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: calc(0.25rem + 1rem);
+  left: calc(50% + 1rem);
+  right: calc(-50% + 1rem);
+  height: 2px;
+  background: #e2e8f0;
+  z-index: 1;
+}
+.rcm-progress-step.rcm-step--done:not(:last-child)::after {
+  background: #10b981;
+}
+
+.rcm-progress-label {
+  margin-top: 0.375rem;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  text-align: center;
+  transition: color 0.2s ease;
+}
+.rcm-step--done .rcm-progress-label { color: #10b981; }
+.rcm-step--active .rcm-progress-label { color: #06b6d4; font-weight: 800; }
+
+/* ── RCM Consequence Cards ── */
+.rcm-consequence-card {
+  position: relative;
+  border: 2px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+.rcm-consequence-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  width: 4px;
+  background: var(--cons-color, #94a3b8);
+  border-radius: 4px 0 0 4px;
+}
+.rcm-consequence-card:hover {
+  border-color: var(--cons-color, #94a3b8);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+.rcm-consequence-card--selected {
+  border-color: var(--cons-color, #06b6d4) !important;
+  background: var(--cons-bg, rgba(6, 182, 212, 0.04));
+  box-shadow: 0 0 0 3px var(--cons-ring, rgba(6, 182, 212, 0.1)), 0 2px 8px rgba(0,0,0,0.04);
+}
+
+/* ── RCM Step Badge ── */
+.rcm-step-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1875rem 0.5rem;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 0.375rem;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+  color: #6d28d9;
+  border: 1px solid #c4b5fd;
+}
+
+/* ── Skeleton shimmer for loading states ── */
+@keyframes rcm-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.rcm-skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200% 100%;
+  animation: rcm-shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.5rem;
+}
