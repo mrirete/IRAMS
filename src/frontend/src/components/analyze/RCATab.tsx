@@ -414,6 +414,9 @@ export const RCATab: React.FC<RCATabProps> = ({
     const [portfolioSort, setPortfolioSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'created_at', dir: 'desc' });
     const [portfolioFilter, setPortfolioFilter] = useState<string>('all'); // 'all' | 'draft' | 'in_progress' | 'review' | 'closed'
 
+    // New investigation form was moved to /analyze/rca/new route
+    const showNewForm = false;
+
 
 
     // Filtered + sorted list for portfolio table
@@ -442,14 +445,12 @@ export const RCATab: React.FC<RCATabProps> = ({
         setSelectedId(rcaId);
         setExpandedMode(true);
         setViewMode('workspace');
-        setShowNewForm(false);
     }, []);
 
     const backToPortfolio = useCallback(() => {
         setViewMode('portfolio');
         setSelectedId(null);
         setExpandedMode(false);
-        setShowNewForm(false);
     }, []);
 
     // ──────────────────────────────────────────────────────────
@@ -923,7 +924,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                         </div>
                     </div>
                     <button
-                        onClick={handleStartNew}
+                        onClick={() => navigate('/analyze/rca/new')}
                         style={{
                             display: 'flex', alignItems: 'center', gap: 4, padding: '6px 12px',
                             background: showNewForm ? 'rgba(34,211,238,0.15)' : 'rgba(34,211,238,0.08)',
@@ -974,7 +975,7 @@ export const RCATab: React.FC<RCATabProps> = ({
 
                         return (
                             <div key={rca.id}
-                                onClick={() => { setShowNewForm(false); setSelectedId(isSelected ? null : rca.id); }}
+                                onClick={() => { setSelectedId(isSelected ? null : rca.id); }}
                                 style={{
                                     padding: '12px 14px', borderRadius: 10, marginBottom: 4, cursor: 'pointer',
                                     background: isSelected ? '#f0fdfa' : '#fff',
@@ -1032,7 +1033,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                 </div>
             </div>
 
-            {/* ═══════ RIGHT: New Investigation Form ══════════════ */}
+            {/* New Investigation Form moved to /analyze/rca/new */}
             {showNewForm && (
                 <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
                     <div style={{ padding: '20px 24px' }}>
@@ -1693,7 +1694,7 @@ export const RCATab: React.FC<RCATabProps> = ({
             )}
 
             {/* ═══════ RIGHT: Investigation Detail ════════════════ */}
-            {!showNewForm && selectedId && selectedRca && (
+            {selectedId && selectedRca && (
                 <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
                     {detailLoading ? (
                         <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading investigation…</div>

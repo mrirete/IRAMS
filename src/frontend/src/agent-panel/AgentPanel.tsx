@@ -92,7 +92,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
                     id: (Date.now() + 1).toString(),
                     sender: 'agent',
                     agentId: '1',
-                    text: `Connection error: ${res.error || 'Unknown error'}`,
+                    text: `Connection error: ${!res.ok ? res.error : 'Unknown error'}`,
                 };
                 setMessages(prev => [...prev, errorMessage]);
             }

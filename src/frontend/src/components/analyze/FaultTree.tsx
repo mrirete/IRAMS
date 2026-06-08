@@ -497,7 +497,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                         {/* Delete Event Node */}
                         {selectedEvent.type !== 'top' && (
                             <button
-                                onClick={() => handleDeleteEvent(selectedEvent.id)}
+                                onClick={() => handleRemoveEventWithHistory(selectedEvent.id)}
                                 className="px-2 py-1 text-[9px] font-black uppercase rounded bg-rose-50 hover:bg-rose-100 border border-rose-100/80 text-rose-700 cursor-pointer flex items-center gap-0.5 shadow-3xs"
                             >
                                 <Trash2 size={10} /> Delete Node
@@ -631,7 +631,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                                 ) : deletingId === event.id ? (
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, fontSize: 11 }}>
                                         <span style={{ color: '#991b1b', fontWeight: 600 }}>Delete this event?</span>
-                                        <button onClick={() => { handleDeleteEvent(event.id); setDeletingId(null); }}
+                                        <button onClick={() => { handleRemoveEventWithHistory(event.id); setDeletingId(null); }}
                                             style={{ padding: '2px 10px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: 'pointer' }}>Yes</button>
                                         <button onClick={() => setDeletingId(null)}
                                             style={{ padding: '2px 10px', background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: 4, fontSize: 10, cursor: 'pointer' }}>No</button>
