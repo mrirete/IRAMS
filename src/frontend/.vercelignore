@@ -1,0 +1,29 @@
+# ── Test & development files ─────────────────────────────
+check_*.js
+test_*.cjs
+test_*.js
+test_*.ts
+tsc_output.txt
+fix_*.ps1
+restore_files.ps1
+generate-pages.js
+
+# ── Local Supabase CLI ───────────────────────────────────
+supabase/
+
+# ── Sub-apps (deployed separately if needed) ─────────────
+agent-panel/
+mobile/
+dashboards/
+
+# ── Environment secrets ──────────────────────────────────
+.env
+.env.local
+.env.production
+.env.*.local
+
+# ── IDE / OS ─────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
