@@ -11,10 +11,10 @@ generate-pages.js
 # ── Local Supabase CLI ───────────────────────────────────
 supabase/
 
-# ── Sub-apps (deployed separately if needed) ─────────────
-agent-panel/
+# ── Standalone sub-apps (not imported by main app) ────────
+# NOTE: agent-panel/ and dashboards/ are imported by AppLayout.tsx
+# and HomePage.tsx respectively — do NOT ignore them.
 mobile/
-dashboards/
 
 # ── Environment secrets ──────────────────────────────────
 .env
