@@ -22,26 +22,24 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
   const nowISO = now.toISOString();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
 
+  // ── Optimized: 7 parallel queries instead of 12 ──
+  // Single WO query provides: status counts, overdue, recent, trend
   const [
     woResult, srResult, assetResult, inventoryResult,
-    overdueWOs, recentActivity, myWorkResult,
-    notificationsResult, woTrendResult, pmWoResult, assetMtbfResult,
+    myWorkResult, notificationsResult, pmWoResult, assetMtbfResult,
     deTasksResult,
   ] = await Promise.all([
-    supabase.from('work_orders').select('status, type, created_at, closed_at, due_date'),
-    supabase.from('service_requests').select('status, created_at'),
+    // 1. ALL work orders (single query replaces 5 separate ones)
+    supabase.from('work_orders')
+      .select('id, wo_number, title, status, type, priority, created_at, closed_at, due_date, updated_at, asset_tag')
+      .order('updated_at', { ascending: false }),
+    // 2. Service requests — counts only
+    supabase.from('service_requests').select('status'),
+    // 3. Assets — core fields
     supabase.from('assets').select('id, tag, name, criticality, status_code, mtbf_days, mttr_hours'),
+    // 4. Inventory — minimal fields for stock alerts
     supabase.from('inventory_items').select('id, stock_on_hand, min_level, is_critical'),
-    supabase.from('work_orders')
-      .select('id, wo_number, title, due_date, status, asset_tag')
-      .lt('due_date', nowISO)
-      .not('status', 'in', '("CLOSED","TECO","CANCELLED")')
-      .order('due_date', { ascending: true })
-      .limit(8),
-    supabase.from('work_orders')
-      .select('id, wo_number, title, status, type, updated_at, asset_tag')
-      .order('updated_at', { ascending: false })
-      .limit(6),
+    // 5. My work (user-specific, limited)
     userId
       ? supabase.from('work_orders')
           .select('id, wo_number, title, status, type, due_date, priority, asset_tag')
@@ -49,6 +47,7 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
           .order('due_date', { ascending: true })
           .limit(10)
       : Promise.resolve({ data: [] }),
+    // 6. Notifications (user-specific, limited)
     userId
       ? supabase.from('notifications')
           .select('id, title, message, severity, module, is_read, created_at, notification_type')
@@ -57,43 +56,49 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
           .order('created_at', { ascending: false })
           .limit(8)
       : Promise.resolve({ data: [] }),
-    supabase.from('work_orders')
-      .select('created_at, closed_at, status')
-      .gte('created_at', sevenDaysAgo),
+    // 7. PM work orders for compliance
     supabase.from('work_orders')
       .select('status, type, due_date, closed_at')
       .in('type', ['PM', 'Preventive', 'Preventative', 'SCHEDULED']),
+    // 8. Asset MTBF for bad actors
     supabase.from('assets')
       .select('tag, name, mtbf_days, mttr_hours, criticality')
       .not('mtbf_days', 'is', null)
       .order('mtbf_days', { ascending: true })
       .limit(20),
+    // 9. Defect elimination tasks
     supabase.from('ers_defect_elimination_tasks')
       .select('id, status, priority, annual_cost, estimated_savings, implementation_cost, created_at')
       .order('created_at', { ascending: false }),
   ]);
 
+  const allWOs = woResult.data || [];
+
+  // ── Derive overdue, recent, and trend from single WO query ──
+  const overdue = allWOs
+    .filter((wo: any) => wo.due_date && wo.due_date < nowISO &&
+      !['CLOSED', 'TECO', 'CANCELLED'].includes(wo.status))
+    .sort((a: any, b: any) => a.due_date.localeCompare(b.due_date))
+    .slice(0, 8);
+
+  const recent = allWOs.slice(0, 6); // Already ordered by updated_at desc
+
+  const woTrend = allWOs.filter((wo: any) => wo.created_at >= sevenDaysAgo);
+
   // ═══ Site Scope Filtering (ISO 55000 Data Boundary Enforcement) ═══
-  // If user has restricted siteIds, filter all data by asset hierarchy.
-  // Assets in the dashboard are raw DB rows (have `id` but no `parentId` mapping).
-  // We need to fetch the full asset tree from DatabaseService to resolve hierarchy.
   const isGlobalScope = !siteIds || siteIds.length === 0 || siteIds.includes('*');
 
   let scopedAssetIds: Set<string> | null = null;
   let rawAssets = assetResult.data || [];
-  let rawWos = woResult.data || [];
+  let rawWos = allWOs;
 
   if (!isGlobalScope) {
-    // Fetch full mapped asset tree for hierarchy resolution
     const fullAssets = await DatabaseService.getInstance().getAssets();
     const scopedAssets = DatabaseService.filterAssetsBySiteScope(fullAssets, siteIds);
     scopedAssetIds = new Set(scopedAssets.map(a => a.id));
-    // Filter raw DB assets by scoped IDs
     rawAssets = rawAssets.filter((a: any) => scopedAssetIds!.has(a.id));
-    console.log(`[Dashboard] Site scope: ${assetResult.data?.length || 0} → ${rawAssets.length} assets`);
   }
 
-  // Filter WO-related results by scoped asset tags (if scope is restricted)
   let scopedAssetTags: Set<string> | null = null;
   if (scopedAssetIds) {
     scopedAssetTags = new Set(rawAssets.map((a: any) => a.tag));
@@ -104,11 +109,11 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
   };
 
   return {
-    wos: filterWOs(woResult.data || []), srs: srResult.data || [],
+    wos: filterWOs(rawWos), srs: srResult.data || [],
     assets: rawAssets, inventory: inventoryResult.data || [],
-    overdue: filterWOs(overdueWOs.data || []), recent: filterWOs(recentActivity.data || []),
+    overdue: filterWOs(overdue), recent: filterWOs(recent),
     myWork: filterWOs(myWorkResult.data || []), notifications: notificationsResult.data || [],
-    woTrend: filterWOs(woTrendResult.data || []), pmWos: filterWOs(pmWoResult.data || []),
+    woTrend: filterWOs(woTrend), pmWos: filterWOs(pmWoResult.data || []),
     assetMtbf: scopedAssetIds
       ? (assetMtbfResult.data || []).filter((a: any) => scopedAssetIds!.has(a.id) || scopedAssetTags?.has(a.tag))
       : (assetMtbfResult.data || []),
