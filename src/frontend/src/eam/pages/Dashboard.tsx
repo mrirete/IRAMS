@@ -349,31 +349,31 @@ export const Dashboard: React.FC = () => {
       {/* ── Row 1: Header ── */}
       <div className="flex flex-wrap justify-between items-end gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{getGreeting()}, {userName}</h1>
-          <p className="text-slate-500 text-sm">
+          <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900">{getGreeting()}, {userName}</h1>
+          <p className="text-slate-500 text-xs sm:text-sm">
             {userRole && <span className="capitalize">{userRole} • </span>}
             Live data • Updated {lastUpdate}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5 sm:gap-2">
           <AskRelanternButton
             contextType="dashboard"
             contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
           />
-          <button onClick={() => refetch()} className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 transition">
-            <RefreshCw size={14} /> Refresh
+          <button onClick={() => refetch()} className="px-2.5 sm:px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 transition">
+            <RefreshCw size={14} /> <span className="hidden xs:inline">Refresh</span>
           </button>
         </div>
       </div>
 
       {/* ── Quick Actions ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         {quickActions.map(qa => (
           <button key={qa.label} onClick={() => navigate(qa.path)}
-            className={`${qa.color} text-white rounded-xl p-3.5 flex items-center gap-3 transition-all shadow-sm hover:shadow-md active:scale-[0.98]`}
+            className={`${qa.color} text-white rounded-xl p-2.5 sm:p-3.5 flex flex-col sm:flex-row items-center gap-1.5 sm:gap-3 transition-all shadow-sm hover:shadow-md active:scale-[0.98] min-h-[52px]`}
           >
-            <qa.icon size={18} />
-            <span className="text-sm font-semibold">{qa.label}</span>
+            <qa.icon size={18} className="flex-shrink-0" />
+            <span className="text-[11px] sm:text-sm font-semibold text-center sm:text-left leading-tight">{qa.label}</span>
           </button>
         ))}
       </div>
@@ -453,22 +453,27 @@ export const Dashboard: React.FC = () => {
             {workTab === 'active' ? (
               myWork.length > 0 ? myWork.map((wo: any) => (
                 <button key={wo.id} onClick={() => navigate(`/work-orders?id=${wo.id}`)}
-                  className="w-full p-3.5 flex items-center gap-3 hover:bg-blue-50/30 transition text-left"
+                  className="w-full p-3 sm:p-3.5 flex items-start sm:items-center gap-2.5 sm:gap-3 hover:bg-blue-50/30 transition text-left min-h-[52px]"
                 >
-                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_COLORS[wo.status] || '#94a3b8' }} />
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5 sm:mt-0" style={{ backgroundColor: STATUS_COLORS[wo.status] || '#94a3b8' }} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <span className="text-sm font-semibold text-slate-900">{wo.wo_number}</span>
                       <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{wo.status}</span>
                       {wo.priority && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${priorityColor(wo.priority)}`}>{wo.priority}</span>}
                     </div>
                     <p className="text-xs text-slate-600 truncate mt-0.5">{wo.title || 'Untitled'}</p>
+                    {wo.due_date && (
+                      <span className={`text-[10px] sm:hidden font-medium mt-1 inline-block ${new Date(wo.due_date) < new Date() ? 'text-red-500' : 'text-slate-400'}`}>
+                        Due {new Date(wo.due_date).toLocaleDateString()}
+                      </span>
+                    )}
                   </div>
                   {wo.due_date && (
-                    <span className={`text-xs font-medium flex-shrink-0 ${new Date(wo.due_date) < new Date() ? 'text-red-500' : 'text-slate-400'}`}>
+                    <span className={`text-xs font-medium flex-shrink-0 hidden sm:block ${new Date(wo.due_date) < new Date() ? 'text-red-500' : 'text-slate-400'}`}>
                       Due {new Date(wo.due_date).toLocaleDateString()}
                     </span>
-                  )}
+                  )}  
                 </button>
               )) : (
                 <div className="p-8 text-center">
@@ -539,7 +544,7 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* ── Row 4: Analytical Cards (2×2 grid) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
 
         {/* PM Schedule Compliance */}
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">

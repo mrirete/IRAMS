@@ -66,15 +66,18 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSide
     return (
         <header className="h-14 md:h-16 bg-brand-800 border-b border-brand-700/60 flex items-center justify-between px-3 md:px-6 z-10 w-full">
             {/* Left: Hamburger (mobile) + Breadcrumb */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 <button
                     onClick={onToggleSidebar}
-                    className="md:hidden p-2 rounded-lg hover:bg-brand-700 text-brand-300 transition-colors"
+                    className="md:hidden p-2 rounded-lg hover:bg-brand-700 text-brand-300 transition-colors flex-shrink-0"
                     aria-label="Toggle sidebar"
                 >
                     <Menu size={20} />
                 </button>
-                <h2 className="hidden sm:block text-sm md:text-lg font-medium tracking-wide text-brand-100">
+                {/* Mobile: compact brand */}
+                <span className="sm:hidden text-sm font-bold text-brand-100 tracking-wide truncate">IRAMS</span>
+                {/* Desktop: breadcrumb */}
+                <h2 className="hidden sm:block text-sm md:text-lg font-medium tracking-wide text-brand-100 truncate">
                     Dashboard <span className="text-brand-500 mx-1">/</span> <span className="text-brand-300">Overview</span>
                 </h2>
             </div>

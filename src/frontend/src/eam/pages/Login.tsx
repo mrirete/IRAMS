@@ -28,19 +28,8 @@ export const Login: React.FC = () => {
         const loadUsers = async () => {
             setLoadingUsers(true);
 
-            // All EAM Users - Login with Password: password123
-            const fallbackUsers = [
-                { username: 'mrirete', name: 'System Administrator', role: 'SYS_ADMIN' },
-                { username: 'john.doe', name: 'John Doe', role: 'Reliability Engineer' },
-                { username: 'alex', name: 'Alex Technician', role: 'Technician' },
-                { username: 'bea', name: 'Bea Technician', role: 'Technician' },
-                { username: 'charlie', name: 'Charlie Technician', role: 'Technician' },
-                { username: 'dana', name: 'Dana Technician', role: 'Technician' },
-                { username: 'evan', name: 'Evan Supervisor', role: 'Supervisor' },
-                { username: 'fiona', name: 'Fiona Supervisor', role: 'Supervisor' },
-                { username: 'greg', name: 'Greg Planner', role: 'Planner' },
-                { username: 'k.syrus', name: 'K. Syrus', role: 'Reliability Engineer' },
-            ];
+            // Fallback: empty — DB is the source of truth
+            const fallbackUsers: { username: string; name: string; role: string }[] = [];
 
             try {
                 const db = DatabaseService.getInstance();
@@ -144,7 +133,7 @@ export const Login: React.FC = () => {
             <div className="w-full max-w-md relative z-10 space-y-4">
                 {/* Main Login Card */}
                 <div className="bg-slate-800/80 backdrop-blur-xl border border-slate-700/50 rounded-2xl shadow-2xl overflow-hidden">
-                    <div className="p-8">
+                <div className="p-5 sm:p-8">
                         {/* Logo + Brand Hero */}
                         <div className="flex flex-col items-center mb-8">
                             <div className="h-16 w-16 bg-gradient-to-br from-relantern-500 to-relantern-700 rounded-2xl flex items-center justify-center shadow-lg shadow-relantern-500/30 transform rotate-3 mb-5">
@@ -152,7 +141,7 @@ export const Login: React.FC = () => {
                             </div>
 
                             {/* IRAMS Acronym Breakdown */}
-                            <div className="w-full space-y-1.5 mb-4">
+                            <div className="w-full space-y-1 sm:space-y-1.5 mb-4">
                                 {([
                                     { letter: 'I', word: 'Integrated' },
                                     { letter: 'R', word: 'Reliability' },
@@ -160,11 +149,11 @@ export const Login: React.FC = () => {
                                     { letter: 'M', word: 'Management' },
                                     { letter: 'S', word: 'Specialist' },
                                 ] as { letter: string; word: string }[]).map(({ letter, word }) => (
-                                    <div key={letter} className="flex items-center gap-3">
-                                        <span className="w-8 h-8 flex-shrink-0 rounded-lg bg-relantern-500/20 border border-relantern-500/40 flex items-center justify-center text-relantern-300 font-black text-base leading-none">
+                                    <div key={letter} className="flex items-center gap-2 sm:gap-3">
+                                        <span className="w-7 h-7 sm:w-8 sm:h-8 flex-shrink-0 rounded-lg bg-relantern-500/20 border border-relantern-500/40 flex items-center justify-center text-relantern-300 font-black text-sm sm:text-base leading-none">
                                             {letter}
                                         </span>
-                                        <span className="text-sm text-slate-300 font-medium tracking-wide">{word}</span>
+                                        <span className="text-xs sm:text-sm text-slate-300 font-medium tracking-wide">{word}</span>
                                         <div className="flex-1 h-px bg-slate-700/60"></div>
                                     </div>
                                 ))}

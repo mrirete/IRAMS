@@ -44,6 +44,12 @@
   body {
     @apply bg-brand-900 text-brand-100 font-sans antialiased;
   }
+  /* ── iOS Safe Area Support ── */
+  .eam-app {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
 }
 
 /* ── Form Controls — always dark text on light backgrounds ── */
@@ -732,13 +738,15 @@ select {
   left: 0;
   right: 0;
   z-index: 50;
-  background: #ffffff;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid #e2e8f0;
   display: flex;
   align-items: stretch;
   justify-content: space-around;
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  box-shadow: 0 -2px 12px rgba(0,0,0,0.06);
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
 }
 .mobile-bottom-nav-item {
   display: flex;
@@ -746,9 +754,9 @@ select {
   align-items: center;
   justify-content: center;
   gap: 0.125rem;
-  padding: 0.5rem 0;
+  padding: 0.625rem 0;
   flex: 1;
-  min-height: 52px;
+  min-height: 56px;
   font-size: 0.625rem;
   font-weight: 600;
   color: #94a3b8;
@@ -757,6 +765,7 @@ select {
   background: none;
   border: none;
   position: relative;
+  -webkit-tap-highlight-color: transparent;
 }
 .mobile-bottom-nav-item.active {
   color: #F5A623;
@@ -765,10 +774,10 @@ select {
   content: '';
   position: absolute;
   top: 0;
-  left: 25%;
-  right: 25%;
-  height: 2.5px;
-  border-radius: 0 0 2px 2px;
+  left: 20%;
+  right: 20%;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
   background: #F5A623;
 }
 /* Hide on tablet+ */
@@ -779,7 +788,7 @@ select {
 /* Account for bottom nav height on mobile */
 @media (max-width: 639px) {
   .eam-app main {
-    padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
 
