@@ -11,11 +11,12 @@ import { DashboardProvider } from './eam/stores/DashboardStore';
 import { AppLayout } from './shell/AppLayout';
 import { ModuleGate } from './components/ModuleGate';
 import { PermissionGate } from './eam/components/PermissionGate';
-import { ConnectorHub } from './pages/admin/ConnectorHub';
-import { ConnectorWizard } from './pages/admin/ConnectorWizard';
-import { ConnectorDetail } from './pages/admin/ConnectorDetail';
-import { GlobalSettingsPage } from './pages/admin/GlobalSettingsPage';
-import { ErrorLogsPage } from './pages/admin/ErrorLogsPage';
+// Admin pages — lazy loaded (admin-only, no need in main bundle)
+const ConnectorHub = lazy(() => import('./pages/admin/ConnectorHub').then(m => ({ default: m.ConnectorHub })));
+const ConnectorWizard = lazy(() => import('./pages/admin/ConnectorWizard').then(m => ({ default: m.ConnectorWizard })));
+const ConnectorDetail = lazy(() => import('./pages/admin/ConnectorDetail').then(m => ({ default: m.ConnectorDetail })));
+const GlobalSettingsPage = lazy(() => import('./pages/admin/GlobalSettingsPage').then(m => ({ default: m.GlobalSettingsPage })));
+const ErrorLogsPage = lazy(() => import('./pages/admin/ErrorLogsPage').then(m => ({ default: m.ErrorLogsPage })));
 
 // ── React Query Client ──────────────────────────────────
 const queryClient = new QueryClient({

@@ -24,7 +24,63 @@ export default defineConfig({
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
       },
-      workbox: { globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'] },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // Don't precache large chunks — let them load on demand
+        maximumFileSizeToCacheInBytes: 1024 * 1024, // 1MB — covers main bundle + CSS
+      },
     }),
   ],
+
+  build: {
+    // Increase chunk size warning threshold
+    chunkSizeWarningLimit: 600,
+
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // ── Core vendor (React + Router) — cached long-term ──
+          'vendor-react': [
+            'react',
+            'react-dom',
+            'react-router-dom',
+          ],
+
+          // ── Supabase client — separate chunk ──
+          'vendor-supabase': [
+            '@supabase/supabase-js',
+          ],
+
+          // ── Charts (Recharts) — only loaded by pages that use charts ──
+          'vendor-charts': [
+            'recharts',
+          ],
+
+          // ── Icons — tree-shaken but still large ──
+          'vendor-icons': [
+            'lucide-react',
+          ],
+
+          // ── Heavy libs loaded on demand ──
+          'vendor-pdf': [
+            'jspdf',
+          ],
+
+          // ── Spreadsheet processing ──
+          'vendor-xlsx': [
+            'xlsx',
+          ],
+        },
+      },
+    },
+
+    // Enable source maps for debugging (optional, remove for smaller deploy)
+    sourcemap: false,
+
+    // Target modern browsers for smaller output
+    target: 'es2022',
+
+    // Minification
+    minify: 'esbuild',
+  },
 })
