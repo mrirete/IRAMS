@@ -1019,7 +1019,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         // ═══ GATEKEEPER PROTOCOL: Criticality A cancellation ═══
         // Per user rules: "Any cancellation of a Work Request on a Criticality A asset
         // requires a mandatory 'Reason for Rejection' and a digital sign-off"
-        if (!force && updates.status === 'CANCELLED' && localJob.status !== 'CANCELLED' && isCriticalityA) {
+        if (!force && (updates.status as string) === 'CANCELLED' && (localJob.status as string) !== 'CANCELLED' && isCriticalityA) {
             setShowGatekeeperModal(true);
             setGatekeeperReason('');
             setGatekeeperConfirmed(false);
@@ -2003,7 +2003,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                             onClick={async () => {
                                                 setAiSuggestingModes(true);
                                                 try {
-                                                    const suggestions = await ersApi.suggestFailureModes(job.id, job.assetClass || 'rotating_equipment');
+                                                    const suggestions = await ersApi.suggestFailureModes(job.id, (job as any).assetClass || 'rotating_equipment');
                                                     const codes = suggestions.map((s: any) => s.code || s.failure_mode || s);
                                                     setAiSuggestedModes(codes.slice(0, 5));
                                                 } catch (err) {

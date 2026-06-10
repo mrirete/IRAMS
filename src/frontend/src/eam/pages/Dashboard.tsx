@@ -188,9 +188,9 @@ const SPARKLINE_COLORS = { created: '#3b82f6', closed: '#22c55e' };
 // ──────────────────────────────── Dashboard ────────────────────────────────
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, dataScope } = useAuth();
-  const userName = profile?.fullName || profile?.username || 'Operator';
-  const userRole = profile?.role || '';
+  const { user, profile, dataScope, role } = useAuth();
+  const userName = (profile as any)?.fullName || (profile as any)?.username || 'Operator';
+  const userRole = role || '';
   const [workTab, setWorkTab] = useState<'active' | 'recent'>('active');
   const [apiBadActors, setApiBadActors] = useState<BadActorEntry[] | null>(null);
 

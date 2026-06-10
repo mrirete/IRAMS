@@ -95,10 +95,12 @@ const MetricCard: React.FC<{
     unit?: string;
     subtext?: string;
     color?: string;
-}> = ({ icon: Icon, label, value, unit, subtext, color = 'text-slate-700' }) => (
+}> = ({ icon: Icon, label, value, unit, subtext, color = 'text-slate-700' }) => {
+    const IconComp = Icon as any;
+    return (
     <div className="bg-white border border-slate-200 rounded-lg p-3">
         <div className="flex items-center gap-1.5 mb-1">
-            <Icon size={12} className="text-slate-400" />
+            <IconComp size={12} className="text-slate-400" />
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">{label}</span>
         </div>
         <div className={`text-xl font-black ${color}`}>
@@ -107,7 +109,8 @@ const MetricCard: React.FC<{
         </div>
         {subtext && <span className="text-[10px] text-slate-400">{subtext}</span>}
     </div>
-);
+    );
+};
 
 // ── DQS Grade Badge ───────────────────────────────────────
 const DQSBadge: React.FC<{ grade: string; score: number }> = ({ grade, score }) => {
@@ -147,7 +150,7 @@ export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProp
     // Build feature vector from asset metadata
     const buildFeatureVector = useCallback((): FeatureVector => ({
         asset_id: asset.id,
-        operating_hours: asset.operatingHours || 0,
+        operating_hours: (asset as any).operatingHours || 0,
         vibration_rms: undefined,
         temperature_c: undefined,
         pressure_bar: undefined,
@@ -193,7 +196,9 @@ export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProp
                 predictionService.getRULEstimate(asset.id),
             ]);
 
+            let twinData: any = null;
             if (twin.status === 'fulfilled' && twin.value) {
+                twinData = twin.value;
                 setFallbackTwin(twin.value);
                 // Map to health format
                 setHealth({
@@ -221,8 +226,8 @@ export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProp
                 });
             }
 
-            // Simulate DQS from available data
-            const hasReadings = !!fallbackTwin?.sensor_summary && Object.keys(fallbackTwin?.sensor_summary || {}).length > 0;
+            // DQS from available data — use local twinData, not stale state
+            const hasReadings = !!twinData?.sensor_summary && Object.keys(twinData?.sensor_summary || {}).length > 0;
             setDqs({
                 asset_id: asset.id,
                 overall_score: hasReadings ? 72 : 45,
@@ -448,7 +453,7 @@ export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProp
                                     <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} />
                                     <YAxis type="category" dataKey="horizon" tick={{ fontSize: 10 }} width={50} />
                                     <Tooltip
-                                        formatter={(value: number) => [`${value.toFixed(1)}%`, 'Probability']}
+                                        formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Probability']}
                                         contentStyle={{ fontSize: 11 }}
                                     />
                                     <Bar dataKey="probability" radius={[0, 4, 4, 0]} barSize={18}>

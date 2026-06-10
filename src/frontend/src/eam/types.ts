@@ -1136,7 +1136,7 @@ export interface ServiceRequest {
   title: string;
   description: string;
   status: RequestStatus;
-  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  priority: 'EMERGENCY' | 'HIGH' | 'MEDIUM' | 'LOW';
   category: string;
   assetId?: string;
   assetName?: string;

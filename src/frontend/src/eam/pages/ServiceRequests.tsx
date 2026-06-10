@@ -739,7 +739,7 @@ const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceReque
         const RPN_EMERGENCY_THRESHOLD = 40; // Criticality A + Breakdown = 10×10 = 100 → EMERGENCY
         
         // Determine priority based on RPN
-        let computedPriority: string;
+        let computedPriority: 'EMERGENCY' | 'HIGH' | 'MEDIUM' | 'LOW';
         if (rpn >= RPN_EMERGENCY_THRESHOLD) {
             computedPriority = 'EMERGENCY';
         } else if (rpn >= 25) {
