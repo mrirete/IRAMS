@@ -63,7 +63,7 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
       .in('type', ['PM', 'Preventive', 'Preventative', 'SCHEDULED']),
     // 8. Asset MTBF for bad actors
     supabase.from('assets')
-      .select('tag, name, mtbf_days, mttr_hours, criticality')
+      .select('id, tag, name, mtbf_days, mttr_hours, criticality')
       .not('mtbf_days', 'is', null)
       .order('mtbf_days', { ascending: true })
       .limit(20),
