@@ -782,6 +782,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const [isSaving, setIsSaving] = useState(false);
     const [followUpDescription, setFollowUpDescription] = useState('');
 
+    // ── Gatekeeper Protocol (Criticality A cancellation) ──
+    const [showGatekeeperModal, setShowGatekeeperModal] = useState(false);
+    const [gatekeeperReason, setGatekeeperReason] = useState('');
+    const [gatekeeperConfirmed, setGatekeeperConfirmed] = useState(false);
+
     // Debounce refs for auto-save
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingUpdatesRef = useRef<Partial<WorkOrder>>({});
@@ -1007,6 +1012,16 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         if (!force && updates.status === 'SCHED' && localJob.status !== 'SCHED') {
             setPendingStatus('SCHED');
             setShowNotificationModal(true);
+            return;
+        }
+
+        // ═══ GATEKEEPER PROTOCOL: Criticality A cancellation ═══
+        // Per user rules: "Any cancellation of a Work Request on a Criticality A asset
+        // requires a mandatory 'Reason for Rejection' and a digital sign-off"
+        if (!force && updates.status === 'CANCELLED' && localJob.status !== 'CANCELLED' && isCriticalityA) {
+            setShowGatekeeperModal(true);
+            setGatekeeperReason('');
+            setGatekeeperConfirmed(false);
             return;
         }
 
@@ -1466,6 +1481,144 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             >
                                 <Send size={16} /> Yes, Notify & Schedule
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ═══ GATEKEEPER PROTOCOL MODAL — Criticality A Cancellation ═══ */}
+            {showGatekeeperModal && (
+                <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-5 border-b border-red-200 flex justify-between items-center bg-red-50">
+                            <h3 className="font-bold text-red-800 flex items-center gap-2">
+                                <AlertTriangle size={20} className="text-red-600" />
+                                Gatekeeper Protocol — Criticality A Cancellation
+                            </h3>
+                            <button onClick={() => setShowGatekeeperModal(false)}>
+                                <X size={20} className="text-slate-400 hover:text-slate-600" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {/* Warning Banner */}
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800 flex items-start gap-3">
+                                <Shield size={20} className="flex-shrink-0 mt-0.5 text-red-600" />
+                                <div>
+                                    <p className="font-bold mb-1">Safety Critical Asset (Criticality A)</p>
+                                    <p className="text-xs leading-relaxed">
+                                        This work order is against a <strong>Criticality A</strong> asset. Cancelling work on safety-critical equipment requires
+                                        a documented justification and digital sign-off per <strong>ISO 55000</strong> and site Gatekeeper Protocol.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* WO Info */}
+                            <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600 space-y-1 border border-slate-200">
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-slate-500">Work Order:</span>
+                                    <span className="font-mono font-bold text-slate-800">{localJob.woNumber || localJob.id}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-slate-500">Asset:</span>
+                                    <span className="text-slate-800">{localJob.assetCode || localJob.assetName || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="font-bold text-slate-500">Type / Priority:</span>
+                                    <span className="text-slate-800">{localJob.type} / {localJob.priority}</span>
+                                </div>
+                            </div>
+
+                            {/* Mandatory Reason */}
+                            <div>
+                                <label className="block text-xs font-bold text-red-700 uppercase mb-1.5">
+                                    Reason for Rejection / Cancellation <span className="text-red-500">*</span>
+                                </label>
+                                <textarea
+                                    value={gatekeeperReason}
+                                    onChange={(e) => setGatekeeperReason(e.target.value)}
+                                    placeholder="Provide a detailed justification for cancelling this safety-critical work order..."
+                                    className="w-full p-3 border border-red-300 rounded-lg text-sm h-28 resize-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-red-50/30"
+                                    autoFocus
+                                />
+                                {gatekeeperReason.trim().length > 0 && gatekeeperReason.trim().length < 20 && (
+                                    <p className="text-[10px] text-red-500 mt-1">Minimum 20 characters required for audit compliance.</p>
+                                )}
+                            </div>
+
+                            {/* Digital Sign-off */}
+                            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                                gatekeeperConfirmed
+                                    ? 'bg-green-50 border-green-300 shadow-sm'
+                                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                            }`}>
+                                <input
+                                    type="checkbox"
+                                    checked={gatekeeperConfirmed}
+                                    onChange={(e) => setGatekeeperConfirmed(e.target.checked)}
+                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500"
+                                />
+                                <div className="flex-1">
+                                    <span className="text-sm font-bold text-slate-800">Digital Sign-off</span>
+                                    <p className="text-[10px] text-slate-500 mt-0.5">
+                                        I, <strong>{user?.user_metadata?.full_name || user?.email || 'Unknown User'}</strong>,
+                                        confirm that I have authority to cancel this Criticality A work order and accept responsibility for this decision.
+                                    </p>
+                                </div>
+                            </label>
+                        </div>
+
+                        <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center">
+                            <span className="text-[9px] text-slate-400 flex items-center gap-1">
+                                <Lock size={10} />
+                                Action will be logged to audit trail (NIST/IEC 62443)
+                            </span>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowGatekeeperModal(false)}
+                                    className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        // Write audit log
+                                        try {
+                                            await supabase.from('audit_logs').insert({
+                                                table_name: 'work_orders',
+                                                record_id: localJob.id,
+                                                action: 'GATEKEEPER_CANCELLATION',
+                                                changed_by: user?.email || user?.id || 'unknown',
+                                                timestamp: new Date().toISOString(),
+                                                changes: JSON.stringify({
+                                                    event: 'CRITICALITY_A_CANCELLATION',
+                                                    wo_number: localJob.woNumber,
+                                                    asset_id: localJob.assetId,
+                                                    asset_code: localJob.assetCode || localJob.assetName,
+                                                    criticality: 'A',
+                                                    reason_for_rejection: gatekeeperReason.trim(),
+                                                    signed_off_by: user?.user_metadata?.full_name || user?.email,
+                                                    signed_off_at: new Date().toISOString(),
+                                                }),
+                                            });
+                                        } catch (auditErr) {
+                                            console.warn('[Gatekeeper] Audit log write failed:', auditErr);
+                                        }
+
+                                        // Proceed with cancellation
+                                        setShowGatekeeperModal(false);
+                                        await updateJob({ status: 'CANCELLED' as any }, true);
+                                        showToast(
+                                            `⛔ WO ${localJob.woNumber || localJob.id} cancelled (Criticality A — Gatekeeper approved). Audit trail logged.`,
+                                            'warning'
+                                        );
+                                    }}
+                                    disabled={gatekeeperReason.trim().length < 20 || !gatekeeperConfirmed}
+                                    className="px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 flex items-center gap-2 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <AlertTriangle size={16} /> Confirm Cancellation
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -39,13 +39,14 @@ import { AskRelanternButton } from '../components/AskRelanternButton';
 import { aiContextService } from '../services/AIContextService';
 import { AssetQRCode } from '../components/AssetQRCode';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
+import { ReliabilityIntelligenceTab } from '../components/ReliabilityIntelligenceTab';
 
 interface AssetsProps {
     onAnalyze?: (context: string) => void;
 }
 
 type TabId =
-    | 'details' | 'hierarchy' | 'bom' | 'readings'
+    | 'details' | 'hierarchy' | 'bom' | 'readings' | 'reliability'
     | 'jobs' | 'financials' | 'journals' | 'files' | 'tracking';
 
 
@@ -674,6 +675,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
         { id: 'hierarchy', label: 'Hierarchy', icon: Link, show: true },
         { id: 'bom', label: 'BOM', icon: Box, show: !isLocation(selectedAsset) },
         { id: 'readings', label: 'Readings', icon: Activity, show: !isLocation(selectedAsset) },
+        { id: 'reliability', label: 'Reliability', icon: Cpu, show: !isLocation(selectedAsset) },
         { id: 'jobs', label: 'Work & History', icon: Wrench, show: true },
         { id: 'files', label: 'Files', icon: FolderPlus, show: true },
         { id: 'financials', label: 'Financials', icon: DollarSign, show: true },
@@ -1444,6 +1446,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     onAdd={handleAddReadingDef}
                                 />
                             )}
+                            {activeTab === 'reliability' && !isLocation(selectedAsset) && <ReliabilityIntelligenceTab asset={selectedAsset} />}
                             {activeTab === 'jobs' && <JobsTab asset={selectedAsset} />}
                             {activeTab === 'financials' && <FinancialsTab asset={selectedAsset} />}
                             {activeTab === 'tracking' && <TrackingTab asset={selectedAsset} />}

@@ -720,6 +720,38 @@ const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceReque
         const newReqNumber = `REQ-2026-${Math.floor(Math.random() * 1000)}`;
         console.log("Creating Request:", { newId, newReqNumber });
 
+        // ═══ RPN Auto-Escalation (ISO 31000 / User Rule) ═══
+        // RPN = Asset Criticality Score × Failure Severity Score
+        // Criticality: A=10, B=5, C=2 (default 3 if unknown)
+        // Severity: breakdown=10, leak/fire/safety=8, general=3
+        const critScores: Record<string, number> = { 'A': 10, 'B': 5, 'C': 2 };
+        const assetCritScore = critScores[selectedAsset?.criticality || ''] || 3;
+        
+        const descLower = desc.toLowerCase();
+        let severityScore = 3; // Default: low severity
+        if (isBreakdown) severityScore = 10;
+        else if (descLower.includes('fire') || descLower.includes('gas leak') || descLower.includes('explosion')) severityScore = 10;
+        else if (descLower.includes('leak') || descLower.includes('safety') || descLower.includes('hazard')) severityScore = 8;
+        else if (descLower.includes('vibrat') || descLower.includes('overheat') || descLower.includes('abnormal')) severityScore = 6;
+        else if (descLower.includes('noise') || descLower.includes('alarm') || descLower.includes('grinding')) severityScore = 5;
+        
+        const rpn = assetCritScore * severityScore;
+        const RPN_EMERGENCY_THRESHOLD = 40; // Criticality A + Breakdown = 10×10 = 100 → EMERGENCY
+        
+        // Determine priority based on RPN
+        let computedPriority: string;
+        if (rpn >= RPN_EMERGENCY_THRESHOLD) {
+            computedPriority = 'EMERGENCY';
+        } else if (rpn >= 25) {
+            computedPriority = 'HIGH';
+        } else if (rpn >= 10) {
+            computedPriority = 'MEDIUM';
+        } else {
+            computedPriority = 'LOW';
+        }
+
+        console.log(`[RPN Auto-Escalation] Criticality=${selectedAsset?.criticality || '?'}(${assetCritScore}) × Severity=${severityScore} = RPN ${rpn} → Priority: ${computedPriority}`);
+
         const newReq: ServiceRequest = {
             id: newId,
             requestNumber: newReqNumber,
@@ -729,13 +761,13 @@ const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceReque
             assetName: selectedAsset?.tag,
             location: getResolvedLocation(),
             status: RequestStatus.NEW,
-            priority: desc.toLowerCase().includes('fire') || desc.toLowerCase().includes('leak') ? 'HIGH' : 'MEDIUM',
+            priority: computedPriority,
             category: category, // GAP-6: Persisted from bound state
             requesterId: user.id, // Use Real User ID
             requesterName: profile?.username || user.email || 'Unknown User',
             createdAt: new Date().toISOString(),
-            slaDeadline: new Date(Date.now() + 86400000).toISOString(),
-            aiRiskScore: desc.toLowerCase().includes('leak') ? 85 : 40,
+            slaDeadline: new Date(Date.now() + (computedPriority === 'EMERGENCY' ? 14400000 : 86400000)).toISOString(), // EMERGENCY = 4hr SLA
+            aiRiskScore: rpn,
             functionalFailureType: funcFailure,
             isBreakdown: isBreakdown,
             files: files
