@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { useAuth } from '../contexts/AuthContext';
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { DatabaseService } from '../services/DatabaseService';
+import ersApi, { BadActorEntry } from '../services/ERSApiClient';
 
 // ──────────────────────────────── Fetcher ────────────────────────────────
 const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) => {
@@ -191,6 +192,7 @@ export const Dashboard: React.FC = () => {
   const userName = profile?.fullName || profile?.username || 'Operator';
   const userRole = profile?.role || '';
   const [workTab, setWorkTab] = useState<'active' | 'recent'>('active');
+  const [apiBadActors, setApiBadActors] = useState<BadActorEntry[] | null>(null);
 
   const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['dashboardStats', profile?.id, dataScope?.siteIds],
@@ -199,6 +201,23 @@ export const Dashboard: React.FC = () => {
     staleTime: 1000 * 30, // 30s — avoid re-fetch storms during auth state changes
     refetchInterval: 1000 * 60 * 2,
   });
+
+  // ── Try API-driven Bad Actor report (Railway) → fallback to MTBF ──
+  useEffect(() => {
+    if (!ersApi.isConfigured) return;
+    (async () => {
+      try {
+        const report = await ersApi.getLatestBadActorReport();
+        if (report?.top_assets?.length > 0) {
+          setApiBadActors(report.top_assets.slice(0, 5));
+          console.log('[Dashboard] API-driven bad actors loaded:', report.top_assets.length);
+        }
+      } catch {
+        // Silently fall back to Supabase MTBF-based bad actors
+        console.log('[Dashboard] API bad actors unavailable, using MTBF fallback');
+      }
+    })();
+  }, [data]); // Re-fetch when dashboard data refreshes
 
   if (isLoading) {
     return (
@@ -293,11 +312,23 @@ export const Dashboard: React.FC = () => {
     if (bucket) bucket.count++;
   });
 
-  // ── Top 5 Bad Actors ──
-  const badActors = assetMtbf
+  // ── Top 5 Bad Actors (prefer API → fallback to MTBF) ──
+  const mtbfBadActors = assetMtbf
     .filter((a: any) => a.mtbf_days !== null && a.mtbf_days > 0)
     .sort((a: any, b: any) => a.mtbf_days - b.mtbf_days)
     .slice(0, 5);
+  const badActors = apiBadActors && apiBadActors.length > 0
+    ? apiBadActors.map(a => ({
+        tag: a.asset_tag,
+        name: a.asset_name,
+        id: a.asset_id,
+        mtbf_days: Math.round(a.total_downtime_hours / Math.max(a.wo_count, 1)),
+        mttr_hours: a.total_downtime_hours,
+        criticality: null,
+        wo_count: a.wo_count,
+        total_cost: a.total_cost,
+      }))
+    : mtbfBadActors;
 
   // ── Defect Elimination Metrics ──
   const activeDETasks = deTasks.filter((t: any) => t.status === 'identified' || t.status === 'in_progress');

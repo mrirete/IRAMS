@@ -60,6 +60,7 @@ import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { DensityToggle, type Density } from '../components/ui/DensityToggle';
 import { supabase } from '../lib/supabase';
+import ersApi from '../services/ERSApiClient';
 
 type ViewMode = 'LIST' | 'DETAIL' | 'PM_LIST' | 'MY_WORK';
 type TabId = 'details' | 'tasks' | 'jsa' | 'resources' | 'files' | 'analysis';
@@ -1815,6 +1816,9 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
 
     // AI-assisted failure effects
     const [aiSuggestingEffects, setAiSuggestingEffects] = useState(false);
+    // AI-suggested failure modes from Railway API
+    const [aiSuggestedModes, setAiSuggestedModes] = useState<string[]>([]);
+    const [aiSuggestingModes, setAiSuggestingModes] = useState(false);
 
     // Local State for Journal Entry
     const [note, setNote] = useState('');
@@ -1992,7 +1996,46 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                             </div>
 
                             <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Failure Mode <span className="text-red-500">*</span></label>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Failure Mode <span className="text-red-500">*</span></label>
+                                    {job.assetId && ersApi.isConfigured && (
+                                        <button
+                                            onClick={async () => {
+                                                setAiSuggestingModes(true);
+                                                try {
+                                                    const suggestions = await ersApi.suggestFailureModes(job.id, job.assetClass || 'rotating_equipment');
+                                                    const codes = suggestions.map((s: any) => s.code || s.failure_mode || s);
+                                                    setAiSuggestedModes(codes.slice(0, 5));
+                                                } catch (err) {
+                                                    console.log('[AnalysisTab] AI failure mode suggestion unavailable:', err);
+                                                }
+                                                setAiSuggestingModes(false);
+                                            }}
+                                            disabled={aiSuggestingModes}
+                                            className="text-[9px] font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 transition disabled:opacity-50"
+                                        >
+                                            {aiSuggestingModes ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
+                                            AI Suggest
+                                        </button>
+                                    )}
+                                </div>
+                                {/* AI-suggested failure modes chips */}
+                                {aiSuggestedModes.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 mb-1.5">
+                                        {aiSuggestedModes.map(code => {
+                                            const fm = failureModes.find(f => f.code === code);
+                                            return fm ? (
+                                                <button
+                                                    key={code}
+                                                    onClick={() => { handleFailureModeChange(code); setAiSuggestedModes([]); }}
+                                                    className="text-[9px] px-2 py-1 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200 hover:bg-indigo-100 transition"
+                                                >
+                                                    {fm.description || code}
+                                                </button>
+                                            ) : null;
+                                        })}
+                                    </div>
+                                )}
                                 <SearchableSelect
                                     value={job.failureData?.failureMode || ''}
                                     onChange={handleFailureModeChange}
