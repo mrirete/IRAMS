@@ -1,0 +1,24 @@
+# Ignore frontend build artifacts and node_modules
+src/frontend/node_modules
+src/frontend/dist
+src/frontend/.next
+
+# Ignore Docker infrastructure (not needed inside container)
+infrastructure/
+
+# Ignore git
+.git
+.gitignore
+
+# Ignore IDE/editor files
+.vscode
+.idea
+*.pyc
+__pycache__
+*.pyo
+.mypy_cache
+.pytest_cache
+
+# Ignore docs and non-essential files
+*.md
+LICENSE

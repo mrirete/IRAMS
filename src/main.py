@@ -75,6 +75,8 @@ _cors_origins: list[str] = (
     [o.strip() for o in _cors_env.split(",") if o.strip()]
     if _cors_env
     else [
+        "https://irams.vercel.app",
+        "https://irams-p9hk.vercel.app",
         "http://localhost:5173",
         "http://localhost:4173",
         "http://localhost:3000",
