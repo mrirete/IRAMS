@@ -72,6 +72,23 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
       .order('created_at', { ascending: false }),
   ]);
 
+  // ── Error diagnostics: log any silent Supabase failures ──
+  const results = [
+    { name: 'work_orders', ...woResult },
+    { name: 'service_requests', ...srResult },
+    { name: 'assets', ...assetResult },
+    { name: 'inventory', ...inventoryResult },
+    { name: 'my_work', ...(myWorkResult as any) },
+    { name: 'notifications', ...(notificationsResult as any) },
+    { name: 'pm_work_orders', ...pmWoResult },
+    { name: 'asset_mtbf', ...assetMtbfResult },
+    { name: 'de_tasks', ...deTasksResult },
+  ];
+  results.forEach(r => {
+    if (r.error) console.error(`[Dashboard] ❌ ${r.name} query failed:`, r.error);
+  });
+  console.log(`[Dashboard] ✓ Loaded: ${woResult.data?.length ?? 0} WOs, ${srResult.data?.length ?? 0} SRs, ${assetResult.data?.length ?? 0} Assets, ${inventoryResult.data?.length ?? 0} Inventory`);
+
   const allWOs = woResult.data || [];
 
   // ── Derive overdue, recent, and trend from single WO query ──
