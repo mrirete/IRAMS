@@ -195,6 +195,8 @@ export const Dashboard: React.FC = () => {
   const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery({
     queryKey: ['dashboardStats', profile?.id, dataScope?.siteIds],
     queryFn: () => fetchDashboardData(profile?.id, dataScope?.siteIds),
+    enabled: !!profile?.id, // Don't fire until auth is ready (prevents anon key hitting RLS)
+    staleTime: 1000 * 30, // 30s — avoid re-fetch storms during auth state changes
     refetchInterval: 1000 * 60 * 2,
   });
 
