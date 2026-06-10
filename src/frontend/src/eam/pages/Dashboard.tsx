@@ -187,7 +187,7 @@ const SPARKLINE_COLORS = { created: '#3b82f6', closed: '#22c55e' };
 // ──────────────────────────────── Dashboard ────────────────────────────────
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { profile, dataScope } = useAuth();
+  const { user, profile, dataScope } = useAuth();
   const userName = profile?.fullName || profile?.username || 'Operator';
   const userRole = profile?.role || '';
   const [workTab, setWorkTab] = useState<'active' | 'recent'>('active');
@@ -626,30 +626,110 @@ export const Dashboard: React.FC = () => {
           </button>
         </div>
 
-        {/* Top 5 Bad Actors */}
+        {/* Top 5 Bad Actors — Pareto (ISO 55000 Monthly Analysis) */}
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-2 mb-3">
             <Skull size={16} className="text-red-600" />
             <h4 className="text-sm font-semibold text-slate-900">Top Bad Actors</h4>
+            <span className="ml-auto text-[9px] font-medium text-slate-400 uppercase tracking-wide">Pareto</span>
           </div>
-          <div className="space-y-2">
-            {badActors.length > 0 ? badActors.map((a: any, i: number) => (
-              <div key={a.tag} className="flex items-center gap-2">
-                <span className={`text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  i === 0 ? 'bg-red-100 text-red-700' : i === 1 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
-                }`}>{i + 1}</span>
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-semibold text-slate-800 truncate block">{a.tag}</span>
+          <div className="space-y-2.5">
+            {badActors.length > 0 ? (() => {
+              const maxMTBF = Math.max(...badActors.map((a: any) => a.mtbf_days || 1));
+              return badActors.map((a: any, i: number) => (
+                <div key={a.tag} className="group">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      i === 0 ? 'bg-red-100 text-red-700' : i === 1 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                    }`}>{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-xs font-semibold text-slate-800 truncate">{a.tag}</span>
+                        {a.criticality && (
+                          <span className={`text-[8px] font-bold px-1 py-0.5 rounded ${
+                            a.criticality === 'A' ? 'bg-red-100 text-red-700' :
+                            a.criticality === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                          }`}>{a.criticality}</span>
+                        )}
+                      </div>
+                      {/* Pareto bar */}
+                      <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            i === 0 ? 'bg-red-500' : i === 1 ? 'bg-amber-500' : 'bg-slate-400'
+                          }`}
+                          style={{ width: `${Math.max(10, 100 - ((a.mtbf_days / maxMTBF) * 80))}%` }}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span className="text-[10px] font-medium text-slate-500">{a.mtbf_days}d</span>
+                      {/* Auto-draft DE Task */}
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            const { error } = await supabase.from('ers_defect_elimination_tasks').insert({
+                              asset_id: a.id || null,
+                              title: `DE: ${a.tag} — Bad Actor Elimination`,
+                              description: `Auto-drafted by monthly Pareto analysis.\nAsset: ${a.tag} (${a.name || 'N/A'})\nCriticality: ${a.criticality || 'Unknown'}\nMTBF: ${a.mtbf_days} days\nMTTR: ${a.mttr_hours || 'N/A'} hours\n\nThis asset was identified as a Top 5 Bad Actor. Root cause investigation and defect elimination recommended per ISO 55000.`,
+                              status: 'identified',
+                              priority: a.criticality === 'A' ? 'critical' : 'high',
+                              annual_cost: 0,
+                              estimated_savings: 0,
+                              implementation_cost: 0,
+                              created_by: user?.id || 'system',
+                            });
+                            if (error) throw error;
+                            alert(`✅ DE Task created for ${a.tag}. Navigate to Analyze → Defect Elimination to review.`);
+                          } catch (err: any) {
+                            alert(`Failed to create DE task: ${err.message}`);
+                          }
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-indigo-50 text-indigo-500 hover:text-indigo-700"
+                        title="Auto-draft Defect Elimination task"
+                      >
+                        <Target size={12} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <span className="text-[10px] font-medium text-slate-500">{a.mtbf_days}d MTBF</span>
-              </div>
-            )) : (
+              ));
+            })() : (
               <div className="text-xs text-slate-400 italic">No MTBF data available</div>
             )}
           </div>
-          <button onClick={() => navigate('/reports')} className="mt-3 text-[10px] font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 transition">
-            View in Reports <ArrowRight size={10} />
-          </button>
+          <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
+            <button onClick={() => navigate('/reports')} className="text-[10px] font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 transition">
+              View in Reports <ArrowRight size={10} />
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm('Auto-draft DE tasks for all Top 5 Bad Actors?')) return;
+                let created = 0;
+                for (const a of badActors as any[]) {
+                  try {
+                    const { error } = await supabase.from('ers_defect_elimination_tasks').insert({
+                      asset_id: a.id || null,
+                      title: `DE: ${a.tag} — Bad Actor Elimination`,
+                      description: `Auto-drafted by monthly Pareto analysis.\nAsset: ${a.tag}\nCriticality: ${a.criticality || '?'}\nMTBF: ${a.mtbf_days}d`,
+                      status: 'identified',
+                      priority: a.criticality === 'A' ? 'critical' : 'high',
+                      annual_cost: 0,
+                      estimated_savings: 0,
+                      implementation_cost: 0,
+                      created_by: user?.id || 'system',
+                    });
+                    if (!error) created++;
+                  } catch { /* skip */ }
+                }
+                alert(`✅ ${created} DE task(s) created. Navigate to Analyze → Defect Elimination.`);
+              }}
+              className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition bg-indigo-50 px-2 py-1 rounded-md hover:bg-indigo-100"
+            >
+              <Target size={10} /> Draft All DE Tasks
+            </button>
+          </div>
         </div>
 
         {/* Defect Elimination Summary */}
