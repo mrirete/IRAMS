@@ -39,38 +39,43 @@ export default defineConfig({
 
     rollupOptions: {
       output: {
-        manualChunks: {
+        manualChunks(id) {
           // ── Core vendor (React + Router) — cached long-term ──
-          'vendor-react': [
-            'react',
-            'react-dom',
-            'react-router-dom',
-          ],
+          if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/react-router')) {
+            return 'vendor-react';
+          }
 
-          // ── Supabase client — separate chunk ──
-          'vendor-supabase': [
-            '@supabase/supabase-js',
-          ],
+          // ── Supabase client ──
+          if (id.includes('@supabase/')) {
+            return 'vendor-supabase';
+          }
 
           // ── Charts (Recharts) — only loaded by pages that use charts ──
-          'vendor-charts': [
-            'recharts',
-          ],
+          if (id.includes('recharts') || id.includes('d3-')) {
+            return 'vendor-charts';
+          }
 
-          // ── Icons — tree-shaken but still large ──
-          'vendor-icons': [
-            'lucide-react',
-          ],
+          // ── Icons (lucide-react) ──
+          if (id.includes('lucide-react')) {
+            return 'vendor-icons';
+          }
 
-          // ── Heavy libs loaded on demand ──
-          'vendor-pdf': [
-            'jspdf',
-          ],
+          // ── Heavy vendor libs — split from index ──
+          if (id.includes('jspdf')) return 'vendor-pdf';
+          if (id.includes('xlsx')) return 'vendor-xlsx';
+          if (id.includes('@tanstack/react-query')) return 'vendor-query';
+          if (id.includes('@google/generative-ai')) return 'vendor-gemini';
+          if (id.includes('date-fns')) return 'vendor-datefns';
 
-          // ── Spreadsheet processing ──
-          'vendor-xlsx': [
-            'xlsx',
-          ],
+          // ── AI / Agent panel — deferred until user opens panel ──
+          if (id.includes('/agent-panel/') || id.includes('RelanternAI') || id.includes('AIContextService') || id.includes('geminiService')) {
+            return 'ai-panel';
+          }
+
+          // ── DevicePreviewer — dev-only, never needed initially ──
+          if (id.includes('DevicePreviewer')) {
+            return 'dev-tools';
+          }
         },
       },
     },

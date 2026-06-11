@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { MobileBottomNav } from './MobileBottomNav';
-import { AgentPanel } from '../agent-panel/AgentPanel';
-import { RelanternAI } from '../eam/components/RelanternAI';
 import { useRelantern } from '../eam/contexts/RelanternContext';
-import { DevicePreviewer } from '../components/dev/DevicePreviewer';
+
+// ── Lazy-loaded panels (not needed on initial render) ──
+const AgentPanel = lazy(() => import('../agent-panel/AgentPanel').then(m => ({ default: m.AgentPanel })));
+const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
+const DevicePreviewer = lazy(() => import('../components/dev/DevicePreviewer').then(m => ({ default: m.DevicePreviewer })));
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -52,20 +54,28 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             </div>
 
             {isAgentPanelOpen && (
-                <AgentPanel onClose={() => setIsAgentPanelOpen(false)} />
+                <Suspense fallback={null}>
+                    <AgentPanel onClose={() => setIsAgentPanelOpen(false)} />
+                </Suspense>
             )}
 
-            {/* Relantern AI Panel — globally available */}
-            <RelanternAI
-                isOpen={isRelanternOpen}
-                onClose={closeRelantern}
-                contextData={contextData}
-                contextType={contextType}
-            />
+            {/* Relantern AI Panel — lazy loaded on first open */}
+            {isRelanternOpen && (
+                <Suspense fallback={null}>
+                    <RelanternAI
+                        isOpen={isRelanternOpen}
+                        onClose={closeRelantern}
+                        contextData={contextData}
+                        contextType={contextType}
+                    />
+                </Suspense>
+            )}
 
             {/* Device Previewer Shell - Only render if we are the top window to prevent inception */}
             {isMainFrame && isPreviewOpen && (
-                <DevicePreviewer onClose={() => setIsPreviewOpen(false)} />
+                <Suspense fallback={null}>
+                    <DevicePreviewer onClose={() => setIsPreviewOpen(false)} />
+                </Suspense>
             )}
 
             {/* Mobile Bottom Tab Navigation — visible only on < 768px */}
