@@ -128,7 +128,7 @@ export const Login: React.FC = () => {
             <div className="w-full lg:w-[480px] xl:w-[520px] flex-shrink-0 flex flex-col min-h-screen relative z-10">
                 {/* Top bar with logo */}
                 <div className="px-8 pt-8 pb-0">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 lg:justify-center">
                         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M12 2c0 0-4 4-4 8a4 4 0 0 0 8 0c0-4-4-8-4-8z" />
@@ -145,10 +145,13 @@ export const Login: React.FC = () => {
 
                 {/* Form — centered vertically */}
                 <div className="flex-1 flex flex-col justify-center px-8 sm:px-12 lg:px-14 py-8">
-                    <div className="max-w-sm w-full mx-auto lg:mx-0">
-                        <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-2">
+                    <div className="max-w-sm w-full mx-auto">
+                        <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">
                             Welcome back
                         </h1>
+                        <p className="text-[11px] font-semibold text-amber-600/80 uppercase tracking-widest mb-1">
+                            Integrated Reliability & Asset Management Specialist
+                        </p>
                         <p className="text-slate-500 text-[15px] font-medium mb-8">
                             Enter your credentials to access IRAMS.
                         </p>
@@ -334,7 +337,7 @@ export const Login: React.FC = () => {
                 </div>
 
                 {/* Footer */}
-                <div className="px-8 pb-6">
+                <div className="px-8 pb-6 lg:text-center">
                     <p className="text-[13px] text-slate-400 font-medium">
                         Don't have an account? <span className="text-slate-600 font-semibold cursor-pointer hover:text-amber-600 transition-colors">Contact IT Support</span>
                     </p>
