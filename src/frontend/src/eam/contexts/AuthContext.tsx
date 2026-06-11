@@ -99,12 +99,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (emailResult.data) {
                 userData = emailResult.data;
             } else {
-                // Fallback: try by username (email prefix)
+                // Fallback: try by username (email prefix) — case-insensitive
+                // because usernames like "J.test1" derive as "j.test1" from email
                 const derivedUser = currentUser.email?.split('@')[0] || '';
                 const usernameResult = await supabase
                     .from('users')
                     .select('*')
-                    .eq('username', derivedUser)
+                    .ilike('username', derivedUser)
                     .maybeSingle();
                 userData = usernameResult.data;
                 userError = usernameResult.error;
