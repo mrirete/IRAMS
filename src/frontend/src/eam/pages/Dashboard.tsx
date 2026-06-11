@@ -32,7 +32,7 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
   ] = await Promise.all([
     // 1. ALL work orders (single query replaces 5 separate ones)
     supabase.from('work_orders')
-      .select('id, wo_number, title, status, type, priority, created_at, closed_at, due_date, updated_at, asset_tag')
+      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id')
       .order('updated_at', { ascending: false }),
     // 2. Service requests — counts only
     supabase.from('service_requests').select('status'),
@@ -43,7 +43,7 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
     // 5. My work (user-specific, limited)
     userId
       ? supabase.from('work_orders')
-          .select('id, wo_number, title, status, type, due_date, priority, asset_tag')
+          .select('id, wo_number, title, status, type, due_date, priority_code, asset_id')
           .not('status', 'in', '("CLOSED","TECO","CANCELLED")')
           .order('due_date', { ascending: true })
           .limit(10)
@@ -123,7 +123,7 @@ const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) =>
   }
   const filterWOs = (wos: any[]) => {
     if (!scopedAssetTags) return wos;
-    return wos.filter((wo: any) => !wo.asset_tag || scopedAssetTags!.has(wo.asset_tag));
+    return wos.filter((wo: any) => !wo.asset_id || scopedAssetTags!.has(wo.asset_id));
   };
 
   return {
@@ -510,7 +510,7 @@ export const Dashboard: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <span className="text-sm font-semibold text-slate-900">{wo.wo_number}</span>
                       <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">{wo.status}</span>
-                      {wo.priority && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${priorityColor(wo.priority)}`}>{wo.priority}</span>}
+                      {wo.priority_code && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${priorityColor(wo.priority_code)}`}>{wo.priority_code}</span>}
                     </div>
                     <p className="text-xs text-slate-600 truncate mt-0.5">{wo.title || 'Untitled'}</p>
                     {wo.due_date && (
