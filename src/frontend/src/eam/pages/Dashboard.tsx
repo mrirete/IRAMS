@@ -18,7 +18,9 @@ import { DatabaseService } from '../services/DatabaseService';
 import ersApi, { BadActorEntry } from '../services/ERSApiClient';
 
 // ──────────────────────────────── Fetcher ────────────────────────────────
-const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) => {
+// Exported so Login can prefetch dashboard data before navigating
+export const DASHBOARD_QUERY_KEY = 'dashboardStats';
+export const fetchDashboardData = async (userId?: string, siteIds?: string[] | null) => {
   const now = new Date();
   const nowISO = now.toISOString();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
@@ -195,11 +197,13 @@ export const Dashboard: React.FC = () => {
   const [apiBadActors, setApiBadActors] = useState<BadActorEntry[] | null>(null);
 
   const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery({
-    queryKey: ['dashboardStats', profile?.id, dataScope?.siteIds],
+    queryKey: [DASHBOARD_QUERY_KEY, profile?.id, dataScope?.siteIds],
     queryFn: () => fetchDashboardData(profile?.id, dataScope?.siteIds),
     enabled: !!profile?.id, // Don't fire until auth is ready (prevents anon key hitting RLS)
-    staleTime: 1000 * 30, // 30s — avoid re-fetch storms during auth state changes
+    staleTime: 1000 * 60 * 2, // 2 min — show cached data instantly on revisit
+    gcTime: 1000 * 60 * 10,   // 10 min — keep cache alive across navigation
     refetchInterval: 1000 * 60 * 2,
+    placeholderData: (prev) => prev, // Show previous data while refetching (no skeleton flash)
   });
 
   // ── Try API-driven Bad Actor report (Railway) → fallback to MTBF ──

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
 import {
     Lock, Mail, AlertCircle, Loader2, Users, ChevronDown, ChevronUp,
@@ -31,8 +32,30 @@ export const Login: React.FC = () => {
     const [focusedField, setFocusedField] = useState<string | null>(null);
     const navigate = useNavigate();
     const location = useLocation();
+    const queryClient = useQueryClient();
 
     const from = (location.state as any)?.from?.pathname || '/';
+
+    // ── Prefetch dashboard data to eliminate post-login load delay ──
+    const prefetchDashboard = async () => {
+        try {
+            // Dynamically import to avoid pulling Dashboard into the Login bundle
+            const { fetchDashboardData, DASHBOARD_QUERY_KEY } = await import('./Dashboard');
+            // Get the current user's profile for the query key
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                // Fire and forget — don't await, let it load in background
+                queryClient.prefetchQuery({
+                    queryKey: [DASHBOARD_QUERY_KEY, user.id, null],
+                    queryFn: () => fetchDashboardData(user.id, null),
+                    staleTime: 1000 * 60 * 2,
+                });
+            }
+        } catch (e) {
+            // Non-critical — dashboard will load normally if prefetch fails
+            console.debug('[Login] Dashboard prefetch skipped:', e);
+        }
+    };
 
     // Load available users for quick switch
     useEffect(() => {
@@ -73,6 +96,8 @@ export const Login: React.FC = () => {
 
         try {
             await loginWithUsername(username, password);
+            // Start loading dashboard data while React Router navigates
+            prefetchDashboard();
             navigate(from, { replace: true });
         } catch (err: any) {
             console.error("Login failed", err);
@@ -106,6 +131,7 @@ export const Login: React.FC = () => {
         try {
             await supabase.auth.signOut();
             await loginWithUsername(targetUsername, TEST_PASSWORD);
+            prefetchDashboard();
             navigate(from, { replace: true });
         } catch (err: any) {
             console.error("Quick switch failed", err);
