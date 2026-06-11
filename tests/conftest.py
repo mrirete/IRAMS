@@ -430,7 +430,9 @@ for alias, dotpath in _ALIASES.items():
                 mod = importlib.util.module_from_spec(spec)
                 sys.modules[alias] = mod
                 spec.loader.exec_module(mod)
-        except (ImportError, ModuleNotFoundError):
+        except Exception as e:
+            import warnings
+            warnings.warn(f"conftest: Failed to load alias '{alias}' from {mod_file}: {e}")
             pass  # Skip modules with missing dependencies
 
 def _register_layer4_integration():
