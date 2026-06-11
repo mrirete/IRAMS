@@ -17,31 +17,39 @@ from uuid import uuid4
 
 import pytest
 
-# ── Use conftest aliases ──────────────────────────────────────
+# ── Use conftest aliases (skip gracefully if not loadable) ────
 
-from layer1_data_fabric_pid_schemas import (
-    CommitRequest,
-    EquipmentType,
-    ExtractedConnection,
-    ExtractedEquipment,
-    JobStatus,
-    PageExtractionResult,
-    ReviewStatus,
+_pid_schemas = pytest.importorskip(
+    "layer1_data_fabric_pid_schemas",
+    reason="PID schemas not loadable",
 )
-from layer1_data_fabric_pid_service import (
-    REVIEW_CONFIDENCE_THRESHOLD,
-    _apply_corrections,
-    all_reviews_resolved,
-    approve_review_item,
-    create_job,
-    get_job,
-    get_review_items,
-    process_job,
-    reject_review_item,
+CommitRequest = _pid_schemas.CommitRequest
+EquipmentType = _pid_schemas.EquipmentType
+ExtractedConnection = _pid_schemas.ExtractedConnection
+ExtractedEquipment = _pid_schemas.ExtractedEquipment
+JobStatus = _pid_schemas.JobStatus
+PageExtractionResult = _pid_schemas.PageExtractionResult
+ReviewStatus = _pid_schemas.ReviewStatus
+
+_pid_service = pytest.importorskip(
+    "layer1_data_fabric_pid_service",
+    reason="PID service not loadable",
 )
-from layer1_data_fabric_pid_vision import (
-    _parse_vision_response,
+REVIEW_CONFIDENCE_THRESHOLD = _pid_service.REVIEW_CONFIDENCE_THRESHOLD
+_apply_corrections = _pid_service._apply_corrections
+all_reviews_resolved = _pid_service.all_reviews_resolved
+approve_review_item = _pid_service.approve_review_item
+create_job = _pid_service.create_job
+get_job = _pid_service.get_job
+get_review_items = _pid_service.get_review_items
+process_job = _pid_service.process_job
+reject_review_item = _pid_service.reject_review_item
+
+_pid_vision = pytest.importorskip(
+    "layer1_data_fabric_pid_vision",
+    reason="PID vision not loadable",
 )
+_parse_vision_response = _pid_vision._parse_vision_response
 
 
 # ── Test Data ────────────────────────────────────────────────

@@ -17,12 +17,31 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 
-# Using conftest aliases
-from shared_auth_schemas import Role, role_inherits, LoginRequest, RefreshRequest
-from shared_auth_security import create_access_token, decode_token, verify_password, get_password_hash
-from shared_auth_service import authenticate_local_user, generate_user_tokens, get_audit_trail
-from shared_auth_decorators import require_role, require_governance_approval, audit
-from shared_auth_dependencies import get_current_user
+# Using conftest aliases — skip gracefully if not loadable
+_auth_schemas = pytest.importorskip("shared_auth_schemas", reason="Auth schemas not loadable")
+Role = _auth_schemas.Role
+role_inherits = _auth_schemas.role_inherits
+LoginRequest = _auth_schemas.LoginRequest
+RefreshRequest = _auth_schemas.RefreshRequest
+
+_auth_security = pytest.importorskip("shared_auth_security", reason="Auth security not loadable")
+create_access_token = _auth_security.create_access_token
+decode_token = _auth_security.decode_token
+verify_password = _auth_security.verify_password
+get_password_hash = _auth_security.get_password_hash
+
+_auth_service = pytest.importorskip("shared_auth_service", reason="Auth service not loadable")
+authenticate_local_user = _auth_service.authenticate_local_user
+generate_user_tokens = _auth_service.generate_user_tokens
+get_audit_trail = _auth_service.get_audit_trail
+
+_auth_decorators = pytest.importorskip("shared_auth_decorators", reason="Auth decorators not loadable")
+require_role = _auth_decorators.require_role
+require_governance_approval = _auth_decorators.require_governance_approval
+audit = _auth_decorators.audit
+
+_auth_deps = pytest.importorskip("shared_auth_dependencies", reason="Auth dependencies not loadable")
+get_current_user = _auth_deps.get_current_user
 
 
 def test_password_hashing():

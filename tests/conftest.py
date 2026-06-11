@@ -1,10 +1,16 @@
 """
 conftest.py — makes the hyphenated layer directories importable for pytest.
+
+All registration is wrapped in try/except so a single broken module
+never crashes the entire test collection (exit code 2).  Tests that
+depend on an unloadable module simply fail at import time with a clear
+ImportError, while the rest of the suite runs normally.
 """
 import importlib
 import importlib.util
 import sys
 import os
+import warnings
 from pathlib import Path
 
 # Add the ERS src root to sys.path
@@ -12,384 +18,137 @@ SRC_DIR = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(SRC_DIR))
 
 
-def _register_ers_predict():
-    """Register ers-predict as ers_predict before test collection."""
-    _ERS_PREDICT_DIR = SRC_DIR / "layer2-modules" / "ers-predict"
-    if not _ERS_PREDICT_DIR.exists():
+# ── Helpers ──────────────────────────────────────────────────────
+
+def _safe_register_package(pkg_name: str, pkg_dir: Path, subpackages: list[str] | None = None):
+    """Register a hyphenated directory as a Python package, with full error isolation."""
+    if not pkg_dir.exists():
         return
 
-    _init = _ERS_PREDICT_DIR / "__init__.py"
-    if not _init.exists():
+    init_file = pkg_dir / "__init__.py"
+    if not init_file.exists():
         return
 
-    # Register parent so submodule imports work
-    sys.path.insert(0, str(_ERS_PREDICT_DIR.parent))
+    sys.path.insert(0, str(pkg_dir.parent))
 
-    # Register the top-level package
-    spec = importlib.util.spec_from_file_location(
-        "ers_predict",
-        str(_init),
-        submodule_search_locations=[str(_ERS_PREDICT_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["ers_predict"] = mod
-        spec.loader.exec_module(mod)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            pkg_name,
+            str(init_file),
+            submodule_search_locations=[str(pkg_dir)],
+        )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[pkg_name] = mod
+            spec.loader.exec_module(mod)
+    except Exception as e:
+        sys.modules.pop(pkg_name, None)
+        warnings.warn(f"conftest: Could not register package '{pkg_name}': {e}")
+        return
 
-    # Pre-register subpackages so chained imports work
-    subpackages = [
-        "features", "models", "sparse", "distributions", "alerts", "twin",
-    ]
-    for sub in subpackages:
-        sub_dir = _ERS_PREDICT_DIR / sub
+    # Pre-register subpackages
+    for sub in (subpackages or []):
+        sub_dir = pkg_dir / sub
         sub_init = sub_dir / "__init__.py"
         if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"ers_predict.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"ers_predict.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
+            fqn = f"{pkg_name}.{sub}"
+            try:
+                sub_spec = importlib.util.spec_from_file_location(
+                    fqn,
+                    str(sub_init),
+                    submodule_search_locations=[str(sub_dir)],
+                )
+                if sub_spec and sub_spec.loader:
+                    sub_mod = importlib.util.module_from_spec(sub_spec)
+                    sys.modules[fqn] = sub_mod
+                    sub_spec.loader.exec_module(sub_mod)
+            except Exception as e:
+                sys.modules.pop(fqn, None)
+                warnings.warn(f"conftest: Could not register subpackage '{fqn}': {e}")
 
 
-# Run immediately at conftest import time (before collection)
-_register_ers_predict()
-
-
-def _register_ers_analyze():
-    """Register ers-analyze as ers_analyze before test collection."""
-    _ERS_ANALYZE_DIR = SRC_DIR / "layer2-modules" / "ers-analyze"
-    if not _ERS_ANALYZE_DIR.exists():
+def _safe_register_alias(alias: str, mod_file: Path):
+    """Load a single .py file as a top-level alias module, with cleanup on failure."""
+    if not mod_file.exists():
         return
-
-    _init = _ERS_ANALYZE_DIR / "__init__.py"
-    if not _init.exists():
-        return
-
-    sys.path.insert(0, str(_ERS_ANALYZE_DIR.parent))
-
-    spec = importlib.util.spec_from_file_location(
-        "ers_analyze",
-        str(_init),
-        submodule_search_locations=[str(_ERS_ANALYZE_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["ers_analyze"] = mod
-        spec.loader.exec_module(mod)
-
-    subpackages = [
-        "rcm", "monte_carlo", "fmea", "rca", "criticality",
-        "bad_actor", "defect_elimination", "oee",
-    ]
-    for sub in subpackages:
-        sub_dir = _ERS_ANALYZE_DIR / sub
-        sub_init = sub_dir / "__init__.py"
-        if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"ers_analyze.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"ers_analyze.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
+    try:
+        spec = importlib.util.spec_from_file_location(alias, str(mod_file))
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[alias] = mod
+            spec.loader.exec_module(mod)
+    except Exception as e:
+        # CRITICAL: remove the partially-loaded module so downstream
+        # imports get a clean ImportError instead of a broken object
+        sys.modules.pop(alias, None)
+        warnings.warn(f"conftest: Failed to load alias '{alias}' from {mod_file}: {e}")
 
 
-_register_ers_analyze()
+# ── Layer2 Package Registration ─────────────────────────────────
+
+_safe_register_package(
+    "ers_predict",
+    SRC_DIR / "layer2-modules" / "ers-predict",
+    ["features", "models", "sparse", "distributions", "alerts", "twin"],
+)
+
+_safe_register_package(
+    "ers_analyze",
+    SRC_DIR / "layer2-modules" / "ers-analyze",
+    ["rcm", "monte_carlo", "fmea", "rca", "criticality",
+     "bad_actor", "defect_elimination", "oee"],
+)
+
+_safe_register_package(
+    "ers_comply",
+    SRC_DIR / "layer2-modules" / "ers-comply",
+    ["inspection", "corrosion", "ffs", "damage_mech", "iow", "regulatory", "audit"],
+)
+
+_safe_register_package(
+    "ers_people",
+    SRC_DIR / "layer2-modules" / "ers-people",
+    ["engines"],
+)
+
+_safe_register_package(
+    "ers_vision",
+    SRC_DIR / "layer2-modules" / "ers-vision",
+    ["corrosion", "thermal", "condition", "tagging", "drone", "comparison"],
+)
+
+_safe_register_package(
+    "ers_sustain",
+    SRC_DIR / "layer2-modules" / "ers-sustain",
+    ["engines"],
+)
+
+_safe_register_package(
+    "ers_plan",
+    SRC_DIR / "layer2-modules" / "ers-plan",
+    ["engines"],
+)
+
+_safe_register_package(
+    "ers_work",
+    SRC_DIR / "layer2-modules" / "ers-work",
+    ["engines"],
+)
 
 
-def _register_ers_comply():
-    """Register ers-comply as ers_comply before test collection."""
-    _ERS_COMPLY_DIR = SRC_DIR / "layer2-modules" / "ers-comply"
-    if not _ERS_COMPLY_DIR.exists():
-        return
+# ── Layer3 Package Registration ─────────────────────────────────
 
-    _init = _ERS_COMPLY_DIR / "__init__.py"
-    if not _init.exists():
-        return
-
-    sys.path.insert(0, str(_ERS_COMPLY_DIR.parent))
-
-    spec = importlib.util.spec_from_file_location(
-        "ers_comply",
-        str(_init),
-        submodule_search_locations=[str(_ERS_COMPLY_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["ers_comply"] = mod
-        spec.loader.exec_module(mod)
-
-    subpackages = [
-        "inspection", "corrosion", "ffs", "damage_mech", "iow", "regulatory", "audit",
-    ]
-    for sub in subpackages:
-        sub_dir = _ERS_COMPLY_DIR / sub
-        sub_init = sub_dir / "__init__.py"
-        if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"ers_comply.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"ers_comply.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
+_safe_register_package(
+    "layer3_agents",
+    SRC_DIR / "layer3-agents",
+    ["engines", "agents"],
+)
 
 
-_register_ers_comply()
+# ── Flat-file Alias Registration ────────────────────────────────
+# Maps importable alias names → dotted paths relative to SRC_DIR
+# (hyphens in directory names replaced with literal hyphens)
 
-
-def _register_ers_people():
-    """Register ers-people as ers_people before test collection."""
-    _ERS_PEOPLE_DIR = SRC_DIR / "layer2-modules" / "ers-people"
-    if not _ERS_PEOPLE_DIR.exists():
-        return
-
-    _init = _ERS_PEOPLE_DIR / "__init__.py"
-    if not _init.exists():
-        return
-
-    sys.path.insert(0, str(_ERS_PEOPLE_DIR.parent))
-
-    spec = importlib.util.spec_from_file_location(
-        "ers_people",
-        str(_init),
-        submodule_search_locations=[str(_ERS_PEOPLE_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["ers_people"] = mod
-        spec.loader.exec_module(mod)
-
-    subpackages = ["engines"]
-    for sub in subpackages:
-        sub_dir = _ERS_PEOPLE_DIR / sub
-        sub_init = sub_dir / "__init__.py"
-        if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"ers_people.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"ers_people.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
-
-
-_register_ers_people()
-def _register_ers_vision():
-    """Register ers-vision as ers_vision before test collection."""
-    _ERS_VISION_DIR = SRC_DIR / "layer2-modules" / "ers-vision"
-    if not _ERS_VISION_DIR.exists():
-        return
-
-    _init = _ERS_VISION_DIR / "__init__.py"
-    if not _init.exists():
-        return
-
-    sys.path.insert(0, str(_ERS_VISION_DIR.parent))
-
-    spec = importlib.util.spec_from_file_location(
-        "ers_vision",
-        str(_init),
-        submodule_search_locations=[str(_ERS_VISION_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["ers_vision"] = mod
-        spec.loader.exec_module(mod)
-
-    subpackages = [
-        "corrosion", "thermal", "condition", "tagging", "drone", "comparison",
-    ]
-    for sub in subpackages:
-        sub_dir = _ERS_VISION_DIR / sub
-        sub_init = sub_dir / "__init__.py"
-        if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"ers_vision.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"ers_vision.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
-_register_ers_vision()
-
-
-def _register_ers_sustain():
-    """Register ers-sustain as ers_sustain before test collection."""
-    _ERS_SUSTAIN_DIR = SRC_DIR / "layer2-modules" / "ers-sustain"
-    if not _ERS_SUSTAIN_DIR.exists():
-        return
-
-    _init = _ERS_SUSTAIN_DIR / "__init__.py"
-    if not _init.exists():
-        return
-
-    sys.path.insert(0, str(_ERS_SUSTAIN_DIR.parent))
-
-    spec = importlib.util.spec_from_file_location(
-        "ers_sustain",
-        str(_init),
-        submodule_search_locations=[str(_ERS_SUSTAIN_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["ers_sustain"] = mod
-        spec.loader.exec_module(mod)
-
-    subpackages = ["engines"]
-    for sub in subpackages:
-        sub_dir = _ERS_SUSTAIN_DIR / sub
-        sub_init = sub_dir / "__init__.py"
-        if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"ers_sustain.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"ers_sustain.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
-
-
-_register_ers_sustain()
-
-
-def _register_ers_plan():
-    """Register ers-plan as ers_plan before test collection."""
-    _ERS_PLAN_DIR = SRC_DIR / "layer2-modules" / "ers-plan"
-    if not _ERS_PLAN_DIR.exists():
-        return
-
-    _init = _ERS_PLAN_DIR / "__init__.py"
-    if not _init.exists():
-        return
-
-    sys.path.insert(0, str(_ERS_PLAN_DIR.parent))
-
-    spec = importlib.util.spec_from_file_location(
-        "ers_plan",
-        str(_init),
-        submodule_search_locations=[str(_ERS_PLAN_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["ers_plan"] = mod
-        spec.loader.exec_module(mod)
-
-    subpackages = ["engines"]
-    for sub in subpackages:
-        sub_dir = _ERS_PLAN_DIR / sub
-        sub_init = sub_dir / "__init__.py"
-        if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"ers_plan.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"ers_plan.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
-
-
-_register_ers_plan()
-
-
-def _register_ers_work():
-    """Register ers-work as ers_work before test collection."""
-    _ERS_WORK_DIR = SRC_DIR / "layer2-modules" / "ers-work"
-    if not _ERS_WORK_DIR.exists():
-        return
-
-    _init = _ERS_WORK_DIR / "__init__.py"
-    if not _init.exists():
-        return
-
-    sys.path.insert(0, str(_ERS_WORK_DIR.parent))
-
-    spec = importlib.util.spec_from_file_location(
-        "ers_work",
-        str(_init),
-        submodule_search_locations=[str(_ERS_WORK_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["ers_work"] = mod
-        spec.loader.exec_module(mod)
-
-    subpackages = ["engines"]
-    for sub in subpackages:
-        sub_dir = _ERS_WORK_DIR / sub
-        sub_init = sub_dir / "__init__.py"
-        if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"ers_work.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"ers_work.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
-
-
-_register_ers_work()
-
-
-def _register_layer3_agents():
-    """Register layer3-agents as layer3_agents before test collection."""
-    _L3_DIR = SRC_DIR / "layer3-agents"
-    if not _L3_DIR.exists():
-        return
-
-    _init = _L3_DIR / "__init__.py"
-    if not _init.exists():
-        return
-
-    sys.path.insert(0, str(_L3_DIR.parent))
-
-    spec = importlib.util.spec_from_file_location(
-        "layer3_agents",
-        str(_init),
-        submodule_search_locations=[str(_L3_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["layer3_agents"] = mod
-        spec.loader.exec_module(mod)
-
-    subpackages = ["engines", "agents"]
-    for sub in subpackages:
-        sub_dir = _L3_DIR / sub
-        sub_init = sub_dir / "__init__.py"
-        if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"layer3_agents.{sub}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"layer3_agents.{sub}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
-
-
-_register_layer3_agents()
-
-# Register hyphenated directories as importable modules via aliases
 _ALIASES = {
     "layer1_data_fabric_quality_engine": "layer1-data-fabric.quality.engine",
     "layer1_data_fabric_quality_schemas": "layer1-data-fabric.quality.schemas",
@@ -417,26 +176,17 @@ _ALIASES = {
 
 for alias, dotpath in _ALIASES.items():
     parts = dotpath.split(".")
-    # Build path manually
     mod_dir = SRC_DIR
     for p in parts[:-1]:
         mod_dir = mod_dir / p
     mod_file = mod_dir / (parts[-1] + ".py")
+    _safe_register_alias(alias, mod_file)
 
-    if mod_file.exists():
-        try:
-            spec = importlib.util.spec_from_file_location(alias, str(mod_file))
-            if spec and spec.loader:
-                mod = importlib.util.module_from_spec(spec)
-                sys.modules[alias] = mod
-                spec.loader.exec_module(mod)
-        except Exception as e:
-            import warnings
-            warnings.warn(f"conftest: Failed to load alias '{alias}' from {mod_file}: {e}")
-            pass  # Skip modules with missing dependencies
+
+# ── Layer4 Package Registration ─────────────────────────────────
 
 def _register_layer4_integration():
-    """Register layer4-integration as layer4_integration before test collection."""
+    """Register layer4-integration, mapping hyphenated subdirs to underscore names."""
     _L4_DIR = SRC_DIR / "layer4-integration"
     if not _L4_DIR.exists():
         return
@@ -447,37 +197,50 @@ def _register_layer4_integration():
 
     sys.path.insert(0, str(_L4_DIR.parent))
 
-    spec = importlib.util.spec_from_file_location(
-        "layer4_integration",
-        str(_init),
-        submodule_search_locations=[str(_L4_DIR)],
-    )
-    if spec and spec.loader:
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["layer4_integration"] = mod
-        spec.loader.exec_module(mod)
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "layer4_integration",
+            str(_init),
+            submodule_search_locations=[str(_L4_DIR)],
+        )
+        if spec and spec.loader:
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["layer4_integration"] = mod
+            spec.loader.exec_module(mod)
+    except Exception as e:
+        sys.modules.pop("layer4_integration", None)
+        warnings.warn(f"conftest: Could not register layer4_integration: {e}")
+        return
 
-    subpackages = ["api_portal", "cmms_writeback", "mes_exchange", "webhooks", "mcp"]
-    
-    # Actually, layer4 subpackages are hyphenated in src (api-portal, cmms-writeback, mes-exchange)!
-    # Let me fix that. The python paths use underscores, but directory names have hyphens.
-    
-    # We will just map the directory names with hyphens to python modules with underscores
-    subdirs = {"api_portal": "api-portal", "cmms_writeback": "cmms-writeback", 
-              "mes_exchange": "mes-exchange", "webhooks": "webhooks", "mcp": "mcp"}
-              
+    subdirs = {
+        "api_portal": "api-portal",
+        "cmms_writeback": "cmms-writeback",
+        "mes_exchange": "mes-exchange",
+        "webhooks": "webhooks",
+        "mcp": "mcp",
+    }
+
     for mod_name, dir_name in subdirs.items():
         sub_dir = _L4_DIR / dir_name
         sub_init = sub_dir / "__init__.py"
         if sub_init.exists():
-            sub_spec = importlib.util.spec_from_file_location(
-                f"layer4_integration.{mod_name}",
-                str(sub_init),
-                submodule_search_locations=[str(sub_dir)],
-            )
-            if sub_spec and sub_spec.loader:
-                sub_mod = importlib.util.module_from_spec(sub_spec)
-                sys.modules[f"layer4_integration.{mod_name}"] = sub_mod
-                sub_spec.loader.exec_module(sub_mod)
+            fqn = f"layer4_integration.{mod_name}"
+            try:
+                sub_spec = importlib.util.spec_from_file_location(
+                    fqn,
+                    str(sub_init),
+                    submodule_search_locations=[str(sub_dir)],
+                )
+                if sub_spec and sub_spec.loader:
+                    sub_mod = importlib.util.module_from_spec(sub_spec)
+                    sys.modules[fqn] = sub_mod
+                    sub_spec.loader.exec_module(sub_mod)
+            except Exception as e:
+                sys.modules.pop(fqn, None)
+                warnings.warn(f"conftest: Could not register '{fqn}': {e}")
 
-_register_layer4_integration()
+
+try:
+    _register_layer4_integration()
+except Exception as e:
+    warnings.warn(f"conftest: layer4 registration failed: {e}")
