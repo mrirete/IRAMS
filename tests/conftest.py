@@ -68,15 +68,61 @@ def _safe_register_package(pkg_name: str, pkg_dir: Path, subpackages: list[str] 
 
 
 def _safe_register_alias(alias: str, mod_file: Path):
-    """Load a single .py file as a top-level alias module, with cleanup on failure."""
+    """Load a single .py file as a top-level alias module, with cleanup on failure.
+
+    Handles relative imports (e.g. 'from .schemas import ...') by first
+    registering the module's directory as a synthetic parent package.
+    """
     if not mod_file.exists():
         return
+
+    parent_dir = mod_file.parent
+    # Build a synthetic parent package name from the directory structure
+    # e.g. for "layer1-data-fabric/connectors/manager.py" we create
+    # a parent package so `from .schemas import ...` works.
+    parent_pkg_name = alias.rsplit("_", 1)[0] + "_pkg"  # unique per alias group
+
     try:
-        spec = importlib.util.spec_from_file_location(alias, str(mod_file))
+        # Step 1: Register the parent directory as a package (if not already)
+        if parent_pkg_name not in sys.modules:
+            parent_init = parent_dir / "__init__.py"
+            if parent_init.exists():
+                parent_spec = importlib.util.spec_from_file_location(
+                    parent_pkg_name,
+                    str(parent_init),
+                    submodule_search_locations=[str(parent_dir)],
+                )
+                if parent_spec and parent_spec.loader:
+                    parent_mod = importlib.util.module_from_spec(parent_spec)
+                    sys.modules[parent_pkg_name] = parent_mod
+                    try:
+                        parent_spec.loader.exec_module(parent_mod)
+                    except Exception:
+                        pass  # Parent may have its own issues; that's OK
+            else:
+                # No __init__.py — create a bare namespace package
+                import types
+                parent_mod = types.ModuleType(parent_pkg_name)
+                parent_mod.__path__ = [str(parent_dir)]
+                parent_mod.__package__ = parent_pkg_name
+                sys.modules[parent_pkg_name] = parent_mod
+
+        # Step 2: Load the actual module as a submodule of that parent package
+        sub_name = mod_file.stem  # e.g. "manager", "schemas"
+        fqn = f"{parent_pkg_name}.{sub_name}"
+
+        spec = importlib.util.spec_from_file_location(
+            fqn,
+            str(mod_file),
+            submodule_search_locations=None,
+        )
         if spec and spec.loader:
             mod = importlib.util.module_from_spec(spec)
-            sys.modules[alias] = mod
+            mod.__package__ = parent_pkg_name
+            sys.modules[fqn] = mod
+            sys.modules[alias] = mod  # Also register under the alias
             spec.loader.exec_module(mod)
+
     except Exception as e:
         # CRITICAL: remove the partially-loaded module so downstream
         # imports get a clean ImportError instead of a broken object
