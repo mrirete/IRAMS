@@ -3,19 +3,19 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import {
     Lock, Mail, AlertCircle, Loader2, Users, ChevronDown, ChevronUp,
-    Shield, Cpu, BarChart3, Wrench, ArrowRight, Eye, EyeOff
+    Shield, Cpu, BarChart3, Wrench, ArrowRight, Eye, EyeOff,
+    TrendingUp, Activity, Zap, CheckCircle2
 } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
 
 // Test password for quick switch (development only)
 const TEST_PASSWORD = 'Password123!';
 
-// ── Feature highlights for the hero panel ──
-const FEATURES = [
-    { icon: Shield, label: 'ISO 55000 Compliant', desc: 'Enterprise-grade asset management' },
-    { icon: Cpu, label: 'AI-Powered Reliability', desc: 'Predictive maintenance & RUL' },
-    { icon: BarChart3, label: 'Real-Time Analytics', desc: 'Pareto, FMEA, RCM, Weibull' },
-    { icon: Wrench, label: '16 EAM Modules', desc: 'Single source of truth' },
+// ── Stats for the dashboard preview ──
+const LIVE_STATS = [
+    { label: 'Total Assets', value: '1,247', change: '+12', positive: true, icon: Activity },
+    { label: 'Avg MTBF', value: '842d', change: '+5.2%', positive: true, icon: TrendingUp },
+    { label: 'Uptime', value: '99.2%', change: '+0.3%', positive: true, icon: Zap },
 ];
 
 export const Login: React.FC = () => {
@@ -121,71 +121,94 @@ export const Login: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen flex bg-white">
+        <div className="min-h-screen flex" style={{ background: 'linear-gradient(135deg, #f8fafc 0%, #eef2ff 50%, #f0fdf4 100%)' }}>
+
             {/* ═══════════════════════════════════════════════════════ */}
             {/* LEFT PANEL — Login Form                                */}
             {/* ═══════════════════════════════════════════════════════ */}
-            <div className="w-full lg:w-[480px] xl:w-[520px] flex-shrink-0 flex flex-col min-h-screen relative z-10">
-                {/* Top bar with logo */}
-                <div className="px-8 pt-8 pb-0">
-                    <div className="flex items-center gap-3 lg:justify-center">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
-                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M12 2c0 0-4 4-4 8a4 4 0 0 0 8 0c0-4-4-8-4-8z" />
-                                <path d="M12 14v4" />
-                                <path d="M10 22h4" />
-                            </svg>
+            <div className="w-full lg:w-[520px] xl:w-[560px] flex-shrink-0 flex flex-col min-h-screen relative z-10">
+
+                {/* Top nav bar */}
+                <div className="px-8 sm:px-10 pt-8">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            {/* Logo mark */}
+                            <div className="relative">
+                                <div className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-lg"
+                                     style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)' }}>
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 2c0 0-4 4-4 8a4 4 0 0 0 8 0c0-4-4-8-4-8z" />
+                                        <path d="M12 14v4" />
+                                        <path d="M10 22h4" />
+                                    </svg>
+                                </div>
+                                <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-white" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[18px] font-extrabold tracking-tight" style={{ color: '#0f172a' }}>IRAMS</span>
+                                <span className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#94a3b8' }}>by Relantern</span>
+                            </div>
                         </div>
-                        <div>
-                            <span className="text-lg font-black text-slate-900 tracking-tight">IRAMS</span>
-                            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest ml-2">by Relantern</span>
+                        {/* Version badge */}
+                        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+                             style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.15)' }}>
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-[11px] font-bold" style={{ color: '#b45309' }}>v3.2</span>
                         </div>
                     </div>
                 </div>
 
-                {/* Form — centered vertically */}
-                <div className="flex-1 flex flex-col justify-center px-8 sm:px-12 lg:px-14 py-8">
-                    <div className="max-w-sm w-full mx-auto">
-                        <h1 className="text-3xl font-black text-slate-900 tracking-tight mb-1">
-                            Welcome back
-                        </h1>
-                        <p className="text-[11px] font-semibold text-amber-600/80 uppercase tracking-widest mb-1">
-                            Integrated Reliability & Asset Management Specialist
-                        </p>
-                        <p className="text-slate-500 text-[15px] font-medium mb-8">
-                            Enter your credentials to access IRAMS.
-                        </p>
+                {/* Form Container — vertically centered */}
+                <div className="flex-1 flex flex-col justify-center px-8 sm:px-10 lg:px-12 py-8">
+                    <div className="max-w-[380px] w-full mx-auto">
 
-                        {/* Error message */}
+                        {/* Welcome heading */}
+                        <div className="mb-8">
+                            <h1 className="text-[32px] font-extrabold tracking-tight leading-tight mb-1.5" style={{ color: '#0f172a' }}>
+                                Welcome back
+                            </h1>
+                            <p className="text-[11px] font-bold uppercase tracking-[0.15em] mb-2" style={{ color: '#d97706' }}>
+                                Integrated Reliability &amp; Asset Management Specialist
+                            </p>
+                            <p className="text-[15px] font-medium" style={{ color: '#64748b' }}>
+                                Sign in to access your dashboard
+                            </p>
+                        </div>
+
+                        {/* Error alert */}
                         {error && (
-                            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                                <AlertCircle className="text-red-500 mt-0.5 flex-shrink-0" size={18} />
-                                <p className="text-sm text-red-700 font-medium">{error}</p>
+                            <div className="mb-5 p-4 rounded-2xl flex items-start gap-3"
+                                 style={{ background: 'rgba(239, 68, 68, 0.06)', border: '1px solid rgba(239, 68, 68, 0.12)' }}>
+                                <AlertCircle className="flex-shrink-0 mt-0.5" size={18} style={{ color: '#ef4444' }} />
+                                <p className="text-[13px] font-medium" style={{ color: '#dc2626' }}>{error}</p>
                             </div>
                         )}
 
-                        <form onSubmit={handleLogin} className="space-y-5">
-                            {/* Username field */}
-                            <div className="space-y-2">
-                                <label htmlFor="username" className="text-sm font-semibold text-slate-700">
+                        {/* Login form */}
+                        <form onSubmit={handleLogin} className="space-y-4">
+                            {/* Username */}
+                            <div>
+                                <label htmlFor="login-username" className="block text-[13px] font-semibold mb-2" style={{ color: '#334155' }}>
                                     Username
                                 </label>
-                                <div className={`relative rounded-xl border-2 transition-all duration-200 ${
-                                    focusedField === 'username'
-                                        ? 'border-amber-500 ring-4 ring-amber-500/10'
-                                        : 'border-slate-200 hover:border-slate-300'
-                                }`}>
-                                    <Mail className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-200 ${
-                                        focusedField === 'username' ? 'text-amber-500' : 'text-slate-400'
-                                    }`} size={18} aria-hidden="true" />
+                                <div className="relative rounded-xl transition-all duration-200"
+                                     style={{
+                                         background: '#ffffff',
+                                         border: focusedField === 'username' ? '2px solid #f59e0b' : '2px solid #e2e8f0',
+                                         boxShadow: focusedField === 'username' ? '0 0 0 4px rgba(245, 158, 11, 0.1)' : '0 1px 3px rgba(0,0,0,0.04)',
+                                     }}>
+                                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-200"
+                                          size={18}
+                                          style={{ color: focusedField === 'username' ? '#f59e0b' : '#94a3b8' }} />
                                     <input
-                                        id="username"
+                                        id="login-username"
                                         type="text"
                                         value={username}
                                         onChange={(e) => setUsername(e.target.value)}
                                         onFocus={() => setFocusedField('username')}
                                         onBlur={() => setFocusedField(null)}
-                                        className="w-full bg-transparent text-slate-900 rounded-xl py-3 pl-11 pr-4 outline-none text-[15px] font-medium placeholder:text-slate-400"
+                                        className="w-full bg-transparent rounded-xl py-3.5 pl-12 pr-4 outline-none text-[15px] font-medium"
+                                        style={{ color: '#0f172a' }}
                                         placeholder="Enter your username"
                                         required
                                         autoComplete="username"
@@ -193,46 +216,44 @@ export const Login: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Password field */}
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <label htmlFor="password" className="text-sm font-semibold text-slate-700">
+                            {/* Password */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label htmlFor="login-password" className="text-[13px] font-semibold" style={{ color: '#334155' }}>
                                         Password
                                     </label>
-                                    <button
-                                        type="button"
-                                        className="text-[13px] font-semibold text-amber-600 hover:text-amber-700 transition-colors"
-                                        onClick={() => {}}
-                                    >
+                                    <button type="button" className="text-[12px] font-bold transition-colors hover:underline"
+                                            style={{ color: '#f59e0b' }} onClick={() => {}}>
                                         Forgot password?
                                     </button>
                                 </div>
-                                <div className={`relative rounded-xl border-2 transition-all duration-200 ${
-                                    focusedField === 'password'
-                                        ? 'border-amber-500 ring-4 ring-amber-500/10'
-                                        : 'border-slate-200 hover:border-slate-300'
-                                }`}>
-                                    <Lock className={`absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors duration-200 ${
-                                        focusedField === 'password' ? 'text-amber-500' : 'text-slate-400'
-                                    }`} size={18} aria-hidden="true" />
+                                <div className="relative rounded-xl transition-all duration-200"
+                                     style={{
+                                         background: '#ffffff',
+                                         border: focusedField === 'password' ? '2px solid #f59e0b' : '2px solid #e2e8f0',
+                                         boxShadow: focusedField === 'password' ? '0 0 0 4px rgba(245, 158, 11, 0.1)' : '0 1px 3px rgba(0,0,0,0.04)',
+                                     }}>
+                                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-200"
+                                          size={18}
+                                          style={{ color: focusedField === 'password' ? '#f59e0b' : '#94a3b8' }} />
                                     <input
-                                        id="password"
+                                        id="login-password"
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         onFocus={() => setFocusedField('password')}
                                         onBlur={() => setFocusedField(null)}
-                                        className="w-full bg-transparent text-slate-900 rounded-xl py-3 pl-11 pr-12 outline-none text-[15px] font-medium placeholder:text-slate-400"
+                                        className="w-full bg-transparent rounded-xl py-3.5 pl-12 pr-12 outline-none text-[15px] font-medium"
+                                        style={{ color: '#0f172a' }}
                                         placeholder="Enter your password"
                                         required
                                         autoComplete="current-password"
                                     />
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1"
-                                        tabIndex={-1}
-                                    >
+                                    <button type="button"
+                                            onClick={() => setShowPassword(!showPassword)}
+                                            className="absolute right-4 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors"
+                                            style={{ color: '#94a3b8' }}
+                                            tabIndex={-1}>
                                         {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                                     </button>
                                 </div>
@@ -242,9 +263,16 @@ export const Login: React.FC = () => {
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className={`w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-amber-500/25 transition-all duration-200 flex items-center justify-center gap-2.5 text-[15px] group ${
-                                    loading ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-xl hover:shadow-amber-500/30 active:scale-[0.98]'
-                                }`}
+                                className="w-full py-3.5 rounded-xl text-[15px] font-bold text-white flex items-center justify-center gap-2.5 transition-all duration-200 group"
+                                style={{
+                                    background: loading ? '#d4a054' : 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
+                                    boxShadow: loading ? 'none' : '0 4px 14px rgba(245, 158, 11, 0.35), 0 1px 3px rgba(0,0,0,0.1)',
+                                    cursor: loading ? 'not-allowed' : 'pointer',
+                                    transform: 'translateY(0)',
+                                }}
+                                onMouseDown={(e) => !loading && ((e.currentTarget.style.transform = 'translateY(1px)'))}
+                                onMouseUp={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
+                                onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateY(0)')}
                             >
                                 {loading ? (
                                     <>
@@ -261,219 +289,258 @@ export const Login: React.FC = () => {
                         </form>
 
                         {/* Divider */}
-                        <div className="flex items-center gap-3 my-6">
-                            <div className="flex-1 h-px bg-slate-200"></div>
-                            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">or</span>
-                            <div className="flex-1 h-px bg-slate-200"></div>
+                        <div className="flex items-center gap-4 my-6">
+                            <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
+                            <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>or</span>
+                            <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
                         </div>
 
-                        {/* Quick Switch toggle */}
+                        {/* Quick Switch */}
                         <button
                             onClick={() => setShowQuickSwitch(!showQuickSwitch)}
-                            className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-dashed border-slate-200 hover:border-amber-300 hover:bg-amber-50/50 transition-all group"
+                            className="w-full flex items-center justify-between px-4 py-3.5 rounded-xl transition-all duration-200"
+                            style={{
+                                background: showQuickSwitch ? 'rgba(245, 158, 11, 0.06)' : '#ffffff',
+                                border: showQuickSwitch ? '2px dashed #f59e0b' : '2px dashed #e2e8f0',
+                                boxShadow: showQuickSwitch ? 'none' : '0 1px 3px rgba(0,0,0,0.04)',
+                            }}
                         >
                             <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center group-hover:bg-amber-200 transition-colors">
-                                    <Users size={16} className="text-amber-600" />
+                                <div className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors"
+                                     style={{ background: 'rgba(245, 158, 11, 0.1)' }}>
+                                    <Users size={17} style={{ color: '#d97706' }} />
                                 </div>
                                 <div className="text-left">
-                                    <div className="text-sm font-semibold text-slate-700">Quick Switch</div>
-                                    <div className="text-[11px] text-slate-400 font-medium">Dev / Testing mode</div>
+                                    <div className="text-[13px] font-bold" style={{ color: '#334155' }}>Quick Switch</div>
+                                    <div className="text-[11px] font-medium" style={{ color: '#94a3b8' }}>Development mode</div>
                                 </div>
                             </div>
                             {showQuickSwitch
-                                ? <ChevronUp size={18} className="text-slate-400" />
-                                : <ChevronDown size={18} className="text-slate-400" />
+                                ? <ChevronUp size={18} style={{ color: '#94a3b8' }} />
+                                : <ChevronDown size={18} style={{ color: '#94a3b8' }} />
                             }
                         </button>
 
                         {/* Quick Switch Panel */}
                         {showQuickSwitch && (
-                            <div className="mt-3 p-4 bg-slate-50 border border-slate-200 rounded-xl animate-in fade-in slide-in-from-top-2 duration-300">
-                                <p className="text-xs text-slate-500 mb-3 font-medium">Click to instantly sign in as a test user</p>
+                            <div className="mt-3 p-4 rounded-xl"
+                                 style={{ background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                                <p className="text-[12px] font-medium mb-3" style={{ color: '#64748b' }}>Click to sign in as a test user</p>
 
                                 {loadingUsers ? (
-                                    <div className="flex items-center justify-center py-6 text-slate-400">
-                                        <Loader2 size={18} className="animate-spin mr-2" />
-                                        <span className="text-sm font-medium">Loading users...</span>
+                                    <div className="flex items-center justify-center py-6">
+                                        <Loader2 size={18} className="animate-spin mr-2" style={{ color: '#94a3b8' }} />
+                                        <span className="text-[13px] font-medium" style={{ color: '#94a3b8' }}>Loading...</span>
                                     </div>
                                 ) : testUsers.length === 0 ? (
-                                    <div className="text-center py-6 text-slate-400 text-sm font-medium">
-                                        No users found in database
+                                    <div className="text-center py-6 text-[13px] font-medium" style={{ color: '#94a3b8' }}>
+                                        No users found
                                     </div>
                                 ) : (
-                                    <div className="grid grid-cols-2 gap-2 max-h-56 overflow-y-auto">
+                                    <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto">
                                         {testUsers.map(user => (
                                             <button
                                                 key={user.username}
                                                 onClick={() => handleQuickSwitch(user.username)}
                                                 disabled={!!switchingUser}
-                                                className={`p-2.5 rounded-lg border text-left transition-all ${
-                                                    switchingUser === user.username
-                                                        ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400/20'
-                                                        : 'bg-white border-slate-200 hover:border-amber-300 hover:shadow-sm'
-                                                } ${switchingUser && switchingUser !== user.username ? 'opacity-40' : ''}`}
+                                                className="p-2.5 rounded-xl text-left transition-all duration-150"
+                                                style={{
+                                                    background: switchingUser === user.username ? 'rgba(245, 158, 11, 0.08)' : '#f8fafc',
+                                                    border: switchingUser === user.username ? '1.5px solid #f59e0b' : '1.5px solid #e2e8f0',
+                                                    opacity: switchingUser && switchingUser !== user.username ? 0.4 : 1,
+                                                }}
                                             >
                                                 <div className="flex items-center gap-2">
-                                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center text-[10px] font-bold text-slate-600 flex-shrink-0">
+                                                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                                                         style={{ background: 'linear-gradient(135deg, #e2e8f0, #cbd5e1)', color: '#475569' }}>
                                                         {user.name?.substring(0, 2).toUpperCase() || user.username.substring(0, 2).toUpperCase()}
                                                     </div>
                                                     <div className="overflow-hidden flex-1 min-w-0">
-                                                        <div className="text-sm font-semibold text-slate-800 truncate">{user.name || user.username}</div>
-                                                        <div className="text-[11px] text-slate-400 truncate font-medium">@{user.username}</div>
+                                                        <div className="text-[12px] font-bold truncate" style={{ color: '#1e293b' }}>{user.name || user.username}</div>
+                                                        <div className="text-[10px] truncate font-medium" style={{ color: '#94a3b8' }}>@{user.username}</div>
                                                     </div>
                                                     {switchingUser === user.username && (
-                                                        <Loader2 size={14} className="animate-spin text-amber-500 flex-shrink-0" />
+                                                        <Loader2 size={14} className="animate-spin flex-shrink-0" style={{ color: '#f59e0b' }} />
                                                     )}
                                                 </div>
                                             </button>
                                         ))}
                                     </div>
                                 )}
-                                <p className="text-[10px] text-amber-600/70 mt-3 text-center font-medium">⚠ Testing only — remove in production</p>
+                                <p className="text-[10px] mt-3 text-center font-medium" style={{ color: '#d97706' }}>⚠ Testing only — remove in production</p>
                             </div>
                         )}
                     </div>
                 </div>
 
                 {/* Footer */}
-                <div className="px-8 pb-6 lg:text-center">
-                    <p className="text-[13px] text-slate-400 font-medium">
-                        Don't have an account? <span className="text-slate-600 font-semibold cursor-pointer hover:text-amber-600 transition-colors">Contact IT Support</span>
+                <div className="px-8 sm:px-10 pb-6 text-center">
+                    <p className="text-[13px] font-medium" style={{ color: '#94a3b8' }}>
+                        Don't have an account?{' '}
+                        <span className="font-bold cursor-pointer transition-colors" style={{ color: '#334155' }}
+                              onMouseEnter={(e) => (e.currentTarget.style.color = '#f59e0b')}
+                              onMouseLeave={(e) => (e.currentTarget.style.color = '#334155')}>
+                            Contact IT Support
+                        </span>
                     </p>
                 </div>
             </div>
 
             {/* ═══════════════════════════════════════════════════════ */}
-            {/* RIGHT PANEL — Hero / Product Showcase                   */}
+            {/* RIGHT PANEL — Dashboard Preview                        */}
             {/* ═══════════════════════════════════════════════════════ */}
-            <div className="hidden lg:flex flex-1 relative overflow-hidden">
-                {/* Background gradient */}
-                <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900" />
+            <div className="hidden lg:flex flex-1 relative overflow-hidden items-center justify-center p-8 xl:p-12">
 
-                {/* Animated grid pattern */}
-                <div className="absolute inset-0 opacity-[0.03]"
-                     style={{
-                         backgroundImage: `linear-gradient(rgba(255,255,255,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.1) 1px, transparent 1px)`,
-                         backgroundSize: '60px 60px'
-                     }}
-                />
+                {/* Layered background */}
+                <div className="absolute inset-0" style={{ background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 60%, #0f172a 100%)' }} />
+                <div className="absolute inset-0 opacity-[0.04]"
+                     style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0)', backgroundSize: '32px 32px' }} />
 
-                {/* Glowing orbs */}
-                <div className="absolute top-[15%] right-[20%] w-80 h-80 bg-amber-500/15 rounded-full blur-[120px] animate-pulse" style={{ animationDuration: '4s' }} />
-                <div className="absolute bottom-[20%] left-[10%] w-64 h-64 bg-orange-500/10 rounded-full blur-[100px] animate-pulse" style={{ animationDuration: '6s' }} />
-                <div className="absolute top-[60%] right-[40%] w-48 h-48 bg-cyan-500/8 rounded-full blur-[80px] animate-pulse" style={{ animationDuration: '5s' }} />
+                {/* Glow effects */}
+                <div className="absolute top-[10%] left-[20%] w-96 h-96 rounded-full blur-[150px]"
+                     style={{ background: 'rgba(245, 158, 11, 0.12)' }} />
+                <div className="absolute bottom-[15%] right-[15%] w-80 h-80 rounded-full blur-[120px]"
+                     style={{ background: 'rgba(59, 130, 246, 0.08)' }} />
 
-                {/* Content */}
-                <div className="relative z-10 flex flex-col justify-center px-12 xl:px-20 py-16 w-full">
-                    {/* Hero text */}
-                    <div className="mb-12">
-                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 mb-6">
+                {/* Content wrapper */}
+                <div className="relative z-10 w-full max-w-xl">
+
+                    {/* Header badge */}
+                    <div className="flex items-center gap-2 mb-6">
+                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full"
+                             style={{ background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.2)' }}>
                             <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                            <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">Enterprise Platform</span>
+                            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#fbbf24' }}>Enterprise Platform</span>
                         </div>
-
-                        <h2 className="text-4xl xl:text-5xl font-black text-white leading-[1.1] tracking-tight mb-5">
-                            The smarter way<br />
-                            to manage your<br />
-                            <span className="bg-gradient-to-r from-amber-400 to-orange-400 bg-clip-text text-transparent">
-                                industrial assets
-                            </span>
-                        </h2>
-                        <p className="text-slate-400 text-lg font-medium leading-relaxed max-w-lg">
-                            AI-powered maintenance intelligence, reliability engineering, and asset lifecycle management — all in one platform.
-                        </p>
                     </div>
 
-                    {/* Feature cards */}
-                    <div className="grid grid-cols-2 gap-3 mb-12 max-w-lg">
-                        {FEATURES.map((feat, i) => (
-                            <div
-                                key={feat.label}
-                                className="group p-4 rounded-xl bg-white/[0.04] border border-white/[0.06] backdrop-blur-sm hover:bg-white/[0.08] hover:border-white/[0.12] transition-all duration-300"
-                                style={{ animationDelay: `${i * 100}ms` }}
-                            >
-                                <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center mb-3 group-hover:bg-amber-500/25 transition-colors">
-                                    <feat.icon size={18} className="text-amber-400" />
+                    {/* Hero heading */}
+                    <h2 className="text-[42px] xl:text-[48px] font-extrabold leading-[1.08] tracking-tight mb-4" style={{ color: '#ffffff' }}>
+                        The smarter way<br />
+                        to manage your<br />
+                        <span style={{ background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #ea580c 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                            industrial assets
+                        </span>
+                    </h2>
+                    <p className="text-[16px] font-medium leading-relaxed mb-10 max-w-md" style={{ color: '#64748b' }}>
+                        AI-powered maintenance intelligence, reliability engineering, and asset lifecycle management.
+                    </p>
+
+                    {/* ── Dashboard Preview Card ── */}
+                    <div className="rounded-2xl p-5 mb-6"
+                         style={{
+                             background: 'rgba(255, 255, 255, 0.04)',
+                             border: '1px solid rgba(255, 255, 255, 0.08)',
+                             backdropFilter: 'blur(20px)',
+                             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.3)',
+                         }}>
+
+                        {/* Card header */}
+                        <div className="flex items-center justify-between mb-5">
+                            <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(245, 158, 11, 0.15)' }}>
+                                    <BarChart3 size={14} style={{ color: '#fbbf24' }} />
                                 </div>
-                                <div className="text-[13px] font-bold text-white mb-0.5">{feat.label}</div>
-                                <div className="text-[11px] text-slate-500 font-medium">{feat.desc}</div>
+                                <span className="text-[12px] font-bold uppercase tracking-wider" style={{ color: '#94a3b8' }}>Dashboard Overview</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full" style={{ background: 'rgba(16, 185, 129, 0.1)' }}>
+                                <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#34d399' }} />
+                                <span className="text-[10px] font-bold" style={{ color: '#34d399' }}>Live</span>
+                            </div>
+                        </div>
+
+                        {/* Stat cards row */}
+                        <div className="grid grid-cols-3 gap-3 mb-5">
+                            {LIVE_STATS.map(stat => (
+                                <div key={stat.label} className="p-3.5 rounded-xl" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <stat.icon size={14} style={{ color: '#64748b' }} />
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md"
+                                              style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#34d399' }}>
+                                            {stat.change}
+                                        </span>
+                                    </div>
+                                    <div className="text-[20px] font-extrabold tracking-tight" style={{ color: '#ffffff' }}>{stat.value}</div>
+                                    <div className="text-[10px] font-semibold uppercase tracking-wider mt-0.5" style={{ color: '#475569' }}>{stat.label}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Mini chart */}
+                        <div className="p-4 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-[11px] font-bold" style={{ color: '#64748b' }}>Asset Health Trend</span>
+                                <div className="flex gap-1">
+                                    {['1W', '1M', '3M', '1Y'].map((period, i) => (
+                                        <button key={period} className="px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors"
+                                                style={{
+                                                    background: i === 2 ? 'rgba(245, 158, 11, 0.15)' : 'transparent',
+                                                    color: i === 2 ? '#fbbf24' : '#475569',
+                                                }}>
+                                            {period}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex items-end gap-[3px] h-16">
+                                {[32, 45, 38, 52, 48, 62, 55, 68, 58, 72, 65, 78, 70, 82, 75, 88, 80, 92, 85, 95].map((h, i) => (
+                                    <div key={i} className="flex-1 rounded-sm transition-all"
+                                         style={{
+                                             height: `${h}%`,
+                                             background: i >= 17
+                                                 ? 'linear-gradient(to top, #f59e0b, #fbbf24)'
+                                                 : i >= 14
+                                                     ? 'rgba(245, 158, 11, 0.3)'
+                                                     : 'rgba(255, 255, 255, 0.06)',
+                                             borderRadius: '2px',
+                                         }} />
+                                ))}
+                            </div>
+                            <div className="flex justify-between mt-2">
+                                <span className="text-[9px] font-medium" style={{ color: '#475569' }}>Jan</span>
+                                <span className="text-[9px] font-medium" style={{ color: '#475569' }}>Apr</span>
+                                <span className="text-[9px] font-medium" style={{ color: '#475569' }}>Jul</span>
+                                <span className="text-[9px] font-medium" style={{ color: '#475569' }}>Oct</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Feature pills */}
+                    <div className="flex flex-wrap gap-2 mb-6">
+                        {[
+                            { icon: Shield, label: 'ISO 55000' },
+                            { icon: Cpu, label: 'AI Reliability' },
+                            { icon: BarChart3, label: 'Analytics' },
+                            { icon: Wrench, label: '16 Modules' },
+                            { icon: CheckCircle2, label: 'FMEA/RCM' },
+                        ].map(pill => (
+                            <div key={pill.label}
+                                 className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                <pill.icon size={13} style={{ color: '#fbbf24' }} />
+                                <span className="text-[11px] font-bold" style={{ color: '#cbd5e1' }}>{pill.label}</span>
                             </div>
                         ))}
                     </div>
 
-                    {/* Trust bar */}
-                    <div className="flex items-center gap-6">
-                        <div className="flex -space-x-2">
-                            {['SA', 'JD', 'MR', 'AK'].map((initials, i) => (
-                                <div
-                                    key={initials}
-                                    className="w-8 h-8 rounded-full border-2 border-slate-800 flex items-center justify-center text-[10px] font-bold"
-                                    style={{
-                                        background: [
-                                            'linear-gradient(135deg, #f59e0b, #ea580c)',
-                                            'linear-gradient(135deg, #06b6d4, #3b82f6)',
-                                            'linear-gradient(135deg, #8b5cf6, #ec4899)',
-                                            'linear-gradient(135deg, #10b981, #059669)',
-                                        ][i],
-                                        color: 'white',
-                                        zIndex: 4 - i
-                                    }}
-                                >
-                                    {initials}
+                    {/* Trust row */}
+                    <div className="flex items-center gap-4">
+                        <div className="flex -space-x-2.5">
+                            {[
+                                { bg: 'linear-gradient(135deg, #f59e0b, #ea580c)', initials: 'SA' },
+                                { bg: 'linear-gradient(135deg, #3b82f6, #2563eb)', initials: 'JD' },
+                                { bg: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', initials: 'MR' },
+                                { bg: 'linear-gradient(135deg, #10b981, #059669)', initials: 'AK' },
+                            ].map((a, i) => (
+                                <div key={a.initials} className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
+                                     style={{ background: a.bg, border: '2px solid #1e293b', zIndex: 4 - i }}>
+                                    {a.initials}
                                 </div>
                             ))}
                         </div>
                         <div>
-                            <div className="text-sm font-bold text-white">Trusted by reliability teams</div>
-                            <div className="text-xs text-slate-500 font-medium">Oil & Gas • Power • Manufacturing</div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Floating dashboard preview card */}
-                <div className="absolute bottom-8 right-8 xl:right-12 w-72 xl:w-80 opacity-80 hover:opacity-100 transition-opacity duration-500">
-                    <div className="rounded-xl bg-white/[0.06] border border-white/[0.08] backdrop-blur-xl p-4 shadow-2xl">
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Live Dashboard</div>
-                            <div className="flex items-center gap-1">
-                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                <span className="text-[10px] text-emerald-400 font-semibold">Online</span>
-                            </div>
-                        </div>
-                        {/* Mini stat cards */}
-                        <div className="grid grid-cols-3 gap-2 mb-3">
-                            {[
-                                { label: 'Assets', value: '1,247', color: 'text-amber-400' },
-                                { label: 'MTBF', value: '842d', color: 'text-cyan-400' },
-                                { label: 'Uptime', value: '99.2%', color: 'text-emerald-400' },
-                            ].map(s => (
-                                <div key={s.label} className="bg-white/[0.04] rounded-lg p-2 text-center">
-                                    <div className={`text-sm font-black ${s.color}`}>{s.value}</div>
-                                    <div className="text-[9px] text-slate-500 font-semibold uppercase">{s.label}</div>
-                                </div>
-                            ))}
-                        </div>
-                        {/* Mini bar chart */}
-                        <div className="flex items-end gap-1 h-12 px-1">
-                            {[35, 55, 45, 70, 60, 80, 65, 75, 50, 85, 70, 90].map((h, i) => (
-                                <div
-                                    key={i}
-                                    className="flex-1 rounded-sm transition-all duration-500"
-                                    style={{
-                                        height: `${h}%`,
-                                        background: i >= 10
-                                            ? 'linear-gradient(to top, #f59e0b, #fbbf24)'
-                                            : 'rgba(255,255,255,0.08)',
-                                        animationDelay: `${i * 50}ms`
-                                    }}
-                                />
-                            ))}
-                        </div>
-                        <div className="flex justify-between mt-2">
-                            <span className="text-[9px] text-slate-600 font-medium">Jan</span>
-                            <span className="text-[9px] text-slate-600 font-medium">Jun</span>
-                            <span className="text-[9px] text-slate-600 font-medium">Dec</span>
+                            <div className="text-[13px] font-bold" style={{ color: '#e2e8f0' }}>Trusted by reliability teams</div>
+                            <div className="text-[11px] font-medium" style={{ color: '#475569' }}>Oil & Gas · Power · Manufacturing</div>
                         </div>
                     </div>
                 </div>
