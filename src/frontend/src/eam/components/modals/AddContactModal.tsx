@@ -18,7 +18,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
         code: '', firstName: '', lastName: '', title: '', email: '', type: initialType || 'INTERNAL',
         orgUnitId: '', costCenterId: ''
     });
-    const [userCreds, setUserCreds] = useState({ username: '', password: '' });
+    const [userCreds, setUserCreds] = useState({ username: '', password: '', confirmPassword: '' });
     const [createUser, setCreateUser] = useState(true);
     const [createLoading, setCreateLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -63,6 +63,12 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
         try {
             if (createUser && (!formData.code || !userCreds.password)) {
                 throw new Error("Username and Password are required for System Access.");
+            }
+            if (createUser && userCreds.password !== userCreds.confirmPassword) {
+                throw new Error("Passwords do not match. Please re-enter your password.");
+            }
+            if (createUser && userCreds.password.length < 6) {
+                throw new Error("Password must be at least 6 characters long.");
             }
 
             const db = DatabaseService.getInstance();
@@ -207,15 +213,38 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                                 {createUser && (
                                     <div className="bg-slate-50 p-4 rounded-lg space-y-3">
                                         <div>
-                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password</label>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Password <span className="text-red-500">*</span></label>
                                             <input
                                                 type="password"
                                                 required={createUser}
                                                 className="w-full text-sm border-slate-300 rounded-md p-2"
                                                 value={userCreds.password}
                                                 onChange={e => setUserCreds({ ...userCreds, password: e.target.value })}
-                                                placeholder="••••••••"
+                                                placeholder="Enter password"
+                                                minLength={6}
                                             />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Confirm Password <span className="text-red-500">*</span></label>
+                                            <input
+                                                type="password"
+                                                required={createUser}
+                                                className={`w-full text-sm rounded-md p-2 ${
+                                                    userCreds.confirmPassword && userCreds.password !== userCreds.confirmPassword
+                                                        ? 'border-red-400 focus:ring-red-500 focus:border-red-500'
+                                                        : 'border-slate-300 focus:ring-relantern-500 focus:border-blue-500'
+                                                }`}
+                                                value={userCreds.confirmPassword}
+                                                onChange={e => setUserCreds({ ...userCreds, confirmPassword: e.target.value })}
+                                                placeholder="Re-enter password"
+                                                minLength={6}
+                                            />
+                                            {userCreds.confirmPassword && userCreds.password !== userCreds.confirmPassword && (
+                                                <p className="text-xs text-red-500 mt-1 font-medium">Passwords do not match</p>
+                                            )}
+                                            {userCreds.confirmPassword && userCreds.password === userCreds.confirmPassword && userCreds.password.length >= 6 && (
+                                                <p className="text-xs text-green-600 mt-1 font-medium">✓ Passwords match</p>
+                                            )}
                                         </div>
                                     </div>
                                 )}
