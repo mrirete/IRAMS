@@ -1167,7 +1167,7 @@ const CalendarView: React.FC<{
         if (item.type === 'WO') {
             navigate(`/work-orders/${item.id}`);
         } else {
-            alert(`Projected Recurring Job: ${item.title}\n\nDrag this item to a date to schedule it firmly (create a Work Order).`);
+            showToast(`Projected Recurring Job: ${item.title}. Drag this item to a date to schedule it firmly.`, 'info');
         }
     };
 

@@ -77,7 +77,10 @@ export const WorkOrders: React.FC = () => {
     const canEdit = permissions?.workOrders?.edit === true;
     const canDelete = permissions?.workOrders?.delete === true;
     const canApprove = permissions?.workOrders?.approve === true;
-    const [viewMode, setViewMode] = useState<ViewMode>('LIST');
+    // GAP-11: Default to MyWorkTodayView on mobile — the best mobile UX component (rated 9/10)
+    const [viewMode, setViewMode] = useState<ViewMode>(() => {
+        return typeof window !== 'undefined' && window.innerWidth < 640 ? 'MY_WORK' : 'LIST';
+    });
     const [selectedJob, setSelectedJob] = useState<WorkOrder | null>(null);
     const [showStatusModal, setShowStatusModal] = useState(false);
     const [statusNote, setStatusNote] = useState('');
@@ -348,6 +351,7 @@ export const WorkOrders: React.FC = () => {
                         onSelect={handleJobSelect}
                         onCreate={() => setIsCreateOpen(true)}
                         dictionaries={dictionaries}
+                        assets={assets}
                         initialSearch={assetParam}
                         canCreate={canCreate}
                         canDelete={canDelete}
@@ -355,7 +359,7 @@ export const WorkOrders: React.FC = () => {
                             // ═══ RBAC Layer 2: Submit-level guard ═══
                             if (!canDelete) {
                                 console.warn('[RBAC-AUDIT] BLOCKED: workOrders.bulkDelete attempt by unauthorized user', woProfile?.username);
-                                alert('⛔ Access Denied: You do not have permission to delete work orders.');
+                                showToast('⛔ Access Denied: You do not have permission to delete work orders.', 'error');
                                 return;
                             }
                             const db = DatabaseService.getInstance();
@@ -447,7 +451,7 @@ export const WorkOrders: React.FC = () => {
                     // ═══ RBAC Layer 2: Submit-level guard ═══
                     if (!canDelete) {
                         console.warn('[RBAC-AUDIT] BLOCKED: workOrders.delete attempt by unauthorized user', woProfile?.username);
-                        alert('⛔ Access Denied: You do not have permission to delete work orders.');
+                        showToast('⛔ Access Denied: You do not have permission to delete work orders.', 'error');
                         return;
                     }
                     if (deleteModal.jobId) {
@@ -456,7 +460,7 @@ export const WorkOrders: React.FC = () => {
                             navigate('/work-orders');
                             showToast('Work Order deleted', 'success');
                         } catch (e: any) {
-                            alert("Failed to delete Work Order: " + e.message);
+                            showToast('Failed to delete Work Order: ' + e.message, 'error');
                         } finally {
                             setDeleteModal({ isOpen: false, jobId: null, jobNo: null });
                         }
@@ -473,7 +477,7 @@ export const WorkOrders: React.FC = () => {
 
 // --- 1. Job Listing Component ---
 
-const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => void, onCreate: () => void, dictionaries: DictionaryEntry[], onBulkDelete?: (ids: string[]) => Promise<void>, initialSearch?: string, canCreate?: boolean, canDelete?: boolean }> = ({ jobs, onSelect, onCreate, dictionaries, onBulkDelete, initialSearch = '', canCreate = true, canDelete = true }) => {
+const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => void, onCreate: () => void, dictionaries: DictionaryEntry[], assets?: any[], onBulkDelete?: (ids: string[]) => Promise<void>, initialSearch?: string, canCreate?: boolean, canDelete?: boolean }> = ({ jobs, onSelect, onCreate, dictionaries, assets = [], onBulkDelete, initialSearch = '', canCreate = true, canDelete = true }) => {
     const [density, setDensity] = useState<Density>('compact');
     const [statusFilter, setStatusFilter] = useState<WorkOrderStatus | 'ALL'>('ALL');
     const [search, setSearch] = useState(initialSearch);
@@ -481,14 +485,83 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     const [bulkDeleting, setBulkDeleting] = useState(false);
     const [showBulkConfirm, setShowBulkConfirm] = useState(false);
 
-    const filteredJobs = jobs.filter(job => {
-        const matchesStatus = statusFilter === 'ALL' || job.status === statusFilter;
-        const matchesSearch = (job.title || '').toLowerCase().includes(search.toLowerCase()) ||
-            (job.id || '').toLowerCase().includes(search.toLowerCase()) ||
-            (job.woNumber || '').toLowerCase().includes(search.toLowerCase()) ||
-            (job.assetName || '').toLowerCase().includes(search.toLowerCase());
-        return matchesStatus && matchesSearch;
+    // ═══ GAP-01: Smart Sort (persisted via localStorage) ═══
+    type SortField = 'priority' | 'dueDate' | 'status' | 'created';
+    const [sortField, setSortField] = useState<SortField>(() => {
+        return (localStorage.getItem('irams_wo_sort_field') as SortField) || 'priority';
     });
+    const [sortAsc, setSortAsc] = useState(() => {
+        return localStorage.getItem('irams_wo_sort_asc') === 'true';
+    });
+
+    const handleSortChange = (field: SortField) => {
+        if (sortField === field) {
+            const newAsc = !sortAsc;
+            setSortAsc(newAsc);
+            localStorage.setItem('irams_wo_sort_asc', String(newAsc));
+        } else {
+            setSortField(field);
+            setSortAsc(false);
+            localStorage.setItem('irams_wo_sort_field', field);
+            localStorage.setItem('irams_wo_sort_asc', 'false');
+        }
+    };
+
+    // Priority rank for sorting (higher number = higher priority)
+    const PRIORITY_RANK: Record<string, number> = { EMERGENCY: 5, HIGH: 4, MEDIUM: 3, LOW: 2, ROUTINE: 1 };
+    const STATUS_RANK: Record<string, number> = { WIP: 5, SCHED: 4, OPEN: 3, TECO: 2, CLOSED: 1, CANC: 0, CANCELLED: 0 };
+
+    const filteredJobs = useMemo(() => {
+        const filtered = jobs.filter(job => {
+            const matchesStatus = statusFilter === 'ALL' || job.status === statusFilter;
+            const matchesSearch = (job.title || '').toLowerCase().includes(search.toLowerCase()) ||
+                (job.id || '').toLowerCase().includes(search.toLowerCase()) ||
+                (job.woNumber || '').toLowerCase().includes(search.toLowerCase()) ||
+                (job.assetName || '').toLowerCase().includes(search.toLowerCase());
+            return matchesStatus && matchesSearch;
+        });
+
+        // Apply sort
+        return filtered.sort((a, b) => {
+            let cmp = 0;
+            switch (sortField) {
+                case 'priority':
+                    cmp = (PRIORITY_RANK[a.priority?.toUpperCase() || ''] || 0) - (PRIORITY_RANK[b.priority?.toUpperCase() || ''] || 0);
+                    break;
+                case 'dueDate':
+                    cmp = new Date(a.dueDate || '9999').getTime() - new Date(b.dueDate || '9999').getTime();
+                    break;
+                case 'status':
+                    cmp = (STATUS_RANK[a.status || ''] || 0) - (STATUS_RANK[b.status || ''] || 0);
+                    break;
+                case 'created':
+                    cmp = new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+                    break;
+            }
+            return sortAsc ? cmp : -cmp;
+        });
+    }, [jobs, statusFilter, search, sortField, sortAsc]);
+
+    // ═══ GAP-02/09/10: Helpers for overdue, RPN, criticality ═══
+    const isOverdue = (job: WorkOrder) => {
+        return job.dueDate && new Date(job.dueDate) < new Date() && !['CLOSED', 'TECO', 'CANC', 'CANCELLED'].includes(job.status);
+    };
+    const getOverdueDays = (job: WorkOrder) => {
+        if (!job.dueDate) return 0;
+        return Math.ceil((Date.now() - new Date(job.dueDate).getTime()) / (1000 * 60 * 60 * 24));
+    };
+    const CRIT_RANK: Record<string, number> = { A: 5, B: 3, C: 2, D: 1 };
+    const PRI_RANK: Record<string, number> = { EMERGENCY: 5, HIGH: 4, MEDIUM: 3, LOW: 2, ROUTINE: 1 };
+    const getRPN = (job: WorkOrder) => {
+        const asset = assets.find((a: any) => a.id === job.assetId);
+        const crit = CRIT_RANK[asset?.criticality || ''] || 1;
+        const pri = PRI_RANK[job.priority?.toUpperCase() || ''] || 1;
+        return crit * pri;
+    };
+    const getAssetCriticality = (job: WorkOrder) => {
+        const asset = assets.find((a: any) => a.id === job.assetId);
+        return asset?.criticality || null;
+    };
 
     // Clear selections that are no longer visible after filter changes
     useEffect(() => {
@@ -641,46 +714,84 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                 </div>
             )}
 
-            {/* ═══ Mobile Card View (< 768px) ═══ */}
+            {/* ═══ Mobile Card View (< 768px) — GAP-02/08/09/10 Enhanced ═══ */}
             <div className="mobile-cards flex-1 overflow-y-auto">
-                {filteredJobs.map(job => (
-                    <div
-                        key={job.id}
-                        onClick={() => onSelect(job)}
-                        className="mobile-card"
-                    >
-                        <div className="mobile-card-header">
-                            <div className="flex items-center gap-2 min-w-0">
-                                {getStatusIcon(job.status)}
-                                <span className="text-sm font-bold text-slate-900 truncate">{job.woNumber || job.id}</span>
+                {/* GAP-01: Sort Toolbar */}
+                <div className="flex items-center gap-1 px-3 py-2 border-b border-slate-100 bg-slate-50/50 overflow-x-auto scrollbar-hide">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mr-1 flex-shrink-0">Sort:</span>
+                    {([['priority', 'Priority'], ['dueDate', 'Due Date'], ['status', 'Status'], ['created', 'Created']] as [SortField, string][]).map(([field, label]) => (
+                        <button
+                            key={field}
+                            onClick={() => handleSortChange(field)}
+                            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-[10px] font-bold transition-all whitespace-nowrap ${
+                                sortField === field
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100'
+                            }`}
+                        >
+                            {label}
+                            {sortField === field && (
+                                <span className="text-[8px]">{sortAsc ? '↑' : '↓'}</span>
+                            )}
+                        </button>
+                    ))}
+                </div>
+
+                {filteredJobs.map(job => {
+                    const overdue = isOverdue(job);
+                    const overdueDays = getOverdueDays(job);
+                    const rpn = getRPN(job);
+                    const crit = getAssetCriticality(job);
+
+                    return (
+                        <div
+                            key={job.id}
+                            onClick={() => onSelect(job)}
+                            className={`mobile-card ${overdue ? 'overdue-strip' : ''} ${crit === 'A' ? 'crit-a-accent' : ''}`}
+                        >
+                            {/* Row 1: Status + WO Number + Badges */}
+                            <div className="mobile-card-header">
+                                <div className="flex items-center gap-2 min-w-0">
+                                    {getStatusIcon(job.status)}
+                                    <span className="text-sm font-bold text-slate-900 truncate">{job.woNumber || job.id}</span>
+                                    {crit === 'A' && <span className="crit-a-badge">🔴 Crit-A</span>}
+                                </div>
+                                <div className="flex items-center gap-1 flex-shrink-0">
+                                    {rpn > 0 && (
+                                        <span className={`rpn-badge ${rpn > 12 ? 'rpn-high' : rpn > 6 ? 'rpn-medium' : 'rpn-low'}`}>
+                                            RPN:{rpn}
+                                        </span>
+                                    )}
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${job.priority === 'HIGH' || job.priority === 'EMERGENCY' ? 'bg-red-100 text-red-700' : job.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
+                                        {job.priority}
+                                    </span>
+                                </div>
                             </div>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase flex-shrink-0 ${job.priority === 'HIGH' ? 'bg-red-100 text-red-700' : job.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                                {job.priority}
-                            </span>
+
+                            {/* Row 2: Title */}
+                            <p className="text-xs text-slate-700 line-clamp-1 font-medium">{job.title}</p>
+
+                            {/* Row 3: Asset + Due Date + Overdue Badge */}
+                            <div className="flex items-center justify-between gap-2 text-[11px]">
+                                <span className="text-slate-500 truncate">{job.assetName || 'No Asset'}</span>
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    {job.type && (
+                                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">{job.type}</span>
+                                    )}
+                                    {overdue ? (
+                                        <span className="overdue-badge overdue-pulse">
+                                            {overdueDays}d overdue
+                                        </span>
+                                    ) : (
+                                        <span className="text-slate-400 text-[10px]">
+                                            {job.dueDate ? new Date(job.dueDate).toLocaleDateString() : ''}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
                         </div>
-                        <p className="text-xs text-slate-700 line-clamp-2">{job.title}</p>
-                        <div className="mobile-card-meta">
-                            <div className="mobile-card-meta-item">
-                                <span className="mobile-card-meta-label">Status</span>
-                                <span className={`mobile-card-meta-value font-bold ${job.status === WorkOrderStatus.WIP ? 'text-blue-600' : job.status === WorkOrderStatus.CLOSED ? 'text-green-600' : 'text-slate-600'}`}>
-                                    {job.status ? job.status.replace('_', ' ') : 'UNKNOWN'}
-                                </span>
-                            </div>
-                            <div className="mobile-card-meta-item">
-                                <span className="mobile-card-meta-label">Asset</span>
-                                <span className="mobile-card-meta-value truncate">{job.assetName || '-'}</span>
-                            </div>
-                            <div className="mobile-card-meta-item">
-                                <span className="mobile-card-meta-label">Type</span>
-                                <span className="mobile-card-meta-value">{job.type || '-'}</span>
-                            </div>
-                            <div className="mobile-card-meta-item">
-                                <span className="mobile-card-meta-label">Due Date</span>
-                                <span className="mobile-card-meta-value">{job.dueDate ? new Date(job.dueDate).toLocaleDateString() : '-'}</span>
-                            </div>
-                        </div>
-                    </div>
-                ))}
+                    );
+                })}
                 {filteredJobs.length === 0 && (
                     <div className="unified-empty-state">
                         <div className="unified-empty-state-icon"><Search size={20} /></div>
@@ -782,6 +893,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const [pendingStatus, setPendingStatus] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [followUpDescription, setFollowUpDescription] = useState('');
+
+    // ── GAP-21: Styled modal states (replace native alert/confirm) ──
+    const [showFinancialCloseModal, setShowFinancialCloseModal] = useState(false);
+    const [journalDeleteId, setJournalDeleteId] = useState<string | null>(null);
 
     // ── Gatekeeper Protocol (Criticality A cancellation) ──
     const [showGatekeeperModal, setShowGatekeeperModal] = useState(false);
@@ -1053,7 +1168,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canEdit) {
             console.warn('[RBAC-AUDIT] BLOCKED: workOrders.edit attempt by unauthorized user');
-            alert('⛔ Access Denied: You do not have permission to edit work orders.');
+            showToast('⛔ Access Denied: You do not have permission to edit work orders.', 'error');
             return;
         }
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -1141,11 +1256,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 }
             }
 
-            alert(message);
+            showToast(message, 'success');
             setShowCompleteModal(false);
             onBack();
         } catch (e: any) {
-            alert('Error closing job: ' + e.message);
+            showToast('Error closing job: ' + e.message, 'error');
         }
     };
 
@@ -1187,15 +1302,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         label: 'Close (Financial)',
                         icon: <Lock size={14} />,
                         onClick: async () => {
-                            if (!confirm(`Close (Financial) WO ${localJob.woNumber || localJob.id}?\n\nThis will freeze all costs and prevent further postings. This action cannot be undone.`)) return;
-                            try {
-                                await DatabaseService.getInstance().updateWorkOrder(localJob.id, { status: WorkOrderStatus.CLOSED } as any, user?.id || 'unknown');
-                                updateJob({ status: WorkOrderStatus.CLOSED });
-                                alert(`Work Order ${localJob.woNumber || localJob.id} has been Financially Closed. All costs are frozen.`);
-                                onBack();
-                            } catch (e: any) {
-                                alert('Error closing: ' + e.message);
-                            }
+                            setShowFinancialCloseModal(true);
                         },
                         variant: 'secondary' as const,
                     }] : []),
@@ -1227,7 +1334,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     await DatabaseService.getInstance().createLibraryTask(libraryTask, mappedInventory, mappedRoles, [], user?.id || 'unknown');
                                     showToast('Saved as Library Template!', 'success');
                                 } catch (e: any) {
-                                    alert("Failed to save template: " + e.message);
+                                    showToast('Failed to save template: ' + e.message, 'error');
                                 }
                             }
                         }}
@@ -1624,6 +1731,44 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     </div>
                 </div>
             )}
+
+            {/* ═══ GAP-21: Financial Close Styled Modal (replaces native confirm) ═══ */}
+            <ConfirmationModal
+                isOpen={showFinancialCloseModal}
+                onClose={() => setShowFinancialCloseModal(false)}
+                onConfirm={async () => {
+                    try {
+                        await DatabaseService.getInstance().updateWorkOrder(localJob.id, { status: WorkOrderStatus.CLOSED } as any, user?.id || 'unknown');
+                        updateJob({ status: WorkOrderStatus.CLOSED });
+                        showToast(`Work Order ${localJob.woNumber || localJob.id} has been Financially Closed. All costs are frozen.`, 'success');
+                        setShowFinancialCloseModal(false);
+                        onBack();
+                    } catch (e: any) {
+                        showToast('Error closing: ' + e.message, 'error');
+                        setShowFinancialCloseModal(false);
+                    }
+                }}
+                title="Financial Close"
+                message={`Close (Financial) WO ${localJob.woNumber || localJob.id}?\n\nThis will freeze all costs and prevent further postings. This action cannot be undone.`}
+                type="danger"
+                confirmText="Freeze Costs & Close"
+            />
+
+            {/* ═══ GAP-21: Journal Delete Styled Modal (replaces native confirm) ═══ */}
+            <ConfirmationModal
+                isOpen={!!journalDeleteId}
+                onClose={() => setJournalDeleteId(null)}
+                onConfirm={() => {
+                    if (journalDeleteId) {
+                        deleteJournal(journalDeleteId);
+                        setJournalDeleteId(null);
+                    }
+                }}
+                title="Delete Journal Entry"
+                message="Are you sure you want to delete this journal entry? This cannot be undone."
+                type="danger"
+                confirmText="Delete Entry"
+            />
         </div>
     );
 };
@@ -2205,7 +2350,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                         <button
                             onClick={addJournal}
                             disabled={!note.trim()}
-                            className="absolute bottom-2 right-2 p-1.5 bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 disabled:opacity-50 disabled:hover:bg-relantern-500 transition"
+                            className="absolute bottom-2 right-2 p-1.5 sm:p-1.5 bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 disabled:opacity-50 disabled:hover:bg-relantern-500 transition min-w-[32px] min-h-[32px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                             title="Add entry (Ctrl+Enter)"
                         >
                             <ArrowRight size={14} />
@@ -2227,17 +2372,17 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                         <div className="flex items-center gap-1.5">
                                             <span className="text-[10px] text-slate-400">{j.createdAt}</span>
                                             {!j.isSystem && (
-                                                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-0.5">
+                                                <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex gap-0.5">
                                                     <button
                                                         onClick={() => startEdit(j)}
-                                                        className="p-0.5 text-slate-400 hover:text-blue-600 rounded"
+                                                        className="p-1 sm:p-0.5 text-slate-400 hover:text-blue-600 rounded min-w-[28px] min-h-[28px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                                                         title="Edit"
                                                     >
                                                         <Edit3 size={11} />
                                                     </button>
                                                     <button
-                                                        onClick={() => { if (confirm('Delete this entry?')) deleteJournal(j.id); }}
-                                                        className="p-0.5 text-slate-400 hover:text-red-600 rounded"
+                                                        onClick={() => setJournalDeleteId(j.id)}
+                                                        className="p-1 sm:p-0.5 text-slate-400 hover:text-red-600 rounded min-w-[28px] min-h-[28px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                                                         title="Delete"
                                                     >
                                                         <Trash2 size={11} />
@@ -3159,7 +3304,7 @@ const TasksTab: React.FC<{
                                 {hasWarning && <AlertTriangle size={14} className="text-amber-500 flex-shrink-0" />}
 
                                 {/* Move controls */}
-                                <div className={`flex items-center gap-0.5 flex-shrink-0 ${isExpanded ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+                                <div className={`flex items-center gap-0.5 flex-shrink-0 ${isExpanded ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'} transition-opacity`}>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); moveTask(index, 'up'); }}
                                         className="p-1 hover:bg-slate-200 rounded text-slate-400 disabled:opacity-30"
@@ -3234,7 +3379,7 @@ const TaskEditor: React.FC<{
         if (!qtyStr) return;
         const returnedQty = parseFloat(qtyStr);
         if (isNaN(returnedQty) || returnedQty <= 0) {
-            alert("Invalid quantity entered.");
+            showToast('Invalid quantity entered.', 'warning');
             return;
         }
 
@@ -3282,7 +3427,7 @@ const TaskEditor: React.FC<{
             showToast(`Successfully returned ${returnedQty} ${part.uom || 'EA'} to stores. Stock updated.`, 'success');
         } catch (e: any) {
             console.error(e);
-            alert("Failed to return parts to stores: " + e.message);
+            showToast('Failed to return parts to stores: ' + e.message, 'error');
         }
     };
 
@@ -5918,7 +6063,7 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
         // ═══ RBAC Layer 2: Submit-level guard ═══
         if (!canDelete) {
             console.warn('[RBAC-AUDIT] BLOCKED: workOrders.pmDelete attempt by unauthorized user');
-            alert('⛔ Access Denied: You do not have permission to delete strategies.');
+            showToast('Access Denied: You do not have permission to delete strategies.', 'error');
             return;
         }
         if (window.confirm('Are you sure you want to delete this strategy?')) {
@@ -6265,6 +6410,45 @@ const MyWorkTodayView: React.FC<MyWorkTodayViewProps> = ({
                                             )}
                                         </div>
                                     </div>
+                                )}
+
+                                {/* GAP-19: JSA Safety Section — Field Review */}
+                                {job.jsa && job.jsa.hazards && job.jsa.hazards.length > 0 && (
+                                    <details className="bg-red-50/50 rounded-lg border border-red-100 overflow-hidden group">
+                                        <summary className="p-3 cursor-pointer flex items-center justify-between select-none touch-target-mobile">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-red-600">🛡️</span>
+                                                <span className="text-[10px] font-bold text-red-700 uppercase tracking-wider">Safety (JSA) — {job.jsa.hazards.length} Hazard{job.jsa.hazards.length > 1 ? 's' : ''}</span>
+                                            </div>
+                                            <span className="text-red-400 text-xs group-open:rotate-90 transition-transform">▶</span>
+                                        </summary>
+                                        <div className="px-3 pb-3 space-y-2 border-t border-red-100 pt-2">
+                                            {job.jsa.hazards.map((h: any, idx: number) => (
+                                                <div key={idx} className="bg-white rounded-lg p-2.5 border border-red-100 space-y-1">
+                                                    <div className="flex justify-between items-start">
+                                                        <span className="text-xs font-bold text-slate-800">{h.hazard || h.description}</span>
+                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                                            (h.riskLevel || h.risk || '').toUpperCase() === 'HIGH' ? 'bg-red-100 text-red-700 border-red-200' :
+                                                            (h.riskLevel || h.risk || '').toUpperCase() === 'MEDIUM' ? 'bg-amber-100 text-amber-700 border-amber-200' :
+                                                            'bg-green-100 text-green-700 border-green-200'
+                                                        }`}>
+                                                            {h.riskLevel || h.risk || 'N/A'}
+                                                        </span>
+                                                    </div>
+                                                    {h.controls && (
+                                                        <p className="text-[10px] text-slate-600 leading-relaxed">
+                                                            <span className="font-bold text-slate-500">Controls: </span>{h.controls}
+                                                        </p>
+                                                    )}
+                                                    {h.ppe && (
+                                                        <p className="text-[10px] text-blue-700 font-medium">
+                                                            🧤 PPE: {h.ppe}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </details>
                                 )}
 
                                 {/* Material Staging Alert / Action */}

@@ -20,6 +20,7 @@ import {
 } from '../services/FinOpsService';
 import { DatabaseService } from '../services/DatabaseService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
+import { useToast } from '../contexts/ToastContext';
 
 type TabId = 'dashboard' | 'cost_centers' | 'budget_control' | 'forecast' | 'depreciation' | 'warranties' | 'claims' | 'vendor_intel' | 'supply_chain' | 'insurance';
 
@@ -63,6 +64,7 @@ interface AddWarrantyModalProps {
 
 const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onClose, onSave, assets, vendors }) => {
     const [loading, setLoading] = useState(false);
+    const { showToast } = useToast();
     const [formData, setFormData] = useState({
         assetId: '',
         vendorId: '',
@@ -88,7 +90,7 @@ const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onClose, on
             onClose();
         } catch (error) {
             console.error('Failed to save warranty:', error);
-            alert('Failed to save warranty');
+            showToast('Failed to save warranty', 'error');
         } finally {
             setLoading(false);
         }
@@ -235,6 +237,7 @@ const TRANSACTION_COST_TYPES = [
 
 const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClose, onSave, costCenters }) => {
     const [loading, setLoading] = useState(false);
+    const { showToast } = useToast();
     const [budgetWarning, setBudgetWarning] = useState<string | null>(null);
 
     // Cross-module data
@@ -378,7 +381,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.amount || !formData.costType || !formData.description) {
-            alert('Please fill required fields: Amount, Cost Type, and Description.');
+            showToast('Please fill required fields: Amount, Cost Type, and Description.', 'warning');
             return;
         }
 
@@ -401,7 +404,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
             onSave();
             onClose();
         } catch (err: any) {
-            alert('Failed to post transaction: ' + err.message);
+            showToast('Failed to post transaction: ' + err.message, 'error');
         } finally {
             setLoading(false);
         }
@@ -1121,6 +1124,7 @@ interface CostCentersTabProps {
 }
 
 const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh, initialSelectedId }) => {
+    const { showToast } = useToast();
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [selectedCenter, setSelectedCenter] = useState<CostCenter | null>(null);
     const [showBudgetModal, setShowBudgetModal] = useState(false);
@@ -1232,7 +1236,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
             setShowBudgetModal(false);
         } catch (err: any) {
             console.error('Failed to save budget', err);
-            alert(`Failed to save budget: ${err.message}`);
+            showToast(`Failed to save budget: ${err.message}`, 'error');
         }
     };
 
@@ -1294,7 +1298,7 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                     onClick={(e) => {
                                         e.stopPropagation();
                                         if (confirm(`Delete cost center ${center.code}?`)) {
-                                            FinOpsService.deleteCostCenter(center.id).then(() => onRefresh());
+                                            FinOpsService.deleteCostCenter(center.id).then(() => { showToast('Cost center deleted.', 'success'); onRefresh(); }).catch((e: any) => showToast('Failed to delete: ' + e.message, 'error'));
                                         }
                                     }}
                                     className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
@@ -1639,6 +1643,7 @@ interface DepreciationTabProps {
 }
 
 const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciation, costCenters }) => {
+    const { showToast } = useToast();
     const [schedule, setSchedule] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -1661,7 +1666,7 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
     const handleRunDepreciation = async () => {
         // Mock run for now, or implement service call if ready
         // await FinOpsService.runMonthlyDepreciation('CORPORATE', 2024, 1);
-        alert('Depreciation run scheduled in background.');
+        showToast('Depreciation run scheduled in background.', 'info');
         loadSchedule();
     };
 
@@ -1949,6 +1954,7 @@ interface WarrantiesTabProps {
 }
 
 const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendors, onRefresh }) => {
+    const { showToast } = useToast();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [, setSearchParams] = useSearchParams();
 
@@ -1984,7 +1990,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
             // Navigate to Claims tab to see the new DRAFT
             setSearchParams({ tab: 'claims' });
         } catch (err: any) {
-            alert('Failed to file claim: ' + err.message);
+            showToast('Failed to file claim: ' + err.message, 'error');
         } finally {
             setFilingClaim(false);
         }
@@ -2172,6 +2178,7 @@ interface ClaimsTabProps {
 }
 
 const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
+    const { showToast } = useToast();
     const [actionClaimId, setActionClaimId] = useState<string | null>(null);
     const [actionType, setActionType] = useState<'SUBMIT' | 'APPROVE' | 'REJECT' | null>(null);
     const [vendorRef, setVendorRef] = useState('');
@@ -2220,7 +2227,7 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
             setRejectionReason('');
             onRefresh();
         } catch (err: any) {
-            alert('Error updating claim: ' + err.message);
+            showToast('Error updating claim: ' + err.message, 'error');
         } finally {
             setProcessing(false);
         }

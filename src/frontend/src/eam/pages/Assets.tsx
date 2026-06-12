@@ -324,7 +324,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
 
     const handleUpdateAsset = async (updatedAsset: Asset) => {
         if (!canEdit) {
-            alert("You do not have permission to edit assets.");
+            showToast("You do not have permission to edit assets.", 'error');
             return;
         }
         // 1. Optimistic Update (List) — instant, no lag
@@ -3115,7 +3115,7 @@ function ReadingsTab({ asset, definitions, onAdd }: ReadingsTabProps) {
     const handleSaveReading = (def: ReadingDefinition) => {
         const val = entryValue[def.id];
         if (val === undefined || isNaN(val)) return;
-        alert(`Saved value ${val} for ${def.name}. (Simulated)`);
+        showToast(`Saved value ${val} for ${def.name}. (Simulated)`, 'success');
         // In real app, this would dispatch to the Readings context/store
         setEntryValue({ ...entryValue, [def.id]: 0 }); // Reset or clear
     };
@@ -3678,6 +3678,7 @@ function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, contac
     const [modelCode, setModelCode] = useState('');
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
+    const { showToast } = useToast();
 
     if (!isOpen) return null;
 
@@ -3690,7 +3691,7 @@ function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, contac
             await db.addContactModel(contactId, newModel);
             onSave(newModel);
         } catch (err: any) {
-            alert("Error adding model: " + err.message);
+            showToast("Error adding model: " + err.message, 'error');
         } finally {
             setLoading(false);
         }

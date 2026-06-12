@@ -50,7 +50,26 @@ export const NO_ACCESS_PERM: ModulePermissions = {
 export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePermissions>> = {
 
     // ────────────────────────────────────────────────────────
-    // SYS_ADMIN: Unrestricted access to ALL modules
+    // SUPER_ADMIN: Platform Owner — Unrestricted + Oversight
+    // The ONLY role that can view the Admin Activity Log,
+    // promote users to SYS_ADMIN, and approve admin MoC.
+    // Per NIST 800-53 AC-6: Separation of Duties for admins.
+    // ────────────────────────────────────────────────────────
+    SUPER_ADMIN: {
+        dashboard: FULL_ACCESS, assets: FULL_ACCESS, requests: FULL_ACCESS,
+        workOrders: FULL_ACCESS, inventory: FULL_ACCESS, readings: FULL_ACCESS,
+        analytics: FULL_ACCESS, admin: FULL_ACCESS, contacts: FULL_ACCESS,
+        vendors: FULL_ACCESS, pm: FULL_ACCESS, purchasing: FULL_ACCESS,
+        scheduling: FULL_ACCESS, taskLibrary: FULL_ACCESS, finops: FULL_ACCESS,
+        safety: FULL_ACCESS, moc: FULL_ACCESS, notifications: FULL_ACCESS,
+        reliability: FULL_ACCESS, integrity: FULL_ACCESS, sustain: FULL_ACCESS,
+        audits: FULL_ACCESS,
+        activityLog: FULL_ACCESS, // ← Exclusive: Admin Activity Log oversight
+    },
+
+    // ────────────────────────────────────────────────────────
+    // SYS_ADMIN: Unrestricted operational access to ALL modules
+    // CANNOT view Admin Activity Log or promote to SYS_ADMIN/SUPER_ADMIN
     // ────────────────────────────────────────────────────────
     SYS_ADMIN: {
         dashboard: FULL_ACCESS, assets: FULL_ACCESS, requests: FULL_ACCESS,
@@ -61,6 +80,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         safety: FULL_ACCESS, moc: FULL_ACCESS, notifications: FULL_ACCESS,
         reliability: FULL_ACCESS, integrity: FULL_ACCESS, sustain: FULL_ACCESS,
         audits: FULL_ACCESS,
+        activityLog: NO_ACCESS_PERM, // ← Blocked: Only SUPER_ADMIN can view
     },
 
     // ────────────────────────────────────────────────────────
@@ -85,7 +105,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
         reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
-        audits: VIEW_ONLY_PERM,
+        audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 
     // ────────────────────────────────────────────────────────
@@ -112,6 +132,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         finops: NO_ACCESS_PERM, moc: NO_ACCESS_PERM,
         admin: NO_ACCESS_PERM,
         reliability: FULL_ACCESS, integrity: FULL_ACCESS, sustain: NO_ACCESS_PERM,
+        activityLog: NO_ACCESS_PERM,
         audits: FULL_ACCESS,
     },
 
@@ -137,7 +158,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
         reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
-        audits: VIEW_ONLY_PERM,
+        audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 
     // ────────────────────────────────────────────────────────
@@ -165,6 +186,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         // Premium — Blocked
         finops: VIEW_ONLY_PERM, admin: NO_ACCESS_PERM,
         reliability: VIEW_ONLY_PERM, integrity: VIEW_ONLY_PERM, sustain: VIEW_ONLY_PERM,
+        activityLog: NO_ACCESS_PERM,
     },
 
     // ────────────────────────────────────────────────────────
@@ -192,6 +214,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         finops: { ...VIEW_ONLY_PERM, viewCosts: true },
         admin: NO_ACCESS_PERM,
         reliability: VIEW_ONLY_PERM, integrity: VIEW_ONLY_PERM, sustain: VIEW_ONLY_PERM,
+        activityLog: NO_ACCESS_PERM,
     },
 
     // ────────────────────────────────────────────────────────
@@ -214,7 +237,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
         reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
-        audits: VIEW_ONLY_PERM, // Baseline so invited users can access the module
+        audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 
     // ────────────────────────────────────────────────────────
@@ -232,7 +255,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         finops: NO_ACCESS_PERM, taskLibrary: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
         moc: NO_ACCESS_PERM, notifications: VIEW_ONLY_PERM, admin: NO_ACCESS_PERM,
         reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
-        audits: VIEW_ONLY_PERM, // Baseline so invited users can access the module
+        audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 
     // ────────────────────────────────────────────────────────
@@ -252,7 +275,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         safety: NO_ACCESS_PERM, moc: NO_ACCESS_PERM, notifications: VIEW_ONLY_PERM,
         admin: NO_ACCESS_PERM,
         reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
-        audits: VIEW_ONLY_PERM, // Baseline so invited users can access the module
+        audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 };
 
@@ -267,5 +290,5 @@ export const BASE_PACKAGE_DEFAULTS: Record<string, ModulePermissions> = {
     safety: NO_ACCESS_PERM, moc: NO_ACCESS_PERM,
     notifications: VIEW_ONLY_PERM, admin: NO_ACCESS_PERM,
     reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
-    audits: VIEW_ONLY_PERM,
+    audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
 };

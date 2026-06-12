@@ -17,6 +17,7 @@ const ConnectorWizard = lazy(() => import('./pages/admin/ConnectorWizard').then(
 const ConnectorDetail = lazy(() => import('./pages/admin/ConnectorDetail').then(m => ({ default: m.ConnectorDetail })));
 const GlobalSettingsPage = lazy(() => import('./pages/admin/GlobalSettingsPage').then(m => ({ default: m.GlobalSettingsPage })));
 const ErrorLogsPage = lazy(() => import('./pages/admin/ErrorLogsPage').then(m => ({ default: m.ErrorLogsPage })));
+const AdminActivityPage = lazy(() => import('./pages/admin/AdminActivityPage').then(m => ({ default: m.AdminActivityPage })));
 
 // ── React Query Client ──────────────────────────────────
 const queryClient = new QueryClient({
@@ -191,6 +192,7 @@ function App() {
                                 <Route path="/admin/connectors/:id" element={<PermissionGate module="admin"><ConnectorDetail /></PermissionGate>} />
                                 <Route path="/admin/settings" element={<PermissionGate module="admin"><GlobalSettingsPage /></PermissionGate>} />
                                 <Route path="/admin/error-logs" element={<PermissionGate module="admin"><ErrorLogsPage /></PermissionGate>} />
+                                <Route path="/admin/activity-log" element={<PermissionGate module="activityLog"><AdminActivityPage /></PermissionGate>} />
                               </Routes>
                             </Suspense>
                           </AppLayout>

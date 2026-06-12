@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
     Search, Filter, Plus, Activity, Zap, Check, AlertTriangle,
     BarChart2, Clock, Calendar, RefreshCcw, Save, Trash2, LineChart as LineChartIcon,
-    AlertCircle, CheckCircle, XCircle, X
+    AlertCircle, CheckCircle, XCircle, X, ChevronLeft
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, AreaChart, Area
@@ -16,6 +16,8 @@ import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 
 export const Readings: React.FC = () => {
     const { profile, permissions, dataScope } = useAuth();
@@ -23,6 +25,7 @@ export const Readings: React.FC = () => {
     const canCreate = permissions?.readings?.create === true;
     const canEdit = permissions?.readings?.edit === true;
     const canDelete = permissions?.readings?.delete === true;
+    const { showToast } = useToast();
     // Local State simulating Database
     const [assets, setAssets] = useState<Asset[]>([]);
     const [definitions, setDefinitions] = useState<ReadingDefinition[]>([]);
@@ -33,6 +36,9 @@ export const Readings: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabId>('entry');
     const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
     const [filterText, setFilterText] = useState('');
+    // Confirm modal state
+    const [meterChangeDefId, setMeterChangeDefId] = useState<string | null>(null);
+    const [deleteDefId, setDeleteDefId] = useState<string | null>(null);
 
     useEffect(() => {
         loadReadings();
@@ -70,7 +76,7 @@ export const Readings: React.FC = () => {
             }
         } catch (e) {
             console.error("Failed to load readings data", e);
-            alert("Failed to load data. See console.");
+            showToast('Failed to load readings data. See console.', 'error');
         }
     };
 
@@ -106,7 +112,7 @@ export const Readings: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
             console.warn('[RBAC-AUDIT] BLOCKED: readings.addDefinition attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to add reading definitions.');
+            showToast('Access Denied: You do not have permission to add reading definitions.', 'error');
             return;
         }
         const dictEntry = readingTypes.find(d => d.code === typeCode);
@@ -127,7 +133,7 @@ export const Readings: React.FC = () => {
             const savedDef = await DatabaseService.getInstance().addReadingDefinition(newDefPayload);
             setDefinitions([...definitions, savedDef]);
         } catch (e: any) {
-            alert("Failed to add definition: " + e.message);
+            showToast('Failed to add definition: ' + e.message, 'error');
         }
     };
 
@@ -136,7 +142,7 @@ export const Readings: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
             console.warn('[RBAC-AUDIT] BLOCKED: readings.saveReadings attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to enter readings.');
+            showToast('Access Denied: You do not have permission to enter readings.', 'error');
             return;
         }
         const timestamp = new Date();
@@ -158,7 +164,7 @@ export const Readings: React.FC = () => {
                     l.definitionId === def.id && l.date === (reading.date || dateStr) && l.isActive
                 );
                 if (duplicate) {
-                    alert(`Error: A valid meter reading for '${def.name}' already exists for ${reading.date || dateStr}. Please deactivate the existing reading first if you wish to replace it.`);
+                    showToast(`A valid meter reading for '${def.name}' already exists for ${reading.date || dateStr}. Deactivate the existing reading first.`, 'warning');
                     continue;
                 }
             }
@@ -169,9 +175,8 @@ export const Readings: React.FC = () => {
                 // If value is lower, assume meter rollover or replacement if not explicitly handled?
                 // For this strict implementation, we warn.
                 if (reading.value < def.lastReadingValue) {
-                    const confirmRollover = window.confirm(`New value (${reading.value}) is lower than previous (${def.lastReadingValue}). Is this a meter rollover/replacement?`);
-                    if (!confirmRollover) continue;
-                    delta = reading.value; // Treat as new start or add logic for rollover max
+                    showToast(`Meter rollover detected for '${def.name}': New value (${reading.value}) < Previous (${def.lastReadingValue}). Treating as meter replacement.`, 'warning');
+                    delta = reading.value; // Treat as new start
                 } else {
                     delta = reading.value - def.lastReadingValue;
                 }
@@ -245,13 +250,13 @@ export const Readings: React.FC = () => {
                 }
             } catch (e: any) {
                 console.error("Failed to save reading", e);
-                alert("Failed to save reading: " + e.message);
+                showToast('Failed to save reading: ' + e.message, 'error');
             }
         }
 
         setLogs(updatedLogs);
         setDefinitions(updatedDefs);
-        alert("Readings saved successfully.");
+        showToast('Readings saved successfully.', 'success');
     };
 
     // Meter Change logic
@@ -259,14 +264,10 @@ export const Readings: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canEdit) {
             console.warn('[RBAC-AUDIT] BLOCKED: readings.meterChange attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to reset meters.');
+            showToast('Access Denied: You do not have permission to reset meters.', 'error');
             return;
         }
-        if (confirm("Are you sure you want to replace/reset this meter? This will deactivate previous history for averaging.")) {
-            setLogs(prev => prev.map(l => l.definitionId === defId ? { ...l, isActive: false } : l));
-            setDefinitions(prev => prev.map(d => d.id === defId ? { ...d, lastReadingValue: 0 } : d));
-            alert("Meter reset. Previous readings archived.");
-        }
+        setMeterChangeDefId(defId);
     };
 
     // Toggle Active Logic
@@ -274,7 +275,7 @@ export const Readings: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canEdit) {
             console.warn('[RBAC-AUDIT] BLOCKED: readings.toggleActive attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to modify reading status.');
+            showToast('Access Denied: You do not have permission to modify reading status.', 'error');
             return;
         }
         const targetLog = logs.find(l => l.id === logId);
@@ -311,23 +312,16 @@ export const Readings: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canDelete) {
             console.warn('[RBAC-AUDIT] BLOCKED: readings.deleteDefinition attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to delete reading definitions.');
+            showToast('Access Denied: You do not have permission to delete reading definitions.', 'error');
             return;
         }
-        if (confirm("Are you sure you want to delete this reading point? History will be kept but it will be removed from future entry sheets.")) {
-            try {
-                await DatabaseService.getInstance().deleteReadingDefinition(id);
-                setDefinitions(prev => prev.filter(d => d.id !== id));
-            } catch (e: any) {
-                alert("Failed to delete definition: " + e.message);
-            }
-        }
+        setDeleteDefId(id);
     };
 
     return (
-        <div className="flex h-[calc(100vh-6rem)] gap-6">
+        <div className="flex h-[calc(100vh-6rem)] gap-4 sm:gap-6">
             {/* Sidebar List */}
-            <div className="w-1/3 flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedAssetId ? 'hidden sm:flex sm:w-1/3' : 'w-full sm:w-1/3'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center">
                     <h2 className="font-bold text-slate-900">Assets</h2>
                     <button
@@ -356,7 +350,7 @@ export const Readings: React.FC = () => {
                             <div
                                 key={asset.id}
                                 onClick={() => { setSelectedAssetId(asset.id); setActiveTab('entry'); }}
-                                className={`p-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition ${selectedAssetId === asset.id ? 'bg-blue-50 border-l-4 border-l-blue-600 pl-[12px]' : 'pl-4'}`}
+                                className={`mobile-card ${selectedAssetId === asset.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`}
                             >
                                 <div className="flex justify-between items-start mb-1">
                                     <span className="font-bold text-slate-900 text-sm">{asset.tag}</span>
@@ -379,9 +373,16 @@ export const Readings: React.FC = () => {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden">
+            <div className={`flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden ${!selectedAssetId ? 'hidden sm:flex' : ''}`}>
                 {selectedAsset ? (
                     <>
+                    {/* Mobile back button */}
+                    <button
+                        onClick={() => setSelectedAssetId(null)}
+                        className="sm:hidden flex items-center gap-2 px-4 py-3 border-b border-slate-200 text-sm font-medium text-blue-600 hover:bg-blue-50 transition"
+                    >
+                        <ChevronLeft size={16} /> Back to Assets
+                    </button>
                         <div className="p-6 border-b border-slate-200 bg-white">
                             <div className="flex justify-between items-center mb-4">
                                 <div>
@@ -457,6 +458,46 @@ export const Readings: React.FC = () => {
                     />
                 )}
             </div>
+
+            {/* GAP-14/21: Meter Change Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={!!meterChangeDefId}
+                onClose={() => setMeterChangeDefId(null)}
+                onConfirm={() => {
+                    if (meterChangeDefId) {
+                        setLogs(prev => prev.map(l => l.definitionId === meterChangeDefId ? { ...l, isActive: false } : l));
+                        setDefinitions(prev => prev.map(d => d.id === meterChangeDefId ? { ...d, lastReadingValue: 0 } : d));
+                        showToast('Meter reset. Previous readings archived.', 'success');
+                        setMeterChangeDefId(null);
+                    }
+                }}
+                title="Replace/Reset Meter?"
+                message="This will deactivate previous reading history for averaging. Are you sure you want to proceed?"
+                type="warning"
+                confirmText="Reset Meter"
+            />
+
+            {/* GAP-14/21: Delete Definition Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={!!deleteDefId}
+                onClose={() => setDeleteDefId(null)}
+                onConfirm={async () => {
+                    if (deleteDefId) {
+                        try {
+                            await DatabaseService.getInstance().deleteReadingDefinition(deleteDefId);
+                            setDefinitions(prev => prev.filter(d => d.id !== deleteDefId));
+                            showToast('Reading point removed. History preserved.', 'success');
+                        } catch (e: any) {
+                            showToast('Failed to delete definition: ' + e.message, 'error');
+                        }
+                        setDeleteDefId(null);
+                    }
+                }}
+                title="Delete Reading Point?"
+                message="History will be kept but this reading point will be removed from future entry sheets."
+                type="danger"
+                confirmText="Delete Point"
+            />
         </div>
     );
 };

@@ -62,6 +62,7 @@ const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
     '/admin/connectors/new': 'admin',
     '/admin/settings': 'admin',
     '/admin/error-logs': 'admin',
+    '/admin/activity-log': 'activityLog',
     '/system-health': 'admin',
 };
 
@@ -73,7 +74,10 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const location = useLocation();
     const { isModuleEnabled } = useLicense();
-    const { permissions, loading: authLoading } = useAuth();
+    const { permissions, role, loading: authLoading } = useAuth();
+
+    // ── Admin-tier roles bypass the license gate (always see all modules) ──
+    const isAdminTier = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
 
     // ── RBAC Check: Does the user have view permission for a given route? ──
     const hasPermission = (path: string): boolean => {
@@ -112,6 +116,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const MODULE_ID_TO_PERM_KEY: Partial<Record<string, ModuleName>> = {
         'predict': 'reliability',    // Reliability Tier → reliability permission
         'comply': 'integrity',       // Integrity → integrity permission
+        'audits': 'audits',          // Audit Suite → audits permission
         'sustain': 'sustain',        // Sustain → sustain permission
     };
 
@@ -125,8 +130,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     // ── Module filtering: License gate → Module RBAC gate → Child RBAC gate ──
     const visibleModules = useMemo(() => {
         return MODULE_REGISTRY.filter(m => {
-            // 1. License/package check
-            if (!isModuleEnabled(m.id)) return false;
+            // 1. License/package check (admin-tier roles bypass this gate)
+            if (!isAdminTier && !isModuleEnabled(m.id)) return false;
 
             // 2. Module-level RBAC check (premium suites: reliability, integrity, sustain)
             //    This is the HIGH-LEVEL governance gate — if the admin disabled the suite
@@ -150,7 +155,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
             return true;
         });
-    }, [permissions, authLoading, isModuleEnabled]);
+    }, [permissions, authLoading, isModuleEnabled, isAdminTier]);
 
     // ── Premium link styling — amber active, crisp slate inactive ──
     const linkClass = (isActive: boolean) =>
@@ -324,6 +329,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 <NavLink to="/admin/error-logs" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)}>
                                     Error Logs
                                 </NavLink>
+                                {/* Activity Log — SUPER_ADMIN only (activityLog.view gate) */}
+                                {permissions?.activityLog?.view && (
+                                    <NavLink to="/admin/activity-log" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)}>
+                                        <span className="flex items-center gap-1.5">
+                                            Activity Log
+                                            <span className="text-[8px] font-black text-violet-400 bg-violet-500/15 px-1.5 py-0.5 rounded-full uppercase tracking-wider">Super</span>
+                                        </span>
+                                    </NavLink>
+                                )}
                             </div>
                         )}
                     </div>

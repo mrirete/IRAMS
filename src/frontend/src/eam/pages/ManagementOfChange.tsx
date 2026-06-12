@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import {
     Plus, FileText, Clock, CheckCircle, XCircle, AlertTriangle, Eye,
     ChevronDown, ChevronRight, Loader2, RefreshCw, Search, Filter,
@@ -64,6 +65,7 @@ const STATUS_FLOW = ['DRAFT', 'SUBMITTED', 'UNDER_REVIEW', 'APPROVED', 'IMPLEMEN
 // --- Main Page ---
 export const ManagementOfChange: React.FC = () => {
     const { profile, permissions } = useAuth();
+    const { showToast } = useToast();
     // ═══ RBAC Permission Extraction (ISO 27001 / NIST CSF) ═══
     const canCreate = permissions?.moc?.create === true;
     const canEdit = permissions?.moc?.edit === true;
@@ -113,12 +115,12 @@ export const ManagementOfChange: React.FC = () => {
         const isApprovalAction = ['APPROVED', 'REJECTED', 'UNDER_REVIEW'].includes(newStatus);
         if (isApprovalAction && !canApprove) {
             console.warn('[RBAC-AUDIT] BLOCKED: moc.approve attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to approve/reject MoC requests.');
+            showToast('Access Denied: You do not have permission to approve/reject MoC requests.', 'error');
             return;
         }
         if (!isApprovalAction && !canEdit) {
             console.warn('[RBAC-AUDIT] BLOCKED: moc.statusChange attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to update MoC status.');
+            showToast('Access Denied: You do not have permission to update MoC status.', 'error');
             return;
         }
         try {
@@ -143,7 +145,7 @@ export const ManagementOfChange: React.FC = () => {
             setSelectedMoc(null);
         } catch (err) {
             console.error('Failed to update MoC status:', err);
-            alert('Failed to update status. See console for details.');
+            showToast('Failed to update status. See console for details.', 'error');
         }
     };
 
@@ -457,6 +459,7 @@ const CreateMocModal: React.FC<{
     const { profile, permissions } = useAuth();
     // ═══ RBAC Permission Extraction (ISO 27001 / NIST CSF) ═══
     const canCreate = permissions?.moc?.create === true;
+    const { showToast } = useToast();
     const [form, setForm] = useState({
         title: '',
         change_type: 'PM_INTERVAL',
@@ -475,7 +478,7 @@ const CreateMocModal: React.FC<{
         // ═══ RBAC Layer 2: Submit-level guard (defense-in-depth) ═══
         if (!canCreate) {
             console.warn('[RBAC-AUDIT] BLOCKED: moc.create attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to create MoC requests.');
+            showToast('Access Denied: You do not have permission to create MoC requests.', 'error');
             return;
         }
 
@@ -491,7 +494,7 @@ const CreateMocModal: React.FC<{
             onCreated();
         } catch (err) {
             console.error('Failed to create MoC:', err);
-            alert('Failed to create. See console.');
+            showToast('Failed to create MoC. See console.', 'error');
         } finally {
             setSaving(false);
         }

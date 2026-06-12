@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     Plus, Search, Filter, Clock, CheckCircle,
     X, User, Camera, Zap, Trash2, Save,
-    MoreHorizontal, QrCode, ChevronLeft, Bot, ShieldCheck, FileText, AlertOctagon, ChevronDown, Mic, Package, MapPin, Edit3, Check
+    MoreHorizontal, QrCode, ChevronLeft, Bot, ShieldCheck, FileText, AlertOctagon, ChevronDown, ChevronRight, Mic, Package, MapPin, Edit3, Check
 } from 'lucide-react';
 import { MOCK_REQUESTS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_WORK_ORDERS } from '../constants';
 import { ServiceRequest, RequestStatus, Asset, JobFile, WorkOrderStatus, WorkOrderType } from '../types';
@@ -16,6 +16,7 @@ import { SearchableDropdown } from '../components/ui/SearchableDropdown';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { NotificationService } from '../services/NotificationService';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { ScanAssetModal } from '../components/modals/ScanAssetModal';
@@ -24,6 +25,7 @@ export const ServiceRequests: React.FC = () => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
     const { user } = useAuth();
+    const { showToast } = useToast();
     const [isCreating, setIsCreating] = useState(false);
     const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
     const [requests, setRequests] = useState<ServiceRequest[]>([]);
@@ -69,7 +71,7 @@ export const ServiceRequests: React.FC = () => {
             setIsCreating(false);
             await refreshData();
         } catch (e: any) {
-            alert("Error creating request: " + e.message);
+            console.error('Error creating request:', e);
         }
     };
 
@@ -80,7 +82,6 @@ export const ServiceRequests: React.FC = () => {
             if (newStatus === RequestStatus.CONVERTED) {
                 // Trigger Conversion Transaction
                 const wo = await db.approveRequestAndConvert(id, user?.id || 'unknown');
-                alert(`Success! Work Order ${wo.wo_number} created.`);
             } else {
                 // Standard Status Update
                 // Need to map UI Status to DB Status
@@ -103,7 +104,7 @@ export const ServiceRequests: React.FC = () => {
                 }
             }
         } catch (e: any) {
-            alert("Action Failed: " + e.message);
+            console.error('Action Failed:', e.message);
         }
     };
 
@@ -122,7 +123,7 @@ export const ServiceRequests: React.FC = () => {
             await refreshData();
             setSelectedRequest(updatedRequest); // Optimistic UI update for detail view
         } catch (e: any) {
-            alert(e.message);
+            console.error('Update failed:', e.message);
         }
     };
 
@@ -132,7 +133,7 @@ export const ServiceRequests: React.FC = () => {
             setSelectedRequest(null);
             await refreshData();
         } catch (e: any) {
-            alert('Delete failed: ' + e.message);
+            console.error('Delete failed:', e.message);
         }
     };
 
@@ -187,42 +188,61 @@ export const ServiceRequests: React.FC = () => {
                 </div>
 
                 {/* Board */}
-                <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
-                    <div className="flex h-full gap-4 min-w-[800px] lg:min-w-0 lg:flex-col lg:overflow-y-auto lg:gap-0">
-                        {/* Mobile: Horizontal Columns / Desktop (Split View): Vertical List */}
-                        {selectedRequest || isCreating ? (
-                            // Compact List View when Detail is open
-                            <div className="space-y-2">
-                                {requests.map(req => (
-                                    <div
-                                        key={req.id}
-                                        onClick={() => handleRequestClick(req)}
-                                        className={`p-3 rounded-lg border cursor-pointer hover:bg-slate-50 transition ${selectedRequest?.id === req.id ? 'bg-blue-50 border-blue-500' : 'bg-white border-slate-200'}`}
-                                    >
-                                        <div className="flex justify-between items-start mb-1">
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="font-mono text-xs text-slate-500">{req.requestNumber}</span>
-                                                {req.isBreakdown && <AlertOctagon size={12} className="text-red-600" title="Breakdown" />}
-                                            </div>
-                                            <StatusBadge status={req.status} compact />
+                <div className="flex-1 overflow-y-auto pb-4">
+                    {selectedRequest || isCreating ? (
+                        // Compact List View when Detail is open
+                        <div className="space-y-2">
+                            {requests.map(req => (
+                                <div
+                                    key={req.id}
+                                    onClick={() => handleRequestClick(req)}
+                                    className={`p-3 rounded-lg border cursor-pointer hover:bg-slate-50 transition ${selectedRequest?.id === req.id ? 'bg-blue-50 border-blue-500' : 'bg-white border-slate-200'}`}
+                                >
+                                    <div className="flex justify-between items-start mb-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="font-mono text-xs text-slate-500">{req.requestNumber}</span>
+                                            {req.isBreakdown && <AlertOctagon size={12} className="text-red-600" title="Breakdown" />}
                                         </div>
-                                        <h3 className="text-sm font-medium text-slate-900 truncate">{req.title}</h3>
-                                        <div className="flex items-center gap-2 mt-2 text-xs text-slate-500">
-                                            <Clock size={12} /> <span>{new Date(req.createdAt).toLocaleDateString()}</span>
-                                        </div>
+                                        <StatusBadge status={req.status} compact />
                                     </div>
-                                ))}
+                                    <h3 className="text-sm font-medium text-slate-900 truncate">{req.title}</h3>
+                                    <div className="flex items-center gap-2 mt-2 text-xs text-slate-500">
+                                        <Clock size={12} /> <span>{new Date(req.createdAt).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <>
+                            {/* ═══ GAP-03: Mobile — Vertical Collapsible Groups ═══ */}
+                            <div className="block sm:hidden space-y-2">
+                                <MobileRequestGroup
+                                    title="New" statuses={[RequestStatus.NEW]} requests={requests}
+                                    onSelect={handleRequestClick} color="bg-slate-100" defaultOpen
+                                />
+                                <MobileRequestGroup
+                                    title="Under Review" statuses={[RequestStatus.REVIEW]} requests={requests}
+                                    onSelect={handleRequestClick} color="bg-blue-50"
+                                />
+                                <MobileRequestGroup
+                                    title="Authorized" statuses={[RequestStatus.AUTHORIZED]} requests={requests}
+                                    onSelect={handleRequestClick} color="bg-indigo-50"
+                                />
+                                <MobileRequestGroup
+                                    title="Approved & Converted" statuses={[RequestStatus.APPROVED, RequestStatus.CONVERTED]} requests={requests}
+                                    onSelect={handleRequestClick} color="bg-green-50"
+                                />
                             </div>
-                        ) : (
-                            // Full Kanban Board
-                            <div className="flex h-full gap-4">
+
+                            {/* Desktop: Full Kanban Board (horizontal columns) */}
+                            <div className="hidden sm:flex h-full gap-4 overflow-x-auto">
                                 <RequestColumn title="New" statuses={[RequestStatus.NEW]} requests={requests} onSelect={setSelectedRequest} color="bg-slate-100" />
                                 <RequestColumn title="Under Review" statuses={[RequestStatus.REVIEW]} requests={requests} onSelect={setSelectedRequest} color="bg-blue-50" />
                                 <RequestColumn title="Authorized" statuses={[RequestStatus.AUTHORIZED]} requests={requests} onSelect={setSelectedRequest} color="bg-indigo-50" />
                                 <RequestColumn title="Approved & Converted" statuses={[RequestStatus.APPROVED, RequestStatus.CONVERTED]} requests={requests} onSelect={setSelectedRequest} color="bg-green-50" />
                             </div>
-                        )}
-                    </div>
+                        </>
+                    )}
                 </div>
             </div>
 
@@ -482,6 +502,92 @@ const RequestColumn: React.FC<{
     );
 };
 
+// ═══ GAP-03: Mobile Vertical Collapsible Group ═══
+const MobileRequestGroup: React.FC<{
+    title: string;
+    statuses: RequestStatus[];
+    requests: ServiceRequest[];
+    onSelect: (r: ServiceRequest) => void;
+    color: string;
+    defaultOpen?: boolean;
+}> = ({ title, statuses, requests, onSelect, color, defaultOpen = false }) => {
+    const navigate = useNavigate();
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+    const filtered = requests.filter(r => statuses.includes(r.status));
+
+    return (
+        <div className={`rounded-xl border border-transparent overflow-hidden ${color}`}>
+            {/* Accordion Header */}
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full p-3 flex items-center justify-between touch-target-mobile"
+            >
+                <div className="flex items-center gap-2">
+                    {isOpen ? <ChevronDown size={16} className="text-slate-500" /> : <ChevronRight size={16} className="text-slate-500" />}
+                    <span className="font-semibold text-sm text-slate-700">{title}</span>
+                </div>
+                <span className="bg-white/60 px-2.5 py-0.5 rounded-full text-xs font-bold text-slate-600 min-w-[24px] text-center">
+                    {filtered.length}
+                </span>
+            </button>
+
+            {/* Accordion Body */}
+            {isOpen && (
+                <div className="px-2 pb-2 space-y-2">
+                    {filtered.length === 0 ? (
+                        <div className="text-center py-4 text-xs text-slate-400">No requests</div>
+                    ) : (
+                        filtered.map(req => (
+                            <div
+                                key={req.id}
+                                onClick={() => onSelect(req)}
+                                className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 active:bg-slate-50 transition cursor-pointer"
+                            >
+                                <div className="flex justify-between items-start mb-1.5">
+                                    <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${req.priority === 'HIGH' || req.priority === 'EMERGENCY' ? 'bg-red-50 text-red-700 border-red-100' :
+                                        req.priority === 'MEDIUM' ? 'bg-amber-50 text-amber-700 border-amber-100' :
+                                            'bg-slate-50 text-slate-600 border-slate-100'
+                                        }`}>
+                                        {req.priority}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        {req.isBreakdown && (
+                                            <span className="text-[10px] flex items-center gap-0.5 text-red-700 bg-red-50 font-bold border border-red-100 px-1 py-0.5 rounded">
+                                                <AlertOctagon size={10} /> BD
+                                            </span>
+                                        )}
+                                        {req.aiRiskScore && req.aiRiskScore > 80 && (
+                                            <span className="text-[10px] flex items-center gap-0.5 text-red-600 font-bold">
+                                                <Zap size={10} fill="currentColor" /> AI
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <h4 className="text-sm font-semibold text-slate-900 line-clamp-1 mb-1">{req.title}</h4>
+                                <div className="flex justify-between items-center text-xs text-slate-500">
+                                    <div className="flex items-center gap-1">
+                                        <User size={11} /> {req.requesterName.split(' ')[0]}
+                                    </div>
+                                    {req.linkedWOId ? (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); navigate(`/work-orders?id=${req.linkedWOId}`); }}
+                                            className="flex items-center gap-0.5 text-blue-600 font-bold text-[10px]"
+                                        >
+                                            <FileText size={10} /> WO #{req.linkedWONumber || '...'}
+                                        </button>
+                                    ) : (
+                                        <SLAIndicator deadline={req.slaDeadline} />
+                                    )}
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 const SLAIndicator: React.FC<{ deadline: string }> = ({ deadline }) => {
     const hoursLeft = (new Date(deadline).getTime() - Date.now()) / 3600000;
 
@@ -712,7 +818,7 @@ const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceReque
 
     const handleSubmit = () => {
         if (!user) {
-            alert("You must be logged in to submit a request.");
+            showToast('You must be logged in to submit a request.', 'error');
             return;
         }
 
@@ -1205,6 +1311,7 @@ const RequestDetail: React.FC<{
 
     // Real Auth Context - use Effective Permission Matrix
     const { user, profile, role, permissions } = useAuth();
+    const { showToast } = useToast();
 
     const currentUser = {
         id: user?.id || '',
@@ -1238,7 +1345,7 @@ const RequestDetail: React.FC<{
     // Rejection handler with reason
     const handleReject = async () => {
         if (!rejectionReason.trim()) {
-            alert('Please provide a reason for rejection.');
+            showToast('Please provide a reason for rejection.', 'warning');
             return;
         }
         setIsProcessing(true);
@@ -1252,7 +1359,7 @@ const RequestDetail: React.FC<{
             setShowRejectModal(false);
             setRejectionReason('');
         } catch (e: any) {
-            alert('Rejection failed: ' + e.message);
+            showToast('Rejection failed: ' + e.message, 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -1264,10 +1371,10 @@ const RequestDetail: React.FC<{
         try {
             const db = DatabaseService.getInstance();
             const wo = await db.approveRequestAndConvert(request.id, currentUser.id);
-            alert(`Request approved! Work Order ${wo.wo_number} created.`);
+            showToast(`Request approved! Work Order ${wo.wo_number} created.`, 'success');
             onStatusChange(request.id, RequestStatus.CONVERTED);
         } catch (e: any) {
-            alert('Approval failed: ' + e.message);
+            showToast('Approval failed: ' + e.message, 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -1285,7 +1392,7 @@ const RequestDetail: React.FC<{
             await db.deleteRequest(request.id);
             onDelete(request.id);
         } catch (e: any) {
-            alert('Delete failed: ' + e.message);
+            showToast('Delete failed: ' + e.message, 'error');
         } finally {
             setIsProcessing(false);
             setIsDeleteModalOpen(false);
@@ -1304,9 +1411,9 @@ const RequestDetail: React.FC<{
                 is_breakdown: request.isBreakdown,
                 category: request.category, // GAP-6: Persist category from detail view
             }, currentUser.id);
-            alert('Request saved successfully.');
+            showToast('Request saved successfully.', 'success');
         } catch (e: any) {
-            alert('Save failed: ' + e.message);
+            showToast('Save failed: ' + e.message, 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -1421,7 +1528,7 @@ const RequestDetail: React.FC<{
                                 }, currentUser.id);
                                 onStatusChange(request.id, RequestStatus.AUTHORIZED);
                             } catch (e: any) {
-                                alert('Authorization failed: ' + e.message);
+                                showToast('Authorization failed: ' + e.message, 'error');
                             } finally {
                                 setIsProcessing(false);
                             }

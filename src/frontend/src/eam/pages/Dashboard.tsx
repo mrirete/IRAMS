@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { useQuery } from '@tanstack/react-query';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip,
@@ -191,6 +192,7 @@ const SPARKLINE_COLORS = { created: '#3b82f6', closed: '#22c55e' };
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, profile, dataScope, role } = useAuth();
+  const { showToast } = useToast();
   const userName = (profile as any)?.fullName || (profile as any)?.username || 'Operator';
   const userRole = role || '';
   const [workTab, setWorkTab] = useState<'active' | 'recent'>('active');
@@ -716,9 +718,9 @@ export const Dashboard: React.FC = () => {
                               created_by: user?.id || 'system',
                             });
                             if (error) throw error;
-                            alert(`✅ DE Task created for ${a.tag}. Navigate to Analyze → Defect Elimination to review.`);
+                            showToast(`DE Task created for ${a.tag}. Navigate to Analyze → Defect Elimination to review.`, 'success');
                           } catch (err: any) {
-                            alert(`Failed to create DE task: ${err.message}`);
+                            showToast(`Failed to create DE task: ${err.message}`, 'error');
                           }
                         }}
                         className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-indigo-50 text-indigo-500 hover:text-indigo-700"
@@ -758,7 +760,7 @@ export const Dashboard: React.FC = () => {
                     if (!error) created++;
                   } catch { /* skip */ }
                 }
-                alert(`✅ ${created} DE task(s) created. Navigate to Analyze → Defect Elimination.`);
+                showToast(`${created} DE task(s) created. Navigate to Analyze → Defect Elimination.`, 'success');
               }}
               className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition bg-indigo-50 px-2 py-1 rounded-md hover:bg-indigo-100"
             >

@@ -20,6 +20,7 @@ import { db } from '../firebaseConfig';
 import { supabase } from '../lib/supabase';
 import { onSnapshot, collection } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 import { TaskLibraryManager } from './admin/TaskLibrary';
 import { OrgTreePicker } from '../components/OrgTreePicker';
@@ -41,6 +42,7 @@ interface DictionaryModalProps {
 
 const DictionaryModal: React.FC<DictionaryModalProps> = ({ isOpen, onClose, onSave, entry, type, dictionaries }) => {
     const [code, setCode] = useState(entry?.code || '');
+    const { showToast } = useToast();
     const [description, setDescription] = useState(entry?.description || '');
     const [hourlyRate, setHourlyRate] = useState<string>(entry?.hourlyRate?.toString() || '');
     const [suppression, setSuppression] = useState<string>(entry?.suppression?.toString() || '');
@@ -113,7 +115,7 @@ const DictionaryModal: React.FC<DictionaryModalProps> = ({ isOpen, onClose, onSa
             await onSave(updates);
             onClose();
         } catch (err: any) {
-            alert("Error saving: " + err.message);
+            showToast('Error saving: ' + err.message, 'error');
         } finally {
             setIsSaving(false);
         }
@@ -343,6 +345,7 @@ const DictionaryManager: React.FC = () => {
     const [selectedType, setSelectedType] = useState<DictionaryType>('READING_TYPE');
     const [searchTerm, setSearchTerm] = useState('');
     const [dictionaries, setDictionaries] = useState<DictionaryEntry[]>([]);
+    const { showToast } = useToast();
     const [pendingChanges, setPendingChanges] = useState<Map<string, Partial<DictionaryEntry>>>(new Map());
     const [isSavingAll, setIsSavingAll] = useState(false);
     const [showInactive, setShowInactive] = useState(false);
@@ -366,7 +369,7 @@ const DictionaryManager: React.FC = () => {
 
     const handleDeleteClick = (entry: DictionaryEntry) => {
         if (entry.is_locked || entry.locked) {
-            alert("This entry is LOCKED and cannot be deleted.");
+            showToast('This entry is LOCKED and cannot be deleted.', 'warning');
             return;
         }
         setDeleteModal({ isOpen: true, entry });
@@ -378,7 +381,7 @@ const DictionaryManager: React.FC = () => {
             await DatabaseService.getInstance().deleteDictionary(deleteModal.entry.id);
             setDictionaries(prev => prev.filter(d => d.id !== deleteModal.entry!.id));
         } catch (e: any) {
-            alert("Error deleting: " + e.message);
+            showToast('Error deleting: ' + e.message, 'error');
         } finally {
             setDeleteModal({ isOpen: false, entry: null });
         }
@@ -457,9 +460,9 @@ const DictionaryManager: React.FC = () => {
             // Reload
             const data = await db.getDictionaries();
             setDictionaries(data);
-            alert(`Seeding complete. Added ${count} entries.`);
+            showToast(`Seeding complete. Added ${count} entries.`, 'success');
         } catch (e: any) {
-            alert("Error seeding: " + e.message);
+            showToast('Error seeding: ' + e.message, 'error');
         } finally {
             setIsSeeding(false);
         }
@@ -502,7 +505,7 @@ const DictionaryManager: React.FC = () => {
 
     const handleSaveAll = async () => {
         if (pendingChanges.size === 0) {
-            alert('No changes to save.');
+            showToast('No changes to save.', 'info');
             return;
         }
         setIsSavingAll(true);
@@ -512,9 +515,9 @@ const DictionaryManager: React.FC = () => {
                 await db.updateDictionary(id, updates);
             }
             setPendingChanges(new Map());
-            alert(`Saved ${pendingChanges.size} change(s) successfully.`);
+            showToast(`Saved ${pendingChanges.size} change(s) successfully.`, 'success');
         } catch (e: any) {
-            alert('Error saving: ' + e.message);
+            showToast('Error saving: ' + e.message, 'error');
         } finally {
             setIsSavingAll(false);
         }
@@ -737,7 +740,7 @@ const DictionaryManager: React.FC = () => {
                                                     try {
                                                         await DatabaseService.getInstance().updateDictionary(entry.id, { is_locked: false, locked: false });
                                                         setDictionaries(prev => prev.map(d => d.id === entry.id ? { ...d, is_locked: false, locked: false } : d));
-                                                    } catch (e: any) { alert("Error unlocking: " + e.message); }
+                                                    } catch (e: any) { showToast('Error unlocking: ' + e.message, 'error'); }
                                                 }}
                                                 className="p-1 text-amber-500 hover:text-amber-700 transition-colors"
                                                 title="Unlock this entry"
@@ -748,7 +751,7 @@ const DictionaryManager: React.FC = () => {
                                                     try {
                                                         await DatabaseService.getInstance().updateDictionary(entry.id, { is_locked: true, locked: true });
                                                         setDictionaries(prev => prev.map(d => d.id === entry.id ? { ...d, is_locked: true, locked: true } : d));
-                                                    } catch (e: any) { alert("Error locking: " + e.message); }
+                                                    } catch (e: any) { showToast('Error locking: ' + e.message, 'error'); }
                                                 }}
                                                 className="p-1 text-slate-300 hover:text-amber-500 transition-colors"
                                                 title="Lock this entry"
@@ -801,6 +804,7 @@ const DictionaryManager: React.FC = () => {
 const UserPermissionManager: React.FC = () => {
     // We track selection by a unique ID (User ID if exists, otherwise Contact ID)
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const { showToast } = useToast();
     const [users, setUsers] = useState<User[]>([]); // Local state for edits
     const [contacts, setContacts] = useState<Contact[]>([]); // Local state for roles
     const [dictionaries, setDictionaries] = useState<DictionaryEntry[]>([]);
@@ -921,10 +925,12 @@ const UserPermissionManager: React.FC = () => {
         const isSysAdmin = assignedRoleCodes.some(code =>
             (code.toUpperCase().includes('SYS') && code.toUpperCase().includes('ADMIN')) ||
             code.toUpperCase() === 'ADMIN' ||
-            code.toUpperCase() === 'SYS_ADMIN'
+            code.toUpperCase() === 'SYS_ADMIN' ||
+            code.toUpperCase() === 'SUPER_ADMIN'
         ) || assignedRoleObjects.some(role =>
             role.description?.toLowerCase().includes('system admin') ||
-            role.description?.toLowerCase().includes('administrator')
+            role.description?.toLowerCase().includes('administrator') ||
+            role.description?.toLowerCase().includes('super admin')
         );
 
         let aggregatedBase: Record<string, ModulePermissions> = {};
@@ -1037,6 +1043,23 @@ const UserPermissionManager: React.FC = () => {
         if (!linkedContact) return;
         if (linkedContact.types.includes(roleCode)) return;
 
+        // ═══ GOVERNANCE GUARD: Role Elevation Protection ═══
+        // Only SUPER_ADMIN can promote users to admin-tier roles.
+        // This prevents SYS_ADMIN from creating "shadow admins" without oversight.
+        // Per NIST 800-53 AC-6: Least Privilege / Separation of Duties.
+        const ADMIN_TIER_ROLES = ['SYS_ADMIN', 'SUPER_ADMIN', 'ADMIN'];
+        if (ADMIN_TIER_ROLES.includes(roleCode.toUpperCase())) {
+            // Check if the CURRENT user (not the selected user) is SUPER_ADMIN
+            const currentUserStr = localStorage.getItem('ers_current_user');
+            const currentUserRoles: string[] = currentUserStr ? (JSON.parse(currentUserStr)?.roles || []) : [];
+            const isSuperAdmin = currentUserRoles.some((r: string) => r.toUpperCase() === 'SUPER_ADMIN');
+
+            if (!isSuperAdmin) {
+                showToast('Role Elevation Blocked: Only a Super Administrator can assign System Administrator or Super Administrator roles. (NIST 800-53 AC-6)', 'error');
+                return;
+            }
+        }
+
         const updatedContact = { ...linkedContact, types: [...linkedContact.types, roleCode] };
         setContacts(prev => prev.map(c => c.id === linkedContact.id ? updatedContact : c));
     };
@@ -1093,11 +1116,16 @@ const UserPermissionManager: React.FC = () => {
         try {
             const dbSvc = DatabaseService.getInstance();
             await Promise.all([
-                // Update User Overrides
+                // Update User Overrides (permission_overrides + data_scope_overrides)
                 // @ts-ignore
                 dbSvc.updateUserPermissions(selectedUser.id, selectedUser.permissionOverrides || {}, selectedUser.dataScopeOverrides || {}),
                 // Update Contact Roles
-                dbSvc.updateContact({ ...linkedContact, types: linkedContact.types, defaultType: linkedContact.defaultType })
+                dbSvc.updateContact({ ...linkedContact, types: linkedContact.types, defaultType: linkedContact.defaultType }),
+                // ═══ CRITICAL: Sync users.roles with contact's types ═══
+                // AuthContext resolves permissions from users.roles FIRST (not contacts.roles).
+                // If we only update the contact, users.roles goes stale and the user
+                // gets the wrong permission template at login (e.g. INTERNAL instead of SYS_ADMIN).
+                dbSvc.updateUser(selectedUser.id, { roles: linkedContact.types }),
             ]);
 
             // Show success state
@@ -1105,7 +1133,7 @@ const UserPermissionManager: React.FC = () => {
             setTimeout(() => setSaveSuccess(false), 3000);
         } catch (error) {
             console.error("Failed to save permissions", error);
-            alert("Failed to save permissions. Please check console.");
+            showToast('Failed to save permissions. Please check console.', 'error');
         } finally {
             setIsSaving(false);
         }
@@ -1726,7 +1754,7 @@ const UserPermissionManager: React.FC = () => {
                                                 // setSaveSuccess(true); setTimeout(() => setSaveSuccess(false), 3000);
 
                                             } catch (e) {
-                                                alert('Failed to create contact: ' + e);
+                                                showToast('Failed to create contact: ' + e, 'error');
                                             }
                                         }
                                     }}
@@ -1760,7 +1788,7 @@ const UserPermissionManager: React.FC = () => {
                                     if (existingUser) {
                                         // Check if existing user is already linked to this contact
                                         if (existingUser.contact_id === c.id || existingUser.contactId === c.id) {
-                                            alert(`A user account already exists for ${c.name}. They can log in using username: ${existingUser.username}`);
+                                            showToast(`A user account already exists for ${c.name}. They can log in using username: ${existingUser.username}`, 'info');
                                             // Update local state to reflect the link
                                             setUsers(users.map(u => u.id === existingUser.id ? { ...u, contact_id: c.id, contactId: c.id } : u));
                                             return;
@@ -1784,9 +1812,9 @@ const UserPermissionManager: React.FC = () => {
                                                 await db.updateUser(userWithSameEmail.id, { contact_id: c.id });
                                                 // Update local state
                                                 setUsers(users.map(u => u.id === userWithSameEmail.id ? { ...u, contact_id: c.id, contactId: c.id } : u));
-                                                alert(`Successfully linked ${userWithSameEmail.username} to ${c.name}.`);
+                                                showToast(`Successfully linked ${userWithSameEmail.username} to ${c.name}.`, 'success');
                                             } catch (e) {
-                                                alert("Failed to link user: " + e);
+                                                showToast('Failed to link user: ' + e, 'error');
                                             }
                                         }
                                         return; // Stop here, do not create new
@@ -1815,7 +1843,7 @@ const UserPermissionManager: React.FC = () => {
                                             await db.createUser(newUser);
                                             setUsers([...users, newUser]);
                                         } catch (e) {
-                                            alert("Failed to create user: " + e);
+                                            showToast('Failed to create user: ' + e, 'error');
                                             console.error(e);
                                         }
                                     }
@@ -1844,6 +1872,7 @@ const UserPermissionManager: React.FC = () => {
 export const Admin: React.FC = () => {
     const { permissions } = useAuth();
     const [activeTab, setActiveTab] = useState<AdminTab>('dictionaries');
+    const { showToast } = useToast();
 
     const handleSeedDictionaries = async () => {
         if (!confirm("This will insert missing dictionary entries (Status, Priority, etc.). Continue?")) return;
@@ -1940,10 +1969,10 @@ export const Admin: React.FC = () => {
             // const newDicts = await DatabaseService.getInstance().getDictionaries();
             // setDictionaries(newDicts);
 
-            alert(`✅ Seeding complete! Added/Updated ${count} entries.`);
+            showToast(`Seeding complete! Added/Updated ${count} entries.`, 'success');
         } catch (e: any) {
             console.error(e);
-            alert("❌ Seeding failed: " + e.message);
+            showToast('Seeding failed: ' + e.message, 'error');
         }
     };
 

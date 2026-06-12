@@ -24,6 +24,7 @@ import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { InventoryItemRecord } from '../schema';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import type { ImportType } from '../services/assetTemplates';
+import { useToast } from '../contexts/ToastContext';
 
 interface InventoryProps {
     onAnalyze: (context: string) => void;
@@ -47,6 +48,7 @@ function StockAdjustmentModal({ isOpen, onClose, item, onSuccess }: {
     const [quantity, setQuantity] = useState<string>(''); // string input for ease
     const [reason, setReason] = useState('');
     const [loading, setLoading] = useState(false);
+    const { showToast } = useToast();
 
     const handleProcess = async () => {
         if (!selectedLocationId || !quantity) return;
@@ -88,7 +90,7 @@ function StockAdjustmentModal({ isOpen, onClose, item, onSuccess }: {
             onSuccess();
         } catch (e) {
             console.error(e);
-            alert("Failed to process stock adjustment.");
+            showToast('Failed to process stock adjustment.', 'error');
         } finally {
             setLoading(false);
         }
@@ -190,6 +192,7 @@ function StoreManagerModal({ isOpen, onClose, stores, onUpdateStores }: {
     onUpdateStores: (stores: Store[]) => void;
 }) {
     const [selectedStoreId, setSelectedStoreId] = useState<string | null>(stores[0]?.id || null);
+    const { showToast } = useToast();
 
     // UI State for creating new vs editing
     const [isCreating, setIsCreating] = useState(false);
@@ -218,7 +221,7 @@ function StoreManagerModal({ isOpen, onClose, stores, onUpdateStores }: {
 
     const handleSaveStore = async () => {
         if (!formData.name || !formData.code) {
-            alert("Store Code and Name are required.");
+            showToast('Store Code and Name are required.', 'warning');
             return;
         }
 
@@ -249,11 +252,11 @@ function StoreManagerModal({ isOpen, onClose, stores, onUpdateStores }: {
 
                 const updatedList = stores.map(s => s.id === selectedStore.id ? updatedStore : s);
                 onUpdateStores(updatedList);
-                alert("Store details refreshed.");
+                showToast('Store details refreshed.', 'success');
             }
         } catch (e: any) {
             console.error("Store save failed", e);
-            alert("Failed to save store: " + e.message);
+            showToast('Failed to save store: ' + e.message, 'error');
         }
     };
 
@@ -523,6 +526,7 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
     dictionaries: any[];
 }) {
     const { profile } = useAuth();
+    const { showToast } = useToast();
     const [formData, setFormData] = useState<Partial<InventoryItem>>({
         code: '',
         description: '',
@@ -546,7 +550,7 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
 
     const handleSubmit = () => {
         if (!formData.code || !formData.description) {
-            alert("Item Code and Description are required.");
+            showToast('Item Code and Description are required.', 'warning');
             return;
         }
 
@@ -1468,6 +1472,7 @@ function SuppliersTab({ item, onUpdate, canCreate = true }: { item: InventoryIte
 function BOMTab({ item }: { item: InventoryItem }) {
     const [assets, setAssets] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const { showToast } = useToast();
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; assetId: string | null }>({
         isOpen: false,
@@ -1526,7 +1531,7 @@ function BOMTab({ item }: { item: InventoryItem }) {
             loadAssets(); // Refresh
             setIsAddModalOpen(false);
         } catch (e) {
-            alert("Failed to link to asset.");
+            showToast('Failed to link to asset.', 'error');
         }
     };
 
@@ -1551,7 +1556,7 @@ function BOMTab({ item }: { item: InventoryItem }) {
             await DatabaseService.getInstance().updateAsset(updatedAsset);
             loadAssets();
         } catch (e: any) {
-            alert("Failed to unlink asset: " + e.message);
+            showToast('Failed to unlink asset: ' + e.message, 'error');
         } finally {
             setDeleteModal({ isOpen: false, assetId: null });
         }
@@ -2065,6 +2070,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
     const canCreate = permissions?.inventory?.create === true;
     const canEdit = permissions?.inventory?.edit === true;
     const canDelete = permissions?.inventory?.delete === true;
+    const { showToast } = useToast();
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
     const [stores, setStores] = useState<Store[]>([]);
     const [dictionaries, setDictionaries] = useState<any[]>([]); // Added dictionary state
@@ -2156,7 +2162,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
             console.warn('[RBAC-AUDIT] BLOCKED: inventory.create attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to create inventory items.');
+            showToast('Access Denied: You do not have permission to create inventory items.', 'error');
             return;
         }
         try {
@@ -2203,7 +2209,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
             setActiveTab('details');
             setShowAddModal(false);
         } catch (e: any) {
-            alert("Error saving item: " + e.message);
+            showToast('Error saving item: ' + e.message, 'error');
         }
     };
 
@@ -2211,7 +2217,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canEdit) {
             console.warn('[RBAC-AUDIT] BLOCKED: inventory.edit attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to edit inventory items.');
+            showToast('Access Denied: You do not have permission to edit inventory items.', 'error');
             return;
         }
         if (!selectedItem) return;
@@ -2274,9 +2280,9 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                 }, { currentUserId: profile?.id || 'SYSTEM' });
             }
 
-            alert("Item saved successfully!");
+            showToast('Item saved successfully!', 'success');
         } catch (e: any) {
-            alert("Failed to update item: " + (e.message || JSON.stringify(e)));
+            showToast('Failed to update item: ' + (e.message || JSON.stringify(e)), 'error');
             console.error(e);
         }
     };
@@ -2327,7 +2333,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
     const handleBulkDelete = async () => {
         if (!canDelete) {
             console.warn('[RBAC-AUDIT] BLOCKED: inventory.bulkDelete attempt by unauthorized user', profile?.username);
-            alert('\u26D4 Access Denied: You do not have permission to delete inventory items.');
+            showToast('Access Denied: You do not have permission to delete inventory items.', 'error');
             return;
         }
         const ids = Array.from(selectedIds);
@@ -2344,7 +2350,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
         setBulkDeleteModal(false);
         if (selectedItem && ids.includes(selectedItem.id)) setSelectedItem(null);
         await loadInventory();
-        alert(`Deleted ${deleted} of ${ids.length} item(s).`);
+        showToast(`Deleted ${deleted} of ${ids.length} item(s).`, deleted === ids.length ? 'success' : 'warning');
     };
 
     // --- Bulk Import Handler for Inventory ---
@@ -2352,7 +2358,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
             console.warn('[RBAC-AUDIT] BLOCKED: inventory.bulkImport attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to import inventory items.');
+            showToast('Access Denied: You do not have permission to import inventory items.', 'error');
             return;
         }
         if (type !== 'inventory') return;
@@ -2400,7 +2406,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                 console.warn(`Failed to import inventory row: ${row['code']}`, e);
             }
         }
-        alert(`Imported ${imported} of ${rows.length} inventory items.`);
+        showToast(`Imported ${imported} of ${rows.length} inventory items.`, imported === rows.length ? 'success' : 'warning');
         loadInventory();
     };
 
@@ -2502,46 +2508,74 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         </div>
                     )}
 
-                    {filteredInventory.map(item => (
-                        <div
-                            key={item.id}
-                            onClick={() => handleRowClick(item)}
-                            className={`p-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition flex gap-3 ${selectedItem?.id === item.id ? 'bg-blue-50 border-l-4 border-l-blue-600 pl-[12px]' : selectedIds.has(item.id) ? 'bg-blue-50/50 pl-4' : 'pl-4'}`}
-                        >
-                            {/* Checkbox */}
-                            <div className="flex items-center flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                <input
-                                    type="checkbox"
-                                    checked={selectedIds.has(item.id)}
-                                    onChange={() => {
-                                        setSelectedIds(prev => {
-                                            const next = new Set(prev);
-                                            if (next.has(item.id)) next.delete(item.id);
-                                            else next.add(item.id);
-                                            return next;
-                                        });
-                                    }}
-                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                />
-                            </div>
-                            <div className="w-10 h-10 bg-slate-200 rounded flex-shrink-0 flex items-center justify-center text-slate-500">
-                                {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover rounded" /> : <Box size={20} />}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className="font-mono text-xs font-bold text-slate-700">{item.code}</span>
-                                    {item.isCritical && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold uppercase">Critical</span>}
+                    {filteredInventory.map(item => {
+                        const stockStatus = item.totalQtyOnHand === 0 ? 'OUT' : item.totalQtyOnHand <= (item.minLevel || 0) ? 'LOW' : 'OK';
+                        const stockColors = {
+                            OUT: 'bg-red-100 text-red-700 border-red-200',
+                            LOW: 'bg-amber-100 text-amber-700 border-amber-200',
+                            OK: 'bg-green-100 text-green-700 border-green-200'
+                        };
+                        const stockLabels = { OUT: 'Out of Stock', LOW: 'Low Stock', OK: 'In Stock' };
+                        const primaryLocation = item.stockLocations?.[0];
+
+                        return (
+                            <div
+                                key={item.id}
+                                onClick={() => handleRowClick(item)}
+                                className={`mobile-card gap-2 ${selectedItem?.id === item.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : selectedIds.has(item.id) ? 'bg-blue-50/50' : ''} ${item.isCritical ? 'overdue-strip' : ''}`}
+                            >
+                                <div className="flex gap-3">
+                                    {/* Checkbox */}
+                                    <div className="flex items-center flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.has(item.id)}
+                                            onChange={() => {
+                                                setSelectedIds(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(item.id)) next.delete(item.id);
+                                                    else next.add(item.id);
+                                                    return next;
+                                                });
+                                            }}
+                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                        />
+                                    </div>
+                                    <div className="w-10 h-10 bg-slate-200 rounded flex-shrink-0 flex items-center justify-center text-slate-500">
+                                        {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover rounded" /> : <Box size={20} />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        {/* Row 1: Code + Badges */}
+                                        <div className="flex justify-between items-start mb-0.5">
+                                            <span className="font-mono text-xs font-bold text-slate-700">{item.code}</span>
+                                            <div className="flex items-center gap-1 flex-shrink-0">
+                                                {item.isCritical && <span className="crit-a-badge">⚡ Critical</span>}
+                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${stockColors[stockStatus]}`}>
+                                                    {stockLabels[stockStatus]}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        {/* Row 2: Description */}
+                                        <h3 className="text-sm font-medium text-slate-900 mb-1 line-clamp-1">{item.description}</h3>
+                                        {/* Row 3: Qty + Store + Type */}
+                                        <div className="flex justify-between items-center text-[11px] text-slate-500">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`font-bold ${stockStatus === 'OUT' ? 'text-red-600' : stockStatus === 'LOW' ? 'text-amber-600' : 'text-green-600'}`}>
+                                                    Qty: {item.totalQtyOnHand} {item.uom}
+                                                </span>
+                                                {primaryLocation && (
+                                                    <span className="text-slate-400">
+                                                        {primaryLocation.storeName}{primaryLocation.binLocation ? ` / ${primaryLocation.binLocation}` : ''}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span className="text-slate-400 text-[10px]">{item.type}</span>
+                                        </div>
+                                    </div>
                                 </div>
-                                <h3 className="text-sm font-medium text-slate-900 mb-1 truncate">{item.description}</h3>
-                                <div className="flex justify-between items-center text-xs text-slate-500">
-                                    <span>Type: {item.type}</span>
-                                    <span className={`font-bold ${item.totalQtyOnHand === 0 ? 'text-red-500' : 'text-green-600'}`}>
-                                        {item.totalQtyOnHand} {item.uom}
-                                    </span>
-                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             </div>
 

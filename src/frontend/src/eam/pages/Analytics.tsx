@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useToast } from '../contexts/ToastContext';
 import { supabase } from '../lib/supabase';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -223,6 +224,7 @@ const KPICard = ({ label, value, icon, color, subtitle }: any) => (
 // --- Main Page ---
 export const Analytics: React.FC = () => {
     const [timeRange, setTimeRange] = useState(90);
+    const { showToast } = useToast();
     const [expandedPrediction, setExpandedPrediction] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<'KPI' | 'PARETO'>('KPI');
     const [paretoCriteria, setParetoCriteria] = useState<'cost' | 'downtime' | 'wo_frequency'>('cost');
@@ -272,7 +274,7 @@ export const Analytics: React.FC = () => {
             setTriggerSuccess(`Success! Monthly Pareto analysis completed. ${draftedCount} Defect Elimination campaigns auto-drafted for review.`);
         } catch (e: any) {
             console.error(e);
-            alert('Failed to execute trigger: ' + e.message);
+            showToast('Failed to execute trigger: ' + e.message, 'error');
         } finally {
             setIsTriggering(false);
         }
@@ -818,7 +820,7 @@ export const Analytics: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                                                 <button
                                                     onClick={() => {
-                                                        alert(`Initiating Defect Elimination RCA for ${ba.asset_name}.\nAuto-linking asset tag ${ba.asset_tag}.`);
+                                                        showToast(`Initiating Defect Elimination RCA for ${ba.asset_name}. Auto-linking asset tag ${ba.asset_tag}.`, 'info');
                                                     }}
                                                     className="px-3.5 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-xs font-bold transition-all border border-blue-100 shadow-sm"
                                                 >

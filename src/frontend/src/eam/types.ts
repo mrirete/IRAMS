@@ -17,7 +17,7 @@ export type DictionaryType =
 export type ModuleName =
   | 'dashboard' | 'assets' | 'requests' | 'workOrders' | 'inventory'
   | 'readings' | 'analytics' | 'admin' | 'contacts' | 'vendors' | 'pm' | 'purchasing' | 'scheduling' | 'taskLibrary' | 'finops' | 'safety' | 'moc' | 'notifications'
-  | 'reliability' | 'integrity' | 'sustain' | 'audits';
+  | 'reliability' | 'integrity' | 'sustain' | 'audits' | 'activityLog';
 
 export interface ModulePermissions {
   view: boolean;

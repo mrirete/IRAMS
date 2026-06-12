@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, AlertTriangle, ShieldCheck, Sparkles, TrendingUp, DollarSign, Wrench, BarChart3, Target, Loader2, Clock, Search } from 'lucide-react';
-import { createRelanternChat } from '../services/geminiService';
+import { createRelanternChat, proxyAIChat, isAIProxyEnabled } from '../services/geminiService';
 import { ChatMessage } from '../types';
 
 // ─── Quick Action Chip Definitions by Context ─────────────
@@ -133,25 +133,35 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
   const chatSessionRef = useRef<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Track whether we're using the proxy or direct SDK
+  const useProxy = isAIProxyEnabled();
+  // Accumulate context for proxy-mode priming
+  const primedContextRef = useRef<string | undefined>(undefined);
+
   useEffect(() => {
-    if (isOpen && !chatSessionRef.current) {
+    if (isOpen && !useProxy && !chatSessionRef.current) {
       try {
         chatSessionRef.current = createRelanternChat();
       } catch (err) {
         console.error('[ReliabilitySpecialist] Failed to create chat session:', err);
       }
     }
-    if (isOpen && contextData && chatSessionRef.current) {
-      const prime = async () => {
-        try {
-          await chatSessionRef.current.sendMessage({ message: `Current Context: ${contextData}. Please wait for my question.` });
-        } catch (err) {
-          console.error('[ReliabilitySpecialist] Failed to prime context:', err);
-        }
-      };
-      prime();
+    if (isOpen && contextData) {
+      if (useProxy) {
+        // For proxy mode, just store the context — it gets sent with each request
+        primedContextRef.current = contextData;
+      } else if (chatSessionRef.current) {
+        const prime = async () => {
+          try {
+            await chatSessionRef.current.sendMessage({ message: `Current Context: ${contextData}. Please wait for my question.` });
+          } catch (err) {
+            console.error('[ReliabilitySpecialist] Failed to prime context:', err);
+          }
+        };
+        prime();
+      }
     }
-  }, [isOpen, contextData]);
+  }, [isOpen, contextData, useProxy]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -173,12 +183,24 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
     setIsLoading(true);
 
     try {
-      if (!chatSessionRef.current) {
-        chatSessionRef.current = createRelanternChat();
-      }
+      let responseText: string;
 
-      const result = await chatSessionRef.current.sendMessage({ message: messageText });
-      const responseText = typeof result?.text === 'string' ? result.text : (result?.text?.() || 'No response received.');
+      if (useProxy) {
+        // Route through the backend AI proxy (API key stays server-side)
+        responseText = await proxyAIChat(
+          messageText,
+          contextType || 'general',
+          primedContextRef.current,
+          contextType,
+        );
+      } else {
+        // Direct Gemini SDK fallback (dev mode)
+        if (!chatSessionRef.current) {
+          chatSessionRef.current = createRelanternChat();
+        }
+        const result = await chatSessionRef.current.sendMessage({ message: messageText });
+        responseText = typeof result?.text === 'string' ? result.text : (result?.text?.() || 'No response received.');
+      }
 
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
@@ -193,8 +215,8 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
       let errorText = '⚠️ Unable to process your request.';
       if (!import.meta.env.VITE_AI_PROXY_URL && !import.meta.env.VITE_GEMINI_API_KEY) {
         errorText = '⚠️ **AI Not Configured** — Neither `VITE_AI_PROXY_URL` (recommended) nor `VITE_GEMINI_API_KEY` is set. Configure the backend AI proxy or add a Gemini API key to `.env.local` and restart the dev server.';
-      } else if (error?.message?.includes('API key') || error?.message?.includes('401') || error?.message?.includes('403')) {
-        errorText = '⚠️ **Authentication Error** — The AI service rejected the request. Please verify your configuration in `.env.local`.';
+      } else if (error?.message?.includes('API key') || error?.message?.includes('401') || error?.message?.includes('403') || error?.message?.includes('405')) {
+        errorText = '⚠️ **Authentication Error** — The AI service rejected the request (HTTP ' + (error?.message?.match(/\d{3}/)?.[0] || '4xx') + '). Please verify your Gemini API key or backend proxy configuration in `.env.local`.';
       } else {
         errorText = `⚠️ **Connection Error** — ${error?.message || 'Please check your network and API configuration, then retry.'}`;
       }
@@ -228,7 +250,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 w-full md:w-[480px] bg-white shadow-2xl z-50 flex flex-col border-l border-slate-200 transform transition-transform duration-300 ease-in-out">
+    <div className="fixed inset-y-0 right-0 w-full md:w-[480px] bg-white shadow-2xl z-[60] flex flex-col border-l border-slate-200 transform transition-transform duration-300 ease-in-out pb-[env(safe-area-inset-bottom,0px)]">
       {/* Header */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-4 flex justify-between items-center shadow-md">
         <div className="flex items-center gap-3">
@@ -303,8 +325,8 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
         <p>Reliability Specialist is an advisory tool. All recommendations require verification by a qualified engineer before execution. ISO 31000/55000 · AI cannot authorize shutdowns, purchases, or asset disposal.</p>
       </div>
 
-      {/* Input */}
-      <div className="p-4 bg-white border-t border-slate-200">
+      {/* Input — extra bottom padding on mobile so it sits above the BottomNav */}
+      <div className="p-4 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] sm:pb-4 bg-white border-t border-slate-200 mb-14 sm:mb-0">
         <div className="relative">
           <textarea
             value={input}

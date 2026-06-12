@@ -8,6 +8,7 @@ import { aiContextService } from '../services/AIContextService';
 import { Vendor, DictionaryEntry } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
+import { useToast } from '../contexts/ToastContext';
 
 interface VendorsProps {
     onAnalyze?: (context: string) => void;
@@ -15,6 +16,7 @@ interface VendorsProps {
 
 export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
+    const { showToast } = useToast();
     const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -73,7 +75,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
             setVendors(prev => prev.filter(v => v.id !== deleteModal.vendorId));
             if (selectedVendor?.id === deleteModal.vendorId) setSelectedVendor(null);
         } catch (e: any) {
-            alert("Delete failed: " + e.message);
+            showToast('Delete failed: ' + e.message, 'error');
         } finally {
             setDeleteModal({ isOpen: false, vendorId: null, vendorName: null });
         }
@@ -83,10 +85,10 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
         if (!selectedVendor) return;
         try {
             await DatabaseService.getInstance().updateVendor(selectedVendor);
-            alert("Vendor saved successfully.");
+            showToast('Vendor saved successfully.', 'success');
             loadData();
         } catch (e: any) {
-            alert("Save failed: " + e.message);
+            showToast('Save failed: ' + e.message, 'error');
         }
     };
 
@@ -103,7 +105,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
             setNewModelCode('');
             setNewModelDesc('');
         } catch (e: any) {
-            alert('Failed to add model: ' + e.message);
+            showToast('Failed to add model: ' + e.message, 'error');
         } finally {
             setAddingModel(false);
         }
@@ -114,7 +116,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
             await DatabaseService.getInstance().deleteVendorModel(modelId);
             setVendorModels(prev => prev.filter(m => m.id !== modelId));
         } catch (e: any) {
-            alert('Failed to delete model: ' + e.message);
+            showToast('Failed to delete model: ' + e.message, 'error');
         }
     };
 
@@ -685,7 +687,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                     await DatabaseService.getInstance().addVendor(newVendor);
                                     loadData();
                                     setIsAddModalOpen(false);
-                                } catch (err: any) { alert(err.message); }
+                                } catch (err: any) { showToast(err.message, 'error'); }
                             }}>
                                 <div className="space-y-4">
                                     <div>

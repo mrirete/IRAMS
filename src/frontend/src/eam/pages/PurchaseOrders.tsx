@@ -17,6 +17,8 @@ import { ImageGallery } from '../components/ui/ImageGallery';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
+import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 
 export const PurchaseOrders: React.FC = () => {
     const { user, profile, permissions } = useAuth();
@@ -25,6 +27,7 @@ export const PurchaseOrders: React.FC = () => {
     const canEdit = permissions?.purchasing?.edit === true;
     const canDelete = permissions?.purchasing?.delete === true;
     const canApprove = permissions?.purchasing?.approve === true;
+    const { showToast } = useToast();
     const [orders, setOrders] = useState<PurchaseOrder[]>([]);
     const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
     const [activeTab, setActiveTab] = useState<TabId>('details');
@@ -34,6 +37,9 @@ export const PurchaseOrders: React.FC = () => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
     const [workOrders, setWorkOrders] = useState<any[]>([]);
+    // Confirmation modal state
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -83,7 +89,7 @@ export const PurchaseOrders: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
             console.warn('[RBAC-AUDIT] BLOCKED: purchasing.create attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to create purchase orders.');
+            showToast('Access Denied: You do not have permission to create purchase orders.', 'error');
             return;
         }
         const newPO: PurchaseOrder = {
@@ -108,7 +114,7 @@ export const PurchaseOrders: React.FC = () => {
             // Notification hook-in: PO Created
             NotificationService.checkRules('purchasing', 'PO_CREATED', newPO, { currentUserId: user?.id || 'SYSTEM' });
         } catch (e: any) {
-            alert("Error creating PO: " + e.message);
+            showToast('Error creating PO: ' + e.message, 'error');
         }
     };
 
@@ -123,15 +129,15 @@ export const PurchaseOrders: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canEdit) {
             console.warn('[RBAC-AUDIT] BLOCKED: purchasing.edit attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to edit purchase orders.');
+            showToast('Access Denied: You do not have permission to edit purchase orders.', 'error');
             return;
         }
         if (!selectedPO) return;
         try {
             await DatabaseService.getInstance().updatePurchaseOrder(selectedPO.id, selectedPO);
-            alert('✅ Purchase Order saved successfully!');
+            showToast('Purchase Order saved successfully!', 'success');
         } catch (e: any) {
-            alert('❌ Failed to save: ' + e.message);
+            showToast('Failed to save: ' + e.message, 'error');
         }
     };
 
@@ -139,19 +145,23 @@ export const PurchaseOrders: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canDelete) {
             console.warn('[RBAC-AUDIT] BLOCKED: purchasing.delete attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to delete purchase orders.');
+            showToast('Access Denied: You do not have permission to delete purchase orders.', 'error');
             return;
         }
         if (!selectedPO) return;
-        if (!confirm(`Are you sure you want to delete ${selectedPO.poCode}? This cannot be undone.`)) return;
+        setShowDeleteConfirm(true);
+    };
 
+    const confirmDeletePO = async () => {
+        if (!selectedPO) return;
+        setShowDeleteConfirm(false);
         try {
             await DatabaseService.getInstance().deletePurchaseOrder(selectedPO.id);
             setOrders(prev => prev.filter(o => o.id !== selectedPO.id));
             setSelectedPO(null);
-            alert('✅ Purchase Order deleted.');
+            showToast('Purchase Order deleted.', 'success');
         } catch (e: any) {
-            alert('❌ Failed to delete: ' + e.message);
+            showToast('Failed to delete: ' + e.message, 'error');
         }
     };
 
@@ -159,7 +169,7 @@ export const PurchaseOrders: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
             console.warn('[RBAC-AUDIT] BLOCKED: purchasing.duplicate attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to create purchase orders.');
+            showToast('Access Denied: You do not have permission to create purchase orders.', 'error');
             return;
         }
         if (!selectedPO) return;
@@ -186,9 +196,9 @@ export const PurchaseOrders: React.FC = () => {
             await DatabaseService.getInstance().createPurchaseOrder(duplicatedPO);
             setOrders([duplicatedPO, ...orders]);
             setSelectedPO(duplicatedPO);
-            alert(`✅ Duplicated as ${duplicatedPO.poCode}`);
+            showToast(`Duplicated as ${duplicatedPO.poCode}`, 'success');
         } catch (e: any) {
-            alert('❌ Failed to duplicate: ' + e.message);
+            showToast('Failed to duplicate: ' + e.message, 'error');
         }
     };
 
@@ -196,17 +206,21 @@ export const PurchaseOrders: React.FC = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canApprove) {
             console.warn('[RBAC-AUDIT] BLOCKED: purchasing.complete attempt by unauthorized user', profile?.username);
-            alert('⛔ Access Denied: You do not have permission to complete purchase orders.');
+            showToast('Access Denied: You do not have permission to complete purchase orders.', 'error');
             return;
         }
         if (!selectedPO) return;
-        if (confirm("Mark Purchase Order as COMPLETED? This will finalize the order.")) {
-            // Check for unreceived items logic would go here
-            handleUpdatePO({
-                status: POStatus.COMPLETED,
-                dateFinished: new Date().toISOString().split('T')[0]
-            });
-        }
+        setShowCompleteConfirm(true);
+    };
+
+    const confirmCompletePO = () => {
+        if (!selectedPO) return;
+        setShowCompleteConfirm(false);
+        handleUpdatePO({
+            status: POStatus.COMPLETED,
+            dateFinished: new Date().toISOString().split('T')[0]
+        });
+        showToast('Purchase Order marked as COMPLETED.', 'success');
     };
 
     const getStatusColor = (status: POStatus) => {
@@ -263,16 +277,19 @@ export const PurchaseOrders: React.FC = () => {
                             <div
                                 key={po.id}
                                 onClick={() => { setSelectedPO(po); setActiveTab('details'); }}
-                                className={`p-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition ${selectedPO?.id === po.id ? 'bg-blue-50 border-l-4 border-l-blue-600 pl-[12px]' : 'pl-4'}`}
+                                className={`mobile-card ${selectedPO?.id === po.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`}
                             >
-                                <div className="flex justify-between items-start mb-1">
+                                <div className="flex justify-between items-start mb-0.5">
                                     <span className="font-mono text-xs font-bold text-slate-700">{po.poCode}</span>
-                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase border ${getStatusColor(po.status)}`}>{po.status.replace('_', ' ')}</span>
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase border ${getStatusColor(po.status)}`}>{po.status.replace('_', ' ')}</span>
                                 </div>
-                                <h3 className="text-sm font-bold text-slate-900 mb-1 truncate">{supplierName || 'Unknown Supplier'}</h3>
-                                <div className="flex justify-between items-center text-xs text-slate-500">
+                                <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-1">{supplierName || 'Unknown Supplier'}</h3>
+                                <div className="flex justify-between items-center text-[11px] text-slate-500">
                                     <span>Req: {po.dateRequired}</span>
-                                    <span className="font-medium text-slate-700">{po.items.length} Items</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-medium text-slate-700">{po.items.length} Items</span>
+                                        <span className="font-bold text-slate-800">${po.items.reduce((s, i) => s + i.lineTotal, 0).toFixed(0)}</span>
+                                    </div>
                                 </div>
                             </div>
                         );
@@ -360,6 +377,28 @@ export const PurchaseOrders: React.FC = () => {
                     <Plus size={24} />
                 </button>
             )}
+
+            {/* GAP-04/21: Delete PO Confirmation */}
+            <ConfirmationModal
+                isOpen={showDeleteConfirm}
+                onClose={() => setShowDeleteConfirm(false)}
+                onConfirm={confirmDeletePO}
+                title={`Delete ${selectedPO?.poCode}?`}
+                message="This purchase order will be permanently deleted. This action cannot be undone."
+                type="danger"
+                confirmText="Delete PO"
+            />
+
+            {/* GAP-04/21: Complete PO Confirmation */}
+            <ConfirmationModal
+                isOpen={showCompleteConfirm}
+                onClose={() => setShowCompleteConfirm(false)}
+                onConfirm={confirmCompletePO}
+                title="Complete Purchase Order?"
+                message="This will finalize the purchase order and lock it from further changes."
+                type="warning"
+                confirmText="Complete PO"
+            />
         </div>
     );
 };
@@ -483,9 +522,13 @@ const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOr
 
 const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, inventoryItems: InventoryItem[], workOrders: any[] }> = ({ po, onUpdate, inventoryItems, workOrders }) => {
     const { user, profile } = useAuth();
+    const { showToast } = useToast();
     // Local state for the "Add Item" row
     const [newItem, setNewItem] = useState<Partial<PurchaseOrderItem>>({ qtyOrdered: 1, unitCost: 0 });
     const [importOpen, setImportOpen] = useState(false);
+    const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
+    const [invoiceMatchId, setInvoiceMatchId] = useState<string | null>(null);
+    const [invoiceInput, setInvoiceInput] = useState('');
 
     // Helper to calculate status based on items
     const calculateStatus = (items: PurchaseOrderItem[]): POStatus => {
@@ -499,7 +542,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
 
     const handleAddItem = async () => {
         if (!newItem.description || !newItem.qtyOrdered) {
-            alert("Description and Quantity are required.");
+            showToast('Description and Quantity are required.', 'warning');
             return;
         }
 
@@ -554,7 +597,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
         if (targetItem.inventoryId) {
             const deliveryLocationId = po.deliveryContactId;
             if (!deliveryLocationId) {
-                alert('Please set a Delivery Location on the Details tab before receiving items.');
+                showToast('Please set a Delivery Location on the Details tab before receiving items.', 'warning');
                 return;
             }
             try {
@@ -590,7 +633,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                 }
             } catch (e: any) {
                 console.error('Stock update failed:', e.message);
-                alert('⚠️ Item received but stock update failed: ' + e.message);
+                showToast('Item received but stock update failed: ' + e.message, 'warning');
             }
         }
 
@@ -627,16 +670,27 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
     };
 
     const handleDeleteItem = (id: string) => {
-        if (confirm("Remove this item?")) {
-            onUpdate({ items: po.items.filter(i => i.id !== id) });
+        setDeleteItemId(id);
+    };
+
+    const confirmDeleteItem = () => {
+        if (deleteItemId) {
+            onUpdate({ items: po.items.filter(i => i.id !== deleteItemId) });
+            setDeleteItemId(null);
         }
     };
 
     const handleInvoiceMatch = (id: string) => {
-        const inv = prompt("Enter Vendor Invoice Number to match:");
-        if (inv) {
-            handleItemChange(id, 'invoiceNumber', inv);
-            handleItemChange(id, 'invoiceMatched', true);
+        setInvoiceMatchId(id);
+        setInvoiceInput('');
+    };
+
+    const confirmInvoiceMatch = () => {
+        if (invoiceMatchId && invoiceInput.trim()) {
+            handleItemChange(invoiceMatchId, 'invoiceNumber', invoiceInput.trim());
+            handleItemChange(invoiceMatchId, 'invoiceMatched', true);
+            setInvoiceMatchId(null);
+            setInvoiceInput('');
         }
     };
 
@@ -665,7 +719,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                         </div>
                         <div className="flex justify-end gap-2">
                             <button onClick={() => setImportOpen(false)} className="px-4 py-2 text-slate-600">Cancel</button>
-                            <button onClick={() => { alert("Imported 5 items (Mock)"); setImportOpen(false); }} className="px-4 py-2 bg-relantern-500 text-white rounded">Process</button>
+                            <button onClick={() => { showToast('Imported 5 items (Mock)', 'success'); setImportOpen(false); }} className="px-4 py-2 bg-relantern-500 text-white rounded">Process</button>
                         </div>
                     </div>
                 </div>
@@ -860,6 +914,7 @@ const PropertiesTab: React.FC<{ po: PurchaseOrder }> = ({ po }) => (
 
 const AuthoriseTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, totalAmount: number }> = ({ po, onUpdate, totalAmount }) => {
     const { profile } = useAuth();
+    const { showToast } = useToast();
     // Mock user permission check
     const canAuthorise = true;
     const isAuthorized = !!po.authorizedById;
@@ -884,7 +939,7 @@ const AuthoriseTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<Purchase
             {!isAuthorized && (
                 <div className="flex gap-4">
                     <button
-                        onClick={() => alert("Notification sent to manager.")}
+                        onClick={() => showToast('Notification sent to manager.', 'success')}
                         className="px-6 py-3 border border-slate-300 rounded-lg font-bold text-slate-700 hover:bg-slate-50"
                     >
                         Request Approval

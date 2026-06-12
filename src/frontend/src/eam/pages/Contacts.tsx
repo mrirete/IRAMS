@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import {
     Trash2, Plus, Edit2, Search, Filter, MoreHorizontal, Mail, Phone, MapPin, User as UserIcon, Building2,
     Briefcase, FileText, Calendar, DollarSign, CheckSquare, Settings, Truck, Box, Users, X,
@@ -44,6 +45,7 @@ import type { ImportType } from '../services/assetTemplates';
 
 export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const { permissions } = useAuth();
+    const { showToast } = useToast();
     const canCreate = permissions?.contacts?.create === true;
     const canEdit = permissions?.contacts?.edit === true;
     const canDelete = permissions?.contacts?.delete === true;
@@ -348,7 +350,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const handleBulkDeleteContacts = async () => {
         if (!canDelete) {
             console.warn('[RBAC-AUDIT] BLOCKED: contacts.bulkDelete attempt by unauthorized user');
-            alert('\u26D4 Access Denied: You do not have permission to delete contacts.');
+            showToast('Access Denied: You do not have permission to delete contacts.', 'error');
             return;
         }
         const db = DatabaseService.getInstance();

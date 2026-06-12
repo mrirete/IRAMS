@@ -14,6 +14,7 @@ import { MOCK_RECURRING_JOBS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_WORK_ORDERS }
 import { RecurringJob, Asset, WorkOrderType, JobJSA, JobLabor, JobInventory, JobFile, JobTask, InstructionBlock, Contact, JSAHazard, GenerationRule, LibraryTask } from '../types';
 import { CreatePMModal } from '../components/modals/CreatePMModal';
 import BulkImportModal from '../components/modals/BulkImportModal';
+import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { DatabaseService } from '../services/DatabaseService';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { NotificationService } from '../services/NotificationService';
@@ -60,6 +61,7 @@ export const RecurringWork: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [deleting, setDeleting] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     // Phase 4A — Master List UX
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
     const [groupBy, setGroupBy] = useState<GroupBy>('none');
@@ -376,8 +378,12 @@ export const RecurringWork: React.FC = () => {
     const handleDelete = async () => {
         if (!selectedJob) return;
         console.log('[RecurringWork] handleDelete triggered for:', selectedJob.id, selectedJob.code);
+        setShowDeleteConfirm(true);
+    };
 
-        if (!window.confirm(`Delete strategy "${selectedJob.jobDescription || selectedJob.description}"? This cannot be undone.`)) return;
+    const confirmDelete = async () => {
+        if (!selectedJob) return;
+        setShowDeleteConfirm(false);
 
         setDeleting(true);
         try {
@@ -709,7 +715,7 @@ export const RecurringWork: React.FC = () => {
                                 return (
                                     <div
                                         key={job.id}
-                                        className={`p-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition flex items-start gap-3 ${selectedJob?.id === job.id ? 'bg-blue-50 border-l-4 border-l-blue-600 pl-[9px]' : ''} ${isSelected ? 'bg-indigo-50/40' : ''}`}
+                                        className={`mobile-card flex items-start gap-3 ${selectedJob?.id === job.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''} ${isSelected ? 'bg-indigo-50/40' : ''} ${isOverdue ? 'overdue-strip' : ''}`}
                                     >
                                         {/* Checkbox */}
                                         <input
@@ -720,24 +726,33 @@ export const RecurringWork: React.FC = () => {
                                             className="mt-1 h-3.5 w-3.5 rounded text-blue-600 cursor-pointer flex-shrink-0"
                                         />
                                         <div className="flex-1 min-w-0" onClick={() => handleSelectJob(job)}>
-                                            <div className="flex justify-between items-start mb-1">
+                                            <div className="flex justify-between items-start mb-0.5">
                                                 <span className="font-mono text-xs font-bold text-slate-500">{job.code}</span>
-                                                <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold uppercase">{job.scheduleType}</span>
+                                                <div className="flex items-center gap-1">
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${job.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : job.status === 'PAUSED' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{job.status}</span>
+                                                    <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold uppercase">{job.scheduleType}</span>
+                                                </div>
                                             </div>
-                                            <h3 className="text-sm font-bold text-slate-900 mb-1 truncate">{job.jobDescription || job.description}</h3>
-                                            <div className="text-xs text-slate-500 flex gap-4 flex-wrap">
+                                            <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-1">{job.jobDescription || job.description}</h3>
+                                            <div className="text-[11px] text-slate-500 flex gap-3 flex-wrap">
                                                 <span className="flex items-center gap-1">
-                                                    <Clock size={12} /> {job.frequencyInterval} {job.frequencyUnit}
+                                                    <Clock size={11} /> {job.frequencyInterval} {job.frequencyUnit}
                                                 </span>
                                                 <span className={`flex items-center gap-1 font-medium ${job.jobType === 'Inspection' ? 'text-purple-600' : 'text-blue-600'}`}>
-                                                    {job.jobType === 'Inspection' ? <ClipboardList size={12} /> : <Package size={12} />}
+                                                    {job.jobType === 'Inspection' ? <ClipboardList size={11} /> : <Package size={11} />}
                                                     {job.jobType}
                                                 </span>
                                                 {nextDue && (
-                                                    <span className={`flex items-center gap-1 font-medium ${isOverdue ? 'text-red-600' : 'text-emerald-600'}`}>
-                                                        <Calendar size={12} />
-                                                        {isOverdue ? 'Overdue' : new Date(nextDue).toLocaleDateString()}
-                                                    </span>
+                                                    isOverdue ? (
+                                                        <span className="overdue-badge overdue-pulse">
+                                                            Overdue
+                                                        </span>
+                                                    ) : (
+                                                        <span className="flex items-center gap-1 font-medium text-emerald-600">
+                                                            <Calendar size={11} />
+                                                            {new Date(nextDue).toLocaleDateString()}
+                                                        </span>
+                                                    )
                                                 )}
                                             </div>
                                         </div>
@@ -1041,6 +1056,16 @@ export const RecurringWork: React.FC = () => {
                 onClose={() => setIsCreatePMOpen(false)}
                 onSave={() => loadStrategies()}
                 dictionaries={dictionaries}
+            />
+            {/* GAP-21: Delete Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={showDeleteConfirm}
+                onClose={() => setShowDeleteConfirm(false)}
+                onConfirm={confirmDelete}
+                title="Delete Strategy?"
+                message={`Are you sure you want to delete "${selectedJob?.jobDescription || selectedJob?.description}"? This action cannot be undone.`}
+                type="danger"
+                confirmText="Delete Strategy"
             />
         </div>
     );
