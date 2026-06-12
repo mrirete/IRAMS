@@ -323,7 +323,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                             <div className="flex flex-col items-end">
                                 <span className={`px-2 py-1 text-xs font-semibold rounded-full 
                                     ${wo.status === 'OPEN' ? 'bg-blue-100 text-blue-800' :
-                                        wo.status === 'IN_PROGRESS' ? 'bg-amber-100 text-amber-800' :
+                                        wo.status === ('IN_PROGRESS' as string) ? 'bg-amber-100 text-amber-800' :
                                             'bg-green-100 text-green-800'}`}>
                                     {wo.status}
                                 </span>
@@ -385,7 +385,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                                 <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-gray-100">
                                     <div className="flex items-center">
                                         <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold mr-3">
-                                            {member.firstName.charAt(0)}{member.lastName.charAt(0)}
+                                            {(member.firstName || '?').charAt(0)}{(member.lastName || '?').charAt(0)}
                                         </div>
                                         {member.name}
                                     </div>

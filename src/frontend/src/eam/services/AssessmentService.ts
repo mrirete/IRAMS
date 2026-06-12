@@ -69,6 +69,8 @@ export interface AssessmentRecord {
     updated_at: string;
     completed_at: string | null;
     archived_at: string | null;
+    sixm_checklist_answers?: any[];
+    sixm_dimension_notes?: Record<string, any>;
 }
 
 export interface AssessmentListItem {
@@ -131,7 +133,7 @@ function hydrateState(record: AssessmentRecord): AuditAssessmentState {
             orgRolesAuthorities: record.org_roles_authorities || '',
             orgRiskFramework: record.org_risk_framework || '',
             orgBudgetAlignment: record.org_budget_alignment || '',
-            isoAlignment: record.iso_series_alignment as AuditIntakeData['isoAlignment'] || {
+            isoAlignment: record.iso_series_alignment as unknown as AuditIntakeData['isoAlignment'] || {
                 iso55010_financial_alignment: '', iso55010_register_alignment: '', iso55010_capex_integration: '',
                 iso55011_regulatory_mapping: '', iso55011_policy_engagement: '',
                 iso55012_competence_framework: '', iso55012_cultural_factors: '', iso55012_outsourced_competence: '',

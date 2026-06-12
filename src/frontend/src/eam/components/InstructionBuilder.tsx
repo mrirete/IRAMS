@@ -21,7 +21,7 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
     mode
 }) => {
     // ── Block Type Definitions ───────────────────────────────────────────────
-    const BLOCK_TYPES: { type: InstructionBlockType; label: string; icon: React.ElementType; category: string }[] = [
+    const BLOCK_TYPES: { type: InstructionBlockType; label: string; icon: React.ComponentType<{size?: number; className?: string}>; category: string }[] = [
         // Structural
         { type: 'HEADING', label: 'Heading', icon: Type, category: 'Structure' },
         { type: 'SECTION', label: 'Section', icon: ChevronDown, category: 'Structure' },
@@ -460,7 +460,7 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
                 return (
                     <div className="space-y-2">
                         <div className="flex items-center gap-2">
-                            {block.icon && <block.icon size={16} className="text-slate-400" />}
+                            {/* icon display removed — InstructionBlock has no icon property */}
                             {isEdit ? (
                                 <input
                                     type="text"

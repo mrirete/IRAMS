@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, User, AlertTriangle, ShieldCheck } from 'lucide-react';
-import { createNexusChat } from '../services/geminiService';
+import { createRelanternChat as createNexusChat } from '../services/geminiService';
 import { ChatMessage } from '../types';
 
 interface NexusAIProps {

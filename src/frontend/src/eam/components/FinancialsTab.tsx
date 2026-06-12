@@ -177,8 +177,8 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
         try {
             await FinOpsService.createDepreciationBook({
                 assetFinancialId: financialRecord.id,
-                bookType,
-                depreciationMethod: method,
+                bookType: bookType as DepreciationBook['bookType'],
+                depreciationMethod: method as DepreciationBook['depreciationMethod'],
                 startDate: financialRecord.acquisitionDate,
                 usageBased: method === 'UNITS_OF_PRODUCTION',
                 currentValue: financialRecord.acquisitionCost,

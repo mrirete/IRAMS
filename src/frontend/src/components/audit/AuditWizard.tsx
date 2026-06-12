@@ -338,7 +338,7 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
             {/* ─── Invite Panel ────────────────────────────────── */}
             <AssessmentInvite
                 assessmentId={recordIdRef.current || null}
-                currentUser={user?.username || state.intake.email}
+                currentUser={user?.email || state.intake.email}
                 isOpen={inviteOpen}
                 onClose={() => setInviteOpen(false)}
             />

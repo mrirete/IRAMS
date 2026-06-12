@@ -204,7 +204,7 @@ export const RecurringWork: React.FC = () => {
                 const completedDates = rj.assignedAssets
                     .map(a => a.lastCompletedDate)
                     .filter(d => d && d.length > 0)
-                    .map(d => new Date(d).getTime())
+                    .map(d => new Date(d!).getTime())
                     .filter(t => !isNaN(t));
 
                 if (completedDates.length > 0) {
@@ -223,7 +223,7 @@ export const RecurringWork: React.FC = () => {
             console.log(`[Generator] ${rj.code}: nextDue=${nextDue || '(empty)'}, isDue=${isDue}, assets=${rj.assignedAssets.length}`);
             if (!isDue) return;
 
-            const isInspection = rj.jobType === WorkOrderType.INSPECTION || rj.jobType === 'Inspection';
+            const isInspection = rj.jobType === WorkOrderType.INSPECTION || (rj.jobType as string) === 'Inspection';
 
             if (isInspection) {
                 if (rj.assignedAssets.length > 0 && rj.scheduleType === 'TIME') {
@@ -523,7 +523,7 @@ export const RecurringWork: React.FC = () => {
             const completedDates = (selectedJob.assignedAssets || [])
                 .map(a => a.lastCompletedDate)
                 .filter(d => d && d.length > 0)
-                .map(d => new Date(d).getTime())
+                .map(d => new Date(d!).getTime())
                 .filter(t => !isNaN(t));
 
             if (completedDates.length > 0 && selectedJob.frequencyInterval) {
@@ -598,7 +598,7 @@ export const RecurringWork: React.FC = () => {
                     est_downtime: parseFloat(row['estdowntime'] || '0') || 0,
                     asset_id: row['assettag'] ? dbAssets.find(a => a.tag === row['assettag'])?.id || null : null,
                 };
-                await db.addPM(payload);
+                await db.createPM(payload);
                 imported++;
             } catch (e: any) {
                 console.warn(`Failed to import recurring job row: ${row['code']}`, e);
@@ -810,7 +810,7 @@ export const RecurringWork: React.FC = () => {
                                         title: selectedJob.jobDescription || selectedJob.description || '',
                                         assetTag: dbAssets.find(a => a.id === selectedJob.assignedAssets?.[0]?.assetId)?.tag,
                                         frequency: `${selectedJob.frequencyInterval} ${selectedJob.frequencyUnit}`,
-                                        lastExecuted: selectedJob.lastGeneratedDate,
+                                        lastExecuted: (selectedJob as any).lastGeneratedDate,
                                         nextDue: (selectedJob as any).nextDueDate,
                                     } : undefined,
                                 })}
@@ -895,7 +895,7 @@ export const RecurringWork: React.FC = () => {
                         {activeTab === 'jsa' && <JSATab job={selectedJob} onUpdate={handleJobUpdate} />}
                         {activeTab === 'labor' && <LaborTab job={selectedJob} onUpdate={handleJobUpdate} contacts={contacts} dictionaries={dictionaries} />}
                         {activeTab === 'inventory' && <InventoryTab job={selectedJob} onUpdate={handleJobUpdate} inventoryItems={inventoryItems} dictionaries={dictionaries} />}
-                        {activeTab === 'files' && <FilesTab job={selectedJob} />}
+                        {activeTab === 'files' && <FilesTab job={selectedJob} onUpdate={handleJobUpdate} />}
                         {activeTab === 'history' && <HistoryTab job={selectedJob} jobs={jobs} />}
                     </div>
                 </div>

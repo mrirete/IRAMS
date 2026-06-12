@@ -648,7 +648,7 @@ export const Scheduling: React.FC = () => {
         }
 
         // No material issues — proceed with scheduling
-        await commitReschedule(itemId, newDate, wo);
+        await commitReschedule(itemId, newDate, wo || null);
     };
 
     // Material check handlers
@@ -708,7 +708,7 @@ export const Scheduling: React.FC = () => {
                 date_due_start: newDate,
                 due_date: newDate,
                 status: newStatus || 'SCHED',
-            }, permissions?.username || 'scheduler');
+            }, (permissions?.username || 'scheduler') as string);
             showToast(`${wo?.woNumber || 'WO'} scheduled for ${new Date(newDate).toLocaleDateString()}`, 'success');
 
             // GAP-G: Send notification to assigned technician on reschedule
@@ -725,7 +725,7 @@ export const Scheduling: React.FC = () => {
                         entityType: 'WORK_ORDER',
                         entityNumber: wo?.woNumber || '',
                         actionLink: '/work-orders',
-                        createdBy: permissions?.username || 'scheduler',
+                        createdBy: (permissions?.username || 'scheduler') as string,
                     });
                 } catch (notifErr) {
                     console.warn('[Scheduling] Reschedule notification failed (non-blocking):', notifErr);
@@ -850,7 +850,7 @@ export const Scheduling: React.FC = () => {
                             plannedHours: jobs.reduce((s, j) => s + (j.estDuration || 0), 0),
                             availableHours: mrsResources.reduce((s, r) => s + (r.dailyCapacityHours || 0) * 5, 0),
                             resourceLoad: mrsResources.map(r => ({
-                                craft: r.craft || r.name || 'General',
+                                craft: (r as any).craft || r.name || 'General',
                                 planned: 0,
                                 available: (r.dailyCapacityHours || 8) * 5,
                             })),
@@ -974,7 +974,7 @@ export const Scheduling: React.FC = () => {
                                     date_due_start: newStart,
                                     due_date: newEnd,
                                     status: (wo.status === 'OPEN' || wo.status === 'PLAN') ? 'SCHED' : wo.status as string,
-                                }, permissions?.username || 'scheduler');
+                                }, (permissions?.username || 'scheduler') as string);
                                 showToast(`${wo.woNumber} rescheduled: ${new Date(newStart).toLocaleDateString()} — ${new Date(newEnd).toLocaleDateString()}`, 'success');
                             } catch (err) {
                                 console.error('[Gantt] Reschedule failed:', err);
@@ -1008,7 +1008,7 @@ export const Scheduling: React.FC = () => {
                                         date_due_start: date,
                                         due_date: date,
                                         status: 'SCHED',
-                                    }, permissions?.username || 'scheduler');
+                                    }, (permissions?.username || 'scheduler') as string);
                                     showToast('Job assigned and scheduled', 'success');
 
                                     // GAP-G: Notify assigned technician
@@ -1026,7 +1026,7 @@ export const Scheduling: React.FC = () => {
                                             entityType: 'WORK_ORDER',
                                             entityNumber: wo?.woNumber || '',
                                             actionLink: '/work-orders',
-                                            createdBy: permissions?.username || 'scheduler',
+                                            createdBy: (permissions?.username || 'scheduler') as string,
                                         });
                                     } catch { /* non-blocking */ }
                                 } catch (err) {
@@ -1130,6 +1130,7 @@ const CalendarView: React.FC<{
     dictionaries: DictionaryEntry[];
 }> = ({ currentDate, setDate, items, onItemDrop, scale, onNavigate, dictionaries }) => {
     const navigate = useNavigate();
+    const { showToast } = useToast();
     const [draggingId, setDraggingId] = useState<string | null>(null);
 
     // GAP-I: Mobile detection

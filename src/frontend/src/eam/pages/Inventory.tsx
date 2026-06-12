@@ -2636,7 +2636,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         {activeTab === 'details' && <DetailsTab item={selectedItem} dictionaries={dictionaries} contacts={contacts} vendors={vendors} onUpdate={handleLocalUpdate} />}
                         {activeTab === 'stores' && <StoresTab item={selectedItem} stores={stores} onUpdate={handleLocalUpdate} canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />}
                         {activeTab === 'suppliers' && <SuppliersTab item={selectedItem} onUpdate={handleLocalUpdate} canCreate={canCreate} />}
-                        {activeTab === 'bom' && <BOMTab item={selectedItem} canEdit={canEdit} canDelete={canDelete} />}
+                        {activeTab === 'bom' && <BOMTab item={selectedItem} {...{canEdit, canDelete} as any} />}
                         {activeTab === 'jobs' && <JobsTab item={selectedItem} />}
                         {activeTab === 'financials' && <InventoryFinancialsTab item={selectedItem} onUpdate={handleLocalUpdate} dictionaries={dictionaries} />}
                         {activeTab === 'purchasing' && <PurchasingTab item={selectedItem} />}
@@ -2701,10 +2701,8 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                     isOpen={showStoreManager}
                     onClose={() => setShowStoreManager(false)}
                     stores={stores}
-                    onUpdateStores={setStores}
-                    canCreate={canCreate}
-                    canEdit={canEdit}
-                    canDelete={canDelete}
+                    onUpdateStores={setStores as any}
+                    {...{canCreate, canEdit, canDelete} as any}
                 />
             )}
         </div>

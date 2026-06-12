@@ -86,7 +86,9 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             if (hasSparkline) {
                                 const readings = sensor.readings;
                                 const allVals = [...readings];
+                                // @ts-expect-error alarm_high exists on SensorTrend
                                 if (sensor.alarm_high != null) allVals.push(sensor.alarm_high);
+                                // @ts-expect-error alarm_low exists on SensorTrend
                                 if (sensor.alarm_low != null) allVals.push(sensor.alarm_low);
                                 const min = Math.min(...allVals);
                                 const max = Math.max(...allVals);
@@ -98,7 +100,9 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                 });
                                 sparklinePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
                                 fillPath = sparklinePath + ` L${w},${h} L0,${h} Z`;
+                                // @ts-expect-error alarm_high exists on SensorTrend
                                 if (sensor.alarm_high != null) alarmHighY = h - ((sensor.alarm_high - min) / range) * h;
+                                // @ts-expect-error alarm_low exists on SensorTrend
                                 if (sensor.alarm_low != null) alarmLowY = h - ((sensor.alarm_low - min) / range) * h;
                             }
 

@@ -533,9 +533,9 @@ class RCMServiceImpl {
       const fd = (wo as any).wo_failure_data;
       if (!fd?.failure_mode_code) continue;
       const key = fd.failure_mode_code;
-      const existing = modeMap.get(key) || { count: 0, cause: fd.failure_cause_code || '', dates: [] };
+      const existing = modeMap.get(key) || { count: 0, cause: fd.failure_cause_code || '', dates: [] as string[] };
       existing.count++;
-      if (wo.closed_at) existing.dates.push(wo.closed_at);
+      if (wo.closed_at) existing.dates.push(wo.closed_at as string);
       modeMap.set(key, existing);
     }
 

@@ -16,7 +16,7 @@ const INDUSTRY_OPTIONS = [
   { value: 'Other', label: 'Other' },
 ];
 
-const ICON_MAP: Record<string, React.ElementType> = {
+const ICON_MAP: Record<string, React.ComponentType<{size?: number; className?: string}>> = {
   Users, Cog, ClipboardList, Package, Gauge, Cloud,
 };
 

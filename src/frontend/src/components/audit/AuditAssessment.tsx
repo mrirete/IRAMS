@@ -3,7 +3,7 @@ import { Send, Loader2, CheckCircle, ChevronRight, Users, Cog, ClipboardList, Pa
 import { auditAssessor, SIXM_DIMENSIONS } from '../../eam/services/AuditAssessor';
 import type { AuditRegistration, DimensionQuestion, DimensionAnswer, DimensionResult, SixMDimension } from '../../eam/services/AuditAssessor';
 
-const ICON_MAP: Record<string, React.ElementType> = { Users, Cog, ClipboardList, Package, Gauge, Cloud };
+const ICON_MAP: Record<string, React.ComponentType<{size?: number; className?: string}>> = { Users, Cog, ClipboardList, Package, Gauge, Cloud };
 
 interface Props {
   registration: AuditRegistration;

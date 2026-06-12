@@ -49,6 +49,7 @@ export const AuditsPage: React.FC = () => {
                 currentStep: 1,
                 status: 'in_progress',
                 intake: {
+                    firstName: '', lastName: '', username: '', autoUsername: true,
                     fullName: '', jobTitle: '', company: '', email: '',
                     mobileCountryCode: '', mobile: '', siteName: '',
                     industrySector: 'Oil & Gas (Upstream)', assetClass: 'Mixed / All Classes',

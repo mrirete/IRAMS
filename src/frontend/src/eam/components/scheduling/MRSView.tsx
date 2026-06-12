@@ -621,11 +621,11 @@ export const MRSView: React.FC<MRSViewProps> = ({
     // Group resources by primary craft type
     const craftGroups = useMemo(() => {
         // GAP-H: Filter to current user's resource in My Schedule mode
-        const effectiveResources = myScheduleMode && permissions?.username
+        const effectiveResources = myScheduleMode && (permissions as any)?.username
             ? resources.filter(r => {
                 // Match by contactId (username) or by name (fallback)
-                const username = permissions.username.toLowerCase();
-                return r.contactId === permissions.username
+                const username = ((permissions as any).username as string).toLowerCase();
+                return r.contactId === (permissions as any).username
                     || r.name.toLowerCase().includes(username)
                     || r.contactId.toLowerCase() === username;
             })
@@ -644,7 +644,7 @@ export const MRSView: React.FC<MRSViewProps> = ({
             return a.localeCompare(b);
         });
         return sortedKeys.map(key => ({ craftName: key, resources: groups[key] }));
-    }, [resources, myScheduleMode, permissions?.username]);
+    }, [resources, myScheduleMode, (permissions as any)?.username]);
 
     // Capacity aggregation per day (across all resources)
     const dayCapacity = useMemo(() => {

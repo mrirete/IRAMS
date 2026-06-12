@@ -890,7 +890,7 @@ export const NotificationConfig: React.FC = () => {
                                     <div className="flex gap-2">
                                         <button onClick={() => loadData()} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><RefreshCw size={14} /></button>
                                         <button
-                                            onClick={handleSimulateSend}
+                                            onClick={() => handleSimulateSend()}
                                             className="bg-relantern-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-relantern-600 flex items-center gap-2"
                                         >
                                             <Send size={14} /> Simulate Send

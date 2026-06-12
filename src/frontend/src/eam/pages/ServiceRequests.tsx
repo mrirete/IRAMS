@@ -160,7 +160,7 @@ export const ServiceRequests: React.FC = () => {
                     <div className="flex flex-wrap items-center gap-2">
                         <AskRelanternButton
                             contextType="serviceRequest"
-                            contextSummary={`Maintenance Request Triage: ${requests.length} total requests. Pending: ${requests.filter(r => r.status === 'PENDING').length}. In Progress: ${requests.filter(r => r.status === 'IN_PROGRESS').length}. Approved: ${requests.filter(r => r.status === 'APPROVED').length}. Ask about triage prioritization, auto-classification, risk-based escalation, or converting MRs to work orders.`}
+                            contextSummary={`Maintenance Request Triage: ${requests.length} total requests. Pending: ${requests.filter(r => (r.status as string) === 'PENDING').length}. In Progress: ${requests.filter(r => (r.status as string) === 'IN_PROGRESS').length}. Approved: ${requests.filter(r => r.status === 'APPROVED').length}. Ask about triage prioritization, auto-classification, risk-based escalation, or converting MRs to work orders.`}
                             compact
                         />
                         <button
@@ -201,7 +201,7 @@ export const ServiceRequests: React.FC = () => {
                                     <div className="flex justify-between items-start mb-1">
                                         <div className="flex items-center gap-1.5">
                                             <span className="font-mono text-xs text-slate-500">{req.requestNumber}</span>
-                                            {req.isBreakdown && <AlertOctagon size={12} className="text-red-600" title="Breakdown" />}
+                                            {req.isBreakdown && <AlertOctagon size={12} className="text-red-600" />}
                                         </div>
                                         <StatusBadge status={req.status} compact />
                                     </div>
@@ -620,6 +620,7 @@ const StatusBadge: React.FC<{ status: RequestStatus, compact?: boolean }> = ({ s
 
 const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceRequest) => void }> = ({ onClose, onSubmit }) => {
     const { user, profile } = useAuth();
+    const { showToast } = useToast();
 
     const [step, setStep] = useState(1);
     const [desc, setDesc] = useState('');
@@ -1478,8 +1479,8 @@ const RequestDetail: React.FC<{
                     {/* Delete Button - requires delete permission */}
                     <button
                         onClick={handleDeleteClick}
-                        disabled={isProcessing || !canDelete || request.status === RequestStatus.CONVERTED}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 border ${canDelete && request.status !== RequestStatus.CONVERTED
+                        disabled={isProcessing || !canDelete || (request.status as string) === RequestStatus.CONVERTED}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 border ${canDelete && (request.status as string) !== RequestStatus.CONVERTED
                             ? 'border-red-300 text-red-700 hover:bg-red-50'
                             : 'border-slate-200 text-slate-400 cursor-not-allowed'
                             }`}

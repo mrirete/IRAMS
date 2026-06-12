@@ -29,21 +29,21 @@ export class AIContextService {
         try {
             const [assets, workOrders] = await Promise.all([
                 this.db.getAssets(),
-                this.db.getWorkOrders(),
+                this.db.getWorkOrders() as Promise<any[]>,
             ]);
 
             const asset = assets.find(a => a.id === assetId);
             if (!asset) return 'Asset not found.';
 
-            const assetWOs = workOrders.filter(wo => wo.assetId === assetId);
+            const assetWOs = workOrders.filter(wo => (wo as any).assetId === assetId || (wo as any).asset_id === assetId);
             const closedWOs = assetWOs.filter(wo => wo.status === 'CLOSED' || wo.status === 'TECO');
             const openWOs = assetWOs.filter(wo => wo.status !== 'CLOSED' && wo.status !== 'CANC');
             const correctiveWOs = assetWOs.filter(wo => wo.type === 'CM');
             const preventiveWOs = assetWOs.filter(wo => wo.type === 'PM');
 
             const totalCost = closedWOs.reduce((sum, wo) => {
-                const laborCost = (wo.labor || []).reduce((s, l) => s + ((l.actualDuration || l.estDuration || 0) * (l.actualRate || l.estRate || 0)), 0);
-                const partsCost = (wo.inventory || []).reduce((s, p) => s + ((p.actualQty || p.estQty || 0) * (p.actualUnitCost || p.estUnitCost || 0)), 0);
+                const laborCost = (wo.labor || []).reduce((s: any, l: any) => s + ((l.actualDuration || l.estDuration || 0) * (l.actualRate || l.estRate || 0)), 0);
+                const partsCost = (wo.inventory || []).reduce((s: any, p: any) => s + ((p.actualQty || p.estQty || 0) * (p.actualUnitCost || p.estUnitCost || 0)), 0);
                 return sum + laborCost + partsCost;
             }, 0);
 
@@ -71,7 +71,7 @@ Total Downtime: ${totalDowntime} hours
 Total Maintenance Cost: $${totalCost.toLocaleString()}
 
 ▸ BOM (Bill of Materials):
-${(asset.bomItems || []).map(b => `  - ${b.description} (${b.inventoryCode}) × ${b.quantity} ${b.uom} ${b.critical ? '⚠️ CRITICAL' : ''}`).join('\n') || '  No BOM items'}
+${(asset.bomItems || []).map((b: any) => `  - ${b.description} (${b.inventoryCode}) × ${b.quantity} ${b.uom} ${b.critical ? '⚠️ CRITICAL' : ''}`).join('\n') || '  No BOM items'}
 `;
         } catch (error) {
             console.error('[AIContextService] buildAssetContext error:', error);
@@ -83,7 +83,7 @@ ${(asset.bomItems || []).map(b => `  - ${b.description} (${b.inventoryCode}) × 
     async buildWorkOrderContext(woId: string): Promise<string> {
         try {
             const [workOrders, assets] = await Promise.all([
-                this.db.getWorkOrders(),
+                this.db.getWorkOrders() as Promise<any[]>,
                 this.db.getAssets(),
             ]);
 
@@ -92,8 +92,8 @@ ${(asset.bomItems || []).map(b => `  - ${b.description} (${b.inventoryCode}) × 
 
             const asset = assets.find(a => a.id === wo.assetId);
 
-            const laborCost = (wo.labor || []).reduce((s, l) => s + ((l.estDuration || 0) * (l.estRate || 0)), 0);
-            const partsCost = (wo.inventory || []).reduce((s, p) => s + ((p.estQty || 0) * (p.estUnitCost || 0)), 0);
+            const laborCost = (wo.labor || []).reduce((s: any, l: any) => s + ((l.estDuration || 0) * (l.estRate || 0)), 0);
+            const partsCost = (wo.inventory || []).reduce((s: any, p: any) => s + ((p.estQty || 0) * (p.estUnitCost || 0)), 0);
             const downtimeCost = (wo.estDowntime || 0) * 500; // Assume $500/hr downtime cost
 
             return `═══ WORK ORDER CONTEXT ═══
@@ -111,7 +111,7 @@ Failure Cause: ${wo.failureCause || 'Not coded'}
 Remedy: ${wo.remedy || 'Not coded'}
 
 ▸ TASKS (${(wo.tasks || []).length}):
-${(wo.tasks || []).map(t => `  ${t.sequence}. ${t.description} — Est: ${t.estHours}h — Status: ${t.status}`).join('\n') || '  No tasks'}
+${(wo.tasks || []).map((t: any) => `  ${t.sequence}. ${t.description} — Est: ${t.estHours}h — Status: ${t.status}`).join('\n') || '  No tasks'}
 
 ▸ COST ESTIMATE:
 Labor: $${laborCost.toLocaleString()} | Materials: $${partsCost.toLocaleString()} | Downtime: $${downtimeCost.toLocaleString()}
@@ -132,7 +132,7 @@ Est Duration: ${wo.estDuration || 0}h | Est Downtime: ${wo.estDowntime || 0}h
         try {
             const [assets, workOrders] = await Promise.all([
                 this.db.getAssets(),
-                this.db.getWorkOrders(),
+                this.db.getWorkOrders() as Promise<any[]>,
             ]);
 
             const totalAssets = assets.length;
@@ -181,10 +181,10 @@ ${badActors.join('\n') || '  No data available'}
     // ─── Inventory Context ─────────────────────────────────
     async buildInventoryContext(itemId?: string): Promise<string> {
         try {
-            const items = await this.db.getInventoryItems();
+            const items = await (this.db as any).getInventoryItems?.() || await (this.db as any).getInventory?.() || [];
 
             if (itemId) {
-                const item = items.find(i => i.id === itemId);
+                const item = items.find((i: any) => i.id === itemId);
                 if (!item) return 'Inventory item not found.';
 
                 return `═══ INVENTORY ITEM CONTEXT ═══
@@ -199,21 +199,21 @@ Manufacturer: ${item.manufacturer || 'N/A'}
 Holding Cost (est): $${((item.itemCost || 0) * (item.totalQtyOnHand || 0) * 0.25).toFixed(2)}/year (at 25% carrying cost)
 
 ▸ STOCK LOCATIONS:
-${(item.stockLocations || []).map(l => `  - ${l.storeName}: ${l.qtyOnHand} units in ${l.binLocation}`).join('\n') || '  No location data'}
+${(item.stockLocations || []).map((l: any) => `  - ${l.storeName}: ${l.qtyOnHand} units in ${l.binLocation}`).join('\n') || '  No location data'}
 
 ▸ RECENT TRANSACTIONS:
-${(item.transactions || []).slice(0, 5).map(t => `  - ${t.date}: ${t.type} ${t.qtyChange > 0 ? '+' : ''}${t.qtyChange} → Balance: ${t.newBalance} (${t.reference || 'N/A'})`).join('\n') || '  No transactions'}
+${(item.transactions || []).slice(0, 5).map((t: any) => `  - ${t.date}: ${t.type} ${t.qtyChange > 0 ? '+' : ''}${t.qtyChange} → Balance: ${t.newBalance} (${t.reference || 'N/A'})`).join('\n') || '  No transactions'}
 `;
             }
 
             // Fleet-level inventory summary
-            const criticalItems = items.filter(i => i.isCritical);
-            const belowMin = items.filter(i => (i.totalQtyOnHand || 0) <= (i.minLevel || 0));
-            const stockouts = items.filter(i => (i.totalQtyOnHand || 0) === 0 && i.isActive);
-            const totalValue = items.reduce((s, i) => s + (i.itemCost || 0) * (i.totalQtyOnHand || 0), 0);
+            const criticalItems = items.filter((i: any) => i.isCritical);
+            const belowMin = items.filter((i: any) => (i.totalQtyOnHand || 0) <= (i.minLevel || 0));
+            const stockouts = items.filter((i: any) => (i.totalQtyOnHand || 0) === 0 && i.isActive);
+            const totalValue = items.reduce((s: any, i: any) => s + (i.itemCost || 0) * (i.totalQtyOnHand || 0), 0);
 
             return `═══ INVENTORY FLEET CONTEXT ═══
-Total SKUs: ${items.length} | Active: ${items.filter(i => i.isActive).length}
+Total SKUs: ${items.length} | Active: ${items.filter((i: any) => i.isActive).length}
 Critical Items: ${criticalItems.length}
 Below Min Level: ${belowMin.length} ⚠️
 Stockouts: ${stockouts.length} 🚨
@@ -229,12 +229,12 @@ Est Annual Holding Cost: $${(totalValue * 0.25).toLocaleString()} (at 25% carryi
     // ─── People / Workforce Context ────────────────────────
     async buildPeopleContext(): Promise<string> {
         try {
-            const contacts = await this.db.getContacts();
-            const personnel = contacts.filter(c => c.contactType !== 'VENDOR' && c.contactType !== 'MANUFACTURER');
-            const technicians = personnel.filter(c => c.contactType === 'TECHNICIAN');
-            const planners = personnel.filter(c => c.contactType === 'PLANNER');
-            const supervisors = personnel.filter(c => c.contactType === 'SUPERVISOR');
-            const engineers = personnel.filter(c => c.contactType === 'RELIABILITY_ENG');
+            const contacts = await this.db.getContacts() as any[];
+            const personnel = contacts.filter((c: any) => c.contactType !== 'VENDOR' && c.contactType !== 'MANUFACTURER');
+            const technicians = personnel.filter((c: any) => c.contactType === 'TECHNICIAN');
+            const planners = personnel.filter((c: any) => c.contactType === 'PLANNER');
+            const supervisors = personnel.filter((c: any) => c.contactType === 'SUPERVISOR');
+            const engineers = personnel.filter((c: any) => c.contactType === 'RELIABILITY_ENG');
 
             return `═══ WORKFORCE CONTEXT ═══
 Total Personnel: ${personnel.length}
@@ -260,14 +260,14 @@ ${['TECHNICIAN', 'PLANNER', 'SUPERVISOR', 'RELIABILITY_ENG', 'INTERNAL']
     async buildServiceRequestContext(srId: string): Promise<string> {
         try {
             const [requests, assets] = await Promise.all([
-                this.db.getServiceRequests(),
+                (this.db as any).getServiceRequests?.() || [],
                 this.db.getAssets(),
             ]);
 
-            const sr = requests.find(r => r.id === srId);
+            const sr = requests.find((r: any) => r.id === srId);
             if (!sr) return 'Service request not found.';
 
-            const asset = assets.find(a => a.id === sr.assetId);
+            const asset = assets.find((a: any) => a.id === sr.assetId);
 
             return `═══ SERVICE REQUEST CONTEXT ═══
 SR: ${sr.requestNumber || sr.id} — ${sr.title}

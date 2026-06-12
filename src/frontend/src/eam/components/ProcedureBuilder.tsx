@@ -40,7 +40,7 @@ const SortableItem: React.FC<{ id: string, children: React.ReactNode, mode: 'EDI
 };
 
 // Block type definitions with categories
-const BLOCK_TYPES: { type: InstructionBlockType; label: string; icon: React.ElementType; category: string }[] = [
+const BLOCK_TYPES: { type: InstructionBlockType; label: string; icon: React.ComponentType<{size?: number; className?: string}>; category: string }[] = [
     // Structure
     { type: 'HEADING', label: 'Heading', icon: Type, category: 'Structure' },
     { type: 'PROCEDURE', label: 'Procedure', icon: ClipboardCheck, category: 'Structure' },

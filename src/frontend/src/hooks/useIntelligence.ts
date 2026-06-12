@@ -125,7 +125,7 @@ function normalizeSensor(db: DbSensor): SensorTrend {
 //  HOOK — tries Supabase services first, falls back to mock/API
 // -------------------------------------------------------------------------
 
-export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | 'downtime' | 'wo_frequency' = 'cost') {
+export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | 'downtime' | 'wo_frequency' | 'failure_rate' = 'cost') {
     const [loading, setLoading] = useState(true);
 
     // Predict state
@@ -254,7 +254,7 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
                 if (dbSnapshot) {
                     setBadActors({
                         report_period: dbSnapshot.report_period,
-                        criteria: dbSnapshot.criteria,
+                        criteria: dbSnapshot.criteria as any,
                         pareto_threshold_pct: dbSnapshot.pareto_threshold_pct,
                         top_5_pct_of_total: (dbSnapshot.top_assets as any)[dbSnapshot.top_assets.length - 1]?.cumulative_pct || 0,
                         total_assets_analyzed: dbSnapshot.total_assets_analyzed,
@@ -267,7 +267,7 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
                     const totalPct = topAssets[topAssets.length - 1]?.cumulative_pct || 0;
                     setBadActors({
                         report_period: '2026-02',
-                        criteria: paretoCriteria,
+                        criteria: paretoCriteria as any,
                         pareto_threshold_pct: 80,
                         top_5_pct_of_total: totalPct,
                         total_assets_analyzed: 1450,
@@ -279,7 +279,7 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
                 if (!cancelled) {
                     const topAssets = badActorsByCriteria[paretoCriteria] || badActorsByCriteria['cost'];
                     setBadActors({
-                        report_period: '2026-02', criteria: paretoCriteria,
+                        report_period: '2026-02', criteria: paretoCriteria as any,
                         pareto_threshold_pct: 80, top_5_pct_of_total: topAssets[topAssets.length - 1]?.cumulative_pct || 0,
                         total_assets_analyzed: 1450, generated_at: new Date().toISOString(), top_assets: topAssets,
                     });

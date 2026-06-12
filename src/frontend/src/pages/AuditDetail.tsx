@@ -132,13 +132,13 @@ export const AuditDetail: React.FC<{ ctx: any; onBack: () => void }> = ({ ctx, o
                                                         {MATURITY_LEVELS.map(level => (
                                                             <button key={level.value} onClick={() => handleScore(q.id, sec.id, level.value)}
                                                                 title={`${level.value} — ${level.label}: ${level.description}`}
-                                                                className={`w-10 h-10 rounded-lg text-sm font-bold border-2 transition-all ${resp?.maturity_score === level.value
+                                                                className={`w-10 h-10 rounded-lg text-sm font-bold border-2 transition-all ${(resp as any)?.maturity_score === level.value
                                                                     ? 'scale-110 shadow-lg text-white' : 'bg-white text-slate-400 border-slate-200 hover:border-current hover:scale-105'}`}
-                                                                style={resp?.maturity_score === level.value ? { backgroundColor: level.color, borderColor: level.color } : { ['--tw-border-opacity' as any]: 1 }}>
+                                                                style={(resp as any)?.maturity_score === level.value ? { backgroundColor: level.color, borderColor: level.color } : { ['--tw-border-opacity' as any]: 1 }}>
                                                                 {level.value}
                                                             </button>
                                                         ))}
-                                                        <span className="text-[10px] text-slate-400 self-center ml-2">{resp?.maturity_score != null ? MATURITY_LEVELS[resp.maturity_score]?.label : 'Not scored'}</span>
+                                                        <span className="text-[10px] text-slate-400 self-center ml-2">{(resp as any)?.maturity_score != null ? MATURITY_LEVELS[(resp as any).maturity_score]?.label : 'Not scored'}</span>
                                                     </div>
                                                 </div>
                                             );

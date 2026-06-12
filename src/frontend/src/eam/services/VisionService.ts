@@ -160,7 +160,7 @@ class VisionService {
         if (idx === -1) return false;
         this.cachedResults[idx] = { ...this.cachedResults[idx], reviewed: true };
         // Persist to Supabase if available
-        try { await analyzeService.updateVisionResult?.(resultId, { reviewed: true }); } catch { /* mock fallback */ }
+        try { await (analyzeService as any).updateVisionResult?.(resultId, { reviewed: true }); } catch { /* mock fallback */ }
         return true;
     }
 

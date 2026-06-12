@@ -828,7 +828,7 @@ export const FinOps: React.FC = () => {
             case 'dashboard': return <DashboardTab metrics={dashboardMetrics} transactions={[]} />; // TODO: Fetch transactions
             case 'cost_centers': return <CostCentersTab costCenters={costCenters} onRefresh={loadData} initialSelectedId={searchParams.get('id')} />;
             case 'forecast':
-                return <ForecastTab forecasts={maintenanceForecasts} />;
+                return <ForecastTab />;
             case 'depreciation':
                 return <DepreciationTab books={depreciationBooks} fleetDepreciation={fleetDepreciation} costCenters={costCenters} />;
             case 'warranties': return <WarrantiesTab warranties={warranties} assets={assets} vendors={vendors} onRefresh={loadData} />;
@@ -1427,8 +1427,8 @@ const CostCentersTab: React.FC<CostCentersTabProps> = ({ costCenters, onRefresh,
                                                         // Recalc Even
                                                         const oVal = parseFloat(opexInput) || 0;
                                                         const cVal = parseFloat(capexInput) || 0;
-                                                        const newO = {};
-                                                        const newC = {};
+                                                        const newO: Record<string, number> = {};
+                                                        const newC: Record<string, number> = {};
                                                         months.forEach(m => { newO[m] = oVal / 12; newC[m] = cVal / 12; });
                                                         setMonthlyOpex(newO);
                                                         setMonthlyCapex(newC);
@@ -2341,7 +2341,7 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
                                                     Submit →
                                                 </button>
                                             )}
-                                            {(claim.status === 'SUBMITTED' || claim.status === 'UNDER_REVIEW') && (
+                                            {(claim.status === 'SUBMITTED' || (claim as any).status === 'UNDER_REVIEW') && (
                                                 <>
                                                     <button
                                                         onClick={() => openAction(claim.id, 'APPROVE')}
@@ -2812,8 +2812,8 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
     const currentYear = new Date().getFullYear();
     const claimsRecoveredYTD = claims
         .filter(c => {
-            const isApproved = c.status === 'APPROVED' || c.status === 'PAID';
-            const claimDate = c.submittedDate ? new Date(c.submittedDate) : null;
+            const isApproved = c.status === 'APPROVED' || (c as any).status === 'PAID';
+            const claimDate = c.submittedAt ? new Date(c.submittedAt) : null;
             const isYTD = claimDate ? claimDate.getFullYear() === currentYear : true;
             return isApproved && isYTD;
         })
@@ -2821,15 +2821,15 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
 
     // Derive insurance incidents from claims (insurance-type claims)
     const incidents = claims
-        .filter(c => c.status === 'APPROVED' || c.status === 'PAID' || c.status === 'SUBMITTED')
+        .filter(c => c.status === 'APPROVED' || (c as any).status === 'PAID' || c.status === 'SUBMITTED')
         .map(c => ({
             id: c.id,
             number: `INC-${c.id?.substring(0, 6).toUpperCase()}`,
-            asset: c.assetName || 'Unknown',
+            asset: (c as any).assetName || 'Unknown',
             type: c.claimType || 'Warranty',
             amount: c.totalClaimAmount || 0,
-            date: c.submittedDate || '',
-            status: c.status === 'PAID' ? 'PAID' : c.status === 'APPROVED' ? 'PAID' : 'UNDER_REVIEW',
+            date: c.submittedAt || '',
+            status: (c as any).status === 'PAID' ? 'PAID' : c.status === 'APPROVED' ? 'PAID' : 'UNDER_REVIEW',
         }));
 
     const formatCurrency = (val: number) => {
@@ -2859,7 +2859,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
                 <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                     <div className="text-3xl font-bold text-slate-800">{formatCurrency(claimsRecoveredYTD)}</div>
                     <div className="text-sm text-slate-500">Claims Recovered YTD</div>
-                    <div className="text-xs text-slate-400 mt-1">{claims.filter(c => c.status === 'APPROVED' || c.status === 'PAID').length} approved claims</div>
+                    <div className="text-xs text-slate-400 mt-1">{claims.filter(c => c.status === 'APPROVED' || (c as any).status === 'PAID').length} approved claims</div>
                 </div>
             </div>
 

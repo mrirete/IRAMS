@@ -47,6 +47,8 @@ export interface Budget {
 
 export interface BudgetCheckResult {
     allowed: boolean;
+    canProceed?: boolean;
+    status?: string;
     blockType?: 'HARD' | 'SOFT' | 'WARN';
     message: string;
     availableBudget: number;
@@ -1658,11 +1660,11 @@ class FinOpsServiceClass {
             const pb = typePriority[b.warrantyType] ?? 99;
             if (pa !== pb) return pa - pb;
             // Within same type, pick longest remaining
-            return new Date(b.endDate).getTime() - new Date(a.endDate).getTime();
+            return new Date(b.endDate || 0).getTime() - new Date(a.endDate || 0).getTime();
         });
 
         const primary = sorted[0];
-        const endDate = new Date(primary.endDate);
+        const endDate = new Date(primary.endDate || new Date());
         const daysRemaining = Math.ceil((endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
         // Find raw warranty for hours check
@@ -1750,7 +1752,7 @@ class FinOpsServiceClass {
             .eq('wo_id', workOrderId);
 
         const partsClaimed = (partsRows || []).map(row => ({
-            partId: row.item_id || '',
+            partId: (row as any).item_id || '',
             partName: row.description || 'Unknown Part',
             qty: parseFloat(row.quantity_act || 0),
             cost: parseFloat(row.unit_cost || 0) * parseFloat(row.quantity_act || 0)

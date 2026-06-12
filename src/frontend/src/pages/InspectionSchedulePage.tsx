@@ -49,7 +49,7 @@ export const InspectionSchedulePage: React.FC = () => {
             status: 'scheduled',
             findings_count: 0,
             inspector: form.inspector,
-            governing_code: form.governing_code || undefined,
+            governing_code: (form.governing_code || undefined) as any,
             description: form.description || undefined,
             approval_mode: form.approval_mode,
             findings: [],
@@ -57,7 +57,7 @@ export const InspectionSchedulePage: React.FC = () => {
             team: [{
                 id: `tm-${Date.now()}`,
                 user_id: `usr-${form.inspector.toLowerCase().replace(/\s+/g, '-')}`,
-                username: form.inspector,
+                name: form.inspector,
                 role: 'lead_inspector',
                 added_at: new Date().toISOString(),
             }],

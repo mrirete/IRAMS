@@ -115,7 +115,7 @@ export const DetailsTab: React.FC<{
                                 // Keep existing secondary types, replace the primary
                                 const otherTypes = (contact.types || []).filter(t => t !== contact.defaultType && t !== newRole);
                                 const newTypes = newRole ? [newRole, ...otherTypes] : otherTypes;
-                                onChange({ ...contact, defaultType: newRole || undefined, types: newTypes });
+                                onChange({ ...contact, defaultType: (newRole || undefined) as string, types: newTypes });
                             }}
                         >
                             <option value="">(None)</option>
@@ -258,7 +258,7 @@ export const DetailsTab: React.FC<{
                         </div>
                         <div>
                             <label className="block text-xs font-medium text-slate-500 uppercase">Address</label>
-                            <textarea rows={3} value={contact.address?.street || ''} onChange={e => onChange({ ...contact, address: { ...contact.address, street: e.target.value } })} className="mt-1 w-full text-sm border border-slate-300 rounded-md p-2" />
+                            <textarea rows={3} value={contact.address?.street || ''} onChange={e => onChange({ ...contact, address: { ...(contact.address || { street: '' }), street: e.target.value } as any })} className="mt-1 w-full text-sm border border-slate-300 rounded-md p-2" />
                         </div>
                     </div>
                 </div>
@@ -271,8 +271,8 @@ export const DetailsTab: React.FC<{
 export const PropertiesTab: React.FC<{ contact: Contact, users: User[], onChange: (c: Contact) => void }> = ({ contact, users, onChange }) => {
     const linkedUser = users.find((u: any) => u.contactId === contact.id || u.contact_id === contact.id);
 
-    const handleFlagToggle = (key: keyof typeof contact.flags) => {
-        const currentFlags = contact.flags || {};
+    const handleFlagToggle = (key: string) => {
+        const currentFlags = contact.flags || {} as any;
         onChange({ ...contact, flags: { ...currentFlags, [key]: !currentFlags[key as keyof typeof currentFlags] } });
     };
 
@@ -323,7 +323,7 @@ export const FieldsTab: React.FC<{ contact: Contact, onChange: (c: Contact) => v
     };
 
     const addField = () => {
-        onChange({ ...contact, customFields: [...fields, { key: "New Field", label: "New Field", type: 'text', value: '' }] });
+        onChange({ ...contact, customFields: [...fields, { id: `cf-${Date.now()}`, key: "New Field", label: "New Field", type: 'TEXT', value: '' } as any] });
     };
 
     const removeField = (index: number) => {
@@ -341,8 +341,8 @@ export const FieldsTab: React.FC<{ contact: Contact, onChange: (c: Contact) => v
             <div className="space-y-3">
                 {fields.map((field, i) => (
                     <div key={i} className="flex gap-2 items-center">
-                        <input className="w-1/3 text-sm border border-slate-200 rounded p-2" value={field.label} onChange={e => {
-                            const nf = [...fields]; nf[i].label = e.target.value; onChange({ ...contact, customFields: nf });
+                        <input className="w-1/3 text-sm border border-slate-200 rounded p-2" value={(field as any).label || field.key} onChange={e => {
+                            const nf = [...fields]; (nf[i] as any).label = e.target.value; onChange({ ...contact, customFields: nf });
                         }} placeholder="Label" />
                         <input className="flex-1 text-sm border border-slate-200 rounded p-2" value={String(field.value)} onChange={e => {
                             const nf = [...fields]; nf[i].value = e.target.value; onChange({ ...contact, customFields: nf });
@@ -526,8 +526,8 @@ export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) =
                     onConfirm={() => handleDelete(deleteId)}
                     title="Delete Qualification"
                     message="Are you sure you want to remove this qualification? This action cannot be undone."
-                    confirmLabel="Delete"
-                    variant="danger"
+                    confirmText="Delete"
+                    type="danger"
                 />
             )}
 

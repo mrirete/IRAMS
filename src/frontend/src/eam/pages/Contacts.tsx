@@ -296,6 +296,8 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                     id: crypto.randomUUID(),
                     code: row['code'] || `PER-${Date.now()}-${imported}`,
                     name: row['name'] || 'Imported Contact',
+                    title: row['title'] || '',
+                    defaultType: row['type'] ? row['type'].toUpperCase() : 'TECHNICIAN',
                     email: row['email'] || '',
                     phone: row['phone'] || '',
                     mobile: row['mobile'] || '',

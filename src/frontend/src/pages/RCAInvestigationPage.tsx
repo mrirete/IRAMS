@@ -378,7 +378,7 @@ export function RCAInvestigationPage() {
                 totalCost: trends?.totalCost || 0,
             });
             // Auto-fill event_location with functional location breadcrumb
-            if (detail?.breadcrumb?.length > 0) {
+            if (detail && detail.breadcrumb && detail.breadcrumb.length > 0) {
                 const locStr = detail.breadcrumb.map((b: any) => b.name || b.tag).join(' › ');
                 setDraft(d => ({ ...d, event_location: d.event_location || locStr }));
             }

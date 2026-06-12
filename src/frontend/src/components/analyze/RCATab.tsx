@@ -38,7 +38,7 @@ const TAXONOMY_BADGES: Record<string, { label: string; color: string }> = {
     location:  { label: 'LOC',     color: '#f59e0b' },
 };
 
-// ── Props ────────────────────────────────────────────────────
+// â”€â”€ Props â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 export interface IncomingWOPayload {
     asset_id: string;
     wo_id: string;
@@ -71,7 +71,7 @@ const METHODS: Record<string, { label: string; color: string }> = {
     fishbone: { label: 'Fishbone', color: '#f59e0b' },
     fault_tree: { label: 'Fault Tree', color: '#a855f7' },
     logic_tree: { label: 'Logic Tree', color: '#8b5cf6' },
-    taproot: { label: 'TapRooT®', color: '#ef4444' },
+    taproot: { label: 'TapRooTÂ®', color: '#ef4444' },
     apollo: { label: 'Apollo', color: '#3b82f6' },
 };
 
@@ -98,7 +98,7 @@ export const RCATab: React.FC<RCATabProps> = ({
     const navigate = useNavigate();
     const { assets: allHierarchyAssets } = useAssetContext();
 
-    // ── Selection & inline detail state ──────────────────────
+    // â”€â”€ Selection & inline detail state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [currentStep, setCurrentStep] = useState(1);
     const [nodes, setNodes] = useState<RCANode[]>([]);
@@ -110,7 +110,7 @@ export const RCATab: React.FC<RCATabProps> = ({
     const [expandedMode, setExpandedMode] = useState(false);
     const [rcaScope, setRcaScope] = useState<'all' | 'mine'>('all');
 
-    // ── Current user context (for scoping) ─────────────────────
+    // â”€â”€ Current user context (for scoping) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const { user: authUser, profile: authProfile, role: authRole } = useAuth();
     const currentContactId = authProfile?.contactId || null;
     const currentUsername = authProfile?.username || authUser?.email || '';
@@ -122,7 +122,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         return fullAccessRoles.includes(currentRole);
     }, [currentRole]);
 
-    // ── Helper: check if a user is a collaborator on an RCA ───
+    // â”€â”€ Helper: check if a user is a collaborator on an RCA â”€â”€â”€
     const isUserCollaborator = useCallback((rca: any): boolean => {
         const collabs = rca.collaborators || [];
         if (!currentContactId && !currentUsername) return false;
@@ -132,7 +132,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         );
     }, [currentContactId, currentUsername]);
 
-    // ── Helper: check if user is involved in an RCA ───────────
+    // â”€â”€ Helper: check if user is involved in an RCA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const isUserInvolved = useCallback((rca: any): boolean => {
         return (
             rca.lead_investigator === currentUsername ||
@@ -141,40 +141,40 @@ export const RCATab: React.FC<RCATabProps> = ({
         );
     }, [currentUsername, isUserCollaborator]);
 
-    // ── Filtered RCA list ──────────────────────────────────────
+    // â”€â”€ Filtered RCA list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Full-access roles see all RCAs; scoped roles only see their own.
     // "My RCAs" always filters to personal involvement regardless of role.
     const displayedRcas = useMemo(() => {
         if (rcaScope === 'mine') {
             return rcas.filter(rca => isUserInvolved(rca));
         }
-        // 'all' scope — admins see everything, others see only their own
+        // 'all' scope â€” admins see everything, others see only their own
         if (isFullAccessRole) return rcas;
         return rcas.filter(rca => isUserInvolved(rca));
     }, [rcas, rcaScope, isFullAccessRole, isUserInvolved]);
 
-    // ── Edit / Delete ────────────────────────────────────────
+    // â”€â”€ Edit / Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editTitle, setEditTitle] = useState('');
     const [editStatus, setEditStatus] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
     const [saving, setSaving] = useState(false);
 
-    // ── Collaboration state ─────────────────────────────────
+    // â”€â”€ Collaboration state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [showTeamPanel, setShowTeamPanel] = useState(false);
     const [rcaCollaborators, setRcaCollaborators] = useState<StudyCollaborator[]>([]);
 
-    // ── EAM Context Panel state ──────────────────────────────
+    // â”€â”€ EAM Context Panel state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [showEAMPanel, setShowEAMPanel] = useState(false);
     const [eamAsset, setEamAsset] = useState<EAMAssetDetail | null>(null);
     const [eamWorkOrders, setEamWorkOrders] = useState<EAMWorkOrder[]>([]);
     const [eamFailureTrends, setEamFailureTrends] = useState<EAMFailureTrends>({ modes: [], timeline: [], totalCM: 0, totalPM: 0, totalCost: 0 });
     const [eamRelatedRCAs, setEamRelatedRCAs] = useState<RCAInvestigation[]>([]);
     const [eamLoading, setEamLoading] = useState(false);
-    // Map asset_id → tag+criticality for the portfolio table
+    // Map asset_id â†’ tag+criticality for the portfolio table
     const [assetTagMap, setAssetTagMap] = useState<Record<string, { tag: string; criticality: string; name: string }>>({});
 
-    // ── DE Modal ─────────────────────────────────────────────
+    // â”€â”€ DE Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [showDEModal, setShowDEModal] = useState(false);
     const [deCreating, setDeCreating] = useState(false);
     const [deCreated, setDeCreated] = useState(false);
@@ -186,7 +186,7 @@ export const RCATab: React.FC<RCATabProps> = ({
 
     const selectedRca = rcas.find(r => r.id === selectedId) || null;
 
-    // ── Load detail data when selection changes ─────────────
+    // â”€â”€ Load detail data when selection changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     useEffect(() => {
         if (!selectedId) { setNodes([]); setActions([]); setEvidence([]); return; }
 
@@ -207,7 +207,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         return () => { cancelled = true; };
     }, [selectedId]);
 
-    // ── Load EAM context data when investigation is selected ──
+    // â”€â”€ Load EAM context data when investigation is selected â”€â”€
     useEffect(() => {
         if (!selectedId || !selectedRca?.asset_id) {
             setEamAsset(null); setEamWorkOrders([]); setEamRelatedRCAs([]);
@@ -234,7 +234,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         return () => { cancelled = true; };
     }, [selectedId, selectedRca?.asset_id]);
 
-    // ── Batch lookup asset tags for portfolio table ──────────
+    // â”€â”€ Batch lookup asset tags for portfolio table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     useEffect(() => {
         const ids = rcas.map(r => r.asset_id).filter(Boolean);
         const unique = [...new Set(ids)].filter(id => !assetTagMap[id]);
@@ -250,7 +250,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         setAssetTagMap(newMap);
     }, [rcas, allHierarchyAssets]);
 
-    // ── Edit handlers ────────────────────────────────────────
+    // â”€â”€ Edit handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const handleEdit = (rca: any, e: React.MouseEvent) => {
         e.stopPropagation(); setEditingId(rca.id);
         setEditTitle(rca.title || ''); setEditStatus(rca.status || 'draft');
@@ -275,7 +275,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         setSaving(false); setDeleteTarget(null);
     };
 
-    // ── Collaboration handlers ─────────────────────────
+    // â”€â”€ Collaboration handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const handleAddRcaCollaborator = async (collab: StudyCollaborator) => {
         const updated = [...rcaCollaborators, collab];
         setRcaCollaborators(updated);
@@ -298,7 +298,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         }
     };
 
-    // ── EAM Context handlers ─────────────────────────────
+    // â”€â”€ EAM Context handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const handleLinkTriggerWO = async (woId: string) => {
         if (!selectedId) return;
         try {
@@ -314,7 +314,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         } catch (err) { console.error('Error unlinking trigger WO:', err); }
     };
 
-    // ── DE Task creation from RCA ────────────────────────────
+    // â”€â”€ DE Task creation from RCA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const openDEModal = useCallback(() => {
         if (!selectedRca) return;
         const rootCauseNodes = nodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
@@ -323,7 +323,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         const methodLabel = METHODS[selectedRca.method]?.label || 'RCA';
 
         const rootCauseSummary = allCauseNodes.length > 0
-            ? `${methodLabel}: ${allCauseNodes.map(n => n.description).join(' → ')}`
+            ? `${methodLabel}: ${allCauseNodes.map(n => n.description).join(' â†’ ')}`
             : selectedRca.root_cause_summary || selectedRca.problem_statement || '';
 
         const proposedSolution = actions.length > 0
@@ -351,7 +351,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                 ? Math.ceil(deDraft.implementationCost / (deDraft.estimatedSavings / 12)) : 0;
             await analyzeService.createDETask({
                 asset_id: selectedRca.asset_id || null,
-                asset_name: selectedRca.title?.split('—')[1]?.trim() || selectedRca.title || 'Unknown',
+                asset_name: selectedRca.title?.split('â€”')[1]?.trim() || selectedRca.title || 'Unknown',
                 title: deDraft.title, status: 'identified', priority: deDraft.priority,
                 annual_cost: deDraft.annualCost, estimated_savings: deDraft.estimatedSavings,
                 implementation_cost: deDraft.implementationCost, payback_months: payback,
@@ -366,19 +366,19 @@ export const RCATab: React.FC<RCATabProps> = ({
         setDeCreating(false);
     }, [selectedRca, deDraft]);
 
-    // ── Helpers ──────────────────────────────────────────────
+    // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const daysAgo = (d: string) => {
         const diff = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
         return diff === 0 ? 'Today' : diff === 1 ? '1d ago' : `${diff}d ago`;
     };
 
-    // ── Investigate from Pareto ────────────────────────────────
+    // â”€â”€ Investigate from Pareto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const handleInvestigateFromPareto = useCallback((asset: ParetoResult) => {
         const criteriaLabel = paretoCriteria === 'cost' ? 'Total Cost' : paretoCriteria === 'downtime' ? 'Downtime' : 'WO Frequency';
         const problem_statement = `${asset.asset_name} (${asset.asset_tag}) ranked #${asset.rank} in Pareto analysis. ${criteriaLabel}: ${asset.metric_unit === '$' ? '$' : ''}${asset.metric_value.toLocaleString()}${asset.metric_unit !== '$' ? ` ${asset.metric_unit}` : ''} across ${asset.event_count} work orders. Criticality: ${asset.criticality}.`;
         navigate('/analyze/rca/new', {
             state: {
-                title: `RCA: ${asset.asset_name} — Bad Actor Analysis`,
+                title: `RCA: ${asset.asset_name} â€” Bad Actor Analysis`,
                 asset_id: asset.asset_id || '',
                 description: problem_statement,
                 maintenanceData: {
@@ -406,9 +406,9 @@ export const RCATab: React.FC<RCATabProps> = ({
         onCreateFMEA?.(asset);
     }, [onCreateFMEA]);
 
-    // ──────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  PORTFOLIO VIEW STATE
-    // ──────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const [viewMode, setViewMode] = useState<'portfolio' | 'workspace'>('portfolio');
     const [portfolioSearch, setPortfolioSearch] = useState('');
     const [portfolioSort, setPortfolioSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'created_at', dir: 'desc' });
@@ -440,7 +440,7 @@ export const RCATab: React.FC<RCATabProps> = ({
         return list;
     }, [displayedRcas, portfolioSearch, portfolioSort, portfolioFilter]);
 
-    // Helpers for portfolio → workspace transitions
+    // Helpers for portfolio â†’ workspace transitions
     const openWorkspace = useCallback((rcaId: string) => {
         setSelectedId(rcaId);
         setExpandedMode(true);
@@ -453,27 +453,27 @@ export const RCATab: React.FC<RCATabProps> = ({
         setExpandedMode(false);
     }, []);
 
-    // ──────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  PRE-RENDER HELPERS (extracted from IIFEs for esbuild compat)
-    // ──────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const show3W2HSummary = selectedRca && (
         (selectedRca.event_what && selectedRca.event_what !== selectedRca.problem_statement)
         || selectedRca.event_how
         || selectedRca.event_location
     );
 
-    // ──────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     //  RENDER
-    // ──────────────────────────────────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     return (
         <div className="space-y-6">
 
-            {/* ═══════ PORTFOLIO LANDING VIEW ══════════════════════ */}
+            {/* â•â•â•â•â•â•â• PORTFOLIO LANDING VIEW â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
             {viewMode === 'portfolio' && (
                 <>
 
 
-                    {/* ── Investigation Table Card ─────────────────── */}
+                    {/* â”€â”€ Investigation Table Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
                     <div style={{
                         background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0',
                         overflow: 'hidden', boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
@@ -592,7 +592,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                 {col.label}
                                                 {portfolioSort.field === col.key && (
                                                     <span style={{ marginLeft: 4, fontSize: 10 }}>
-                                                        {portfolioSort.dir === 'asc' ? '▲' : '▼'}
+                                                        {portfolioSort.dir === 'asc' ? 'â–²' : 'â–¼'}
                                                     </span>
                                                 )}
                                             </th>
@@ -623,7 +623,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                         const statusLabel = rca.status === 'in_progress' ? 'In Progress'
                                             : rca.status === 'draft' ? 'Draft'
                                             : rca.status === 'review' ? 'Review'
-                                            : rca.status === 'closed' ? 'Closed' : rca.status || '—';
+                                            : rca.status === 'closed' ? 'Closed' : rca.status || 'â€”';
                                         const statusColor = rca.status === 'in_progress' ? '#2563eb'
                                             : rca.status === 'draft' ? '#64748b'
                                             : rca.status === 'review' ? '#d97706'
@@ -673,7 +673,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                     {(() => {
                                                         const ai = assetTagMap[rca.asset_id];
                                                         if (!ai) {
-                                                            if (!rca.event_what) return <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>;
+                                                            if (!rca.event_what) return <span style={{ color: '#cbd5e1', fontSize: 11 }}>â€”</span>;
                                                             return (
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                                     <span style={{ display: 'inline-flex', padding: '2px 6px', borderRadius: 6, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', fontSize: 10, fontWeight: 800 }}>MANUAL</span>
@@ -720,10 +720,10 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                     </span>
                                                 </td>
                                                 <td style={{ padding: '14px 16px', color: '#475569', fontSize: 12, textTransform: 'capitalize' }}>
-                                                    {(rca.rca_category || '—').replace('_', ' ')}
+                                                    {(rca.rca_category || 'â€”').replace('_', ' ')}
                                                 </td>
                                                 <td style={{ padding: '14px 16px', color: '#64748b', fontSize: 12, whiteSpace: 'nowrap' }}>
-                                                    {rca.created_at ? new Date(rca.created_at).toLocaleDateString() : '—'}
+                                                    {rca.created_at ? new Date(rca.created_at).toLocaleDateString() : 'â€”'}
                                                 </td>
                                                 <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                                                     <button
@@ -746,7 +746,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                         </div>
                     </div>
 
-                    {/* ── Pareto Bad Actor Section (portfolio level) ── */}
+                    {/* â”€â”€ Pareto Bad Actor Section (portfolio level) â”€â”€ */}
                     {onParetoDataChange && (
                         <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
                             <button
@@ -801,7 +801,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                 </>
             )}
 
-            {/* ═══════ WORKSPACE VIEW (investigation detail) ═════════ */}
+            {/* â•â•â•â•â•â•â• WORKSPACE VIEW (investigation detail) â•â•â•â•â•â•â•â•â• */}
             {viewMode === 'workspace' && (
                 <>
                     {/* Back to portfolio breadcrumb */}
@@ -865,7 +865,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                     </div>
 
 
-            {/* ═══════ INVESTIGATION WORKSPACE ═════════════════════ */}
+            {/* â•â•â•â•â•â•â• INVESTIGATION WORKSPACE â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 2px' }}>
                 <div style={{
                     width: 28, height: 28, borderRadius: 8,
@@ -877,13 +877,13 @@ export const RCATab: React.FC<RCATabProps> = ({
                 </div>
                 <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b' }}>Step 2: Root Cause Investigations</div>
-                    <div style={{ fontSize: 11, color: '#94a3b8' }}>Formal failure investigations — select a bad actor above or create manually</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8' }}>Formal failure investigations â€” select a bad actor above or create manually</div>
                 </div>
             </div>
             <div id="rca-investigations-section" style={{ display: 'flex', gap: 0, minHeight: expandedMode ? 700 : 520, background: '#fff', borderRadius: expandedMode ? 16 : 14, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: expandedMode ? '0 8px 40px rgba(0,0,0,0.08)' : '0 4px 24px rgba(0,0,0,0.06)', transition: 'all .3s ease' }}>
 
 
-            {/* ═══════ LEFT: Investigation List ═══════════════════ */}
+            {/* â•â•â•â•â•â•â• LEFT: Investigation List â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
             <div style={{
                 width: (selectedId || showNewForm) ? 380 : '100%', minWidth: 320,
                 borderRight: (selectedId || showNewForm) ? '1px solid #e2e8f0' : 'none',
@@ -943,7 +943,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                             <GitMerge size={28} style={{ margin: '0 auto 10px', opacity: 0.4, display: 'block' }} />
                             <p style={{ fontSize: 13 }}>{rcaScope === 'mine' ? 'No investigations assigned to you.' : 'No investigations yet.'}</p>
                             {rcaScope === 'mine' && rcas.length > 0 && (
-                                <button onClick={() => setRcaScope('all')} style={{ marginTop: 8, fontSize: 12, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Show all investigations →</button>
+                                <button onClick={() => setRcaScope('all')} style={{ marginTop: 8, fontSize: 12, color: '#7c3aed', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>Show all investigations â†’</button>
                             )}
                         </div>
                     ) : displayedRcas.map(rca => {
@@ -1033,671 +1033,15 @@ export const RCATab: React.FC<RCATabProps> = ({
                 </div>
             </div>
 
-            {/* New Investigation Form moved to /analyze/rca/new */}
-            {showNewForm && (
-                <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
-                    <div style={{ padding: '20px 24px' }}>
-                        {/* Form header */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 20 }}>
-                            <div>
-                                <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1e293b', margin: 0 }}>New RCA Investigation</h2>
-                                <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Define the event, select a method, and start your root cause analysis</p>
-                            </div>
-                            <button onClick={() => setShowNewForm(false)}
-                                style={{ padding: 4, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}><X size={18} /></button>
-                        </div>
+            {/* New Investigation Form is now at /analyze/rca/new */}
 
-                        {/* ── Investigation Setup ── */}
-                        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 16, marginBottom: 16 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-                                <GitMerge size={14} color="#ef4444" />
-                                <span style={{ fontSize: 11, fontWeight: 700, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Investigation Setup</span>
-                            </div>
-                            <div>
-                                <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Investigation Title *</label>
-                                <input value={newDraft.title} onChange={e => setNewDraft(d => ({ ...d, title: e.target.value }))}
-                                    placeholder="e.g. Premature Seal Failure on P-101A"
-                                    style={{ width: '100%', padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                            </div>
-                        </div>
 
-                        {/* ── Target Asset / Functional Location ── */}
-                        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 16, marginBottom: 16 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                                <MapPin size={14} color="#06b6d4" />
-                                <span style={{ fontSize: 11, fontWeight: 700, color: '#155e75', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Where? — Functional Location *</span>
-                                {!hasEAMAssets && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 'auto' }}>Manual entry (no asset register loaded)</span>}
-                            </div>
 
-                            {/* ERM-only fallback: plain text inputs for Asset & Location */}
-                            {!hasEAMAssets ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                    <div>
-                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>Asset / Equipment Tag</label>
-                                        <input value={newDraft.event_what} onChange={e => setNewDraft(d => ({ ...d, event_what: e.target.value }))}
-                                            placeholder="e.g. Pump P-101A"
-                                            style={{ width: '100%', padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, boxSizing: 'border-box' }} />
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 4 }}>Location / Functional Location *</label>
-                                        <input value={newDraft.event_location} onChange={e => setNewDraft(d => ({ ...d, event_location: e.target.value }))}
-                                            placeholder="e.g. Unit 2 - Utilities"
-                                            style={{ width: '100%', padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, boxSizing: 'border-box' }} />
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                                    {/* Asset selected — show chip + context card */}
-                                    {newDraft.asset_id ? (
-                                        <>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '9px 12px' }}>
-                                                {(() => {
-                                                    const sel = hierarchyAssets.find(a => a.id === newDraft.asset_id);
-                                                    const badge = TAXONOMY_BADGES[sel?.taxonomy_level || 'equipment'];
-                                                    return sel ? (
-                                                        <>
-                                                            <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: badge.color + '22', color: badge.color, border: `1px solid ${badge.color}44` }}>{badge.label}</span>
-                                                            <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 600 }}>{sel.tag}</span>
-                                                            <span style={{ fontSize: 12, color: '#64748b' }}>— {sel.name}</span>
-                                                        </>
-                                                    ) : <span style={{ fontSize: 13, color: '#94a3b8' }}>Unknown asset</span>;
-                                                })()}
-                                                <button onClick={() => { setNewDraft(d => ({ ...d, asset_id: '', event_location: '' })); setNewMaintenanceData(null); setNewDataPulled(false); setShowNewAssetDropdown(true); setLinkedWO(null); setFormAssetDetail(null); setFormAssetTrends(null); }}
-                                                    style={{ marginLeft: 'auto', padding: 2, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}><X size={14} /></button>
-                                            </div>
-
-                                            {/* ── Asset Context Card ── */}
-                                            {formAssetLoading ? (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 12px', color: '#94a3b8', fontSize: 12 }}>
-                                                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Loading asset context...
-                                                </div>
-                                            ) : formAssetDetail ? (
-                                                <div style={{ marginTop: 10, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 14 }}>
-                                                    {/* Breadcrumb */}
-                                                    {formAssetDetail.breadcrumb?.length > 0 && (
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
-                                                            <MapPin size={12} color="#0891b2" />
-                                                            {formAssetDetail.breadcrumb.map((crumb, i) => (
-                                                                <React.Fragment key={i}>
-                                                                    {i > 0 && <ChevronRight size={10} color="#cbd5e1" />}
-                                                                    <span style={{
-                                                                        fontSize: 11, color: i === formAssetDetail!.breadcrumb.length - 1 ? '#0f172a' : '#64748b',
-                                                                        fontWeight: i === formAssetDetail!.breadcrumb.length - 1 ? 700 : 500,
-                                                                    }}>{crumb.name || crumb.tag}</span>
-                                                                </React.Fragment>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                    {/* Identity row */}
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                        {(() => {
-                                                            const cc = (formAssetDetail.criticality || 'C').toUpperCase();
-                                                            const bg = cc === 'A' ? '#fef2f2' : cc === 'B' ? '#fffbeb' : cc === 'C' ? '#eff6ff' : '#f8fafc';
-                                                            const tc = cc === 'A' ? '#dc2626' : cc === 'B' ? '#d97706' : cc === 'C' ? '#2563eb' : '#64748b';
-                                                            const bc = cc === 'A' ? '#fecaca' : cc === 'B' ? '#fde68a' : cc === 'C' ? '#bfdbfe' : '#e2e8f0';
-                                                            const label = cc === 'A' ? 'Safety Critical' : cc === 'B' ? 'Production Critical' : cc === 'C' ? 'Standard' : 'Low';
-                                                            return (
-                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', borderRadius: 6, background: bg, color: tc, border: `1px solid ${bc}`, fontSize: 10, fontWeight: 800 }}>
-                                                                    <Shield size={10} /> {cc} — {label}
-                                                                </span>
-                                                            );
-                                                        })()}
-                                                        <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>
-                                                            {formAssetDetail.equipment_type || 'Equipment'}
-                                                            {formAssetDetail.manufacturer ? ` │ ${formAssetDetail.manufacturer}` : ''}
-                                                            {formAssetDetail.model ? ` │ ${formAssetDetail.model}` : ''}
-                                                        </span>
-                                                    </div>
-                                                    {/* Quick KPIs */}
-                                                    {formAssetTrends && (
-                                                        <div style={{ display: 'flex', gap: 10 }}>
-                                                            <span style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                                                <Wrench size={11} /> {formAssetTrends.totalCM + formAssetTrends.totalPM} WOs
-                                                                <span style={{ color: '#dc2626' }}>({formAssetTrends.totalCM} CM)</span>
-                                                            </span>
-                                                            {formAssetTrends.totalCost > 0 && (
-                                                                <span style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', gap: 3 }}>
-                                                                    │ ${formAssetTrends.totalCost >= 1e3 ? `${(formAssetTrends.totalCost / 1e3).toFixed(1)}K` : formAssetTrends.totalCost.toFixed(0)} cost (12mo)
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : null}
-                                        </>
-                                    ) : (
-                                        /* Asset search dropdown */
-                                        <div style={{ position: 'relative' }}>
-                                            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                                            <input value={newAssetSearch}
-                                                onChange={e => { setNewAssetSearch(e.target.value); setShowNewAssetDropdown(true); }}
-                                                onFocus={() => setShowNewAssetDropdown(true)}
-                                                placeholder="Search asset register by tag, name, or level…"
-                                                style={{ width: '100%', padding: '9px 12px 9px 32px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, boxSizing: 'border-box' }} />
-                                            {showNewAssetDropdown && (
-                                                <div style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, marginTop: 4, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', maxHeight: 200, overflowY: 'auto' }}>
-                                                    {filteredHierarchyAssets.length === 0 && (
-                                                        <div style={{ padding: 12, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>No assets found</div>
-                                                    )}
-                                                    {filteredHierarchyAssets.map(a => {
-                                                        const badge = TAXONOMY_BADGES[a.taxonomy_level] || TAXONOMY_BADGES.equipment;
-                                                        return (
-                                                            <button key={a.id}
-                                                                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-                                                                onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
-                                                                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                                                                onClick={() => {
-                                                                    setNewDraft(d => ({ ...d, asset_id: a.id }));
-                                                                    setShowNewAssetDropdown(false); setNewAssetSearch('');
-                                                                    setNewMaintenanceData(null); setNewDataPulled(false);
-                                                                }}
-                                                            >
-                                                                <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: badge.color + '22', color: badge.color, border: `1px solid ${badge.color}44`, flexShrink: 0 }}>{badge.label}</span>
-                                                                <span style={{ fontSize: 13, color: '#1e293b', fontWeight: 600 }}>{a.tag}</span>
-                                                                <span style={{ fontSize: 12, color: '#94a3b8' }}>— {a.name}</span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                    {filteredHierarchyAssets.length >= 30 && (
-                                                        <div style={{ padding: 8, fontSize: 10, color: '#94a3b8', textAlign: 'center', borderTop: '1px solid #e2e8f0' }}>Showing first 30 — type to narrow search</div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </div>
-
-                        {/* ── Maintenance Data ── */}
-                        {newDraft.asset_id && (
-                            <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', overflow: 'hidden', marginBottom: 16 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                    <Database size={14} color="#06b6d4" />
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: '#155e75', textTransform: 'uppercase' }}>Maintenance Data</span>
-                                    <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 'auto' }}>Optional — enriches analysis with historical context</span>
-                                </div>
-                                {/* Source tabs */}
-                                <div style={{ display: 'flex', borderBottom: '1px solid #e2e8f0' }}>
-                                    <button onClick={() => { setNewDataSourceMode('connected'); setNewMaintenanceData(null); setNewDataPulled(false); }}
-                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer',
-                                            color: newDataSourceMode === 'connected' ? '#06b6d4' : '#94a3b8', borderBottom: newDataSourceMode === 'connected' ? '2px solid #06b6d4' : '2px solid transparent' }}>
-                                        <Server size={12} /> Connected Source
-                                    </button>
-                                    <button onClick={() => { setNewDataSourceMode('manual'); setNewMaintenanceData(null); setNewDataPulled(false); }}
-                                        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer',
-                                            color: newDataSourceMode === 'manual' ? '#06b6d4' : '#94a3b8', borderBottom: newDataSourceMode === 'manual' ? '2px solid #06b6d4' : '2px solid transparent' }}>
-                                        <Edit3 size={12} /> Manual Input
-                                    </button>
-                                </div>
-                                <div style={{ padding: 16 }}>
-                                    {newDataSourceMode === 'connected' && (
-                                        <>
-                                            <div style={{ marginBottom: 10 }}>
-                                                <label style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, marginBottom: 4, display: 'block' }}>Data Source</label>
-                                                <select value={newSelectedConnector}
-                                                    onChange={e => { setNewSelectedConnector(e.target.value); setNewMaintenanceData(null); setNewDataPulled(false); }}
-                                                    style={{ width: '100%', padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13 }}>
-                                                    <option value="local">ERS Local Database (Supabase)</option>
-                                                    {runningConnectors.map(c => (
-                                                        <option key={c.connector_id} value={c.connector_id}>{c.name} ({c.type})</option>
-                                                    ))}
-                                                </select>
-                                            </div>
-                                            <button onClick={handleNewPullData} disabled={newDataPulling}
-                                                style={{ width: '100%', padding: '10px', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: 8, color: '#0891b2', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: newDataPulling ? 0.6 : 1 }}>
-                                                {newDataPulling ? <><Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Pulling Records…</> : <><Database size={14} /> Pull Records</>}
-                                            </button>
-                                        </>
-                                    )}
-                                    {newDataSourceMode === 'manual' && (
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                                                <div>
-                                                    <label style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Total Work Orders</label>
-                                                    <input type="number" min={0} value={manualWOs} onChange={e => setManualWOs(Number(e.target.value))}
-                                                        style={{ width: '100%', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                                </div>
-                                                <div>
-                                                    <label style={{ fontSize: 10, color: '#dc2626', fontWeight: 600 }}>Failure Work Orders</label>
-                                                    <input type="number" min={0} value={manualFailures} onChange={e => setManualFailures(Number(e.target.value))}
-                                                        style={{ width: '100%', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                                </div>
-                                            </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                                                <div>
-                                                    <label style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>MTBF (hours)</label>
-                                                    <input type="number" min={0} value={manualMTBF} onChange={e => setManualMTBF(e.target.value === '' ? '' : Number(e.target.value))}
-                                                        placeholder="—"
-                                                        style={{ width: '100%', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                                </div>
-                                                <div>
-                                                    <label style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>MTTR (hours)</label>
-                                                    <input type="number" min={0} value={manualMTTR} onChange={e => setManualMTTR(e.target.value === '' ? '' : Number(e.target.value))}
-                                                        placeholder="—"
-                                                        style={{ width: '100%', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <label style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Top Failure Modes <span style={{ fontWeight: 400, color: '#94a3b8' }}>(comma-separated)</span></label>
-                                                <input value={manualFailureModes} onChange={e => setManualFailureModes(e.target.value)}
-                                                    placeholder="e.g. Seal Leak, Bearing Wear, Vibration"
-                                                    style={{ width: '100%', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                            </div>
-                                            <div>
-                                                <label style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Additional Notes</label>
-                                                <textarea value={manualNotes} onChange={e => setManualNotes(e.target.value)} rows={2}
-                                                    placeholder="Additional context, historical observations, SME notes…"
-                                                    style={{ width: '100%', padding: '8px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 12, resize: 'vertical', marginTop: 4, boxSizing: 'border-box', lineHeight: 1.5 }} />
-                                            </div>
-                                            <button onClick={() => {
-                                                const modes = manualFailureModes.split(',').map(m => m.trim()).filter(Boolean).map(m => ({ mode: m, count: 1 }));
-                                                setNewMaintenanceData({
-                                                    source: 'manual',
-                                                    connectorName: 'Manual Entry',
-                                                    targetLevel: 'equipment',
-                                                    totalWorkOrders: manualWOs,
-                                                    failureWorkOrders: manualFailures,
-                                                    lastWODate: null,
-                                                    mtbfHours: manualMTBF === '' ? null : manualMTBF,
-                                                    mttrHours: manualMTTR === '' ? null : manualMTTR,
-                                                    topFailureModes: modes,
-                                                    workOrderSamples: [],
-                                                    manualNotes: manualNotes || undefined,
-                                                });
-                                                setNewDataPulled(true);
-                                            }}
-                                                style={{ width: '100%', padding: '10px', background: '#ecfeff', border: '1px solid #a5f3fc', borderRadius: 8, color: '#0891b2', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                <CheckCircle size={14} /> Save Manual Data
-                                            </button>
-                                        </div>
-                                    )}
-                                    {/* Summary Card */}
-                                    {newDataPulled && newMaintenanceData && (
-                                        <div style={{ marginTop: 12, border: '1px solid #a5f3fc', borderRadius: 10, background: '#ecfeff', padding: 12 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                                                <CheckCircle size={14} color="#10b981" />
-                                                <span style={{ fontSize: 12, fontWeight: 600, color: '#1e293b' }}>Data from {newMaintenanceData.connectorName || 'Local EAM'}</span>
-                                            </div>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
-                                                <div style={{ textAlign: 'center' }}>
-                                                    <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{newMaintenanceData.totalWorkOrders}</div>
-                                                    <div style={{ fontSize: 10, color: '#94a3b8' }}>Total WOs</div>
-                                                </div>
-                                                <div style={{ textAlign: 'center' }}>
-                                                    <div style={{ fontSize: 16, fontWeight: 700, color: '#ef4444' }}>{newMaintenanceData.failureWorkOrders}</div>
-                                                    <div style={{ fontSize: 10, color: '#94a3b8' }}>Failures</div>
-                                                </div>
-                                                <div style={{ textAlign: 'center' }}>
-                                                    <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{newMaintenanceData.mtbfHours ?? '—'}</div>
-                                                    <div style={{ fontSize: 10, color: '#94a3b8' }}>MTBF (hrs)</div>
-                                                </div>
-                                                <div style={{ textAlign: 'center' }}>
-                                                    <div style={{ fontSize: 16, fontWeight: 700, color: '#1e293b' }}>{newMaintenanceData.mttrHours ?? '—'}</div>
-                                                    <div style={{ fontSize: 10, color: '#94a3b8' }}>MTTR (hrs)</div>
-                                                </div>
-                                            </div>
-                                            {newMaintenanceData.topFailureModes.length > 0 && (
-                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
-                                                    {newMaintenanceData.topFailureModes.slice(0, 5).map((fm, i) => (
-                                                        <span key={i} style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0', color: '#475569' }}>
-                                                            {fm.mode} <span style={{ color: '#94a3b8' }}>×{fm.count}</span>
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ── Problem Statement ── */}
-                        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 16, marginBottom: 16 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                                <AlertTriangle size={14} color="#f59e0b" />
-                                <span style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Problem Statement</span>
-                                {/* Import from WO button — only when asset is selected */}
-                                {newDraft.asset_id && hasEAMAssets && !linkedWO && (
-                                    <button
-                                        onClick={() => setShowWOPicker(true)}
-                                        style={{
-                                            marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5,
-                                            padding: '4px 10px', borderRadius: 6, fontSize: 10, fontWeight: 700,
-                                            background: 'linear-gradient(135deg, #0891b2, #0284c7)', color: '#fff',
-                                            border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-                                        }}
-                                        onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; }}
-                                        onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
-                                        title="Import problem statement from a work order"
-                                    >
-                                        <FileText size={10} /> Import from Work Order
-                                    </button>
-                                )}
-                            </div>
-
-                            {/* Linked WO card */}
-                            {linkedWO && (
-                                <div style={{
-                                    display: 'flex', alignItems: 'center', gap: 10,
-                                    background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 8,
-                                    padding: '8px 12px', marginBottom: 10,
-                                }}>
-                                    <Link2 size={13} color="#059669" />
-                                    <span style={{ fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#16a34a', border: '1px solid #86efac' }}>TRIGGER WO</span>
-                                    <span style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#065f46' }}>{linkedWO.wo_number}</span>
-                                    <span style={{ fontSize: 12, color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{linkedWO.title}</span>
-                                    {linkedWO.cost > 0 && (
-                                        <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>
-                                            ${linkedWO.cost >= 1e3 ? `${(linkedWO.cost / 1e3).toFixed(1)}K` : linkedWO.cost.toFixed(0)}
-                                        </span>
-                                    )}
-                                    <button
-                                        onClick={() => setLinkedWO(null)}
-                                        style={{ padding: 2, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}
-                                        title="Unlink work order"
-                                    ><Unlink size={13} /></button>
-                                </div>
-                            )}
-
-                            <textarea value={newDraft.problem_statement} onChange={e => setNewDraft(d => ({ ...d, problem_statement: e.target.value }))} rows={3}
-                                placeholder="Describe the problem clearly — what happened, what was the impact?"
-                                style={{ width: '100%', padding: '9px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, color: '#1e293b', fontSize: 13, resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 }} />
-
-                            {!newDraft.asset_id && hasEAMAssets && (
-                                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, fontStyle: 'italic' }}>
-                                    💡 Select an asset above to enable "Import from Work Order"
-                                </div>
-                            )}
-                        </div>
-
-                        {/* WO Picker Modal */}
-                        {showWOPicker && newDraft.asset_id && (
-                            <WOPickerModal
-                                assetId={newDraft.asset_id}
-                                onClose={() => setShowWOPicker(false)}
-                                onSelect={(wo) => {
-                                    // Build problem statement from WO
-                                    let ps = wo.title;
-                                    if (wo.description) ps += `. ${wo.description}`;
-                                    if (wo.failure_mode) ps += `\nFailure Mode: ${wo.failure_mode}`;
-                                    if (wo.failure_cause) ps += ` | Cause: ${wo.failure_cause}`;
-                                    setNewDraft(d => ({
-                                        ...d,
-                                        problem_statement: ps,
-                                        event_date: wo.event_date ? new Date(wo.event_date).toISOString().split('T')[0] : d.event_date,
-                                        event_how_much_cost: wo.cost || d.event_how_much_cost,
-                                        event_how: wo.failure_mode || d.event_how,
-                                    }));
-                                    setLinkedWO(wo);
-                                    setShowWOPicker(false);
-                                }}
-                            />
-                        )}
-
-                        {/* ── Event Details (classification + context) ── */}
-                        <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0', padding: 16, marginBottom: 16 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 14 }}>
-                                <Search size={14} color="#3b82f6" />
-                                <span style={{ fontSize: 11, fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Event Details</span>
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                                {/* Row 1: Method, Category */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                                    <div>
-                                        <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                            RCA Method *
-                                            {newDraft.method === methodRecommendation.method
-                                                ? <span title="Matches recommendation" style={{ color: '#22c55e', fontSize: 12 }}>✓</span>
-                                                : userOverrodeMethod
-                                                    ? <span title="User override — differs from recommendation" style={{ color: '#f59e0b', fontSize: 12 }}>⚠</span>
-                                                    : null
-                                            }
-                                        </label>
-                                        <select value={newDraft.method} onChange={e => {
-                                            setNewDraft(d => ({ ...d, method: e.target.value as any }));
-                                            setUserOverrodeMethod(e.target.value !== methodRecommendation.method);
-                                        }}
-                                            style={{ width: '100%', padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4 }}>
-                                            <option value="five_why">5-Why Analysis</option>
-                                            <option value="fishbone">Fishbone (Ishikawa)</option>
-                                            <option value="fault_tree">Fault Tree Analysis</option>
-                                            <option value="logic_tree">Logic Tree Analysis (LTA)</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Category</label>
-                                        <select value={newDraft.rca_category} onChange={e => setNewDraft(d => ({ ...d, rca_category: e.target.value as any }))}
-                                            style={{ width: '100%', padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4 }}>
-                                            <option value="asset_failure">Asset Failure</option>
-                                            <option value="safety">Safety</option>
-                                            <option value="production">Production</option>
-                                            <option value="process">Process</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                {/* Row 2: Investigation Type, Trigger */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                                    <div>
-                                        <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Investigation Type</label>
-                                        <select value={newDraft.investigation_type} onChange={e => setNewDraft(d => ({ ...d, investigation_type: e.target.value as any }))}
-                                            style={{ width: '100%', padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4 }}>
-                                            <option value="reactive">Reactive</option>
-                                            <option value="proactive">Proactive</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Trigger</label>
-                                        <select value={newDraft.trigger_type} onChange={e => setNewDraft(d => ({ ...d, trigger_type: e.target.value as any }))}
-                                            style={{ width: '100%', padding: '9px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4 }}>
-                                            <option value="manual">Manual</option>
-                                            <option value="cost">Cost Threshold</option>
-                                            <option value="recurrence">Recurrence</option>
-                                            <option value="criticality">Criticality</option>
-                                            <option value="safety">Safety Incident</option>
-                                            <option value="pareto">Pareto / Bad Actor</option>
-                                            <option value="downtime">Downtime</option>
-                                            <option value="near_miss">Near Miss</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                {/* Divider */}
-                                <div style={{ borderTop: '1px solid #e2e8f0', margin: '4px 0' }} />
-                                {/* Row 3: When, Where, How */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                                    <div>
-                                        <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>When?</label>
-                                        <input type="date" value={newDraft.event_date || ''} onChange={e => setNewDraft(d => ({ ...d, event_date: e.target.value }))}
-                                            style={{ width: '100%', padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Where?</label>
-                                        <input value={newDraft.event_location} onChange={e => setNewDraft(d => ({ ...d, event_location: e.target.value }))}
-                                            placeholder="Location / unit"
-                                            style={{ width: '100%', padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: 11, color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>How?</label>
-                                        <input value={newDraft.event_how} onChange={e => setNewDraft(d => ({ ...d, event_how: e.target.value }))}
-                                            placeholder="Failure mechanism"
-                                            style={{ width: '100%', padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                    </div>
-                                </div>
-                                {/* Row 4: Cost, Downtime */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                                    <div>
-                                        <label style={{ fontSize: 10, color: '#dc2626', fontWeight: 700, textTransform: 'uppercase' }}>Est. Cost ($)</label>
-                                        <input type="number" value={newDraft.event_how_much_cost || ''} onChange={e => setNewDraft(d => ({ ...d, event_how_much_cost: Number(e.target.value) }))}
-                                            placeholder="0"
-                                            style={{ width: '100%', padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                    </div>
-                                    <div>
-                                        <label style={{ fontSize: 10, color: '#d97706', fontWeight: 700, textTransform: 'uppercase' }}>Downtime (hrs)</label>
-                                        <input type="number" value={newDraft.event_how_much_downtime || ''} onChange={e => setNewDraft(d => ({ ...d, event_how_much_downtime: Number(e.target.value) }))}
-                                            placeholder="0"
-                                            style={{ width: '100%', padding: '8px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, color: '#1e293b', fontSize: 13, marginTop: 4, boxSizing: 'border-box' }} />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* ── AI Method Recommendation Card ── */}
-                        <div style={{
-                            borderRadius: 10, overflow: 'hidden', marginBottom: 20,
-                            border: `1px solid ${methodRecommendation.confidence >= 0.85 ? '#86efac' : methodRecommendation.confidence >= 0.7 ? '#93c5fd' : '#e2e8f0'}`,
-                        }}>
-                            {/* Header */}
-                            <div style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                padding: '10px 14px',
-                                background: methodRecommendation.confidence >= 0.85
-                                    ? 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)'
-                                    : methodRecommendation.confidence >= 0.7
-                                        ? 'linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%)'
-                                        : '#f8fafc',
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontSize: 14 }}>🤖</span>
-                                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-                                        color: methodRecommendation.confidence >= 0.85 ? '#166534' : methodRecommendation.confidence >= 0.7 ? '#1e40af' : '#475569',
-                                    }}>Recommended Method</span>
-                                </div>
-                                <span style={{
-                                    fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
-                                    background: methodRecommendation.confidence >= 0.85 ? '#dcfce7' : methodRecommendation.confidence >= 0.7 ? '#dbeafe' : '#f1f5f9',
-                                    color: methodRecommendation.confidence >= 0.85 ? '#166534' : methodRecommendation.confidence >= 0.7 ? '#1e40af' : '#64748b',
-                                }}>{Math.round(methodRecommendation.confidence * 100)}% confidence</span>
-                            </div>
-                            {/* Body */}
-                            <div style={{ padding: '12px 14px', background: '#fff' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                                    <span style={{
-                                        fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6,
-                                        background: (METHODS[methodRecommendation.method]?.color || '#94a3b8') + '18',
-                                        color: METHODS[methodRecommendation.method]?.color || '#94a3b8',
-                                        border: `1px solid ${(METHODS[methodRecommendation.method]?.color || '#94a3b8')}44`,
-                                    }}>{METHODS[methodRecommendation.method]?.label || methodRecommendation.method}</span>
-                                    {newDraft.method === methodRecommendation.method && (
-                                        <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                            <CheckCircle size={11} /> Applied
-                                        </span>
-                                    )}
-                                    {userOverrodeMethod && newDraft.method !== methodRecommendation.method && (
-                                        <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
-                                            <AlertTriangle size={11} /> Overridden
-                                        </span>
-                                    )}
-                                </div>
-                                <p style={{ fontSize: 12, color: '#475569', margin: '0 0 10px 0', lineHeight: 1.5 }}>
-                                    {methodRecommendation.reasoning}
-                                </p>
-                                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                    {newDraft.method !== methodRecommendation.method && (
-                                        <button onClick={() => {
-                                            setNewDraft(d => ({ ...d, method: methodRecommendation.method }));
-                                            setUserOverrodeMethod(false);
-                                        }}
-                                            style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
-                                                background: '#ecfdf5', border: '1px solid #86efac', color: '#166534',
-                                            }}>Apply Recommendation</button>
-                                    )}
-                                    <button onClick={handleAskAIMethod} disabled={aiRecommendationLoading}
-                                        style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
-                                            background: aiRecommendationLoading ? '#f1f5f9' : '#f5f3ff',
-                                            border: '1px solid ' + (aiRecommendationLoading ? '#e2e8f0' : '#c4b5fd'),
-                                            color: aiRecommendationLoading ? '#94a3b8' : '#5b21b6',
-                                            display: 'flex', alignItems: 'center', gap: 4,
-                                            opacity: aiRecommendationLoading ? 0.7 : 1,
-                                        }}>
-                                        {aiRecommendationLoading
-                                            ? <><Loader2 size={11} style={{ animation: 'spin 1s linear infinite' }} /> Analyzing…</>
-                                            : <><Zap size={11} /> Ask AI for 2nd Opinion</>
-                                        }
-                                    </button>
-                                    <span style={{ fontSize: 9, color: '#94a3b8', marginLeft: 'auto', fontStyle: 'italic' }}>HITL · Advisory</span>
-                                </div>
-                            </div>
-
-                            {/* AI Second Opinion Panel */}
-                            {aiRecommendation && (
-                                <div style={{ padding: '12px 14px', borderTop: '1px solid #e9d5ff', background: 'linear-gradient(135deg, #faf5ff 0%, #f5f3ff 100%)' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <span style={{ fontSize: 13 }}>🔮</span>
-                                            <span style={{ fontSize: 11, fontWeight: 700, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: '0.04em' }}>AI Second Opinion</span>
-                                        </div>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                            <span style={{
-                                                fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
-                                                background: '#ede9fe', color: '#5b21b6',
-                                            }}>{Math.round(aiRecommendation.confidence * 100)}%</span>
-                                            <button onClick={() => setAiRecommendation(null)}
-                                                style={{ padding: 2, background: 'none', border: 'none', color: '#a78bfa', cursor: 'pointer' }}><X size={12} /></button>
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                                        <span style={{
-                                            fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 6,
-                                            background: (METHODS[aiRecommendation.method]?.color || '#94a3b8') + '18',
-                                            color: METHODS[aiRecommendation.method]?.color || '#94a3b8',
-                                            border: `1px solid ${(METHODS[aiRecommendation.method]?.color || '#94a3b8')}44`,
-                                        }}>{METHODS[aiRecommendation.method]?.label || aiRecommendation.method}</span>
-                                        {aiRecommendation.method === methodRecommendation.method
-                                            ? <span style={{ fontSize: 10, color: '#22c55e', fontWeight: 600 }}>✓ Agrees with rules engine</span>
-                                            : <span style={{ fontSize: 10, color: '#f59e0b', fontWeight: 600 }}>↔ Differs from rules engine</span>
-                                        }
-                                    </div>
-                                    <p style={{ fontSize: 12, color: '#475569', margin: '0 0 8px 0', lineHeight: 1.5 }}>
-                                        {aiRecommendation.reasoning}
-                                    </p>
-                                    {aiRecommendation.alternatives && aiRecommendation.alternatives.length > 0 && (
-                                        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>
-                                            <span style={{ fontWeight: 600, color: '#475569' }}>Alternatives: </span>
-                                            {aiRecommendation.alternatives.map((alt, i) => (
-                                                <span key={alt.method}>
-                                                    {i > 0 && ' · '}
-                                                    <span style={{ fontWeight: 600, color: METHODS[alt.method]?.color || '#64748b' }}>{alt.label || alt.method}</span>
-                                                    <span style={{ color: '#94a3b8' }}> — {alt.reason}</span>
-                                                </span>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {newDraft.method !== aiRecommendation.method && (
-                                        <button onClick={() => {
-                                            setNewDraft(d => ({ ...d, method: aiRecommendation.method }));
-                                            setUserOverrodeMethod(false);
-                                        }}
-                                            style={{ padding: '5px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
-                                                background: '#ede9fe', border: '1px solid #c4b5fd', color: '#5b21b6',
-                                            }}>Apply AI Suggestion</button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* ── Action Buttons ── */}
-                        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                            <button onClick={() => setShowNewForm(false)}
-                                style={{ padding: '10px 20px', background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#64748b', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>Cancel</button>
-                            <button onClick={handleCreateNew} disabled={newCreating || !newDraft.title.trim()}
-                                style={{
-                                    padding: '10px 22px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                                    background: (newCreating || !newDraft.title.trim()) ? '#94a3b8' : '#0891b2',
-                                    border: 'none', color: '#fff', display: 'flex', alignItems: 'center', gap: 6,
-                                    opacity: (newCreating || !newDraft.title.trim()) ? 0.6 : 1,
-                                }}>
-                                <Plus size={14} /> {newCreating ? 'Creating…' : 'Create Investigation'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ═══════ RIGHT: Investigation Detail ════════════════ */}
+            {/* â•â•â•â•â•â•â• RIGHT: Investigation Detail â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
             {selectedId && selectedRca && (
                 <div style={{ flex: 1, overflowY: 'auto', background: '#f8fafc' }}>
                     {detailLoading ? (
-                        <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading investigation…</div>
+                        <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>Loading investigationâ€¦</div>
                     ) : (
                         <div style={{ padding: expandedMode ? '24px 32px' : '20px 24px', maxWidth: expandedMode ? 1100 : undefined, margin: expandedMode ? '0 auto' : undefined }}>
                             {/* Expanded mode breadcrumb */}
@@ -1727,8 +1071,8 @@ export const RCATab: React.FC<RCATabProps> = ({
                                     )}
                                     <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
                                         Method: <span style={{ fontWeight: 600, color: METHODS[selectedRca.method]?.color }}>{METHODS[selectedRca.method]?.label || 'RCA'}</span>
-                                        {' · '}Created: {new Date(selectedRca.created_at).toLocaleDateString()}
-                                        {selectedRca.rca_category && <> · Category: <span style={{ textTransform: 'capitalize' }}>{selectedRca.rca_category.replace('_', ' ')}</span></>}
+                                        {' Â· '}Created: {new Date(selectedRca.created_at).toLocaleDateString()}
+                                        {selectedRca.rca_category && <> Â· Category: <span style={{ textTransform: 'capitalize' }}>{selectedRca.rca_category.replace('_', ' ')}</span></>}
                                     </p>
                                 </div>
                                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1754,7 +1098,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                 </div>
                             </div>
 
-                            {/* ═══════ 6-STEP INVESTIGATION WORKFLOW ═══════ */}
+                            {/* â•â•â•â•â•â•â• 6-STEP INVESTIGATION WORKFLOW â•â•â•â•â•â•â• */}
                             <RCAStepIndicator
                                 currentStep={currentStep}
                                 onStepClick={setCurrentStep}
@@ -1769,14 +1113,14 @@ export const RCATab: React.FC<RCATabProps> = ({
                                 }}
                             />
 
-                            {/* ── Contextual Step Guide ── */}
+                            {/* â”€â”€ Contextual Step Guide â”€â”€ */}
                             <RCAStepGuide activeStep={currentStep - 1} />
 
-                            {/* ── Step content panels ── */}
+                            {/* â”€â”€ Step content panels â”€â”€ */}
                             <div style={{ marginTop: 16 }}>
                                 {/* STEP 1: Define the Problem */}
                                 {currentStep === 1 && (() => {
-                                    /* ── Inline-edit state management for Step 1 ── */
+                                    /* â”€â”€ Inline-edit state management for Step 1 â”€â”€ */
                                     const InlineDefinePanel: React.FC<{ rca: typeof selectedRca }> = ({ rca }) => {
                                         const [draft, setDraft] = React.useState({
                                             problem_statement: rca?.problem_statement || '',
@@ -1896,7 +1240,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                     {inlineSaving ? (
                                                         <>
                                                             <Loader2 size={13} color="#0891b2" className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
-                                                            <span style={{ fontSize: 11, color: '#0891b2', fontWeight: 600 }}>Saving…</span>
+                                                            <span style={{ fontSize: 11, color: '#0891b2', fontWeight: 600 }}>Savingâ€¦</span>
                                                         </>
                                                     ) : saved ? (
                                                         <>
@@ -1969,7 +1313,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                         }}>
                                             <Target size={14} color="#16a34a" style={{ flexShrink: 0, marginTop: 2 }} />
                                             <div style={{ fontSize: 12, color: '#166534', lineHeight: 1.6 }}>
-                                                <strong>Step 5 — Implement:</strong> Assign corrective actions from Step 4, create work orders,
+                                                <strong>Step 5 â€” Implement:</strong> Assign corrective actions from Step 4, create work orders,
                                                 and ensure each recommendation has an owner and a due date.
                                             </div>
                                         </div>
@@ -2011,8 +1355,8 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                                 <div style={{ fontSize: 12, color: '#1e293b', fontWeight: 500 }}>{act.action_description}</div>
                                                                 <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>
                                                                     {act.action_type?.replace('_', ' ')}
-                                                                    {act.assigned_to && ` · ${act.assigned_to}`}
-                                                                    {act.due_date && ` · Due: ${new Date(act.due_date).toLocaleDateString()}`}
+                                                                    {act.assigned_to && ` Â· ${act.assigned_to}`}
+                                                                    {act.due_date && ` Â· Due: ${new Date(act.due_date).toLocaleDateString()}`}
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -2079,7 +1423,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                 </>
             )}
 
-            {/* ═══════ DE TASK CREATION MODAL ════════════════════ */}
+            {/* â•â•â•â•â•â•â• DE TASK CREATION MODAL â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
             {showDEModal && (
                 <div style={{
                     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
@@ -2187,7 +1531,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                             background: '#059669', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', gap: 5,
                                             opacity: deCreating || !deDraft.title.trim() ? 0.6 : 1,
                                         }}>
-                                        <Target size={13} /> {deCreating ? 'Creating…' : 'Create DE Task'}
+                                        <Target size={13} /> {deCreating ? 'Creatingâ€¦' : 'Create DE Task'}
                                     </button>
                                 </div>
                             </>
@@ -2245,7 +1589,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                 />
             )}
 
-            {/* EAM Context Panel — Asset, WO History, Failure Trends, Related RCAs */}
+            {/* EAM Context Panel â€” Asset, WO History, Failure Trends, Related RCAs */}
             {showEAMPanel && (
                 <EAMContextPanel
                     asset={eamAsset}

@@ -60,13 +60,13 @@ export const CONSEQUENCE_OPTIONS = [
 ] as const;
 
 /** Parse a comma-separated consequence_code string into an array of codes */
-export function parseConsequenceCodes(code: string | null): string[] {
+export function parseConsequenceCodes(code: string | null | undefined): string[] {
   if (!code) return [];
   return code.split(',').map(c => c.trim()).filter(Boolean);
 }
 
 /** Check if any safety-level consequence is present in a multi-code string */
-export function hasSafetyConsequence(code: string | null): boolean {
+export function hasSafetyConsequence(code: string | null | undefined): boolean {
   const codes = parseConsequenceCodes(code);
   return codes.some(c => c === 'SAFETY_ENV' || c === 'HIDDEN_SAFETY');
 }

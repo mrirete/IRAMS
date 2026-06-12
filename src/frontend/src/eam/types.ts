@@ -49,7 +49,7 @@ export interface DictionaryEntry {
   isManufacturer?: boolean;
 
   // RBAC: Permissions attached to CONTACT_TYPE entries
-  permissions?: Record<ModuleName, ModulePermissions>;
+  permissions?: Partial<Record<ModuleName, ModulePermissions>>;
   dataScope?: DataScope;
 
   // Reading Type Specifics
@@ -65,6 +65,12 @@ export interface DictionaryEntry {
   // Priority & Dictionary ordering
   colorCode?: string; // Hex color e.g. '#EF4444' or Tailwind key for org-specific color coding
   sequence?: number;  // Sort order for dictionaries (critical for PRIORITY ranking P1→P5)
+
+  // Extended properties (used by Admin page and INVENTORY_TYPE)
+  properties?: Record<string, any>;
+  metadata?: Record<string, any>;
+  is_stockable?: boolean;
+  [key: string]: any; // Allow arbitrary extra properties for dictionary flexibility
 }
 
 export type DictionaryRecord = DictionaryEntry;
@@ -75,7 +81,7 @@ export interface PermissionSet {
   name: string;
   description: string;
   isSystem?: boolean;
-  permissions: Record<ModuleName, ModulePermissions>;
+  permissions: Partial<Record<ModuleName, ModulePermissions>>;
   dataScope: DataScope;
 }
 
@@ -99,6 +105,9 @@ export interface User {
   // Optional per-user granular overrides (deltas) on top of Contact Type permissions
   permissionOverrides?: Partial<Record<ModuleName, Partial<ModulePermissions>>>;
   dataScopeOverrides?: Partial<DataScope>;
+
+  // Snake-case aliases (backward compat with Admin.tsx)
+  contact_id?: string;
 }
 
 // --- Notifications & Alerts (New) ---
@@ -225,8 +234,10 @@ export interface Asset {
   equipmentNumber?: string;       // Auto-generated: EQ-NNNNNN (immutable after creation)
   equipmentGeneration?: number;   // Replacement counter (1 = original install, 2+ = replacement)
 
-  parentId?: string;
+  parentId?: string | null;
 
+  // Hierarchy (ISO 14224)
+  hierarchyLevel?: string;  // e.g. 'ENTERPRISE','SITE','UNIT','SYSTEM','EQUIPMENT','SUBUNIT','COMPONENT'
 
 
   image?: string;
@@ -292,7 +303,7 @@ export interface BomItem {
   notes?: string;
 
   // Derived (computed on read, not stored)
-  isLinked: boolean;             // true = has material record (inventoryItemId set)
+  isLinked?: boolean;             // true = has material record (inventoryItemId set)
   isStockable?: boolean;         // from INVENTORY_TYPE.is_stockable
 }
 
@@ -478,6 +489,7 @@ export interface InventoryItem {
 
 export interface InventoryLocation {
   id: string;
+  storeId?: string; // FK to Store
   storeName: string; // 'Main Store', 'Site B'
   binLocation: string; // 'C2-01-4-2'
   qtyOnHand: number;
@@ -1184,6 +1196,11 @@ export interface Contact {
   costCenterId?: string;
   address?: Address;
 
+  // Backward compat / import
+  roles?: string[];
+  site?: string;
+  reportingTo?: string;
+
   // Meta
   flags?: {
     canLogin?: boolean;
@@ -1209,10 +1226,10 @@ export interface Contact {
 
 export interface Address {
   street: string;
-  city: string;
-  state: string;
-  zip: string;
-  country: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
 }
 
 export interface Vendor {
@@ -1245,14 +1262,6 @@ export interface Vendor {
 }
 
 
-
-
-export interface CustomField {
-  key: string;
-  label: string;
-  type: 'text' | 'number' | 'date' | 'boolean';
-  value: string | number | boolean;
-}
 
 export interface ManufacturerModel {
   id: string;

@@ -160,13 +160,13 @@ export class DatabaseService {
             title: contact.title,
             roles: contact.types,
             is_active: contact.active,
-            is_employee: contact.flags.isLabour,
-            is_vendor: contact.flags.isVendor,
+            is_employee: contact.flags?.isLabour,
+            is_vendor: contact.flags?.isVendor,
             organization_unit_id: contact.organizationUnitId,
             // New Permission Flags
-            can_submit_requests: contact.flags.canSubmitRequests,
-            can_log_time: contact.flags.canLogTime,
-            has_qualifications: contact.flags.hasQualifications,
+            can_submit_requests: contact.flags?.canSubmitRequests,
+            can_log_time: contact.flags?.canLogTime,
+            has_qualifications: contact.flags?.hasQualifications,
 
             hourly_rate: contact.hourlyRate,
             address: contact.address,
@@ -211,13 +211,13 @@ export class DatabaseService {
             mobile: contact.mobile,
             roles: contact.types,
             is_active: contact.active,
-            is_employee: contact.flags.isLabour,
-            is_vendor: contact.flags.isVendor,
+            is_employee: contact.flags?.isLabour,
+            is_vendor: contact.flags?.isVendor,
             organization_unit_id: contact.organizationUnitId,
             // New Permission Flags
-            can_submit_requests: contact.flags.canSubmitRequests,
-            can_log_time: contact.flags.canLogTime,
-            has_qualifications: contact.flags.hasQualifications,
+            can_submit_requests: contact.flags?.canSubmitRequests,
+            can_log_time: contact.flags?.canLogTime,
+            has_qualifications: contact.flags?.hasQualifications,
 
             hourly_rate: contact.hourlyRate,
             address: contact.address,
@@ -1312,9 +1312,7 @@ export class DatabaseService {
         const { error } = await supabase.from('assets').update(row).eq('id', asset.id);
         if (error) {
             console.error('[updateAsset] Supabase ERROR:', error.message, error.details, error.hint);
-            errorLog.apiError('assets', `[updateAsset] Failed for ${asset.tag || asset.id}`, error, {
-                assetId: asset.id, tag: asset.tag, operation: 'update',
-            });
+            errorLog.apiError('assets', `[updateAsset] Failed for ${asset.tag || asset.id}`, error, 'asset', asset.id);
         } else {
             console.log('[updateAsset] ✅ Saved successfully for asset:', asset.id);
         }
@@ -1413,11 +1411,11 @@ export class DatabaseService {
             }));
 
             // Merge results
-            return [...dictionaryEntries, ...costCenterEntries];
+            return [...dictionaryEntries as DictionaryEntry[], ...costCenterEntries as DictionaryEntry[]];
         } catch (e) {
             console.error("Federation Error (Cost Centers): Failed to fetch from FinOpsService", e);
             errorLog.apiError('dictionaries', 'Federation Error: Cost Centers fetch failed', e);
-            return dictionaryEntries; // Return at least standard dictionaries
+            return dictionaryEntries as DictionaryEntry[]; // Return at least standard dictionaries
         }
     }
 
@@ -2144,7 +2142,7 @@ export class DatabaseService {
 
         if (labor) {
             // Fix Task IDs if they were temporary
-            const fixedLabor = labor.map(l => {
+            const fixedLabor = labor.map((l: any) => {
                 if (l.jobTaskId && l.jobTaskId.startsWith('new-')) {
                     if (taskSemaphores[l.jobTaskId]) {
                         console.log(`[updateWorkOrder] Fixing Labor Task ID: ${l.jobTaskId} -> ${taskSemaphores[l.jobTaskId]}`);
@@ -2160,7 +2158,7 @@ export class DatabaseService {
 
         if (inventory) {
             // Fix Task IDs if they were temporary
-            const fixedInventory = inventory.map(i => {
+            const fixedInventory = inventory.map((i: any) => {
                 if (i.jobTaskId && i.jobTaskId.startsWith('new-')) {
                     if (taskSemaphores[i.jobTaskId]) {
                         console.log(`[updateWorkOrder] Fixing Inventory Task ID: ${i.jobTaskId} -> ${taskSemaphores[i.jobTaskId]}`);
@@ -2360,7 +2358,7 @@ export class DatabaseService {
             cost_frozen: false,
             frozen_labor_cost: 0,
             frozen_material_cost: 0,
-            created_by: actor && actor.length > 10 ? actor : undefined,
+            created_by: actor && actor.length > 10 ? actor : undefined as any,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
         };
@@ -3804,7 +3802,7 @@ export class DatabaseService {
         if (targetAssetId) {
             try {
                 await supabase.from('recurring_work_assigned_assets').update({
-                    last_completed: now.toISOString().split('T')[0],
+                    last_completed: new Date().toISOString().split('T')[0],
                 }).eq('recurring_work_id', pmId).eq('asset_id', targetAssetId);
                 console.log(`[generateWOFromPM] Updated last_completed for asset ${targetAssetId}`);
             } catch (e) {

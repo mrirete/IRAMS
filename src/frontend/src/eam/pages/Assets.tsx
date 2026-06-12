@@ -976,13 +976,13 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                                     onClick={async () => {
                                                         const selected = assets.filter(a => selectedIds.has(a.id));
                                                         for (const a of selected) {
-                                                            await DatabaseService.updateAsset({ ...a, status });
+                                                            await DatabaseService.getInstance().updateAsset({ ...a, status });
                                                         }
-                                                        const refreshed = await DatabaseService.getAssets();
+                                                        const refreshed = await DatabaseService.getInstance().getAssets();
                                                         setAssets(refreshed);
                                                         setSelectedIds(new Set());
                                                         setShowMassChange(false);
-                                                        toast.success(`Set ${selected.length} assets to ${status}`);
+                                                        showToast(`Set ${selected.length} assets to ${status}`, 'success');
                                                     }}
                                                     className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 rounded"
                                                 >
@@ -998,13 +998,13 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                                     onClick={async () => {
                                                         const selected = assets.filter(a => selectedIds.has(a.id));
                                                         for (const a of selected) {
-                                                            await DatabaseService.updateAsset({ ...a, criticality: crit });
+                                                            await DatabaseService.getInstance().updateAsset({ ...a, criticality: crit });
                                                         }
-                                                        const refreshed = await DatabaseService.getAssets();
+                                                        const refreshed = await DatabaseService.getInstance().getAssets();
                                                         setAssets(refreshed);
                                                         setSelectedIds(new Set());
                                                         setShowMassChange(false);
-                                                        toast.success(`Set ${selected.length} assets to Criticality ${crit}`);
+                                                        showToast(`Set ${selected.length} assets to Criticality ${crit}`, 'success');
                                                     }}
                                                     className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 rounded"
                                                 >
@@ -1769,7 +1769,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 priority: 'MEDIUM',
                                 bomItems: [],
                             };
-                            await DatabaseService.createAsset(newAsset);
+                            await DatabaseService.getInstance().addAsset(newAsset);
                             successCount++;
                         } catch (err) {
                             failCount++;
@@ -1779,7 +1779,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                             });
                         }
                     }
-                    const refreshed = await DatabaseService.getAssets();
+                    const refreshed = await DatabaseService.getInstance().getAssets();
                     setAssets(refreshed);
                     if (failCount > 0) {
                         showToast(`Imported ${successCount} assets, ${failCount} failed — see Error Logs`, 'warning');
@@ -1809,7 +1809,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 uom: item.uom || 'EA',
                                 critical: item.critical || false,
                             }));
-                            await DatabaseService.updateAsset({ ...asset, bomItems: [...existingBom, ...newItems] });
+                            await DatabaseService.getInstance().updateAsset({ ...asset, bomItems: [...existingBom, ...newItems] });
                             count += newItems.length;
                         } catch (err) {
                             failCount++;
@@ -1818,7 +1818,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                             });
                         }
                     }
-                    const refreshed = await DatabaseService.getAssets();
+                    const refreshed = await DatabaseService.getInstance().getAssets();
                     setAssets(refreshed);
                     if (failCount > 0) {
                         showToast(`Imported ${count} BOM items, ${failCount} groups failed — see Error Logs`, 'warning');
@@ -1859,7 +1859,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
             .filter(c =>
                 c.types.includes('MANUFACTURER') ||
                 c.types.includes('VENDOR') ||
-                c.flags.isVendor
+                c.flags?.isVendor
             )
             .map(c => c.name);
 
@@ -1944,6 +1944,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     onSave={handleMfrCreated}
                     contactTypes={dictionaries.filter(d => d.type === 'CONTACT_TYPE')}
                     initialType="MANUFACTURER"
+                    costCenters={dictionaries.filter(d => d.type === 'COST_CENTRE')}
                 />
             )}
             {isAddModelOpen && mfrContact && (
@@ -2938,7 +2939,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
         name: '',
         assetType: type === 'Asset' ? '' : 'AREA',
         status: AssetStatus.ACTIVE,
-        criticality: '',
+        criticality: '' as any,
         location: '',
         parentId: initialParentId,
         healthScore: 100,
@@ -3115,7 +3116,7 @@ function ReadingsTab({ asset, definitions, onAdd }: ReadingsTabProps) {
     const handleSaveReading = (def: ReadingDefinition) => {
         const val = entryValue[def.id];
         if (val === undefined || isNaN(val)) return;
-        showToast(`Saved value ${val} for ${def.name}. (Simulated)`, 'success');
+        console.log(`Saved value ${val} for ${def.name}. (Simulated)`);
         // In real app, this would dispatch to the Readings context/store
         setEntryValue({ ...entryValue, [def.id]: 0 }); // Reset or clear
     };

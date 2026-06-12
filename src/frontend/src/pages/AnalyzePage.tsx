@@ -637,7 +637,7 @@ export const AnalyzePage: React.FC = () => {
                 {/* Right: Reliability Specialist + Triggers (1/4) */}
                 <div className="space-y-4">
                     <ReliabilitySpecialist
-                        activeDivision={activeDivision}
+                        activeDivision={activeDivision as any}
                         contextAsset={contextAsset}
                         paretoData={paretoData}
                         paretoCriteria={paretoCriteria}

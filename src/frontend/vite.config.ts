@@ -1,6 +1,6 @@
+// @ts-ignore vitest types not available in CI build
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-/// <reference types="vitest" />
 import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
@@ -90,6 +90,7 @@ export default defineConfig({
     minify: 'esbuild',
   },
 
+  // @ts-ignore - vitest config extension
   test: {
     globals: true,
     environment: 'jsdom',

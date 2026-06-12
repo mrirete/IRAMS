@@ -30,7 +30,7 @@ export async function pdfToImageBlob(file: File): Promise<Blob> {
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Could not get canvas context');
 
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    await page.render({ canvasContext: ctx, viewport } as any).promise;
 
     return new Promise<Blob>((resolve, reject) => {
         canvas.toBlob(

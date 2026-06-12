@@ -45,7 +45,7 @@ export const MobileBottomNav: React.FC = () => {
                         className={`mobile-bottom-nav-item ${active ? 'active' : ''}`}
                         aria-current={active ? 'page' : undefined}
                     >
-                        <Icon size={20} strokeWidth={active ? 2.2 : 1.8} />
+                        {React.createElement(item.icon as any, { size: 20, strokeWidth: active ? 2.2 : 1.8 })}
                         <span>{item.label}</span>
                     </button>
                 );
