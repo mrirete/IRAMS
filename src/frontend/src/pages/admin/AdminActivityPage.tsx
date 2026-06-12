@@ -16,7 +16,7 @@ import {
     Calendar, ArrowDownCircle, X, AlertOctagon, FileText,
     BarChart3, Users
 } from 'lucide-react';
-import { supabase } from '../../eam/services/supabaseClient';
+import { supabase } from '../../eam/lib/supabase';
 
 // ── Types ────────────────────────────────────────────────────
 
