@@ -294,7 +294,7 @@ export const ParetoChart: React.FC<Props> = ({ data, criteria, threshold, onBarC
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-400" /> Cumulative %
                 </span>
                 <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-400" /> WO Count
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-400" /> WO Count
                 </span>
             </div>
         </div>

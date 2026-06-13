@@ -108,7 +108,7 @@ export const KnowledgeGraphPage: React.FC = () => {
             case 'FailureMode': return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/30';
             case 'Cause': return 'bg-red-500/10 text-red-500 border-red-500/30';
             case 'Person': return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
-            case 'KPI': return 'bg-purple-500/10 text-purple-400 border-purple-500/30';
+            case 'KPI': return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
             case 'Department': return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
             case 'Competency': return 'bg-orange-500/10 text-orange-400 border-orange-500/30';
             default: return 'bg-slate-100 text-brand-300 border-slate-300';

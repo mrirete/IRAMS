@@ -65,7 +65,7 @@ const KPI_DATA: KpiCard[] = [
         label: 'Inventory Alerts', value: 14, format: 'number',
         trend: 'down', trendValue: '-3', trendGood: true,
         sparkline: [22, 20, 19, 18, 17, 16, 14],
-        icon: <Package size={20} />, color: 'text-purple-400', route: '/inventory',
+        icon: <Package size={20} />, color: 'text-blue-500', route: '/inventory',
     },
     {
         label: 'Safety Open Items', value: 6, format: 'number',

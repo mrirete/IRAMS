@@ -488,14 +488,14 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
 
             {/* ── Toolbar (Edit Mode Only) ── */}
             {mode === 'EDIT' && !readOnly && (
-                <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm p-2 border-b border-indigo-100 -mx-4 px-4 mb-4">
+                <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm p-2 border-b border-blue-100 -mx-4 px-4 mb-4">
                     <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
                         {['Structure', 'Input', 'Inspection', 'Evidence', 'Safety'].map(cat => (
                             <button
                                 key={cat}
                                 onClick={() => setActiveCategory(cat)}
                                 className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors
-                                    ${activeCategory === cat ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                    ${activeCategory === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                             >
                                 {cat}
                             </button>
@@ -506,12 +506,12 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
                             <button
                                 key={tool.type}
                                 onClick={() => addBlock(tool.type)}
-                                className="flex items-center gap-2 p-2 rounded border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 hover:shadow-sm transition text-left group"
+                                className="flex items-center gap-2 p-2 rounded border border-slate-200 hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm transition text-left group"
                             >
-                                <div className="p-1.5 bg-slate-100 rounded group-hover:bg-white text-slate-500 group-hover:text-indigo-600 transition-colors">
+                                <div className="p-1.5 bg-slate-100 rounded group-hover:bg-white text-slate-500 group-hover:text-blue-600 transition-colors">
                                     <tool.icon size={14} />
                                 </div>
-                                <span className="text-xs font-medium text-slate-700 group-hover:text-indigo-900">{tool.label}</span>
+                                <span className="text-xs font-medium text-slate-700 group-hover:text-blue-900">{tool.label}</span>
                             </button>
                         ))}
                     </div>
@@ -536,21 +536,21 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
                         onDragOver={(e) => handleDragOver(e, idx)}
                         onDragEnd={handleDragEnd}
                         className={`group relative border rounded-xl bg-white transition-all duration-200
-                            ${draggedIdx === idx ? 'opacity-40 border-dashed border-indigo-400' : 'border-slate-200 hover:border-indigo-200 hover:shadow-sm'}
+                            ${draggedIdx === idx ? 'opacity-40 border-dashed border-blue-400' : 'border-slate-200 hover:border-blue-200 hover:shadow-sm'}
                             ${block.type === 'HEADING' ? 'border-none !bg-transparent !p-0 !m-0 mt-6' : 'p-4'}
                         `}
                     >
                         {/* Drag Handle & Actions (Edit Mode) */}
                         {mode === 'EDIT' && !readOnly && (
                             <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <span className="cursor-move text-slate-300 hover:text-indigo-500 p-1"><GripVertical size={14} /></span>
+                                <span className="cursor-move text-slate-300 hover:text-blue-500 p-1"><GripVertical size={14} /></span>
                                 <div className="h-4 w-px bg-slate-200 mx-1" />
-                                <label className="flex items-center gap-1 text-[10px] uppercase font-bold text-slate-400 cursor-pointer hover:text-indigo-600">
+                                <label className="flex items-center gap-1 text-[10px] uppercase font-bold text-slate-400 cursor-pointer hover:text-blue-600">
                                     <input
                                         type="checkbox"
                                         checked={block.required}
                                         onChange={(e) => updateBlock(block.id, { required: e.target.checked })}
-                                        className="rounded border-slate-300 text-indigo-600 focus:ring-0 h-3 w-3"
+                                        className="rounded border-slate-300 text-blue-600 focus:ring-0 h-3 w-3"
                                     />
                                     Req
                                 </label>

@@ -294,7 +294,7 @@ ${strategyRecommendation}
                     {/* Left: Input Form (1/3) */}
                     <div className="lg:col-span-1 bg-white border border-slate-200 rounded-xl shadow-sm p-5 space-y-4">
                         <div className="flex items-center gap-2 text-sm font-bold text-slate-800 pb-2 border-b border-slate-100">
-                            <Gauge size={16} className="text-indigo-600" /> Enter Asset Parameters
+                            <Gauge size={16} className="text-blue-600" /> Enter Asset Parameters
                         </div>
                         <form onSubmit={handleCalculate} className="space-y-3.5">
                             <div>
@@ -304,7 +304,7 @@ ${strategyRecommendation}
                                     required
                                     value={inputs.assetName}
                                     onChange={e => setInputs({ ...inputs, assetName: e.target.value })}
-                                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-indigo-500"
+                                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-blue-500"
                                     placeholder="e.g. Pump, Compressor, Turbine..."
                                 />
                             </div>
@@ -319,7 +319,7 @@ ${strategyRecommendation}
                                         step="any"
                                         value={inputs.plannedTime}
                                         onChange={e => setInputs({ ...inputs, plannedTime: parseFloat(e.target.value) || 0 })}
-                                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-indigo-500"
+                                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-blue-500"
                                     />
                                 </div>
                                 <div>
@@ -331,7 +331,7 @@ ${strategyRecommendation}
                                         step="any"
                                         value={inputs.downtime}
                                         onChange={e => setInputs({ ...inputs, downtime: parseFloat(e.target.value) || 0 })}
-                                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-indigo-500"
+                                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-blue-500"
                                     />
                                 </div>
                             </div>
@@ -344,7 +344,7 @@ ${strategyRecommendation}
                                     min="1"
                                     value={inputs.idealRate}
                                     onChange={e => setInputs({ ...inputs, idealRate: parseInt(e.target.value) || 0 })}
-                                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-indigo-500"
+                                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-blue-500"
                                 />
                             </div>
 
@@ -357,7 +357,7 @@ ${strategyRecommendation}
                                         min="0"
                                         value={inputs.totalProduced}
                                         onChange={e => setInputs({ ...inputs, totalProduced: parseInt(e.target.value) || 0 })}
-                                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-indigo-500"
+                                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-blue-500"
                                     />
                                 </div>
                                 <div>
@@ -368,14 +368,14 @@ ${strategyRecommendation}
                                         min="0"
                                         value={inputs.goodProduced}
                                         onChange={e => setInputs({ ...inputs, goodProduced: parseInt(e.target.value) || 0 })}
-                                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-indigo-500"
+                                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-700 focus:outline-none focus:border-blue-500"
                                     />
                                 </div>
                             </div>
 
                             <button
                                 type="submit"
-                                className="w-full flex items-center justify-center gap-2 mt-4 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl text-xs transition-all shadow-md hover:shadow-lg"
+                                className="w-full flex items-center justify-center gap-2 mt-4 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white font-semibold rounded-xl text-xs transition-all shadow-md hover:shadow-lg"
                             >
                                 <Play size={12} fill="currentColor" /> Run OEE Calculation
                             </button>
@@ -543,7 +543,7 @@ ${strategyRecommendation}
                                             {/* Net productive time (OEE) */}
                                             <div
                                                 style={{ width: `${activeResult.oee * 100}%` }}
-                                                className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full flex items-center justify-center text-white text-[9px] font-bold"
+                                                className="bg-gradient-to-r from-blue-500 to-blue-500 h-full flex items-center justify-center text-white text-[9px] font-bold"
                                                 title={`Net Productive Time: ${activeResult.netProductiveHours.toFixed(1)} hrs`}
                                             >
                                                 {activeResult.oee > 0.15 && `${activeResult.netProductiveHours.toFixed(1)}h Productive`}
@@ -575,9 +575,9 @@ ${strategyRecommendation}
                                         </div>
 
                                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                                            <div className="p-3 bg-indigo-50/50 rounded-lg border border-indigo-100">
+                                            <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-100">
                                                 <div className="text-slate-400 text-[9px] font-bold uppercase">Net Productive Time</div>
-                                                <div className="text-sm font-black text-indigo-700">{activeResult.netProductiveHours.toFixed(1)} hrs</div>
+                                                <div className="text-sm font-black text-blue-700">{activeResult.netProductiveHours.toFixed(1)} hrs</div>
                                             </div>
                                             <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-100">
                                                 <div className="text-slate-400 text-[9px] font-bold uppercase">Availability Loss</div>
@@ -669,7 +669,7 @@ ${strategyRecommendation}
                                             <td className="px-4 py-3.5">
                                                 <div className="flex items-center gap-2">
                                                     <div className="w-12 bg-slate-100 rounded-full h-1.5">
-                                                        <div className="bg-indigo-600 h-1.5 rounded-full" style={{ width: `${rec.oee * 100}%` }} />
+                                                        <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${rec.oee * 100}%` }} />
                                                     </div>
                                                     <span className="font-mono font-black">{(rec.oee * 100).toFixed(1)}%</span>
                                                 </div>
@@ -684,7 +684,7 @@ ${strategyRecommendation}
                                             <td className="px-4 py-3.5 text-right space-x-1.5">
                                                 <button
                                                     onClick={() => handleLoadInput(rec)}
-                                                    className="px-2 py-1 bg-indigo-50 border border-indigo-200 text-indigo-600 text-[10px] font-bold rounded hover:bg-indigo-100 transition-colors"
+                                                    className="px-2 py-1 bg-blue-50 border border-blue-200 text-blue-600 text-[10px] font-bold rounded hover:bg-blue-100 transition-colors"
                                                 >
                                                     Select
                                                 </button>
@@ -729,7 +729,7 @@ ${strategyRecommendation}
                             <div
                                 key={rec.id}
                                 onClick={() => handleLoadInput(rec)}
-                                className={`p-4 rounded-xl border transition-all cursor-pointer relative group ${activeResult?.id === rec.id ? 'border-indigo-500 bg-indigo-50/20 shadow-md scale-[1.01]' : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'}`}
+                                className={`p-4 rounded-xl border transition-all cursor-pointer relative group ${activeResult?.id === rec.id ? 'border-blue-500 bg-blue-50/20 shadow-md scale-[1.01]' : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'}`}
                             >
                                 <button
                                     onClick={(e) => handleDeleteHistory(rec.id, e)}

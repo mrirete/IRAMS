@@ -19,7 +19,7 @@ const STATUS_CFG: Record<InspectionEventStatus, { label: string; icon: React.Rea
 };
 
 const NDT_COLOR: Record<string, string> = {
-    UT: 'bg-blue-500', PAUT: 'bg-cyan-500', MFL: 'bg-purple-500', VT: 'bg-green-500',
+    UT: 'bg-blue-500', PAUT: 'bg-cyan-500', MFL: 'bg-blue-500', VT: 'bg-green-500',
     PT: 'bg-yellow-500', RT: 'bg-orange-500', MT: 'bg-pink-500', TOFD: 'bg-teal-500',
 };
 

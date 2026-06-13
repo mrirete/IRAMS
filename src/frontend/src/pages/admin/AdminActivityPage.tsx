@@ -200,14 +200,14 @@ export const AdminActivityPage: React.FC = () => {
             {/* ── Header ─────────────────────────────────────── */}
             <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-violet-500/25">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center shadow-lg shadow-blue-500/25">
                         <Shield size={22} className="text-white" />
                     </div>
                     <div>
                         <h1 className="text-xl font-black text-slate-900 tracking-tight">Admin Activity Log</h1>
                         <p className="text-sm text-slate-500 font-medium">
                             Full audit trail — Who changed What, When, and Where
-                            <span className="ml-2 text-violet-600 font-bold text-[10px] uppercase tracking-widest bg-violet-50 px-2 py-0.5 rounded-full border border-violet-200">Super Admin Only</span>
+                            <span className="ml-2 text-blue-600 font-bold text-[10px] uppercase tracking-widest bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">Super Admin Only</span>
                         </p>
                     </div>
                 </div>
@@ -219,13 +219,13 @@ export const AdminActivityPage: React.FC = () => {
 
             {/* ── Stats Banner ────────────────────────────────── */}
             {stats && (
-                <div className="px-6 py-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-violet-50/30 flex items-center gap-3 overflow-x-auto shrink-0">
+                <div className="px-6 py-3 border-b border-slate-200 bg-gradient-to-r from-slate-50 to-blue-50/30 flex items-center gap-3 overflow-x-auto shrink-0">
                     <StatCard label="Total Events" value={stats.total} icon={<BarChart3 size={14} />} color="text-slate-800" />
                     <StatCard label="Creates" value={stats.inserts} icon={<PlusCircle size={14} />} color="text-emerald-600" />
                     <StatCard label="Updates" value={stats.updates} icon={<Edit3 size={14} />} color="text-blue-600" />
                     <StatCard label="Deletes" value={stats.deletes} icon={<Trash2 size={14} />} color="text-red-600" />
                     <div className="w-px h-8 bg-slate-300 shrink-0" />
-                    <StatCard label="Active Users" value={stats.uniqueUsers} icon={<Users size={14} />} color="text-violet-600" />
+                    <StatCard label="Active Users" value={stats.uniqueUsers} icon={<Users size={14} />} color="text-blue-600" />
                     <StatCard label="Tables Affected" value={stats.uniqueTables} icon={<Database size={14} />} color="text-amber-600" />
                     <StatCard label="Privileged Actions" value={stats.privilegedActions} icon={<AlertOctagon size={14} />} color="text-red-700" />
                 </div>
@@ -239,18 +239,18 @@ export const AdminActivityPage: React.FC = () => {
                         value={search}
                         onChange={e => { setSearch(e.target.value); setPage(0); }}
                         placeholder="Search changes, users, record IDs..."
-                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20 transition-all font-medium"
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"
                     />
                 </div>
 
                 <select value={filterTable} onChange={e => { setFilterTable(e.target.value); setPage(0); }}
-                    className="py-2.5 px-3 text-sm min-w-[140px] bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:border-violet-500 cursor-pointer">
+                    className="py-2.5 px-3 text-sm min-w-[140px] bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer">
                     <option value="">All Tables</option>
                     {uniqueTables.map(t => <option key={t} value={t}>{TABLE_LABELS[t] || t}</option>)}
                 </select>
 
                 <select value={filterAction} onChange={e => { setFilterAction(e.target.value); setPage(0); }}
-                    className="py-2.5 px-3 text-sm min-w-[120px] bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:border-violet-500 cursor-pointer">
+                    className="py-2.5 px-3 text-sm min-w-[120px] bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer">
                     <option value="">All Actions</option>
                     <option value="INSERT">Created</option>
                     <option value="UPDATE">Modified</option>
@@ -258,7 +258,7 @@ export const AdminActivityPage: React.FC = () => {
                 </select>
 
                 <select value={filterUser} onChange={e => { setFilterUser(e.target.value); setPage(0); }}
-                    className="py-2.5 px-3 text-sm min-w-[140px] bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:border-violet-500 cursor-pointer">
+                    className="py-2.5 px-3 text-sm min-w-[140px] bg-white border border-slate-300 rounded-lg text-slate-700 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer">
                     <option value="">All Users</option>
                     {Array.from(userMap.entries()).map(([id, name]) => (
                         <option key={id} value={id}>{name}</option>
@@ -266,14 +266,14 @@ export const AdminActivityPage: React.FC = () => {
                 </select>
 
                 <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
-                    className="py-2.5 px-3 text-sm bg-white border border-slate-300 rounded-lg text-slate-700 font-medium focus:outline-none focus:border-violet-500 cursor-pointer" />
+                    className="py-2.5 px-3 text-sm bg-white border border-slate-300 rounded-lg text-slate-700 font-medium focus:outline-none focus:border-blue-500 cursor-pointer" />
                 <span className="text-xs text-slate-400 font-medium">to</span>
                 <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
-                    className="py-2.5 px-3 text-sm bg-white border border-slate-300 rounded-lg text-slate-700 font-medium focus:outline-none focus:border-violet-500 cursor-pointer" />
+                    className="py-2.5 px-3 text-sm bg-white border border-slate-300 rounded-lg text-slate-700 font-medium focus:outline-none focus:border-blue-500 cursor-pointer" />
 
                 <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none font-semibold whitespace-nowrap">
                     <input type="checkbox" checked={filterPrivileged} onChange={e => { setFilterPrivileged(e.target.checked); setPage(0); }}
-                        className="rounded border-slate-300 bg-white text-violet-600 focus:ring-violet-500 w-4 h-4" />
+                        className="rounded border-slate-300 bg-white text-blue-600 focus:ring-blue-500 w-4 h-4" />
                     <AlertTriangle size={13} className="text-amber-500" /> Privileged only
                 </label>
 
@@ -289,7 +289,7 @@ export const AdminActivityPage: React.FC = () => {
             <div className="flex-1 overflow-y-auto">
                 {loading ? (
                     <div className="flex items-center justify-center h-48">
-                        <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                     </div>
                 ) : entries.length === 0 ? (
                     <div className="flex flex-col items-center justify-center mt-16 space-y-3">
@@ -310,7 +310,7 @@ export const AdminActivityPage: React.FC = () => {
                             const tableLabel = TABLE_LABELS[entry.table_name] || entry.table_name;
 
                             return (
-                                <div key={entry.id} className={`px-6 py-3.5 hover:bg-slate-50/80 transition-colors ${isSecurity ? 'border-l-3 border-l-violet-400' : ''}`}>
+                                <div key={entry.id} className={`px-6 py-3.5 hover:bg-slate-50/80 transition-colors ${isSecurity ? 'border-l-3 border-l-blue-400' : ''}`}>
                                     <div className="flex items-start gap-3 cursor-pointer" onClick={() => setExpandedId(isExpanded ? null : entry.id)}>
                                         {/* Action Badge */}
                                         <div className={`mt-0.5 shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase border ${actionCfg.bg} ${actionCfg.border} ${actionCfg.color}`}>

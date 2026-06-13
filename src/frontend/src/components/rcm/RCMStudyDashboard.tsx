@@ -208,7 +208,7 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
                     <div className="flex items-center justify-between mt-3">
                       <div className="flex items-center gap-3 text-[10px] text-slate-400">
                         <span className="flex items-center gap-1">
-                          {study.rcm_source === 'ai_generated' ? <><Sparkles size={10} className="text-purple-400" /> AI</> : '📝 Manual'}
+                          {study.rcm_source === 'ai_generated' ? <><Sparkles size={10} className="text-blue-400" /> AI</> : '📝 Manual'}
                         </span>
                         <span>{new Date(study.updated_at).toLocaleDateString()}</span>
                       </div>

@@ -11,17 +11,17 @@ export default {
             },
             colors: {
                 brand: {
-                    950: '#020617', // darkest slate
-                    900: '#0f172a', // deep slate (sidebar/topbar bg option)
-                    800: '#1e293b', // sidebar/topbar bg
-                    700: '#334155', // borders, hover bg
-                    600: '#475569', // muted dividers
-                    500: '#64748b', // secondary icons
-                    400: '#94a3b8', // nav text (inactive)
-                    300: '#cbd5e1', // hover text, breadcrumb
-                    200: '#e2e8f0', // primary text
-                    100: '#f1f5f9', // bright text, headings
-                    50: '#f8fafc', // near-white
+                    950: '#ffffff',  // lightest — page bg fallback
+                    900: '#f1f5f9',  // shell bg, sidebar bg
+                    800: '#e8edf3',  // soft slate-blue sidebar
+                    700: '#cbd5e1',  // borders, dividers
+                    600: '#94a3b8',  // muted icons, dividers
+                    500: '#64748b',  // secondary/disabled text
+                    400: '#475569',  // nav text (inactive)
+                    300: '#334155',  // hover text
+                    200: '#1e293b',  // primary text
+                    100: '#0f172a',  // headings, bold text
+                    50:  '#020617',  // darkest (near black)
                 },
                 accent: {
                     blue: '#3b82f6',

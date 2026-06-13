@@ -49,9 +49,9 @@ const PRIORITY_COLORS: Record<string, { bg: string; text: string; border: string
 const CRAFT_COLORS: Record<string, string> = {
     ELECTRICIAN: 'bg-yellow-100 text-yellow-800 border-yellow-300',
     MECHANIC:    'bg-sky-100 text-sky-800 border-sky-300',
-    INSTRUMENT:  'bg-purple-100 text-purple-800 border-purple-300',
+    INSTRUMENT:  'bg-blue-100 text-blue-800 border-blue-300',
     OPERATOR:    'bg-emerald-100 text-emerald-800 border-emerald-300',
-    TECHNICIAN:  'bg-indigo-100 text-indigo-800 border-indigo-300',
+    TECHNICIAN:  'bg-blue-100 text-blue-800 border-blue-300',
     SUPERVISOR:  'bg-rose-100 text-rose-800 border-rose-300',
     PLUMBER:     'bg-cyan-100 text-cyan-800 border-cyan-300',
     WELDER:      'bg-amber-100 text-amber-800 border-amber-300',

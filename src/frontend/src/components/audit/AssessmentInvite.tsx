@@ -289,7 +289,7 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
                             <Users size={18} className="text-white" />
                         </div>
                         <div>
@@ -441,7 +441,7 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                                                                         : 'hover:bg-blue-50/60'
                                                                 }`}
                                                             >
-                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center shrink-0">
+                                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-100 to-blue-100 flex items-center justify-center shrink-0">
                                                                     <User size={14} className="text-blue-500" />
                                                                 </div>
                                                                 <div className="flex-1 min-w-0">
@@ -487,7 +487,7 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                                 )}
 
                                 <p className="text-[10px] text-slate-400 flex items-center gap-1">
-                                    <Bell size={9} className="text-indigo-400" />
+                                    <Bell size={9} className="text-blue-400" />
                                     System users receive an in-app notification automatically
                                 </p>
                             </div>
@@ -543,7 +543,7 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                                         <div key={c.id} className="flex items-center gap-3 bg-slate-50 rounded-xl px-4 py-3">
                                             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                                                 sysUser
-                                                    ? 'bg-gradient-to-br from-blue-100 to-indigo-100'
+                                                    ? 'bg-gradient-to-br from-blue-100 to-blue-100'
                                                     : 'bg-blue-100'
                                             }`}>
                                                 {sysUser

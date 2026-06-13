@@ -4,7 +4,7 @@ import type { InspectionTeamMember, InspectionTeamRole } from '../../types/integ
 
 const ROLE_CONFIG: Record<InspectionTeamRole, { label: string; icon: React.ReactNode; bg: string; text: string }> = {
     lead_inspector: { label: 'Lead Inspector', icon: <Shield size={10} />, bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
-    nde_technician: { label: 'NDE Technician', icon: <Wrench size={10} />, bg: 'bg-violet-50 border-violet-200', text: 'text-violet-700' },
+    nde_technician: { label: 'NDE Technician', icon: <Wrench size={10} />, bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
     engineer: { label: 'Engineer', icon: <Award size={10} />, bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
     observer: { label: 'Observer', icon: <Eye size={10} />, bg: 'bg-slate-50 border-slate-200', text: 'text-slate-600' },
 };
@@ -57,21 +57,21 @@ export const InspectionTeamPanel: React.FC<InspectionTeamPanelProps> = ({
 
     const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase();
 
-    const INITIALS_COLORS = ['bg-blue-500', 'bg-violet-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500', 'bg-indigo-500'];
+    const INITIALS_COLORS = ['bg-blue-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500', 'bg-blue-500'];
 
     return (
         <div className="space-y-3">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <div className="w-1 h-5 rounded-full bg-gradient-to-b from-violet-400 to-blue-400" />
+                    <div className="w-1 h-5 rounded-full bg-gradient-to-b from-blue-400 to-blue-400" />
                     <h3 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Inspection Team</h3>
                     <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">{team.length}</span>
                 </div>
                 {!readonly && (
                     <button
                         onClick={() => setShowPicker(!showPicker)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
                     >
                         <Plus size={12} /> Add Inspector
                     </button>
@@ -151,7 +151,7 @@ export const InspectionTeamPanel: React.FC<InspectionTeamPanelProps> = ({
 
             {/* Picker Modal */}
             {showPicker && !readonly && (
-                <div className="bg-white/90 backdrop-blur-sm border border-violet-200/60 rounded-xl p-4 shadow-lg space-y-3 animate-in slide-in-from-top-2 duration-200">
+                <div className="bg-white/90 backdrop-blur-sm border border-blue-200/60 rounded-xl p-4 shadow-lg space-y-3 animate-in slide-in-from-top-2 duration-200">
                     {/* Search */}
                     <div className="relative">
                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -159,7 +159,7 @@ export const InspectionTeamPanel: React.FC<InspectionTeamPanelProps> = ({
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
                             placeholder="Search people..."
-                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 transition-all"
+                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all"
                             autoFocus
                         />
                     </div>
@@ -169,7 +169,7 @@ export const InspectionTeamPanel: React.FC<InspectionTeamPanelProps> = ({
                         <select
                             value={selectedRole}
                             onChange={e => setSelectedRole(e.target.value as InspectionTeamRole)}
-                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-300 transition-all"
+                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all"
                         >
                             <option value="lead_inspector">Lead Inspector</option>
                             <option value="nde_technician">NDE Technician</option>
@@ -180,7 +180,7 @@ export const InspectionTeamPanel: React.FC<InspectionTeamPanelProps> = ({
                             value={certification}
                             onChange={e => setCertification(e.target.value)}
                             placeholder="Certification (e.g. API 510)"
-                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 transition-all"
+                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-all"
                         />
                     </div>
 
@@ -193,7 +193,7 @@ export const InspectionTeamPanel: React.FC<InspectionTeamPanelProps> = ({
                                 <button
                                     key={person.user_id}
                                     onClick={() => handleAddMember(person)}
-                                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-violet-50 transition-colors"
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-blue-50 transition-colors"
                                 >
                                     <div className="w-7 h-7 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0">
                                         {getInitials(person.name)}
@@ -202,7 +202,7 @@ export const InspectionTeamPanel: React.FC<InspectionTeamPanelProps> = ({
                                         <p className="text-xs font-semibold text-slate-800">{person.name}</p>
                                         <p className="text-[10px] text-slate-400">{person.department}</p>
                                     </div>
-                                    <Plus size={14} className="text-violet-400 shrink-0" />
+                                    <Plus size={14} className="text-blue-400 shrink-0" />
                                 </button>
                             ))
                         )}

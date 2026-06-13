@@ -556,7 +556,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                         </div>
                         <div>
                             <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1">
-                                <Wrench size={12} className="text-purple-500" />
+                                <Wrench size={12} className="text-blue-500" />
                                 Work Order
                             </label>
                             <select
@@ -569,7 +569,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                                         description: formData.description || (wo ? `WO: ${wo.job_id} — ${wo.description || ''}` : ''),
                                     });
                                 }}
-                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
                             >
                                 <option value="">— No WO (ad-hoc) —</option>
                                 {workOrders.slice(0, 50).map(wo => (
@@ -698,7 +698,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                                 </div>
                                 {selectedPerson && <div className="text-blue-600">👤 {selectedPerson.name}</div>}
                                 {selectedItem && <div className="text-amber-600">📦 {selectedItem.code}</div>}
-                                {selectedWO && <div className="text-purple-600">🔧 {selectedWO.job_id}</div>}
+                                {selectedWO && <div className="text-blue-600">🔧 {selectedWO.job_id}</div>}
                             </div>
                             <span className={`text-lg font-bold font-mono ${
                                 formData.transactionType === 'CREDIT' ? 'text-emerald-700' : 'text-red-700'
@@ -957,10 +957,10 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) =>
     const kpis = [
         { label: 'Budget Utilization', value: `${metrics.budgetUtilization.toFixed(0)}%`, icon: Target, color: 'text-emerald-600', bg: 'bg-emerald-100', sub: 'Year to Date' },
         { label: 'Depreciation MTD', value: `$${metrics.depreciationMTD.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', sub: ' posted' },
-        { label: 'Active Warranties', value: metrics.activeWarranties.toString(), icon: ShieldCheck, color: 'text-purple-600', bg: 'bg-purple-100', sub: 'Assets Covered' },
+        { label: 'Active Warranties', value: metrics.activeWarranties.toString(), icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'Assets Covered' },
         { label: 'Pending Claims', value: metrics.pendingClaims.toString(), icon: FileText, color: 'text-amber-600', bg: 'bg-amber-100', sub: 'Review Needed' },
         { label: 'Invoice Variance', value: `${metrics.invoiceVariance}%`, icon: Banknote, color: 'text-teal-600', bg: 'bg-teal-100', sub: 'Avg Variance' },
-        { label: 'Insurance Coverage', value: `$${(metrics.insuranceCoverage / 1000000).toFixed(1)}M`, icon: Shield, color: 'text-indigo-600', bg: 'bg-indigo-100', sub: 'Total Value' },
+        { label: 'Insurance Coverage', value: `$${(metrics.insuranceCoverage / 1000000).toFixed(1)}M`, icon: Shield, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'Total Value' },
     ];
 
     return (
@@ -1056,7 +1056,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) =>
                             recentTransactions.map((tx) => (
                                 <div key={tx.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${tx.costType === 'MATERIAL' ? 'bg-blue-100 text-blue-600' :
-                                        tx.costType === 'SERVICE' ? 'bg-purple-100 text-purple-600' :
+                                        tx.costType === 'SERVICE' ? 'bg-blue-100 text-blue-600' :
                                             'bg-emerald-100 text-emerald-600'
                                         }`}>
                                         {tx.costType === 'MATERIAL' ? <Box size={16} /> :
@@ -1705,7 +1705,7 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                         <div key={idx} className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
                             <div className="flex items-center justify-between mb-4">
                                 <div className={`px-3 py-1 rounded-full text-xs font-medium ${book.bookType === 'CORPORATE' ? 'bg-blue-100 text-blue-700' :
-                                    book.bookType === 'TAX' ? 'bg-purple-100 text-purple-700' :
+                                    book.bookType === 'TAX' ? 'bg-blue-100 text-blue-700' :
                                         'bg-amber-100 text-amber-700'
                                     }`}>
                                     {book.bookType} BOOK
@@ -2011,7 +2011,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
             <div className="bg-white rounded-xl shadow-sm border border-slate-100">
                 <div className="flex items-center justify-between p-4 border-b border-slate-100">
                     <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                        <Shield size={18} className="text-purple-600" />
+                        <Shield size={18} className="text-blue-600" />
                         Active Warranties
                     </h3>
                     <div className="flex gap-2">
@@ -2020,12 +2020,12 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                             <input
                                 type="text"
                                 placeholder="Search warranties..."
-                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
                         <button
                             onClick={() => setIsAddModalOpen(true)}
-                            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                         >
                             <Plus size={14} />
                             Add Warranty
@@ -2048,8 +2048,8 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                 <div key={warranty.id} className="p-4 hover:bg-slate-50 transition-colors">
                                     <div className="flex items-center justify-between">
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-xl bg-purple-100 flex items-center justify-center">
-                                                <Shield size={20} className="text-purple-600" />
+                                            <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                                                <Shield size={20} className="text-blue-600" />
                                             </div>
                                             <div>
                                                 <div className="font-medium text-slate-800">{(warranty as any).assetName || 'Unknown Asset'}</div>
@@ -2071,8 +2071,8 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                 onClick={() => setClaimWarrantyId(isClaimOpen ? null : warranty.id)}
                                                 className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
                                                     isClaimOpen
-                                                        ? 'bg-purple-600 text-white'
-                                                        : 'text-purple-600 hover:bg-purple-50'
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'text-blue-600 hover:bg-blue-50'
                                                 }`}
                                             >
                                                 {isClaimOpen ? 'Cancel' : 'File Claim →'}
@@ -2082,8 +2082,8 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
 
                                     {/* G5: Inline File Claim Dialog */}
                                     {isClaimOpen && (
-                                        <div className="mt-4 p-4 bg-purple-50 border border-purple-200 rounded-xl space-y-3 animate-in slide-in-from-top-2 duration-200">
-                                            <h4 className="text-sm font-bold text-purple-800 flex items-center gap-2">
+                                        <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl space-y-3 animate-in slide-in-from-top-2 duration-200">
+                                            <h4 className="text-sm font-bold text-blue-800 flex items-center gap-2">
                                                 <FileCheck size={14} />
                                                 File Warranty Claim — {(warranty as any).vendorName || 'Vendor'}
                                             </h4>
@@ -2093,7 +2093,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                     <textarea
                                                         value={claimForm.failureDescription}
                                                         onChange={e => setClaimForm({ ...claimForm, failureDescription: e.target.value })}
-                                                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none resize-none"
+                                                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none resize-none"
                                                         rows={2}
                                                         placeholder="Describe the failure or defect..."
                                                     />
@@ -2104,7 +2104,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                         <select
                                                             value={claimForm.claimType}
                                                             onChange={e => setClaimForm({ ...claimForm, claimType: e.target.value as any })}
-                                                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                                                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
                                                         >
                                                             <option value="REPAIR">Repair</option>
                                                             <option value="REPLACEMENT">Replacement</option>
@@ -2117,7 +2117,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                             type="number"
                                                             value={claimForm.amount}
                                                             onChange={e => setClaimForm({ ...claimForm, amount: e.target.value })}
-                                                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                                                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
                                                             placeholder="0.00"
                                                         />
                                                     </div>
@@ -2133,7 +2133,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                 <button
                                                     onClick={handleFileClaim}
                                                     disabled={!claimForm.failureDescription || filingClaim}
-                                                    className="px-4 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                                                    className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
                                                 >
                                                     {filingClaim ? (
                                                         <>
@@ -2192,7 +2192,7 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
         UNDER_REVIEW: 'bg-amber-100 text-amber-700',
         APPROVED: 'bg-emerald-100 text-emerald-700',
         REJECTED: 'bg-red-100 text-red-700',
-        CREDITED: 'bg-purple-100 text-purple-700',
+        CREDITED: 'bg-blue-100 text-blue-700',
     };
 
     // KPI calculations
@@ -2299,11 +2299,11 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-4">
                                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                                            claim.claimType === 'REPLACEMENT' ? 'bg-purple-100' :
+                                            claim.claimType === 'REPLACEMENT' ? 'bg-blue-100' :
                                             claim.claimType === 'CREDIT' ? 'bg-teal-100' : 'bg-blue-100'
                                         }`}>
                                             <Shield size={18} className={
-                                                claim.claimType === 'REPLACEMENT' ? 'text-purple-600' :
+                                                claim.claimType === 'REPLACEMENT' ? 'text-blue-600' :
                                                 claim.claimType === 'CREDIT' ? 'text-teal-600' : 'text-blue-600'
                                             } />
                                         </div>
@@ -2503,7 +2503,7 @@ const VendorIntelTab: React.FC<VendorIntelTabProps> = ({ vendorKPIs, onRefresh }
                 </div>
                 <button
                     onClick={onRefresh}
-                    className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm font-medium rounded-lg shadow hover:shadow-lg transition-all flex items-center gap-2"
+                    className="px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-sm font-medium rounded-lg shadow hover:shadow-lg transition-all flex items-center gap-2"
                 >
                     <RefreshCw size={14} /> Refresh
                 </button>
@@ -2569,8 +2569,8 @@ const VendorIntelTab: React.FC<VendorIntelTabProps> = ({ vendorKPIs, onRefresh }
                             <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center">
-                                            <Truck size={18} className="text-indigo-600" />
+                                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-blue-100 flex items-center justify-center">
+                                            <Truck size={18} className="text-blue-600" />
                                         </div>
                                         <div>
                                             <h3 className="font-semibold text-slate-800 text-sm truncate max-w-[180px]">{vendor.vendorName}</h3>
@@ -2842,7 +2842,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
         <div className="space-y-6">
             {/* Coverage Summary — computed from real policy data */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl p-6 text-white">
+                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white">
                     <ShieldCheck size={32} className="mb-3 opacity-80" />
                     <div className="text-3xl font-bold">{formatCurrency(totalCoverage)}</div>
                     <div className="text-sm opacity-80">Total Coverage Value</div>
@@ -2867,7 +2867,7 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
             <div className="bg-white rounded-xl shadow-sm border border-slate-100">
                 <div className="p-4 border-b border-slate-100">
                     <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                        <FileText size={18} className="text-indigo-600" />
+                        <FileText size={18} className="text-blue-600" />
                         Active Policies
                     </h3>
                 </div>
@@ -2882,8 +2882,8 @@ const InsuranceTab: React.FC<InsuranceTabProps> = ({ policies, claims, totalAsse
                         policies.map(policy => (
                             <div key={policy.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center">
-                                        <ShieldCheck size={20} className="text-indigo-600" />
+                                    <div className="w-12 h-12 rounded-xl bg-blue-100 flex items-center justify-center">
+                                        <ShieldCheck size={20} className="text-blue-600" />
                                     </div>
                                     <div>
                                         <div className="font-medium text-slate-800">{(policy as any).assetName || 'Unknown Asset'}</div>

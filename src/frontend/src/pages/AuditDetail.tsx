@@ -64,9 +64,9 @@ export const AuditDetail: React.FC<{ ctx: any; onBack: () => void }> = ({ ctx, o
                 </div>
                 <div className="flex gap-2">
                     <button onClick={exportPDF} className="px-3 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-lg flex items-center gap-1.5 hover:bg-slate-200"><Download size={14} />PDF Report</button>
-                    {sectionScores.length > 0 && <button onClick={() => runAIAnalysis(audit.id)} disabled={aiLoading} className="px-3 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 disabled:opacity-50">{aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}{aiLoading ? 'Analyzing…' : 'AI Analysis'}</button>}
+                    {sectionScores.length > 0 && <button onClick={() => runAIAnalysis(audit.id)} disabled={aiLoading} className="px-3 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-bold rounded-lg flex items-center gap-1.5 disabled:opacity-50">{aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}{aiLoading ? 'Analyzing…' : 'AI Analysis'}</button>}
                     {audit.status === 'planned' && <button onClick={() => updateStatus(audit.id, 'in_progress')} className="px-3 py-2 bg-accent-cyan text-white text-xs font-bold rounded-lg flex items-center gap-1.5"><Play size={14} />Start</button>}
-                    {audit.status === 'in_progress' && <button onClick={() => calculateScores(audit.id)} className="px-3 py-2 bg-purple-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5"><Award size={14} />Calculate Maturity</button>}
+                    {audit.status === 'in_progress' && <button onClick={() => calculateScores(audit.id)} className="px-3 py-2 bg-blue-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5"><Award size={14} />Calculate Maturity</button>}
                     {audit.status === 'in_progress' && <button onClick={() => updateStatus(audit.id, 'completed')} className="px-3 py-2 bg-green-500 text-white text-xs font-bold rounded-lg flex items-center gap-1.5"><CheckCircle size={14} />Complete</button>}
                 </div>
             </div>
@@ -264,19 +264,19 @@ export const AuditDetail: React.FC<{ ctx: any; onBack: () => void }> = ({ ctx, o
                             </div>
                             {/* AI Summary */}
                             {audit.ai_summary && (
-                                <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-5">
-                                    <h3 className="text-sm font-bold text-purple-800 mb-2 flex items-center gap-2">🤖 Relantern AI Analysis</h3>
+                                <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg p-5">
+                                    <h3 className="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">🤖 Relantern AI Analysis</h3>
                                     <p className="text-sm text-slate-700 whitespace-pre-wrap font-mono leading-relaxed">{audit.ai_summary}</p>
                                 </div>
                             )}
                             {/* AI Recommendations — Service Proposals */}
                             {audit.ai_recommendations && audit.ai_recommendations.length > 0 && (
                                 <div className="bg-white border border-slate-200 rounded-lg p-5">
-                                    <h3 className="text-sm font-bold text-slate-800 mb-1 flex items-center gap-2"><Sparkles size={14} className="text-purple-500" />Gap Analysis & Service Proposals</h3>
+                                    <h3 className="text-sm font-bold text-slate-800 mb-1 flex items-center gap-2"><Sparkles size={14} className="text-blue-500" />Gap Analysis & Service Proposals</h3>
                                     <p className="text-[10px] text-slate-400 mb-4">Identified improvement opportunities with recommended service offerings</p>
                                     <div className="space-y-3">
                                         {(audit.ai_recommendations as AuditAIRecommendation[]).map((rec, i) => (
-                                            <div key={i} className="border border-slate-100 rounded-lg p-4 hover:border-purple-200 transition-colors">
+                                            <div key={i} className="border border-slate-100 rounded-lg p-4 hover:border-blue-200 transition-colors">
                                                 <div className="flex items-center justify-between mb-2">
                                                     <div className="flex items-center gap-2">
                                                         <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded text-white ${rec.priority === 'critical' ? 'bg-red-500' : rec.priority === 'high' ? 'bg-orange-500' : rec.priority === 'medium' ? 'bg-yellow-500' : 'bg-green-500'}`}>{rec.priority.toUpperCase()}</span>

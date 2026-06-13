@@ -313,7 +313,7 @@ export const PurchaseOrders: React.FC = () => {
                         subtitle={getSupplierName(selectedPO.supplierId) || 'Select Supplier'}
                         status={selectedPO.status.replace('_', ' ')}
                         statusClassName={getStatusColor(selectedPO.status)}
-                        icon={<ShoppingCart size={20} className="text-indigo-500" />}
+                        icon={<ShoppingCart size={20} className="text-blue-500" />}
                         onClose={() => setSelectedPO(null)}
                         actions={[
                             { label: 'Save', icon: <Save size={14} />, onClick: handleSavePO, variant: 'primary' as const },

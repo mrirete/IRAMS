@@ -552,12 +552,12 @@ const USE_CASES = [
 function UseCasesPanel() {
     const [expanded, setExpanded] = useState(false);
     return (
-        <div className="bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 border border-indigo-200/60 rounded-xl overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-50 via-blue-50 to-cyan-50 border border-blue-200/60 rounded-xl overflow-hidden">
             <button onClick={() => setExpanded(!expanded)}
                 className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/30 transition-colors">
                 <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-                        <BookOpen size={16} className="text-indigo-600" />
+                    <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+                        <BookOpen size={16} className="text-blue-600" />
                     </div>
                     <div className="text-left">
                         <p className="text-sm font-bold text-slate-800">Use Cases & Workflows</p>
@@ -571,11 +571,11 @@ function UseCasesPanel() {
                     {USE_CASES.map((uc, i) => (
                         <div key={i} className="bg-white/80 border border-slate-200/80 rounded-xl p-3.5 hover:shadow-sm transition-shadow">
                             <div className="flex items-center gap-2 mb-1.5">
-                                <div className="text-indigo-500">{uc.icon}</div>
+                                <div className="text-blue-500">{uc.icon}</div>
                                 <p className="text-xs font-bold text-slate-800">{uc.title}</p>
                             </div>
                             <p className="text-[11px] text-slate-600 leading-relaxed">{uc.desc}</p>
-                            <p className="text-[9px] text-indigo-500 font-semibold mt-2 uppercase tracking-wider">→ {uc.who}</p>
+                            <p className="text-[9px] text-blue-500 font-semibold mt-2 uppercase tracking-wider">→ {uc.who}</p>
                         </div>
                     ))}
                 </div>
@@ -705,7 +705,7 @@ export function MTBFTab({ onStateChange, loadedData }: TabProps = {}) {
 
             {/* MTTR Results */}
             <div>
-                <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2"><Wrench size={16} className="text-purple-600" /> MTTR Results</h4>
+                <h4 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2"><Wrench size={16} className="text-blue-600" /> MTTR Results</h4>
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <ResultCard label="Mean (MTTR)" value={mttrResult.mean.toFixed(1)} unit="hrs" color="purple" />
                     <ResultCard label="Median" value={mttrResult.median.toFixed(1)} unit="hrs" color="purple" />
@@ -940,45 +940,46 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
 
 
     return (
-        <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                <label className="block text-sm font-medium text-blue-900 mb-2">
-                    <Search size={14} className="inline mr-1" /> Auto-populate from asset failure intervals
-                </label>
-                <AssetSelector selected={asset} onSelect={setAsset} />
-                {loading && <p className="text-xs text-blue-500 mt-2 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Calculating failure intervals...</p>}
+        <div className="space-y-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 shrink-0">
+                    <Search size={14} className="text-blue-500" /> Asset
+                </div>
+                <div className="flex-1 min-w-0">
+                    <AssetSelector selected={asset} onSelect={setAsset} />
+                </div>
+                {loading && <p className="text-xs text-blue-500 flex items-center gap-1 shrink-0"><Loader2 size={12} className="animate-spin" /> Loading...</p>}
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Time-to-Failure Data (hours, comma-separated)
-                    <span className="text-xs text-slate-400 ml-2">Enter individual failure times or inter-failure intervals</span>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    Time-to-Failure Data (hrs, comma-sep)
                 </label>
-                <textarea value={dataStr} onChange={e => setDataStr(e.target.value)}
-                    className="w-full p-3 border border-slate-300 rounded-lg text-sm font-mono h-20" />
+                <textarea value={dataStr} onChange={e => setDataStr(e.target.value)} placeholder="20, 42, 55, 73, 95..."
+                    className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono h-12 md:h-16 resize-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
             </div>
 
             {fit && (
                 <>
                     {/* Parameters */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <ResultCard label="Shape (β)" value={fit.beta} color="blue" sub="Failure characteristic" />
-                        <ResultCard label="Scale (η)" value={fit.eta} unit="hrs" color="purple" sub="Characteristic life (63.2%)" />
-                        <ResultCard label="R²" value={fit.r2} color={fit.r2 >= 0.9 ? 'green' : 'amber'} sub={fit.r2 >= 0.9 ? 'Good fit' : 'Fair fit'} />
-                        <ResultCard label="B10 Life" value={Math.round(weibullBLife(fit.beta, fit.eta, 10))} unit="hrs" color="green" sub="10% failure probability" />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <ResultCard label="Shape (β)" value={fit.beta} color="blue" />
+                        <ResultCard label="Scale (η)" value={fit.eta} unit="hrs" color="purple" />
+                        <ResultCard label="R²" value={fit.r2} color={fit.r2 >= 0.9 ? 'green' : 'amber'} />
+                        <ResultCard label="B10 Life" value={Math.round(weibullBLife(fit.beta, fit.eta, 10))} unit="hrs" color="green" />
                     </div>
 
 
 
 
                     {/* B-Life Table */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-4">
-                        <h4 className="text-sm font-bold text-slate-900 mb-3">B-Life Values (Percentile Failures)</h4>
-                        <div className="grid grid-cols-5 gap-3">
+                    <div className="bg-white border border-slate-200 rounded-xl p-3">
+                        <h4 className="text-xs font-bold text-slate-800 mb-2">B-Life Values</h4>
+                        <div className="grid grid-cols-5 gap-1.5">
                             {[1, 5, 10, 50, 63.2].map(pct => (
-                                <div key={pct} className="text-center p-2 bg-slate-50 rounded-lg">
-                                    <p className="text-xs text-slate-500">B{pct}%</p>
-                                    <p className="text-sm font-bold text-slate-900">{Math.round(weibullBLife(fit.beta, fit.eta, pct))} hrs</p>
+                                <div key={pct} className="text-center p-1.5 bg-slate-50 rounded-lg">
+                                    <p className="text-[9px] text-slate-500">B{pct}%</p>
+                                    <p className="text-xs font-bold text-slate-900">{Math.round(weibullBLife(fit.beta, fit.eta, pct))}h</p>
                                 </div>
                             ))}
                         </div>
@@ -1002,7 +1003,7 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                         </button>
                         {showRtFt && (
                             <div className="px-6 pb-6">
-                                <ResponsiveContainer width="100%" height={300}>
+                                <ResponsiveContainer width="100%" height={200}>
                                     <LineChart data={fit.plotData}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                         <XAxis dataKey="t" label={{ value: 'Time (hours)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
@@ -1151,44 +1152,44 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
     }, [population, mtbfVal, interval, confidence, asset]);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-4">
             {/* Asset Selector */}
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                <label className="block text-sm font-medium text-blue-900 mb-2">
-                    <Search size={14} className="inline mr-1" /> Auto-populate MTBF from asset work orders
-                </label>
-                <AssetSelector selected={asset} onSelect={setAsset} />
-                {loadingSp && <p className="text-xs text-blue-500 mt-2 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Calculating failure rate...</p>}
+            <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 shrink-0">
+                    <Search size={14} className="text-blue-500" /> Asset
+                </div>
+                <div className="flex-1 min-w-0">
+                    <AssetSelector selected={asset} onSelect={setAsset} />
+                </div>
+                {loadingSp && <p className="text-xs text-blue-500 flex items-center gap-1 shrink-0"><Loader2 size={12} className="animate-spin" /> Loading...</p>}
             </div>
 
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-                <p className="text-sm text-amber-800 flex items-center gap-2">
-                    <Info size={14} /> Based on Poisson distribution. Assumes constant failure rate (exponential distribution) and no repair during resupply interval.
+            <div className="bg-amber-50/60 border border-amber-100 rounded-lg p-2.5">
+                <p className="text-[10px] text-amber-700 flex items-center gap-1.5">
+                    <Info size={12} className="shrink-0" /> Poisson-based · Assumes constant failure rate · No repair during resupply
                 </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Equipment Population</label>
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Population</label>
                     <input type="number" value={population} onChange={e => setPopulation(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
-                    <p className="text-[10px] text-slate-400 mt-0.5">Number of identical units in service</p>
+                        className="w-full p-2 border border-slate-200 rounded-lg text-sm h-10" />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">MTBF (hours)</label>
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">MTBF (hrs)</label>
                     <input type="number" value={mtbfVal} onChange={e => setMtbfVal(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        className="w-full p-2 border border-slate-200 rounded-lg text-sm h-10" />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Resupply Interval (hours)</label>
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Resupply (hrs)</label>
                     <input type="number" value={interval} onChange={e => setInterval(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
-                    <p className="text-[10px] text-slate-400 mt-0.5">Time between restock / lead time</p>
+                        className="w-full p-2 border border-slate-200 rounded-lg text-sm h-10" />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Confidence Level (%)</label>
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Confidence</label>
                     <select value={confidence} onChange={e => setConfidence(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm">
+                        className="w-full p-2 border border-slate-200 rounded-lg text-sm h-10">
                         <option value="90">90%</option>
                         <option value="95">95%</option>
                         <option value="99">99%</option>
@@ -1197,18 +1198,18 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
             </div>
 
             {/* Results */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <ResultCard label="Expected Demand (λ)" value={result.lambda.toFixed(2)} unit="failures" color="blue" sub="Expected failures in interval" />
-                <ResultCard label={`Spares Required (${confidence}%)`} value={result.requiredSpares} unit="units" color="green"
-                    sub={`${confidence}% confidence of no stockout`} />
-                <ResultCard label="Failure Rate" value={(failureRate * 1000).toFixed(3)} unit="per 1000h" color="red" />
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                <ResultCard label="Expected (λ)" value={result.lambda.toFixed(2)} unit="failures" color="blue" />
+                <ResultCard label={`Spares ${confidence}%`} value={result.requiredSpares} unit="units" color="green" />
+                <ResultCard label="Fail Rate" value={(failureRate * 1000).toFixed(3)} unit="/1000h" color="red" />
             </div>
 
             {/* Probability Table */}
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-100">
-                    <h4 className="text-sm font-bold text-slate-900">Poisson Probability Distribution</h4>
+                <div className="px-3 py-2 border-b border-slate-100">
+                    <h4 className="text-xs font-bold text-slate-800">Poisson Distribution</h4>
                 </div>
+                <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: 'touch' } as any}>
                 <table className="min-w-full divide-y divide-slate-100">
                     <thead className="bg-slate-50">
                         <tr>
@@ -1237,6 +1238,7 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
                         ))}
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
     );
@@ -1409,11 +1411,6 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [loading, setLoading] = useState(false);
 
-    // Section collapse state
-    const [expandedR, setExpandedR] = useState(true);
-    const [expandedM, setExpandedM] = useState(true);
-    const [expandedA, setExpandedA] = useState(true);
-
     // ─── Reliability (R) inputs ───────────────────────────────
     const [totalHours, setTotalHours] = useState('');
     const [failures, setFailures] = useState('');
@@ -1542,250 +1539,289 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
         }, asset ? { id: asset.id, tag: asset.tag, name: asset.name } : null);
     }, [totalHours, failures, repairTimesStr, confidence, mldt, targetAo, asset]);
 
+    // Mobile section switcher
+    const [mobileSection, setMobileSection] = useState<'R' | 'M' | 'A'>('R');
+    const [showCharts, setShowCharts] = useState(false);
+
     return (
-        <div className="space-y-5">
+        <div className="space-y-4">
             {/* ─── Critical Assets Quick-Launch ─────────────────── */}
             <CriticalAssetsPanel onSelectAsset={(a) => setAsset(a)} />
 
             {/* ─── Shared Asset Selector ───────────────────────── */}
-            <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200/60 rounded-xl p-4">
-                <label className="block text-sm font-semibold text-blue-900 mb-2 flex items-center gap-1.5">
-                    <Search size={14} /> Auto-populate from asset work orders
-                </label>
-                <AssetSelector selected={asset} onSelect={setAsset} />
-                {loading && <p className="text-xs text-blue-500 mt-2 flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> Loading WO data for all RAM metrics...</p>}
+            <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 shrink-0">
+                    <Search size={14} className="text-blue-500" /> Asset
+                </div>
+                <div className="flex-1 min-w-0">
+                    <AssetSelector selected={asset} onSelect={setAsset} />
+                </div>
+                {loading && <p className="text-xs text-blue-500 flex items-center gap-1 shrink-0"><Loader2 size={12} className="animate-spin" /> Loading...</p>}
             </div>
 
-            {/* ═══════════ SECTION 1: RELIABILITY (R) ═══════════ */}
-            <RAMSectionHeader
-                icon={<Activity size={18} />}
-                title="Reliability (R)"
-                subtitle="MTBF, failure rate, and confidence intervals"
-                expanded={expandedR}
-                onToggle={() => setExpandedR(!expandedR)}
-                accentColor="blue"
-            />
-            {expandedR && (
-                <div className="space-y-4 pl-1 animate-in slide-in-from-top-2 duration-200">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Total Operating Hours</label>
-                            <input type="number" value={totalHours} onChange={e => setTotalHours(e.target.value)}
-                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Number of Failures</label>
-                            <input type="number" value={failures} onChange={e => setFailures(e.target.value)}
-                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Confidence Level (%)</label>
-                            <select value={confidence} onChange={e => setConfidence(Number(e.target.value))}
-                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
-                                <option value={60}>60%</option>
-                                <option value={80}>80%</option>
-                                <option value={90}>90%</option>
-                                <option value={95}>95%</option>
-                            </select>
-                        </div>
-                    </div>
+            {/* ─── Mobile Pill Tabs (visible only on small screens) ─── */}
+            <div className="flex lg:hidden gap-1 bg-slate-100 p-1 rounded-xl">
+                {(['R', 'M', 'A'] as const).map(s => (
+                    <button key={s} onClick={() => setMobileSection(s)}
+                        className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all ${
+                            mobileSection === s
+                                ? s === 'R' ? 'bg-blue-500 text-white shadow-md' : s === 'M' ? 'bg-purple-500 text-white shadow-md' : 'bg-green-500 text-white shadow-md'
+                                : 'text-slate-500 hover:bg-white/60'
+                        }`}>
+                        {s === 'R' ? '🎯 Reliability' : s === 'M' ? '🔧 Maintain.' : '⚡ Availability'}
+                    </button>
+                ))}
+            </div>
 
-                    {hasReliabilityData ? (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            <ResultCard label="Point MTBF" value={mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} unit="hrs" color="blue" />
-                            <ResultCard label={`Lower (${confidence}%)`} value={mtbfResult.lower.toFixed(0)} unit="hrs" color="amber" sub="Conservative estimate" />
-                            <ResultCard label={`Upper (${confidence}%)`} value={mtbfResult.upper === Infinity ? '∞' : mtbfResult.upper.toFixed(0)} unit="hrs" color="green" />
-                            <ResultCard label="Failure Rate (λ)" value={mtbfResult.mtbf > 0 && mtbfResult.mtbf < Infinity ? (1 / mtbfResult.mtbf * 1000).toFixed(3) : '0'} unit="per 1000h" color="red" />
+            {/* ═══════════ 3-COLUMN RAM GRID ═══════════ */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+
+                {/* ─── COLUMN 1: RELIABILITY (R) ─── */}
+                <div className={`bg-white border border-slate-200 rounded-xl overflow-hidden ${mobileSection !== 'R' ? 'hidden lg:block' : ''}`}>
+                    <div className="h-1 bg-gradient-to-r from-blue-400 to-blue-600" />
+                    <div className="p-3 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
+                                <Activity size={14} className="text-blue-600" />
+                            </div>
+                            <div>
+                                <p className="text-xs font-bold text-slate-800">Reliability (R)</p>
+                                <p className="text-[10px] text-slate-400">MTBF & failure rate</p>
+                            </div>
                         </div>
-                    ) : (
-                        <div className="text-center py-8 bg-gradient-to-b from-blue-50/50 to-slate-50 border border-dashed border-blue-200/60 rounded-xl">
-                            <Activity size={28} className="mx-auto mb-3 text-blue-300" />
-                            <p className="text-sm font-semibold text-slate-600 mb-1">🎯 Reliability (R) — How often does this asset fail?</p>
-                            <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                                MTBF is the primary measure of equipment reliability. Select a critical asset above or enter historical operating data to benchmark against OREDA/industry standards, set PM interval thresholds (IEC 61649), and feed Availability (Ao) calculations.
-                            </p>
+
+                        <div className="space-y-2">
+                            <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Operating Hours</label>
+                                <input type="number" value={totalHours} onChange={e => setTotalHours(e.target.value)} placeholder="e.g. 8760"
+                                    className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-10" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Failures</label>
+                                    <input type="number" value={failures} onChange={e => setFailures(e.target.value)} placeholder="0"
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-10" />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Confidence</label>
+                                    <select value={confidence} onChange={e => setConfidence(Number(e.target.value))}
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-10">
+                                        <option value={60}>60%</option><option value={80}>80%</option><option value={90}>90%</option><option value={95}>95%</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
-                    )}
+
+                        {/* R Results */}
+                        {hasReliabilityData ? (
+                            <div className="grid grid-cols-2 gap-2">
+                                <ResultCard label="MTBF" value={mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} unit="hrs" color="blue" />
+                                <ResultCard label="λ (Fail Rate)" value={mtbfResult.mtbf > 0 && mtbfResult.mtbf < Infinity ? (1 / mtbfResult.mtbf * 1000).toFixed(3) : '0'} unit="/1000h" color="red" />
+                                <ResultCard label={`Lower ${confidence}%`} value={mtbfResult.lower.toFixed(0)} unit="hrs" color="amber" />
+                                <ResultCard label={`Upper ${confidence}%`} value={mtbfResult.upper === Infinity ? '∞' : mtbfResult.upper.toFixed(0)} unit="hrs" color="green" />
+                            </div>
+                        ) : (
+                            <div className="text-center py-3 bg-blue-50/50 border border-dashed border-blue-200/60 rounded-lg">
+                                <p className="text-[10px] text-blue-400">Enter hours & failures to calculate MTBF</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* ─── COLUMN 2: MAINTAINABILITY (M) ─── */}
+                <div className={`bg-white border border-slate-200 rounded-xl overflow-hidden ${mobileSection !== 'M' ? 'hidden lg:block' : ''}`}>
+                    <div className="h-1 bg-gradient-to-r from-purple-400 to-purple-600" />
+                    <div className="p-3 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center">
+                                <Wrench size={14} className="text-purple-600" />
+                            </div>
+                            <div>
+                                <p className="text-xs font-bold text-slate-800">Maintainability (M)</p>
+                                <p className="text-[10px] text-slate-400">MTTR & repair distribution</p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Repair Times (hrs, comma-sep)</label>
+                            <textarea value={repairTimesStr} onChange={e => setRepairTimesStr(e.target.value)} placeholder="2.5, 4, 1.5, 6, 3"
+                                className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono h-12 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 resize-none" />
+                            <p className="text-[10px] text-slate-400 mt-0.5">{repairTimes.length} data points</p>
+                        </div>
+
+                        {/* M Results */}
+                        {hasMaintainabilityData ? (
+                            <div className="space-y-2">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <ResultCard label="MTTR" value={mttrResult.mean.toFixed(1)} unit="hrs" color="purple" />
+                                    <ResultCard label="Median" value={mttrResult.median.toFixed(1)} unit="hrs" color="purple" />
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <ResultCard label="σ" value={mttrResult.stdDev.toFixed(1)} unit="hrs" color="slate" />
+                                    <ResultCard label="Mmax90" value={mttrResult.mmax90.toFixed(1)} unit="hrs" color="amber" />
+                                    <ResultCard label="Mmax95" value={mttrResult.mmax95.toFixed(1)} unit="hrs" color="red" />
+                                </div>
+                                {lognormalFit && (
+                                    <div className="bg-purple-50/50 border border-purple-100 rounded-lg p-2">
+                                        <p className="text-[10px] text-purple-600 font-medium">Lognormal: μ={lognormalFit.mu} σ={lognormalFit.sigma}</p>
+                                        <p className="text-[10px] text-purple-400">t₅₀={lognormalFit.t50.toFixed(1)}h · t₉₀={lognormalFit.t90.toFixed(1)}h · t₉₅={lognormalFit.t95.toFixed(1)}h</p>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="text-center py-3 bg-purple-50/50 border border-dashed border-purple-200/60 rounded-lg">
+                                <p className="text-[10px] text-purple-400">Enter repair times to calculate MTTR</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* ─── COLUMN 3: AVAILABILITY (A) ─── */}
+                <div className={`bg-white border border-slate-200 rounded-xl overflow-hidden ${mobileSection !== 'A' ? 'hidden lg:block' : ''}`}>
+                    <div className={`h-1 ${ao >= 0.95 ? 'bg-gradient-to-r from-green-400 to-emerald-500' : ao >= 0.90 ? 'bg-gradient-to-r from-amber-400 to-yellow-500' : 'bg-gradient-to-r from-red-400 to-rose-500'}`} />
+                    <div className="p-3 space-y-3">
+                        <div className="flex items-center gap-2">
+                            <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${ao >= 0.95 ? 'bg-green-50' : ao >= 0.90 ? 'bg-amber-50' : 'bg-red-50'}`}>
+                                <Gauge size={14} className={ao >= 0.95 ? 'text-green-600' : ao >= 0.90 ? 'text-amber-600' : 'text-red-600'} />
+                            </div>
+                            <div>
+                                <p className="text-xs font-bold text-slate-800">Availability (A)</p>
+                                <p className="text-[10px] text-slate-400">Ao auto-calculated from R + M</p>
+                            </div>
+                        </div>
+
+                        {(hasReliabilityData || hasMaintainabilityData) ? (
+                            <div className="space-y-2">
+                                {/* Source metrics */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-2">
+                                        <p className="text-[9px] text-blue-500 font-bold uppercase">From R</p>
+                                        <p className="text-sm font-bold text-blue-700">{mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)}h</p>
+                                    </div>
+                                    <div className="bg-purple-50/60 border border-purple-100 rounded-lg p-2">
+                                        <p className="text-[9px] text-purple-500 font-bold uppercase">From M</p>
+                                        <p className="text-sm font-bold text-purple-700">{mttrResult.mean.toFixed(1)}h</p>
+                                    </div>
+                                </div>
+                                {/* User inputs */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">MLDT (hrs)</label>
+                                        <input type="number" value={mldt} onChange={e => setMldt(e.target.value)} placeholder="0"
+                                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 h-10" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Target Ao%</label>
+                                        <input type="number" value={targetAo} onChange={e => setTargetAo(e.target.value)}
+                                            className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 h-10" />
+                                    </div>
+                                </div>
+                                {/* Ao Result — prominent */}
+                                <div className={`p-3 rounded-xl text-center ${ao >= 0.95 ? 'bg-green-50 border border-green-200' : ao >= 0.90 ? 'bg-amber-50 border border-amber-200' : 'bg-red-50 border border-red-200'}`}>
+                                    <p className={`text-2xl font-black ${ao >= 0.95 ? 'text-green-700' : ao >= 0.90 ? 'text-amber-700' : 'text-red-700'}`}>{aoPercent}%</p>
+                                    <p className={`text-[10px] font-medium ${ao >= 0.95 ? 'text-green-500' : ao >= 0.90 ? 'text-amber-500' : 'text-red-500'}`}>
+                                        {ao >= 0.95 ? '✅ World-class' : ao >= 0.90 ? '⚠️ Below target' : '🔴 Critical'}
+                                    </p>
+                                </div>
+                                {/* Downtime/Uptime */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <ResultCard label="Downtime" value={((1 - ao) * 8760).toFixed(0)} unit="hrs/yr" color="red" />
+                                    <ResultCard label="Uptime" value={(ao * 8760).toFixed(0)} unit="hrs/yr" color="green" />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="text-center py-3 bg-green-50/50 border border-dashed border-green-200/60 rounded-lg">
+                                <p className="text-[10px] text-green-400">Enter R & M data — Ao auto-calculates</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* ═══════════ FORMULA BAR (compact) ═══════════ */}
+            {(hasReliabilityData || hasMaintainabilityData) && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                    <p className="text-[11px] text-slate-500 font-mono">
+                        Ao = MTBF / (MTBF + MRT) = {mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} / ({mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} + {mrt.toFixed(1)})
+                    </p>
                 </div>
             )}
 
-            {/* ═══════════ SECTION 2: MAINTAINABILITY (M) ═══════════ */}
-            <RAMSectionHeader
-                icon={<Wrench size={18} />}
-                title="Maintainability (M)"
-                subtitle="MTTR, lognormal repair distribution M(t)"
-                expanded={expandedM}
-                onToggle={() => setExpandedM(!expandedM)}
-                accentColor="purple"
-            />
-            {expandedM && (
-                <div className="space-y-4 pl-1 animate-in slide-in-from-top-2 duration-200">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Repair Times (hours, comma-separated)</label>
-                        <textarea value={repairTimesStr} onChange={e => setRepairTimesStr(e.target.value)}
-                            className="w-full p-3 border border-slate-300 rounded-lg text-sm font-mono h-16 focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500" />
-                        <p className="text-xs text-slate-400 mt-0.5">{repairTimes.length} data points</p>
+            {/* ═══════════ BRIDGE TO SPARES ═══════════ */}
+            {onSendToSpares && mtbfResult.mtbf > 0 && mtbfResult.mtbf < Infinity && (
+                <div className="flex items-center justify-between p-2.5 bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-xl">
+                    <div className="text-[11px] text-teal-700">
+                        <span className="font-semibold">Next:</span> Use MTBF ({Math.round(mtbfResult.mtbf).toLocaleString()}h) for spares analysis
                     </div>
-
-                    {/* MTTR summary cards */}
-                    {hasMaintainabilityData ? (
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                            <ResultCard label="Mean (MTTR)" value={mttrResult.mean.toFixed(1)} unit="hrs" color="purple" />
-                            <ResultCard label="Median" value={mttrResult.median.toFixed(1)} unit="hrs" color="purple" />
-                            <ResultCard label="Std Dev" value={mttrResult.stdDev.toFixed(1)} unit="hrs" color="slate" />
-                            <ResultCard label="Mmax (90%)" value={mttrResult.mmax90.toFixed(1)} unit="hrs" color="amber" sub="90% repairs complete" />
-                            <ResultCard label="Mmax (95%)" value={mttrResult.mmax95.toFixed(1)} unit="hrs" color="red" sub="95% repairs complete" />
-                        </div>
-                    ) : (
-                        <div className="text-center py-8 bg-gradient-to-b from-purple-50/50 to-slate-50 border border-dashed border-purple-200/60 rounded-xl">
-                            <Wrench size={28} className="mx-auto mb-3 text-purple-300" />
-                            <p className="text-sm font-semibold text-slate-600 mb-1">🔧 Maintainability (M) — How quickly can we restore this asset?</p>
-                            <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                                MTTR quantifies repair efficiency. Enter individual repair times from work orders to model the lognormal repair distribution and determine Mmax(90/95%) — the time by which 90% or 95% of repairs should be complete.
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Lognormal parameters and chart */}
-                    {lognormalFit && (
-                        <>
-                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
-                                <p className="text-sm text-slate-600">Lognormal Distribution: μ = {lognormalFit.mu}, σ = {lognormalFit.sigma}</p>
-                                <p className="text-xs text-slate-400 mt-0.5">Geometric Mean = e^μ = {Math.exp(lognormalFit.mu).toFixed(1)} hrs · t₅₀ = {lognormalFit.t50.toFixed(1)}h · t₉₀ = {lognormalFit.t90.toFixed(1)}h · t₉₅ = {lognormalFit.t95.toFixed(1)}h</p>
-                            </div>
-                            <div className="bg-white border border-slate-200 rounded-xl p-5">
-                                <h4 className="text-sm font-bold text-slate-900 mb-4">Maintainability Function M(t) — Lognormal CDF</h4>
-                                <ResponsiveContainer width="100%" height={240}>
-                                    <AreaChart data={lognormalFit.curveData}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                        <XAxis dataKey="t" label={{ value: 'Repair Time (hours)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                                        <YAxis label={{ value: 'M(t) %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} domain={[0, 100]} />
-                                        <Tooltip formatter={(v: any) => `${v}%`} />
-                                        <Area type="monotone" dataKey="Mt" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.15} name="M(t) - Probability of repair" />
-                                    </AreaChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </>
-                    )}
-
-                    {/* Also show the empirical MTTR CDF (exponential) if enough data */}
-                    {mttrChartData.length > 2 && !lognormalFit && (
-                        <div className="bg-white border border-slate-200 rounded-xl p-5">
-                            <h4 className="text-sm font-bold text-slate-900 mb-4">Repair Time CDF — Exponential Approximation</h4>
-                            <ResponsiveContainer width="100%" height={220}>
-                                <LineChart data={mttrChartData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                    <XAxis dataKey="time" label={{ value: 'Repair Time (hrs)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                                    <YAxis label={{ value: 'M(t) %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} domain={[0, 100]} />
-                                    <Tooltip formatter={(v: any) => `${v}%`} />
-                                    <Legend />
-                                    <Line type="monotone" dataKey="Mt" stroke="#8b5cf6" strokeWidth={2} name="Exponential M(t)" dot={false} />
-                                    <Line type="stepAfter" dataKey="rank" stroke="#3b82f6" strokeWidth={1} strokeDasharray="4 4" name="Empirical CDF" dot={{ r: 3, fill: '#3b82f6' }} />
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
-                    )}
+                    <button onClick={() => onSendToSpares(mtbfResult.mtbf)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-xs font-medium rounded-lg shadow-sm hover:shadow-md transition-all shrink-0 ml-3">
+                        📦 Spares →
+                    </button>
                 </div>
             )}
 
-            {/* ═══════════ SECTION 3: AVAILABILITY (A) ═══════════ */}
-            <RAMSectionHeader
-                icon={<Gauge size={18} />}
-                title="Availability (A)"
-                subtitle={hasReliabilityData ? `Ao = MTBF / (MTBF + MRT) — auto-calculated: ${aoPercent}%` : 'Ao = MTBF / (MTBF + MRT) — enter R & M data first'}
-                expanded={expandedA}
-                onToggle={() => setExpandedA(!expandedA)}
-                accentColor="green"
-            />
-            {expandedA && (
-                <div className="space-y-4 pl-1 animate-in slide-in-from-top-2 duration-200">
-                    {(hasReliabilityData || hasMaintainabilityData) ? (
-                        <>
-                    {/* Only MLDT and Target need user input — MTBF & MTTR feed from above */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3">
-                            <p className="text-[10px] text-blue-500 font-bold uppercase tracking-wider">From Reliability</p>
-                            <p className="text-lg font-bold text-blue-700 mt-0.5">{mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} <span className="text-xs font-normal">hrs MTBF</span></p>
-                        </div>
-                        <div className="bg-purple-50/50 border border-purple-100 rounded-lg p-3">
-                            <p className="text-[10px] text-purple-500 font-bold uppercase tracking-wider">From Maintainability</p>
-                            <p className="text-lg font-bold text-purple-700 mt-0.5">{mttrResult.mean.toFixed(1)} <span className="text-xs font-normal">hrs MTTR</span></p>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">MLDT (hours)</label>
-                            <input type="number" value={mldt} onChange={e => setMldt(e.target.value)}
-                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500" />
-                            <p className="text-[10px] text-slate-400 mt-0.5">Mean logistics delay time</p>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Target Ao (%)</label>
-                            <input type="number" value={targetAo} onChange={e => setTargetAo(e.target.value)}
-                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500" />
-                        </div>
-                    </div>
-
-                    {/* Formula */}
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-center">
-                        <p className="text-sm text-slate-500">
-                            Ao = MTBF / (MTBF + MRT) = {mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} / ({mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} + {mrt.toFixed(1)})
-                        </p>
-                    </div>
-
-                    {/* Ao Results */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <ResultCard label="Operational Availability" value={`${aoPercent}%`} color={aoColor}
-                            sub={ao >= 0.95 ? '✅ Meets world-class target' : ao >= 0.90 ? '⚠️ Below target' : '🔴 Critical'} />
-                        <ResultCard label="MRT (Total)" value={mrt.toFixed(1)} unit="hrs" color="purple" sub={`MTTR ${mttrResult.mean.toFixed(1)}h + MLDT ${mldt}h`} />
-                        <ResultCard label="Annual Downtime" value={((1 - ao) * 8760).toFixed(0)} unit="hrs/yr" color="red" />
-                        <ResultCard label="Annual Uptime" value={(ao * 8760).toFixed(0)} unit="hrs/yr" color="green" />
-                    </div>
-
-                    {/* Ao vs Target */}
-                    <div className={`p-4 rounded-xl border ${ao >= parseFloat(targetAo) / 100 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                        <p className={`text-sm font-medium ${ao >= parseFloat(targetAo) / 100 ? 'text-green-700' : 'text-red-700'}`}>
-                            {ao >= parseFloat(targetAo) / 100
-                                ? `✅ Current Ao (${aoPercent}%) meets the target of ${targetAo}%`
-                                : `🔴 Current Ao (${aoPercent}%) is below the target of ${targetAo}%. Need to improve MTBF or reduce MRT.`}
-                        </p>
-                    </div>
-
-                    {/* P2.2: Bridge to Spares Calculator */}
-                    {onSendToSpares && mtbfResult.mtbf > 0 && mtbfResult.mtbf < Infinity && (
-                        <div className="flex items-center justify-between p-3 bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-xl">
-                            <div className="text-[11px] text-teal-700">
-                                <span className="font-semibold">Next Step:</span> Use this MTBF ({Math.round(mtbfResult.mtbf).toLocaleString()}h) to calculate recommended spares holding
-                            </div>
-                            <button onClick={() => onSendToSpares(mtbfResult.mtbf)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-xs font-medium rounded-lg shadow-sm hover:shadow-md transition-all shrink-0 ml-3">
-                                <span>📦</span> Calculate Spares →
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Trade-off Chart */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-5">
-                        <h4 className="text-sm font-bold text-slate-900 mb-4">
-                            MTBF vs MRT Trade-off for Ao = {targetAo}%
-                            <span className="text-xs font-normal text-slate-400 ml-2">Combinations that achieve target availability</span>
-                        </h4>
-                        <ResponsiveContainer width="100%" height={260}>
-                            <AreaChart data={tradeoffData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="mrt" label={{ value: 'MRT (hours)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                                <YAxis label={{ value: 'Required MTBF (hrs)', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} />
-                                <Tooltip formatter={(v: any) => `${v} hrs`} />
-                                <Area type="monotone" dataKey="mtbfReq" stroke="#22c55e" fill="#22c55e" fillOpacity={0.1} name="Required MTBF" />
-                            </AreaChart>
-                        </ResponsiveContainer>
-                    </div>
-                        </>
-                    ) : (
-                        <div className="text-center py-10 bg-gradient-to-b from-green-50/50 to-slate-50 border border-dashed border-green-200/60 rounded-xl">
-                            <Gauge size={32} className="mx-auto mb-3 text-green-300" />
-                            <p className="text-sm font-semibold text-slate-600 mb-1">⚡ Availability (A) — What percentage of time is this asset operational?</p>
-                            <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                                Operational Availability (Ao) combines reliability and maintainability: Ao = MTBF / (MTBF + MRT). Enter data in the R and M sections above, and availability will be auto-calculated. Target Ao ≥ 95% for world-class performance.
-                            </p>
+            {/* ═══════════ COLLAPSIBLE CHARTS ═══════════ */}
+            {(lognormalFit || (mttrChartData.length > 2) || (hasReliabilityData && hasMaintainabilityData)) && (
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <button onClick={() => setShowCharts(!showCharts)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                        <span className="text-xs font-semibold text-slate-700 flex items-center gap-2">
+                            <BarChart2 size={14} className="text-slate-400" />
+                            📊 Charts & Analysis
+                        </span>
+                        <span className="text-[10px] text-slate-400">{showCharts ? '▲ Collapse' : '▼ Expand'}</span>
+                    </button>
+                    {showCharts && (
+                        <div className="border-t border-slate-100 p-4 space-y-4 animate-in slide-in-from-top-2 duration-200">
+                            {/* M(t) Lognormal CDF */}
+                            {lognormalFit && (
+                                <div>
+                                    <h4 className="text-xs font-bold text-slate-800 mb-3">Maintainability Function M(t) — Lognormal CDF</h4>
+                                    <ResponsiveContainer width="100%" height={200}>
+                                        <AreaChart data={lognormalFit.curveData}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                            <XAxis dataKey="t" label={{ value: 'Repair Time (hrs)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 10 }} />
+                                            <YAxis label={{ value: 'M(t) %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 10 }} domain={[0, 100]} />
+                                            <Tooltip formatter={(v: any) => `${v}%`} />
+                                            <Area type="monotone" dataKey="Mt" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.15} name="M(t)" />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                            {/* Empirical CDF fallback */}
+                            {mttrChartData.length > 2 && !lognormalFit && (
+                                <div>
+                                    <h4 className="text-xs font-bold text-slate-800 mb-3">Repair Time CDF — Exponential</h4>
+                                    <ResponsiveContainer width="100%" height={180}>
+                                        <LineChart data={mttrChartData}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                            <XAxis dataKey="time" label={{ value: 'Repair Time (hrs)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 10 }} />
+                                            <YAxis label={{ value: 'M(t) %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 10 }} domain={[0, 100]} />
+                                            <Tooltip formatter={(v: any) => `${v}%`} />
+                                            <Legend />
+                                            <Line type="monotone" dataKey="Mt" stroke="#8b5cf6" strokeWidth={2} name="Exponential M(t)" dot={false} />
+                                            <Line type="stepAfter" dataKey="rank" stroke="#3b82f6" strokeWidth={1} strokeDasharray="4 4" name="Empirical CDF" dot={{ r: 3, fill: '#3b82f6' }} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
+                            {/* Ao Trade-off */}
+                            {hasReliabilityData && hasMaintainabilityData && (
+                                <div>
+                                    <h4 className="text-xs font-bold text-slate-800 mb-3">
+                                        MTBF vs MRT Trade-off for Ao = {targetAo}%
+                                    </h4>
+                                    <ResponsiveContainer width="100%" height={200}>
+                                        <AreaChart data={tradeoffData}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                            <XAxis dataKey="mrt" label={{ value: 'MRT (hours)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 10 }} />
+                                            <YAxis label={{ value: 'Required MTBF (hrs)', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 10 }} />
+                                            <Tooltip formatter={(v: any) => `${v} hrs`} />
+                                            <Area type="monotone" dataKey="mtbfReq" stroke="#22c55e" fill="#22c55e" fillOpacity={0.1} name="Required MTBF" />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

@@ -56,7 +56,7 @@ const SEVERITY_CONFIG: Record<CASeverity, { label: string; color: string; bg: st
 const STATUS_CONFIG: Record<CAStatus, { label: string; color: string; bg: string }> = {
     open:                   { label: 'Open',              color: 'text-blue-700',   bg: 'bg-blue-100' },
     in_progress:            { label: 'In Progress',       color: 'text-amber-700',  bg: 'bg-amber-100' },
-    pending_verification:   { label: 'Pending Verif.',    color: 'text-purple-700', bg: 'bg-purple-100' },
+    pending_verification:   { label: 'Pending Verif.',    color: 'text-blue-700', bg: 'bg-blue-100' },
     closed:                 { label: 'Closed',            color: 'text-green-700',  bg: 'bg-green-100' },
     overdue:                { label: 'Overdue',           color: 'text-red-700',    bg: 'bg-red-100' },
 };
@@ -147,7 +147,7 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                     <h1 className="text-2xl font-black text-slate-800">Corrective Actions</h1>
                     <p className="text-sm text-slate-500 mt-1">ISO 55001 §10.1 — Nonconformity tracking, root cause, remediation & WO conversion</p>
                 </div>
-                <button className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
+                <button className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
                     <Plus size={18} /> Log Finding
                 </button>
             </div>
@@ -169,7 +169,7 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="Search by finding, owner, or description..."
-                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400"
+                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-400"
                     />
                 </div>
                 <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700">
@@ -262,7 +262,7 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
 
                                     {/* Quick Actions */}
                                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button className="p-2 rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-colors" title="View Details">
+                                        <button className="p-2 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="View Details">
                                             <Eye size={16} />
                                         </button>
                                         {!action.workOrderId && action.status !== 'closed' && (

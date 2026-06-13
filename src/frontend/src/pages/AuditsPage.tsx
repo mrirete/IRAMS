@@ -219,7 +219,7 @@ export const AuditsPage: React.FC = () => {
                 </div>
                 <button
                     onClick={handleStartNew}
-                    className="px-5 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2"
+                    className="px-5 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2"
                 >
                     <ClipboardCheck size={18} />
                     New Audit
@@ -245,7 +245,7 @@ export const AuditsPage: React.FC = () => {
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="Search by name, company, or number..."
-                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400"
+                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-400"
                     />
                 </div>
                 <select
@@ -264,7 +264,7 @@ export const AuditsPage: React.FC = () => {
                         onClick={() => setAuditScope('all')}
                         className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
                             auditScope === 'all'
-                                ? 'bg-indigo-50 text-indigo-700 shadow-sm'
+                                ? 'bg-blue-50 text-blue-700 shadow-sm'
                                 : 'text-slate-400 hover:text-slate-600'
                         }`}
                     >
@@ -274,13 +274,13 @@ export const AuditsPage: React.FC = () => {
                         onClick={() => setAuditScope('mine')}
                         className={`px-3 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
                             auditScope === 'mine'
-                                ? 'bg-purple-50 text-purple-700 shadow-sm'
+                                ? 'bg-blue-50 text-blue-700 shadow-sm'
                                 : 'text-slate-400 hover:text-slate-600'
                         }`}
                     >
                         <Users size={13} /> My Audits
                         {myCollaborations.size > 0 && (
-                            <span className="text-[9px] font-bold bg-purple-200 text-purple-700 px-1.5 py-0.5 rounded-full">
+                            <span className="text-[9px] font-bold bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">
                                 {myCollaborations.size}
                             </span>
                         )}
@@ -311,14 +311,14 @@ export const AuditsPage: React.FC = () => {
                     {auditScope === 'mine' ? (
                         <button
                             onClick={() => setAuditScope('all')}
-                            className="text-sm text-indigo-500 hover:underline font-semibold"
+                            className="text-sm text-blue-500 hover:underline font-semibold"
                         >
                             Show all audits →
                         </button>
                     ) : (
                         <button
                             onClick={handleStartNew}
-                            className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl shadow-md"
+                            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-md"
                         >
                             Begin Audit
                         </button>
@@ -348,7 +348,7 @@ export const AuditsPage: React.FC = () => {
                                                 <StepBadge step={a.current_step} />
                                             )}
                                             {myCollaborations.has(a.id) && (
-                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase bg-purple-100 text-purple-700 border border-purple-200">
+                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase bg-blue-100 text-blue-700 border border-blue-200">
                                                     INVITED
                                                 </span>
                                             )}
@@ -393,7 +393,7 @@ export const AuditsPage: React.FC = () => {
                                         <div className="flex flex-col items-center">
                                             <div className="flex gap-0.5">
                                                 {[1,2,3,4,5,6,7].map(s => (
-                                                    <div key={s} className={`w-1.5 h-4 rounded-sm ${s <= (a.current_step || 1) ? 'bg-indigo-400' : 'bg-slate-200'}`} />
+                                                    <div key={s} className={`w-1.5 h-4 rounded-sm ${s <= (a.current_step || 1) ? 'bg-blue-400' : 'bg-slate-200'}`} />
                                                 ))}
                                             </div>
                                             <span className="text-[10px] text-slate-400 mt-1">Step {a.current_step || 1}/7</span>
@@ -410,7 +410,7 @@ export const AuditsPage: React.FC = () => {
                                             {/* Edit / Resume */}
                                             <button
                                                 onClick={() => handleEdit(a.id)}
-                                                className="p-2 rounded-lg hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 transition-colors"
+                                                className="p-2 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors"
                                                 title={a.status === 'in_progress' ? 'Resume Audit' : 'Edit Audit'}
                                             >
                                                 <Edit3 size={16} />
@@ -537,7 +537,7 @@ function StepBadge({ step }: { step: number }) {
         5: '6M Assessment', 6: 'Findings', 7: 'Report',
     };
     return (
-        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 uppercase">
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 uppercase">
             Step {step}: {STEP_LABELS[step] || 'Unknown'}
         </span>
     );

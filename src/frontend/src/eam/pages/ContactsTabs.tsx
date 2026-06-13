@@ -211,7 +211,7 @@ export const DetailsTab: React.FC<{
                             <div className="flex flex-wrap gap-2">
                                 {orgUnits.filter(u => contact.organizationUnitIds?.includes(u.id) && u.id !== contact.organizationUnitId).map(unit => (
                                     <span key={unit.id} className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium bg-white border border-slate-200 text-slate-700 shadow-sm">
-                                        <span className={`w-1.5 h-1.5 rounded-full mr-2 ${unit.type === 'DIVISION' ? 'bg-indigo-500' : unit.type === 'GROUP' ? 'bg-blue-500' : 'bg-sky-500'}`}></span>
+                                        <span className={`w-1.5 h-1.5 rounded-full mr-2 ${unit.type === 'DIVISION' ? 'bg-blue-500' : unit.type === 'GROUP' ? 'bg-blue-500' : 'bg-sky-500'}`}></span>
                                         {unit.name}
                                     </span>
                                 ))}

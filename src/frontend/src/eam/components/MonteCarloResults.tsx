@@ -131,7 +131,7 @@ export const MonteCarloResults: React.FC<{
                 {/* Survival Curve */}
                 <div className="bg-white border border-slate-200 rounded-xl p-4">
                     <h4 className="text-sm font-bold text-slate-800 mb-1 flex items-center gap-1.5">
-                        <TrendingUp size={14} className="text-purple-500" /> Survival Curve R(t)
+                        <TrendingUp size={14} className="text-blue-500" /> Survival Curve R(t)
                     </h4>
                     <p className="text-[10px] text-slate-400 mb-3">Simulated vs theoretical Weibull reliability</p>
                     <ResponsiveContainer width="100%" height={220}>

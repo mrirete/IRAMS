@@ -34,6 +34,12 @@ const QUICK_ACTIONS: Record<string, { label: string; icon: React.ReactNode; prom
     { label: 'Anomaly Check', icon: <AlertTriangle size={12} />, prompt: 'Analyze recent condition monitoring data for anomalies. Flag any readings deviating from historical baseline and suggest probable causes and recommended actions.' },
     { label: 'P-F Curve Position', icon: <TrendingUp size={12} />, prompt: 'Based on the condition data trends, estimate where this asset is on the P-F curve. How much potential failure lead time remains? Recommend intervention timing.' },
   ],
+  reliability: [
+    { label: 'Failure Analysis', icon: <Target size={12} />, prompt: 'Based on the asset health index and RUL data in context, perform a failure analysis. Identify dominant failure modes using ISO 14224 taxonomy, estimate failure probability at 30/90/365 day horizons, and recommend risk mitigation actions.' },
+    { label: 'Weibull Fit', icon: <BarChart3 size={12} />, prompt: 'Using the asset\'s operating data and failure history, recommend appropriate Weibull distribution parameters (β, η). Interpret the shape parameter for failure pattern (infant mortality, random, or wear-out) and recommend maintenance strategy.' },
+    { label: 'RCM Strategy', icon: <Wrench size={12} />, prompt: 'Based on the reliability intelligence data in context (Health Index, RUL, Failure Probability, Criticality), recommend the optimal RCM strategy per SAE JA1011. Should this asset be on time-based PM, condition-based monitoring, or run-to-failure? Justify with cost-risk tradeoff.' },
+    { label: 'Defect Elimination', icon: <Target size={12} />, prompt: 'Analyze this asset\'s reliability data to identify chronic defects. Draft a defect elimination plan including root cause hypothesis, recommended corrective actions, expected reliability improvement, and estimated cost savings.' },
+  ],
   people: [
     { label: 'Skill Gap Analysis', icon: <Target size={12} />, prompt: 'Analyze workforce skills versus maintenance requirements. Identify critical skill gaps, estimate the cost impact of using contractors to fill gaps, and recommend training priorities with ROI estimates.' },
     { label: 'Capacity Planning', icon: <BarChart3 size={12} />, prompt: 'Project available wrench-hours versus planned maintenance demand for the next quarter. Flag capacity constraints and recommend resource leveling strategies.' },
@@ -254,7 +260,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
       {/* Header */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-4 flex justify-between items-center shadow-md">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
             <Bot size={18} className="text-white" />
           </div>
           <div>
@@ -277,7 +283,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
               key={i}
               onClick={() => handleQuickAction(chip.prompt)}
               disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 text-slate-700 rounded-full hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-700 transition-all shadow-sm disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 text-slate-700 rounded-full hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 transition-all shadow-sm disabled:opacity-50"
             >
               {chip.icon}
               {chip.label}
@@ -291,7 +297,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] rounded-lg p-3 text-sm shadow-sm ${msg.role === 'user'
-              ? 'bg-indigo-600 text-white rounded-br-none'
+              ? 'bg-blue-600 text-white rounded-br-none'
               : 'bg-white text-slate-700 border border-slate-200 rounded-bl-none'
               }`}>
               {msg.role === 'model' && (
@@ -301,7 +307,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
                 {renderMarkdown(msg.text)}
               </div>
               {/* Timestamp */}
-              <div className={`text-[9px] mt-1.5 ${msg.role === 'user' ? 'text-indigo-200' : 'text-slate-300'}`}>
+              <div className={`text-[9px] mt-1.5 ${msg.role === 'user' ? 'text-blue-200' : 'text-slate-300'}`}>
                 <Clock size={8} className="inline mr-1" />
                 {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
@@ -311,7 +317,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-white border border-slate-200 p-3 rounded-lg rounded-bl-none shadow-sm flex items-center gap-2">
-              <Loader2 size={14} className="animate-spin text-indigo-400" />
+              <Loader2 size={14} className="animate-spin text-blue-400" />
               <span className="text-xs text-slate-400">Analyzing...</span>
             </div>
           </div>
@@ -333,12 +339,12 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyPress}
             placeholder="Ask about TCO, RCA, FMEA, PM strategy, or asset ROI..."
-            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none h-12 scrollbar-hide"
+            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none h-12 scrollbar-hide"
           />
           <button
             onClick={() => handleSend()}
             disabled={!input.trim() || isLoading}
-            className="absolute right-2 top-2 p-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-md hover:from-indigo-600 hover:to-purple-700 disabled:opacity-50 transition"
+            className="absolute right-2 top-2 p-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-md hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 transition"
           >
             <Send size={16} />
           </button>

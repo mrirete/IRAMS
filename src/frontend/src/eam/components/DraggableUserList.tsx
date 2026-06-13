@@ -70,11 +70,11 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
     return (
         <div className="fixed right-0 top-0 h-full w-80 bg-white dark:bg-gray-800 shadow-2xl z-50 flex flex-col border-l border-gray-200 dark:border-gray-700 transition-transform duration-300">
             {/* Header */}
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-indigo-600 text-white">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-blue-600 text-white">
                 <h3 className="font-semibold text-lg">People</h3>
                 <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium bg-indigo-500 px-2 py-0.5 rounded-full">{contacts.length}</span>
-                    <button onClick={onClose} className="hover:bg-indigo-700 p-1 rounded">
+                    <span className="text-xs font-medium bg-blue-500 px-2 py-0.5 rounded-full">{contacts.length}</span>
+                    <button onClick={onClose} className="hover:bg-blue-700 p-1 rounded">
                         ✕
                     </button>
                 </div>
@@ -87,7 +87,7 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
                     <input
                         type="text"
                         placeholder="Search people..."
-                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-gray-800 dark:text-gray-100"
+                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:text-gray-100"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
@@ -101,7 +101,7 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
                 {loading ? (
                     <div className="flex justify-center items-center h-20">
-                        <Loader className="animate-spin h-6 w-6 text-indigo-500" />
+                        <Loader className="animate-spin h-6 w-6 text-blue-500" />
                     </div>
                 ) : (
                     sortedContacts.map(contact => {
@@ -113,12 +113,12 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
                                 draggable={!onSelectContact}
                                 onDragStart={(e) => handleDragStart(e, contact)}
                                 onClick={() => onSelectContact?.(contact)}
-                                className={`flex items-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-sm border border-gray-100 dark:border-gray-600 hover:shadow-md active:cursor-grabbing hover:border-indigo-300 transition-all group ${onSelectContact ? 'cursor-pointer' : 'cursor-grab'
+                                className={`flex items-center p-3 bg-white dark:bg-gray-700 rounded-lg shadow-sm border border-gray-100 dark:border-gray-600 hover:shadow-md active:cursor-grabbing hover:border-blue-300 transition-all group ${onSelectContact ? 'cursor-pointer' : 'cursor-grab'
                                     }`}
                             >
                                 <GripVertical className="h-4 w-4 text-gray-400 mr-2 opacity-50 group-hover:opacity-100" />
                                 <div className="relative">
-                                    <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs mr-3">
+                                    <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-xs mr-3">
                                         {contact.firstName?.[0]}{contact.lastName?.[0]}
                                     </div>
                                     {/* Assignment indicator dot */}
@@ -130,7 +130,7 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
                                     </p>
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                         {role && (
-                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium dark:bg-indigo-900/30 dark:text-indigo-300">
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium dark:bg-blue-900/30 dark:text-blue-300">
                                                 {role}
                                             </span>
                                         )}

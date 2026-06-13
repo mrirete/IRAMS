@@ -624,7 +624,7 @@ export const RecurringWork: React.FC = () => {
                         </button>
                         <button
                             onClick={() => setShowGenerator(true)}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
                             title="Run Job Generator"
                         >
                             <Zap size={16} /> <span className="hidden xl:inline">Generate</span>
@@ -715,7 +715,7 @@ export const RecurringWork: React.FC = () => {
                                 return (
                                     <div
                                         key={job.id}
-                                        className={`mobile-card flex items-start gap-3 ${selectedJob?.id === job.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''} ${isSelected ? 'bg-indigo-50/40' : ''} ${isOverdue ? 'overdue-strip' : ''}`}
+                                        className={`mobile-card flex items-start gap-3 ${selectedJob?.id === job.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''} ${isSelected ? 'bg-blue-50/40' : ''} ${isOverdue ? 'overdue-strip' : ''}`}
                                     >
                                         {/* Checkbox */}
                                         <input
@@ -738,7 +738,7 @@ export const RecurringWork: React.FC = () => {
                                                 <span className="flex items-center gap-1">
                                                     <Clock size={11} /> {job.frequencyInterval} {job.frequencyUnit}
                                                 </span>
-                                                <span className={`flex items-center gap-1 font-medium ${job.jobType === 'Inspection' ? 'text-purple-600' : 'text-blue-600'}`}>
+                                                <span className={`flex items-center gap-1 font-medium ${job.jobType === 'Inspection' ? 'text-blue-600' : 'text-blue-600'}`}>
                                                     {job.jobType === 'Inspection' ? <ClipboardList size={11} /> : <Package size={11} />}
                                                     {job.jobType}
                                                 </span>
@@ -765,8 +765,8 @@ export const RecurringWork: React.FC = () => {
 
                 {/* Phase 4A — Bulk Action Bar */}
                 {selectedIds.size > 0 && (
-                    <div className="p-3 border-t border-slate-200 bg-indigo-50 flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-200">
-                        <span className="text-xs font-bold text-indigo-700">{selectedIds.size} selected</span>
+                    <div className="p-3 border-t border-slate-200 bg-blue-50 flex items-center justify-between gap-3 animate-in slide-in-from-bottom duration-200">
+                        <span className="text-xs font-bold text-blue-700">{selectedIds.size} selected</span>
                         <div className="flex gap-2">
                             <button onClick={() => handleBulkStatusChange('PAUSED')} className="px-3 py-1.5 bg-amber-100 text-amber-700 rounded-lg text-[11px] font-bold flex items-center gap-1.5 hover:bg-amber-200">
                                 <PauseCircle size={13} /> Pause
@@ -774,7 +774,7 @@ export const RecurringWork: React.FC = () => {
                             <button onClick={() => handleBulkStatusChange('ACTIVE')} className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-[11px] font-bold flex items-center gap-1.5 hover:bg-green-200">
                                 <PlayCircle size={13} /> Activate
                             </button>
-                            <button onClick={handleBulkGenerate} className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 hover:bg-indigo-700">
+                            <button onClick={handleBulkGenerate} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 hover:bg-blue-700">
                                 <Zap size={13} /> Generate
                             </button>
                         </div>
@@ -905,12 +905,12 @@ export const RecurringWork: React.FC = () => {
             {showGenerator && (
                 <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center backdrop-blur-sm p-4">
                     <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-                        <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-indigo-600 text-white rounded-t-2xl">
+                        <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-blue-600 text-white rounded-t-2xl">
                             <div>
                                 <h2 className="text-xl font-bold flex items-center gap-2"><Zap size={20} /> Recurring Job Generator</h2>
-                                <p className="text-indigo-100 text-sm">Process due PMs and create Work Orders.</p>
+                                <p className="text-blue-100 text-sm">Process due PMs and create Work Orders.</p>
                             </div>
-                            <button onClick={() => setShowGenerator(false)} className="text-white/70 hover:text-white p-2 hover:bg-indigo-500 rounded-full transition">X</button>
+                            <button onClick={() => setShowGenerator(false)} className="text-white/70 hover:text-white p-2 hover:bg-blue-500 rounded-full transition">X</button>
                         </div>
 
                         <div className="p-6 bg-slate-50 border-b border-slate-200 flex gap-4 items-end">
@@ -931,7 +931,7 @@ export const RecurringWork: React.FC = () => {
                             </div>
                             <button
                                 onClick={handleRunGenerator}
-                                className="px-6 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-md flex items-center gap-2"
+                                className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md flex items-center gap-2"
                             >
                                 <Play size={16} fill="currentColor" /> Run Analysis
                             </button>
@@ -979,7 +979,7 @@ export const RecurringWork: React.FC = () => {
                                                         {items.map((item: any) => {
                                                             const idx = generatedPreview.indexOf(item);
                                                             return (
-                                                                <tr key={idx} className={selectedGenItems.has(idx) ? 'bg-indigo-50/50' : ''}>
+                                                                <tr key={idx} className={selectedGenItems.has(idx) ? 'bg-blue-50/50' : ''}>
                                                                     <td className="p-3">
                                                                         <input
                                                                             type="checkbox"
@@ -989,7 +989,7 @@ export const RecurringWork: React.FC = () => {
                                                                                 if (e.target.checked) next.add(idx); else next.delete(idx);
                                                                                 setSelectedGenItems(next);
                                                                             }}
-                                                                            className="rounded text-indigo-600"
+                                                                            className="rounded text-blue-600"
                                                                         />
                                                                     </td>
                                                                     <td className="p-3 text-sm font-bold text-slate-900">{item.jobCode}</td>
@@ -1276,7 +1276,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                         ]
                                     }
                                 </select>
-                                {job.jobType === 'Inspection' && <p className="text-[10px] text-purple-600 mt-1 font-medium">Generates grouped Work Order (Route)</p>}
+                                {job.jobType === 'Inspection' && <p className="text-[10px] text-blue-600 mt-1 font-medium">Generates grouped Work Order (Route)</p>}
                                 {job.jobType === 'Preventive' && <p className="text-[10px] text-blue-600 mt-1 font-medium">Generates individual Work Orders</p>}
                             </div>
                             <div>
@@ -1320,7 +1320,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
             {/* RCM Strategy Card (SAE JA1011 / ISO 14224) */}
             <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
                 <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
-                    <Shield size={18} className="text-indigo-600" /> RCM Strategy (SAE JA1011)
+                    <Shield size={18} className="text-blue-600" /> RCM Strategy (SAE JA1011)
                 </h3>
                 <p className="text-xs text-slate-500 mb-4">Justify this PM by linking it to the failure it prevents. Required for Criticality A assets.</p>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1329,7 +1329,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                         <select
                             value={job.rcmStrategy || ''}
                             onChange={(e) => onUpdate({ rcmStrategy: e.target.value as any || undefined })}
-                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 ${criticality === 'A' && !job.rcmStrategy ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
+                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 ${criticality === 'A' && !job.rcmStrategy ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
                         >
                             <option value="">— Select Strategy —</option>
                             {rcmStrategies.length > 0
@@ -1348,7 +1348,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                         <select
                             value={job.functionalFailureCode || ''}
                             onChange={(e) => onUpdate({ functionalFailureCode: e.target.value || undefined })}
-                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 ${criticality === 'A' && !job.functionalFailureCode ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
+                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 ${criticality === 'A' && !job.functionalFailureCode ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
                         >
                             <option value="">— Select —</option>
                             {functionalFailures.length > 0
@@ -1367,7 +1367,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                         <select
                             value={job.failureModeCode || ''}
                             onChange={(e) => onUpdate({ failureModeCode: e.target.value || undefined })}
-                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500 ${criticality === 'A' && !job.failureModeCode ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
+                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 ${criticality === 'A' && !job.failureModeCode ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
                         >
                             <option value="">— Select —</option>
                             {failureModes.length > 0 ? (() => {
@@ -1436,7 +1436,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             <textarea
                                 value={job.localImpact || ''}
                                 onChange={(e) => onUpdate({ localImpact: e.target.value })}
-                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 resize-none placeholder:text-slate-400"
+                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 resize-none placeholder:text-slate-400"
                                 placeholder="Describe the local effect on this equipment or subsystem if the failure mode occurs (e.g., 'Pump seizure, loss of lubrication to bearings')..."
                             />
                             <p className="text-[10px] text-slate-400 mt-1">Impact on the equipment/subsystem itself when the failure occurs.</p>
@@ -1446,7 +1446,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             <textarea
                                 value={job.plantWideImpact || ''}
                                 onChange={(e) => onUpdate({ plantWideImpact: e.target.value })}
-                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-indigo-500 resize-none placeholder:text-slate-400"
+                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 resize-none placeholder:text-slate-400"
                                 placeholder="Describe the broader impact on plant operations, safety, or environment (e.g., 'Loss of cooling water to reactor, emergency shutdown required')..."
                             />
                             <p className="text-[10px] text-slate-400 mt-1">Wider consequence to production output, personnel safety, or environmental compliance.</p>
@@ -1976,7 +1976,7 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                     <div className="flex gap-1.5">
                         <button
                             onClick={openLibraryPicker}
-                            className="text-xs bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded hover:bg-indigo-100 flex items-center gap-1 font-medium transition-colors"
+                            className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded hover:bg-blue-100 flex items-center gap-1 font-medium transition-colors"
                             title="Import steps from Task Library"
                         >
                             <BookOpen size={13} /> Library
@@ -2067,10 +2067,10 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
             {showLibraryPicker && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="p-4 border-b border-slate-200 bg-indigo-50 flex justify-between items-center">
+                        <div className="p-4 border-b border-slate-200 bg-blue-50 flex justify-between items-center">
                             <div>
                                 <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                    <BookOpen size={18} className="text-indigo-600" /> Import from Task Library
+                                    <BookOpen size={18} className="text-blue-600" /> Import from Task Library
                                 </h3>
                                 <p className="text-xs text-slate-500 mt-0.5">Select a template to add as a job step. Procedures, parts, and hours will be imported.</p>
                             </div>
@@ -2120,14 +2120,14 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                         <div
                                             key={libTask.id}
                                             onClick={() => importFromLibrary(libTask)}
-                                            className="p-4 border border-slate-200 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 cursor-pointer transition-all group"
+                                            className="p-4 border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-300 cursor-pointer transition-all group"
                                         >
                                             <div className="flex justify-between items-start mb-1.5">
                                                 <div className="flex items-center gap-2">
                                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                                                         libTask.category === 'MAINTENANCE' ? 'bg-orange-100 text-orange-700' :
                                                         libTask.category === 'SAFETY' ? 'bg-red-100 text-red-700' :
-                                                        libTask.category === 'INSPECTION' ? 'bg-purple-100 text-purple-700' :
+                                                        libTask.category === 'INSPECTION' ? 'bg-blue-100 text-blue-700' :
                                                         'bg-blue-100 text-blue-700'
                                                     }`}>{libTask.category}</span>
                                                     <span className="text-xs font-mono text-slate-400">{libTask.code}</span>
@@ -2140,7 +2140,7 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                                         <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold">v{libTask.version}</span>
                                                     )}
                                                 </div>
-                                                <span className="text-xs text-indigo-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                                <span className="text-xs text-blue-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
                                                     Click to import <ChevronRight size={12} />
                                                 </span>
                                             </div>
@@ -2347,7 +2347,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                                     'bg-green-100 text-green-800 border-green-300',
                                                     'bg-teal-100 text-teal-800 border-teal-300',
                                                     'bg-blue-100 text-blue-800 border-blue-300',
-                                                    'bg-purple-100 text-purple-800 border-purple-300',
+                                                    'bg-blue-100 text-blue-800 border-blue-300',
                                                     'bg-orange-100 text-orange-800 border-orange-300',
                                                 ];
                                                 return (
@@ -2480,7 +2480,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
     return (
         <div className="space-y-4 animate-in fade-in duration-300">
             {/* Staffing Summary Card */}
-            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-lg p-4">
                 <div className="flex items-center justify-between">
                     <div className="flex gap-8">
                         <div>
@@ -3075,7 +3075,7 @@ const HistoryTab: React.FC<{ job: RecurringJob; jobs?: RecurringJob[] }> = ({ jo
     const typeColors: Record<string, string> = {
         generation: 'bg-blue-100 text-blue-700',
         edit: 'bg-slate-100 text-slate-700',
-        status: 'bg-purple-100 text-purple-700',
+        status: 'bg-blue-100 text-blue-700',
         compliance: 'bg-green-100 text-green-700',
     };
 

@@ -115,13 +115,13 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
 
                         {/* ── Alert Precision Banner ── */}
                         {totalFeedback > 0 && (
-                            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100">
-                                <BarChart3 size={14} className="text-indigo-500 shrink-0" />
+                            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-100">
+                                <BarChart3 size={14} className="text-blue-500 shrink-0" />
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-[11px] font-semibold text-indigo-700">
+                                    <p className="text-[11px] font-semibold text-blue-700">
                                         Alert Precision: {((feedbackStats?.precision || 0) * 100).toFixed(0)}%
                                     </p>
-                                    <p className="text-[10px] text-indigo-400">
+                                    <p className="text-[10px] text-blue-400">
                                         {feedbackStats?.actionable} confirmed · {feedbackStats?.falseAlarm} dismissed · {totalFeedback} total
                                     </p>
                                 </div>

@@ -74,7 +74,7 @@ export const SIXM_DIMENSIONS: SixMDimension[] = [
     },
     {
         key: 'measurement', code: 'M5', label: 'Measurement', icon: 'Gauge',
-        color: '#8b5cf6', gradient: 'from-violet-500 to-violet-600',
+        color: '#8b5cf6', gradient: 'from-blue-500 to-blue-600',
         description: 'OEE, MTBF, MTTR & CMMS',
         covers: 'KPIs, OEE tracking, MTBF/MTTR measurement, CMMS data quality, reporting, benchmarking, data-driven decision making',
         standards: ['ISO 14224', 'SMRP Best Practices', 'ISO 55001 §9.1', 'EN 15341'],

@@ -99,8 +99,8 @@ export const CustomDashboardTab: React.FC<CustomDashboardTabProps> = ({ widgetDa
           <div className="text-center max-w-lg">
             {/* Premium empty state */}
             <div className="relative mx-auto w-28 h-28 mb-6">
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-3xl rotate-6" />
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-indigo-500/10 rounded-3xl -rotate-3" />
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-blue-500/20 rounded-3xl rotate-6" />
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-blue-500/10 rounded-3xl -rotate-3" />
               <div className="relative bg-white border border-slate-200 rounded-2xl w-full h-full flex items-center justify-center shadow-lg">
                 <LayoutDashboard size={40} className="text-blue-500" />
               </div>
@@ -113,7 +113,7 @@ export const CustomDashboardTab: React.FC<CustomDashboardTabProps> = ({ widgetDa
             <p className="text-slate-400 text-xs mb-6">Dashboards are saved locally and persist across sessions.</p>
             <button
               onClick={() => setShowNewModal(true)}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-blue-500/25 transition-all hover:shadow-xl hover:shadow-blue-500/30 hover:-translate-y-0.5"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-500 hover:to-blue-500 text-white rounded-xl text-sm font-semibold shadow-lg shadow-blue-500/25 transition-all hover:shadow-xl hover:shadow-blue-500/30 hover:-translate-y-0.5"
             >
               <Plus size={16} /> Create Your First Dashboard
             </button>

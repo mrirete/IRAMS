@@ -4,8 +4,8 @@ import { Users, Radio, MapPin, Activity, X, ShieldAlert, Sparkles, MessageSquare
 import { createPortal } from 'react-dom';
 
 const ROLE_BADGE_CLASSES: Record<string, string> = {
-    ADMIN: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    SYS_ADMIN: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    ADMIN: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    SYS_ADMIN: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
     ENGINEER: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
     RELIABILITY_ENG: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
     PLANNER: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
@@ -17,8 +17,8 @@ const ROLE_BADGE_CLASSES: Record<string, string> = {
 };
 
 const ROLE_AVATAR_GRADIENTS: Record<string, string> = {
-    ADMIN: 'from-purple-500 to-indigo-600',
-    SYS_ADMIN: 'from-purple-500 to-indigo-600',
+    ADMIN: 'from-blue-500 to-blue-600',
+    SYS_ADMIN: 'from-blue-500 to-blue-600',
     ENGINEER: 'from-cyan-500 to-blue-600',
     RELIABILITY_ENG: 'from-cyan-500 to-blue-600',
     PLANNER: 'from-blue-500 to-sky-600',

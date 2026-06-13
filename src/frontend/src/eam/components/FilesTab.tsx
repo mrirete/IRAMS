@@ -276,7 +276,7 @@ export const FilesTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrde
                             </span>
                         )}
                         {taskLabel && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 flex items-center gap-0.5">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 flex items-center gap-0.5">
                                 <Link2 size={8} /> {taskLabel}
                             </span>
                         )}

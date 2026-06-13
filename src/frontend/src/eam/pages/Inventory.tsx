@@ -1999,12 +1999,12 @@ function InventoryFinancialsTab({ item, onUpdate, dictionaries }: { item: Invent
                                 type="checkbox"
                                 checked={item.isCapitalSpare || false}
                                 onChange={e => handleChange('isCapitalSpare', e.target.checked)}
-                                className="mt-1 rounded text-purple-600 focus:ring-purple-500"
+                                className="mt-1 rounded text-blue-600 focus:ring-blue-500"
                             />
                             <div>
                                 <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
                                     Capital Spare (Rotable)
-                                    {item.isCapitalSpare && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded border border-purple-200">ACTIVE</span>}
+                                    {item.isCapitalSpare && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">ACTIVE</span>}
                                 </span>
                                 <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                                     Treat as a serialized asset. Individual items will be tracked with unique serial numbers and history.

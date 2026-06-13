@@ -3,9 +3,9 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useRelantern } from '../eam/contexts/RelanternContext';
+import { RelanternCoPilot } from '../components/shell/RelanternCoPilot';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
-const AgentPanel = lazy(() => import('../agent-panel/AgentPanel').then(m => ({ default: m.AgentPanel })));
 const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
 const DevicePreviewer = lazy(() => import('../components/dev/DevicePreviewer').then(m => ({ default: m.DevicePreviewer })));
 
@@ -14,7 +14,6 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
-    const [isAgentPanelOpen, setIsAgentPanelOpen] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isMainFrame, setIsMainFrame] = useState(true);
@@ -31,33 +30,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         return () => window.removeEventListener('toggle-sidebar', handler);
     }, []);
 
-    // ── Iframe Mode (DevicePreviewer) ──
-    // We now render the FULL responsive application shell inside the DevicePreviewer iframe.
-    // This allows active testing of the MobileBottomNav, responsive TopBar, and Sidebar drawer.
-    // We conditionally pass parameters based on whether we are in the main window.
-
     return (
-        <div className="eam-app flex h-screen w-full overflow-hidden bg-brand-900 text-brand-100 font-sans max-w-[100vw]">
+        <div className="eam-app flex h-screen w-full overflow-hidden bg-brand-900 text-slate-800 font-sans max-w-[100vw]">
             <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
             <div className="flex flex-col flex-1 overflow-hidden relative min-w-0">
                 <TopBar
-                    onToggleAgentPanel={() => setIsAgentPanelOpen(!isAgentPanelOpen)}
                     onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                     onTogglePreview={isMainFrame ? () => setIsPreviewOpen(true) : undefined}
                 />
 
                 {/* bg-slate-50 + text-slate-900: light content area so EAM page headers are visible */}
-                <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-6 relative bg-slate-50 text-slate-900 md:rounded-tl-2xl">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-6 relative bg-slate-50 text-slate-900">
                     {children}
                 </main>
             </div>
-
-            {isAgentPanelOpen && (
-                <Suspense fallback={null}>
-                    <AgentPanel onClose={() => setIsAgentPanelOpen(false)} />
-                </Suspense>
-            )}
 
             {/* Relantern AI Panel — lazy loaded on first open */}
             {isRelanternOpen && (
@@ -77,6 +64,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     <DevicePreviewer onClose={() => setIsPreviewOpen(false)} />
                 </Suspense>
             )}
+
+            {/* Relantern CoPilot — Floating AI Coach (MaintainX-style) */}
+            <RelanternCoPilot />
 
             {/* Mobile Bottom Tab Navigation — visible only on < 768px */}
             <MobileBottomNav />

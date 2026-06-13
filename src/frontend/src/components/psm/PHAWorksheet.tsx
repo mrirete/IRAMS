@@ -32,7 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
     open: 'bg-blue-100 text-blue-700',
     in_progress: 'bg-amber-100 text-amber-700',
     completed: 'bg-emerald-100 text-emerald-700',
-    verified: 'bg-purple-100 text-purple-700',
+    verified: 'bg-blue-100 text-blue-700',
     cancelled: 'bg-slate-100 text-slate-500',
 };
 
@@ -125,7 +125,7 @@ function PHARow({ item, onUpdate, onDelete }: {
         <tr className="group hover:bg-slate-50/50 border-b border-slate-50">
             <td className="p-2">
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
-                    item.item_type === 'what_if' ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-600'
+                    item.item_type === 'what_if' ? 'bg-blue-50 text-blue-600' : 'bg-blue-50 text-blue-600'
                 }`}>
                     {item.item_type === 'what_if' ? 'What-If' : 'Checklist'}
                 </span>

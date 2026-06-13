@@ -222,7 +222,7 @@ const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, on
                 <div className="flex items-center justify-between flex-wrap gap-2">
                     <div>
                         <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                            <Zap size={16} className="text-violet-500" />
+                            <Zap size={16} className="text-blue-500" />
                             Hazard Rate h(t) — Data-Driven
                         </h4>
                         <p className="text-[11px] text-slate-400 mt-0.5">
@@ -360,7 +360,7 @@ const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, on
                 {/* Key Stats Row */}
                 <div className="flex flex-wrap items-center justify-center gap-4 text-[10px] text-slate-500 mt-1 mb-2 px-2">
                     <span className="flex items-center gap-1.5">
-                        <span className="w-3 h-0.5 bg-violet-500 rounded-full inline-block" style={{ borderTop: '2px dashed #8b5cf6' }} />
+                        <span className="w-3 h-0.5 bg-blue-500 rounded-full inline-block" style={{ borderTop: '2px dashed #8b5cf6' }} />
                         <span>η = {Math.round(eta)} hrs</span>
                         <span className="text-slate-400">(h = {formatH(hAtEta)}/hr)</span>
                     </span>
@@ -478,8 +478,8 @@ const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, on
                         </div>
 
                         {/* Quick Reference */}
-                        <div className="sm:col-span-2 bg-gradient-to-r from-violet-50 via-indigo-50 to-blue-50 rounded-xl p-4 border border-indigo-100">
-                            <h6 className="text-xs font-bold text-indigo-700 mb-2">Quick Reference — Weibull Shape Parameter (β)</h6>
+                        <div className="sm:col-span-2 bg-gradient-to-r from-blue-50 via-blue-50 to-blue-50 rounded-xl p-4 border border-blue-100">
+                            <h6 className="text-xs font-bold text-blue-700 mb-2">Quick Reference — Weibull Shape Parameter (β)</h6>
                             <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
                                 {[
                                     { b: '0.5', desc: 'Infant Mortality', col: '#f59e0b' },
@@ -490,7 +490,7 @@ const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, on
                                     { b: '5.0+', desc: 'Severe Wear-Out', col: '#dc2626' },
                                 ].map((ref, i) => (
                                     <div key={i} className={`text-center p-2 rounded-lg bg-white/70 border transition-all ${
-                                        Math.abs(beta - parseFloat(ref.b)) < 0.5 ? 'border-indigo-300 ring-2 ring-indigo-200 scale-105' : 'border-slate-200'
+                                        Math.abs(beta - parseFloat(ref.b)) < 0.5 ? 'border-blue-300 ring-2 ring-blue-200 scale-105' : 'border-slate-200'
                                     }`}>
                                         <p className="text-sm font-bold" style={{ color: ref.col }}>β = {ref.b}</p>
                                         <p className="text-[9px] text-slate-500 mt-0.5 leading-tight">{ref.desc}</p>

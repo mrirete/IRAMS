@@ -131,7 +131,7 @@ export const OrgTreePicker: React.FC<OrgTreePickerProps> = ({
         return (
             <div key={node.id} className="select-none">
                 <div
-                    className={`flex items-center gap-2 py-1.5 px-2 rounded-r-lg transition-colors border-l-4 ${isSelected ? 'bg-blue-50' : isHighlighted ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'hover:bg-slate-50'} ${node.type === 'DIVISION' ? 'border-indigo-400' :
+                    className={`flex items-center gap-2 py-1.5 px-2 rounded-r-lg transition-colors border-l-4 ${isSelected ? 'bg-blue-50' : isHighlighted ? 'bg-emerald-50 ring-1 ring-emerald-200' : 'hover:bg-slate-50'} ${node.type === 'DIVISION' ? 'border-blue-400' :
                         node.type === 'GROUP' ? 'border-blue-400' :
                             node.type === 'TEAM' ? 'border-green-400' :
                                 'border-amber-400'

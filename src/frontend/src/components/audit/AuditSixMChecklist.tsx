@@ -89,7 +89,7 @@ export const AuditSixMChecklist: React.FC<Props> = ({ initialData, dimensionNote
         <div className="max-w-4xl mx-auto py-8 px-4 space-y-5">
             {/* Header */}
             <div className="text-center mb-2">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-violet-500/20">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
                     <Sparkles size={24} className="text-white" />
                 </div>
                 <h2 className="text-2xl font-black text-slate-800">Step 3 — 6M Assessment</h2>
@@ -105,7 +105,7 @@ export const AuditSixMChecklist: React.FC<Props> = ({ initialData, dimensionNote
                 </div>
                 <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
                     <div
-                        className="h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-500"
+                        className="h-full bg-gradient-to-r from-blue-500 to-blue-500 rounded-full transition-all duration-500"
                         style={{ width: `${(totalAnswered / totalQuestions) * 100}%` }}
                     />
                 </div>
@@ -248,7 +248,7 @@ export const AuditSixMChecklist: React.FC<Props> = ({ initialData, dimensionNote
                 {activeDimension < dimensions.length - 1 ? (
                     <button
                         onClick={() => setActiveDimension(activeDimension + 1)}
-                        className="text-xs font-bold text-violet-600 hover:text-violet-700 flex items-center gap-1"
+                        className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1"
                     >
                         Next Dimension <ChevronRight size={14} />
                     </button>
@@ -267,7 +267,7 @@ export const AuditSixMChecklist: React.FC<Props> = ({ initialData, dimensionNote
                 <button
                     onClick={handleSubmit}
                     disabled={totalAnswered < 6}
-                    className="px-6 py-3 bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     Generate Findings <ArrowRight size={16} />
                 </button>

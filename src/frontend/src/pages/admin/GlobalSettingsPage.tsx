@@ -40,7 +40,7 @@ export const GlobalSettingsPage: React.FC = () => {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
                         <Settings size={22} className="text-white" />
                     </div>
                     <div>
@@ -236,8 +236,8 @@ const AboutTab: React.FC = () => (
         <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><Info size={18} className="text-blue-500" /> About ERS</h3>
         <p className="text-sm text-slate-500 mb-5">Platform version, standards compliance, and technical stack.</p>
         <div className="space-y-4">
-            <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-cyan-50 to-purple-50 rounded-xl border border-cyan-200/60">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-accent-cyan to-purple-500 flex items-center justify-center text-2xl font-black text-white shadow-lg">E</div>
+            <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-cyan-50 to-blue-50 rounded-xl border border-cyan-200/60">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-accent-cyan to-blue-500 flex items-center justify-center text-2xl font-black text-white shadow-lg">E</div>
                 <div>
                     <p className="text-slate-900 font-black text-lg">Enterprise Reliability System</p>
                     <p className="text-slate-600 text-sm font-medium">AI-Powered Asset Management & Reliability Intelligence</p>

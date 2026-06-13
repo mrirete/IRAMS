@@ -130,7 +130,7 @@ export const AuditAssessment: React.FC<Props> = ({ registration, onComplete }) =
         </div>
         {/* Progress Bar */}
         <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-          <div className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-indigo-500 to-purple-500" style={{ width: `${totalProgress}%` }} />
+          <div className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-blue-500 to-blue-500" style={{ width: `${totalProgress}%` }} />
         </div>
         {/* Dimension Pills */}
         <div className="flex gap-1.5 mt-3">
@@ -166,7 +166,7 @@ export const AuditAssessment: React.FC<Props> = ({ registration, onComplete }) =
               <p className="text-xs text-slate-500 max-w-md mb-4 leading-relaxed">{questionError}</p>
               <button
                 onClick={loadDimensionQuestions}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-sm font-semibold rounded-xl border border-indigo-200 transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 text-sm font-semibold rounded-xl border border-blue-200 transition-colors"
               >
                 <RefreshCw size={14} /> Retry
               </button>
@@ -187,7 +187,7 @@ export const AuditAssessment: React.FC<Props> = ({ registration, onComplete }) =
                   </div>
                   {/* User Answer */}
                   <div className="flex gap-3 justify-end">
-                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl rounded-tr-sm px-4 py-3 max-w-[85%]">
+                    <div className="bg-blue-50 border border-blue-100 rounded-xl rounded-tr-sm px-4 py-3 max-w-[85%]">
                       <p className="text-sm text-slate-700">{a.answer}</p>
                     </div>
                   </div>
@@ -255,12 +255,12 @@ export const AuditAssessment: React.FC<Props> = ({ registration, onComplete }) =
               placeholder={answers.length >= 5 ? 'Dimension complete. Moving to next...' : 'Describe your organization\'s approach...'}
               disabled={loading || loadingQuestions || answers.length >= 5}
               rows={2}
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400/30 disabled:opacity-50 text-slate-800 placeholder:text-slate-400"
+              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 disabled:opacity-50 text-slate-800 placeholder:text-slate-400"
             />
             <button
               onClick={handleSubmitAnswer}
               disabled={!answer.trim() || loading || answers.length >= 5}
-              className="px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl hover:shadow-md disabled:opacity-40 transition-all self-end"
+              className="px-4 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:shadow-md disabled:opacity-40 transition-all self-end"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
             </button>

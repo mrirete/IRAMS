@@ -239,7 +239,7 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase ${
                                         book.bookType === 'CORPORATE' ? 'bg-blue-100 text-blue-700' :
                                         book.bookType === 'TAX' ? 'bg-amber-100 text-amber-700' :
-                                        book.bookType === 'IFRS' ? 'bg-purple-100 text-purple-700' :
+                                        book.bookType === 'IFRS' ? 'bg-blue-100 text-blue-700' :
                                         'bg-slate-100 text-slate-600'
                                     }`}>
                                         {book.bookType}

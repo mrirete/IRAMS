@@ -371,7 +371,7 @@ export const Dashboard: React.FC = () => {
   const quickActions = [
     { label: 'Create Work Order', icon: Wrench, color: 'bg-blue-600 hover:bg-blue-700', path: '/work-orders?action=create' },
     { label: 'Log Request', icon: Inbox, color: 'bg-emerald-600 hover:bg-emerald-700', path: '/requests?action=create' },
-    { label: 'Add Asset', icon: Plus, color: 'bg-violet-600 hover:bg-violet-700', path: '/assets?action=create' },
+    { label: 'Add Asset', icon: Plus, color: 'bg-blue-600 hover:bg-blue-700', path: '/assets?action=create' },
     { label: 'View Reports', icon: BarChart3, color: 'bg-slate-700 hover:bg-slate-800', path: '/reports' },
   ];
 
@@ -723,7 +723,7 @@ export const Dashboard: React.FC = () => {
                             showToast(`Failed to create DE task: ${err.message}`, 'error');
                           }
                         }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-indigo-50 text-indigo-500 hover:text-indigo-700"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-blue-50 text-blue-500 hover:text-blue-700"
                         title="Auto-draft Defect Elimination task"
                       >
                         <Target size={12} />
@@ -762,7 +762,7 @@ export const Dashboard: React.FC = () => {
                 }
                 showToast(`${created} DE task(s) created. Navigate to Analyze → Defect Elimination.`, 'success');
               }}
-              className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition bg-indigo-50 px-2 py-1 rounded-md hover:bg-indigo-100"
+              className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition bg-blue-50 px-2 py-1 rounded-md hover:bg-blue-100"
             >
               <Target size={10} /> Draft All DE Tasks
             </button>
@@ -770,9 +770,9 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Defect Elimination Summary */}
-        <button onClick={() => navigate('/analyze?division=defect_elimination')} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md hover:border-indigo-200 transition-all text-left group">
+        <button onClick={() => navigate('/analyze?division=defect_elimination')} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md hover:border-blue-200 transition-all text-left group">
           <div className="flex items-center gap-2 mb-3">
-            <Target size={16} className="text-indigo-600" />
+            <Target size={16} className="text-blue-600" />
             <h4 className="text-sm font-semibold text-slate-900">Defect Elimination</h4>
             {criticalDETasks > 0 && (
               <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{criticalDETasks} CRIT</span>
@@ -792,7 +792,7 @@ export const Dashboard: React.FC = () => {
               <div className="text-lg font-bold text-slate-900 mt-0.5">${totalDESavings.toLocaleString()}</div>
             </div>
           </div>
-          <div className="mt-3 text-[10px] font-medium text-indigo-600 group-hover:text-indigo-800 flex items-center gap-1 transition">
+          <div className="mt-3 text-[10px] font-medium text-blue-600 group-hover:text-blue-800 flex items-center gap-1 transition">
             Open DE Program <ArrowRight size={10} />
           </div>
         </button>
@@ -800,12 +800,12 @@ export const Dashboard: React.FC = () => {
         {/* Fleet Reliability (MTBF/MTTR) */}
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-2 mb-3">
-            <Timer size={16} className="text-indigo-600" />
+            <Timer size={16} className="text-blue-600" />
             <h4 className="text-sm font-semibold text-slate-900">Fleet Reliability</h4>
           </div>
           <div className="space-y-3">
-            <div className="bg-indigo-50 rounded-lg p-3">
-              <div className="text-[10px] font-bold text-indigo-600 uppercase tracking-wide">Avg MTBF</div>
+            <div className="bg-blue-50 rounded-lg p-3">
+              <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Avg MTBF</div>
               <div className="flex items-baseline gap-1 mt-0.5">
                 <span className="text-2xl font-bold text-slate-900">{avgMTBF}</span>
                 <span className="text-xs text-slate-500">days</span>

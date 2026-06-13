@@ -299,14 +299,14 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
     //  RENDER
     // ═══════════════════════════════════════════════════════════
     return (
-        <div className="bg-white border border-indigo-200 rounded-xl shadow-sm overflow-hidden transition-all duration-300">
+        <div className="bg-white border border-blue-200 rounded-xl shadow-sm overflow-hidden transition-all duration-300">
             {/* ── Header ────────────────────────────────────── */}
             <button
                 onClick={() => setExpanded(e => !e)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-indigo-50/50 transition-colors"
+                className="w-full flex items-center justify-between px-4 py-3 hover:bg-blue-50/50 transition-colors"
             >
                 <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-md">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-md">
                         <Bot size={16} className="text-white" />
                     </div>
                     <div className="text-left">
@@ -316,7 +316,7 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                 </div>
                 <div className="flex items-center gap-2">
                     {messages.length > 0 && (
-                        <span className="flex items-center gap-1 text-[10px] text-indigo-400 bg-indigo-50 px-2 py-0.5 rounded-full">
+                        <span className="flex items-center gap-1 text-[10px] text-blue-400 bg-blue-50 px-2 py-0.5 rounded-full">
                             <MessageSquare size={10} /> {messages.length}
                         </span>
                     )}
@@ -325,9 +325,9 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
             </button>
 
             {expanded && (
-                <div className="border-t border-indigo-100">
+                <div className="border-t border-blue-100">
                     {/* ── Quick Actions ────────────────────────── */}
-                    <div className="px-4 py-2.5 bg-indigo-50/30 border-b border-indigo-100">
+                    <div className="px-4 py-2.5 bg-blue-50/30 border-b border-blue-100">
                         <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-medium">Quick Actions</div>
                         <div className="flex flex-wrap gap-1.5">
                             {currentActions.map(qa => (
@@ -335,7 +335,7 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                                     key={qa.action}
                                     onClick={() => handleQuickAction(qa.action)}
                                     disabled={loading}
-                                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-indigo-200 text-indigo-600 rounded-lg text-[11px] font-medium hover:bg-indigo-50 hover:border-indigo-300 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm hover:shadow"
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-blue-200 text-blue-600 rounded-lg text-[11px] font-medium hover:bg-blue-50 hover:border-blue-300 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm hover:shadow"
                                     title={qa.description}
                                 >
                                     {qa.icon}
@@ -349,7 +349,7 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                     <div ref={scrollRef} className="max-h-80 overflow-y-auto px-4 py-3 space-y-3" style={{ minHeight: messages.length > 0 ? '120px' : '60px' }}>
                         {messages.length === 0 && !loading && (
                             <div className="text-center py-4">
-                                <Bot size={28} className="mx-auto text-indigo-200 mb-2" />
+                                <Bot size={28} className="mx-auto text-blue-200 mb-2" />
                                 <p className="text-xs text-slate-400">Hello! I'm your <strong>Reliability Specialist</strong>.</p>
                                 <p className="text-[10px] text-slate-400 mt-1">
                                     Ask me a question or use the quick actions above.
@@ -361,7 +361,7 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                         {messages.map(msg => (
                             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                 <div className={`max-w-[85%] rounded-xl px-3 py-2 text-xs leading-relaxed ${msg.role === 'user'
-                                    ? 'bg-indigo-500 text-white rounded-br-sm'
+                                    ? 'bg-blue-500 text-white rounded-br-sm'
                                     : 'bg-slate-50 text-slate-700 border border-slate-200 rounded-bl-sm'
                                     }`}>
                                     {msg.role === 'specialist' && (
@@ -420,7 +420,7 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                                         </div>
                                     )}
                                     {/* Timestamp */}
-                                    <div className={`text-[9px] mt-1.5 ${msg.role === 'user' ? 'text-indigo-200' : 'text-slate-300'}`}>
+                                    <div className={`text-[9px] mt-1.5 ${msg.role === 'user' ? 'text-blue-200' : 'text-slate-300'}`}>
                                         <Clock size={8} className="inline mr-1" />
                                         {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </div>
@@ -432,7 +432,7 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                         {loading && (
                             <div className="flex justify-start">
                                 <div className="bg-slate-50 border border-slate-200 rounded-xl rounded-bl-sm px-3 py-2.5 flex items-center gap-2">
-                                    <Loader2 size={14} className="animate-spin text-indigo-400" />
+                                    <Loader2 size={14} className="animate-spin text-blue-400" />
                                     <span className="text-xs text-slate-400">Analyzing...</span>
                                 </div>
                             </div>
@@ -440,7 +440,7 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                     </div>
 
                     {/* ── Input Bar ─────────────────────────────── */}
-                    <div className="px-4 py-2.5 border-t border-indigo-100 bg-slate-50/50">
+                    <div className="px-4 py-2.5 border-t border-blue-100 bg-slate-50/50">
                         <div className="flex gap-2">
                             <input
                                 value={input}
@@ -448,12 +448,12 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                                 onKeyDown={handleKeyDown}
                                 placeholder={contextAsset ? `Ask about ${contextAsset.tag}...` : 'Ask the Reliability Specialist...'}
                                 disabled={loading}
-                                className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition-all disabled:opacity-50"
+                                className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all disabled:opacity-50"
                             />
                             <button
                                 onClick={handleSendQuestion}
                                 disabled={loading || !input.trim()}
-                                className="px-3 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
+                                className="px-3 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg"
                             >
                                 <Send size={14} />
                             </button>
@@ -484,7 +484,7 @@ class SpecialistErrorBoundary extends Component<{ children: ReactNode }, { hasEr
                     <p className="text-[10px] text-slate-400 mt-1 mb-3">{this.state.error?.message || 'Unknown error'}</p>
                     <button
                         onClick={() => this.setState({ hasError: false, error: undefined })}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
                     >
                         <RefreshCw size={12} /> Retry
                     </button>

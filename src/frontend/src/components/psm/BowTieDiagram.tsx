@@ -17,7 +17,7 @@ import BowTieVisual from './diagrams/BowTieVisual';
 const ELEMENT_STYLES: Record<BowTieElementType, { bg: string; border: string; text: string; label: string }> = {
     top_event:           { bg: 'bg-red-100',     border: 'border-red-400',    text: 'text-red-800',    label: 'Top Event' },
     threat:              { bg: 'bg-orange-50',   border: 'border-orange-300', text: 'text-orange-700', label: 'Threat' },
-    consequence:         { bg: 'bg-purple-50',   border: 'border-purple-300', text: 'text-purple-700', label: 'Consequence' },
+    consequence:         { bg: 'bg-blue-50',   border: 'border-blue-300', text: 'text-blue-700', label: 'Consequence' },
     prevention_barrier:  { bg: 'bg-blue-50',     border: 'border-blue-300',   text: 'text-blue-700',   label: 'Prevention Barrier' },
     mitigation_barrier:  { bg: 'bg-teal-50',     border: 'border-teal-300',   text: 'text-teal-700',   label: 'Mitigation Barrier' },
     escalation_factor:   { bg: 'bg-amber-50',    border: 'border-amber-300',  text: 'text-amber-700',  label: 'Escalation Factor' },
@@ -218,10 +218,10 @@ const BowTieDiagram: React.FC<BowTieDiagramProps> = ({ study, onRefresh }) => {
 
                         {/* Consequences */}
                         <div className="space-y-2">
-                            <div className="text-[10px] font-bold uppercase text-purple-500 tracking-wider text-center mb-2">Consequences</div>
+                            <div className="text-[10px] font-bold uppercase text-blue-500 tracking-wider text-center mb-2">Consequences</div>
                             {consequences.map(c => <ElementCard key={c.id} element={c} onUpdate={updateElement} onDelete={deleteElement} />)}
                             <button onClick={() => addElement('consequence')}
-                                className="w-full text-xs text-purple-500 hover:bg-purple-50 border border-dashed border-purple-300 rounded-lg py-2 flex items-center justify-center gap-1">
+                                className="w-full text-xs text-blue-500 hover:bg-blue-50 border border-dashed border-blue-300 rounded-lg py-2 flex items-center justify-center gap-1">
                                 <Plus size={12} /> Consequence
                             </button>
                         </div>

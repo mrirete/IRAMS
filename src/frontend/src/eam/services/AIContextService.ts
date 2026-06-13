@@ -24,7 +24,58 @@ export class AIContextService {
         return AIContextService.instance;
     }
 
-    // ─── Asset Context ─────────────────────────────────────
+    // ─── Hierarchy Path Builder ──────────────────────────────
+    private buildHierarchyPath(assetId: string, allAssets: any[]): string {
+        const path: { tag: string; name: string }[] = [];
+        let current = allAssets.find(a => a.id === assetId);
+        let depth = 0;
+        while (current && depth < 10) {
+            path.unshift({ tag: current.tag, name: current.name });
+            if (!current.parentId && !current.parent_id) break;
+            current = allAssets.find(a => a.id === (current.parentId || current.parent_id));
+            depth++;
+        }
+        if (path.length <= 1) return 'Root level (no parent hierarchy)';
+        return path.map(p => `${p.tag} (${p.name})`).join(' → ');
+    }
+
+    // ─── OREDA Lookup ──────────────────────────────────────
+    private getOREDABenchmark(assetType: string): { name: string; mtbf: number; lambda: number } | null {
+        const benchmarks: Record<string, { name: string; mtbf: number; lambda: number }> = {
+            'CENTRIFUGAL_PUMP': { name: 'Centrifugal Pump', mtbf: 8300, lambda: 120 },
+            'PUMP': { name: 'Centrifugal Pump', mtbf: 8300, lambda: 120 },
+            'RECIPROCATING_COMPRESSOR': { name: 'Reciprocating Compressor', mtbf: 2800, lambda: 360 },
+            'COMPRESSOR': { name: 'Centrifugal Compressor', mtbf: 5600, lambda: 180 },
+            'CENTRIFUGAL_COMPRESSOR': { name: 'Centrifugal Compressor', mtbf: 5600, lambda: 180 },
+            'GAS_TURBINE': { name: 'Gas Turbine', mtbf: 2200, lambda: 450 },
+            'STEAM_TURBINE': { name: 'Steam Turbine', mtbf: 4000, lambda: 250 },
+            'ELECTRIC_MOTOR': { name: 'Electric Motor (>100kW)', mtbf: 28500, lambda: 35 },
+            'MOTOR': { name: 'Electric Motor (>100kW)', mtbf: 28500, lambda: 35 },
+            'HEAT_EXCHANGER': { name: 'Heat Exchanger (S&T)', mtbf: 45000, lambda: 22 },
+            'CONDENSER': { name: 'Overhead Condenser (S&T)', mtbf: 45000, lambda: 22 },
+            'GATE_VALVE': { name: 'Gate Valve', mtbf: 55000, lambda: 18 },
+            'VALVE': { name: 'Gate Valve', mtbf: 55000, lambda: 18 },
+            'CONTROL_VALVE': { name: 'Control Valve', mtbf: 18000, lambda: 55 },
+            'PSV': { name: 'Pressure Safety Valve', mtbf: 125000, lambda: 8 },
+            'DIESEL_ENGINE': { name: 'Diesel Engine', mtbf: 3500, lambda: 280 },
+            'PRESSURE_VESSEL': { name: 'Pressure Vessel', mtbf: 100000, lambda: 10 },
+            'SEPARATOR': { name: 'Separator', mtbf: 80000, lambda: 12 },
+            'STORAGE_TANK': { name: 'Storage Tank', mtbf: 200000, lambda: 5 },
+            'TRANSFORMER': { name: 'Power Transformer', mtbf: 100000, lambda: 10 },
+            'AIR_COOLER': { name: 'Air-Cooled Exchanger', mtbf: 22000, lambda: 45 },
+        };
+        // Try exact match, then partial match
+        const type = (assetType || '').toUpperCase().replace(/\s+/g, '_');
+        if (benchmarks[type]) return benchmarks[type];
+        // Try class match
+        const classKey = (assetType || '').toUpperCase();
+        for (const [key, val] of Object.entries(benchmarks)) {
+            if (classKey.includes(key) || key.includes(classKey)) return val;
+        }
+        return null;
+    }
+
+    // ─── Asset Context (Expert Intelligence Brief) ─────────
     async buildAssetContext(assetId: string): Promise<string> {
         try {
             const [assets, workOrders] = await Promise.all([
@@ -33,50 +84,217 @@ export class AIContextService {
             ]);
 
             const asset = assets.find(a => a.id === assetId);
-            if (!asset) return 'Asset not found.';
+            if (!asset) return 'Asset not found in the database.';
 
-            const assetWOs = workOrders.filter(wo => (wo as any).assetId === assetId || (wo as any).asset_id === assetId);
-            const closedWOs = assetWOs.filter(wo => wo.status === 'CLOSED' || wo.status === 'TECO');
-            const openWOs = assetWOs.filter(wo => wo.status !== 'CLOSED' && wo.status !== 'CANC');
-            const correctiveWOs = assetWOs.filter(wo => wo.type === 'CM');
-            const preventiveWOs = assetWOs.filter(wo => wo.type === 'PM');
-
-            const totalCost = closedWOs.reduce((sum, wo) => {
-                const laborCost = (wo.labor || []).reduce((s: any, l: any) => s + ((l.actualDuration || l.estDuration || 0) * (l.actualRate || l.estRate || 0)), 0);
-                const partsCost = (wo.inventory || []).reduce((s: any, p: any) => s + ((p.actualQty || p.estQty || 0) * (p.actualUnitCost || p.estUnitCost || 0)), 0);
-                return sum + laborCost + partsCost;
-            }, 0);
-
-            const totalDowntime = closedWOs.reduce((sum, wo) => sum + (wo.actualDowntime || wo.estDowntime || 0), 0);
-            const failures = correctiveWOs.length;
-            const totalRunHours = 8760; // Approximate annual hours
-            const mtbf = failures > 0 ? Math.round(totalRunHours / failures) : 'N/A (no failures recorded)';
-
-            return `═══ ASSET CONTEXT ═══
-Asset: ${asset.tag} — ${asset.name}
-Type: ${asset.assetType || 'N/A'} | Category: ${asset.assetCategory || 'N/A'} | Class: ${asset.assetClass || 'N/A'}
-Criticality: ${asset.criticality || 'N/A'} | Health Score: ${asset.healthScore || 'N/A'}/100
-Status: ${asset.status} | Location: ${asset.location || 'N/A'}
-Manufacturer: ${asset.manufacturer || 'N/A'} | Model: ${asset.model || 'N/A'}
-Cost Center: ${asset.costCenter || 'N/A'}
-Purchase Price: $${asset.purchasePrice?.toLocaleString() || 'N/A'}
-Install Date: ${asset.installationDate || 'N/A'} | Useful Life: ${asset.usefulLifeYears || 'N/A'} years
-
-▸ WORK HISTORY SUMMARY:
-Total Work Orders: ${assetWOs.length} | Open: ${openWOs.length} | Closed: ${closedWOs.length}
-Corrective (CM): ${correctiveWOs.length} | Preventive (PM): ${preventiveWOs.length}
-PM:CM Ratio: ${preventiveWOs.length > 0 ? Math.round((preventiveWOs.length / (preventiveWOs.length + correctiveWOs.length)) * 100) : 0}%
-Estimated MTBF: ${mtbf} hours
-Total Downtime: ${totalDowntime} hours
-Total Maintenance Cost: $${totalCost.toLocaleString()}
-
-▸ BOM (Bill of Materials):
-${(asset.bomItems || []).map((b: any) => `  - ${b.description} (${b.inventoryCode}) × ${b.quantity} ${b.uom} ${b.critical ? '⚠️ CRITICAL' : ''}`).join('\n') || '  No BOM items'}
-`;
+            return this._buildAssetIntelligenceBrief(asset, assets, workOrders);
         } catch (error) {
             console.error('[AIContextService] buildAssetContext error:', error);
             return 'Error loading asset context.';
         }
+    }
+
+    /**
+     * Build asset context from pre-loaded data (avoids duplicate DB calls
+     * when the Assets page already has assets & workOrders in state).
+     */
+    buildAssetContextFromData(asset: any, allAssets: any[], workOrders: any[]): string {
+        try {
+            return this._buildAssetIntelligenceBrief(asset, allAssets, workOrders);
+        } catch (error) {
+            console.error('[AIContextService] buildAssetContextFromData error:', error);
+            return 'Error building asset context.';
+        }
+    }
+
+    private _buildAssetIntelligenceBrief(asset: any, allAssets: any[], workOrders: any[]): string {
+        // ── Hierarchy Path ──
+        const hierarchyPath = this.buildHierarchyPath(asset.id, allAssets);
+
+        // ── Work History ──
+        const assetWOs = workOrders.filter(wo =>
+            (wo.assetId === asset.id || wo.asset_id === asset.id)
+        );
+        const closedWOs = assetWOs.filter(wo => wo.status === 'CLOSED' || wo.status === 'TECO');
+        const openWOs = assetWOs.filter(wo => wo.status !== 'CLOSED' && wo.status !== 'CANC');
+        const correctiveWOs = assetWOs.filter(wo => wo.type === 'CM');
+        const preventiveWOs = assetWOs.filter(wo => wo.type === 'PM');
+        const inspectionWOs = assetWOs.filter(wo => wo.type === 'INSPECTION' || wo.type === 'INS');
+
+        // ── Cost Calculation ──
+        const totalCost = closedWOs.reduce((sum, wo) => {
+            const laborCost = (wo.labor || []).reduce((s: any, l: any) =>
+                s + ((l.actualDuration || l.estDuration || 0) * (l.actualRate || l.estRate || 0)), 0);
+            const partsCost = (wo.inventory || []).reduce((s: any, p: any) =>
+                s + ((p.actualQty || p.estQty || 0) * (p.actualUnitCost || p.estUnitCost || 0)), 0);
+            return sum + laborCost + partsCost;
+        }, 0);
+
+        const totalDowntime = closedWOs.reduce((sum, wo) =>
+            sum + (wo.actualDowntime || wo.estDowntime || 0), 0);
+
+        // ── MTBF & OREDA Comparison ──
+        const failures = correctiveWOs.length;
+        const totalRunHours = 8760; // Approximate annual
+        const actualMTBF = failures > 0 ? Math.round(totalRunHours / failures) : null;
+        const oreda = this.getOREDABenchmark(
+            asset.assetClass || asset.assetType || asset.asset_type || asset.category || ''
+        );
+
+        let oredaComparison = '';
+        if (oreda && actualMTBF) {
+            const ratio = (actualMTBF / oreda.mtbf).toFixed(2);
+            const status = actualMTBF < oreda.mtbf * 0.67
+                ? '🔴 BAD ACTOR — actual MTBF is significantly below OREDA benchmark'
+                : actualMTBF < oreda.mtbf
+                    ? '⚠️ Below benchmark — maintenance strategy review recommended'
+                    : '✅ Performing at or above OREDA benchmark';
+            oredaComparison = `OREDA Benchmark (${oreda.name}): MTBF=${oreda.mtbf.toLocaleString()}h | Actual: ${actualMTBF.toLocaleString()}h | Ratio: ${ratio}× | ${status}`;
+        } else if (oreda) {
+            oredaComparison = `OREDA Benchmark (${oreda.name}): MTBF=${oreda.mtbf.toLocaleString()}h | Actual: No failures recorded — performing well`;
+        }
+
+        // ── PM:CM Ratio ──
+        const pmCmTotal = preventiveWOs.length + correctiveWOs.length;
+        const pmCmRatio = pmCmTotal > 0
+            ? Math.round((preventiveWOs.length / pmCmTotal) * 100)
+            : 0;
+        const pmCmStatus = pmCmRatio >= 80 ? '✅ Target met' :
+            pmCmRatio >= 60 ? '⚠️ Below target (>80%)' : '🔴 Highly reactive — PM program review needed';
+
+        // ── Asset Age ──
+        const installDate = asset.installationDate || asset.installation_date;
+        let ageStr = 'N/A';
+        let ageYears = 0;
+        let lifePctStr = '';
+        if (installDate) {
+            const install = new Date(installDate);
+            ageYears = Math.round((Date.now() - install.getTime()) / (365.25 * 24 * 60 * 60 * 1000) * 10) / 10;
+            ageStr = `${ageYears} years`;
+            const usefulLife = asset.usefulLifeYears || asset.useful_life_years;
+            if (usefulLife) {
+                const pct = Math.round((ageYears / usefulLife) * 100);
+                lifePctStr = ` | Life consumed: ${pct}% of ${usefulLife} years`;
+            }
+        }
+
+        // ── Warranty Status ──
+        const warrantyEnd = asset.warrantyEndDate || asset.warranty_end_date;
+        let warrantyStatus = 'No warranty data';
+        if (warrantyEnd) {
+            const wEnd = new Date(warrantyEnd);
+            warrantyStatus = wEnd > new Date()
+                ? `✅ UNDER WARRANTY until ${wEnd.toLocaleDateString()}`
+                : `Expired (${wEnd.toLocaleDateString()})`;
+        }
+
+        // ── Cost Analysis ──
+        const annualizedCost = ageYears > 0 ? Math.round(totalCost / ageYears) : totalCost;
+        const purchasePrice = asset.purchasePrice || asset.purchase_price || 0;
+        const ravPct = purchasePrice > 0
+            ? ((annualizedCost / purchasePrice) * 100).toFixed(1)
+            : 'N/A';
+        const ravStatus = purchasePrice > 0
+            ? (annualizedCost / purchasePrice > 0.04 ? ' ⚠️ Above 4% benchmark' :
+                annualizedCost / purchasePrice > 0.02 ? ' — Within benchmark (2-4%)' : ' ✅ Below 2%')
+            : '';
+
+        // ── Recent CM Detail (last 5) ──
+        const recentCMs = correctiveWOs
+            .sort((a, b) => new Date(b.dateCreated || b.date_created || 0).getTime() -
+                new Date(a.dateCreated || a.date_created || 0).getTime())
+            .slice(0, 5);
+
+        const cmDetailLines = recentCMs.map(wo => {
+            const woNum = wo.woNumber || wo.wo_number || wo.id;
+            const title = wo.title || 'Untitled';
+            const dt = wo.actualDowntime || wo.estDowntime || 0;
+            const lCost = (wo.labor || []).reduce((s: any, l: any) =>
+                s + ((l.actualDuration || l.estDuration || 0) * (l.actualRate || l.estRate || 0)), 0);
+            const pCost = (wo.inventory || []).reduce((s: any, p: any) =>
+                s + ((p.actualQty || p.estQty || 0) * (p.actualUnitCost || p.estUnitCost || 0)), 0);
+            const cause = wo.failureCause || wo.failure_cause || 'Not coded';
+            const mode = wo.failureMode || wo.failure_mode || 'Not coded';
+            return `    ${woNum}: "${title}" — ${dt}h downtime, $${(lCost + pCost).toLocaleString()} | Mode: ${mode} | Cause: ${cause}`;
+        });
+
+        // ── BOM ──
+        const bomItems = asset.bomItems || asset.bom_items || [];
+        const bomLines = bomItems.length > 0
+            ? bomItems.map((b: any) => {
+                const stock = b.qtyOnHand ?? b.qty_on_hand;
+                const stockAlert = stock !== undefined
+                    ? (stock === 0 ? ' ⚠️ ZERO STOCK' : ` — Stock: ${stock}`)
+                    : '';
+                return `    ${b.inventoryCode || b.inventory_code || 'N/A'}: ${b.description} × ${b.quantity} ${b.uom} ${b.critical ? '⚠️ CRITICAL' : ''}${stockAlert}`;
+            }).join('\n')
+            : '    No BOM items registered';
+
+        // ── Children & Siblings ──
+        const children = allAssets.filter(a => (a.parentId || a.parent_id) === asset.id);
+        const parent = allAssets.find(a => a.id === (asset.parentId || asset.parent_id));
+        const siblings = parent
+            ? allAssets.filter(a => (a.parentId || a.parent_id) === parent.id && a.id !== asset.id)
+            : [];
+
+        // ── Open WO Detail ──
+        const openWOLines = openWOs.slice(0, 5).map(wo => {
+            const woNum = wo.woNumber || wo.wo_number || wo.id;
+            return `    ${woNum}: "${wo.title || 'Untitled'}" — ${wo.type} | ${wo.priority || 'N/A'} | Status: ${wo.status}`;
+        });
+
+        // ── Build the Intelligence Brief ──
+        return `═══ ASSET INTELLIGENCE BRIEF ═══
+
+▸ IDENTITY & LOCATION:
+  Tag: ${asset.tag} | Name: ${asset.name}
+  Hierarchy Path: ${hierarchyPath}
+  Status: ${asset.status || 'N/A'} | Equipment #: ${asset.equipmentNumber || asset.equipment_number || 'N/A'}
+
+▸ CLASSIFICATION (ISO 14224):
+  Category: ${asset.assetCategory || asset.asset_category || 'N/A'}
+  Class: ${asset.assetClass || asset.asset_class || 'N/A'}
+  Type: ${asset.assetType || asset.asset_type || 'N/A'}
+  Criticality: ${asset.criticality || 'N/A'}
+
+▸ TECHNICAL DATA:
+  Manufacturer: ${asset.manufacturer || 'N/A'} | Model: ${asset.model || 'N/A'}
+  Serial: ${asset.serialNumber || asset.serial_number || 'N/A'}
+  Install Date: ${installDate || 'N/A'} | Age: ${ageStr}${lifePctStr}
+  Purchase Price (RAV): $${purchasePrice ? purchasePrice.toLocaleString() : 'N/A'}
+  Warranty: ${warrantyStatus}
+  Cost Center: ${asset.costCenter || asset.cost_center || 'N/A'}
+  Department: ${asset.department || 'N/A'}
+
+▸ WORK HISTORY SUMMARY:
+  Total WOs: ${assetWOs.length} | Open: ${openWOs.length} | Completed: ${closedWOs.length}
+  CM (Corrective): ${correctiveWOs.length} | PM (Preventive): ${preventiveWOs.length} | Inspection: ${inspectionWOs.length}
+  PM:CM Ratio: ${pmCmRatio}% ${pmCmStatus}
+  MTBF: ${actualMTBF ? actualMTBF.toLocaleString() + 'h' : 'No failures recorded'}
+  ${oredaComparison}
+  Total Downtime: ${totalDowntime}h
+  Total Maintenance Cost: $${totalCost.toLocaleString()}
+  Annualized Cost: $${annualizedCost.toLocaleString()}/yr
+  Maintenance/RAV: ${ravPct}%${ravStatus}
+
+▸ RECENT CORRECTIVE WORK (Last 5 CMs):
+${cmDetailLines.length > 0 ? cmDetailLines.join('\n') : '    No corrective work orders recorded'}
+
+▸ OPEN WORK:
+${openWOLines.length > 0 ? openWOLines.join('\n') : '    No open work orders'}
+
+▸ BOM (${bomItems.length} items):
+${bomLines}
+
+▸ HIERARCHY:
+  Children: ${children.length} sub-assets${children.length > 0 ? ' (' + children.map((c: any) => c.tag).join(', ') + ')' : ''}
+  Siblings: ${siblings.length} other items under ${parent?.tag || 'root'}${siblings.length > 0 ? ' (' + siblings.slice(0, 5).map((s: any) => s.tag).join(', ') + (siblings.length > 5 ? '...' : '') + ')' : ''}
+
+▸ HEALTH & RELIABILITY:
+  Health Score: ${asset.healthScore ?? asset.health_score ?? 'N/A'}/100
+
+▸ FLEET SUMMARY:
+  Total Assets in Registry: ${allAssets.length}
+`;
     }
 
     // ─── Work Order Context ────────────────────────────────

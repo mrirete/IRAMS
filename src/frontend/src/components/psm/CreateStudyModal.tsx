@@ -71,7 +71,7 @@ const STUDY_TYPE_CONFIG: Record<PSMStudyType, StudyTypeConfig> = {
             { key: 'revalidation_required', label: 'Revalidation Type', type: 'select', options: ['Initial study', 'Revalidation (5-year)', 'MOC-triggered revalidation', 'Incident-triggered review'], tooltip: 'Per OSHA 1910.119(e)(6) — shall be updated and revalidated every 5 years' },
         ],
         teamRoles: ['Team Leader', 'Scribe', 'Process Engineer', 'Operations Supervisor', 'Maintenance Rep', 'Safety Representative', 'Subject Matter Expert'],
-        color: 'from-blue-500 to-indigo-500',
+        color: 'from-blue-500 to-blue-500',
     },
     lopa: {
         label: 'Layer of Protection Analysis',
@@ -106,7 +106,7 @@ const STUDY_TYPE_CONFIG: Record<PSMStudyType, StudyTypeConfig> = {
             { key: 'barrier_standard', label: 'Barrier Assessment Standard', type: 'select', options: ['Barrier effectiveness only', 'Barrier + escalation factors', 'Full degradation assessment'], tooltip: 'Level of detail for barrier effectiveness assessment' },
         ],
         teamRoles: ['Facilitator', 'Scribe', 'Process Safety Engineer', 'Operations Rep', 'Maintenance Rep', 'HSE Manager'],
-        color: 'from-purple-500 to-pink-500',
+        color: 'from-blue-500 to-pink-500',
     },
     fta: {
         label: 'Fault Tree Analysis',
@@ -158,7 +158,7 @@ const STUDY_TYPE_CONFIG: Record<PSMStudyType, StudyTypeConfig> = {
             { key: 'proof_test_philosophy', label: 'Proof Test Philosophy', type: 'textarea', placeholder: 'Describe proof test strategy: intervals, partial stroke, online testing', tooltip: 'Per IEC 61511 Cl.16.3 — proof testing requirements' },
         ],
         teamRoles: ['SIL Facilitator', 'SIS Engineer', 'Process Safety Engineer', 'Process Engineer', 'Operations Rep', 'Maintenance Rep'],
-        color: 'from-violet-500 to-purple-500',
+        color: 'from-blue-500 to-blue-500',
     },
     pssr: {
         label: 'Pre-Startup Safety Review',
@@ -181,9 +181,9 @@ const STUDY_TYPE_CONFIG: Record<PSMStudyType, StudyTypeConfig> = {
 };
 
 const TAXONOMY_BADGES: Record<string, { label: string; color: string }> = {
-    site:      { label: 'SITE',    color: 'bg-purple-100 text-purple-700 border-purple-200' },
+    site:      { label: 'SITE',    color: 'bg-blue-100 text-blue-700 border-blue-200' },
     unit:      { label: 'UNIT',    color: 'bg-blue-100 text-blue-700 border-blue-200' },
-    system:    { label: 'SYSTEM',  color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+    system:    { label: 'SYSTEM',  color: 'bg-blue-100 text-blue-700 border-blue-200' },
     equipment: { label: 'EQUIP',   color: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
     subunit:   { label: 'SUBUNIT', color: 'bg-teal-100 text-teal-700 border-teal-200' },
     component: { label: 'COMP',    color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },

@@ -29,7 +29,7 @@ export const RCMContextualHelp: React.FC<RCMContextualHelpProps> = ({ question, 
         onClick={() => setOpen(!open)}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
-        className="p-0.5 text-slate-400 hover:text-violet-500 transition-colors rounded-full hover:bg-violet-50"
+        className="p-0.5 text-slate-400 hover:text-blue-500 transition-colors rounded-full hover:bg-blue-50"
         type="button"
         aria-label="Help"
       >

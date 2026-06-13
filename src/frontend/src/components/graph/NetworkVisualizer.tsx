@@ -157,7 +157,7 @@ export const NetworkVisualizer: React.FC<Props> = ({ data, onNodeClick }) => {
                 case 'FailureMode': return '#eab308'; // yellow-500
                 case 'Cause': return '#ef4444'; // red-500
                 case 'Person': return '#3b82f6'; // blue-500
-                case 'KPI': return '#a855f7'; // purple-500
+                case 'KPI': return '#a855f7'; // blue-500
                 case 'Department': return '#10b981'; // emerald-500
                 case 'Competency': return '#f97316'; // orange-500
                 default: return '#94a3b8'; // slate-400

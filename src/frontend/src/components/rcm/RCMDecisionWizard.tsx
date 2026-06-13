@@ -62,8 +62,8 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
       {/* Empty State */}
       {failureModes.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center shadow-sm">
-          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-purple-50 flex items-center justify-center">
-            <GitBranch size={28} className="text-purple-300" />
+          <div className="w-14 h-14 mx-auto mb-4 rounded-2xl bg-blue-50 flex items-center justify-center">
+            <GitBranch size={28} className="text-blue-300" />
           </div>
           <p className="text-sm font-semibold text-slate-500">No failure modes to evaluate</p>
           <p className="text-xs text-slate-400 mt-1">Define failure modes in the Functions tab first.</p>
@@ -129,7 +129,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                   <button
                     onClick={(e) => { e.stopPropagation(); onAIRecommend(fm); }}
                     disabled={aiLoading === `recommend-${fm.id}`}
-                    className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-50 border border-purple-200 rounded-lg text-[10px] font-bold text-purple-700 hover:bg-purple-100 transition-colors disabled:opacity-50 shrink-0"
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-[10px] font-bold text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 shrink-0"
                   >
                     {aiLoading === `recommend-${fm.id}` ? <RefreshCw size={11} className="animate-spin" /> : <Sparkles size={11} />}
                     AI
@@ -177,9 +177,9 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
 
                     {/* Failure-Finding hint for hidden failures */}
                     {decision?.is_hidden_failure && (
-                      <div className="flex items-start gap-2 p-2.5 bg-violet-50/60 border border-violet-200/50 rounded-lg">
-                        <ShieldAlert size={13} className="text-violet-500 mt-0.5 shrink-0" />
-                        <p className="text-[10px] text-violet-700 leading-relaxed">
+                      <div className="flex items-start gap-2 p-2.5 bg-blue-50/60 border border-blue-200/50 rounded-lg">
+                        <ShieldAlert size={13} className="text-blue-500 mt-0.5 shrink-0" />
+                        <p className="text-[10px] text-blue-700 leading-relaxed">
                           <strong>SAE JA1012:</strong> Hidden failures require a <strong>Failure-Finding</strong> task first. If no failure-finding task is applicable, consider Redesign.
                         </p>
                       </div>
@@ -204,7 +204,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                                 : selected
                                   ? 'border-accent-cyan bg-accent-cyan/5 shadow-sm scale-[1.02]'
                                   : isFFHighlighted
-                                    ? 'border-violet-300 bg-violet-50/50 hover:border-violet-400 ring-1 ring-violet-200'
+                                    ? 'border-blue-300 bg-blue-50/50 hover:border-blue-400 ring-1 ring-blue-200'
                                     : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
                             }`}
                           >
@@ -275,15 +275,15 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
 
                   {/* AI Recommendation */}
                   {decision?.ai_recommendation && (
-                    <div className="bg-gradient-to-r from-purple-50 to-violet-50 border border-purple-200/60 rounded-xl p-4 animate-in fade-in duration-300">
-                      <div className="flex items-center gap-2 text-xs font-bold text-purple-700">
+                    <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200/60 rounded-xl p-4 animate-in fade-in duration-300">
+                      <div className="flex items-center gap-2 text-xs font-bold text-blue-700">
                         <Sparkles size={14} />
                         AI Recommendation
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-600">
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-600">
                           {((decision.ai_recommendation as any).confidence * 100).toFixed(0)}% confidence
                         </span>
                       </div>
-                      <p className="text-[11px] text-purple-600 mt-2 line-clamp-3 leading-relaxed">
+                      <p className="text-[11px] text-blue-600 mt-2 line-clamp-3 leading-relaxed">
                         {(decision.ai_recommendation as any).reasoning}
                       </p>
                       <button
@@ -296,7 +296,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                             justification: rec.reasoning,
                           });
                         }}
-                        className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold rounded-lg transition-colors"
+                        className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-lg transition-colors"
                       >
                         <Check size={11} /> Accept Recommendation
                       </button>

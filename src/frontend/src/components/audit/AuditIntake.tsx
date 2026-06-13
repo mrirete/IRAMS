@@ -472,20 +472,20 @@ export const AuditIntake: React.FC<Props> = ({ initialData, onComplete }) => {
                 sectionKey="context"
                 title="Organizational Context"
                 subtitle="ISO 55001:2024 §4 — Understanding the organization and its context"
-                icon={<ShieldCheck size={16} className="text-purple-500" />}
+                icon={<ShieldCheck size={16} className="text-blue-500" />}
                 expanded={expandedSections.has('context')}
                 onToggle={() => toggleSection('context')}
                 badge="ISO 55001 §4"
             >
                 <div className="space-y-4">
-                    <div className="flex items-start gap-3 p-3.5 rounded-xl bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100/80">
-                        <div className="w-6 h-6 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0 mt-0.5">
-                            <BookOpen size={12} className="text-indigo-500" />
+                    <div className="flex items-start gap-3 p-3.5 rounded-xl bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-100/80">
+                        <div className="w-6 h-6 rounded-lg bg-blue-100 flex items-center justify-center shrink-0 mt-0.5">
+                            <BookOpen size={12} className="text-blue-500" />
                         </div>
                         <p className="text-xs text-slate-600 leading-relaxed">
-                            <strong className="text-indigo-700">Why this matters:</strong> The AI assessor uses your organization's vision, mission, and strategic objectives
+                            <strong className="text-blue-700">Why this matters:</strong> The AI assessor uses your organization's vision, mission, and strategic objectives
                             to contextualize all findings and recommendations. Outcomes are aligned to what the organization is trying to achieve,
-                            not generic best practices. This is the foundation of ISO 55001:2024's emphasis on <em className="text-indigo-600 font-semibold">value realization</em>.
+                            not generic best practices. This is the foundation of ISO 55001:2024's emphasis on <em className="text-blue-600 font-semibold">value realization</em>.
                         </p>
                     </div>
 

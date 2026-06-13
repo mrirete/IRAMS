@@ -174,25 +174,25 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                 ) : (
                     <>
                         {/* ── Analysis Provenance Banner ────────────── */}
-                        <div className="mx-6 mt-5 p-4 bg-gradient-to-r from-violet-50 via-indigo-50 to-blue-50 border border-indigo-200/60 rounded-xl">
+                        <div className="mx-6 mt-5 p-4 bg-gradient-to-r from-blue-50 via-blue-50 to-blue-50 border border-blue-200/60 rounded-xl">
                             <div className="flex items-center gap-2 mb-2">
-                                <Info size={14} className="text-indigo-500" />
-                                <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Analysis Basis</span>
+                                <Info size={14} className="text-blue-500" />
+                                <span className="text-xs font-bold text-blue-700 uppercase tracking-wider">Analysis Basis</span>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                <div className="text-center p-2 bg-white/70 rounded-lg border border-indigo-100">
+                                <div className="text-center p-2 bg-white/70 rounded-lg border border-blue-100">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase">Asset</p>
                                     <p className="text-xs font-bold text-slate-800 font-mono">{data.asset.tag}</p>
                                 </div>
-                                <div className="text-center p-2 bg-white/70 rounded-lg border border-indigo-100">
+                                <div className="text-center p-2 bg-white/70 rounded-lg border border-blue-100">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase">Shape β</p>
                                     <p className="text-sm font-bold text-blue-700">{data.beta}</p>
                                 </div>
-                                <div className="text-center p-2 bg-white/70 rounded-lg border border-indigo-100">
+                                <div className="text-center p-2 bg-white/70 rounded-lg border border-blue-100">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase">Scale η</p>
-                                    <p className="text-sm font-bold text-purple-700">{data.eta.toLocaleString()} hrs</p>
+                                    <p className="text-sm font-bold text-blue-700">{data.eta.toLocaleString()} hrs</p>
                                 </div>
-                                <div className="text-center p-2 bg-white/70 rounded-lg border border-indigo-100">
+                                <div className="text-center p-2 bg-white/70 rounded-lg border border-blue-100">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase">R²</p>
                                     <p className={`text-sm font-bold ${data.r2 >= 0.9 ? 'text-emerald-700' : 'text-amber-600'}`}>{data.r2}</p>
                                 </div>

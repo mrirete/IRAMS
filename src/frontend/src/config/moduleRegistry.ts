@@ -34,6 +34,9 @@ export type ModuleId =
 
 export type ModuleTier = 'core' | 'reliability' | 'integrity' | 'intelligence' | 'sustainability' | 'financial';
 
+/** Sidebar package sections */
+export type ModuleSection = 'eam' | 'ers' | 'platform';
+
 export interface SidebarChild {
     id: string;
     label: string;
@@ -54,6 +57,8 @@ export interface ModuleDefinition {
     routes: string[];
     /** Other modules this depends on */
     dependencies: ModuleId[];
+    /** Sidebar section: 'eam' | 'ers' | 'platform' */
+    section: ModuleSection;
 }
 
 // ── Tier Metadata ────────────────────────────────────────
@@ -62,7 +67,7 @@ export const TIER_META: Record<ModuleTier, { label: string; color: string; bg: s
     core: { label: 'Core', color: 'text-accent-cyan', bg: 'bg-accent-cyan/10', border: 'border-accent-cyan/30' },
     reliability: { label: 'Reliability', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
     integrity: { label: 'Integrity', color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/30' },
-    intelligence: { label: 'Intelligence', color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30' },
+    intelligence: { label: 'Intelligence', color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30' },
     sustainability: { label: 'Sustainability', color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/30' },
     financial: { label: 'Financial', color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/30' },
 };
@@ -74,7 +79,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         id: 'core', label: 'Core Platform', description: 'Dashboard, Assets, Admin & Settings',
         tier: 'core', icon: Home, path: '/',
         routes: ['/', '/assets', '/admin', '/admin/connectors/new', '/admin/connectors/:id', '/admin/settings', '/admin/error-logs', '/admin/activity-log', '/data-quality', '/login', '/eam-admin', '/system-health', '/readings', '/notifications'],
-        dependencies: [],
+        dependencies: [], section: 'eam',
     },
     {
         id: 'work', label: 'Work Management',
@@ -89,7 +94,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'moc', label: 'Management of Change', path: '/management-of-change' },
         ],
         routes: ['/work-orders', '/requests', '/recurring-work', '/scheduling', '/task-library', '/management-of-change'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'eam',
     },
     {
         id: 'inventory', label: 'Inventory & Spares',
@@ -100,7 +105,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'purchase-orders', label: 'Purchase Orders', path: '/purchase-orders' },
         ],
         routes: ['/inventory', '/purchase-orders'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'eam',
     },
     {
         id: 'people', label: 'People & Org',
@@ -111,7 +116,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'vendors', label: 'Vendors', path: '/vendors' },
         ],
         routes: ['/contacts', '/vendors'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'eam',
     },
     {
         id: 'predict', label: 'Reliability Tier',
@@ -126,7 +131,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'knowledge-dash', label: 'Knowledge & Data', path: '/knowledge-graph' },
         ],
         routes: ['/predict', '/reliability-modelling', '/analyze', '/analyze/rca', '/rcm', '/vision', '/knowledge-graph'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'ers',
     },
 
     {
@@ -150,7 +155,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             '/comply/inspection-schedule', '/comply/thickness-data', '/comply/corrosion-rates',
             '/comply/damage-mechanisms', '/comply/ffs', '/comply/iow-dashboard',
             '/comply/regulatory-preparedness'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'ers',
     },
     {
         id: 'audits', label: 'Audits',
@@ -163,27 +168,27 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'audit-ca', label: 'Corrective Actions', path: '/audits/corrective-actions' },
         ],
         routes: ['/audits', '/audits/templates', '/audits/schedule', '/audits/corrective-actions'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'ers',
     },
     {
         id: 'sustain', label: 'Sustain', description: 'Emissions tracking, ESG compliance',
         tier: 'sustainability', icon: RefreshCcw, path: '/sustain',
         routes: ['/sustain'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'ers',
     },
     {
         id: 'finops', label: 'Financial Ops',
         description: 'Budgeting, cost tracking, asset lifecycle costing',
         tier: 'core', icon: DollarSign, path: '/finops',
         routes: ['/finops'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'eam',
     },
     {
         id: 'reports', label: 'Reports',
         description: 'Enterprise analytics and interactive dashboards',
         tier: 'core', icon: FileBarChart, path: '/reports',
         routes: ['/reports'],
-        dependencies: ['core'],
+        dependencies: ['core'], section: 'platform',
     },
 ];
 

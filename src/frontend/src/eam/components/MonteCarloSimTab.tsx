@@ -266,12 +266,12 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
         label: string; value: number; onChange: (v: number) => void; unit?: string; tip?: string;
     }) => (
         <div>
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
                 {label} {unit && <span className="font-normal text-slate-400">({unit})</span>}
                 {tip && <span title={tip} className="cursor-help"><Info size={10} className="text-slate-300" /></span>}
             </label>
             <input type="number" value={value} onChange={e => onChange(Number(e.target.value))}
-                className="w-full mt-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none" />
+                className="w-full mt-0.5 px-2 py-1.5 border border-slate-200 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none h-9" />
         </div>
     );
 
@@ -280,16 +280,16 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
     const regimeColor = beta < 1 ? 'text-orange-600' : beta > 1 ? 'text-blue-600' : 'text-slate-500';
 
     return (
-        <div className="space-y-5">
+        <div className="space-y-4">
             {/* ═══ HEADER ═══ */}
-            <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 border border-indigo-100 rounded-xl p-4">
-                <div className="flex items-center gap-3">
-                    <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl text-white shadow-lg">
-                        <Dices size={20} />
+            <div className="bg-white border border-slate-200 rounded-xl p-3">
+                <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg text-white shadow-md">
+                        <Dices size={16} />
                     </div>
                     <div>
-                        <h3 className="text-base font-bold text-slate-900">Monte Carlo Simulation</h3>
-                        <p className="text-xs text-slate-500">Probabilistic lifecycle forecasting · Weibull TTF + Lognormal TTR · ISO 14224</p>
+                        <h3 className="text-sm font-bold text-slate-900">Monte Carlo Simulation</h3>
+                        <p className="text-[10px] text-slate-500">Probabilistic lifecycle · Weibull TTF + Lognormal TTR · ISO 14224</p>
                     </div>
                 </div>
             </div>
@@ -341,7 +341,7 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                 <button onClick={() => setShowImport(!showImport)}
                     className="w-full px-4 py-3 flex items-center justify-between text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors">
-                    <span className="flex items-center gap-1.5"><Upload size={14} className="text-purple-500" /> Import External Data (CSV)</span>
+                    <span className="flex items-center gap-1.5"><Upload size={14} className="text-blue-500" /> Import External Data (CSV)</span>
                     {showImport ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                 </button>
                 {showImport && (
@@ -423,17 +423,17 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
             </div>
 
             {/* ═══ RUN CONTROLS ═══ */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center flex-wrap gap-2">
                 <button onClick={runSimulation} disabled={running || beta <= 0 || eta <= 0}
-                    className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 transition-all text-sm">
-                    {running ? <><Loader2 size={16} className="animate-spin" /> Running...</> : <><Play size={16} /> Run Simulation</>}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-600 text-white font-bold rounded-xl shadow-lg hover:shadow-xl disabled:opacity-50 transition-all text-sm">
+                    {running ? <><Loader2 size={14} className="animate-spin" /> Running...</> : <><Play size={14} /> Run</>}
                 </button>
                 <button onClick={resetAll}
-                    className="flex items-center gap-2 px-4 py-3 border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50 transition-colors text-sm">
-                    <RotateCcw size={14} /> Reset
+                    className="flex items-center gap-2 px-3 py-2.5 border border-slate-300 text-slate-600 rounded-xl hover:bg-slate-50 text-xs">
+                    <RotateCcw size={12} /> Reset
                 </button>
                 <span className="ml-auto text-[10px] text-slate-400 font-mono flex items-center gap-1">
-                    <Cpu size={10} /> {numRuns.toLocaleString()} runs × {pmInterval > 0 ? '2 strategies' : '1 strategy'}
+                    <Cpu size={10} /> {numRuns.toLocaleString()} × {pmInterval > 0 ? '2' : '1'} strategy
                 </span>
             </div>
 

@@ -169,7 +169,7 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
                                 <div className="flex items-center gap-2">
                                     <span className={`px-2 py-1 rounded text-xs font-bold uppercase tracking-wider ${task.category === 'MAINTENANCE' ? 'bg-orange-100 text-orange-700' :
                                         task.category === 'SAFETY' ? 'bg-red-100 text-red-700' :
-                                        task.category === 'INSPECTION' ? 'bg-purple-100 text-purple-700' :
+                                        task.category === 'INSPECTION' ? 'bg-blue-100 text-blue-700' :
                                             'bg-blue-100 text-blue-700'
                                         }`}>
                                         {task.category}
@@ -191,7 +191,7 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
                                     {task.isLocked ? (
                                         <button
                                             onClick={() => handleCreateNewVersion(task.id)}
-                                            className="p-1.5 hover:bg-indigo-100 rounded text-indigo-600 hover:text-indigo-700"
+                                            className="p-1.5 hover:bg-blue-100 rounded text-blue-600 hover:text-blue-700"
                                             title="Create New Version (Management of Change)"
                                         >
                                             <GitBranch size={14} />
@@ -447,7 +447,7 @@ const TaskEditorModal: React.FC<{
                                     onClick={handleAutoSuggest}
                                     type="button"
                                     disabled={isThinking || formData.isLocked}
-                                    className="text-xs flex items-center gap-1 text-purple-600 hover:text-purple-700 font-medium px-2 py-1 bg-purple-50 rounded-full border border-purple-100 transition-colors disabled:opacity-50"
+                                    className="text-xs flex items-center gap-1 text-blue-600 hover:text-blue-700 font-medium px-2 py-1 bg-blue-50 rounded-full border border-blue-100 transition-colors disabled:opacity-50"
                                 >
                                     <Sparkles size={12} className={isThinking ? "animate-spin" : ""} />
                                     {isThinking ? 'Analyzing Task...' : 'Auto-Suggest Resources'}

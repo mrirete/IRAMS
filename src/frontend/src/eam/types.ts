@@ -960,13 +960,13 @@ export type DocumentCategory = 'PID' | 'DRAWING' | 'OEM_MANUAL' | 'DATASHEET' | 
 
 export const DOCUMENT_CATEGORY_META: Record<DocumentCategory, { label: string; icon: string; color: string; bg: string; border: string }> = {
   PID:         { label: 'P&ID',        icon: '🔧', color: 'text-cyan-700',    bg: 'bg-cyan-50',    border: 'border-cyan-200' },
-  DRAWING:     { label: 'Drawing',     icon: '📐', color: 'text-violet-700',  bg: 'bg-violet-50',  border: 'border-violet-200' },
+  DRAWING:     { label: 'Drawing',     icon: '📐', color: 'text-blue-700',  bg: 'bg-blue-50',  border: 'border-blue-200' },
   OEM_MANUAL:  { label: 'OEM Manual',  icon: '📘', color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200' },
   DATASHEET:   { label: 'Data Sheet',  icon: '📊', color: 'text-teal-700',    bg: 'bg-teal-50',    border: 'border-teal-200' },
-  PROCEDURE:   { label: 'Procedure',   icon: '📋', color: 'text-indigo-700',  bg: 'bg-indigo-50',  border: 'border-indigo-200' },
+  PROCEDURE:   { label: 'Procedure',   icon: '📋', color: 'text-blue-700',  bg: 'bg-blue-50',  border: 'border-blue-200' },
   SAFETY:      { label: 'Safety',      icon: '🛡️', color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200' },
   REPORT:      { label: 'Report',      icon: '📄', color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' },
-  PHOTO:       { label: 'Photo',       icon: '📷', color: 'text-purple-700',  bg: 'bg-purple-50',  border: 'border-purple-200' },
+  PHOTO:       { label: 'Photo',       icon: '📷', color: 'text-blue-700',  bg: 'bg-blue-50',  border: 'border-blue-200' },
   SPREADSHEET: { label: 'Spreadsheet', icon: '📊', color: 'text-green-700',   bg: 'bg-green-50',   border: 'border-green-200' },
   OTHER:       { label: 'Other',       icon: '📎', color: 'text-slate-600',   bg: 'bg-slate-50',   border: 'border-slate-200' },
 };

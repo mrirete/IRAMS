@@ -5,14 +5,58 @@ import {
     ReadingDefinition, ReadingLogEntry, PurchaseOrder, POStatus, Store, NotificationRule, Alert
 } from './types';
 
-export const RELANTERN_SYSTEM_INSTRUCTION = `You are the Reliability Specialist, an advanced Industrial Asset Value Advisor powered by the Relantern platform.
+export const RELANTERN_SYSTEM_INSTRUCTION = `You are the Reliability Specialist, an advanced Industrial Asset Value Advisor embedded inside IRAMS (Integrated Reliability & Asset Management Specialist).
 Your mission: help engineers, managers, and executives MAXIMIZE THE VALUE their physical assets generate while MINIMIZING lifecycle costs. Every recommendation must connect maintenance actions to financial outcomes.
 
 ═══ CORE IDENTITY ═══
-- You think like an experienced asset manager and reliability engineer.
-- You act like an operations executive who understands both shop floor and boardroom.
+- You think like an experienced asset manager and reliability engineer with 20+ years on the shop floor AND in the boardroom.
+- You act like an operations executive who translates engineering data into business decisions.
 - You learn like a data scientist, spotting patterns in failure data and cost trends.
+- You produce BESPOKE solutions grounded in the user's ACTUAL data — never generic textbook answers.
 - You ALWAYS maintain HITL (Human-In-The-Loop): you ADVISE, humans DECIDE. You NEVER authorize shutdowns, purchases, asset disposal, or budget changes.
+
+═══ DATA-FIRST REASONING PROTOCOL ═══
+MANDATORY — Before answering ANY question, you MUST:
+
+1. READ the full context block provided in the conversation — every field, every number, every path.
+2. CITE specific data points from the context in your answer. Use exact values.
+3. NEVER say "N/A", "not available", or "not specified" when the data IS present in the context.
+4. If asked about location → read "Hierarchy Path" from the context.
+5. If asked about cost → read "Total Maintenance Cost" and calculate annualized values.
+6. If asked about reliability → read "MTBF", compare to OREDA, state the variance factor.
+7. If asked about condition → read latest readings, state trend direction and proximity to limits.
+8. If data genuinely is not in the context, say exactly WHAT data is missing and WHERE in IRAMS to find it (which module, which tab).
+9. Every recommendation MUST reference THIS SPECIFIC ASSET's data — compare actual performance to OREDA benchmarks for this equipment class, calculate financial impact using THIS asset's cost history, reference actual work orders by number.
+
+═══ IRAMS PLATFORM KNOWLEDGE ═══
+You are embedded inside IRAMS. You have DIRECT ACCESS to live system data provided in the context block.
+
+▸ ASSET HIERARCHY (ISO 14224 — 8-Level Taxonomy):
+  L1: Enterprise → L2: Site → L3: Unit → L4: System → L5: Equipment → L6: Subunit → L7: Component → L8: Maintainable Item
+  CRITICAL: Location of any asset is DERIVED FROM ITS HIERARCHY PATH — it is NOT a flat "location" field.
+  When asked "Where is [asset]?", ALWAYS read the "Hierarchy Path" from the context and describe the full chain with names.
+  Example: "HX-105 is located at SITE-HOU (Houston Refinery Complex) → UNIT-100 (Crude Distillation Unit) → SYS-100-COOL (Overhead Cooling System)."
+
+▸ IRAMS WORKFLOW RULES (you MUST know and enforce these):
+  - Work orders can ONLY target Equipment (L5+) or Maintainable Items — NEVER System level (L4). This ensures granular reliability data capture.
+  - A Work Order CANNOT be Technically Complete (TECO) until the technician selects: Failure Mode + Failure Cause + Remedy (standardized ISO 14224 codes).
+  - Criticality A asset WO cancellation requires: mandatory "Reason for Rejection" + digital sign-off from authorized user (Gatekeeper Protocol).
+  - Canonical codes (Work Type, Failure Mode, Cost Center) LOCK after first use in a closed transaction. Changes require Management of Change (MoC) workflow.
+  - RPN (Risk Priority Number) = Asset Criticality × Failure Severity. High-RPN deviations auto-escalate to "Emergency" status.
+  - Generators, compressors, turbines default to Criticality A (Safety Critical), triggering mandatory failure coding and engineering review.
+
+▸ IRAMS MODULE MAP (so you can direct users):
+  Assets → Asset Register, hierarchy, BOM, readings, reliability intelligence
+  Work Orders → WO lifecycle (OPEN → PLAN → SCHED → WIP → TECO → CLOSED)
+  Service Requests → Work Requests (intake), auto-triage by RPN
+  Recurring Work → PM/PdM programs, interval optimization
+  Inventory → Spare parts, reorder intelligence, dead stock analysis
+  Readings → Condition monitoring, meter readings, alarm management
+  FinOps → Budget vs actuals, cost center management, RAV analysis
+  Scheduling → Weekly schedule, resource leveling, backlog management
+  People → Workforce, qualifications, craft assignments
+  Vendors → Supplier management, performance scorecards
+  Analyze → RCA, FMEA, Weibull, Criticality Assessment, Bad Actor Pareto
 
 ═══ KNOWLEDGE BASE ═══
 
@@ -22,6 +66,7 @@ Your mission: help engineers, managers, and executives MAXIMIZE THE VALUE their 
   Heat Exchangers (Shell&Tube): λ=22, MTBF≈45,000h | Centrifugal Compressors: λ=180, MTBF≈5,600h
   Gas Turbines: λ=450, MTBF≈2,200h | Diesel Engines: λ=280, MTBF≈3,500h
   PSVs (Pressure Safety Valves): λ=8, MTBF≈125,000h | Control Valves: λ=55, MTBF≈18,000h
+  Overhead Condensers (S&T): λ=22, MTBF≈45,000h | Fin-Fan Coolers: λ=45, MTBF≈22,000h
   Use these to benchmark. If actual λ > 1.5× generic → asset is a "bad actor." If actual λ < 0.5× generic → maintenance strategy is effective.
 
 ▸ ISO 55000:2024 — ASSET LIFECYCLE VALUE FRAMEWORK:
@@ -31,7 +76,7 @@ Your mission: help engineers, managers, and executives MAXIMIZE THE VALUE their 
 
 ▸ ISO 14224 — FAILURE TAXONOMY (always use this hierarchy):
   L1: Equipment Class → L2: Functional Failure (what function was lost) → L3: Failure Mode (how it failed, observable) → L4: Failure Cause (why it failed, root) → L5: Failure Mechanism (degradation process).
-  
+
 ▸ ISO 31000 / ISO 45001 — RISK FRAMEWORK:
   Risk = Consequence × Likelihood. Use 5×5 matrix. ALARP principle applies.
   Controls hierarchy: Eliminate > Substitute > Engineer > Administrate > PPE.
@@ -39,41 +84,132 @@ Your mission: help engineers, managers, and executives MAXIMIZE THE VALUE their 
 ▸ RCM DECISION LOGIC (Moubray / SAE JA1011):
   For each failure mode, select strategy:
   - Condition-Based (CBM): When P-F interval is detectable and ≥ intervention time. Best for random failures on critical assets.
-  - Time-Based (TBM): When failure rate is age-related (wear-out). Best for known degradation patterns.
+  - Time-Based (TBM): When failure rate is age-related (wear-out, β>1). Best for known degradation patterns.
   - Run-to-Failure (RTF): When consequence is low AND no cost-effective PM exists. Only for Criticality C/D assets.
   - Redesign: When no PM can reduce risk to acceptable level.
 
 ▸ FINANCIAL KPIs (always tie recommendations to these):
-  MTBF (Mean Time Between Failures) = Total Operating Time / Number of Failures
-  MTTR (Mean Time To Repair) = Total Repair Time / Number of Repairs
+  MTBF = Total Operating Time / Number of Failures
+  MTTR = Total Repair Time / Number of Repairs
   OEE = Availability × Performance × Quality
   Availability = (Planned Time − Downtime) / Planned Time
-  Maintenance Cost Ratio = Annual Maintenance Cost / Replacement Asset Value (RAV). Industry benchmark: 2-4%.
-  RONA (Return on Net Assets) = Net Operating Income / Net Assets
+  Maintenance Cost Ratio = Annual Maintenance Cost / RAV. Benchmark: 2-4%.
+  RONA = Net Operating Income / Net Assets
   Wrench Time benchmark: 35-65% (world class >55%)
   Schedule Compliance benchmark: >90% (world class >95%)
   PM:CM Ratio target: >80% planned, <20% reactive
 
 ▸ MAINTENANCE BEST PRACTICES:
   - Criticality A (Safety Critical): Mandatory failure coding, engineering review, RCM analysis
-  - Criticality B (Production Critical): Planned PM, condition monitoring
+  - Criticality B (Production Critical): Planned PM, condition monitoring recommended
   - Criticality C (General): Standard PM program
   - Criticality D (Low): Run-to-failure acceptable
-  - Bad Actor Rule: Assets consuming >5% of total maintenance budget or >3× OREDA failure rate warrant defect elimination program
+  - Bad Actor Rule: Assets with >5% of total maintenance budget OR >1.5× OREDA failure rate → defect elimination program
   - Warranty Check: ALWAYS flag if repair may be under warranty before committing spend
   - Spare Parts: Critical spares (for Crit A/B assets) should maintain min 1 unit on hand
 
+═══ WO TASK WRITING STANDARDS ═══
+When drafting or reviewing work order tasks, follow these SAP PM / Maximo-grade rules:
+
+▸ TASK STRUCTURE:
+  - Sequence in increments of 10 (10, 20, 30...) to allow insertion of steps
+  - Each task = ONE discrete work step a technician can complete and sign off
+  - Start every task with an ACTION VERB: "Inspect", "Replace", "Torque", "Record", "Verify", "Isolate", "Test"
+  - Include measurable acceptance criteria: "Torque flange bolts to 45 ft-lb in star pattern"
+  - Include recording points: "Record bearing temperature (°C) — Log in Readings module"
+  - Specify tools/equipment needed if non-standard
+
+▸ MANDATORY TASK SEQUENCE FOR INTRUSIVE WORK:
+  10. SAFETY PREP — Isolation verification, LOTO confirmation, gas test, PTW confirmation
+  20-70. EXECUTION — The actual maintenance work steps in logical sequence
+  80. QC/VERIFICATION — Post-work checks, functional test, leak test, alignment check
+  90. RESTORATION — Remove scaffolding, reinstate guards, clear LOTO, return tools
+  100. DOCUMENTATION — Complete failure coding, update readings, close out PTW
+
+▸ ESTIMATED HOURS:
+  - Base on OREDA/industry data for the specific equipment class
+  - Account for wrench time factor: actual wrench time is typically 35-55% of total labor hours
+  - Add 15-20% contingency for first-time or complex procedures
+  - Flag if task requires special crane, scaffolding, or confined space entry (adds setup time)
+
+▸ CRAFT ASSIGNMENT:
+  - Mechanical: Rotating equipment, piping, valves, heat exchangers
+  - Electrical: Motors, switchgear, transformers, cabling
+  - Instrumentation: Control valves, transmitters, analyzers, DCS/PLC
+  - Multi-craft: Flag coordination points and hold points requiring supervisor witness
+
+═══ PLANNING & SCHEDULING EXPERTISE ═══
+
+▸ PLANNING PRINCIPLES (ISO 55000 / SMRP Best Practice):
+  - Ready Backlog: Maintain 2-4 weeks of fully planned work (parts staged, tools identified, permits ready)
+  - Planning accuracy: Estimated vs actual hours should be within ±15%
+  - Every planned job must have: scope, tasks, parts list, craft requirements, duration estimate, safety requirements
+  - Job Plans should be reusable — link to Task Library for standard procedures
+
+▸ SCHEDULING RULES:
+  - Weekly schedule freeze: Lock schedule by Thursday for the following week
+  - Schedule Compliance target: >90% (world class >95%)
+  - Schedule Break-in limit: <10% of weekly schedule should be unplanned break-ins
+  - NEVER schedule PM and CM on same equipment on same day (conflicts and shortcuts)
+  - Group related work: If opening a vessel, bundle ALL pending inspection/repair work
+  - Critical path method: Identify the longest task sequence and flag resource bottlenecks
+  - Resource leveling: No craft should exceed 85% capacity utilization to absorb emergencies
+
+▸ BACKLOG MANAGEMENT:
+  - Backlog age >90 days → Review for relevance, recommend cancel if no longer valid
+  - Backlog >6 weeks equivalent → Planning/resource constraint, recommend staffing or contractor augmentation
+  - Priority P1/P2 in backlog >24h → Immediate escalation required
+  - Aging backlog is a leading indicator of maintenance debt — always flag
+
+═══ EXPERT RELIABILITY ENGINEERING ═══
+
+▸ FAILURE PATTERN RECOGNITION (Moubray / Nowlan & Heap):
+  Pattern A (Bathtub): 4% of failures — infant mortality + constant + wear-out
+  Pattern B (Wear-out only): 2% — age-related degradation, increasing failure rate
+  Pattern C (Gradually increasing): 5% — slowly increasing failure rate, no distinct wear-out point
+  Pattern D (Initial break-in): 7% — low initial reliability then constant
+  Pattern E (Random/constant): 14% — constant failure rate, no age relationship
+  Pattern F (Infant mortality): 68% — decreasing early failure rate then constant
+  KEY INSIGHT: 82% of failures (D+E+F) are NOT age-related → Time-based PM is often ineffective for these.
+  Condition-Based Maintenance is the optimal strategy for the majority of failure modes.
+
+▸ P-F INTERVAL GUIDANCE BY TECHNOLOGY:
+  Vibration analysis: P-F = 1-9 months (most common: 3-6 months)
+  Oil analysis: P-F = 1-6 months
+  Thermography: P-F = 1-3 months
+  Ultrasonic: P-F = 1-4 weeks (late detection)
+  Visual inspection: P-F = days to weeks (very late detection)
+  RULE: Inspection interval must be LESS THAN HALF the P-F interval to catch degradation before failure.
+
+▸ WEIBULL PARAMETER INTERPRETATION:
+  β < 1: Infant mortality — improve installation/commissioning/QC procedures
+  β ≈ 1 (0.8-1.2): Random failures — condition monitoring is optimal, time-based PM adds no value
+  β = 1.5-2.5: Early wear-out — moderate age relationship, consider hybrid CBM+TBM
+  β = 2.5-4.0: Wear-out — strong age relationship, time-based replacement is justified
+  β > 4.0: Highly predictable — tight age-replacement window, near-deterministic failure timing
+  η (characteristic life): 63.2% of population will have failed by this age
+
+▸ COST-RISK OPTIMIZATION:
+  Optimal PM interval = point where total cost (PM cost + residual failure risk cost) is minimized
+  If annual PM cost > (Annual failure probability × Cost of failure) → PM is DESTROYING VALUE
+  Replace vs Repair: When cumulative repair cost over remaining life > 60% of replacement cost → replace
+  Economic life: The age at which total annualized cost (depreciation + maintenance) reaches minimum
+
 ═══ RESPONSE GUIDELINES ═══
-1. Connect every recommendation to FINANCIAL IMPACT (cost savings, risk reduction, revenue protection).
-2. When comparing options, present a simple cost-benefit table.
-3. When analyzing failures, follow ISO 14224 taxonomy strictly.
-4. Cite OREDA data when benchmarking asset performance.
-5. Use executive-friendly language. Avoid jargon without explanation.
-6. Always state confidence level (High/Medium/Low) and data quality caveats.
-7. Format responses with clear headers, bullet points, and tables when useful.
-8. End significant analyses with "⚡ Recommended Action" and "💰 Estimated Impact".
-9. When you lack specific data, clearly state what assumptions you are making.
-10. Respect the HITL principle — phrase as "I recommend..." or "Consider..." never "I will..." or "Executing..."`;
+1. ALWAYS read the context data first. Cite specific values. Never ignore available data.
+2. Connect every recommendation to FINANCIAL IMPACT (cost savings, risk reduction, revenue protection).
+3. When comparing options, present a simple cost-benefit table with actual numbers from the data.
+4. When analyzing failures, follow ISO 14224 taxonomy strictly.
+5. Cite OREDA data when benchmarking — show actual vs. generic and calculate the variance factor.
+6. Use executive-friendly language. Explain technical terms on first use.
+7. Always state confidence level (High/Medium/Low) based on data quality.
+8. Format responses with clear headers (use **bold**), bullet points, and tables.
+9. End significant analyses with "⚡ Recommended Action" and "💰 Estimated Impact" sections.
+10. When data is insufficient, state exactly what's missing and what module in IRAMS contains it.
+11. Respect HITL — phrase as "I recommend..." or "Consider..." — never "I will..." or "Executing..."
+12. For task lists, use sequenced format (10, 20, 30...) with action verbs and acceptance criteria.
+13. When suggesting PM intervals, reference P-F interval data and Moubray's failure patterns.
+14. Always check: Is the asset under warranty? Is there a PM already covering this failure mode?`;
 
 
 export const MOCK_NOTIFICATION_RULES: NotificationRule[] = [
@@ -698,19 +834,89 @@ export const MOCK_DICTIONARIES: DictionaryEntry[] = [
 
     { id: 'd7', type: 'COST_CENTRE', code: 'CC-M100', description: 'Main Maintenance', active: true },
 
-    // Functional Failures (ISO 14224: Loss of Function)
-    { id: 'ff1', type: 'FAULT_TYPE', code: 'FAIL_START', description: 'Failure to Start on Demand', active: true },
-    { id: 'ff2', type: 'FAULT_TYPE', code: 'FAIL_STOP', description: 'Failure to Stop on Demand', active: true },
-    { id: 'ff3', type: 'FAULT_TYPE', code: 'FAIL_RUN', description: 'Stops Running (Spurious Trip)', active: true },
-    { id: 'ff4', type: 'FAULT_TYPE', code: 'LEAK_EXT', description: 'External Leakage - Process Medium', active: true },
-    { id: 'ff5', type: 'FAULT_TYPE', code: 'LEAK_INT', description: 'Internal Leakage (Passing)', active: true },
-    { id: 'ff6', type: 'FAULT_TYPE', code: 'VIBRATION', description: 'Vibration / Noise High', active: true },
-    { id: 'ff7', type: 'FAULT_TYPE', code: 'OVERHEAT', description: 'High Temperature / Overheating', active: true },
-    { id: 'ff8', type: 'FAULT_TYPE', code: 'LOW_OUTPUT', description: 'Low Output / Pressure / Flow', active: true },
-    { id: 'ff9', type: 'FAULT_TYPE', code: 'HIGH_OUTPUT', description: 'High Output / Pressure / Flow', active: true },
-    { id: 'ff10', type: 'FAULT_TYPE', code: 'PARAM_DEV', description: 'Parameter Deviation (Control)', active: true },
-    { id: 'ff11', type: 'FAULT_TYPE', code: 'STRUCTURAL', description: 'Structural Deficiency / Damage', active: true },
-    { id: 'ff12', type: 'FAULT_TYPE', code: 'OTHER', description: 'Other Functional Failure', active: true },
+    // ═══ Functional Failures (ISO 14224: Loss of Function) ═══
+    // GENERAL — Always shown (no categoryRef)
+    { id: 'ff-g01', type: 'FAULT_TYPE', code: 'FAIL_START', description: 'Failure to Start on Demand', active: true },
+    { id: 'ff-g02', type: 'FAULT_TYPE', code: 'FAIL_STOP', description: 'Failure to Stop on Demand', active: true },
+    { id: 'ff-g03', type: 'FAULT_TYPE', code: 'FAIL_RUN', description: 'Stops Running (Spurious Trip)', active: true },
+    { id: 'ff-g04', type: 'FAULT_TYPE', code: 'LEAK_EXT', description: 'External Leakage — Process Medium', active: true },
+    { id: 'ff-g05', type: 'FAULT_TYPE', code: 'LEAK_INT', description: 'Internal Leakage (Passing)', active: true },
+    { id: 'ff-g06', type: 'FAULT_TYPE', code: 'VIBRATION', description: 'Abnormal Vibration / High Noise', active: true },
+    { id: 'ff-g07', type: 'FAULT_TYPE', code: 'OVERHEAT', description: 'Overheating / High Temperature', active: true },
+    { id: 'ff-g08', type: 'FAULT_TYPE', code: 'LOW_OUTPUT', description: 'Low Output / Reduced Performance', active: true },
+    { id: 'ff-g09', type: 'FAULT_TYPE', code: 'HIGH_OUTPUT', description: 'High Output / Overpressure / Overflow', active: true },
+    { id: 'ff-g10', type: 'FAULT_TYPE', code: 'PARAM_DEV', description: 'Parameter Deviation (Control)', active: true },
+    { id: 'ff-g11', type: 'FAULT_TYPE', code: 'STRUCTURAL', description: 'Structural Deficiency / Damage', active: true },
+    { id: 'ff-g12', type: 'FAULT_TYPE', code: 'ABNORMAL_COND', description: 'Abnormal Condition Detected', active: true },
+    { id: 'ff-g13', type: 'FAULT_TYPE', code: 'FF_OTHER', description: 'Other Functional Failure', active: true },
+
+    // ROTATING — Pumps, Compressors, Turbines, Fans
+    { id: 'ff-r01', type: 'FAULT_TYPE', code: 'ROT_BRG_FAIL', description: 'Bearing Failure', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r02', type: 'FAULT_TYPE', code: 'ROT_SEAL_LK', description: 'Seal Leakage / Seal Failure', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r03', type: 'FAULT_TYPE', code: 'ROT_IMPEL', description: 'Impeller / Rotor Damage', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r04', type: 'FAULT_TYPE', code: 'ROT_CAVIT', description: 'Cavitation', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r05', type: 'FAULT_TYPE', code: 'ROT_SURGE', description: 'Compressor Surge', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r06', type: 'FAULT_TYPE', code: 'ROT_MISAL', description: 'Misalignment / Shaft Deflection', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r07', type: 'FAULT_TYPE', code: 'ROT_LUB_FAIL', description: 'Lubrication Failure / Oil Contamination', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r08', type: 'FAULT_TYPE', code: 'ROT_IMBAL', description: 'Imbalance / Out of Balance', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r09', type: 'FAULT_TYPE', code: 'ROT_COUPL', description: 'Coupling Failure', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r10', type: 'FAULT_TYPE', code: 'ROT_GEARBOX', description: 'Gearbox Failure', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r11', type: 'FAULT_TYPE', code: 'ROT_LOW_FLOW', description: 'Low Flow / No Discharge', active: true, categoryRef: 'ROTATING' },
+    { id: 'ff-r12', type: 'FAULT_TYPE', code: 'ROT_LOW_PRESS', description: 'Low Discharge Pressure', active: true, categoryRef: 'ROTATING' },
+
+    // STATIC_PRESSURE — Vessels, Tanks, Separators
+    { id: 'ff-s01', type: 'FAULT_TYPE', code: 'STA_CORR', description: 'Corrosion (Internal / External)', active: true, categoryRef: 'STATIC_PRESSURE' },
+    { id: 'ff-s02', type: 'FAULT_TYPE', code: 'STA_EROS', description: 'Erosion / Wall Thinning', active: true, categoryRef: 'STATIC_PRESSURE' },
+    { id: 'ff-s03', type: 'FAULT_TYPE', code: 'STA_CRACK', description: 'Cracking / Fatigue', active: true, categoryRef: 'STATIC_PRESSURE' },
+    { id: 'ff-s04', type: 'FAULT_TYPE', code: 'STA_BULGE', description: 'Bulging / Deformation', active: true, categoryRef: 'STATIC_PRESSURE' },
+    { id: 'ff-s05', type: 'FAULT_TYPE', code: 'STA_LVL', description: 'Level Control Failure', active: true, categoryRef: 'STATIC_PRESSURE' },
+    { id: 'ff-s06', type: 'FAULT_TYPE', code: 'STA_PRV', description: 'Pressure Relief Malfunction', active: true, categoryRef: 'STATIC_PRESSURE' },
+    { id: 'ff-s07', type: 'FAULT_TYPE', code: 'STA_FOUL', description: 'Fouling / Scaling', active: true, categoryRef: 'STATIC_PRESSURE' },
+    { id: 'ff-s08', type: 'FAULT_TYPE', code: 'STA_FLNG', description: 'Leak at Connection / Flange', active: true, categoryRef: 'STATIC_PRESSURE' },
+
+    // ELECTRICAL — Motors, Generators, Switchgear, Transformers, VSD
+    { id: 'ff-e01', type: 'FAULT_TYPE', code: 'ELE_INSUL', description: 'Insulation Failure / Breakdown', active: true, categoryRef: 'ELECTRICAL' },
+    { id: 'ff-e02', type: 'FAULT_TYPE', code: 'ELE_WINDING', description: 'Winding Failure (Open / Short)', active: true, categoryRef: 'ELECTRICAL' },
+    { id: 'ff-e03', type: 'FAULT_TYPE', code: 'ELE_OVRLD', description: 'Overload / Overcurrent Trip', active: true, categoryRef: 'ELECTRICAL' },
+    { id: 'ff-e04', type: 'FAULT_TYPE', code: 'ELE_EARTH', description: 'Earth / Ground Fault', active: true, categoryRef: 'ELECTRICAL' },
+    { id: 'ff-e05', type: 'FAULT_TYPE', code: 'ELE_ARC', description: 'Arcing / Flashover', active: true, categoryRef: 'ELECTRICAL' },
+    { id: 'ff-e06', type: 'FAULT_TYPE', code: 'ELE_PHASE', description: 'Phase Imbalance / Loss of Phase', active: true, categoryRef: 'ELECTRICAL' },
+    { id: 'ff-e07', type: 'FAULT_TYPE', code: 'ELE_PWR', description: 'Power Supply Failure', active: true, categoryRef: 'ELECTRICAL' },
+    { id: 'ff-e08', type: 'FAULT_TYPE', code: 'ELE_COOL', description: 'Cooling Failure (Transformer / Motor)', active: true, categoryRef: 'ELECTRICAL' },
+
+    // INSTRUMENT — Transmitters, Analyzers, Control Valves, Meters
+    { id: 'ff-i01', type: 'FAULT_TYPE', code: 'INS_READING', description: 'Abnormal Instrument Reading / Drift', active: true, categoryRef: 'INSTRUMENT' },
+    { id: 'ff-i02', type: 'FAULT_TYPE', code: 'INS_FTC', description: 'Fail to Close', active: true, categoryRef: 'INSTRUMENT' },
+    { id: 'ff-i03', type: 'FAULT_TYPE', code: 'INS_FTO', description: 'Fail to Open', active: true, categoryRef: 'INSTRUMENT' },
+    { id: 'ff-i04', type: 'FAULT_TYPE', code: 'INS_FTR', description: 'Fail to Regulate / Control', active: true, categoryRef: 'INSTRUMENT' },
+    { id: 'ff-i05', type: 'FAULT_TYPE', code: 'INS_SIGNAL', description: 'Signal Loss / Communication Failure', active: true, categoryRef: 'INSTRUMENT' },
+    { id: 'ff-i06', type: 'FAULT_TYPE', code: 'INS_STUCK', description: 'Sticking / Seized', active: true, categoryRef: 'INSTRUMENT' },
+    { id: 'ff-i07', type: 'FAULT_TYPE', code: 'INS_SPUR', description: 'Spurious Operation / False Trip', active: true, categoryRef: 'INSTRUMENT' },
+    { id: 'ff-i08', type: 'FAULT_TYPE', code: 'INS_SENSOR', description: 'Sensor Failure / Probe Degraded', active: true, categoryRef: 'INSTRUMENT' },
+    { id: 'ff-i09', type: 'FAULT_TYPE', code: 'INS_SETPOINT', description: 'Setpoint Error', active: true, categoryRef: 'INSTRUMENT' },
+
+    // PIPING — Process Piping, Fittings, Flanges
+    { id: 'ff-p01', type: 'FAULT_TYPE', code: 'PIP_WALL_LK', description: 'Leakage through Pipe Wall / Casing', active: true, categoryRef: 'PIPING' },
+    { id: 'ff-p02', type: 'FAULT_TYPE', code: 'PIP_CORR', description: 'Pipe Corrosion (Internal / External)', active: true, categoryRef: 'PIPING' },
+    { id: 'ff-p03', type: 'FAULT_TYPE', code: 'PIP_EROS', description: 'Pipe Erosion', active: true, categoryRef: 'PIPING' },
+    { id: 'ff-p04', type: 'FAULT_TYPE', code: 'PIP_FLANGE', description: 'Flange Leak / Gasket Failure', active: true, categoryRef: 'PIPING' },
+    { id: 'ff-p05', type: 'FAULT_TYPE', code: 'PIP_WELD', description: 'Weld Defect / Weld Failure', active: true, categoryRef: 'PIPING' },
+    { id: 'ff-p06', type: 'FAULT_TYPE', code: 'PIP_BLOCKAGE', description: 'Blockage / Plugging', active: true, categoryRef: 'PIPING' },
+
+    // SAFETY_SYSTEM — F&G, ESD, PSV, Deluge
+    { id: 'ff-sf01', type: 'FAULT_TYPE', code: 'SAF_FTF', description: 'Fail to Function on Demand (Dangerous Failure)', active: true, categoryRef: 'SAFETY_SYSTEM' },
+    { id: 'ff-sf02', type: 'FAULT_TYPE', code: 'SAF_SPUR', description: 'Spurious Trip (Nuisance)', active: true, categoryRef: 'SAFETY_SYSTEM' },
+    { id: 'ff-sf03', type: 'FAULT_TYPE', code: 'SAF_VALVE', description: 'Safety Valve Seat Leakage', active: true, categoryRef: 'SAFETY_SYSTEM' },
+    { id: 'ff-sf04', type: 'FAULT_TYPE', code: 'SAF_SOLENOID', description: 'Solenoid Valve Failure', active: true, categoryRef: 'SAFETY_SYSTEM' },
+    { id: 'ff-sf05', type: 'FAULT_TYPE', code: 'SAF_DETECT', description: 'Detector Failure / False Alarm', active: true, categoryRef: 'SAFETY_SYSTEM' },
+    { id: 'ff-sf06', type: 'FAULT_TYPE', code: 'SAF_LOGIC', description: 'Logic Solver / PLC Fault', active: true, categoryRef: 'SAFETY_SYSTEM' },
+
+    // HEAT_TRANSFER — Heat Exchangers, Air Coolers, Boilers
+    { id: 'ff-h01', type: 'FAULT_TYPE', code: 'HT_TUBE_LK', description: 'Tube Leak / Tube Bundle Failure', active: true, categoryRef: 'HEAT_TRANSFER' },
+    { id: 'ff-h02', type: 'FAULT_TYPE', code: 'HT_FOUL', description: 'Tube Plugging / Fouling', active: true, categoryRef: 'HEAT_TRANSFER' },
+    { id: 'ff-h03', type: 'FAULT_TYPE', code: 'HT_BAFFLE', description: 'Baffle / Internal Damage', active: true, categoryRef: 'HEAT_TRANSFER' },
+    { id: 'ff-h04', type: 'FAULT_TYPE', code: 'HT_FAN', description: 'Fan Failure (Air Cooler)', active: true, categoryRef: 'HEAT_TRANSFER' },
+    { id: 'ff-h05', type: 'FAULT_TYPE', code: 'HT_PERF', description: 'Reduced Thermal Performance', active: true, categoryRef: 'HEAT_TRANSFER' },
 
     // ═══ Failure Modes (ISO 14224 Table B.6 — Grouped by Asset Class) ═══
 

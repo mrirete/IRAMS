@@ -46,7 +46,7 @@ export const SIXM_EXPLAINERS: SixMDimensionExplainer[] = [
     { key: 'machine', code: 'M2', label: 'Machine', icon: 'Cog', color: '#ef4444', gradient: 'from-red-500 to-red-600', meaning: 'How well do you know and maintain your physical assets? This covers your asset register, condition monitoring, inspections, and criticality rankings.' },
     { key: 'method', code: 'M3', label: 'Method', icon: 'ClipboardList', color: '#22c55e', gradient: 'from-green-500 to-green-600', meaning: 'Are your work processes documented, followed, and effective? This examines work management, permits, change control, and maintenance strategies.' },
     { key: 'material', code: 'M4', label: 'Material', icon: 'Package', color: '#f59e0b', gradient: 'from-amber-500 to-amber-600', meaning: 'Can you get the right parts when you need them? This assesses spare parts management, inventory controls, vendor performance, and procurement.' },
-    { key: 'measurement', code: 'M5', label: 'Measurement', icon: 'Gauge', color: '#8b5cf6', gradient: 'from-violet-500 to-violet-600', meaning: 'Are you measuring what matters? This evaluates your KPIs, data quality, CMMS usage, and how data drives decisions.' },
+    { key: 'measurement', code: 'M5', label: 'Measurement', icon: 'Gauge', color: '#8b5cf6', gradient: 'from-blue-500 to-blue-600', meaning: 'Are you measuring what matters? This evaluates your KPIs, data quality, CMMS usage, and how data drives decisions.' },
     { key: 'mother_nature', code: 'M6', label: 'Mother Nature', icon: 'Cloud', color: '#06b6d4', gradient: 'from-cyan-500 to-cyan-600', meaning: 'How do you manage environmental and regulatory risks? This covers compliance, climate risk, corrosion management, and sustainability.' },
 ];
 

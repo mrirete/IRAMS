@@ -262,7 +262,7 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                                 <React.Fragment key={step.step}>
                                     {i > 0 && (
                                         <div className={`flex-1 h-0.5 rounded-full transition-colors ${
-                                            isComplete ? 'bg-indigo-400' : 'bg-slate-200'
+                                            isComplete ? 'bg-blue-400' : 'bg-slate-200'
                                         }`} />
                                     )}
                                     <button
@@ -270,7 +270,7 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                                         disabled={!isClickable}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
                                             isActive
-                                                ? 'bg-indigo-50 text-indigo-600 border border-indigo-200 shadow-sm'
+                                                ? 'bg-blue-50 text-blue-600 border border-blue-200 shadow-sm'
                                                 : isComplete
                                                     ? 'bg-green-50 text-green-600 border border-green-200 cursor-pointer hover:bg-green-100'
                                                     : 'bg-slate-50 text-slate-400 border border-slate-200'
@@ -280,7 +280,7 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                                             <Check size={12} className="text-green-500" />
                                         ) : (
                                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                                                isActive ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'
+                                                isActive ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-500'
                                             }`}>
                                                 {step.step}
                                             </span>

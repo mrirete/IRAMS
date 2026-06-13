@@ -90,7 +90,7 @@ export const AuditDocReview: React.FC<Props> = ({ initialData, onComplete, onBac
         <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
             {/* Header */}
             <div className="text-center mb-2">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 to-violet-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-purple-500/20">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
                     <FileSearch size={24} className="text-white" />
                 </div>
                 <h2 className="text-2xl font-black text-slate-800">Step 2 — Document Review</h2>
@@ -186,7 +186,7 @@ export const AuditDocReview: React.FC<Props> = ({ initialData, onComplete, onBac
                             <option key={c} value={c}>{c}</option>
                         ))}
                     </select>
-                    <button onClick={handleAdd} className="p-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors">
+                    <button onClick={handleAdd} className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
                         <Plus size={16} />
                     </button>
                 </div>
@@ -199,7 +199,7 @@ export const AuditDocReview: React.FC<Props> = ({ initialData, onComplete, onBac
                 </button>
                 <button
                     onClick={() => onComplete(items)}
-                    className="px-6 py-3 bg-gradient-to-r from-purple-500 to-violet-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2"
                 >
                     Proceed to Site Verification <ArrowRight size={16} />
                 </button>

@@ -152,7 +152,7 @@ const FailureModeTreeNode: React.FC<{
           <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-50 via-blue-50/15 to-white border-b border-blue-300/40">
             <StepBadge label={`FM-${index + 1}`} color="#3b82f6" done={!!fm.failure_mode_description} />
             {fm.data_source !== 'manual' && (
-              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-purple-50 text-purple-600 border border-purple-200">
+              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200">
                 {fm.data_source === 'ai_generated' ? '🤖 AI' : fm.data_source === 'fmea_import' ? '📋 FMEA' : '📊 WO'}
               </span>
             )}
@@ -279,8 +279,8 @@ const FailureModeTreeNode: React.FC<{
 
               {/* Hidden / Evident toggle — inline compact */}
               <div className="flex items-center gap-2">
-                <EyeOff size={12} className="text-violet-500 shrink-0" />
-                <span className="text-[9px] font-bold text-violet-600 uppercase">Evident to operators?</span>
+                <EyeOff size={12} className="text-blue-500 shrink-0" />
+                <span className="text-[9px] font-bold text-blue-600 uppercase">Evident to operators?</span>
                 <div className="flex items-center gap-1">
                   {[
                     { label: 'Evident', value: false },
@@ -298,7 +298,7 @@ const FailureModeTreeNode: React.FC<{
                       className={`px-3 py-1 text-[10px] font-bold rounded-md border transition-all ${
                         (decision?.is_hidden_failure ?? false) === opt.value
                           ? opt.value
-                            ? 'bg-violet-500 text-white border-violet-500'
+                            ? 'bg-blue-500 text-white border-blue-500'
                             : 'bg-accent-cyan text-brand-900 border-accent-cyan'
                           : 'bg-white border-slate-300/80 text-slate-500 hover:border-slate-400 hover:text-slate-700 shadow-2xs'
                       }`}
@@ -322,7 +322,7 @@ const FailureModeTreeNode: React.FC<{
               {decision?.is_hidden_failure ? (
                 /* HIDDEN path */
                 <div className="space-y-1.5">
-                  <span className="text-[9px] text-violet-500 font-medium italic">
+                  <span className="text-[9px] text-blue-500 font-medium italic">
                     If combined with another failure, could it threaten safety?
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -410,10 +410,10 @@ const FailureModeTreeNode: React.FC<{
       {/* ── Risk Assessment Node ── */}
       {showEffects && (
         <TreeNode level={3} isLast={isLast} color="#8b5cf6">
-          <div className="bg-white border border-violet-300 border-l-4 border-l-violet-500 rounded-xl overflow-hidden shadow-sm my-1">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-violet-50 via-violet-50/15 to-white border-b border-violet-300/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-              <span className="text-[9px] font-bold text-violet-600 uppercase tracking-wider">Risk Assessment</span>
+          <div className="bg-white border border-blue-300 border-l-4 border-l-blue-500 rounded-xl overflow-hidden shadow-sm my-1">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 via-blue-50/15 to-white border-b border-blue-300/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Risk Assessment</span>
             </div>
             <div className="px-3 py-2.5">
               <div className="flex items-center gap-2">
@@ -424,7 +424,7 @@ const FailureModeTreeNode: React.FC<{
                     defaultValue={fm.severity || ''}
                     onChange={e => debouncedUpdate('severity', parseInt(e.target.value) || null)}
                     placeholder="1-10"
-                    className="w-full text-xs text-center font-semibold text-slate-700 bg-violet-50/10 border border-violet-300/70 rounded-lg px-2 py-1.5 focus:border-violet-500 focus:outline-none mt-0.5 transition-colors"
+                    className="w-full text-xs text-center font-semibold text-slate-700 bg-blue-50/10 border border-blue-300/70 rounded-lg px-2 py-1.5 focus:border-blue-500 focus:outline-none mt-0.5 transition-colors"
                   />
                 </div>
                 <span className="text-slate-300 text-sm font-bold mt-3">×</span>
@@ -435,7 +435,7 @@ const FailureModeTreeNode: React.FC<{
                     defaultValue={fm.occurrence || ''}
                     onChange={e => debouncedUpdate('occurrence', parseInt(e.target.value) || null)}
                     placeholder="1-10"
-                    className="w-full text-xs text-center font-semibold text-slate-700 bg-violet-50/10 border border-violet-300/70 rounded-lg px-2 py-1.5 focus:border-violet-500 focus:outline-none mt-0.5 transition-colors"
+                    className="w-full text-xs text-center font-semibold text-slate-700 bg-blue-50/10 border border-blue-300/70 rounded-lg px-2 py-1.5 focus:border-blue-500 focus:outline-none mt-0.5 transition-colors"
                   />
                 </div>
                 <span className="text-slate-300 text-sm font-bold mt-3">=</span>
@@ -510,7 +510,7 @@ export const RCMFunctionPanel: React.FC<RCMFunctionPanelProps> = ({
         <button
           onClick={onAISuggest}
           disabled={aiLoading === 'suggest'}
-          className="flex items-center gap-2 px-4 py-2.5 bg-purple-50 border border-purple-200 rounded-lg text-sm font-medium text-purple-700 hover:bg-purple-100 transition-colors disabled:opacity-50 shadow-sm"
+          className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 shadow-sm"
         >
           {aiLoading === 'suggest' ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
           AI Suggest Functions

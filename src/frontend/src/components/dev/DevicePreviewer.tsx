@@ -98,7 +98,7 @@ export const DevicePreviewer: React.FC<DevicePreviewerProps> = ({ onClose }) => 
             <div className="h-14 bg-brand-900/90 backdrop-blur-md border-b border-brand-800/80 flex items-center justify-between px-4 shadow-lg shrink-0">
                 <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 via-blue-500 to-pink-500 flex items-center justify-center shadow-lg shadow-blue-500/25">
                             <Monitor size={13} className="text-white" />
                         </div>
                         <div className="flex flex-col">
@@ -115,21 +115,21 @@ export const DevicePreviewer: React.FC<DevicePreviewerProps> = ({ onClose }) => 
                     <div className="flex items-center bg-brand-950/60 rounded-lg p-1 border border-brand-800/50 shadow-inner">
                         <button 
                             onClick={() => setDevice('desktop')} 
-                            className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all duration-200 ${device === 'desktop' ? 'bg-indigo-500/20 text-indigo-300 shadow-sm border border-indigo-500/20' : 'text-brand-400 hover:text-brand-200 hover:bg-brand-900/40 border border-transparent'}`}
+                            className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all duration-200 ${device === 'desktop' ? 'bg-blue-500/20 text-blue-300 shadow-sm border border-blue-500/20' : 'text-brand-400 hover:text-brand-200 hover:bg-brand-900/40 border border-transparent'}`}
                         >
                             <Monitor size={13}/>
                             <span className="hidden xs:inline">Desktop</span>
                         </button>
                         <button 
                             onClick={() => setDevice('tablet')} 
-                            className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all duration-200 ${device === 'tablet' ? 'bg-indigo-500/20 text-indigo-300 shadow-sm border border-indigo-500/20' : 'text-brand-400 hover:text-brand-200 hover:bg-brand-900/40 border border-transparent'}`}
+                            className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all duration-200 ${device === 'tablet' ? 'bg-blue-500/20 text-blue-300 shadow-sm border border-blue-500/20' : 'text-brand-400 hover:text-brand-200 hover:bg-brand-900/40 border border-transparent'}`}
                         >
                             <Tablet size={13}/>
                             <span className="hidden xs:inline">Tablet</span>
                         </button>
                         <button 
                             onClick={() => setDevice('mobile')} 
-                            className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all duration-200 ${device === 'mobile' ? 'bg-indigo-500/20 text-indigo-300 shadow-sm border border-indigo-500/20' : 'text-brand-400 hover:text-brand-200 hover:bg-brand-900/40 border border-transparent'}`}
+                            className={`px-3 py-1.5 rounded-md flex items-center gap-2 text-xs font-semibold transition-all duration-200 ${device === 'mobile' ? 'bg-blue-500/20 text-blue-300 shadow-sm border border-blue-500/20' : 'text-brand-400 hover:text-brand-200 hover:bg-brand-900/40 border border-transparent'}`}
                         >
                             <Smartphone size={13}/>
                             <span className="hidden xs:inline">Mobile</span>
@@ -142,7 +142,7 @@ export const DevicePreviewer: React.FC<DevicePreviewerProps> = ({ onClose }) => 
                     {device !== 'desktop' && (
                         <button 
                             onClick={() => setOrientation(o => o === 'portrait' ? 'landscape' : 'portrait')} 
-                            className="p-1.5 text-brand-300 hover:text-indigo-300 hover:bg-brand-800 rounded-lg transition-all border border-brand-800 bg-brand-900/40 flex items-center gap-1.5 text-xs font-semibold hover:shadow-sm"
+                            className="p-1.5 text-brand-300 hover:text-blue-300 hover:bg-brand-800 rounded-lg transition-all border border-brand-800 bg-brand-900/40 flex items-center gap-1.5 text-xs font-semibold hover:shadow-sm"
                             title="Rotate Device Orientation"
                         >
                             <RotateCcw size={13} className="transition-transform duration-300 hover:-rotate-45" />
@@ -152,7 +152,7 @@ export const DevicePreviewer: React.FC<DevicePreviewerProps> = ({ onClose }) => 
                     <div className="w-px h-6 bg-brand-800/80 mx-1"></div>
                     <button 
                         onClick={() => setIframeKey(k => k + 1)} 
-                        className="p-2 text-brand-400 hover:text-indigo-300 hover:bg-brand-850 rounded-lg transition-all border border-transparent hover:border-brand-800"
+                        className="p-2 text-brand-400 hover:text-blue-300 hover:bg-brand-850 rounded-lg transition-all border border-transparent hover:border-brand-800"
                         title="Hard Reload Viewport"
                     >
                         <RefreshCw size={15} />
@@ -222,8 +222,8 @@ export const DevicePreviewer: React.FC<DevicePreviewerProps> = ({ onClose }) => 
                     {device !== 'desktop' && orientation === 'portrait' && (
                         <div className="absolute top-1 left-1/2 transform -translate-x-1/2 w-28 h-5 bg-black rounded-full z-50 flex items-center justify-center border border-white/5 shadow-inner">
                             {/* Camera Lens Highlight */}
-                            <div className="absolute left-4 w-1.5 h-1.5 bg-indigo-950/80 border border-indigo-500/20 rounded-full flex items-center justify-center">
-                                <div className="w-0.5 h-0.5 bg-indigo-400 rounded-full opacity-60"></div>
+                            <div className="absolute left-4 w-1.5 h-1.5 bg-blue-950/80 border border-blue-500/20 rounded-full flex items-center justify-center">
+                                <div className="w-0.5 h-0.5 bg-blue-400 rounded-full opacity-60"></div>
                             </div>
                             {/* Speaker Mesh line */}
                             <div className="w-10 h-0.5 bg-zinc-800 rounded-full"></div>
@@ -234,8 +234,8 @@ export const DevicePreviewer: React.FC<DevicePreviewerProps> = ({ onClose }) => 
                     {device !== 'desktop' && orientation === 'landscape' && (
                         <div className="absolute left-1 top-1/2 transform -translate-y-1/2 w-5 h-28 bg-black rounded-full z-50 flex flex-col items-center justify-center border border-white/5 shadow-inner">
                             {/* Camera Lens Highlight */}
-                            <div className="absolute top-4 w-1.5 h-1.5 bg-indigo-950/80 border border-indigo-500/20 rounded-full flex items-center justify-center">
-                                <div className="w-0.5 h-0.5 bg-indigo-400 rounded-full opacity-60"></div>
+                            <div className="absolute top-4 w-1.5 h-1.5 bg-blue-950/80 border border-blue-500/20 rounded-full flex items-center justify-center">
+                                <div className="w-0.5 h-0.5 bg-blue-400 rounded-full opacity-60"></div>
                             </div>
                             {/* Speaker Mesh line */}
                             <div className="h-10 w-0.5 bg-zinc-800 rounded-full"></div>

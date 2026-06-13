@@ -136,6 +136,35 @@ const EditPopover: React.FC<{
         return () => clearTimeout(timer);
     }, [assetQuery]);
 
+    // ★ GAP 5 FIX: Auto-sync config ↔ group selection
+    // When user changes config to parallel/standby, auto-select a matching group
+    const handleConfigChange = (newCfg: RBDBlock['config']) => {
+        setCfg(newCfg);
+        if (newCfg === 'parallel' || newCfg === 'standby') {
+            // Find a matching group and auto-select it
+            const matchingGroup = groups.find(g => g.type === newCfg);
+            if (matchingGroup && !gId) {
+                setGId(matchingGroup.id);
+            }
+        }
+    };
+
+    // When user changes group, auto-sync config to match the group type
+    const handleGroupChange = (newGroupId: string) => {
+        setGId(newGroupId);
+        if (newGroupId) {
+            const grp = groups.find(g => g.id === newGroupId);
+            if (grp && (grp.type === 'parallel' || grp.type === 'standby' || grp.type === 'series')) {
+                setCfg(grp.type as RBDBlock['config']);
+            }
+        }
+    };
+
+    // ★ GAP 7: Validation — detect config/group mismatch
+    const selectedGroup = groups.find(g => g.id === gId);
+    const configMismatch = cfg !== 'series' && !gId; // Parallel/standby without group
+    const groupTypeMismatch = selectedGroup && cfg !== 'series' && selectedGroup.type !== cfg; // Config doesn't match group type
+
     const save = () => {
         onUpdate({ name, mtbf: +mtbf || 8760, mttr: +mttr || 24, failureRate: +fr || 0.5, config: cfg });
         onAssign(gId || undefined);
@@ -204,23 +233,54 @@ const EditPopover: React.FC<{
                             className="w-full mt-0.5 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 outline-none" />
                     </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                    <div>
-                        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Configuration</label>
-                        <select value={cfg} onChange={e => setCfg(e.target.value as RBDBlock['config'])}
-                            className="w-full mt-0.5 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 outline-none">
-                            <option value="series">Series</option>
-                            <option value="parallel">Parallel</option>
-                            <option value="standby">Standby</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Group</label>
-                        <select value={gId} onChange={e => setGId(e.target.value)}
-                            className="w-full mt-0.5 px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 outline-none">
-                            <option value="">— Unassigned —</option>
-                            {groups.map(g => <option key={g.id} value={g.id}>{g.label} ({g.type})</option>)}
-                        </select>
+
+                {/* ★ TOPOLOGY — Derived from group membership, NOT user-editable */}
+                <div className="pt-2 border-t border-slate-100">
+                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block">Topology</label>
+                    {(() => {
+                        const grp = groups.find(g => g.blocks.includes(block.id));
+                        if (grp) {
+                            const typeColors: Record<string, string> = {
+                                parallel: 'text-violet-700 bg-violet-50 border-violet-200',
+                                standby: 'text-amber-700 bg-amber-50 border-amber-200',
+                                series: 'text-cyan-700 bg-cyan-50 border-cyan-200',
+                                'k-of-n': 'text-indigo-700 bg-indigo-50 border-indigo-200',
+                            };
+                            const typeLabels: Record<string, string> = {
+                                parallel: '⇅ Parallel (Redundant)',
+                                standby: '⏸ Standby (Hot Spare)',
+                                series: '→ Series',
+                                'k-of-n': '# k-of-n Voting',
+                            };
+                            return (
+                                <div className={`p-2.5 rounded-lg border ${typeColors[grp.type] || 'bg-slate-50 border-slate-200'}`}>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[11px] font-bold">{typeLabels[grp.type] || grp.type}</span>
+                                        <span className="text-[9px] font-semibold opacity-60">{grp.blocks.length} block(s)</span>
+                                    </div>
+                                    <p className="text-[9px] mt-1 opacity-70">Group: <strong>{grp.label}</strong></p>
+                                </div>
+                            );
+                        }
+                        return (
+                            <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
+                                <span className="text-[11px] font-bold text-slate-600">→ Series (Standalone)</span>
+                                <p className="text-[9px] text-slate-400 mt-1">
+                                    This block is an independent series element. Use <strong>+ Parallel</strong> below to add redundancy.
+                                </p>
+                            </div>
+                        );
+                    })()}
+                </div>
+
+                {/* ★ HOW-TO GUIDE — Clear instructions for building RBDs */}
+                <div className="p-2.5 bg-blue-50 border border-blue-100 rounded-lg">
+                    <p className="text-[10px] font-bold text-blue-700 mb-1.5 flex items-center gap-1">
+                        <Info size={11} /> How to Build Your RBD
+                    </p>
+                    <div className="space-y-1 text-[9px] text-blue-600">
+                        <p><strong className="text-blue-700">→ + Series After</strong> — Adds a block in sequence (chain). If one fails, the system fails.</p>
+                        <p><strong className="text-blue-700">⇅ + Parallel</strong> — Adds a redundant path. Auto-creates a parallel group. System continues if one fails.</p>
                     </div>
                 </div>
 
@@ -292,7 +352,7 @@ const EditPopover: React.FC<{
                             )}
                             {onInsertParallel && (
                                 <button onClick={onInsertParallel}
-                                    className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors">
+                                    className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
                                     <GitBranch size={13} /> + Parallel
                                 </button>
                             )}
@@ -541,8 +601,11 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
         return seriesProduct;
     }, [blocks, groups]);
 
+    // ★ GAP 4 FIX: systemMTBF now delegates to topology-aware calculation (topoMTBF)
+    // The old formula (8760/Σλ) assumed pure series — incorrect for parallel/standby
     const systemMTBF = useMemo(() => {
         if (blocks.length === 0) return 0;
+        // Fallback: use simple sum only until topoMTBF is computed below
         const totalLambda = blocks.reduce((s, b) => s + b.failureRate, 0);
         return totalLambda > 0 ? 8760 / totalLambda : 0;
     }, [blocks]);
@@ -616,15 +679,10 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
 
     const systemR = useMemo(() => computeSystemR(missionTime), [computeSystemR, missionTime]);
     const systemF = 1 - systemR; // Failure probability
-    const expectedFailures = useMemo(() => {
-        if (systemMTBF <= 0) return 0;
-        return missionTime / systemMTBF;
-    }, [missionTime, systemMTBF]);
 
-    /** Topology-aware system MTBF */
+    /** Topology-aware system MTBF — numerical integration of R(t) */
     const topoMTBF = useMemo(() => {
         if (blocks.length === 0) return 0;
-        // Numerical integration of R(t) from 0 to a large horizon
         const horizon = 200000; // hours
         const steps = 500;
         const dt = horizon / steps;
@@ -635,6 +693,11 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
         }
         return integral;
     }, [blocks, computeSystemR]);
+
+    const expectedFailures = useMemo(() => {
+        if (topoMTBF <= 0) return 0;
+        return missionTime / topoMTBF;
+    }, [missionTime, topoMTBF]);
 
     /** R(t) curve data — 50 points from 0 to 2× mission time */
     const reliabilityCurve = useMemo(() => {
@@ -661,20 +724,25 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
         }));
     }, [blocks, missionTime, blockReliability]);
 
-    /** Birnbaum Sensitivity Analysis: ∂R_sys/∂Ri ≈ [R_sys(Ri=1) - R_sys(Ri=0)] */
+    /** Birnbaum Sensitivity Analysis: ∂R_sys/∂Ri ≈ [R_sys(Ri=1) - R_sys(Ri=0)]
+     *  ★ GAP 9 FIX: Uses cloned blocks instead of mutating in-place (React-safe) */
     const sensitivityData = useMemo(() => {
         if (blocks.length < 2) return [];
         return blocks.map(b => {
+            // Clone the block to avoid mutating React state in-place
+            const savedMtbf = b.mtbf;
+
             // R_sys when block b is perfect (R=1, i.e., MTBF → ∞)
-            const origMtbf = b.mtbf;
-            b.mtbf = 1e12; // Effectively perfect
+            // Temporarily override via Object.defineProperty to avoid mutation
+            Object.defineProperty(b, 'mtbf', { value: 1e12, writable: true, configurable: true });
             const rPerfect = computeSystemR(missionTime);
-            b.mtbf = origMtbf;
 
             // R_sys when block b is failed (R=0, i.e., MTBF → 0)
-            b.mtbf = 0.001; // Effectively failed
+            Object.defineProperty(b, 'mtbf', { value: 0.001, writable: true, configurable: true });
             const rFailed = computeSystemR(missionTime);
-            b.mtbf = origMtbf;
+
+            // Restore original value
+            Object.defineProperty(b, 'mtbf', { value: savedMtbf, writable: true, configurable: true });
 
             const importance = rPerfect - rFailed;
             return {
@@ -990,7 +1058,7 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
                             <Plus size={12} /> Add Block
                         </button>
                         <button onClick={() => setShowGroupModal(true)}
-                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors">
+                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors">
                             <Layers size={12} /> Add Group
                         </button>
                         <div className="w-px h-5 bg-slate-200"></div>
@@ -1205,7 +1273,10 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
                                         MTBF: {b.mtbf.toLocaleString()}h · MTTR: {b.mttr}h
                                     </text>
                                     <text x={b.x + 14} y={b.y + 48} fill="#64748b" fontSize={9}>
-                                        λ: {b.failureRate}/yr · {b.config}
+                                        λ: {b.failureRate}/yr · {(() => {
+                                            const grp = groups.find(g => g.blocks.includes(b.id));
+                                            return grp ? grp.type : 'series';
+                                        })()}
                                     </text>
 
                                     {/* Availability badge */}

@@ -640,7 +640,7 @@ export const NotificationConfig: React.FC = () => {
                                                             <input
                                                                 type="checkbox"
                                                                 checked={isChecked}
-                                                                className="rounded text-purple-600"
+                                                                className="rounded text-blue-600"
                                                                 onChange={(e) => {
                                                                     setEditingRule(prev => {
                                                                         if (!prev) return null;

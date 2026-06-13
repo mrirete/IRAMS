@@ -562,9 +562,9 @@ export const Analytics: React.FC = () => {
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                         <div className="px-6 py-4 border-b border-slate-100">
                             <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                                <Brain size={18} className="text-purple-600" />
+                                <Brain size={18} className="text-blue-600" />
                                 AI-Driven Reliability Insights
-                                <span className="ml-2 px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full font-normal">
+                                <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-normal">
                                     Human-In-The-Loop
                                 </span>
                             </h3>
@@ -667,7 +667,7 @@ export const Analytics: React.FC = () => {
                         <button
                             onClick={handleTriggerPareto}
                             disabled={isTriggering}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/25 hover:shadow-lg disabled:opacity-50 w-full md:w-auto justify-center"
+                            className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white font-bold rounded-xl text-sm transition-all shadow-md shadow-blue-500/25 hover:shadow-lg disabled:opacity-50 w-full md:w-auto justify-center"
                         >
                             {isTriggering ? (
                                 <>
@@ -816,7 +816,7 @@ export const Analytics: React.FC = () => {
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-slate-800">${Number(ba.total_cost || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-slate-600">{Number(ba.total_downtime_hrs || 0).toFixed(1)} hrs</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-bold text-slate-800">{ba.wo_count}</td>
-                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-indigo-600 font-bold">{ba.cumulativePct}%</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-blue-600 font-bold">{ba.cumulativePct}%</td>
                                             <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
                                                 <button
                                                     onClick={() => {

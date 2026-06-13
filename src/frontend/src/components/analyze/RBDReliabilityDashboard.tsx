@@ -213,7 +213,7 @@ const RBDReliabilityDashboard: React.FC<Props> = ({
             {kofnGroups.length > 0 && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                     <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
-                        <Calculator size={14} className="text-violet-500" /> Redundancy & Voting Configuration
+                        <Calculator size={14} className="text-blue-500" /> Redundancy & Voting Configuration
                     </h3>
                     <div className="space-y-3">
                         {kofnGroups.map(kg => (

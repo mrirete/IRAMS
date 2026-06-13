@@ -419,72 +419,34 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
     return (
         <div className="space-y-4">
-            {/* Calculator sub-tab bar */}
+            {/* Calculator sub-tab bar — scrollable on mobile */}
             <div className="-mx-1 px-1" style={{ overflow: 'visible' }}>
-                <div className="flex items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm min-w-max">
+                <div className="flex items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm overflow-x-auto no-scrollbar" style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
                     {CALC_TABS.map(tab => (
-                        <div key={tab.id} style={{ position: 'relative' }}
-                            onMouseEnter={e => {
-                                const tip = e.currentTarget.querySelector('[data-tooltip]') as HTMLElement;
-                                if (tip) tip.style.opacity = '1';
-                            }}
-                            onMouseLeave={e => {
-                                const tip = e.currentTarget.querySelector('[data-tooltip]') as HTMLElement;
-                                if (tip) tip.style.opacity = '0';
-                            }}
+                        <button
+                            key={tab.id}
+                            onClick={() => handleTabSwitch(tab.id)}
+                            title={`${tab.phase}: ${tab.desc}`}
+                            style={{ scrollSnapAlign: 'start' }}
+                            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-[13px] font-medium transition-all whitespace-nowrap shrink-0 ${activeCalc === tab.id
+                                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md shadow-teal-500/20'
+                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                                }`}
                         >
-                            <button
-                                onClick={() => handleTabSwitch(tab.id)}
-                                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-[13px] font-medium transition-all whitespace-nowrap ${activeCalc === tab.id
-                                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md shadow-teal-500/20'
-                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                                    }`}
-                            >
-                                <span className={`transition-colors ${activeCalc === tab.id ? 'text-white/90' : 'text-slate-400'}`}>{tab.icon}</span>
-                                <span>{tab.label}</span>
-                            </button>
-                            {/* Tooltip — appears ABOVE the button to avoid overflow clipping */}
-                            <div data-tooltip style={{
-                                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-                                bottom: '100%', marginBottom: 10,
-                                zIndex: 50, pointerEvents: 'none',
-                                opacity: 0, transition: 'opacity 0.2s ease',
-                            }}>
-                                <div style={{
-                                    background: 'linear-gradient(135deg, #0f172a, #1e293b)',
-                                    border: '1px solid #334155',
-                                    borderRadius: 12,
-                                    padding: '12px 16px',
-                                    maxWidth: 280,
-                                    minWidth: 180,
-                                    boxShadow: '0 12px 40px rgba(0,0,0,0.45), 0 4px 12px rgba(0,0,0,0.25)',
-                                    position: 'relative' as const,
-                                }}>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: '#22d3ee', marginBottom: 4, letterSpacing: '0.02em' }}>
-                                        {tab.phase}
-                                    </div>
-                                    <div style={{ fontSize: 12, fontWeight: 500, color: '#cbd5e1', lineHeight: 1.5 }}>
-                                        {tab.desc}
-                                    </div>
-                                    {/* Arrow pointing DOWN */}
-                                    <div style={{
-                                        position: 'absolute' as const, bottom: -6, left: '50%', transform: 'translateX(-50%) rotate(45deg)',
-                                        width: 10, height: 10,
-                                        background: '#1e293b', borderRight: '1px solid #334155', borderBottom: '1px solid #334155',
-                                    }} />
-                                </div>
-                            </div>
-                        </div>
+                            <span className={`transition-colors ${activeCalc === tab.id ? 'text-white/90' : 'text-slate-400'}`}>{tab.icon}</span>
+                            <span>{tab.label}</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold hidden sm:inline ${activeCalc === tab.id ? 'bg-white/20 text-white/80' : 'bg-slate-100 text-slate-400'}`}>{tab.phase}</span>
+                        </button>
                     ))}
 
                     {/* Save button inline */}
                     {currentAnalysisType && (
                         <button
                             onClick={() => { setEditingAnalysis(null); setShowSaveModal(true); }}
-                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 rounded-lg shadow-sm hover:shadow-md transition-all"
+                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 rounded-lg shadow-sm hover:shadow-md transition-all shrink-0"
                         >
                             <Save size={13} />
-                            {activeAnalysisId ? 'Save As New' : 'Save Analysis'}
+                            {activeAnalysisId ? 'Save As' : 'Save'}
                         </button>
                     )}
                 </div>

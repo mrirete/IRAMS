@@ -142,11 +142,11 @@ export const VisionHistoryPanel: React.FC<VisionHistoryPanelProps> = ({
                                             <button
                                                 onClick={() => handleDraftWR(r)}
                                                 disabled={isDrafting}
-                                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-violet-700 bg-violet-50 border border-violet-200 rounded hover:bg-violet-100 transition-colors shrink-0 disabled:opacity-50"
+                                                className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors shrink-0 disabled:opacity-50"
                                                 title="Draft a Work Request from this Vision finding (HITL)"
                                             >
                                                 {isDrafting
-                                                    ? <div className="w-3 h-3 border-2 border-violet-300 border-t-transparent rounded-full animate-spin" />
+                                                    ? <div className="w-3 h-3 border-2 border-blue-300 border-t-transparent rounded-full animate-spin" />
                                                     : <Wrench size={10} />
                                                 }
                                                 Draft WR
@@ -162,7 +162,7 @@ export const VisionHistoryPanel: React.FC<VisionHistoryPanelProps> = ({
 
             {/* Draft Message */}
             {draftMessage && (
-                <div className="bg-violet-50 border border-violet-200 rounded-lg px-4 py-2 text-xs text-violet-700">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-xs text-blue-700">
                     <span className="font-medium">Agent Response:</span> {draftMessage}
                 </div>
             )}

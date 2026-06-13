@@ -125,7 +125,7 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                 className="w-full p-5 flex items-center justify-between hover:bg-slate-100/30 transition-colors"
             >
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
                         <Sliders size={20} />
                     </div>
                     <div className="text-left">
@@ -201,7 +201,7 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                         <button
                             onClick={handleRun}
                             disabled={isRunning}
-                            className="flex items-center gap-2 px-5 py-2.5 bg-purple-500 hover:bg-purple-400 disabled:opacity-50 text-white font-bold rounded-lg text-sm transition-all shadow-[0_0_20px_rgba(168,85,247,0.2)]"
+                            className="flex items-center gap-2 px-5 py-2.5 bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold rounded-lg text-sm transition-all shadow-[0_0_20px_rgba(168,85,247,0.2)]"
                         >
                             {isRunning ? (
                                 <>
@@ -313,10 +313,10 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                             </div>
 
                             {/* AI Recommendation */}
-                            <div className="bg-purple-500/5 border border-purple-500/20 rounded-lg p-4">
+                            <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
                                 <div className="flex items-center gap-2 mb-2">
-                                    <Cpu size={14} className="text-purple-400" />
-                                    <span className="text-xs font-bold text-purple-400 uppercase tracking-wider">AI Recommendation</span>
+                                    <Cpu size={14} className="text-blue-400" />
+                                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">AI Recommendation</span>
                                     <span className="text-[10px] font-mono bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-500 ml-auto">
                                         T{result.governance_tier} · {result.monte_carlo_runs.toLocaleString()} runs
                                     </span>

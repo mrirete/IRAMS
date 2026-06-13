@@ -206,7 +206,7 @@ export const SchedulePrintModal: React.FC<PrintModalProps> = ({
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
                 {/* Header */}
-                <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
+                <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-blue-600 text-white flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Printer size={20} />
                         <h2 className="text-lg font-bold">Print / Export</h2>

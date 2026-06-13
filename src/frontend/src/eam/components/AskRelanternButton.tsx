@@ -43,7 +43,7 @@ export const AskRelanternButton: React.FC<AskRelanternButtonProps> = ({
             <button
                 onClick={handleClick}
                 title={tooltip}
-                className={`p-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 shadow-sm hover:shadow-md transition-all ${className}`}
+                className={`p-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all ${className}`}
             >
                 <Sparkles size={16} />
             </button>
@@ -54,7 +54,7 @@ export const AskRelanternButton: React.FC<AskRelanternButtonProps> = ({
         <button
             onClick={handleClick}
             title={tooltip}
-            className={`flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg text-sm font-medium hover:from-indigo-600 hover:to-purple-700 shadow-sm hover:shadow-md transition-all ${className}`}
+            className={`flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all ${className}`}
         >
             <Sparkles size={14} />
             <span>Ask Specialist</span>

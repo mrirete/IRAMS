@@ -27,15 +27,15 @@ interface OrgLevel {
 // Color utility – maps level color names to Tailwind classes
 const LEVEL_COLORS: Record<string, { bg: string; text: string; border: string; badge: string; accent: string; hover: string }> = {
     '#3b82f6': { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60 dark:hover:bg-blue-900/40' },
-    '#8b5cf6': { bg: 'bg-violet-50 dark:bg-violet-900/20', text: 'text-violet-700 dark:text-violet-300', border: 'border-violet-200 dark:border-violet-800', badge: 'bg-violet-100 text-violet-700', accent: 'text-violet-600', hover: 'hover:bg-violet-100/60 dark:hover:bg-violet-900/40' },
+    '#8b5cf6': { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60 dark:hover:bg-blue-900/40' },
     '#f59e0b': { bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', badge: 'bg-amber-100 text-amber-700', accent: 'text-amber-600', hover: 'hover:bg-amber-100/60 dark:hover:bg-amber-900/40' },
     '#10b981': { bg: 'bg-emerald-50 dark:bg-emerald-900/20', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', badge: 'bg-emerald-100 text-emerald-700', accent: 'text-emerald-600', hover: 'hover:bg-emerald-100/60 dark:hover:bg-emerald-900/40' },
-    '#6366f1': { bg: 'bg-indigo-50 dark:bg-indigo-900/20', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800', badge: 'bg-indigo-100 text-indigo-700', accent: 'text-indigo-600', hover: 'hover:bg-indigo-100/60 dark:hover:bg-indigo-900/40' },
+    '#6366f1': { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60 dark:hover:bg-blue-900/40' },
     // Legacy named colors
-    indigo: { bg: 'bg-indigo-50 dark:bg-indigo-900/20', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-200 dark:border-indigo-800', badge: 'bg-indigo-100 text-indigo-700', accent: 'text-indigo-600', hover: 'hover:bg-indigo-100/60' },
+    indigo: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60' },
     blue: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60' },
     green: { bg: 'bg-green-50 dark:bg-green-900/20', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800', badge: 'bg-green-100 text-green-700', accent: 'text-green-600', hover: 'hover:bg-green-100/60' },
-    purple: { bg: 'bg-purple-50 dark:bg-purple-900/20', text: 'text-purple-700 dark:text-purple-300', border: 'border-purple-200 dark:border-purple-800', badge: 'bg-purple-100 text-purple-700', accent: 'text-purple-600', hover: 'hover:bg-purple-100/60' },
+    purple: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60' },
     amber: { bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', badge: 'bg-amber-100 text-amber-700', accent: 'text-amber-600', hover: 'hover:bg-amber-100/60' },
     rose: { bg: 'bg-rose-50 dark:bg-rose-900/20', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800', badge: 'bg-rose-100 text-rose-700', accent: 'text-rose-600', hover: 'hover:bg-rose-100/60' },
     teal: { bg: 'bg-teal-50 dark:bg-teal-900/20', text: 'text-teal-700 dark:text-teal-300', border: 'border-teal-200 dark:border-teal-800', badge: 'bg-teal-100 text-teal-700', accent: 'text-teal-600', hover: 'hover:bg-teal-100/60' },
@@ -463,7 +463,7 @@ export const OrgChart: React.FC = () => {
                         {/* Assign People */}
                         <button
                             onClick={() => setShowUserList(!showUserList)}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors ${showUserList ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300'}`}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors ${showUserList ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300'}`}
                         >
                             <Users size={14} />
                             {showUserList ? 'Hide People' : 'People'}
@@ -719,10 +719,10 @@ export const OrgChart: React.FC = () => {
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); setExpandedMembers(p => ({ ...p, [unit.id]: !p[unit.id] })); }}
                                                         className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full border transition-all ${isExpanded
-                                                            ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
+                                                            ? 'bg-blue-100 text-blue-700 border-blue-300'
                                                             : isMobileAssignMode && selectedContactForAssign
                                                                 ? 'bg-green-100 text-green-700 border-green-300 animate-pulse'
-                                                                : 'text-gray-600 bg-white/70 border-gray-200 hover:bg-indigo-50 hover:border-indigo-200'
+                                                                : 'text-gray-600 bg-white/70 border-gray-200 hover:bg-blue-50 hover:border-blue-200'
                                                             }`}
                                                         title={`${mCount} people`}
                                                     >
@@ -779,7 +779,7 @@ export const OrgChart: React.FC = () => {
                                                                 className="flex items-center justify-between bg-gray-50 dark:bg-gray-800 rounded-lg p-2 border border-gray-100 dark:border-gray-700 hover:border-gray-300 transition-all cursor-grab active:cursor-grabbing"
                                                             >
                                                                 <div className="flex items-center gap-2 min-w-0">
-                                                                    <div className="h-7 w-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-[10px] flex-shrink-0">
+                                                                    <div className="h-7 w-7 rounded-full bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center text-blue-700 dark:text-blue-300 font-bold text-[10px] flex-shrink-0">
                                                                         {member.firstName?.[0]}{member.lastName?.[0]}
                                                                     </div>
                                                                     <div className="min-w-0">
@@ -802,7 +802,7 @@ export const OrgChart: React.FC = () => {
                                                     )}
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); handleAddMember(unit); }}
-                                                        className="w-full text-xs text-indigo-600 hover:text-indigo-800 font-medium py-1.5 border border-dashed border-indigo-200 rounded-lg hover:bg-indigo-50 transition-colors"
+                                                        className="w-full text-xs text-blue-600 hover:text-blue-800 font-medium py-1.5 border border-dashed border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
                                                     >
                                                         + Add Member
                                                     </button>

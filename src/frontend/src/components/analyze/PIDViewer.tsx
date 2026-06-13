@@ -472,7 +472,7 @@ const PIDViewer: React.FC<PIDViewerProps> = ({
                             <Plus size={12} /> Place
                         </button>
                         <button onClick={() => { setDrawMode('connect'); setPlacingType(null); }}
-                            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors border ${drawMode === 'connect' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}>
+                            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors border ${drawMode === 'connect' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}>
                             <Link2 size={12} /> Connect
                         </button>
 
@@ -544,15 +544,15 @@ const PIDViewer: React.FC<PIDViewerProps> = ({
 
                 {/* ── Connect mode info ── */}
                 {drawMode === 'connect' && (
-                    <div className="px-4 py-2 border-b border-slate-100 bg-indigo-50/50">
+                    <div className="px-4 py-2 border-b border-slate-100 bg-blue-50/50">
                         <div className="flex items-center gap-3">
-                            <p className="text-[10px] text-indigo-700 font-semibold">
+                            <p className="text-[10px] text-blue-700 font-semibold">
                                 {connectFrom
                                     ? `From: ${equipment.find(e => e.id === connectFrom)?.label || connectFrom} → Click target equipment`
                                     : 'Click source equipment to start connection'}
                             </p>
                             <select value={connectionType} onChange={e => setConnectionType(e.target.value as PIDConnection['type'])}
-                                className="text-[10px] px-2 py-0.5 bg-white border border-indigo-200 rounded text-indigo-700 outline-none">
+                                className="text-[10px] px-2 py-0.5 bg-white border border-blue-200 rounded text-blue-700 outline-none">
                                 <option value="process">Process</option>
                                 <option value="instrument">Instrument</option>
                                 <option value="signal">Signal</option>
@@ -560,7 +560,7 @@ const PIDViewer: React.FC<PIDViewerProps> = ({
                             </select>
                             {connectFrom && (
                                 <button onClick={() => setConnectFrom(null)}
-                                    className="text-[10px] text-indigo-500 hover:text-indigo-700 underline">Cancel</button>
+                                    className="text-[10px] text-blue-500 hover:text-blue-700 underline">Cancel</button>
                             )}
                         </div>
                     </div>

@@ -30,6 +30,10 @@ import type {
     DQSResult, FeatureVector
 } from '../services/ERSApiClient';
 import { predictionService } from '../services/PredictionService';
+import { useNavigate } from 'react-router-dom';
+import { useLicense } from '../../contexts/LicenseContext';
+import { useRelantern } from '../contexts/RelanternContext';
+import { Sparkles } from 'lucide-react';
 
 interface ReliabilityIntelligenceTabProps {
     asset: Asset;
@@ -134,6 +138,11 @@ const DQSBadge: React.FC<{ grade: string; score: number }> = ({ grade, score }) 
 // ═══════════════════════════════════════════════════════════
 
 export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProps> = ({ asset }) => {
+    const navigate = useNavigate();
+    const { isModuleEnabled } = useLicense();
+    const { openRelantern } = useRelantern();
+    const hasReliabilitySuite = isModuleEnabled('predict');
+
     // State
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -326,6 +335,60 @@ export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProp
                         <span className="text-[9px] text-slate-400">
                             Updated {lastRefresh.toLocaleTimeString()}
                         </span>
+                    )}
+                    {/* Ask Specialist — launches Relantern AI panel with rich reliability context */}
+                    <button
+                        onClick={() => {
+                            // Build rich reliability context for the AI
+                            const healthStr = health
+                                ? `Health Index: ${health.health_index?.toFixed(0)}/100 (Confidence: ${((health.confidence || 0.85) * 100).toFixed(0)}%) | Governance: ${health.governance_tier || 'N/A'}`
+                                : fallbackTwin
+                                    ? `Health Index: ${fallbackTwin.health_index?.toFixed(0)}/100 (Fallback Estimate)`
+                                    : 'Health Index: Not yet computed';
+                            const rulStr = rul
+                                ? `RUL: ${Math.round(rul.rul_days)} days (${((rul.confidence || 0.78) * 100).toFixed(0)}% confidence) | Model: ${rul.model_used || 'Ensemble'}`
+                                : fallbackRUL
+                                    ? `RUL: ${Math.round(fallbackRUL.rul_days)} days (Fallback Estimate)`
+                                    : 'RUL: Not yet computed';
+                            const failStr = failure
+                                ? `Failure Probability: 7d=${((failure.probability_7d || 0) * 100).toFixed(1)}% | 30d=${((failure.probability_30d || 0) * 100).toFixed(1)}% | 90d=${((failure.probability_90d || 0) * 100).toFixed(1)}%`
+                                : 'Failure Probability: Not yet computed';
+                            const dqsStr = dqs
+                                ? `DQS: ${dqs.score?.toFixed(0)} (${dqs.grade}) — Data quality ${dqs.grade === 'A' ? 'Excellent' : dqs.grade === 'B' ? 'Good' : dqs.grade === 'C' ? 'Fair' : 'Poor'}`
+                                : 'DQS: Not assessed';
+
+                            const richContext = `═══ RELIABILITY INTELLIGENCE CONTEXT ═══
+Asset: ${asset.tag} (${asset.name})
+Type: ${asset.assetType || (asset as any).category || 'N/A'} | Criticality: ${asset.criticality || 'N/A'}
+
+▸ PREDICTIVE ANALYTICS:
+  ${healthStr}
+  ${rulStr}
+  ${failStr}
+  ${dqsStr}
+
+▸ IRAMS MODULE: Reliability Intelligence Tab
+  This data comes from the predictive analytics engine. Ask about reliability strategy, maintenance optimization, or failure pattern analysis.`;
+                            openRelantern(richContext, 'reliability');
+                        }}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg transition-all
+                            bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md"
+                        title="Ask Reliability Specialist"
+                    >
+                        <Sparkles size={12} />
+                        Ask Specialist
+                    </button>
+                    {/* Open Reliability Suite — RBAC-gated: only for users with Reliability Tier access */}
+                    {hasReliabilitySuite && (
+                        <button
+                            onClick={() => navigate('/analyze')}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold rounded-lg border transition-all
+                                bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-800 hover:border-slate-300"
+                            title="Open the full Reliability Suite (RCA, FMEA, Weibull, Bad Actors)"
+                        >
+                            <BarChart2 size={12} />
+                            Reliability Suite →
+                        </button>
                     )}
                     <button
                         onClick={fetchIntelligence}

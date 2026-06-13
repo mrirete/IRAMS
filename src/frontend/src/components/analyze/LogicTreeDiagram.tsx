@@ -243,8 +243,8 @@ const LogicTreeDiagram: React.FC<LogicTreeDiagramProps> = ({
         <div className="space-y-4">
             {/* Header */}
             <div className="flex items-center gap-2.5 pb-2">
-                <ShieldAlert size={16} className="text-purple-600" />
-                <span className="text-xs font-extrabold text-purple-800 uppercase tracking-wider">
+                <ShieldAlert size={16} className="text-blue-600" />
+                <span className="text-xs font-extrabold text-blue-800 uppercase tracking-wider">
                     Logic Tree Analysis (LTA)
                 </span>
                 <div className="flex-1 h-px bg-slate-200" />
@@ -511,7 +511,7 @@ const LogicTreeDiagram: React.FC<LogicTreeDiagramProps> = ({
 
             {/* Root Cause Summary Strip */}
             {rootCauseNodes.length > 0 && (
-                <div className="flex items-start gap-2.5 p-3.5 bg-gradient-to-r from-rose-50 via-amber-50 to-purple-50 border border-rose-200/60 rounded-xl mt-2">
+                <div className="flex items-start gap-2.5 p-3.5 bg-gradient-to-r from-rose-50 via-amber-50 to-blue-50 border border-rose-200/60 rounded-xl mt-2">
                     <Target size={14} className="text-rose-600 shrink-0 mt-0.5" />
                     <div>
                         <div className="text-[10px] font-extrabold text-rose-700 uppercase tracking-wider mb-1">

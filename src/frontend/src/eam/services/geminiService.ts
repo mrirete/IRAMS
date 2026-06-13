@@ -197,7 +197,7 @@ export const createRelanternChat = (): Chat => {
       systemInstruction: RELANTERN_SYSTEM_INSTRUCTION,
       temperature: 0.2, // Low temperature for factual, engineering responses
       topK: 40,
-      thinkingConfig: { thinkingBudget: 0 } // Optimization for speed/chat
+      thinkingConfig: { thinkingBudget: 4096 } // Expert reasoning enabled for data-first analysis
     },
   });
 };
@@ -219,7 +219,7 @@ export const createPSMAdvisorChat = (studyContext?: string, personaSupplement?: 
       systemInstruction: psmInstruction,
       temperature: 0.2,
       topK: 40,
-      thinkingConfig: { thinkingBudget: 0 }
+      thinkingConfig: { thinkingBudget: 4096 }
     },
   });
 };

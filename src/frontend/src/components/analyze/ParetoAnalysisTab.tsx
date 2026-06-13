@@ -325,7 +325,7 @@ export const ParetoAnalysisTab: React.FC<ParetoAnalysisTabProps> = ({
                                         <td className="p-3 text-right font-mono text-slate-700">
                                             {d.metric_unit === '$' ? '$' : ''}{d.metric_value.toLocaleString()}{d.metric_unit !== '$' ? ` ${d.metric_unit}` : ''}
                                         </td>
-                                        <td className="p-3 text-right font-mono text-indigo-400">{d.event_count}</td>
+                                        <td className="p-3 text-right font-mono text-blue-400">{d.event_count}</td>
                                         <td className="p-3 text-right text-slate-600">{d.pct_of_total.toFixed(1)}%</td>
                                         <td className="p-3 text-right font-medium text-amber-400">{d.cumulative_pct.toFixed(1)}%</td>
                                         <td className="p-3 text-center">
@@ -352,7 +352,7 @@ export const ParetoAnalysisTab: React.FC<ParetoAnalysisTabProps> = ({
                                                         <button
                                                             onClick={(e) => { e.stopPropagation(); handleAutoDraftRCA(d); }}
                                                             disabled={draftingRCA === d.asset_id}
-                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-violet-50 text-violet-600 hover:bg-violet-100 border border-violet-200 transition-colors disabled:opacity-50"
+                                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200 transition-colors disabled:opacity-50"
                                                         >
                                                             {draftingRCA === d.asset_id ? <Loader2 size={11} className="animate-spin" /> : <Bot size={11} />}
                                                             Draft RCA

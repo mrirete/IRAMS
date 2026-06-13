@@ -77,9 +77,11 @@ interface Props {
     fleetData?: FleetAssetHealth[];
     filterSlot?: React.ReactNode;
     totalAssetCount?: number;
+    /** When true, skip outer wrapper and header (used when embedded inside a collapsible parent) */
+    embedded?: boolean;
 }
 
-export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect, fleetData, filterSlot, totalAssetCount }) => {
+export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect, fleetData, filterSlot, totalAssetCount, embedded }) => {
     const [search, setSearch] = useState('');
     const [sort, setSort] = useState<SortOption>('health_asc');
     const [critFilter, setCritFilter] = useState<CritFilter>('all');
@@ -132,9 +134,9 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
     ];
 
     return (
-        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden animate-in fade-in duration-300">
-            {/* ═══ Header ═══ */}
-            <div className="px-5 pt-5 pb-4">
+        <div className={embedded ? 'overflow-hidden' : 'bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden animate-in fade-in duration-300'}>
+            {/* ═══ Header (hidden when embedded) ═══ */}
+            {!embedded && (<div className="px-5 pt-5 pb-4">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-accent-cyan/10 rounded-lg text-accent-cyan">
@@ -254,6 +256,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                     )}
                 </div>
             </div>
+            )}
 
             {/* ═══ Content: Grid or List ═══ */}
             {processed.length === 0 ? (

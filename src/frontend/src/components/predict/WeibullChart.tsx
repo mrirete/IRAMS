@@ -79,7 +79,7 @@ export const WeibullChart: React.FC<Props> = ({ rulEstimate }) => {
                             <span>P(Failure):</span>
                             <span className="font-bold">{d.cdf.toFixed(1)}%</span>
                         </p>
-                        <p className="text-purple-400 text-xs flex justify-between gap-4">
+                        <p className="text-blue-400 text-xs flex justify-between gap-4">
                             <span>Failure Rate:</span>
                             <span className="font-bold">{d.pdf.toFixed(2)}</span>
                         </p>

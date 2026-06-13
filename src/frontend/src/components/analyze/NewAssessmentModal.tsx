@@ -30,9 +30,9 @@ const EMPTY_FORM: NewAssessmentForm = {
 };
 
 const TAXONOMY_BADGES: Record<string, { label: string; color: string }> = {
-    site: { label: 'SITE', color: 'bg-purple-500/20 text-purple-300 border-purple-500/30' },
+    site: { label: 'SITE', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
     unit: { label: 'UNIT', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
-    system: { label: 'SYSTEM', color: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' },
+    system: { label: 'SYSTEM', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
     equipment: { label: 'EQUIP', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },
     subunit: { label: 'SUBUNIT', color: 'bg-teal-500/20 text-teal-300 border-teal-500/30' },
     component: { label: 'COMP', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },

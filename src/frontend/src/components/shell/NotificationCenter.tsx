@@ -31,10 +31,10 @@ const SEVERITY_DOT: Record<string, string> = {
 function getTypeIcon(type: string): React.ReactNode {
     switch (type) {
         case 'SAFETY_ALERT': return <ShieldAlert size={14} className="text-red-400" />;
-        case 'SCHEDULE_ALERT': return <Clock size={14} className="text-indigo-500" />;
+        case 'SCHEDULE_ALERT': return <Clock size={14} className="text-blue-500" />;
         case 'ASSIGNMENT': return <Wrench size={14} className="text-blue-500" />;
         case 'STATUS_CHANGE': return <Zap size={14} className="text-yellow-500" />;
-        case 'APPROVAL_REQUIRED': return <CheckSquare size={14} className="text-purple-500" />;
+        case 'APPROVAL_REQUIRED': return <CheckSquare size={14} className="text-blue-500" />;
         case 'INVENTORY_ALERT': return <Package size={14} className="text-amber-500" />;
         case 'SLA_BREACH': return <Zap size={14} className="text-red-500" />;
         case 'COST_THRESHOLD': return <BarChart3 size={14} className="text-emerald-500" />;

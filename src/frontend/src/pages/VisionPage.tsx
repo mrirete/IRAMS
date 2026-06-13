@@ -56,7 +56,7 @@ export const VisionPage: React.FC = () => {
         corrosion: { text: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200', icon: <Shield size={12} /> },
         thermal: { text: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', icon: <Thermometer size={12} /> },
         condition: { text: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', icon: <Eye size={12} /> },
-        tagging: { text: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-200', icon: <Tag size={12} /> },
+        tagging: { text: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', icon: <Tag size={12} /> },
     };
     const getSeverity = (s: string) => severityConfig[s] || severityConfig.minor;
     const getType = (t: string) => typeConfig[t] || typeConfig.condition;
@@ -67,14 +67,14 @@ export const VisionPage: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
                 <div>
                     <div className="flex items-center gap-2.5">
-                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-violet-500 to-fuchsia-500" />
+                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-blue-500 to-blue-500" />
                         <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">Computer Vision</h1>
                     </div>
                     <p className="text-slate-500 text-xs sm:text-sm mt-1.5 ml-4">AI-powered visual inspection, drone surveys, and anomaly detection</p>
                 </div>
                 <button
                     onClick={() => setShowNew(true)}
-                    className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-700 hover:to-fuchsia-700 text-white font-semibold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/30"
+                    className="flex items-center gap-2 px-4 sm:px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white font-semibold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30"
                 >
                     <Plus size={15} /> Upload Analysis
                 </button>
@@ -85,18 +85,18 @@ export const VisionPage: React.FC = () => {
                 <KpiCard label="Total Results" value={visionResults.length} icon={Scan} gradient="from-blue-500 to-cyan-500" />
                 <KpiCard label="Unreviewed" value={unreviewed} icon={AlertTriangle} gradient="from-amber-500 to-orange-500" />
                 <KpiCard label="Critical Detections" value={visionResults.filter(v => v.max_severity === 'critical').length} icon={AlertTriangle} gradient="from-red-500 to-rose-500" />
-                <KpiCard label="Drone Surveys" value={droneSurveys.length} icon={Image} gradient="from-violet-500 to-purple-500" />
+                <KpiCard label="Drone Surveys" value={droneSurveys.length} icon={Image} gradient="from-blue-500 to-blue-500" />
             </div>
 
             {/* ── HITL Alert ──────────────────────────────── */}
             {unreviewed > 0 && (
-                <div className="bg-gradient-to-r from-violet-50 to-fuchsia-50 border border-violet-200 rounded-xl p-4 flex items-start gap-3">
-                    <div className="p-2 bg-violet-100 rounded-lg shrink-0">
-                        <Brain className="text-violet-600" size={18} />
+                <div className="bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+                    <div className="p-2 bg-blue-100 rounded-lg shrink-0">
+                        <Brain className="text-blue-600" size={18} />
                     </div>
                     <div>
-                        <p className="text-violet-800 text-sm font-semibold">{unreviewed} AI vision result(s) pending human review</p>
-                        <p className="text-violet-600/70 text-xs mt-1">All AI-generated detections are <strong>Tier 2 advisory</strong>. Critical findings require inspector verification before work order generation.</p>
+                        <p className="text-blue-800 text-sm font-semibold">{unreviewed} AI vision result(s) pending human review</p>
+                        <p className="text-blue-600/70 text-xs mt-1">All AI-generated detections are <strong>Tier 2 advisory</strong>. Critical findings require inspector verification before work order generation.</p>
                     </div>
                 </div>
             )}
@@ -104,7 +104,7 @@ export const VisionPage: React.FC = () => {
             {/* ── Vision Analysis Results Gallery ──────────── */}
             <div>
                 <div className="flex items-center gap-2 mb-3">
-                    <div className="w-1 h-4 rounded-full bg-gradient-to-b from-violet-500 to-fuchsia-500" />
+                    <div className="w-1 h-4 rounded-full bg-gradient-to-b from-blue-500 to-blue-500" />
                     <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">Vision Analysis Results</h3>
                     <span className="ml-auto text-xs text-slate-400">{visionResults.length} total</span>
                 </div>
@@ -155,11 +155,11 @@ export const VisionPage: React.FC = () => {
                                             <button
                                                 onClick={() => handleDraftWR(v)}
                                                 disabled={draftingId === v.id}
-                                                className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-bold text-violet-700 bg-violet-50 border border-violet-200 rounded-lg hover:bg-violet-100 transition-colors disabled:opacity-50"
+                                                className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
                                                 title="Draft a Work Request from this finding (requires HITL approval)"
                                             >
                                                 {draftingId === v.id
-                                                    ? <div className="w-3 h-3 border-2 border-violet-400 border-t-transparent rounded-full animate-spin" />
+                                                    ? <div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
                                                     : <Wrench size={12} />
                                                 }
                                                 Draft Work Request
@@ -175,12 +175,12 @@ export const VisionPage: React.FC = () => {
 
             {/* ── Agent Draft Response ───────────────────── */}
             {draftMessage && (
-                <div className="bg-violet-50 border border-violet-200 rounded-xl px-5 py-3 flex items-center justify-between animate-in fade-in duration-300">
-                    <div className="flex items-center gap-2 text-sm text-violet-700">
-                        <Brain size={16} className="text-violet-500 shrink-0" />
+                <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 flex items-center justify-between animate-in fade-in duration-300">
+                    <div className="flex items-center gap-2 text-sm text-blue-700">
+                        <Brain size={16} className="text-blue-500 shrink-0" />
                         <span><span className="font-semibold">Agent:</span> {draftMessage}</span>
                     </div>
-                    <button onClick={() => setDraftMessage(null)} className="text-violet-400 hover:text-violet-600 transition-colors">
+                    <button onClick={() => setDraftMessage(null)} className="text-blue-400 hover:text-blue-600 transition-colors">
                         <X size={14} />
                     </button>
                 </div>
@@ -238,7 +238,7 @@ export const VisionPage: React.FC = () => {
                     <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="p-2.5 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-xl text-white shadow-lg shadow-violet-500/20">
+                                <div className="p-2.5 bg-gradient-to-br from-blue-500 to-blue-500 rounded-xl text-white shadow-lg shadow-blue-500/20">
                                     <Camera size={18} />
                                 </div>
                                 <div>
@@ -265,18 +265,18 @@ export const VisionPage: React.FC = () => {
                             </div>
                             <div>
                                 <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Image / File Name</label>
-                                <input type="text" value={form.image_name} onChange={e => setForm(f => ({ ...f, image_name: e.target.value }))} placeholder="e.g. V205_shell_12oclock.jpg" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400 transition-all" />
+                                <input type="text" value={form.image_name} onChange={e => setForm(f => ({ ...f, image_name: e.target.value }))} placeholder="e.g. V205_shell_12oclock.jpg" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all" />
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Analysis Type</label>
-                                    <select value={form.analysis_type} onChange={e => setForm(f => ({ ...f, analysis_type: e.target.value as AnalysisType }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400 transition-all">
+                                    <select value={form.analysis_type} onChange={e => setForm(f => ({ ...f, analysis_type: e.target.value as AnalysisType }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all">
                                         <option value="corrosion">Corrosion</option><option value="thermal">Thermal</option><option value="condition">Condition</option><option value="tagging">Tagging / OCR</option>
                                     </select>
                                 </div>
                                 <div>
                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Target Asset</label>
-                                    <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400 transition-all">
+                                    <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all">
                                         <option value="">Select asset…</option>{assetOptions.map(a => <option key={a.id} value={a.id}>{a.tag} — {a.name}</option>)}
                                     </select>
                                 </div>
@@ -284,11 +284,11 @@ export const VisionPage: React.FC = () => {
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Detected Items</label>
-                                    <input type="number" min="0" value={form.detected_items} onChange={e => setForm(f => ({ ...f, detected_items: e.target.value }))} placeholder="0" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400 transition-all" />
+                                    <input type="number" min="0" value={form.detected_items} onChange={e => setForm(f => ({ ...f, detected_items: e.target.value }))} placeholder="0" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all" />
                                 </div>
                                 <div>
                                     <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">Max Severity</label>
-                                    <select value={form.max_severity} onChange={e => setForm(f => ({ ...f, max_severity: e.target.value as VisionSeverity }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400 transition-all">
+                                    <select value={form.max_severity} onChange={e => setForm(f => ({ ...f, max_severity: e.target.value as VisionSeverity }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:border-blue-400 transition-all">
                                         <option value="minor">Minor</option><option value="moderate">Moderate</option><option value="severe">Severe</option><option value="critical">Critical</option>
                                     </select>
                                 </div>
@@ -296,7 +296,7 @@ export const VisionPage: React.FC = () => {
                         </div>
                         <div className="p-5 border-t border-slate-100 flex justify-end gap-3">
                             <button onClick={() => setShowNew(false)} className="px-4 py-2.5 text-sm text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-xl transition-all">Cancel</button>
-                            <button onClick={handleSubmit} disabled={!form.image_name || !form.asset_id} className="px-5 py-2.5 bg-gradient-to-r from-violet-600 to-fuchsia-600 text-white text-sm font-semibold rounded-xl hover:from-violet-700 hover:to-fuchsia-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-violet-500/25">Submit for Analysis</button>
+                            <button onClick={handleSubmit} disabled={!form.image_name || !form.asset_id} className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-600 text-white text-sm font-semibold rounded-xl hover:from-blue-700 hover:to-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-lg shadow-blue-500/25">Submit for Analysis</button>
                         </div>
                     </div>
                 </div>

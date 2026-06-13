@@ -343,7 +343,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                 <div className="flex items-center gap-3.5 flex-wrap">
                     <div className="flex gap-3 text-[10px] font-semibold text-slate-500">
                         <span><span className="text-blue-500">■</span> AND Gate</span>
-                        <span><span className="text-purple-500">■</span> OR Gate</span>
+                        <span><span className="text-blue-500">■</span> OR Gate</span>
                     </div>
                     {!readOnly && onAddEvent && topEvent && (
                         <div className="flex gap-1.5 items-center">
@@ -364,7 +364,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                             {/* Context-aware buttons */}
                             <button
                                 onClick={() => handleAddEventWithHistory(selectedEventId || topEvent.id, 'intermediate', 'OR')}
-                                className="px-2.5 py-1 text-[10px] font-bold rounded-lg border cursor-pointer flex items-center gap-1 transition-colors bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 shadow-xs"
+                                className="px-2.5 py-1 text-[10px] font-bold rounded-lg border cursor-pointer flex items-center gap-1 transition-colors bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 shadow-xs"
                                 title={selectedEventId ? `Add OR Gate under "${selectedEvent?.label}"` : 'Add OR Gate under top event'}
                             >
                                 <Plus size={10} /> OR Gate
@@ -398,7 +398,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                                 <input
                                     value={editSelectedText}
                                     onChange={e => setEditSelectedText(e.target.value)}
-                                    className="px-2 py-1 text-xs border border-indigo-500 rounded-lg outline-none w-full bg-white text-slate-800 shadow-xs"
+                                    className="px-2 py-1 text-xs border border-blue-500 rounded-lg outline-none w-full bg-white text-slate-800 shadow-xs"
                                     autoFocus
                                     onKeyDown={e => {
                                         if (e.key === 'Enter' && editSelectedText.trim()) {
@@ -415,7 +415,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                                             setEditingSelected(false);
                                         }
                                     }}
-                                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-md cursor-pointer"
+                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-md cursor-pointer"
                                 >
                                     Save
                                 </button>
@@ -431,7 +431,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                                 <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase ${
                                     selectedEvent.type === 'top' ? 'bg-red-50 text-red-700 border border-red-200' :
                                     selectedEvent.type === 'basic' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                    'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                    'bg-blue-50 text-blue-700 border border-blue-200'
                                 }`}>
                                     {selectedEvent.type === 'top' ? 'TOP' : selectedEvent.type === 'basic' ? 'BASIC' : selectedEvent.gateType || 'GATE'}
                                 </span>
@@ -465,7 +465,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                                             handleUpdateProbabilityWithHistory(selectedEvent.id, val);
                                         }
                                     }}
-                                    className="w-16 px-1.5 py-0.5 border border-slate-200 bg-white rounded-md outline-none text-center font-bold text-slate-800 shadow-xs focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20"
+                                    className="w-16 px-1.5 py-0.5 border border-slate-200 bg-white rounded-md outline-none text-center font-bold text-slate-800 shadow-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
                                 />
                             </div>
                         )}
@@ -475,7 +475,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                             <div className="flex gap-1">
                                 <button
                                     onClick={() => handleAddEventWithHistory(selectedEvent.id, 'intermediate', 'OR')}
-                                    className="px-2 py-1 text-[9px] font-black uppercase rounded bg-purple-50 hover:bg-purple-100 border border-purple-100/80 text-purple-700 cursor-pointer shadow-3xs"
+                                    className="px-2 py-1 text-[9px] font-black uppercase rounded bg-blue-50 hover:bg-blue-100 border border-blue-100/80 text-blue-700 cursor-pointer shadow-3xs"
                                 >
                                     + OR
                                 </button>

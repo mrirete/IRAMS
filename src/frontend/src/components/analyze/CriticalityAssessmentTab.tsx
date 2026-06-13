@@ -13,7 +13,7 @@ const CONSEQUENCE_FACTORS = [
     { key: 'consequence_environment', label: 'Environment', icon: Wind, color: 'text-green-400', description: 'Environmental impact' },
     { key: 'consequence_production', label: 'Production', icon: Factory, color: 'text-blue-400', description: 'Production / operational impact' },
     { key: 'consequence_cost', label: 'Cost', icon: DollarSign, color: 'text-amber-400', description: 'Financial cost impact' },
-    { key: 'consequence_reputation', label: 'Reputation', icon: Users, color: 'text-purple-400', description: 'Reputational / regulatory impact' },
+    { key: 'consequence_reputation', label: 'Reputation', icon: Users, color: 'text-blue-400', description: 'Reputational / regulatory impact' },
 ] as const;
 
 const SEVERITY_LABELS = ['Negligible', 'Minor', 'Moderate', 'Major', 'Catastrophic'];

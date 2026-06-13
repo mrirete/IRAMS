@@ -67,3 +67,5 @@ tsc_output.txt
 
 # ── Gemini / Antigravity local config ────────────────────
 .gemini/
+
+.vercel

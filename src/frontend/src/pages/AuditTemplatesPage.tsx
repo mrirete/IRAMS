@@ -58,10 +58,10 @@ interface CategoryStyle {
 const CATEGORY_CONFIG: Record<TemplateCategory, CategoryStyle> = {
     iso55001: {
         label: 'ISO 55001', icon: <ClipboardCheck size={20} />,
-        color: 'text-indigo-600', bg: 'bg-indigo-50',
-        border: 'border-l-indigo-500', gradient: 'from-indigo-50/80 via-white to-white',
-        ring: 'ring-indigo-300 shadow-indigo-500/10', iconBg: 'bg-gradient-to-br from-indigo-500 to-violet-600',
-        accentBar: 'bg-indigo-500',
+        color: 'text-blue-600', bg: 'bg-blue-50',
+        border: 'border-l-blue-500', gradient: 'from-blue-50/80 via-white to-white',
+        ring: 'ring-blue-300 shadow-blue-500/10', iconBg: 'bg-gradient-to-br from-blue-500 to-blue-600',
+        accentBar: 'bg-blue-500',
     },
     psm: {
         label: 'PSM / SEMS', icon: <Shield size={20} />,
@@ -215,7 +215,7 @@ export const AuditTemplatesPage: React.FC = () => {
                     <button className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition-colors">
                         <Upload size={16} /> Import
                     </button>
-                    <button className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
+                    <button className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
                         <Plus size={18} /> New Template
                     </button>
                 </div>
@@ -238,7 +238,7 @@ export const AuditTemplatesPage: React.FC = () => {
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="Search templates..."
-                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400"
+                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-400"
                     />
                 </div>
                 <select
@@ -294,7 +294,7 @@ export const AuditTemplatesPage: React.FC = () => {
                                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                                                 <h3 className="text-sm font-bold text-slate-800">{t.name}</h3>
                                                 {t.isSystem && (
-                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-600 flex items-center gap-0.5">
+                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 flex items-center gap-0.5">
                                                         <Lock size={8} /> SYSTEM
                                                     </span>
                                                 )}
@@ -399,7 +399,7 @@ export const AuditTemplatesPage: React.FC = () => {
                                         </div>
                                         {/* Action Bar */}
                                         <div className="flex items-center gap-3 mt-5 pt-4 border-t border-slate-200/60">
-                                            <button onClick={() => handleStartAudit(t)} className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-lg text-sm flex items-center gap-2 hover:shadow-lg hover:scale-[1.02] transition-all">
+                                            <button onClick={() => handleStartAudit(t)} className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-lg text-sm flex items-center gap-2 hover:shadow-lg hover:scale-[1.02] transition-all">
                                                 <PlayCircle size={16} /> Start Audit
                                             </button>
                                             <button onClick={() => handleDuplicate(t)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition-colors">

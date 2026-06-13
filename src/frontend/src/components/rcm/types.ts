@@ -32,7 +32,7 @@ export const CRIT_COLORS: Record<string, string> = {
 export const STRATEGY_LABELS: Record<string, { label: string; color: string; icon: string }> = {
   PM_TIME:      { label: 'Time-Based PM',   color: 'bg-blue-100 text-blue-700',    icon: '🕐' },
   PM_CONDITION: { label: 'Condition-Based',  color: 'bg-cyan-100 text-cyan-700',    icon: '📊' },
-  PM_PREDICTIVE:{ label: 'Predictive',       color: 'bg-purple-100 text-purple-700',icon: '🤖' },
+  PM_PREDICTIVE:{ label: 'Predictive',       color: 'bg-blue-100 text-blue-700',icon: '🤖' },
   RTF:          { label: 'Run-to-Failure',   color: 'bg-orange-100 text-orange-700',icon: '⚡' },
   REDESIGN:     { label: 'Redesign',         color: 'bg-red-100 text-red-700',      icon: '🔧' },
   COMBINATION:  { label: 'Combined',         color: 'bg-emerald-100 text-emerald-700',icon: '🔀' },

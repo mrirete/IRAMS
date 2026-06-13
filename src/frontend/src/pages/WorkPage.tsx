@@ -215,7 +215,7 @@ function TypeBadge({ type }: { type: string }) {
         'PM': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
         'CM': 'bg-orange-500/10 text-orange-400 border-orange-500/20',
         'EM': 'bg-red-500/10 text-red-400 border-red-500/20',
-        'PdM': 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+        'PdM': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
     };
     return <span className={`px-2 py-1 text-xs font-semibold rounded border ${map[type] || 'bg-slate-100 text-brand-300'}`}>{type}</span>;
 }
@@ -239,7 +239,7 @@ function RPNBadge({ rpn }: { rpn: number }) {
 function WOStatusBadge({ status }: { status: string }) {
     const map: Record<string, string> = {
         'planning': 'text-slate-500', 'scheduled': 'text-blue-400', 'in_progress': 'text-accent-cyan',
-        'on_hold': 'text-yellow-500', 'teco': 'text-purple-400', 'closed': 'text-green-400'
+        'on_hold': 'text-yellow-500', 'teco': 'text-blue-400', 'closed': 'text-green-400'
     };
     return <span className={`flex items-center space-x-1.5 text-xs font-medium uppercase tracking-wider ${map[status] || 'text-brand-300'}`}>
         <span className="w-1.5 h-1.5 rounded-full bg-current" />
@@ -311,16 +311,16 @@ function WODetailPanel({ wo, onClose, onTeco, onEdit, onDelete }: { wo: WorkOrde
                 {deTaskId && (
                     <button
                         onClick={() => { onClose(); navigate(`/analyze?division=defect_elimination&task=${deTaskId}`); }}
-                        className="w-full flex items-center gap-3 p-4 rounded-lg bg-indigo-50 border border-indigo-200/60 hover:bg-indigo-100 hover:border-indigo-300 transition-all text-left group"
+                        className="w-full flex items-center gap-3 p-4 rounded-lg bg-blue-50 border border-blue-200/60 hover:bg-blue-100 hover:border-blue-300 transition-all text-left group"
                     >
-                        <div className="p-2 rounded-lg bg-indigo-100">
-                            <Target size={16} className="text-indigo-600" />
+                        <div className="p-2 rounded-lg bg-blue-100">
+                            <Target size={16} className="text-blue-600" />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <span className="text-xs font-bold text-indigo-700 uppercase tracking-wide">Defect Elimination Origin</span>
-                            <p className="text-[11px] text-indigo-600/80 mt-0.5">This WO was generated from a DE task. Click to view the reliability initiative.</p>
+                            <span className="text-xs font-bold text-blue-700 uppercase tracking-wide">Defect Elimination Origin</span>
+                            <p className="text-[11px] text-blue-600/80 mt-0.5">This WO was generated from a DE task. Click to view the reliability initiative.</p>
                         </div>
-                        <span className="text-indigo-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all">→</span>
+                        <span className="text-blue-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all">→</span>
                     </button>
                 )}
 
@@ -359,7 +359,7 @@ function WODetailPanel({ wo, onClose, onTeco, onEdit, onDelete }: { wo: WorkOrde
             {/* Footer Action */}
             <div className="p-6 border-t border-slate-200 bg-brand-800">
                 {wo.status === 'in_progress' && !isFailureCoding && (
-                    <button onClick={() => setIsFailureCoding(true)} className="w-full btn-primary bg-purple-600 hover:bg-purple-500 border-none shadow-lg shadow-purple-900/20 py-3">
+                    <button onClick={() => setIsFailureCoding(true)} className="w-full btn-primary bg-blue-600 hover:bg-blue-500 border-none shadow-lg shadow-blue-900/20 py-3">
                         <CheckCircle size={18} className="mr-2" /> Mark Technically Complete (TECO)
                     </button>
                 )}

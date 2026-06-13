@@ -41,11 +41,11 @@ interface MocRequest {
 // --- Constants ---
 const CHANGE_TYPES: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
     PM_INTERVAL: { label: 'PM Interval Change', icon: <Clock size={14} />, color: 'bg-blue-100 text-blue-700' },
-    SET_POINT: { label: 'Set-Point Change', icon: <Settings size={14} />, color: 'bg-purple-100 text-purple-700' },
+    SET_POINT: { label: 'Set-Point Change', icon: <Settings size={14} />, color: 'bg-blue-100 text-blue-700' },
     DICTIONARY: { label: 'Dictionary Change', icon: <FileText size={14} />, color: 'bg-amber-100 text-amber-700' },
     ASSET_STRATEGY: { label: 'Asset Strategy', icon: <Shield size={14} />, color: 'bg-emerald-100 text-emerald-700' },
     SAFETY_PARAMETER: { label: 'Safety Parameter', icon: <AlertTriangle size={14} />, color: 'bg-red-100 text-red-700' },
-    OPERATING_PROCEDURE: { label: 'Operating Procedure', icon: <FileText size={14} />, color: 'bg-indigo-100 text-indigo-700' },
+    OPERATING_PROCEDURE: { label: 'Operating Procedure', icon: <FileText size={14} />, color: 'bg-blue-100 text-blue-700' },
     OTHER: { label: 'Other', icon: <FileText size={14} />, color: 'bg-slate-100 text-slate-700' },
 };
 

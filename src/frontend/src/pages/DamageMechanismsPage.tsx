@@ -28,7 +28,7 @@ export const DamageMechanismsPage: React.FC = () => {
     };
 
     const sourceBadge = (s: string) => {
-        if (s === 'ai_suggested') return 'text-purple-700 bg-purple-50 border border-purple-200';
+        if (s === 'ai_suggested') return 'text-blue-700 bg-blue-50 border border-blue-200';
         if (s === 'engineer_confirmed') return 'text-emerald-700 bg-emerald-50 border border-emerald-200';
         return 'text-slate-600 bg-slate-100 border border-slate-200';
     };
@@ -43,16 +43,16 @@ export const DamageMechanismsPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Kpi label="Active Mechanisms" value={summary.active_damage_mechs} icon={AlertTriangle} color="text-red-500" bg="bg-red-50" />
                 <Kpi label="Total Registered" value={damageMechanisms.length} icon={AlertTriangle} />
-                <Kpi label="AI Pending Review" value={summary.ai_suggested_pending} icon={Brain} color="text-purple-500" bg="bg-purple-50" />
+                <Kpi label="AI Pending Review" value={summary.ai_suggested_pending} icon={Brain} color="text-blue-500" bg="bg-blue-50" />
                 <Kpi label="Confirmed" value={damageMechanisms.filter(dm => dm.source === 'engineer_confirmed').length} icon={AlertTriangle} color="text-emerald-500" bg="bg-emerald-50" />
             </div>
 
             {summary.ai_suggested_pending > 0 && (
-                <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-start">
-                    <Brain className="text-purple-500 mr-3 flex-shrink-0 mt-0.5" size={20} />
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start">
+                    <Brain className="text-blue-500 mr-3 flex-shrink-0 mt-0.5" size={20} />
                     <div>
-                        <p className="text-purple-800 text-sm font-medium">AI has identified {summary.ai_suggested_pending} potential damage mechanism(s).</p>
-                        <p className="text-purple-600 text-xs mt-1">All AI results are <strong>Tier 2 advisory</strong>. Engineer confirmation required before inclusion in official MI program.</p>
+                        <p className="text-blue-800 text-sm font-medium">AI has identified {summary.ai_suggested_pending} potential damage mechanism(s).</p>
+                        <p className="text-blue-600 text-xs mt-1">All AI results are <strong>Tier 2 advisory</strong>. Engineer confirmation required before inclusion in official MI program.</p>
                     </div>
                 </div>
             )}

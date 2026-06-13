@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Activity, AlertTriangle, ShieldCheck, HeartPulse, Clock, Search, ChevronDown, Gauge, Thermometer, Wind, Droplets, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3 } from 'lucide-react';
+import { Activity, AlertTriangle, ShieldCheck, HeartPulse, Clock, Search, ChevronDown, Gauge, Thermometer, Wind, Droplets, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3, Wrench, FileWarning, Loader2 } from 'lucide-react';
 import { useIntelligence } from '../hooks/useIntelligence';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
 import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
 import predictionService from '../eam/services/PredictionService';
+import { DatabaseService } from '../eam/services/DatabaseService';
 import type { FleetAssetHealth } from '../types/intelligence';
 
 type InsightType = 'digital_twin' | 'rul_analysis' | 'alert_config' | 'degradation_model';
@@ -47,6 +48,13 @@ export const PredictPage: React.FC = () => {
     const [hiddenFleetIds, setHiddenFleetIds] = useState<Set<string>>(new Set());
     const [fleetSearch, setFleetSearch] = useState('');
     const fleetFilterRef = useRef<HTMLDivElement>(null);
+
+    // ── Corrective Work Request Modal state ──
+    const [wrModalOpen, setWrModalOpen] = useState(false);
+    const [wrSubmitting, setWrSubmitting] = useState(false);
+    const [wrSuccess, setWrSuccess] = useState(false);
+    const [wrError, setWrError] = useState<string | null>(null);
+    const [wrForm, setWrForm] = useState({ title: '', description: '', priority: 'ROUTINE' as string, workType: 'CM' as string });
 
     const { assetOptions, getAssetById } = useAssetLookup();
 
@@ -101,9 +109,23 @@ export const PredictPage: React.FC = () => {
 
                 // Build FleetAssetHealth array, enriching each with register data
                 // Only include equipment-level assets (exclude SITE/UNIT/SYSTEM hierarchy items)
+                // Multi-strategy asset resolution:
+                //   1. Exact ID match
+                //   2. Fuzzy match by partial ID prefix (twin asset_id might be truncated)
+                //   3. Fallback to readable label from asset_id
+                const resolveAsset = (assetId: string) => {
+                    // Strategy 1: exact
+                    const exact = getAssetById(assetId);
+                    if (exact) return exact;
+                    // Strategy 2: check if any asset id starts with this prefix
+                    const matchByPrefix = assetOptions.find(a => a.id.startsWith(assetId) || assetId.startsWith(a.id));
+                    if (matchByPrefix) return getAssetById(matchByPrefix.id);
+                    return null;
+                };
+
                 const fleet: FleetAssetHealth[] = twins
                     .filter(t => {
-                        const asset = getAssetById(t.asset_id);
+                        const asset = resolveAsset(t.asset_id);
                         if (!asset) return true; // keep unresolved twins
                         const level = asset.taxonomy_level;
                         return level !== 'site' && level !== 'unit' && level !== 'system';
@@ -111,13 +133,25 @@ export const PredictPage: React.FC = () => {
                     .map(t => {
                         const rul = rulMap.get(t.asset_id);
                         const hi = Number(t.health_index);
-                        const registeredAsset = getAssetById(t.asset_id);
+                        const registeredAsset = resolveAsset(t.asset_id);
+
+                        // Human-readable fallback: derive name from sensor keys or show truncated ID
+                        const fallbackName = (() => {
+                            if (t.sensor_summary && Object.keys(t.sensor_summary).length > 0) {
+                                // Try to infer equipment type from sensor tags
+                                const keys = Object.keys(t.sensor_summary).join(' ').toLowerCase();
+                                if (keys.includes('turbine') || keys.includes('exhaust')) return `Equipment ${t.asset_id.substring(0, 8).toUpperCase()}`;
+                                if (keys.includes('pump') || keys.includes('discharge')) return `Equipment ${t.asset_id.substring(0, 8).toUpperCase()}`;
+                                if (keys.includes('compressor') || keys.includes('suction')) return `Equipment ${t.asset_id.substring(0, 8).toUpperCase()}`;
+                            }
+                            return `Equipment ${t.asset_id.substring(0, 8).toUpperCase()}`;
+                        })();
 
                         return {
                             asset_id: t.asset_id,
                             asset_name: registeredAsset
                                 ? `${registeredAsset.tag} — ${registeredAsset.name}`
-                                : t.twin_id,
+                                : fallbackName,
                             unit: registeredAsset
                                 ? (registeredAsset.system || registeredAsset.unit || registeredAsset.site || '-')
                                 : '-',
@@ -137,7 +171,7 @@ export const PredictPage: React.FC = () => {
             }
         })();
         return () => { cancelled = true; };
-    }, [getAssetById]);
+    }, [getAssetById, assetOptions]);
 
     const visibleFleetData = useMemo(() => {
         return fleetData.filter(a => !hiddenFleetIds.has(a.asset_id));
@@ -301,7 +335,7 @@ export const PredictPage: React.FC = () => {
                             </div>
                         </div>
 
-                        {/* Results */}
+                        {/* Results — grouped by system */}
                         <div className="max-h-[50vh] overflow-y-auto">
                             {filteredAssets.length === 0 ? (
                                 <div className="p-8 text-center">
@@ -309,64 +343,69 @@ export const PredictPage: React.FC = () => {
                                     <p className="text-sm font-medium text-slate-500">No matching assets</p>
                                     <p className="text-xs text-slate-400 mt-1">Try a different search term</p>
                                 </div>
-                            ) : (
-                                filteredAssets.map((asset, idx) => {
-                                    const isActive = asset.id === selectedAssetId;
-                                    const aCritColor = asset.criticality === 'A' ? 'bg-red-500/15 text-red-500 border-red-500/30' : asset.criticality === 'B' ? 'bg-yellow-500/15 text-yellow-600 border-yellow-500/30' : 'bg-slate-100 text-slate-500 border-slate-300';
-                                    // Try to find health info from fleet data
-                                    const fleetMatch = fleetData.find(f => f.asset_id === asset.id);
-                                    const hi = fleetMatch?.health_index;
-                                    const healthDot = hi != null ? (hi >= 85 ? 'bg-emerald-500' : hi >= 70 ? 'bg-yellow-500' : hi >= 55 ? 'bg-orange-500' : 'bg-red-500') : 'bg-slate-300';
+                            ) : (() => {
+                                // Group filtered assets by system
+                                const systemGroups = new Map<string, typeof filteredAssets>();
+                                filteredAssets.forEach(asset => {
+                                    const sys = asset.system || 'Unassigned';
+                                    if (!systemGroups.has(sys)) systemGroups.set(sys, []);
+                                    systemGroups.get(sys)!.push(asset);
+                                });
 
-                                    return (
-                                        <button
-                                            key={asset.id}
-                                            onClick={() => { setSelectedAssetId(asset.id); setAssetPickerOpen(false); setAssetSearch(''); }}
-                                            className={`w-full flex items-center gap-3 px-5 py-3.5 text-left transition-all hover:bg-slate-50 ${isActive ? 'bg-accent-cyan/5 border-l-[3px] border-l-accent-cyan' : 'border-l-[3px] border-l-transparent'} ${idx > 0 ? 'border-t border-t-slate-100' : ''}`}
-                                        >
-                                            {/* Health dot */}
-                                            <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${healthDot}`} />
-
-                                            {/* Asset info */}
-                                            <div className="flex-1 min-w-0">
-                                                <p className={`text-sm font-semibold truncate ${isActive ? 'text-accent-cyan' : 'text-slate-800'}`}>
-                                                    {asset.tag} — {asset.name}
-                                                </p>
-                                                <div className="flex items-center gap-2 mt-0.5">
-                                                    <span className="text-[11px] text-slate-400">{asset.system}</span>
-                                                    {hi != null && (
-                                                        <>
-                                                            <span className="text-[10px] text-slate-300">·</span>
-                                                            <span className={`text-[10px] font-bold ${hi >= 70 ? 'text-slate-500' : 'text-red-500'}`}>HI: {hi.toFixed(0)}</span>
-                                                        </>
-                                                    )}
-                                                    {fleetMatch && fleetMatch.rul_days > 0 && (
-                                                        <>
-                                                            <span className="text-[10px] text-slate-300">·</span>
-                                                            <span className={`text-[10px] ${fleetMatch.rul_days < 90 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>RUL: {fleetMatch.rul_days}d</span>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Criticality badge */}
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${aCritColor}`}>
-                                                CRIT {asset.criticality}
+                                return Array.from(systemGroups.entries()).map(([systemName, assets]) => (
+                                    <div key={systemName}>
+                                        {/* System Group Header */}
+                                        <div className="sticky top-0 z-10 px-5 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                            <span className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                                <Layers size={11} className="text-slate-400" /> {systemName}
                                             </span>
+                                            <span className="text-[10px] text-slate-400">{assets.length} asset{assets.length !== 1 ? 's' : ''}</span>
+                                        </div>
+                                        {assets.map((asset, idx) => {
+                                            const isActive = asset.id === selectedAssetId;
+                                            const aCritColor = asset.criticality === 'A' ? 'bg-red-500/15 text-red-500 border-red-500/30' : asset.criticality === 'B' ? 'bg-yellow-500/15 text-yellow-600 border-yellow-500/30' : 'bg-slate-100 text-slate-500 border-slate-300';
+                                            const fleetMatch = fleetData.find(f => f.asset_id === asset.id);
+                                            const hi = fleetMatch?.health_index;
+                                            const healthDot = hi != null ? (hi >= 85 ? 'bg-emerald-500' : hi >= 70 ? 'bg-yellow-500' : hi >= 55 ? 'bg-orange-500' : 'bg-red-500') : 'bg-slate-300';
 
-                                            {/* Active indicator */}
-                                            {isActive && (
-                                                <CheckCircle size={16} className="text-accent-cyan shrink-0" />
-                                            )}
-                                        </button>
-                                    );
-                                })
-                            )}
+                                            return (
+                                                <button
+                                                    key={asset.id}
+                                                    onClick={() => { setSelectedAssetId(asset.id); setAssetPickerOpen(false); setAssetSearch(''); }}
+                                                    className={`w-full flex items-center gap-3 px-5 py-3 text-left transition-all hover:bg-slate-50 ${isActive ? 'bg-accent-cyan/5 border-l-[3px] border-l-accent-cyan' : 'border-l-[3px] border-l-transparent'} ${idx > 0 ? 'border-t border-t-slate-50' : ''}`}
+                                                >
+                                                    <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${healthDot}`} />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className={`text-sm font-semibold truncate ${isActive ? 'text-accent-cyan' : 'text-slate-800'}`}>
+                                                            {asset.tag} — {asset.name}
+                                                        </p>
+                                                        <div className="flex items-center gap-2 mt-0.5">
+                                                            {hi != null && (
+                                                                <span className={`text-[10px] font-bold ${hi >= 70 ? 'text-slate-500' : 'text-red-500'}`}>HI: {hi.toFixed(0)}</span>
+                                                            )}
+                                                            {fleetMatch && fleetMatch.rul_days > 0 && (
+                                                                <>
+                                                                    <span className="text-[10px] text-slate-300">·</span>
+                                                                    <span className={`text-[10px] ${fleetMatch.rul_days < 90 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>RUL: {fleetMatch.rul_days}d</span>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${aCritColor}`}>
+                                                        {asset.criticality}
+                                                    </span>
+                                                    {isActive && <CheckCircle size={16} className="text-accent-cyan shrink-0" />}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ));
+                            })()}
                         </div>
 
                         {/* Footer */}
                         <div className="p-2.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-[10px] text-slate-400">
-                            <span>{filteredAssets.length} asset{filteredAssets.length !== 1 ? 's' : ''} available</span>
+                            <span>{filteredAssets.length} asset{filteredAssets.length !== 1 ? 's' : ''} · {new Set(filteredAssets.map(a => a.system)).size} system{new Set(filteredAssets.map(a => a.system)).size !== 1 ? 's' : ''}</span>
                             <div className="flex items-center gap-3">
                                 <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded font-mono text-[9px]">↑↓</kbd> Navigate</span>
                                 <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded font-mono text-[9px]">Ctrl+K</kbd> Toggle</span>
@@ -512,24 +551,61 @@ export const PredictPage: React.FC = () => {
                 </div>
             )}
 
-            {/* ═══ FOCUSED ASSET BANNER ═══ */}
-            <div className="bg-gradient-to-r from-brand-800 to-slate-800 border border-brand-700 rounded-xl p-5 shadow-lg">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-accent-cyan/10 rounded-xl text-accent-cyan border border-accent-cyan/20">
-                            <Target size={28} />
-                        </div>
-                        <div>
-                            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-0.5">Focused Asset</p>
-                            <h2 className="text-xl font-bold text-white">{selectedAsset?.name || selectedAssetId}</h2>
-                            <p className="text-xs text-slate-400 mt-0.5">{selectedAsset?.system ? `${selectedAsset.system}` : ''} · All panels below show data for this asset only</p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <span className={`text-xs uppercase font-bold px-2.5 py-1 rounded-lg border ${critColor}`}>Criticality {critLevel || '?'}</span>
-                        <div className="text-right">
-                            <p className="text-xs text-slate-400">Health Index</p>
-                            <p className={`text-2xl font-bold ${isHealthy ? 'text-accent-safe' : systemHealth >= 60 ? 'text-yellow-500' : 'text-red-400'}`}>{systemHealth.toFixed(1)}<span className="text-sm text-slate-500 ml-1">/ 100</span></p>
+            {/* ═══ FOCUSED ASSET BANNER — with integrated asset selector ═══ */}
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="flex items-stretch">
+                    {/* Left accent stripe */}
+                    <div className={`w-1.5 shrink-0 ${isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} />
+
+                    <div className="flex-1 flex items-center justify-between px-5 py-4">
+                        {/* Left: Asset info + clickable selector */}
+                        <button
+                            onClick={() => { setAssetPickerOpen(true); setAssetSearch(''); }}
+                            className="flex items-center gap-4 text-left hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg transition-colors group"
+                            title="Click to change asset · Ctrl+K"
+                        >
+                            <div className={`p-3 rounded-xl border transition-colors ${isHealthy ? 'bg-emerald-50 border-emerald-200 text-emerald-600 group-hover:bg-emerald-100' : systemHealth >= 60 ? 'bg-amber-50 border-amber-200 text-amber-600 group-hover:bg-amber-100' : 'bg-red-50 border-red-200 text-red-500 group-hover:bg-red-100'}`}>
+                                <Target size={24} />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2 mb-0.5">
+                                    <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Focused Asset</p>
+                                    <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ${critColor}`}>Crit {critLevel || '?'}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-lg font-bold text-slate-800 leading-tight group-hover:text-cyan-700 transition-colors">{selectedAsset?.name || selectedAssetId}</h2>
+                                    <ChevronDown size={14} className="text-slate-300 group-hover:text-cyan-500 transition-colors" />
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                    {selectedAsset?.system && (
+                                        <span className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                                            <Layers size={10} /> {selectedAsset.system}
+                                        </span>
+                                    )}
+                                    {selectedAsset?.tag && (
+                                        <span className="text-[10px] text-slate-400 font-mono">{selectedAsset.tag}</span>
+                                    )}
+                                </div>
+                            </div>
+                        </button>
+
+                        {/* Right: Health gauge */}
+                        <div className="flex items-center gap-5">
+                            <div className="text-right">
+                                <p className="text-[9px] text-slate-400 uppercase tracking-wider font-bold mb-1">Health Index</p>
+                                <div className="flex items-baseline gap-1">
+                                    <span className={`text-3xl font-bold tabular-nums ${isHealthy ? 'text-emerald-600' : systemHealth >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
+                                        {systemHealth.toFixed(1)}
+                                    </span>
+                                    <span className="text-sm text-slate-400 font-medium">/ 100</span>
+                                </div>
+                                <div className="mt-1.5 w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div
+                                        className={`h-full rounded-full transition-all ${isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                        style={{ width: `${systemHealth}%` }}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -558,6 +634,7 @@ export const PredictPage: React.FC = () => {
             {activeTab === 'overview' && (
                 <PredictOverviewTab
                     selectedAssetId={selectedAssetId}
+                    selectedAssetName={selectedAsset?.name || selectedAssetId}
                     onAssetSelect={(id) => { setSelectedAssetId(id); setAssetPickerOpen(false); }}
                     fleetData={fleetData}
                     visibleFleetData={visibleFleetData}
@@ -636,9 +713,35 @@ export const PredictPage: React.FC = () => {
                     isHealthy={isHealthy}
                     rulDays={rulEstimate?.rul_days}
                     alertCount={assetAlerts.length}
-                    calibrationQuality={twinHealth?.calibration_quality || 0}
+                    rulConfidenceBands={rulEstimate?.confidence_bands || []}
+                    distributionType={rulEstimate?.distribution_type || null}
+                    rulConfidence={rulEstimate?.confidence ?? null}
                     twinHealth={twinHealth}
                     assetSensorTrends={assetSensorTrends}
+                    onInvestigate={() => window.location.href = '/analyze'}
+                    onCreateWR={() => {
+                        // Pre-populate WR form from health data
+                        const hiVal = systemHealth.toFixed(1);
+                        const critLabel = critLevel || 'B';
+                        const assetName = selectedAsset?.name || selectedAssetId;
+                        const assetTag = selectedAsset?.tag || '';
+                        const rulVal = rulEstimate?.rul_days?.toFixed(0) || 'N/A';
+
+                        // Auto-calculate priority: Crit A + HI<70 = EMERGENCY, Crit A + HI<85 = URGENT, else ROUTINE
+                        const autoPriority = critLabel === 'A' && systemHealth < 70 ? 'EMERGENCY'
+                            : (critLabel === 'A' || systemHealth < 60) ? 'URGENT'
+                            : systemHealth < 75 ? 'ROUTINE' : 'ROUTINE';
+
+                        setWrForm({
+                            title: `PdM — Corrective action on ${assetTag || assetName}`,
+                            description: `Auto-generated from Predictive Insights.\n\nAsset: ${assetTag} — ${assetName}\nHealth Index: ${hiVal}/100\nRemaining Useful Life: ${rulVal} days\nCriticality: ${critLabel}\nAlerts: ${assetAlerts.length}\n\nCondition monitoring indicates degradation. Investigate and perform corrective maintenance per ISO 55000.`,
+                            priority: autoPriority,
+                            workType: 'CM',
+                        });
+                        setWrModalOpen(true);
+                        setWrSuccess(false);
+                        setWrError(null);
+                    }}
                 />
             )}
 
@@ -656,6 +759,165 @@ export const PredictPage: React.FC = () => {
                     rulEstimate={rulEstimate}
                     assetAlerts={assetAlerts}
                 />
+            )}
+
+            {/* ═══ CORRECTIVE WORK REQUEST MODAL (PdM → EAM Bridge) ═══ */}
+            {wrModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => !wrSubmitting && setWrModalOpen(false)}>
+                    <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl shadow-black/40 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="p-5 border-b border-slate-200 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-cyan-50 rounded-xl text-cyan-600 border border-cyan-100">
+                                    <Wrench size={20} />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">Raise Corrective WR</h2>
+                                    <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider">PdM → EAM Bridge · ISO 55000 Feedback Loop</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setWrModalOpen(false)} disabled={wrSubmitting} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40">
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {wrSuccess ? (
+                            /* Success state */
+                            <div className="p-8 text-center">
+                                <div className="inline-flex p-3 bg-emerald-50 rounded-xl text-emerald-600 mb-3">
+                                    <CheckCircle size={32} />
+                                </div>
+                                <h3 className="text-base font-bold text-slate-800">Work Request Created</h3>
+                                <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto">
+                                    The corrective work order has been inserted into the EAM work queue. It will appear in <strong>Work Management</strong>.
+                                </p>
+                                <button onClick={() => { setWrModalOpen(false); setWrSuccess(false); }} className="mt-4 px-5 py-2 bg-accent-cyan text-brand-900 font-semibold rounded-lg text-sm hover:bg-cyan-400 transition-colors">
+                                    Done
+                                </button>
+                            </div>
+                        ) : (
+                            /* Form */
+                            <div className="p-5 space-y-4">
+                                {wrError && (
+                                    <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
+                                        <AlertTriangle size={14} /> {wrError}
+                                    </div>
+                                )}
+
+                                {/* Pre-populated source badge */}
+                                <div className="flex items-center gap-2 px-3 py-2 bg-cyan-50 border border-cyan-100 rounded-lg">
+                                    <FileWarning size={14} className="text-cyan-600" />
+                                    <p className="text-xs text-cyan-700">
+                                        <strong>Source:</strong> Predictive Insights · {selectedAsset?.tag || selectedAssetId} · HI {systemHealth.toFixed(0)}/100
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Title</label>
+                                    <input
+                                        type="text"
+                                        value={wrForm.title}
+                                        onChange={e => setWrForm(f => ({ ...f, title: e.target.value }))}
+                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Work Type</label>
+                                        <select
+                                            value={wrForm.workType}
+                                            onChange={e => setWrForm(f => ({ ...f, workType: e.target.value }))}
+                                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                                        >
+                                            <option value="CM">CM — Corrective</option>
+                                            <option value="PdM">PdM — Predictive</option>
+                                            <option value="EM">EM — Emergency</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Priority</label>
+                                        <select
+                                            value={wrForm.priority}
+                                            onChange={e => setWrForm(f => ({ ...f, priority: e.target.value }))}
+                                            className={`w-full px-3 py-2.5 border rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-cyan-500/30 ${wrForm.priority === 'EMERGENCY' ? 'bg-red-50 border-red-300 text-red-700' : wrForm.priority === 'URGENT' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
+                                        >
+                                            <option value="ROUTINE">Routine</option>
+                                            <option value="URGENT">Urgent</option>
+                                            <option value="EMERGENCY">Emergency</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Description</label>
+                                    <textarea
+                                        value={wrForm.description}
+                                        onChange={e => setWrForm(f => ({ ...f, description: e.target.value }))}
+                                        rows={5}
+                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 font-mono leading-relaxed"
+                                    />
+                                </div>
+
+                                {/* Asset + Criticality info */}
+                                <div className="flex items-center gap-3 text-[10px] text-slate-400">
+                                    <span>Asset: <strong className="text-slate-600">{selectedAsset?.tag}</strong></span>
+                                    <span>·</span>
+                                    <span>Criticality: <strong className={`${critLevel === 'A' ? 'text-red-500' : critLevel === 'B' ? 'text-amber-500' : 'text-slate-600'}`}>{critLevel}</strong></span>
+                                    <span>·</span>
+                                    <span>RUL: <strong className="text-slate-600">{rulEstimate?.rul_days?.toFixed(0) || '--'}d</strong></span>
+                                </div>
+
+                                {/* Submit */}
+                                <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
+                                    <button onClick={() => setWrModalOpen(false)} disabled={wrSubmitting} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40">
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            setWrSubmitting(true);
+                                            setWrError(null);
+                                            try {
+                                                const db = DatabaseService.getInstance();
+                                                const now = new Date().toISOString();
+                                                const woPayload = {
+                                                    title: wrForm.title,
+                                                    description: wrForm.description,
+                                                    type: wrForm.workType,
+                                                    priority: wrForm.priority.toLowerCase(),
+                                                    status: 'WIP',
+                                                    asset_id: selectedAssetId,
+                                                    source: 'PREDICT',
+                                                    wo_number: `PdM-${Date.now().toString(36).toUpperCase()}`,
+                                                    created_at: now,
+                                                    updated_at: now,
+                                                    properties: {
+                                                        source_module: 'predictive_insights',
+                                                        health_index_at_creation: systemHealth,
+                                                        rul_at_creation: rulEstimate?.rul_days || null,
+                                                        criticality_at_creation: critLevel,
+                                                    },
+                                                };
+                                                await db.createWorkOrder(woPayload, 'system_admin');
+                                                setWrSuccess(true);
+                                            } catch (err: any) {
+                                                console.error('[PredictPage] WR creation failed:', err);
+                                                setWrError(err.message || 'Failed to create work request. Check database connection.');
+                                            } finally {
+                                                setWrSubmitting(false);
+                                            }
+                                        }}
+                                        disabled={wrSubmitting || !wrForm.title.trim()}
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-accent-cyan hover:bg-cyan-400 text-brand-900 font-bold rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                                    >
+                                        {wrSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Wrench size={16} />}
+                                        {wrSubmitting ? 'Creating...' : 'Create Work Order'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
             )}
         </div>
     );

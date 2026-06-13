@@ -937,7 +937,7 @@ export const AssetsPage: React.FC = () => {
                                             <p className="text-xs text-slate-500 mt-1">This asset has {getAssetFailures(selectedAsset.id).length} recorded failures. Qualifies for Defect Elimination review.</p>
                                             <button
                                                 onClick={() => navigate(`/analyze?division=defect_elimination&asset=${selectedAsset.id}`)}
-                                                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+                                                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
                                             >
                                                 <Target size={12} /> View / Create DE Task
                                             </button>

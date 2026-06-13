@@ -37,7 +37,7 @@ export const AuditWelcome: React.FC<Props> = ({ onStart }) => {
       <div className="min-h-[80vh] flex flex-col items-center justify-center px-4">
         {/* Hero */}
         <div className="text-center max-w-2xl mx-auto mb-12">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-500/30">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-500/30">
             <Sparkles size={36} className="text-white" />
           </div>
           <h1 className="text-4xl font-black text-slate-800 tracking-tight mb-3">
@@ -74,7 +74,7 @@ export const AuditWelcome: React.FC<Props> = ({ onStart }) => {
         {/* CTA */}
         <button
           onClick={() => setShowReg(true)}
-          className="px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-lg font-bold rounded-xl shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-3"
+          className="px-8 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-lg font-bold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-3"
         >
           <ClipboardCheck size={22} />
           Begin Audit Assessment
@@ -89,7 +89,7 @@ export const AuditWelcome: React.FC<Props> = ({ onStart }) => {
   return (
     <div className="max-w-xl mx-auto py-12 px-4">
       <div className="text-center mb-8">
-        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
+        <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
           <Users size={24} className="text-white" />
         </div>
         <h2 className="text-2xl font-bold text-slate-800">Assessor Registration</h2>
@@ -128,7 +128,7 @@ export const AuditWelcome: React.FC<Props> = ({ onStart }) => {
           <button
             onClick={() => canSubmit && onStart(form)}
             disabled={!canSubmit}
-            className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-40 transition-all flex items-center gap-2"
+            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-40 transition-all flex items-center gap-2"
           >
             Launch Assessment <ArrowRight size={16} />
           </button>

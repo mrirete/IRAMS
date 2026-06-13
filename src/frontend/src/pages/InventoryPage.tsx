@@ -83,7 +83,7 @@ export const InventoryPage: React.FC = () => {
                 <KpiCard label="In Stock" value={summary.in_stock_count} icon={Archive} color="text-green-400" bg="bg-green-500/10" />
                 <KpiCard label="Low Stock" value={summary.low_stock_count} icon={AlertTriangle} color="text-yellow-400" bg="bg-yellow-500/10" />
                 <KpiCard label="Out of Stock" value={summary.out_of_stock_count} icon={XCircle} color="text-red-400" bg="bg-red-500/10" />
-                <KpiCard label="ABC-A Items" value={summary.abc_a_count} icon={Layers} color="text-purple-400" bg="bg-purple-500/10" />
+                <KpiCard label="ABC-A Items" value={summary.abc_a_count} icon={Layers} color="text-blue-400" bg="bg-blue-500/10" />
                 <KpiCard label="Fill Rate" value={`${summary.fill_rate_pct}%`} icon={TrendingUp} color="text-accent-cyan" bg="bg-accent-cyan/10" />
                 <KpiCard label="Pending Orders" value={summary.pending_orders} icon={ShoppingCart} />
             </div>
@@ -289,7 +289,7 @@ function InventoryTable({ items, sortField, sortDir, onSort, onRowClick }: {
 
 function ABCBadge({ cls }: { cls: ABCClass }) {
     const map: Record<ABCClass, string> = {
-        A: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
+        A: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
         B: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
         C: 'text-slate-500 bg-slate-100 border-slate-300',
     };
@@ -316,7 +316,7 @@ function CategoryBadge({ cat }: { cat: InventoryCategory }) {
     const map: Record<InventoryCategory, string> = {
         spare_part: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
         consumable: 'bg-green-500/10 text-green-400 border-green-500/20',
-        rotable: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
+        rotable: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
         capital_spare: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
         safety_stock: 'bg-red-500/10 text-red-400 border-red-500/20',
     };
@@ -611,7 +611,7 @@ function MiniStat({ label, value }: { label: string; value: string | number }) {
 function TxnTypeBadge({ type }: { type: TransactionType }) {
     const map: Record<TransactionType, string> = {
         receipt: 'text-green-400', issue: 'text-red-400', return: 'text-blue-400',
-        adjustment: 'text-yellow-400', transfer: 'text-purple-400', cycle_count: 'text-brand-300',
+        adjustment: 'text-yellow-400', transfer: 'text-blue-400', cycle_count: 'text-brand-300',
     };
     return <span className={`text-[10px] uppercase font-semibold tracking-wider ${map[type]}`}>{TRANSACTION_TYPE_LABELS[type]}</span>;
 }

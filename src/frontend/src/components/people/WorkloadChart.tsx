@@ -52,7 +52,7 @@ export const WorkloadChart: React.FC = () => {
                     <div className="space-y-1 text-xs">
                         <div className="flex justify-between"><span className="text-red-400">Corrective:</span><span className="font-bold text-slate-700">{d.cm}h</span></div>
                         <div className="flex justify-between"><span className="text-accent-cyan">Preventive:</span><span className="font-bold text-slate-700">{d.pm}h</span></div>
-                        <div className="flex justify-between"><span className="text-purple-400">Project:</span><span className="font-bold text-slate-700">{d.project}h</span></div>
+                        <div className="flex justify-between"><span className="text-blue-400">Project:</span><span className="font-bold text-slate-700">{d.project}h</span></div>
                         <div className="flex justify-between border-t border-slate-200 pt-1">
                             <span className="text-slate-500">Total:</span>
                             <span className={`font-bold ${d.total > OVERLOAD_THRESHOLD ? 'text-red-400' : 'text-accent-safe'}`}>{d.total}h/wk</span>

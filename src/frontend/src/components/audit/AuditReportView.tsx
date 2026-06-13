@@ -70,7 +70,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center py-24 gap-4">
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
         <Loader2 size={28} className="animate-spin text-white" />
       </div>
       <h2 className="text-xl font-bold text-slate-700">Generating 5-Part Report...</h2>
@@ -88,15 +88,15 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
   return (
     <div className="max-w-5xl mx-auto py-8 px-4 space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-indigo-600 to-purple-700 rounded-2xl p-6 text-white shadow-xl shadow-indigo-500/20">
+      <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-xl shadow-blue-500/20">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-indigo-200 text-xs font-mono uppercase tracking-wider mb-1">Integrated Audit Report — ISO 55000:2024 Series</p>
+            <p className="text-blue-200 text-xs font-mono uppercase tracking-wider mb-1">Integrated Audit Report — ISO 55000:2024 Series</p>
             <h1 className="text-2xl font-black">{registration.company}</h1>
-            <p className="text-sm text-indigo-200 mt-1">{registration.industrySector} · {registration.siteName || 'All Sites'}</p>
-            <p className="text-xs text-indigo-300 mt-1">Assessed by {registration.fullName} ({registration.jobTitle}) · {new Date(report.generatedAt).toLocaleDateString()}</p>
+            <p className="text-sm text-blue-200 mt-1">{registration.industrySector} · {registration.siteName || 'All Sites'}</p>
+            <p className="text-xs text-blue-300 mt-1">Assessed by {registration.fullName} ({registration.jobTitle}) · {new Date(report.generatedAt).toLocaleDateString()}</p>
             {auditState?.intake?.orgVision && (
-              <p className="text-xs text-indigo-200/80 mt-2 italic border-t border-indigo-500/30 pt-2">
+              <p className="text-xs text-blue-200/80 mt-2 italic border-t border-blue-500/30 pt-2">
                 <BookOpen size={10} className="inline mr-1" />Vision: "{auditState.intake.orgVision}"
               </p>
             )}
@@ -104,7 +104,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
           <div className="text-center">
             <div className="w-20 h-20 rounded-2xl bg-white/15 backdrop-blur flex flex-col items-center justify-center">
               <span className="text-3xl font-black">{report.overallScore.toFixed(1)}</span>
-              <span className="text-[10px] font-bold text-indigo-200">/5.0</span>
+              <span className="text-[10px] font-bold text-blue-200">/5.0</span>
             </div>
             <div className="mt-2 px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: maturityColor + '33', color: maturityColor }}>
               {report.maturityLevel}
@@ -127,7 +127,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
-                tab === t.key ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
+                tab === t.key ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'
               }`}>
               {t.icon} {t.label}
             </button>
@@ -149,8 +149,8 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">Assessment Notes</label>
           <div className="flex gap-2">
             <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add notes, observations, or follow-up actions..."
-              rows={2} className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 resize-none focus:outline-none focus:border-indigo-400 placeholder:text-slate-400" />
-            <button onClick={handleSaveNotes} className="self-end px-3 py-2 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-lg hover:bg-indigo-100 transition-colors flex items-center gap-1">
+              rows={2} className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-700 resize-none focus:outline-none focus:border-blue-400 placeholder:text-slate-400" />
+            <button onClick={handleSaveNotes} className="self-end px-3 py-2 bg-blue-50 text-blue-600 text-xs font-bold rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1">
               <Save size={12} /> Save
             </button>
           </div>
@@ -171,7 +171,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
 const MaturityTab: React.FC<{ report: AuditReport }> = ({ report }) => (
   <div className="space-y-6">
     <div className="bg-white border border-slate-200 rounded-2xl p-6">
-      <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-indigo-500" /> ISO 55001 Maturity Scorecard</h3>
+      <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-blue-500" /> ISO 55001 Maturity Scorecard</h3>
       <div className="space-y-3">
         {report.dimensionResults.map(d => {
           const dim = SIXM_DIMENSIONS.find(dd => dd.key === d.dimensionKey);
@@ -322,7 +322,7 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="text-center">
       <p className="text-lg font-black text-white">{value}</p>
-      <p className="text-[9px] text-indigo-200 uppercase">{label}</p>
+      <p className="text-[9px] text-blue-200 uppercase">{label}</p>
     </div>
   );
 }
@@ -350,7 +350,7 @@ function FindingRow({ finding }: { finding: ScoredFinding }) {
           {finding.sixmCategory && <span className="text-[10px] text-slate-400">6M: {finding.sixmCategory}</span>}
           {finding.owner && <span className="text-[10px] text-slate-400">→ {finding.owner}</span>}
         </div>
-        {finding.recommendedAction && <p className="text-[10px] text-indigo-500 mt-1">Action: {finding.recommendedAction}</p>}
+        {finding.recommendedAction && <p className="text-[10px] text-blue-500 mt-1">Action: {finding.recommendedAction}</p>}
       </div>
     </div>
   );

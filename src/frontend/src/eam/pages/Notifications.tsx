@@ -89,11 +89,11 @@ export const Notifications: React.FC = () => {
 
     const getTypeIcon = (type: string) => {
         switch (type) {
-            case 'APPROVAL_REQUIRED': return <CheckSquare size={14} className="text-purple-500" />;
+            case 'APPROVAL_REQUIRED': return <CheckSquare size={14} className="text-blue-500" />;
             case 'ASSIGNMENT': return <Wrench size={14} className="text-blue-500" />;
             case 'SAFETY_ALERT': return <Shield size={14} className="text-red-500" />;
             case 'INVENTORY_ALERT': return <Package size={14} className="text-amber-500" />;
-            case 'SCHEDULE_ALERT': return <Clock size={14} className="text-indigo-500" />;
+            case 'SCHEDULE_ALERT': return <Clock size={14} className="text-blue-500" />;
             case 'SLA_BREACH': return <Zap size={14} className="text-red-500" />;
             case 'COST_THRESHOLD': return <BarChart3 size={14} className="text-emerald-500" />;
             case 'AI_RECOMMENDATION': return <Zap size={14} className="text-cyan-500" />;

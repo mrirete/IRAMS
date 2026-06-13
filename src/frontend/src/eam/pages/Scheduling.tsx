@@ -928,7 +928,7 @@ export const Scheduling: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => setShowProjections(!showProjections)}
-                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showProjections ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showProjections ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
                                 >
                                     {showProjections ? <Eye size={14} /> : <EyeOff size={14} />}
                                     {showProjections ? 'Hide Projections' : 'Show Projections'}
@@ -1195,7 +1195,7 @@ const CalendarView: React.FC<{
                 draggable
                 onDragStart={(e) => onDragStart(e, item.id, item.type)}
                 onClick={(e) => { e.stopPropagation(); handleJobClick(item); }}
-                className={`text-[10px] px-1.5 py-1 rounded border cursor-pointer hover:shadow-md transition flex flex-col gap-0.5 ${isPM ? 'border-dashed opacity-80 hover:opacity-100 bg-white text-slate-500 border-slate-300 hover:border-purple-300 hover:text-purple-700' : ''
+                className={`text-[10px] px-1.5 py-1 rounded border cursor-pointer hover:shadow-md transition flex flex-col gap-0.5 ${isPM ? 'border-dashed opacity-80 hover:opacity-100 bg-white text-slate-500 border-slate-300 hover:border-blue-300 hover:text-blue-700' : ''
                     }`}
                 style={!isPM ? {
                     backgroundColor: pStyle.hex + '18',
@@ -1303,7 +1303,7 @@ const CalendarView: React.FC<{
                                 <div className="flex justify-between items-start mb-1">
                                     <div className="flex items-center gap-1">
                                         <span className="text-xs font-mono font-bold text-slate-500">{item.displayId}</span>
-                                        {item.isFromPM && <Repeat size={10} className="text-indigo-400" />}
+                                        {item.isFromPM && <Repeat size={10} className="text-blue-400" />}
                                     </div>
                                     <GripVertical size={14} className="text-slate-300 group-hover:text-slate-500" />
                                 </div>
@@ -1536,8 +1536,8 @@ const DayGrid: React.FC<{
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-xs font-mono font-bold text-slate-500">{item.displayId}</span>
-                                        {isPM && <span className="text-[9px] font-bold bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full">PROJECTED PM</span>}
-                                        {!isPM && item.isFromPM && <span className="text-[9px] font-bold bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Repeat size={8} />PM</span>}
+                                        {isPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">PROJECTED PM</span>}
+                                        {!isPM && item.isFromPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Repeat size={8} />PM</span>}
                                     </div>
                                     <div className="text-sm font-bold text-slate-900 truncate">{item.title}</div>
                                     <div className="text-xs text-slate-500 mt-0.5">{item.assetName}</div>

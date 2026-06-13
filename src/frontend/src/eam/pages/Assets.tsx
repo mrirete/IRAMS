@@ -89,6 +89,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [activeTab, setActiveTab] = useState<TabId>('details');
+    const [aiContextForAsset, setAiContextForAsset] = useState<string>('');
 
     // Auto-reset tab when switching to a location that doesn't support the current tab
     // (e.g., user was on BOM tab for equipment, then clicks a location via breadcrumbs)
@@ -97,6 +98,19 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
             setActiveTab('details');
         }
     }, [selectedAsset]);
+
+    // ── Pre-build rich AI context when selected asset changes ──
+    useEffect(() => {
+        if (!selectedAsset) {
+            setAiContextForAsset('');
+            return;
+        }
+        let cancelled = false;
+        aiContextService.buildAssetContext(selectedAsset.id).then(ctx => {
+            if (!cancelled) setAiContextForAsset(ctx);
+        });
+        return () => { cancelled = true; };
+    }, [selectedAsset?.id]);
 
     // Load from DB
     const refreshContacts = async () => {
@@ -314,8 +328,8 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
         // Use typeCode if available, else fallback to category
         const type = (asset.assetType || asset.category || '').toUpperCase();
         if (type === 'SITE') return <Building size={18} className="text-blue-600" />;
-        if (type === 'AREA') return <Factory size={18} className="text-indigo-600" />;
-        if (type === 'UNIT') return <Network size={18} className="text-purple-600" />;
+        if (type === 'AREA') return <Factory size={18} className="text-blue-600" />;
+        if (type === 'UNIT') return <Network size={18} className="text-blue-600" />;
         if (type === 'SYSTEM') return <FolderPlus size={18} className="text-teal-600" />;
         if (type === 'PUMP' || type === 'MOTOR' || type === 'COMPRESSOR') return <Activity size={18} className="text-slate-500" />;
         return <Package size={18} className="text-slate-400" />;
@@ -816,7 +830,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                                     {asset.name}
                                                 </p>
                                                 {asset.equipmentNumber && (
-                                                    <span className="text-[9px] font-mono text-indigo-500 flex items-center gap-0.5 mt-0.5">
+                                                    <span className="text-[9px] font-mono text-blue-500 flex items-center gap-0.5 mt-0.5">
                                                         <Hash size={8} className="flex-shrink-0" />
                                                         {asset.equipmentNumber}
                                                     </span>
@@ -1240,34 +1254,60 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                         </div>
                                     </div>
 
-                                    {/* Right side — Status + Health */}
-                                    <div className="hidden sm:flex flex-col items-end gap-1.5 flex-shrink-0">
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border whitespace-nowrap ${getStatusColor(asset.status)}`}>
+                                    {/* ── Right side — SAP PM-grade Status Panel ── */}
+                                    <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
+
+                                        {/* Status Badge */}
+                                        <span className={`text-[10px] px-2.5 py-1 rounded-md font-bold border whitespace-nowrap ${getStatusColor(asset.status)}`}>
                                             {asset.status}
                                         </span>
-                                        <div className="flex items-center gap-1.5">
-                                            <div className="w-14 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                                <div
-                                                    className={`h-full rounded-full transition-all ${asset.healthScore > 80 ? 'bg-green-500' : asset.healthScore > 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                                    style={{ width: `${asset.healthScore}%` }}
-                                                />
-                                            </div>
-                                            <span className="text-[10px] font-mono font-medium text-slate-500 w-8 text-right">{asset.healthScore}%</span>
-                                        </div>
-                                    </div>
 
-                                    {/* Parts BOM icon — hidden for location-type assets (ISO 14224: BOM only on equipment/maintainable items) */}
-                                    {!isLocation(asset) && (
-                                    <div className="hidden lg:block flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                                        <button
-                                            onClick={(e) => toggleBOMExpansion(asset.id, e)}
-                                            className={`p-1.5 rounded-lg transition ${expandedBOMIds.has(asset.id) ? 'bg-blue-100 text-blue-600' : 'text-slate-300 hover:bg-slate-100 hover:text-slate-500'}`}
-                                            title="Manage BOM"
-                                        >
-                                            <Box size={16} />
-                                        </button>
+                                        {/* Criticality Ring — SAP Risk Profile */}
+                                        {asset.criticality && (
+                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black border-2 flex-shrink-0 ${
+                                                asset.criticality === 'A' ? 'border-red-400 text-red-600 bg-red-50' :
+                                                asset.criticality === 'B' ? 'border-orange-400 text-orange-600 bg-orange-50' :
+                                                asset.criticality === 'C' ? 'border-blue-400 text-blue-600 bg-blue-50' : 'border-slate-300 text-slate-500 bg-slate-50'
+                                            }`} title={`Criticality ${asset.criticality}`}>
+                                                {asset.criticality}
+                                            </div>
+                                        )}
+
+                                        {/* Health Score — Donut-style indicator */}
+                                        <div className="flex items-center gap-1.5" title={`Health Score: ${asset.healthScore}%`}>
+                                            <div className="relative w-8 h-8">
+                                                <svg className="w-8 h-8 -rotate-90" viewBox="0 0 36 36">
+                                                    <circle cx="18" cy="18" r="15" fill="none" stroke="#e2e8f0" strokeWidth="3" />
+                                                    <circle
+                                                        cx="18" cy="18" r="15" fill="none"
+                                                        strokeWidth="3"
+                                                        strokeLinecap="round"
+                                                        stroke={asset.healthScore > 80 ? '#22c55e' : asset.healthScore > 50 ? '#f59e0b' : '#ef4444'}
+                                                        strokeDasharray={`${(asset.healthScore / 100) * 94.2} 94.2`}
+                                                    />
+                                                </svg>
+                                                <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold text-slate-600">
+                                                    {asset.healthScore}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* BOM Parts Button — only for equipment */}
+                                        {!isLocation(asset) && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); toggleBOMExpansion(asset.id, e); }}
+                                                className={`hidden lg:flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold transition-all border ${
+                                                    expandedBOMIds.has(asset.id)
+                                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                                        : 'bg-white text-slate-400 border-slate-200 hover:bg-slate-50 hover:text-slate-600'
+                                                }`}
+                                                title="Bill of Materials"
+                                            >
+                                                <Box size={12} />
+                                                <span>BOM</span>
+                                            </button>
+                                        )}
                                     </div>
-                                    )}
                                 </div>
 
                                 {/* Inline BOM Expansion — only for equipment/maintainable items */}
@@ -1332,7 +1372,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                         </span>
                                     )}
                                     {selectedAsset.equipmentNumber && (
-                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border bg-indigo-50 text-indigo-700 border-indigo-200 flex items-center gap-1" title={`Internal Equipment Number (Gen ${selectedAsset.equipmentGeneration || 1})`}>
+                                        <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1" title={`Internal Equipment Number (Gen ${selectedAsset.equipmentGeneration || 1})`}>
                                             <Hash size={9} /> {selectedAsset.equipmentNumber}
                                         </span>
                                     )}
@@ -1386,11 +1426,11 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                             ]}
                         />
 
-                        {/* AI Context Button */}
+                        {/* AI Context Button — Rich Intelligence Brief */}
                         <div className="px-4 py-1.5 border-b border-slate-100 bg-slate-50/30 flex items-center">
                             <AskRelanternButton
                                 contextType="assets"
-                                contextSummary={`═══ ASSET CONTEXT ═══\nTag: ${selectedAsset.tag} | Name: ${selectedAsset.name}\nStatus: ${selectedAsset.status} | Criticality: ${selectedAsset.criticality || 'N/A'}\nType: ${selectedAsset.assetType || selectedAsset.category || 'N/A'} | Health: ${selectedAsset.healthScore ?? 'N/A'}%\nLocation: ${selectedAsset.location || 'N/A'} | Department: ${selectedAsset.department || 'N/A'}\nSerial: ${selectedAsset.serialNumber || 'N/A'} | Equipment #: ${selectedAsset.equipmentNumber || 'N/A'}\nManufacturer: ${selectedAsset.manufacturer || 'N/A'} | Model: ${selectedAsset.model || 'N/A'}\nTotal Assets in Registry: ${assets.length}`}
+                                contextSummary={aiContextForAsset || `Loading asset intelligence for ${selectedAsset.tag}...`}
                             />
                         </div>
                         {/* Safety Banner (Conditional) */}
@@ -2033,15 +2073,15 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
 
                 {/* ── Internal Equipment Number (SAP PM parity) ── */}
                 {asset.equipmentNumber && (
-                    <div className="flex items-center gap-3 px-3 py-2 bg-indigo-50/60 border border-indigo-100 rounded-lg">
+                    <div className="flex items-center gap-3 px-3 py-2 bg-blue-50/60 border border-blue-100 rounded-lg">
                         <div className="flex items-center gap-1.5">
-                            <Hash size={13} className="text-indigo-500" />
-                            <span className="text-[10px] font-bold text-indigo-400 uppercase">Equipment No.</span>
+                            <Hash size={13} className="text-blue-500" />
+                            <span className="text-[10px] font-bold text-blue-400 uppercase">Equipment No.</span>
                         </div>
-                        <span className="text-sm font-mono font-bold text-indigo-700 tracking-wide">{asset.equipmentNumber}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600 font-semibold">Gen {asset.equipmentGeneration || 1}</span>
-                        <Lock size={10} className="text-indigo-300 ml-auto" />
-                        <span className="text-[9px] text-indigo-400">Auto-generated · Immutable</span>
+                        <span className="text-sm font-mono font-bold text-blue-700 tracking-wide">{asset.equipmentNumber}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-600 font-semibold">Gen {asset.equipmentGeneration || 1}</span>
+                        <Lock size={10} className="text-blue-300 ml-auto" />
+                        <span className="text-[9px] text-blue-400">Auto-generated · Immutable</span>
                     </div>
                 )}
 
@@ -2329,7 +2369,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
                                     cf.type === 'NUMBER' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-                                    cf.type === 'DATE' ? 'bg-purple-50 text-purple-600 border-purple-200' :
+                                    cf.type === 'DATE' ? 'bg-blue-50 text-blue-600 border-blue-200' :
                                     cf.type === 'BOOLEAN' ? 'bg-amber-50 text-amber-600 border-amber-200' :
                                     cf.type === 'DROPDOWN' ? 'bg-teal-50 text-teal-600 border-teal-200' :
                                     'bg-slate-50 text-slate-600 border-slate-200'
@@ -2369,7 +2409,7 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
 
     // ISO 14224 level names by depth
     const ISO_LEVELS: { label: string; tag: string; color: string }[] = [
-        { label: 'Enterprise', tag: 'L1', color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+        { label: 'Enterprise', tag: 'L1', color: 'bg-blue-100 text-blue-700 border-blue-200' },
         { label: 'Site', tag: 'L2', color: 'bg-sky-100 text-sky-700 border-sky-200' },
         { label: 'Plant', tag: 'L3', color: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
         { label: 'Unit', tag: 'L4', color: 'bg-teal-100 text-teal-700 border-teal-200' },
@@ -2765,7 +2805,7 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
             );
         }
         return (
-            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 border border-purple-200">
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200">
                 âš™ï¸ {item.materialNumber} Â· {type}
             </span>
         );
@@ -3297,7 +3337,7 @@ function JobsTab({ asset }: { asset: Asset }) {
     const STATUS_COLORS: Record<string, string> = {
         OPEN: 'bg-blue-100 text-blue-700',
         WIP: 'bg-amber-100 text-amber-700',
-        SCHED: 'bg-indigo-100 text-indigo-700',
+        SCHED: 'bg-blue-100 text-blue-700',
         TECO: 'bg-emerald-100 text-emerald-700',
         CLOSED: 'bg-green-100 text-green-700',
         CANCELLED: 'bg-red-100 text-red-600',
@@ -3313,7 +3353,7 @@ function JobsTab({ asset }: { asset: Asset }) {
     const RCM_LABELS: Record<string, { label: string; color: string }> = {
         TIME_DIRECTED: { label: 'Time-Directed', color: 'bg-blue-100 text-blue-700' },
         CONDITION_DIRECTED: { label: 'Condition-Based', color: 'bg-teal-100 text-teal-700' },
-        FAILURE_FINDING: { label: 'Failure-Finding', color: 'bg-purple-100 text-purple-700' },
+        FAILURE_FINDING: { label: 'Failure-Finding', color: 'bg-blue-100 text-blue-700' },
         RUN_TO_FAILURE: { label: 'Run-to-Failure', color: 'bg-slate-100 text-slate-600' },
     };
 

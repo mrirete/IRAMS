@@ -7,23 +7,22 @@ import { NotificationCenter } from '../components/shell/NotificationCenter';
 import { ReliabilityPresenceWidget } from '../components/shell/ReliabilityPresenceWidget';
 
 const ROLE_COLORS: Record<string, string> = {
-    admin: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
-    engineer: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
-    planner: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-    technician: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
-    supervisor: 'bg-relantern-500/20 text-relantern-300 border-relantern-500/40',
-    manager: 'bg-orange-500/20 text-orange-300 border-orange-500/40',
-    viewer: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
-    safety_officer: 'bg-red-500/20 text-red-300 border-red-500/40',
+    admin: 'bg-blue-50 text-blue-600 border-blue-200',
+    engineer: 'bg-cyan-50 text-cyan-600 border-cyan-200',
+    planner: 'bg-sky-50 text-sky-600 border-sky-200',
+    technician: 'bg-emerald-50 text-emerald-600 border-emerald-200',
+    supervisor: 'bg-relantern-50 text-relantern-700 border-relantern-200',
+    manager: 'bg-orange-50 text-orange-600 border-orange-200',
+    viewer: 'bg-slate-50 text-slate-500 border-slate-200',
+    safety_officer: 'bg-red-50 text-red-600 border-red-200',
 };
 
 interface TopBarProps {
-    onToggleAgentPanel: () => void;
     onToggleSidebar: () => void;
     onTogglePreview?: () => void;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSidebar, onTogglePreview }) => {
+export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview }) => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
@@ -64,21 +63,21 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSide
         : '??';
 
     return (
-        <header className="h-14 md:h-16 bg-brand-800 border-b border-brand-700/60 flex items-center justify-between px-3 md:px-6 z-10 w-full">
+        <header className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 md:px-6 z-10 w-full shadow-sm">
             {/* Left: Hamburger (mobile) + Breadcrumb */}
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 <button
                     onClick={onToggleSidebar}
-                    className="md:hidden p-2 rounded-lg hover:bg-brand-700 text-brand-300 transition-colors flex-shrink-0"
+                    className="md:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors flex-shrink-0"
                     aria-label="Toggle sidebar"
                 >
                     <Menu size={20} />
                 </button>
                 {/* Mobile: compact brand */}
-                <span className="sm:hidden text-sm font-bold text-brand-100 tracking-wide truncate">IRAMS</span>
+                <span className="sm:hidden text-sm font-bold text-slate-800 tracking-wide truncate">IRAMS</span>
                 {/* Desktop: breadcrumb */}
-                <h2 className="hidden sm:block text-sm md:text-lg font-medium tracking-wide text-brand-100 truncate">
-                    Dashboard <span className="text-brand-500 mx-1">/</span> <span className="text-brand-300">Overview</span>
+                <h2 className="hidden sm:block text-sm md:text-lg font-medium tracking-wide text-slate-800 truncate">
+                    Dashboard <span className="text-slate-300 mx-1">/</span> <span className="text-slate-500">Overview</span>
                 </h2>
             </div>
 
@@ -86,11 +85,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSide
             <div className="flex items-center gap-2 md:gap-4">
                 {/* Search */}
                 <div className="relative hidden sm:block">
-                    <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-brand-400" />
+                    <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
                     <input
                         type="text"
                         placeholder="Search IRAMS..."
-                        className="bg-brand-900 border border-brand-600 rounded-lg text-sm pl-9 pr-4 py-1.5 focus:outline-none focus:border-relantern-500 focus:ring-1 focus:ring-relantern-500/30 w-40 md:w-56 text-brand-100 placeholder-brand-500 transition-all"
+                        className="bg-slate-50 border border-slate-200 rounded-lg text-sm pl-9 pr-4 py-1.5 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 w-40 md:w-56 text-slate-800 placeholder-slate-400 transition-all"
                     />
                 </div>
 
@@ -98,21 +97,21 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSide
 
                 <ReliabilityPresenceWidget />
 
-                {/* AI Panel Toggle — Relantern branded */}
+                {/* AI CoPilot Toggle — Relantern branded */}
                 <button
-                    onClick={onToggleAgentPanel}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-500/15 hover:bg-relantern-500/25 border border-relantern-500/30 text-relantern-300 hover:text-relantern-200 transition-all shadow-sm"
-                    title="Reliability Specialist"
+                    onClick={() => window.dispatchEvent(new CustomEvent('toggle-copilot'))}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
+                    title="Relantern CoPilot · AI Coach"
                 >
                     <Sparkles size={15} />
-                    <span className="font-bold text-xs hidden md:inline">AI</span>
+                    <span className="font-bold text-xs hidden md:inline">CoPilot</span>
                 </button>
 
                 {/* Device Preview Toggle */}
                 {onTogglePreview && (
                     <button 
                         onClick={onTogglePreview}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 hover:text-indigo-200 transition-all shadow-sm hidden sm:flex"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-600 hover:text-blue-700 transition-all shadow-sm hidden sm:flex"
                         title="Toggle Device Previewer"
                     >
                         <Monitor size={15} />
@@ -120,7 +119,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSide
                     </button>
                 )}
 
-                <button className="text-brand-400 hover:text-brand-100 transition-colors hidden md:block">
+                <button className="text-slate-400 hover:text-slate-700 transition-colors hidden md:block">
                     <Grid size={18} />
                 </button>
 
@@ -129,18 +128,18 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSide
                     <button
                         ref={triggerRef}
                         onClick={() => setMenuOpen(!menuOpen)}
-                        className="flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-brand-700/60 transition-colors"
+                        className="flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-slate-50 transition-colors"
                     >
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-relantern-400 to-relantern-600 border border-relantern-500/30 flex items-center justify-center text-xs font-bold text-white shadow-sm">
                             {initials}
                         </div>
                         {user && (
                             <div className="hidden lg:flex items-center gap-1.5">
-                                <span className="text-sm text-brand-100 font-medium">{user.full_name}</span>
-                                <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${ROLE_COLORS[user.role] || 'bg-brand-700 text-brand-300 border-brand-600'}`}>
+                                <span className="text-sm text-slate-700 font-medium">{user.full_name}</span>
+                                <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border ${ROLE_COLORS[user.role] || 'bg-slate-50 text-slate-500 border-slate-200'}`}>
                                     {user.role}
                                 </span>
-                                <ChevronDown size={14} className={`text-brand-400 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
+                                <ChevronDown size={14} className={`text-slate-400 transition-transform ${menuOpen ? 'rotate-180' : ''}`} />
                             </div>
                         )}
                     </button>
@@ -150,22 +149,22 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSide
                 {menuOpen && user && createPortal(
                     <div
                         ref={menuRef}
-                        className="fixed w-64 bg-brand-800 border border-brand-600 rounded-xl shadow-2xl shadow-black/50 z-[9999] animate-in slide-in-from-top-2 duration-150"
+                        className="fixed w-64 bg-white border border-slate-200 rounded-xl shadow-xl shadow-slate-200/50 z-[9999] animate-in slide-in-from-top-2 duration-150"
                         style={{ top: dropdownPos.top, right: dropdownPos.right }}
                     >
                         <div
-                            className="p-4 border-b border-brand-700 cursor-pointer hover:bg-brand-700/50 transition-colors rounded-t-xl"
+                            className="p-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors rounded-t-xl"
                             onClick={() => { setMenuOpen(false); navigate(`/contacts?id=${user.contactId}`); }}
                             title="View my profile in People module"
                         >
-                            <p className="text-sm font-semibold text-brand-50">{user.full_name}</p>
-                            <p className="text-xs text-brand-400 mt-0.5">{user.email}</p>
+                            <p className="text-sm font-semibold text-slate-800">{user.full_name}</p>
+                            <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
                             <div className="flex items-center gap-2 mt-2">
-                                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${ROLE_COLORS[user.role] || 'bg-brand-700 text-brand-300'}`}>
+                                <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${ROLE_COLORS[user.role] || 'bg-slate-50 text-slate-500'}`}>
                                     {user.role}
                                 </span>
                                 {user.departments.map(d => (
-                                    <span key={d} className="text-[10px] text-brand-300 bg-brand-900 px-1.5 py-0.5 rounded">{d}</span>
+                                    <span key={d} className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">{d}</span>
                                 ))}
                             </div>
                         </div>
@@ -173,18 +172,18 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleAgentPanel, onToggleSide
                         <div className="p-2">
                             <button
                                 onClick={() => { setMenuOpen(false); navigate(`/contacts?id=${user.contactId}`); }}
-                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-brand-200 hover:bg-brand-700 hover:text-brand-50 rounded-lg transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-lg transition-colors"
                             >
                                 <UserIcon size={14} />
                                 My Profile
                             </button>
-                            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-brand-200 hover:bg-brand-700 hover:text-brand-50 rounded-lg transition-colors">
+                            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-lg transition-colors">
                                 <Shield size={14} />
                                 Security Settings
                             </button>
                             <button
                                 onClick={handleLogout}
-                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                             >
                                 <LogOut size={14} />
                                 Sign Out

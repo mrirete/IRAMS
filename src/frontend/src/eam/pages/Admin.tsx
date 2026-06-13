@@ -667,7 +667,7 @@ const DictionaryManager: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-4 text-center">
                                                 {entry.isManufacturer ? (
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
                                                         Yes
                                                     </span>
                                                 ) : <span className="text-slate-300">-</span>}
@@ -1299,7 +1299,7 @@ const UserPermissionManager: React.FC = () => {
                                                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Additional Roles (Multi-Role)</label>
                                                             <div className="flex flex-wrap gap-2 mb-2">
                                                                 {linkedContact.types.filter(t => t !== linkedContact.defaultType).map(roleCode => (
-                                                                    <span key={roleCode} className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-100">
+                                                                    <span key={roleCode} className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs font-bold rounded-lg border border-blue-100">
                                                                         {roles.find(r => r.code === roleCode)?.description || roleCode}
                                                                         <button
                                                                             onClick={() => handleRemoveRole(roleCode)}
@@ -2052,7 +2052,7 @@ export const Admin: React.FC = () => {
                                         <button
                                             id="seed-dictionaries-btn"
                                             onClick={handleSeedDictionaries}
-                                            className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 shadow-sm"
+                                            className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-sm"
                                         >
                                             Seed Dictionaries
                                         </button>

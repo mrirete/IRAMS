@@ -359,7 +359,7 @@ export const Readings: React.FC = () => {
                                 <p className="text-xs text-slate-500 truncate mb-2">{asset.name}</p>
                                 <div className="flex flex-wrap gap-1">
                                     {assetDefs.map(d => (
-                                        <span key={d.id} className={`text-[10px] px-1.5 rounded border flex items-center gap-1 ${d.category === 'METER' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-purple-50 text-purple-700 border-purple-100'}`}>
+                                        <span key={d.id} className={`text-[10px] px-1.5 rounded border flex items-center gap-1 ${d.category === 'METER' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
                                             {d.category === 'METER' ? <Clock size={10} /> : <Activity size={10} />}
                                             {d.name}
                                         </span>
@@ -830,7 +830,7 @@ const BatchEntryView: React.FC<{
                                     </td>
                                     <td className="px-4 py-3">
                                         <div className="flex items-center gap-2">
-                                            {def.category === 'METER' ? <Clock size={14} className="text-blue-500" /> : <Activity size={14} className="text-purple-500" />}
+                                            {def.category === 'METER' ? <Clock size={14} className="text-blue-500" /> : <Activity size={14} className="text-blue-500" />}
                                             <span className="text-sm font-medium text-slate-700 truncate max-w-[120px]">{def.name}</span>
                                         </div>
                                         <div className="text-[10px] text-slate-400 mt-0.5">{def.unit}</div>
@@ -993,7 +993,7 @@ const DefinitionsManager: React.FC<{
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <h4 className="font-bold text-slate-900">{def.name}</h4>
-                            {def.category === 'METER' ? <Clock size={14} className="text-blue-500" /> : <Activity size={14} className="text-purple-500" />}
+                            {def.category === 'METER' ? <Clock size={14} className="text-blue-500" /> : <Activity size={14} className="text-blue-500" />}
                         </div>
                         <div className="text-xs text-slate-500">
                             Unit: {def.unit} | Limits: {def.minCritical || '-'} / {def.maxCritical || '-'}

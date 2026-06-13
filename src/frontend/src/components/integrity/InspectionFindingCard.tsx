@@ -19,7 +19,7 @@ const SEVERITY_CONFIG: Record<FindingSeverity, { label: string; bg: string; text
 
 const STATUS_CONFIG: Record<FindingStatus, { label: string; bg: string; text: string }> = {
     open: { label: 'Open', bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
-    actioned: { label: 'Actioned', bg: 'bg-violet-50 border-violet-200', text: 'text-violet-700' },
+    actioned: { label: 'Actioned', bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
     deferred: { label: 'Deferred', bg: 'bg-amber-50 border-amber-200', text: 'text-amber-700' },
     closed: { label: 'Closed', bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
 };
@@ -103,7 +103,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                         )}
                         {/* Measurement */}
                         {finding.measurement_value != null && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-md bg-violet-50 text-violet-700 border border-violet-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-50 text-blue-700 border border-blue-200">
                                 <Gauge size={9} /> {finding.measurement_value} {finding.measurement_unit || 'mm'}
                             </span>
                         )}
@@ -295,7 +295,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                                             setDraftingWR(false);
                                         }}
                                         disabled={draftingWR || wrDrafted || !onDraftWR}
-                                        className={`flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-all ${wrDrafted ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-violet-700 bg-violet-50 border-violet-200 hover:bg-violet-100'} disabled:opacity-50`}
+                                        className={`flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-all ${wrDrafted ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100'} disabled:opacity-50`}
                                     >
                                         {draftingWR ? <><Loader2 size={11} className="animate-spin" /> Drafting…</>
                                             : wrDrafted ? <><CheckCircle2 size={11} /> WR Drafted</>

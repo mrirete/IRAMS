@@ -75,9 +75,9 @@ const BARRIER_ASSESSMENTS = [
 ];
 
 const TAXONOMY_BADGES: Record<string, { label: string; color: string; bg: string; border: string }> = {
-    site:      { label: 'SITE',    color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200' },
+    site:      { label: 'SITE',    color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
     unit:      { label: 'UNIT',    color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
-    system:    { label: 'SYSTEM',  color: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-200' },
+    system:    { label: 'SYSTEM',  color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
     equipment: { label: 'EQUIP',   color: 'text-cyan-700', bg: 'bg-cyan-50', border: 'border-cyan-200' },
     subunit:   { label: 'SUBUNIT', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200' },
     component: { label: 'COMP',    color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
@@ -608,7 +608,7 @@ export function RCAInvestigationPage() {
         return (
             <div className="bg-slate-50 min-h-screen p-6 md:p-8 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3 text-slate-500">
-                    <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+                    <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
                     <p className="text-sm font-medium animate-pulse">Loading investigation details…</p>
                 </div>
             </div>
@@ -647,7 +647,7 @@ export function RCAInvestigationPage() {
                             <span className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full border tracking-wide uppercase ${
                                 inv?.status === 'closed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                 inv?.status === 'review' ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                'bg-blue-50 text-blue-700 border-blue-200'
                             }`}>
                                 {inv?.status?.toUpperCase() || 'DRAFT'}
                             </span>
@@ -662,7 +662,7 @@ export function RCAInvestigationPage() {
                                 )}
                                 <button
                                     onClick={() => setShowTeamPanel(true)}
-                                    className="px-3.5 py-2 text-xs font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                                    className="px-3.5 py-2 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                                 >
                                     <Users size={14} strokeWidth={2.5} /> {rcaCollaborators.length > 0 ? `Team (${rcaCollaborators.length})` : 'Invite Team'}
                                 </button>
@@ -675,7 +675,7 @@ export function RCAInvestigationPage() {
                             </>
                         )}
                         <button 
-                            className="px-4.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
+                            className="px-4.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
                             onClick={handleSave} 
                             disabled={saving}
                         >
@@ -713,14 +713,14 @@ export function RCAInvestigationPage() {
                                 onClick={() => goStep(st.num)}
                                 className={`flex items-center gap-2 px-3.5 py-2.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shrink-0 ${
                                     active 
-                                        ? 'border-indigo-200/60 bg-indigo-50/50 text-indigo-700' 
+                                        ? 'border-blue-200/60 bg-blue-50/50 text-blue-700' 
                                         : done 
                                             ? 'border-transparent text-emerald-600 hover:text-emerald-700 hover:bg-slate-50/50' 
                                             : 'border-transparent text-slate-400 hover:text-slate-700 hover:bg-slate-50/80'
                                 }`}
                             >
                                 <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 text-[10px] font-bold ${
-                                    done ? 'bg-emerald-100 text-emerald-700' : active ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-400'
+                                    done ? 'bg-emerald-100 text-emerald-700' : active ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-400'
                                 }`}>
                                     {done ? <Check size={11} strokeWidth={3} /> : st.num}
                                 </div>
@@ -738,14 +738,14 @@ export function RCAInvestigationPage() {
                     <div className="space-y-6">
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-5 flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-indigo-600" /> Problem Definition & 3W2H
+                                <FileText className="w-4 h-4 text-blue-600" /> Problem Definition & 3W2H
                             </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Investigation Title *</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         value={draft.title} 
                                         onChange={e => setDraft(d => ({ ...d, title: e.target.value }))} 
                                         placeholder="e.g. Premature Seal Failure — PMP-411" 
@@ -754,7 +754,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">RCA Category</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={draft.rca_category} 
                                         onChange={e => setDraft(d => ({ ...d, rca_category: e.target.value }))}
                                     >
@@ -767,7 +767,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Investigation Type</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={draft.investigation_type} 
                                         onChange={e => setDraft(d => ({ ...d, investigation_type: e.target.value }))}
                                     >
@@ -781,7 +781,7 @@ export function RCAInvestigationPage() {
                             <div className="mb-5">
                                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Problem Statement (What happened?) *</label>
                                 <textarea 
-                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm min-h-[90px] resize-y"
+                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm min-h-[90px] resize-y"
                                     value={draft.problem_statement} 
                                     onChange={e => setDraft(d => ({ ...d, problem_statement: e.target.value }))} 
                                     placeholder="Describe the failure event, symptoms, and sequence of events…" 
@@ -794,7 +794,7 @@ export function RCAInvestigationPage() {
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Linked EAM Asset</label>
                                     {draft.asset_id ? (
                                         <div className="flex items-center gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                                            <Database size={16} className="text-indigo-600 shrink-0" />
+                                            <Database size={16} className="text-blue-600 shrink-0" />
                                             {(() => {
                                                 const sel = allHierarchyAssets.find(a => a.id === draft.asset_id);
                                                 return sel ? (
@@ -824,7 +824,7 @@ export function RCAInvestigationPage() {
                                                 onChange={e => { setNewAssetSearch(e.target.value); setShowNewAssetDropdown(true); }}
                                                 onFocus={() => setShowNewAssetDropdown(true)}
                                                 placeholder="Search asset register by tag, name, or level…"
-                                                className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                                className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                             />
                                             {showNewAssetDropdown && (
                                                 <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto border-t border-slate-100">
@@ -860,14 +860,14 @@ export function RCAInvestigationPage() {
                                     {/* EAM Asset Context Card */}
                                     {formAssetLoading ? (
                                         <div className="flex items-center gap-2 p-4 text-xs font-semibold text-slate-500">
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" /> Loading asset context...
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" /> Loading asset context...
                                         </div>
                                     ) : formAssetDetail ? (
                                         <div className="mt-3 bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3">
                                             {/* Breadcrumb */}
                                             {formAssetDetail.breadcrumb?.length > 0 && (
                                                 <div className="flex items-center gap-1.5 flex-wrap text-xs font-semibold text-slate-500">
-                                                    <MapPin size={12} className="text-indigo-600 shrink-0" />
+                                                    <MapPin size={12} className="text-blue-600 shrink-0" />
                                                     {formAssetDetail.breadcrumb.map((crumb: any, i: number) => (
                                                         <React.Fragment key={i}>
                                                             {i > 0 && <ChevronRight size={10} className="text-slate-300" />}
@@ -922,7 +922,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Event Date</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         type="date" 
                                         value={draft.event_date} 
                                         onChange={e => setDraft(d => ({ ...d, event_date: e.target.value }))} 
@@ -931,7 +931,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Event Location / Functional Path</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         value={draft.event_location} 
                                         onChange={e => setDraft(d => ({ ...d, event_location: e.target.value }))} 
                                         placeholder="e.g. Site A › Unit 1 › System A" 
@@ -943,14 +943,14 @@ export function RCAInvestigationPage() {
                         {/* 3W2H Details */}
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-5 flex items-center gap-2">
-                                <Search className="w-4 h-4 text-indigo-600" /> 3W2H Causal Assessment (Event Details)
+                                <Search className="w-4 h-4 text-blue-600" /> 3W2H Causal Assessment (Event Details)
                             </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">What component failed? (What)</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         value={draft.event_what} 
                                         onChange={e => setDraft(d => ({ ...d, event_what: e.target.value }))} 
                                         placeholder="e.g. Pump Mechanical Seal Carbon Face" 
@@ -959,7 +959,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">How did it fail? (How)</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         value={draft.event_how} 
                                         onChange={e => setDraft(d => ({ ...d, event_how: e.target.value }))} 
                                         placeholder="e.g. Heavy thermal cracking and chipping along face" 
@@ -971,7 +971,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Downtime (Hours)</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         type="number" 
                                         value={draft.event_how_much.downtime_hrs || ''} 
                                         onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, downtime_hrs: Number(e.target.value) } }))} 
@@ -980,7 +980,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Estimated Cost ($)</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         type="number" 
                                         value={draft.event_how_much.cost || ''} 
                                         onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, cost: Number(e.target.value) } }))} 
@@ -989,7 +989,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Safety Tier Impact</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={draft.event_how_much.safety_tier || ''} 
                                         onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, safety_tier: e.target.value } }))}
                                     >
@@ -1003,7 +1003,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Environmental Impact</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={draft.event_how_much.env_impact || ''} 
                                         onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, env_impact: e.target.value } }))}
                                     >
@@ -1023,14 +1023,14 @@ export function RCAInvestigationPage() {
                     <div className="space-y-6">
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <Database className="w-4 h-4 text-indigo-600" /> Evidence Library & Data Log
+                                <Database className="w-4 h-4 text-blue-600" /> Evidence Library & Data Log
                             </div>
                             
                             <div className="space-y-2">
                                 {evidence.map(ev => (
                                     <div key={ev.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100/50 transition-all">
                                         <div className="flex items-center gap-2 flex-wrap">
-                                            <span className="text-[9px] font-extrabold px-2 py-0.5 rounded border border-indigo-200 bg-indigo-50 text-indigo-700 tracking-wide uppercase">{ev.evidence_type}</span>
+                                            <span className="text-[9px] font-extrabold px-2 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 tracking-wide uppercase">{ev.evidence_type}</span>
                                             <span className="text-sm text-slate-800 font-bold">{ev.title}</span>
                                             {ev.content && <span className="text-xs text-slate-500 font-medium">— {ev.content}</span>}
                                         </div>
@@ -1051,7 +1051,7 @@ export function RCAInvestigationPage() {
                                 <div className="w-full md:w-40 shrink-0">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Evidence Type</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={newEvType} 
                                         onChange={e => setNewEvType(e.target.value)}
                                     >
@@ -1067,7 +1067,7 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Evidence Title</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="Title / Reference Tag" 
                                         value={newEvTitle} 
                                         onChange={e => setNewEvTitle(e.target.value)} 
@@ -1076,14 +1076,14 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Content / Attachment details</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="Content / URL / Note Details" 
                                         value={newEvContent} 
                                         onChange={e => setNewEvContent(e.target.value)} 
                                     />
                                 </div>
                                 <button 
-                                    className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs md:h-[38px] shrink-0"
+                                    className="bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs md:h-[38px] shrink-0"
                                     onClick={addEvidence}
                                 >
                                     <Plus size={14} strokeWidth={2.5} /> Add
@@ -1114,11 +1114,11 @@ export function RCAInvestigationPage() {
                 {activeStep === 3 && inv && (
                     <div className="space-y-6">
                         {/* Tool Selection Guidance Card */}
-                        <div className="bg-gradient-to-br from-indigo-50/50 to-purple-50/50 border border-indigo-200/60 rounded-xl p-5 md:p-6 shadow-sm">
-                            <div className="text-sm sm:text-base font-extrabold text-indigo-900 pb-2 flex items-center gap-2">
-                                <AlertTriangle size={16} className="text-indigo-600" /> Which RCA Tool Should I Use?
+                        <div className="bg-gradient-to-br from-blue-50/50 to-blue-50/50 border border-blue-200/60 rounded-xl p-5 md:p-6 shadow-sm">
+                            <div className="text-sm sm:text-base font-extrabold text-blue-900 pb-2 flex items-center gap-2">
+                                <AlertTriangle size={16} className="text-blue-600" /> Which RCA Tool Should I Use?
                             </div>
-                            <p className="text-xs text-indigo-950/60 font-medium mb-4">
+                            <p className="text-xs text-blue-950/60 font-medium mb-4">
                                 The type of problem determines the best analysis method. Select a methodology below to use for building the causal framework.
                             </p>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1126,7 +1126,7 @@ export function RCAInvestigationPage() {
                                     { type: 'Simple / single-cause', tool: '5-Why Analysis', why: 'Linear cause chain — quick for straightforward failures', method: 'five_why', color: 'border-emerald-500 text-emerald-700 bg-emerald-50/20' },
                                     { type: 'Multiple contributing factors', tool: 'Fishbone (Ishikawa)', why: 'Category-based brainstorming (6M) for complex interactions', method: 'fishbone', color: 'border-blue-500 text-blue-700 bg-blue-50/20' },
                                     { type: 'Safety-critical / quantitative', tool: 'Fault Tree Analysis', why: 'Boolean AND/OR gates with probability calculations for SIL/PSM', method: 'fault_tree', color: 'border-rose-500 text-rose-700 bg-rose-50/20' },
-                                    { type: 'Chronic recurring failures', tool: 'Logic Tree (LTA)', why: 'Physical → Human → Latent structured decision tree — the RCFA workhorse', method: 'logic_tree', color: 'border-purple-500 text-purple-700 bg-purple-50/20' },
+                                    { type: 'Chronic recurring failures', tool: 'Logic Tree (LTA)', why: 'Physical → Human → Latent structured decision tree — the RCFA workhorse', method: 'logic_tree', color: 'border-blue-500 text-blue-700 bg-blue-50/20' },
                                 ].map(g => {
                                     const isSelected = inv.method === g.method;
                                     return (
@@ -1153,12 +1153,12 @@ export function RCAInvestigationPage() {
 
                         {/* ── AI Method Recommendation ─────────────── */}
                         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                            <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-violet-50 to-purple-50 border-b border-violet-100">
+                            <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-blue-50 to-blue-50 border-b border-blue-100">
                                 <div className="flex items-center gap-2">
                                     <span className="text-lg">🤖</span>
-                                    <span className="text-xs font-extrabold text-violet-900 uppercase tracking-wider">AI Method Advisor</span>
+                                    <span className="text-xs font-extrabold text-blue-900 uppercase tracking-wider">AI Method Advisor</span>
                                 </div>
-                                <span className="text-[9px] font-semibold text-violet-400 italic">HITL · Advisory Only</span>
+                                <span className="text-[9px] font-semibold text-blue-400 italic">HITL · Advisory Only</span>
                             </div>
                             <div className="px-5 py-4">
                                 {!aiMethodRec && !aiMethodLoading && (
@@ -1190,7 +1190,7 @@ export function RCAInvestigationPage() {
                                                 }
                                                 setAiMethodLoading(false);
                                             }}
-                                            className="px-5 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-xs font-bold rounded-lg shadow-md shadow-violet-500/20 hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-2"
+                                            className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-600 text-white text-xs font-bold rounded-lg shadow-md shadow-blue-500/20 hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-2"
                                         >
                                             <Zap size={13} /> Ask AI to Recommend
                                         </button>
@@ -1199,8 +1199,8 @@ export function RCAInvestigationPage() {
 
                                 {aiMethodLoading && (
                                     <div className="flex items-center justify-center gap-3 py-6">
-                                        <Loader2 size={18} className="animate-spin text-violet-500" />
-                                        <span className="text-sm text-violet-600 font-semibold">Analyzing problem context…</span>
+                                        <Loader2 size={18} className="animate-spin text-blue-500" />
+                                        <span className="text-sm text-blue-600 font-semibold">Analyzing problem context…</span>
                                     </div>
                                 )}
 
@@ -1220,7 +1220,7 @@ export function RCAInvestigationPage() {
                                                 aiMethodRec.method === 'five_why' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                                 : aiMethodRec.method === 'fishbone' ? 'bg-blue-50 text-blue-700 border-blue-200'
                                                 : aiMethodRec.method === 'fault_tree' ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                                : 'bg-purple-50 text-purple-700 border-purple-200'
+                                                : 'bg-blue-50 text-blue-700 border-blue-200'
                                             }`}>
                                                 {METHODS.find(m => m.value === aiMethodRec.method)?.label || aiMethodRec.method}
                                             </span>
@@ -1301,7 +1301,7 @@ export function RCAInvestigationPage() {
                                                     }
                                                     setAiMethodLoading(false);
                                                 }}
-                                                className="px-3 py-2 text-[11px] font-semibold rounded-lg text-violet-500 hover:text-violet-700 hover:bg-violet-50 transition-all flex items-center gap-1"
+                                                className="px-3 py-2 text-[11px] font-semibold rounded-lg text-blue-500 hover:text-blue-700 hover:bg-blue-50 transition-all flex items-center gap-1"
                                             >
                                                 <Zap size={10} /> Re-analyze
                                             </button>
@@ -1314,11 +1314,11 @@ export function RCAInvestigationPage() {
                         {/* Analysis Method Selection */}
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <Settings size={16} className="text-indigo-600" /> Active Analysis Method
+                                <Settings size={16} className="text-blue-600" /> Active Analysis Method
                             </div>
                             <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
                                 <select
-                                    className="w-full sm:w-64 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer shrink-0"
+                                    className="w-full sm:w-64 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer shrink-0"
                                     value={inv.method || 'five_why'}
                                     onChange={async e => {
                                         const newMethod = e.target.value;
@@ -1362,7 +1362,7 @@ export function RCAInvestigationPage() {
                         {!VISUAL_DIAGRAM_METHODS.includes(inv.method || '') && (
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <AlertTriangle size={16} className="text-indigo-600" /> Causal Factor Identification
+                                <AlertTriangle size={16} className="text-blue-600" /> Causal Factor Identification
                             </div>
                             
                             <div className="space-y-2 mb-5">
@@ -1374,14 +1374,14 @@ export function RCAInvestigationPage() {
                                     >
                                         <div className="flex items-center gap-2 flex-wrap">
                                             {n.is_root_cause && <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-rose-200 bg-rose-50 text-rose-700 tracking-wide uppercase">ROOT CAUSE</span>}
-                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-indigo-200 bg-indigo-50 text-indigo-700 tracking-wide uppercase">
+                                            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 tracking-wide uppercase">
                                                 {n.node_type === 'problem' ? 'PROBLEM' : n.node_type === 'why' ? `WHY ${n.depth}` : n.node_type.toUpperCase()}
                                             </span>
                                             {n.cause_category && (
                                                 <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border tracking-wide uppercase ${
                                                     n.cause_category === 'physical' ? 'border-red-200 bg-red-50 text-red-700' :
                                                     n.cause_category === 'human' ? 'border-amber-200 bg-amber-50 text-amber-700' :
-                                                    'border-purple-200 bg-purple-50 text-purple-700'
+                                                    'border-blue-200 bg-blue-50 text-blue-700'
                                                 }`}>
                                                     {n.cause_category}
                                                 </span>
@@ -1407,7 +1407,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Node Type</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newNodeType} 
                                             onChange={e => setNewNodeType(e.target.value)}
                                         >
@@ -1421,7 +1421,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Cause Layer</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newNodeCauseCategory} 
                                             onChange={e => setNewNodeCauseCategory(e.target.value)}
                                         >
@@ -1432,7 +1432,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">ISO 14224 Code</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newNodeCauseCode} 
                                             onChange={e => setNewNodeCauseCode(e.target.value)}
                                         >
@@ -1444,14 +1444,14 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1 lg:flex-[2]">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Statement Description</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="Description of this Causal Event" 
                                         value={newNodeDesc} 
                                         onChange={e => setNewNodeDesc(e.target.value)} 
                                     />
                                 </div>
                                 <button 
-                                    className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs lg:h-[38px] shrink-0"
+                                    className="bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs lg:h-[38px] shrink-0"
                                     onClick={addNode}
                                 >
                                     <Plus size={14} strokeWidth={2.5} /> Add
@@ -1463,7 +1463,7 @@ export function RCAInvestigationPage() {
                         {/* Barrier Analysis */}
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <Shield className="w-4 h-4 text-indigo-600" /> Barrier Analysis (Defense-in-Depth)
+                                <Shield className="w-4 h-4 text-blue-600" /> Barrier Analysis (Defense-in-Depth)
                             </div>
                             <p className="text-xs text-slate-400 font-medium mb-4">
                                 Define what design controls, technical trips, human checks, or organizational policies should have prevented or mitigated this failure.
@@ -1497,7 +1497,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Type</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newBarrierType} 
                                             onChange={e => setNewBarrierType(e.target.value)}
                                         >
@@ -1507,7 +1507,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Classification</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newBarrierClass} 
                                             onChange={e => setNewBarrierClass(e.target.value)}
                                         >
@@ -1517,7 +1517,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Effectiveness</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newBarrierAssessment} 
                                             onChange={e => setNewBarrierAssessment(e.target.value)}
                                         >
@@ -1528,14 +1528,14 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1 lg:flex-[2]">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Safeguard Description</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="Trips, training guidelines, mechanical containment, etc." 
                                         value={newBarrierDesc} 
                                         onChange={e => setNewBarrierDesc(e.target.value)} 
                                     />
                                 </div>
                                 <button 
-                                    className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs lg:h-[38px] shrink-0"
+                                    className="bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs lg:h-[38px] shrink-0"
                                     onClick={addBarrier}
                                 >
                                     <Plus size={14} strokeWidth={2.5} /> Add
@@ -1550,7 +1550,7 @@ export function RCAInvestigationPage() {
                     <div className="space-y-6">
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <Wrench className="w-4 h-4 text-indigo-600" /> Corrective Actions & Recommendations
+                                <Wrench className="w-4 h-4 text-blue-600" /> Corrective Actions & Recommendations
                             </div>
                             <p className="text-xs text-slate-400 font-medium mb-5">
                                 Formulate corrective action plans. Group recommendations cleanly under cause categories (Physical, Human, Latent).
@@ -1616,7 +1616,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Target Cause Category</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newActionCategory} 
                                             onChange={e => setNewActionCategory(e.target.value)}
                                         >
@@ -1626,7 +1626,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Action Horizon</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newActionType} 
                                             onChange={e => setNewActionType(e.target.value)}
                                         >
@@ -1638,7 +1638,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Assignee</label>
                                         <input 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                             placeholder="Assignee Name" 
                                             value={newActionAssignee} 
                                             onChange={e => setNewActionAssignee(e.target.value)} 
@@ -1647,7 +1647,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Due Date</label>
                                         <input 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                             type="date" 
                                             value={newActionDue} 
                                             onChange={e => setNewActionDue(e.target.value)} 
@@ -1657,14 +1657,14 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1 lg:flex-[2]">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Action Recommendation Details</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="e.g. Conduct MoC to replace seal grade to Viton Extreme-90" 
                                         value={newActionDesc} 
                                         onChange={e => setNewActionDesc(e.target.value)} 
                                     />
                                 </div>
                                 <button 
-                                    className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs lg:h-[38px] shrink-0"
+                                    className="bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs lg:h-[38px] shrink-0"
                                     onClick={addAction}
                                 >
                                     <Plus size={14} strokeWidth={2.5} /> Add
@@ -1679,7 +1679,7 @@ export function RCAInvestigationPage() {
                     <div className="space-y-6">
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-5 flex items-center gap-2">
-                                <ClipboardList className="w-4 h-4 text-indigo-600" /> Implementation Tracker
+                                <ClipboardList className="w-4 h-4 text-blue-600" /> Implementation Tracker
                             </div>
                             
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
@@ -1704,7 +1704,7 @@ export function RCAInvestigationPage() {
                             <div className="mb-6 space-y-1.5">
                                 <div className="flex justify-between items-center text-xs font-bold text-slate-500">
                                     <span>TASK EXECUTION PROGRESS</span>
-                                    <span className="text-indigo-600">{actions.length ? Math.round((actions.filter(a => a.status === 'completed').length / actions.length) * 100) : 0}%</span>
+                                    <span className="text-blue-600">{actions.length ? Math.round((actions.filter(a => a.status === 'completed').length / actions.length) * 100) : 0}%</span>
                                 </div>
                                 <div className="w-full bg-slate-100 border border-slate-200/50 rounded-full h-2.5 overflow-hidden">
                                     <div 
@@ -1721,14 +1721,14 @@ export function RCAInvestigationPage() {
                                             <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded border shrink-0 tracking-wide uppercase ${
                                                 a.cause_category === 'physical' ? 'bg-red-50 border-red-200 text-red-700' :
                                                 a.cause_category === 'human' ? 'bg-amber-50 border-amber-200 text-amber-700' :
-                                                'bg-purple-50 border-purple-200 text-purple-700'
+                                                'bg-blue-50 border-blue-200 text-blue-700'
                                             }`}>
                                                 {a.cause_category}
                                             </span>
                                             <span className="text-sm font-bold text-slate-800">{a.action_description}</span>
                                         </div>
                                         <select 
-                                            className="w-full sm:w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all cursor-pointer shadow-xs shrink-0"
+                                            className="w-full sm:w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs shrink-0"
                                             value={a.status} 
                                             onChange={async e => {
                                                 const updated = await analyzeService.updateRCACorrectiveAction(a.id, { status: e.target.value as any });
@@ -1756,14 +1756,14 @@ export function RCAInvestigationPage() {
                     <div className="space-y-6">
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-5 flex items-center gap-2">
-                                <BarChart3 className="w-4 h-4 text-indigo-600" /> Effectiveness Verification & Audit
+                                <BarChart3 className="w-4 h-4 text-blue-600" /> Effectiveness Verification & Audit
                             </div>
                             
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Effectiveness Review Due Date</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         type="date" 
                                         value={inv.effectiveness_due?.split('T')[0] || ''} 
                                         onChange={async e => {
@@ -1775,7 +1775,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Effectiveness Verification Status</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={inv.effectiveness_status || 'pending'} 
                                         onChange={async e => {
                                             await analyzeService.updateRCAInvestigation(inv.id, { effectiveness_status: e.target.value } as any);
@@ -1793,7 +1793,7 @@ export function RCAInvestigationPage() {
                             <div>
                                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Root Cause Summary (Final Engineering Sign-off)</label>
                                 <textarea 
-                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm min-h-[100px] resize-y"
+                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm min-h-[100px] resize-y"
                                     value={inv.root_cause_summary || ''} 
                                     onChange={async e => {
                                         const val = e.target.value;
@@ -1810,7 +1810,7 @@ export function RCAInvestigationPage() {
                         {/* Audit Trail */}
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <Clock size={16} className="text-indigo-600" /> Audit Log History
+                                <Clock size={16} className="text-blue-600" /> Audit Log History
                             </div>
                             
                             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
@@ -1818,7 +1818,7 @@ export function RCAInvestigationPage() {
                                     <div key={log.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100/50 transition-all text-xs text-slate-600">
                                         <div className="flex items-center gap-2.5 flex-wrap">
                                             <span className="text-slate-400 font-bold shrink-0">{new Date(log.created_at).toLocaleString()}</span>
-                                            <span className="text-[9px] font-extrabold px-2 py-0.5 rounded border border-indigo-100 bg-indigo-50 text-indigo-700 tracking-wide uppercase shrink-0">{log.action}</span>
+                                            <span className="text-[9px] font-extrabold px-2 py-0.5 rounded border border-blue-100 bg-blue-50 text-blue-700 tracking-wide uppercase shrink-0">{log.action}</span>
                                             <span className="text-slate-800 font-bold shrink-0">{log.changed_by}</span>
                                         </div>
                                     </div>
@@ -1869,11 +1869,11 @@ export function RCAInvestigationPage() {
                                     </div>
 
                                     {/* RCA source badge */}
-                                    <div className="flex items-center gap-2 p-3 bg-indigo-50/40 border border-indigo-100 rounded-xl text-xs text-slate-600 mb-4 shrink-0">
-                                        <Zap size={14} className="text-indigo-600 shrink-0" />
+                                    <div className="flex items-center gap-2 p-3 bg-blue-50/40 border border-blue-100 rounded-xl text-xs text-slate-600 mb-4 shrink-0">
+                                        <Zap size={14} className="text-blue-600 shrink-0" />
                                         <span>Source Investigation:</span>
-                                        <span className="font-bold text-indigo-700 truncate max-w-[200px]">{inv?.title || draft.title}</span>
-                                        <span className="ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded border border-indigo-200 bg-indigo-50 text-indigo-700 tracking-wide uppercase shrink-0">
+                                        <span className="font-bold text-blue-700 truncate max-w-[200px]">{inv?.title || draft.title}</span>
+                                        <span className="ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 tracking-wide uppercase shrink-0">
                                             {METHODS.find(m => m.value === (inv?.method || draft.method))?.label || 'RCA'}
                                         </span>
                                     </div>
@@ -1886,7 +1886,7 @@ export function RCAInvestigationPage() {
                                             <input 
                                                 value={deDraft.title}
                                                 onChange={e => setDeDraft(d => ({ ...d, title: e.target.value }))}
-                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm"
+                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
                                             />
                                         </div>
 
@@ -1922,7 +1922,7 @@ export function RCAInvestigationPage() {
                                             <select 
                                                 value={deDraft.priority}
                                                 onChange={e => setDeDraft(d => ({ ...d, priority: e.target.value as any }))}
-                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm cursor-pointer"
+                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             >
                                                 <option value="critical">Critical</option>
                                                 <option value="high">High</option>
@@ -1939,7 +1939,7 @@ export function RCAInvestigationPage() {
                                                     type="number" 
                                                     value={deDraft.annualCost}
                                                     onChange={e => setDeDraft(d => ({ ...d, annualCost: Number(e.target.value) }))}
-                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm mt-1"
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
                                                 />
                                             </div>
                                             <div>
@@ -1948,7 +1948,7 @@ export function RCAInvestigationPage() {
                                                     type="number" 
                                                     value={deDraft.estimatedSavings}
                                                     onChange={e => setDeDraft(d => ({ ...d, estimatedSavings: Number(e.target.value) }))}
-                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm mt-1"
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
                                                 />
                                             </div>
                                             <div>
@@ -1957,7 +1957,7 @@ export function RCAInvestigationPage() {
                                                     type="number" 
                                                     value={deDraft.implementationCost}
                                                     onChange={e => setDeDraft(d => ({ ...d, implementationCost: Number(e.target.value) }))}
-                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm mt-1"
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
                                                 />
                                             </div>
                                         </div>
@@ -1998,7 +1998,7 @@ export function RCAInvestigationPage() {
                     ) : <div />}
                     {activeStep < 6 ? (
                         <button 
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow"
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow"
                             onClick={async () => { await handleSave(); goStep(activeStep + 1); }}
                         >
                             Next <ChevronRight size={15} strokeWidth={2.5} />

@@ -33,7 +33,7 @@ import {
     ShieldCheck,
     Printer, Copy, ChevronLeft, Download, GitPullRequest,
     BarChart3, Shield, Box, Paperclip, AlertOctagon, Book, Package, Info, Bell, Send, Layers, Eye, Repeat,
-    DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2
+    DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2, Check
 } from 'lucide-react';
 import { InventoryPicker } from '../components/pickers/InventoryPicker';
 import { FinOpsService, type CostAllocation, type AssetFinancial, type WarrantyCheckResult, type CostAnomalyResult } from '../services/FinOpsService';
@@ -651,7 +651,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
 
             {/* Bulk Action Bar */}
             {selectedIds.size > 0 && (
-                <div className="px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 flex items-center justify-between gap-3">
+                <div className="px-3 py-2 bg-gradient-to-r from-blue-50 to-blue-50 border-b border-blue-200 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                         <div className="flex items-center gap-1.5">
                             <div className="w-5 h-5 bg-blue-600 rounded flex items-center justify-center">
@@ -857,7 +857,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                                     <div className="flex items-center gap-1">
                                         <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">{job.type}</span>
                                         {job.recurringWorkId && (
-                                            <span className="px-1 py-0.5 rounded bg-indigo-100 text-indigo-600 text-[9px] font-bold flex items-center gap-0.5" title="Generated from PM">
+                                            <span className="px-1 py-0.5 rounded bg-blue-100 text-blue-600 text-[9px] font-bold flex items-center gap-0.5" title="Generated from PM">
                                                 <Repeat size={8} />PM
                                             </span>
                                         )}
@@ -897,6 +897,18 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     // ── GAP-21: Styled modal states (replace native alert/confirm) ──
     const [showFinancialCloseModal, setShowFinancialCloseModal] = useState(false);
     const [journalDeleteId, setJournalDeleteId] = useState<string | null>(null);
+
+    // Resolve asset class for failure mode context filtering
+    const [resolvedAssetClass, setResolvedAssetClass] = useState<string>('');
+    useEffect(() => {
+        if (!localJob.assetId) return;
+        DatabaseService.getInstance().getAssets().then((assets: any[]) => {
+            const asset = assets.find((a: any) => a.id === localJob.assetId);
+            if (asset) {
+                setResolvedAssetClass(asset.assetClass || asset.assetCategory || asset.asset_class || asset.asset_category || '');
+            }
+        }).catch(() => {});
+    }, [localJob.assetId]);
 
     // ── Gatekeeper Protocol (Criticality A cancellation) ──
     const [showGatekeeperModal, setShowGatekeeperModal] = useState(false);
@@ -1277,7 +1289,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 onClose={onBack}
                 badges={
                     localJob.recurringWorkId ? (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center gap-1" title="Generated from Recurring Work">
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-200 flex items-center gap-1" title="Generated from Recurring Work">
                             <Repeat size={9} /> Source PM
                         </span>
                     ) : undefined
@@ -1409,7 +1421,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     {activeTab === 'jsa' && <JSATab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
                     {activeTab === 'resources' && <ResourcesTab job={localJob} users={users} contacts={contacts} onNavigateToTask={(taskId) => { setActiveTab('tasks'); }} dictionaries={dictionaries} />}
                     {activeTab === 'files' && <FilesTab job={localJob} onUpdate={updateJob} tasks={localJob.tasks || []} />}
-                    {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} />}
+                    {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} />}
                     {/* Placeholders */}
                     {[''].includes(activeTab) && (
                         <div className="flex flex-col items-center justify-center h-64 text-slate-400">
@@ -1794,13 +1806,19 @@ const SearchableSelect: React.FC<{
     options: { id: string; code: string; description: string; categoryRef?: string }[];
     placeholder: string;
     groupKey?: string; // When set, groups options by this field (e.g. 'categoryRef')
-}> = ({ value, onChange, options, placeholder, groupKey }) => {
+    allowManualEntry?: boolean; // Enable "Not in list?" manual code entry
+    allOptions?: { id: string; code: string; description: string }[]; // Full list for duplicate validation
+}> = ({ value, onChange, options, placeholder, groupKey, allowManualEntry = false, allOptions }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState('');
     const containerRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
     const listRef = useRef<HTMLUListElement>(null);
     const [highlightIdx, setHighlightIdx] = useState(-1);
+    const [showManualEntry, setShowManualEntry] = useState(false);
+    const [manualCode, setManualCode] = useState('');
+    const [manualDesc, setManualDesc] = useState('');
+    const [duplicateError, setDuplicateError] = useState('');
 
     // Close on click outside
     useEffect(() => {
@@ -1808,6 +1826,7 @@ const SearchableSelect: React.FC<{
             if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
                 setIsOpen(false);
                 setSearch('');
+                setShowManualEntry(false);
             }
         };
         document.addEventListener('mousedown', handler);
@@ -1874,10 +1893,15 @@ const SearchableSelect: React.FC<{
         onChange(code);
         setIsOpen(false);
         setSearch('');
+        setShowManualEntry(false);
     };
 
     const selectedLabel = value
-        ? (() => { const o = options.find(o => o.code === value); return o ? `${o.code} - ${o.description}` : value; })()
+        ? (() => {
+            if (value.startsWith('MANUAL:')) return value.replace('MANUAL:', '');
+            const o = options.find(o => o.code === value) || (allOptions || []).find(o => o.code === value);
+            return o ? `${o.code} — ${o.description}` : value;
+        })()
         : '';
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1885,16 +1909,34 @@ const SearchableSelect: React.FC<{
         if (e.key === 'ArrowDown') { setHighlightIdx(i => Math.min(i + 1, selectableItems.length - 1)); e.preventDefault(); }
         else if (e.key === 'ArrowUp') { setHighlightIdx(i => Math.max(i - 1, 0)); e.preventDefault(); }
         else if (e.key === 'Enter' && highlightIdx >= 0 && selectableItems[highlightIdx]?.option) { select(selectableItems[highlightIdx].option!.code); e.preventDefault(); }
-        else if (e.key === 'Escape') { setIsOpen(false); setSearch(''); }
+        else if (e.key === 'Escape') { setIsOpen(false); setSearch(''); setShowManualEntry(false); }
+    };
+
+    // Manual entry: validate for duplicate codes
+    const handleManualCodeChange = (code: string) => {
+        const upper = code.toUpperCase().replace(/[^A-Z0-9_]/g, '');
+        setManualCode(upper);
+        const checkList = allOptions || options;
+        const dup = checkList.find(o => o.code === upper);
+        setDuplicateError(dup ? `Code "${dup.code}" already exists: ${dup.description}` : '');
+    };
+
+    const submitManualEntry = () => {
+        if (!manualCode || !manualDesc || duplicateError) return;
+        onChange(`MANUAL:${manualCode} — ${manualDesc}`);
+        setShowManualEntry(false);
+        setIsOpen(false);
+        setManualCode('');
+        setManualDesc('');
     };
 
     return (
         <div ref={containerRef} className="relative">
             <div
                 className={`w-full p-2 border rounded-lg text-xs bg-white flex items-center gap-1 cursor-pointer transition-colors ${isOpen ? 'border-blue-400 ring-1 ring-blue-200' : 'border-slate-300 hover:border-slate-400'}`}
-                onClick={() => { setIsOpen(true); setTimeout(() => inputRef.current?.focus(), 0); }}
+                onClick={() => { setIsOpen(true); setShowManualEntry(false); setTimeout(() => inputRef.current?.focus(), 0); }}
             >
-                {isOpen ? (
+                {isOpen && !showManualEntry ? (
                     <input
                         ref={inputRef}
                         value={search}
@@ -1911,7 +1953,7 @@ const SearchableSelect: React.FC<{
                 )}
                 <ChevronDown size={14} className={`text-slate-400 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </div>
-            {isOpen && (
+            {isOpen && !showManualEntry && (
                 <ul ref={listRef} className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg py-1 text-xs">
                     {value && (
                         <li
@@ -1948,17 +1990,85 @@ const SearchableSelect: React.FC<{
                             );
                         })
                     )}
+                    {/* Manual Entry Trigger */}
+                    {allowManualEntry && (
+                        <li
+                            onClick={() => { setShowManualEntry(true); setIsOpen(true); }}
+                            className="px-3 py-2 border-t border-slate-200 bg-slate-50 text-center cursor-pointer hover:bg-blue-50 transition-colors"
+                        >
+                            <span className="text-xs font-medium text-blue-600 flex items-center justify-center gap-1.5">
+                                <Edit3 size={12} /> Not in list? Enter manually
+                            </span>
+                        </li>
+                    )}
                 </ul>
+            )}
+            {/* Manual Entry Panel */}
+            {showManualEntry && (
+                <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-blue-200 rounded-lg shadow-xl p-4 animate-in fade-in zoom-in-95 duration-100">
+                    <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-xs font-bold text-slate-700 uppercase">Manual Entry</h4>
+                        <button onClick={() => { setShowManualEntry(false); setIsOpen(true); }} className="text-slate-400 hover:text-slate-600">
+                            <X size={14} />
+                        </button>
+                    </div>
+                    <div className="space-y-2">
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Code <span className="text-red-500">*</span></label>
+                            <input
+                                type="text"
+                                value={manualCode}
+                                onChange={(e) => handleManualCodeChange(e.target.value)}
+                                placeholder="e.g. CUSTOM_MODE_01"
+                                className={`w-full p-2 border rounded-lg text-xs font-mono ${duplicateError ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
+                                maxLength={30}
+                                autoFocus
+                            />
+                            {duplicateError && (
+                                <p className="text-[10px] text-red-600 mt-0.5">{duplicateError}</p>
+                            )}
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Description <span className="text-red-500">*</span></label>
+                            <input
+                                type="text"
+                                value={manualDesc}
+                                onChange={(e) => setManualDesc(e.target.value)}
+                                placeholder="Describe the failure mode..."
+                                className="w-full p-2 border border-slate-300 rounded-lg text-xs"
+                            />
+                        </div>
+                        <div className="flex justify-between items-center pt-1">
+                            <p className="text-[9px] text-slate-400">Flagged for admin review.</p>
+                            <button
+                                onClick={submitManualEntry}
+                                disabled={!manualCode || !manualDesc || !!duplicateError}
+                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                            >
+                                <Check size={12} /> Apply
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );
 };
 
-const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange }) => {
+const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void, assetClassCode?: string }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange, assetClassCode }) => {
     const { profile } = useAuth();
-    // Dropdown Data
-    const failureModes = dictionaries.filter(d => d.type === 'FAILURE_MODE' && d.active);
-    const failureCauses = dictionaries.filter(d => d.type === 'FAILURE_CAUSE' && d.active);
+    // Dropdown Data — all failure modes (unfiltered, for duplicate validation)
+    const allFailureModes = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_MODE' && d.active), [dictionaries]);
+    // Context-filtered: General (no categoryRef) + matched asset class
+    const failureModes = useMemo(() => {
+        if (!assetClassCode) return allFailureModes;
+        return allFailureModes.filter(d => {
+            const ref = d.categoryRef;
+            return !ref || ref === assetClassCode;
+        });
+    }, [allFailureModes, assetClassCode]);
+    const allFailureCauses = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_CAUSE' && d.active), [dictionaries]);
+    const failureCauses = allFailureCauses; // Causes are not asset-specific
 
     // AI-assisted failure effects
     const [aiSuggestingEffects, setAiSuggestingEffects] = useState(false);
@@ -2084,7 +2194,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     const journalTypeColors: Record<string, string> = {
         'Note': 'bg-blue-100 text-blue-700',
         'Observation': 'bg-emerald-100 text-emerald-700',
-        'Handover': 'bg-purple-100 text-purple-700',
+        'Handover': 'bg-blue-100 text-blue-700',
         'Safety': 'bg-red-100 text-red-700',
         'SYSTEM': 'bg-slate-200 text-slate-600'
     };
@@ -2113,25 +2223,25 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                             </div>
                             {/* Show pre-populated failure impacts from PM template (read-only context) */}
                             {(job.failureData?.localImpact || job.failureData?.plantWideImpact) && (
-                                <div className="bg-indigo-50 p-3 rounded-lg border border-indigo-200">
-                                    <h4 className="text-[10px] font-bold text-indigo-700 uppercase mb-2 flex items-center gap-1">
+                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                                    <h4 className="text-[10px] font-bold text-blue-700 uppercase mb-2 flex items-center gap-1">
                                         <Shield size={11} /> PM Failure Impact Context (from PM Strategy)
                                     </h4>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         {job.failureData.localImpact && (
                                             <div>
-                                                <p className="text-[10px] font-bold text-indigo-600 uppercase mb-0.5">Local Impact</p>
-                                                <p className="text-xs text-indigo-800 bg-white p-2 rounded border border-indigo-100">{job.failureData.localImpact}</p>
+                                                <p className="text-[10px] font-bold text-blue-600 uppercase mb-0.5">Local Impact</p>
+                                                <p className="text-xs text-blue-800 bg-white p-2 rounded border border-blue-100">{job.failureData.localImpact}</p>
                                             </div>
                                         )}
                                         {job.failureData.plantWideImpact && (
                                             <div>
-                                                <p className="text-[10px] font-bold text-indigo-600 uppercase mb-0.5">Plant-Wide Impact</p>
-                                                <p className="text-xs text-indigo-800 bg-white p-2 rounded border border-indigo-100">{job.failureData.plantWideImpact}</p>
+                                                <p className="text-[10px] font-bold text-blue-600 uppercase mb-0.5">Plant-Wide Impact</p>
+                                                <p className="text-xs text-blue-800 bg-white p-2 rounded border border-blue-100">{job.failureData.plantWideImpact}</p>
                                             </div>
                                         )}
                                     </div>
-                                    <p className="text-[9px] text-indigo-400 mt-1.5">These impacts describe what this PM prevents. They are inherited from the parent PM strategy.</p>
+                                    <p className="text-[9px] text-blue-400 mt-1.5">These impacts describe what this PM prevents. They are inherited from the parent PM strategy.</p>
                                 </div>
                             )}
                         </div>
@@ -2158,7 +2268,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                                 setAiSuggestingModes(false);
                                             }}
                                             disabled={aiSuggestingModes}
-                                            className="text-[9px] font-medium text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5 transition disabled:opacity-50"
+                                            className="text-[9px] font-medium text-blue-600 hover:text-blue-800 flex items-center gap-0.5 transition disabled:opacity-50"
                                         >
                                             {aiSuggestingModes ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
                                             AI Suggest
@@ -2174,7 +2284,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                                 <button
                                                     key={code}
                                                     onClick={() => { handleFailureModeChange(code); setAiSuggestedModes([]); }}
-                                                    className="text-[9px] px-2 py-1 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200 hover:bg-indigo-100 transition"
+                                                    className="text-[9px] px-2 py-1 bg-blue-50 text-blue-700 rounded-full border border-blue-200 hover:bg-blue-100 transition"
                                                 >
                                                     {fm.description || code}
                                                 </button>
@@ -2188,6 +2298,8 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                     options={failureModes}
                                     placeholder="-- Select Failure Mode --"
                                     groupKey="categoryRef"
+                                    allowManualEntry
+                                    allOptions={allFailureModes}
                                 />
                             </div>
 
@@ -2198,6 +2310,8 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                     onChange={handleFailureCauseChange}
                                     options={failureCauses}
                                     placeholder="-- Select Failure Cause --"
+                                    allowManualEntry
+                                    allOptions={allFailureCauses}
                                 />
                             </div>
 
@@ -2244,7 +2358,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                                 setAiSuggestingEffects(false);
                                             }}
                                             disabled={aiSuggestingEffects}
-                                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md bg-gradient-to-r from-purple-500 to-indigo-500 text-white hover:from-purple-600 hover:to-indigo-600 transition-all disabled:opacity-50 shadow-sm"
+                                            className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md bg-gradient-to-r from-blue-500 to-blue-500 text-white hover:from-blue-600 hover:to-blue-600 transition-all disabled:opacity-50 shadow-sm"
                                         >
                                             {aiSuggestingEffects ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
                                             {aiSuggestingEffects ? 'Analyzing...' : '✨ AI Suggest'}
@@ -2274,7 +2388,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                     </div>
                                 </div>
                                 {job.recurringWorkId && (localLocalImpact || localPlantWideImpact) && (
-                                    <p className="text-[10px] text-indigo-500 mt-1.5 flex items-center gap-1">
+                                    <p className="text-[10px] text-blue-500 mt-1.5 flex items-center gap-1">
                                         <Shield size={10} /> Pre-populated from PM Strategy — editable during WO execution.
                                     </p>
                                 )}
@@ -2544,7 +2658,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                     <div>
                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Scope</label>
                         <select
-                            className={`w-full text-xs border rounded px-2 py-1.5 font-medium ${job.scope === 'PROJECT' ? 'bg-indigo-50 text-indigo-700 border-indigo-300' : 'bg-white border-slate-300'
+                            className={`w-full text-xs border rounded px-2 py-1.5 font-medium ${job.scope === 'PROJECT' ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white border-slate-300'
                                 }`}
                             value={job.scope || 'STANDARD'}
                             onChange={(e) => onUpdate({ scope: e.target.value as WorkOrderScope })}
@@ -2629,7 +2743,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
                     {/* Material Staging Card */}
                     {job.inventory && job.inventory.length > 0 && (
-                        <div className="md:col-span-2 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 p-4 rounded-xl border border-blue-100 shadow-sm space-y-3 mt-4">
+                        <div className="md:col-span-2 bg-gradient-to-r from-blue-50/50 to-blue-50/50 p-4 rounded-xl border border-blue-100 shadow-sm space-y-3 mt-4">
                             <div className="flex justify-between items-center border-b border-blue-100/50 pb-2">
                                 <h4 className="font-bold text-xs md:text-sm text-slate-800 flex items-center gap-2">
                                     <Package className="text-blue-600" size={16} />
@@ -2694,7 +2808,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                 <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-2">
                     <Clock className="text-blue-600" size={15} /> Scheduling & Progress
                     {job.scope === 'PROJECT' && (
-                        <span className="ml-auto text-[9px] font-bold uppercase bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full">
+                        <span className="ml-auto text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
                             Turnaround / Project Mode
                         </span>
                     )}
@@ -2757,8 +2871,8 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                     {/* --- PROJECT SCOPE: Full Turnaround Scheduling Matrix --- */}
                     {job.scope === 'PROJECT' && (
                         <div className="space-y-3">
-                            <div className="bg-indigo-50 border border-indigo-200 rounded px-2.5 py-2 text-[11px] text-indigo-700 flex items-center gap-1.5">
-                                <Calendar size={12} className="text-indigo-500 flex-shrink-0" />
+                            <div className="bg-blue-50 border border-blue-200 rounded px-2.5 py-2 text-[11px] text-blue-700 flex items-center gap-1.5">
+                                <Calendar size={12} className="text-blue-500 flex-shrink-0" />
                                 Project/Turnaround mode � full start & finish scheduling with time precision for shutdown planning.
                             </div>
 
@@ -2766,19 +2880,19 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             <div className="grid grid-cols-1 md:grid-cols-[60px_1fr_1fr] gap-x-3 gap-y-3 items-start">
                                 {/* Headers - hidden on mobile */}
                                 <div className="hidden md:block"></div>
-                                <div className="hidden md:block text-[10px] font-bold text-indigo-600 uppercase text-center tracking-wider">Scheduled</div>
+                                <div className="hidden md:block text-[10px] font-bold text-blue-600 uppercase text-center tracking-wider">Scheduled</div>
                                 <div className="hidden md:block text-[10px] font-bold text-slate-500 uppercase text-center tracking-wider">Actual</div>
 
                                 {/* Start Row */}
                                 <div className="font-bold text-slate-700 text-xs pt-1.5">Start</div>
                                 <div className="space-y-1">
-                                    <label className="md:hidden block text-[10px] font-bold text-indigo-600 uppercase mb-0.5">Scheduled</label>
+                                    <label className="md:hidden block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Scheduled</label>
                                     <input
                                         key={`start-${job.id}`}
                                         type="date"
                                         value={job.dateDueStart ? formatDateForInput(job.dateDueStart) : ''}
                                         onChange={(e) => handleScheduleChange('dateDueStart', e.target.value)}
-                                        className="w-full text-xs border border-indigo-200 rounded px-2 py-1.5 bg-indigo-50/50 font-medium"
+                                        className="w-full text-xs border border-blue-200 rounded px-2 py-1.5 bg-blue-50/50 font-medium"
                                     />
                                     {(job.timeDueStart) ? (
                                         <div className="flex gap-1 items-center">
@@ -2786,7 +2900,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                                 type="time"
                                                 value={job.timeDueStart || ''}
                                                 onChange={(e) => handleScheduleChange('timeDueStart', e.target.value)}
-                                                className="flex-1 text-xs border border-indigo-200 rounded px-2 py-1 bg-indigo-50/50"
+                                                className="flex-1 text-xs border border-blue-200 rounded px-2 py-1 bg-blue-50/50"
                                             />
                                             <button
                                                 onClick={() => handleScheduleChange('timeDueStart', '')}
@@ -2797,7 +2911,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                     ) : (
                                         <button
                                             onClick={() => handleScheduleChange('timeDueStart', '06:00')}
-                                            className="text-[10px] text-indigo-500 hover:text-indigo-700 flex items-center gap-1 font-medium"
+                                            className="text-[10px] text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium"
                                         ><Clock size={10} /> Add time</button>
                                     )}
                                 </div>
@@ -2823,13 +2937,13 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                 {/* Finish Row */}
                                 <div className="font-bold text-slate-700 text-xs pt-1.5">Finish</div>
                                 <div className="space-y-1">
-                                    <label className="md:hidden block text-[10px] font-bold text-indigo-600 uppercase mb-0.5">Scheduled</label>
+                                    <label className="md:hidden block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Scheduled</label>
                                     <input
                                         key={`due-${job.id}`}
                                         type="date"
                                         value={job.dueDate ? formatDateForInput(job.dueDate) : ''}
                                         onChange={(e) => handleScheduleChange('dueDate', e.target.value)}
-                                        className="w-full text-xs border border-indigo-200 rounded px-2 py-1.5 bg-indigo-50/50 font-medium"
+                                        className="w-full text-xs border border-blue-200 rounded px-2 py-1.5 bg-blue-50/50 font-medium"
                                     />
                                     {(job.timeDueFinish) ? (
                                         <div className="flex gap-1 items-center">
@@ -2837,7 +2951,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                                 type="time"
                                                 value={job.timeDueFinish || ''}
                                                 onChange={(e) => handleScheduleChange('timeDueFinish', e.target.value)}
-                                                className="flex-1 text-xs border border-indigo-200 rounded px-2 py-1 bg-indigo-50/50"
+                                                className="flex-1 text-xs border border-blue-200 rounded px-2 py-1 bg-blue-50/50"
                                             />
                                             <button
                                                 onClick={() => handleScheduleChange('timeDueFinish', '')}
@@ -2848,7 +2962,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                     ) : (
                                         <button
                                             onClick={() => handleScheduleChange('timeDueFinish', '18:00')}
-                                            className="text-[10px] text-indigo-500 hover:text-indigo-700 flex items-center gap-1 font-medium"
+                                            className="text-[10px] text-blue-500 hover:text-blue-700 flex items-center gap-1 font-medium"
                                         ><Clock size={10} /> Add time</button>
                                     )}
                                 </div>
@@ -3261,7 +3375,7 @@ const TasksTab: React.FC<{
                                     {task.predecessorTaskId && (() => {
                                         const pred = tasks.find(t => t.id === task.predecessorTaskId);
                                         return pred ? (
-                                            <span className="text-[10px] text-indigo-500 font-medium flex items-center gap-0.5 mt-0.5">
+                                            <span className="text-[10px] text-blue-500 font-medium flex items-center gap-0.5 mt-0.5">
                                                 <ArrowRight size={9} className="rotate-180" /> After #{pred.sequence}
                                             </span>
                                         ) : null;
@@ -3271,7 +3385,7 @@ const TasksTab: React.FC<{
                                 {/* Resource badges (compact) */}
                                 <div className="flex items-center gap-1.5 flex-shrink-0">
                                     {laborCount > 0 && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 font-medium flex items-center gap-0.5">
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 font-medium flex items-center gap-0.5">
                                             <Users size={9} /> {laborCount}
                                         </span>
                                     )}
@@ -3788,7 +3902,7 @@ const TaskEditor: React.FC<{
                     onClick={() => onTabChange('resources')}
                     className={`px-4 py-2 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 ${
                         editorTab === 'resources'
-                            ? 'border-indigo-600 text-indigo-700 bg-white'
+                            ? 'border-blue-600 text-blue-700 bg-white'
                             : 'border-transparent text-slate-400 hover:text-slate-600'
                     }`}
                 >
@@ -3797,7 +3911,7 @@ const TaskEditor: React.FC<{
                     {/* Badge showing resource count */}
                     {(taskLabor.length > 0 || taskParts.length > 0) && (
                         <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${
-                            editorTab === 'resources' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-500'
+                            editorTab === 'resources' ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-500'
                         }`}>
                             {taskLabor.length + taskParts.length}
                         </span>
@@ -3838,7 +3952,7 @@ const TaskEditor: React.FC<{
                             </button>
                             <button
                                 onClick={openLibraryPicker}
-                                className="text-xs text-indigo-600 hover:text-indigo-700 font-medium flex items-center gap-1"
+                                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
                             >
                                 <Book size={12} />
                                 Import Template
@@ -3906,8 +4020,8 @@ const TaskEditor: React.FC<{
 
                 {/* Compact Project Scheduling (Only for PROJECT scope) */}
                 {jobContext.scope === 'PROJECT' && (
-                    <div className="bg-white rounded-lg border border-indigo-100 p-3">
-                        <h4 className="text-xs font-bold text-indigo-600 uppercase mb-2">Task Schedule (Project Mode)</h4>
+                    <div className="bg-white rounded-lg border border-blue-100 p-3">
+                        <h4 className="text-xs font-bold text-blue-600 uppercase mb-2">Task Schedule (Project Mode)</h4>
                         <div className="grid grid-cols-4 gap-2 text-xs">
                             <div>
                                 <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Start Date</label>
@@ -3948,7 +4062,7 @@ const TaskEditor: React.FC<{
                         </div>
                         {/* Predecessor Dependency */}
                         <div className="mt-2">
-                            <label className="text-[10px] text-indigo-500 uppercase font-bold block mb-1">Predecessor (Start After)</label>
+                            <label className="text-[10px] text-blue-500 uppercase font-bold block mb-1">Predecessor (Start After)</label>
                             <select
                                 value={task.predecessorTaskId || ''}
                                 onChange={(e) => onChange({ predecessorTaskId: e.target.value || undefined })}
@@ -3973,7 +4087,7 @@ const TaskEditor: React.FC<{
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
                     <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
                         <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-2">
-                            <Users size={14} className="text-indigo-600" /> Assign People
+                            <Users size={14} className="text-blue-600" /> Assign People
                         </h4>
                         <button onClick={addTaskLabor} className="text-xs text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 hover:bg-blue-50 px-2 py-1 rounded-lg transition-colors">
                             <Plus size={12} /> Add Role
@@ -3986,15 +4100,15 @@ const TaskEditor: React.FC<{
                         {taskLabor.length === 0 ? (
                             <button
                                 onClick={addTaskLabor}
-                                className="w-full text-xs text-indigo-500 hover:text-indigo-700 hover:bg-indigo-50 border border-dashed border-indigo-200 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 transition-colors"
+                                className="w-full text-xs text-blue-500 hover:text-blue-700 hover:bg-blue-50 border border-dashed border-blue-200 rounded-lg px-3 py-2 flex items-center justify-center gap-1.5 transition-colors"
                             >
                                 <Plus size={12} /> Add craft requirement to enable role-based scheduling
                             </button>
                         ) : (
                             <>
                             <div>
-                                <label className="text-[11px] text-indigo-600 uppercase font-bold tracking-wider flex items-center gap-1.5 mb-2">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 inline-block" /> Craft Requirements <span className="text-slate-400 font-normal">(Planning)</span>
+                                <label className="text-[11px] text-blue-600 uppercase font-bold tracking-wider flex items-center gap-1.5 mb-2">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> Craft Requirements <span className="text-slate-400 font-normal">(Planning)</span>
                                 </label>
                                 {taskLabor.length > 1 && (
                                     <input
@@ -4219,7 +4333,7 @@ const TaskEditor: React.FC<{
                                                                     <span className="text-[8px] px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-100 shrink-0" title="Internal">🏢</span>
                                                                 ) : null}
                                                                 {contact?.defaultType && contact.defaultType !== 'GUEST' && (
-                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium border border-indigo-100 shrink-0">
+                                                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 font-medium border border-blue-100 shrink-0">
                                                                         {getRoleLabel(contact.defaultType)}
                                                                     </span>
                                                                 )}
@@ -4343,7 +4457,7 @@ const TaskEditor: React.FC<{
                     <div className="bg-white rounded-xl shadow-2xl w-[480px] max-h-[70vh] flex flex-col" onClick={e => e.stopPropagation()}>
                         <div className="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
                             <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                <Book size={16} className="text-indigo-600" />
+                                <Book size={16} className="text-blue-600" />
                                 Import from Task Library
                             </h3>
                             <button onClick={() => setShowLibraryPicker(false)} className="text-slate-400 hover:text-slate-600">
@@ -4364,11 +4478,11 @@ const TaskEditor: React.FC<{
                                         <button
                                             key={lt.id}
                                             onClick={() => importFromLibrary(lt)}
-                                            className="w-full text-left p-3 border border-slate-200 rounded-lg hover:border-indigo-300 hover:bg-indigo-50/30 transition group"
+                                            className="w-full text-left p-3 border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50/30 transition group"
                                         >
                                             <div className="flex items-start justify-between">
                                                 <div>
-                                                    <div className="font-semibold text-sm text-slate-800 group-hover:text-indigo-700">{lt.title}</div>
+                                                    <div className="font-semibold text-sm text-slate-800 group-hover:text-blue-700">{lt.title}</div>
                                                     <div className="text-xs text-slate-400 mt-0.5">
                                                         {lt.category && <span className="bg-slate-100 px-1.5 py-0.5 rounded mr-2">{lt.category}</span>}
                                                         {lt.instructions?.length || 0} steps
@@ -4376,7 +4490,7 @@ const TaskEditor: React.FC<{
                                                     </div>
                                                     {lt.description && <div className="text-xs text-slate-500 mt-1 line-clamp-2">{lt.description}</div>}
                                                 </div>
-                                                <ArrowRight size={14} className="text-slate-300 group-hover:text-indigo-500 mt-1 shrink-0" />
+                                                <ArrowRight size={14} className="text-slate-300 group-hover:text-blue-500 mt-1 shrink-0" />
                                             </div>
                                         </button>
                                     ))}
@@ -4727,10 +4841,10 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
             'DRAFT': 'bg-slate-100 text-slate-700',
             'PENDING': 'bg-amber-100 text-amber-800',
             'APPROVED': 'bg-blue-100 text-blue-700',
-            'ISSUED': 'bg-indigo-100 text-indigo-700',
+            'ISSUED': 'bg-blue-100 text-blue-700',
             'ACTIVE': 'bg-green-100 text-green-700',
             'SUSPENDED': 'bg-red-100 text-red-700',
-            'RETURNED': 'bg-purple-100 text-purple-700',
+            'RETURNED': 'bg-blue-100 text-blue-700',
             'CLOSED': 'bg-slate-200 text-slate-600',
             'REJECTED': 'bg-red-200 text-red-800'
         };
@@ -4743,7 +4857,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
             'CONFINED_SPACE': 'border-amber-400 bg-amber-50',
             'ELECTRICAL': 'border-yellow-400 bg-yellow-50',
             'HEIGHT': 'border-blue-400 bg-blue-50',
-            'CHEMICAL': 'border-purple-400 bg-purple-50',
+            'CHEMICAL': 'border-blue-400 bg-blue-50',
             'RADIATION': 'border-pink-400 bg-pink-50',
             'EXCAVATION': 'border-orange-400 bg-orange-50',
         };
@@ -4767,7 +4881,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                         <button
                             onClick={(e) => { e.preventDefault(); handleAISuggest(); }}
                             disabled={aiSuggesting}
-                            className="bg-gradient-to-r from-violet-500 to-blue-500 hover:from-violet-600 hover:to-blue-600 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm flex items-center gap-1.5 disabled:opacity-50 transition"
+                            className="bg-gradient-to-r from-blue-500 to-blue-500 hover:from-blue-600 hover:to-blue-600 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm flex items-center gap-1.5 disabled:opacity-50 transition"
                         >
                             {aiSuggesting ? (
                                 <><span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Analyzing...</>
@@ -4832,18 +4946,18 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
 
                     {/* AI Suggestion Panel */}
                     {aiSuggestions.length > 0 && (
-                        <div className="bg-gradient-to-br from-violet-50 to-blue-50 border-2 border-violet-200 rounded-lg p-4 space-y-3 animate-in fade-in">
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-50 border-2 border-blue-200 rounded-lg p-4 space-y-3 animate-in fade-in">
                             <div className="flex justify-between items-center">
-                                <h4 className="font-bold text-sm text-violet-800 flex items-center gap-2">✨ AI-Suggested Hazards <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-600">{aiSuggestions.length}</span></h4>
+                                <h4 className="font-bold text-sm text-blue-800 flex items-center gap-2">✨ AI-Suggested Hazards <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-600">{aiSuggestions.length}</span></h4>
                                 <button onClick={() => setAiSuggestions([])} className="text-xs text-slate-400 hover:text-slate-600">Dismiss All</button>
                             </div>
-                            <p className="text-[10px] text-violet-600">⚠️ HITL: These are AI suggestions only. Review each hazard carefully before accepting.</p>
+                            <p className="text-[10px] text-blue-600">⚠️ HITL: These are AI suggestions only. Review each hazard carefully before accepting.</p>
                             <div className="space-y-2">
                                 {aiSuggestions.map((s, i) => {
                                     const sScore = s.consequence * s.likelihood;
                                     const sLevel = getWORiskLevel(sScore);
                                     return (
-                                        <div key={i} className="bg-white rounded-lg p-3 border border-violet-200 flex gap-3">
+                                        <div key={i} className="bg-white rounded-lg p-3 border border-blue-200 flex gap-3">
                                             <div className="flex-1">
                                                 <p className="text-sm font-bold text-slate-800">{s.hazard}</p>
                                                 <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-500">
@@ -4963,7 +5077,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                                             'bg-green-100 text-green-800 border-green-300',
                                                             'bg-teal-100 text-teal-800 border-teal-300',
                                                             'bg-blue-100 text-blue-800 border-blue-300',
-                                                            'bg-purple-100 text-purple-800 border-purple-300',
+                                                            'bg-blue-100 text-blue-800 border-blue-300',
                                                             'bg-orange-100 text-orange-800 border-orange-300',
                                                         ];
                                                         return (
@@ -5097,11 +5211,11 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
             <details open className="group">
                 <summary className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center cursor-pointer list-none">
                     <div className="flex items-center gap-3">
-                        <FileText size={20} className="text-indigo-600" />
+                        <FileText size={20} className="text-blue-600" />
                         <h3 className="font-bold text-slate-800">Permits to Work</h3>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{permits.length}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{permits.length}</span>
                     </div>
-                    <button onClick={(e) => { e.preventDefault(); if (!showCreatePermit) { setNewPermit((prev: any) => ({ ...prev, description: job.description || prev.description })); } setShowCreatePermit(!showCreatePermit); }} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm">
+                    <button onClick={(e) => { e.preventDefault(); if (!showCreatePermit) { setNewPermit((prev: any) => ({ ...prev, description: job.description || prev.description })); } setShowCreatePermit(!showCreatePermit); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm">
                         + New Permit
                     </button>
                 </summary>
@@ -5109,9 +5223,9 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                 <div className="mt-2 space-y-3">
                     {/* Create Permit Form */}
                     {showCreatePermit && (
-                        <div className="bg-white border-2 border-indigo-200 rounded-lg p-5 space-y-4">
+                        <div className="bg-white border-2 border-blue-200 rounded-lg p-5 space-y-4">
                             <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                <FileText size={16} className="text-indigo-600" /> New Permit Request
+                                <FileText size={16} className="text-blue-600" /> New Permit Request
                             </h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
@@ -5119,7 +5233,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                     <select
                                         value={newPermit.permitType}
                                         onChange={e => setNewPermit({ ...newPermit, permitType: e.target.value })}
-                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     >
                                         {permitTypes.map(pt => (
                                             <option key={pt.code} value={pt.code}>{pt.description}</option>
@@ -5155,8 +5269,8 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                             key={ppe.code}
                                             onClick={() => togglePPE(ppe.code)}
                                             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${newPermit.ppeRequirements.includes(ppe.code)
-                                                ? 'bg-indigo-600 text-white border-indigo-600'
-                                                : 'bg-white text-slate-600 border-slate-300 hover:border-indigo-400'
+                                                ? 'bg-blue-600 text-white border-blue-600'
+                                                : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
                                                 }`}
                                         >
                                             {ppe.description}
@@ -5169,7 +5283,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                 <button
                                     onClick={handleCreatePermit}
                                     disabled={!newPermit.description}
-                                    className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50 shadow-sm"
+                                    className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 shadow-sm"
                                 >
                                     Create Permit
                                 </button>
@@ -5216,7 +5330,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                     {permit.status === 'APPROVED' && (
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handlePermitStatusChange(permit.id, 'ISSUED'); }}
-                                            className="px-3 py-1 text-xs font-bold bg-indigo-600 text-white rounded hover:bg-indigo-700 shadow-sm"
+                                            className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm"
                                         >
                                             Issue Permit
                                         </button>
@@ -5233,7 +5347,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                         <>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handleReturnPermit(permit.id); }}
-                                                className="px-3 py-1 text-xs font-bold bg-purple-600 text-white rounded hover:bg-purple-700 shadow-sm"
+                                                className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm"
                                             >
                                                 Return Permit
                                             </button>
@@ -5273,7 +5387,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                                 <span className="font-bold text-slate-500 uppercase text-xs block mb-1">PPE Required</span>
                                                 <div className="flex flex-wrap gap-1">
                                                     {permit.ppeRequirements.map((ppe: string) => (
-                                                        <span key={ppe} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[10px] font-bold">{getPPEDesc(ppe)}</span>
+                                                        <span key={ppe} className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] font-bold">{getPPEDesc(ppe)}</span>
                                                     ))}
                                                 </div>
                                             </div>
@@ -5404,7 +5518,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                                             type="checkbox"
                                                             checked={permit.toolboxTalkCompleted}
                                                             onChange={(e) => handleUpdatePermit(permit.id, { toolboxTalkCompleted: e.target.checked })}
-                                                            className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                                             disabled={permit.status !== 'APPROVED'}
                                                         />
                                                         <span className="text-sm font-bold text-slate-700">Toolbox Talk Completed</span>
@@ -5424,9 +5538,9 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
 
                                     {/* ? Return / Closure */}
                                     {(permit.status === 'RETURNED' || permit.status === 'CLOSED') && (
-                                        <div className="p-4 bg-purple-50/30">
+                                        <div className="p-4 bg-blue-50/30">
                                             <h4 className="font-bold text-sm text-slate-700 flex items-center gap-2 mb-3">
-                                                <CheckCircle size={14} className="text-purple-500" /> Permit Return
+                                                <CheckCircle size={14} className="text-blue-500" /> Permit Return
                                             </h4>
                                             <div className="grid grid-cols-2 gap-4 text-xs">
                                                 <div><span className="font-bold text-slate-500 uppercase block">Returned At</span>{permit.returnedAt ? new Date(permit.returnedAt).toLocaleString() : '�'}</div>
@@ -5445,9 +5559,9 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
             <details open className="group">
                 <summary className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center cursor-pointer list-none">
                     <div className="flex items-center gap-3">
-                        <PenTool size={20} className="text-purple-600" />
+                        <PenTool size={20} className="text-blue-600" />
                         <h3 className="font-bold text-slate-800">Digital Sign-offs</h3>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
                             {(job.jsa.signoffs || []).filter(s => s.status === 'Signed').length}/{['Worker', 'Supervisor', 'HSE Officer'].length}
                         </span>
                     </div>
@@ -5652,7 +5766,7 @@ const ResourcesTab: React.FC<{
         <div className="space-y-3 md:space-y-4 animate-in fade-in duration-300">
             {/* KPI Stats Header */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-lg p-3 text-center">
+                <div className="bg-gradient-to-br from-blue-50 to-blue-50 border border-blue-100 rounded-lg p-3 text-center">
                     <div className="text-xl md:text-2xl font-black text-blue-700">{uniquePeople}{unfilledRoles > 0 && <span className="text-xs font-medium text-amber-500 ml-1">+{unfilledRoles} open</span>}</div>
                     <div className="text-[10px] text-blue-500 font-bold uppercase mt-0.5">Assigned</div>
                 </div>
@@ -5711,7 +5825,7 @@ const ResourcesTab: React.FC<{
                                                 {i === 0 && (
                                                     <td className="px-3 py-2 align-top" rowSpan={entries.length}>
                                                         <div className="flex items-center gap-2">
-                                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold shadow-sm flex-shrink-0 ${entry.isPlanning ? 'bg-amber-100 text-amber-600 border-2 border-dashed border-amber-300' : 'bg-gradient-to-br from-blue-500 to-indigo-600 text-white'}`}>
+                                                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold shadow-sm flex-shrink-0 ${entry.isPlanning ? 'bg-amber-100 text-amber-600 border-2 border-dashed border-amber-300' : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'}`}>
                                                                 {entry.isPlanning ? '?' : entry.userName.substring(0, 2).toUpperCase()}
                                                             </div>
                                                             <span className={`truncate max-w-[120px] ${entry.isPlanning ? 'text-amber-700 italic text-[11px] font-medium' : 'font-semibold text-slate-800'}`}>{entry.userName}</span>
@@ -5891,30 +6005,30 @@ const ResourcesTab: React.FC<{
                     {(job as any).scope === 'PROJECT' && (
                         <div className="mt-3 pt-3 border-t border-dashed border-slate-200">
                             <div className="flex items-center gap-2 mb-2">
-                                <Briefcase size={13} className="text-indigo-500" />
-                                <span className="text-[10px] font-bold text-indigo-600 uppercase">Project Budget Envelope</span>
+                                <Briefcase size={13} className="text-blue-500" />
+                                <span className="text-[10px] font-bold text-blue-600 uppercase">Project Budget Envelope</span>
                             </div>
-                            <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-3">
+                            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
                                 <div className="flex justify-between items-center mb-1">
-                                    <span className="text-[10px] text-indigo-500">Approved Budget</span>
-                                    <span className="text-xs font-bold text-indigo-700">{fmtCost((job as any).budgetApproved || 0)}</span>
+                                    <span className="text-[10px] text-blue-500">Approved Budget</span>
+                                    <span className="text-xs font-bold text-blue-700">{fmtCost((job as any).budgetApproved || 0)}</span>
                                 </div>
                                 <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[10px] text-indigo-500">Spent to Date</span>
-                                    <span className="text-xs font-bold text-indigo-700">{fmtCost(totalActCost)}</span>
+                                    <span className="text-[10px] text-blue-500">Spent to Date</span>
+                                    <span className="text-xs font-bold text-blue-700">{fmtCost(totalActCost)}</span>
                                 </div>
                                 <ProgressBar
                                     planned={(job as any).budgetApproved || totalEstCost || 1}
                                     actual={totalActCost}
-                                    color="bg-indigo-500"
+                                    color="bg-blue-500"
                                 />
                                 <div className="flex justify-between items-center mt-1">
-                                    <span className="text-[10px] text-indigo-400">
+                                    <span className="text-[10px] text-blue-400">
                                         {(((job as any).budgetApproved || totalEstCost) > 0
                                             ? (totalActCost / ((job as any).budgetApproved || totalEstCost) * 100).toFixed(0)
                                             : 0)}% consumed
                                     </span>
-                                    <span className="text-[10px] font-medium text-indigo-600">
+                                    <span className="text-[10px] font-medium text-blue-600">
                                         {fmtCost(((job as any).budgetApproved || totalEstCost) - totalActCost)} remaining
                                     </span>
                                 </div>
@@ -5928,7 +6042,7 @@ const ResourcesTab: React.FC<{
             <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
                 <div className="px-3 py-2.5 md:px-4 md:py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2 text-xs md:text-sm">
-                        <BarChart3 size={14} className="text-indigo-600" /> Financial Performance
+                        <BarChart3 size={14} className="text-blue-600" /> Financial Performance
                     </h3>
                     {job.status === 'CLOSED' && (
                         <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">

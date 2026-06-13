@@ -6,10 +6,10 @@ import { useIntegrity } from '../../hooks/useIntegrity';
 
 const TYPE_COLORS: Record<InspectionType, { bg: string; text: string }> = {
     UT: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
-    PAUT: { bg: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700' },
+    PAUT: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
     RT: { bg: 'bg-amber-50 border-amber-200', text: 'text-amber-700' },
     VT: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
-    MT: { bg: 'bg-violet-50 border-violet-200', text: 'text-violet-700' },
+    MT: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
     PT: { bg: 'bg-rose-50 border-rose-200', text: 'text-rose-700' },
     MFL: { bg: 'bg-cyan-50 border-cyan-200', text: 'text-cyan-700' },
 };

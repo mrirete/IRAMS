@@ -28,7 +28,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
         if (block.passFail === 'PASS' || block.valueBoolean) return 'border-green-500';
         if (block.type === 'HEADING') return 'border-blue-400';
         if (block.type === 'ISOLATION_CHECK') return 'border-red-300';
-        if (block.type === 'SIGNATURE') return 'border-purple-300';
+        if (block.type === 'SIGNATURE') return 'border-blue-300';
         return 'border-slate-300';
     };
 
@@ -363,10 +363,10 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                             <button
                                 disabled={readOnly}
                                 onClick={() => onChange({ signedBy: 'current-user', signedAt: new Date().toISOString() })}
-                                className="w-full p-4 border-2 border-dashed border-purple-300 rounded-lg flex flex-col items-center gap-2 hover:bg-purple-50 transition-colors"
+                                className="w-full p-4 border-2 border-dashed border-blue-300 rounded-lg flex flex-col items-center gap-2 hover:bg-blue-50 transition-colors"
                             >
-                                <PenTool size={20} className="text-purple-400" />
-                                <span className="text-xs text-purple-600 font-medium">
+                                <PenTool size={20} className="text-blue-400" />
+                                <span className="text-xs text-blue-600 font-medium">
                                     {block.signatureRole ? `Sign as ${block.signatureRole}` : 'Apply Digital Signature'}
                                 </span>
                             </button>

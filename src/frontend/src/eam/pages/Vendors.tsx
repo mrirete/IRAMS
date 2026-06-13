@@ -163,7 +163,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                     className={`mobile-card-contact ${selectedVendor?.id === vendor.id ? 'bg-blue-50' : ''}`}
                                     onClick={() => setSelectedVendor(vendor)}
                                 >
-                                    <div className={`mobile-card-contact-avatar ${vendor.type === 'MANUFACTURER' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
+                                    <div className={`mobile-card-contact-avatar ${vendor.type === 'MANUFACTURER' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}`}>
                                         {vendor.name.charAt(0)}
                                     </div>
                                     <div className="mobile-card-contact-body">
@@ -173,7 +173,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                         </div>
                                     </div>
                                     <div className="mobile-card-contact-badge">
-                                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${vendor.type === 'MANUFACTURER' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${vendor.type === 'MANUFACTURER' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
                                             {vendor.type === 'MANUFACTURER' ? 'MFR' : vendor.type === 'SUPPLIER' ? 'SUP' : 'VND'}
                                         </span>
                                     </div>
@@ -208,7 +208,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                             <div className="text-xs text-slate-500">{vendor.code}</div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${vendor.type === 'MANUFACTURER' ? 'bg-purple-100 text-purple-800' : 'bg-green-100 text-green-800'}`}>
+                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${vendor.type === 'MANUFACTURER' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
                                                 {vendor.type}
                                             </span>
                                         </td>
@@ -333,7 +333,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                     <button
                                         onClick={handleAddModel}
                                         disabled={addingModel || !newModelCode.trim()}
-                                        className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 flex items-center gap-1 text-sm whitespace-nowrap"
+                                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1 text-sm whitespace-nowrap"
                                     >
                                         <Plus size={14} /> {addingModel ? 'Adding...' : 'Add Model'}
                                     </button>
@@ -535,7 +535,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                         {/* Contractor Rate Card Section */}
                         <div className="border-t border-slate-100 pt-6 mt-6">
                             <h4 className="text-sm font-bold text-slate-800 mb-2 flex items-center gap-2">
-                                <Users size={16} className="text-indigo-600" />
+                                <Users size={16} className="text-blue-600" />
                                 Contractor Rate Cards (JSONB Governed)
                             </h4>
                             <p className="text-xs text-slate-500 mb-4">
@@ -652,7 +652,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                             }
                                         });
                                     }}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition-all border border-indigo-200"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition-all border border-blue-200"
                                 >
                                     <Plus size={14} /> Add Craft Line
                                 </button>

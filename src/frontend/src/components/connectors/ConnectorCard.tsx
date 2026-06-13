@@ -25,7 +25,7 @@ const getTypeIcon = (type: ConnectorType) => {
         case 'database': return <Database size={18} className="text-accent-cyan" />;
         case 'csv': return <FileText size={18} className="text-slate-600" />;
         case 'mqtt': return <Radio size={18} className="text-accent-warn" />;
-        case 'opc_ua': return <Server size={18} className="text-purple-400" />;
+        case 'opc_ua': return <Server size={18} className="text-blue-400" />;
         case 'historian': return <Activity size={18} className="text-pink-400" />;
         case 'document_store': return <FolderOpen size={18} className="text-emerald-400" />;
         case 'weather_api': return <CloudSun size={18} className="text-sky-400" />;

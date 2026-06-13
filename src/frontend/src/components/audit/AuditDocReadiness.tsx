@@ -79,7 +79,7 @@ export const AuditDocReadiness: React.FC<Props> = ({ initialData, onComplete, on
         <div className="max-w-3xl mx-auto py-8 px-4 space-y-5">
             {/* Header */}
             <div className="text-center mb-2">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-indigo-500/20">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
                     <FileSearch size={24} className="text-white" />
                 </div>
                 <h2 className="text-2xl font-black text-slate-800">Step 2 — Document Readiness</h2>
@@ -144,7 +144,7 @@ export const AuditDocReadiness: React.FC<Props> = ({ initialData, onComplete, on
                 </button>
                 <button
                     onClick={() => onComplete(items)}
-                    className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2"
+                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2"
                 >
                     Proceed to 6M Assessment <ArrowRight size={16} />
                 </button>

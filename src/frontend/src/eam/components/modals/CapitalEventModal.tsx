@@ -228,7 +228,7 @@ export const CapitalEventModal: React.FC<CapitalEventModalProps> = ({
 
                     {/* Impact Preview */}
                     {capitalAmount > 0 && (
-                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-200">
+                        <div className="bg-gradient-to-r from-blue-50 to-blue-50 rounded-lg p-3 border border-blue-200">
                             <div className="text-[10px] text-blue-600 uppercase font-bold mb-2 flex items-center gap-1">
                                 <TrendingUp size={12} /> Impact Preview
                             </div>

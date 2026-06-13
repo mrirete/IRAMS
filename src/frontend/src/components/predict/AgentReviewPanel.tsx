@@ -40,7 +40,7 @@ const STATUS_STYLES: Record<AgentActionStatus, { bg: string; text: string; label
 const AGENT_BADGES: Record<string, { icon: typeof Bot; color: string; label: string }> = {
     alert_to_wo: { icon: Wrench, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'WO Agent' },
     vision_to_wo: { icon: Eye, color: 'text-cyan-600 bg-cyan-50 border-cyan-200', label: 'Vision Agent' },
-    bad_actor_rca: { icon: Search, color: 'text-violet-600 bg-violet-50 border-violet-200', label: 'RCA Agent' },
+    bad_actor_rca: { icon: Search, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'RCA Agent' },
     threshold_adapter: { icon: BarChart3, color: 'text-teal-600 bg-teal-50 border-teal-200', label: 'Threshold Agent' },
 };
 
@@ -100,8 +100,8 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             {/* Header */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-gradient-to-br from-violet-100 to-indigo-100">
-                    <Sparkles size={18} className="text-violet-600" />
+                <div className="p-2 rounded-lg bg-gradient-to-br from-blue-100 to-blue-100">
+                    <Sparkles size={18} className="text-blue-600" />
                 </div>
                 <div className="flex-1">
                     <h3 className="text-base font-semibold text-slate-800">Agent Intelligence Review</h3>
@@ -125,7 +125,7 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
                             onClick={() => setActiveTab(tab.key)}
                             className={`flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
                                 activeTab === tab.key
-                                    ? 'border-violet-500 text-violet-700'
+                                    ? 'border-blue-500 text-blue-700'
                                     : 'border-transparent text-slate-400 hover:text-slate-600'
                             }`}
                         >
@@ -133,7 +133,7 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
                             {tab.label}
                             {count > 0 && (
                                 <span className={`ml-1 px-1.5 py-0.5 rounded-full text-[10px] ${
-                                    activeTab === tab.key ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'
+                                    activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
                                 }`}>{count}</span>
                             )}
                         </button>
@@ -145,7 +145,7 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
             <div className="divide-y divide-slate-50 max-h-[520px] overflow-y-auto">
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
-                        <Loader2 size={20} className="animate-spin text-violet-400" />
+                        <Loader2 size={20} className="animate-spin text-blue-400" />
                         <span className="ml-2 text-sm text-slate-400">Loading agent actions...</span>
                     </div>
                 ) : filteredActions.length === 0 ? (
@@ -268,7 +268,7 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
                                                     placeholder="Rejection reason (required for Criticality A)..."
                                                     value={rejectNotes[action.id] || ''}
                                                     onChange={e => setRejectNotes(prev => ({ ...prev, [action.id]: e.target.value }))}
-                                                    className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-violet-300 bg-slate-50"
+                                                    className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300 bg-slate-50"
                                                 />
                                             </div>
                                         )}

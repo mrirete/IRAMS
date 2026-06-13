@@ -144,7 +144,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                     className={`
                         flex items-center px-4 py-4 text-sm font-medium border-b-2 whitespace-nowrap transition-colors duration-200
                         ${activeTab === tab.id
-                            ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
+                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                             : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}
                     `}
                 >
@@ -161,7 +161,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                 <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
                     <textarea
-                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
+                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
                         rows={3}
                         value={formData.description || ''}
                         onChange={e => setFormData({ ...formData, description: e.target.value })}
@@ -176,7 +176,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                         </span>
                         <input
                             type="text"
-                            className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                            className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                             value={formData.location || ''}
                             onChange={e => setFormData({ ...formData, location: e.target.value })}
                         />
@@ -190,7 +190,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                         </span>
                         <input
                             type="email"
-                            className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                            className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                             value={formData.email || ''}
                             onChange={e => setFormData({ ...formData, email: e.target.value })}
                         />
@@ -365,7 +365,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
         <div className="p-6">
             <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">Team Competency Matrix</h3>
-                <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-1 rounded">Overall: 88%</span>
+                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Overall: 88%</span>
             </div>
 
             <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
@@ -384,7 +384,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                             <tr key={member.id}>
                                 <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 dark:text-gray-100">
                                     <div className="flex items-center">
-                                        <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold mr-3">
+                                        <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold mr-3">
                                             {(member.firstName || '?').charAt(0)}{(member.lastName || '?').charAt(0)}
                                         </div>
                                         {member.name}
@@ -475,7 +475,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                 <div className="relative transform overflow-hidden rounded-xl bg-white dark:bg-gray-900 text-left shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-5xl">
                     <div className="flex h-[80vh] flex-col bg-white dark:bg-gray-900">
                         {/* Header */}
-                        <div className="bg-indigo-700 px-6 py-6">
+                        <div className="bg-blue-700 px-6 py-6">
                             <div className="flex items-start justify-between">
                                 <div className="flex items-center">
                                     <div className="bg-white/20 p-2 rounded-lg mr-4">
@@ -485,7 +485,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                                     </div>
                                     <div>
                                         <h2 className="text-2xl font-bold text-white tracking-wide">{unit.name}</h2>
-                                        <p className="text-indigo-200 text-sm mt-1 flex items-center">
+                                        <p className="text-blue-200 text-sm mt-1 flex items-center">
                                             <span className="uppercase tracking-wider font-semibold mr-2 px-2 py-0.5 bg-white/10 rounded">{unit.type}</span>
                                             {unit.code}
                                         </p>
@@ -502,19 +502,19 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                                     <button
                                         onClick={handleDuplicate}
                                         title="Duplicate Unit"
-                                        className="px-3 py-1.5 text-xs font-medium rounded border border-indigo-400 text-indigo-100 hover:bg-indigo-600 focus:outline-none"
+                                        className="px-3 py-1.5 text-xs font-medium rounded border border-blue-400 text-blue-100 hover:bg-blue-600 focus:outline-none"
                                     >
                                         Duplicate
                                     </button>
                                     <button
                                         onClick={handleSaveDetails}
-                                        className="px-3 py-1.5 text-xs font-bold rounded bg-white text-indigo-700 hover:bg-indigo-50 shadow-sm focus:outline-none"
+                                        className="px-3 py-1.5 text-xs font-bold rounded bg-white text-blue-700 hover:bg-blue-50 shadow-sm focus:outline-none"
                                     >
                                         Save Changes
                                     </button>
                                     <button
                                         type="button"
-                                        className="rounded-md text-indigo-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-white ml-2"
+                                        className="rounded-md text-blue-200 hover:text-white focus:outline-none focus:ring-2 focus:ring-white ml-2"
                                         onClick={onClose}
                                     >
                                         <span className="sr-only">Close panel</span>
@@ -522,7 +522,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                                     </button>
                                 </div>
                             </div>
-                            <div className="mt-4 flex items-center space-x-6 text-indigo-100 text-sm">
+                            <div className="mt-4 flex items-center space-x-6 text-blue-100 text-sm">
                                 <div className="flex items-center">
                                     <User className="w-4 h-4 mr-2 opacity-75" />
                                     <span className="opacity-90">Manager: {unit.managerId ? 'Assigned' : 'Unassigned'}</span>
@@ -541,7 +541,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                         <div className="relative flex-1 overflow-y-auto">
                             {isLoading ? (
                                 <div className="p-12 flex justify-center">
-                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                                 </div>
                             ) : (
                                 <>

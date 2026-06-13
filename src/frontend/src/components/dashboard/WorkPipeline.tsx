@@ -19,7 +19,7 @@ interface PipelineStage {
 const STAGES: PipelineStage[] = [
     { key: 'draft', label: 'Draft', count: 12, overdue: 0, color: 'text-slate-500', bgColor: 'bg-slate-100/30', borderColor: 'border-slate-300' },
     { key: 'planned', label: 'Planned', count: 23, overdue: 2, color: 'text-blue-400', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500/30' },
-    { key: 'scheduled', label: 'Scheduled', count: 18, overdue: 1, color: 'text-purple-400', bgColor: 'bg-purple-500/10', borderColor: 'border-purple-500/30' },
+    { key: 'scheduled', label: 'Scheduled', count: 18, overdue: 1, color: 'text-blue-500', bgColor: 'bg-blue-50', borderColor: 'border-blue-200' },
     { key: 'in_progress', label: 'In Progress', count: 28, overdue: 4, color: 'text-accent-cyan', bgColor: 'bg-accent-cyan/10', borderColor: 'border-accent-cyan/30' },
     { key: 'complete', label: 'Complete', count: 6, overdue: 0, color: 'text-accent-safe', bgColor: 'bg-accent-safe/10', borderColor: 'border-accent-safe/30' },
 ];
@@ -74,8 +74,7 @@ export const WorkPipeline: React.FC = () => {
                                         style={{
                                             width: `${pct}%`,
                                             backgroundColor: stage.color.replace('text-', '').includes('accent') ? '#06b6d4' :
-                                                stage.color.includes('blue') ? '#3b82f6' :
-                                                    stage.color.includes('purple') ? '#a855f7' :
+                                                    stage.color.includes('blue') ? '#3b82f6' :
                                                         stage.color.includes('safe') ? '#22c55e' : '#64748b'
                                         }}
                                     />
@@ -89,7 +88,7 @@ export const WorkPipeline: React.FC = () => {
                                 )}
                             </button>
                             {idx < STAGES.length - 1 && (
-                                <div className="flex items-center text-brand-600">
+                                <div className="flex items-center text-slate-300">
                                     <ChevronRight size={14} />
                                 </div>
                             )}

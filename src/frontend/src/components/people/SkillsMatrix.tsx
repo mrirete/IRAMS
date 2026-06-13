@@ -53,7 +53,7 @@ const LEVEL_COLORS: Record<number, string> = {
     2: 'bg-blue-900/40 text-blue-400',
     3: 'bg-accent-cyan/10 text-accent-cyan',
     4: 'bg-accent-safe/10 text-accent-safe',
-    5: 'bg-purple-500/15 text-purple-400',
+    5: 'bg-blue-500/15 text-blue-400',
 };
 
 const LEVEL_LABELS = ['—', 'Novice', 'Basic', 'Competent', 'Proficient', 'Expert'];
@@ -71,7 +71,7 @@ export const SkillsMatrix: React.FC = () => {
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
             <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
                         <Award size={20} />
                     </div>
                     <div>

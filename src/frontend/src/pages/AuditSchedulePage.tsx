@@ -120,7 +120,7 @@ export const AuditSchedulePage: React.FC = () => {
                     <h1 className="text-2xl font-black text-slate-800">Audit Schedule</h1>
                     <p className="text-sm text-slate-500 mt-1">ISO 55001 §9.2 — Audit Programme Planning, Scheduling & Tracking</p>
                 </div>
-                <button className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
+                <button className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
                     <Plus size={18} /> Schedule Audit
                 </button>
             </div>
@@ -142,7 +142,7 @@ export const AuditSchedulePage: React.FC = () => {
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="Search by audit title or auditor..."
-                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-400"
+                        className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-400"
                     />
                 </div>
                 <select
@@ -192,7 +192,7 @@ export const AuditSchedulePage: React.FC = () => {
                                                     </span>
                                                 )}
                                                 {audit.recurrence !== 'one-time' && (
-                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-600 flex items-center gap-0.5">
+                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-100 text-blue-600 flex items-center gap-0.5">
                                                         <Repeat size={8} /> {audit.recurrence}
                                                     </span>
                                                 )}

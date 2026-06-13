@@ -31,10 +31,10 @@ const STATUS_CONFIG: Record<InspectionEventStatus, { label: string; icon: React.
 
 const TYPE_COLORS: Record<InspectionType, string> = {
     UT: 'bg-blue-50 text-blue-700 border-blue-200',
-    PAUT: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    PAUT: 'bg-blue-50 text-blue-700 border-blue-200',
     RT: 'bg-amber-50 text-amber-700 border-amber-200',
     VT: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    MT: 'bg-violet-50 text-violet-700 border-violet-200',
+    MT: 'bg-blue-50 text-blue-700 border-blue-200',
     PT: 'bg-rose-50 text-rose-700 border-rose-200',
     MFL: 'bg-cyan-50 text-cyan-700 border-cyan-200',
 };
@@ -250,7 +250,7 @@ const InspectionDetailPage: React.FC = () => {
                                 </span>
                             )}
                             {localInsp.approval_mode === 'two_step' && (
-                                <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-violet-50 border border-violet-200 text-violet-600">
+                                <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-blue-50 border border-blue-200 text-blue-600">
                                     2-Step Approval
                                 </span>
                             )}

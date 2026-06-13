@@ -234,7 +234,7 @@ export const CapacityChart: React.FC<CapacityChartProps> = ({
             {/* ── Header ── */}
             <div className="px-6 pt-5 pb-4">
                 <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0 p-2.5 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 shadow-md shadow-blue-500/20">
+                    <div className="flex-shrink-0 p-2.5 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-md shadow-blue-500/20">
                         <BarChart2 className="text-white" size={20} />
                     </div>
                     <div>

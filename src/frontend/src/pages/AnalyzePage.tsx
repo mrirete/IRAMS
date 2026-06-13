@@ -493,7 +493,7 @@ export const AnalyzePage: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
                 <div>
                     <div className="flex items-center gap-2.5">
-                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-indigo-500 to-purple-600" />
+                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-blue-500 to-blue-600" />
                         <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight">Analyze &amp; Investigate</h1>
                     </div>
                     <p className="text-slate-500 text-xs sm:text-sm mt-1.5 ml-4">Root cause analysis &amp; defect elimination — Pareto → RCA → DE · ISO 55000</p>
@@ -511,7 +511,7 @@ export const AnalyzePage: React.FC = () => {
                     </button>
                     <button
                         onClick={handleNewAnalysis}
-                        className="flex items-center gap-2 px-4 sm:px-5 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30"
+                        className="flex items-center gap-2 px-4 sm:px-5 py-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white font-semibold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30"
                     >
                         <Plus size={15} /> New Analysis
                     </button>
@@ -535,7 +535,7 @@ export const AnalyzePage: React.FC = () => {
                             <button
                                 onClick={() => setActiveDivision(div.id)}
                                 className={`relative flex items-center gap-2.5 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap ${activeDivision === div.id
-                                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25 scale-[1.02]'
+                                    ? 'bg-gradient-to-r from-blue-600 to-blue-600 text-white shadow-lg shadow-blue-500/25 scale-[1.02]'
                                     : 'text-slate-500 hover:text-slate-800 hover:bg-white hover:shadow-md'
                                     }`}
                             >

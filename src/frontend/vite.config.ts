@@ -26,9 +26,29 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        // Don't precache large chunks — let them load on demand
-        maximumFileSizeToCacheInBytes: 1024 * 1024, // 1MB — covers main bundle + CSS
+        // Only precache the HTML shell, CSS, and small critical assets
+        globPatterns: ['**/*.{html,ico,png,svg,woff2}'],
+        // Exclude large JS chunks from precache — they load on-demand via lazy routes
+        maximumFileSizeToCacheInBytes: 256 * 1024, // 256KB — only small assets
+        // Cache JS/CSS at runtime (on first navigation to each route)
+        runtimeCaching: [
+          {
+            urlPattern: /\.(?:js|css)$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'js-css-cache',
+              expiration: { maxEntries: 120, maxAgeSeconds: 30 * 24 * 60 * 60 },
+            },
+          },
+          {
+            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'image-cache',
+              expiration: { maxEntries: 60, maxAgeSeconds: 30 * 24 * 60 * 60 },
+            },
+          },
+        ],
       },
     }),
   ],
@@ -72,9 +92,22 @@ export default defineConfig({
             return 'ai-panel';
           }
 
+          // ── PDF generation — only needed for exports ──
+          if (id.includes('jspdf') || id.includes('html2canvas')) {
+            return 'pdf';
+          }
+
           // ── DevicePreviewer — dev-only, never needed initially ──
           if (id.includes('DevicePreviewer')) {
             return 'dev-tools';
+          }
+
+          // ── Heavy EAM page internals — split large service files ──
+          if (id.includes('AIAnalysisEngine') || id.includes('AnalyzeService')) {
+            return 'ai-analysis';
+          }
+          if (id.includes('PredictionService')) {
+            return 'ai-prediction';
           }
         },
       },
