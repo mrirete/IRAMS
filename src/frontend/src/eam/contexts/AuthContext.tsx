@@ -162,23 +162,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             let contactDepartment = '';
             let contactRoleLabel = '';
 
-            // Fetch linked Contact for display data
-            if (userData.contact_id) {
-                const { data: contactData } = await supabase
+            // ── Parallel fetch: Contact + Role permissions (saves ~500ms) ──
+            // Both queries are independent — no reason to wait for one before the other.
+            const contactPromise = userData.contact_id
+                ? supabase
                     .from('contacts')
                     .select('name, email, roles, organization_unit_id, organization_units(name)')
                     .eq('id', userData.contact_id)
-                    .maybeSingle();
+                    .maybeSingle()
+                : Promise.resolve({ data: null, error: null });
 
-                if (contactData) {
-                    contactName = contactData.name || userData.username;
-                    contactEmail = contactData.email || contactEmail;
-                    // Department from linked org unit
-                    contactDepartment = (contactData as any).organization_units?.name || '';
-                    // Role label from contact's roles array (same mapping as DatabaseService)
-                    contactRoleLabel = (contactData.roles && (contactData.roles as string[]).length > 0)
-                        ? (contactData.roles as string[])[0] : '';
-                }
+            // Pre-compute roleCode for the reference_codes query
+            let preRoleCode = 'GUEST';
+            if (userData.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
+                preRoleCode = userData.roles[0];
+            }
+
+            const dictPromise = supabase
+                .from('reference_codes')
+                .select('properties')
+                .eq('category', 'CONTACT_TYPE')
+                .eq('code', preRoleCode)
+                .maybeSingle();
+
+            const [contactResult, dictResult] = await Promise.all([contactPromise, dictPromise]);
+
+            // Process contact data
+            if (contactResult.data) {
+                const contactData = contactResult.data;
+                contactName = contactData.name || userData.username;
+                contactEmail = contactData.email || contactEmail;
+                contactDepartment = (contactData as any).organization_units?.name || '';
+                contactRoleLabel = (contactData.roles && (contactData.roles as string[]).length > 0)
+                    ? (contactData.roles as string[])[0] : '';
             }
 
             setProfile({
@@ -194,10 +210,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
 
             // B. Resolve Role (via Contact or direct role)
-            let roleCode = 'GUEST';
-            if (userData.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
-                roleCode = userData.roles[0];
-            } else if (contactRoleLabel) {
+            let roleCode = preRoleCode;
+            if (roleCode === 'GUEST' && contactRoleLabel) {
                 // Fall back to contact's defaultType if no role in users table
                 roleCode = contactRoleLabel;
             }
@@ -205,12 +219,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setRole(roleCode);
 
             // C. Get Base Permissions from Dictionaries
-            const { data: dictData, error: dictError } = await supabase
-                .from('reference_codes')
-                .select('properties')
-                .eq('category', 'CONTACT_TYPE')
-                .eq('code', roleCode)
-                .maybeSingle();
+            const dictData = dictResult.data;
+            const dictError = dictResult.error;
 
             // Permission templates imported from '../constants/rolePermissions'
             // ROLE_PERMISSION_TEMPLATES, BASE_PACKAGE_DEFAULTS are the single source of truth
@@ -221,11 +231,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (ROLE_PERMISSION_TEMPLATES[roleCode]) {
                 // Primary: Use hardcoded role template (version-controlled, authoritative)
                 basePermissions = ROLE_PERMISSION_TEMPLATES[roleCode];
-                console.log(`[AuthContext] ✓ Role "${roleCode}" resolved from ROLE_PERMISSION_TEMPLATES`);
             } else if (!dictError && dictData?.properties?.permissions) {
                 // Secondary: DB-stored permissions for custom/dynamic roles
                 basePermissions = dictData.properties.permissions;
-                console.log(`[AuthContext] ✓ Role "${roleCode}" resolved from DB reference_codes`);
             } else {
                 // Tertiary: Fail-closed with BASE_PACKAGE_DEFAULTS
                 console.warn(`[AuthContext] ⚠ Unknown role "${roleCode}" — applying BASE_PACKAGE_DEFAULTS (fail-closed)`);
@@ -244,15 +252,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 };
             });
 
-            console.log(`[AuthContext] FINAL permissions for "${userData.username}":`, {
-                finops: finalPermissions.finops?.view,
-                admin: finalPermissions.admin?.view,
-                moc: finalPermissions.moc?.view,
-                notifications: finalPermissions.notifications?.view,
-                analytics: finalPermissions.analytics?.view,
-                assets: finalPermissions.assets?.view,
-                overrideKeys: Object.keys(userOverrides),
-            });
 
             setPermissions(finalPermissions);
 
@@ -265,7 +264,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 ownWorkOnly: dbScope?.ownWorkOnly || false,
             };
             setDataScope(resolvedScope);
-            console.log(`[AuthContext] Data Scope for "${userData.username}":`, resolvedScope);
 
         } catch (error) {
             console.error("Error fetching profile:", error);

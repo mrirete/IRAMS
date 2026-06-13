@@ -45,16 +45,29 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
     const isInIframe = typeof window !== 'undefined' && window.top !== window.self;
 
     if (loading) {
-        // In iframe (DevicePreviewer), show a minimal silent loader — the parent
-        // frame already authenticated, so the shared Supabase session will resolve
-        // almost instantly. Avoid showing "Authenticating…" text that creates a
-        // visual flicker loop.
         return (
-            <div className="h-screen w-screen flex items-center justify-center bg-brand-950">
-                <div className="flex flex-col items-center gap-4">
-                    <div className="w-10 h-10 border-4 border-accent-cyan/30 border-t-accent-cyan rounded-full animate-spin" />
+            <div className="h-screen w-screen flex items-center justify-center" style={{ background: '#f8fafc' }}>
+                <div className="flex flex-col items-center gap-3">
+                    {/* Brand mark */}
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                         style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)' }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M12 2c0 0-4 4-4 8a4 4 0 0 0 8 0c0-4-4-8-4-8z" />
+                            <path d="M12 14v4" />
+                            <path d="M10 22h4" />
+                        </svg>
+                    </div>
+                    {/* Progress bar */}
+                    <div className="w-32 h-1 rounded-full overflow-hidden" style={{ background: '#e2e8f0' }}>
+                        <div className="h-full rounded-full" style={{
+                            background: 'linear-gradient(90deg, #f59e0b, #ea580c)',
+                            animation: 'authProgress 1.2s ease-in-out infinite',
+                            width: '40%',
+                        }} />
+                    </div>
+                    <style>{`@keyframes authProgress { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
                     {!isInIframe && (
-                        <p className="text-brand-400 text-sm animate-pulse">Authenticating…</p>
+                        <p className="text-xs font-medium" style={{ color: '#94a3b8' }}>Loading IRAMS…</p>
                     )}
                 </div>
             </div>

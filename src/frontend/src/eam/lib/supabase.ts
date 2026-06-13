@@ -11,7 +11,5 @@ const SUPABASE_ANON_KEY_DEFAULT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3Mi
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || SUPABASE_URL_DEFAULT;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY_DEFAULT;
 
-console.log('[Supabase] URL:', supabaseUrl);
-console.log('[Supabase] Key starts with:', supabaseKey?.substring(0, 20));
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
