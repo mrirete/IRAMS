@@ -33,5 +33,11 @@ scipy>=1.12.0
 scikit-learn>=1.4.0
 xgboost>=2.0.0
 
+# AI (Gemini — server-side proxy)
+google-genai>=1.0.0
+
+# Database (Supabase — audit logging, data access)
+supabase>=2.0.0
+
 # OR-Tools (optional, for ers-work scheduling)
 # ortools>=9.8
