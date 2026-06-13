@@ -23,6 +23,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { createRelanternChat, proxyAIChat, isAIProxyEnabled } from '../../eam/services/geminiService';
 import type { Chat } from '@google/genai';
 import { useAssetLookup } from '../../hooks/useAssetLookup';
+import { DatabaseService } from '../../eam/services/DatabaseService';
 
 // ─── Page Context Detection ─────────────────────────────────
 interface PageContext {
