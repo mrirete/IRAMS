@@ -1,6 +1,14 @@
 import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { RELANTERN_SYSTEM_INSTRUCTION } from '../constants';
 import { PSM_SYSTEM_SUPPLEMENT } from '../../components/psm/PSMAdvisorPrompts';
+import { supabase } from '../lib/supabase';
+
+// ── Auth Token Helper ───────────────────────────────────────
+// Retrieves the active Supabase session access token for AI proxy auth.
+const getAuthToken = async (): Promise<string> => {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token || '';
+};
 
 // ── Backend AI Proxy Configuration ──────────────────────────
 // When set, AI calls route through the server-side proxy (API key stays server-side).
@@ -46,7 +54,7 @@ export const proxyAIChat = async (
     throw new Error('AI proxy not configured');
   }
 
-  const token = localStorage.getItem('ers_access_token') || '';
+  const token = await getAuthToken();
   const response = await fetch(`${AI_PROXY_URL}/ai/chat`, {
     method: 'POST',
     headers: {
@@ -81,7 +89,7 @@ export const proxyAIAnalyze = async (
     throw new Error('AI proxy not configured');
   }
 
-  const token = localStorage.getItem('ers_access_token') || '';
+  const token = await getAuthToken();
   const response = await fetch(`${AI_PROXY_URL}/ai/analyze`, {
     method: 'POST',
     headers: {
@@ -123,7 +131,7 @@ export const proxyAIVision = async (
     throw new Error('AI proxy not configured');
   }
 
-  const token = localStorage.getItem('ers_access_token') || '';
+  const token = await getAuthToken();
   const response = await fetch(`${AI_PROXY_URL}/ai/vision`, {
     method: 'POST',
     headers: {
@@ -163,7 +171,7 @@ export const proxyAIRAGQuery = async (
     throw new Error('AI proxy not configured');
   }
 
-  const token = localStorage.getItem('ers_access_token') || '';
+  const token = await getAuthToken();
   const response = await fetch(`${AI_PROXY_URL}/ai/oem/search`, {
     method: 'POST',
     headers: {

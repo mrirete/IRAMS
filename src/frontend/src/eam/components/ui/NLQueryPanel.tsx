@@ -174,7 +174,14 @@ const NLQueryPanel: React.FC<NLQueryPanelProps> = ({ onClose }) => {
         setError('');
 
         try {
-            const token = localStorage.getItem('ers_access_token') || '';
+            // Get Supabase session token for backend auth
+            const { createClient } = await import('@supabase/supabase-js');
+            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+            const sb = createClient(supabaseUrl, supabaseKey);
+            const { data: { session } } = await sb.auth.getSession();
+            const token = session?.access_token || '';
+
             const proxyUrl = import.meta.env.VITE_AI_PROXY_URL || '';
             const response = await fetch(`${proxyUrl}/ai/query`, {
                 method: 'POST',

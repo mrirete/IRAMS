@@ -1697,7 +1697,9 @@ Respond as JSON:
         // The callGemini helper handles text-only. For vision, we need the direct SDK.
         if (isAIProxyEnabled()) {
             try {
-                const token = localStorage.getItem('ers_access_token') || '';
+                const { supabase } = await import('../lib/supabase');
+                const { data: { session } } = await supabase.auth.getSession();
+                const token = session?.access_token || '';
                 const proxyUrl = import.meta.env.VITE_AI_PROXY_URL || '';
                 const response = await fetch(`${proxyUrl}/ai/vision`, {
                     method: 'POST',
