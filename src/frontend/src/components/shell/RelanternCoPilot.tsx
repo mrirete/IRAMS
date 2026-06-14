@@ -217,14 +217,15 @@ export const RelanternCoPilot: React.FC = () => {
             setMessages(prev => [...prev, agentMsg]);
         } catch (err: any) {
             let errorText: string;
+            const errMsg = err?.message || 'Unknown error';
             if (!import.meta.env.VITE_AI_PROXY_URL && !import.meta.env.VITE_GEMINI_API_KEY) {
                 errorText = '⚠️ AI Not Configured — Set VITE_AI_PROXY_URL (recommended) or VITE_GEMINI_API_KEY in .env.local and restart the dev server.';
-            } else if (err?.message?.includes('API key') || err?.message?.includes('401') || err?.message?.includes('403')) {
-                errorText = '⚠️ Authentication Error — The AI service rejected the request. Verify your backend proxy or API key configuration.';
-            } else if (err?.message?.includes('429')) {
-                errorText = '⚠️ Rate Limited — Too many AI requests. Please wait a moment and try again.';
+            } else if (errMsg.includes('API key') || errMsg.includes('401') || errMsg.includes('403') || errMsg.includes('validate credentials')) {
+                errorText = `⚠️ Authentication Error — ${errMsg}`;
+            } else if (errMsg.includes('429') || errMsg.includes('rate limit') || errMsg.includes('Rate limit') || errMsg.includes('quota')) {
+                errorText = `⚠️ Rate Limited — ${errMsg}. Please wait a moment and try again.`;
             } else {
-                errorText = `⚠️ AI Error — ${err?.message || 'Unknown error. Please try again.'}`;
+                errorText = `⚠️ AI Error — ${errMsg}`;
             }
             setMessages(prev => [...prev, {
                 id: (Date.now() + 1).toString(),

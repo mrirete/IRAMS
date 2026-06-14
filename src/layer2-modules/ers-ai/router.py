@@ -173,9 +173,21 @@ async def ai_chat(
         )
         return AIResponse(**result)
     except ValueError as e:
-        raise HTTPException(status_code=429, detail=str(e))
+        # Our internal rate limiter
+        raise HTTPException(status_code=429, detail=f"Rate limited: {e}")
     except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        error_msg = str(e)
+        # Check if it's a Gemini 429 (quota/rate limit from Google)
+        if "429" in error_msg or "quota" in error_msg.lower() or "rate" in error_msg.lower():
+            raise HTTPException(status_code=429, detail=f"Gemini API rate limited: {error_msg}")
+        raise HTTPException(status_code=503, detail=error_msg)
+    except Exception as e:
+        # Catch-all for unexpected errors (e.g., google.genai exceptions)
+        error_msg = str(e)
+        logger.error("Unexpected AI error: %s (type: %s)", error_msg, type(e).__name__)
+        if "429" in error_msg or "quota" in error_msg.lower():
+            raise HTTPException(status_code=429, detail=f"Gemini quota exceeded: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"AI error ({type(e).__name__}): {error_msg}")
 
 
 @router.post("/analyze", response_model=AIResponse, summary="AI Structured Analysis")
