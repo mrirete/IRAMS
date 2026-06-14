@@ -11,7 +11,9 @@ COPY src/frontend/ ./
 ENV VITE_SUPABASE_URL=https://placeholder.supabase.co
 ENV VITE_SUPABASE_ANON_KEY=placeholder-key
 ENV VITE_GATEWAY_URL=http://localhost:8000
-RUN npm run build
+# Skip tsc in Docker — type checking is done by frontend-tests CI job.
+# Only vite build is needed for the production bundle.
+RUN npx vite build
 
 FROM nginx:alpine
 # Copy built assets to NGINX serve directory
