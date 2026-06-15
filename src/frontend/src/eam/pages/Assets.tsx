@@ -887,9 +887,9 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                     /* ─── FULL TABLE VIEW (no asset selected) ─── */
                     <>
                 {/* Header */}
-                <div className="p-3 sm:p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2 bg-slate-50/50">
-                    <h2 className="text-lg font-bold text-slate-900">Asset Registry</h2>
-                    <div className="flex flex-wrap gap-2">
+                <div className="p-2 sm:p-3 md:p-4 border-b border-slate-100 flex flex-wrap justify-between items-center gap-2 bg-slate-50/50">
+                    <h2 className="hidden sm:block text-lg font-bold text-slate-900">Asset Registry</h2>
+                    <div className="hidden sm:flex flex-wrap gap-2">
                         {/* Bulk Import */}
                         {canCreate && (
                             <button

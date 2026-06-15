@@ -310,12 +310,12 @@ export const WorkOrders: React.FC = () => {
                 onSave={handleJobCreated}
                 dictionaries={dictionaries}
             />
-            <div className={`flex flex-wrap justify-between items-center mb-3 md:mb-4 gap-2 ${viewMode === 'DETAIL' ? 'mobile-hide-when-detail' : ''}`}>
+            <div className={`hidden sm:flex flex-wrap justify-between items-center mb-3 md:mb-4 gap-2`}>
                 <div>
                     <h1 className="text-base md:text-lg font-bold text-slate-900">Work Order Manager</h1>
                     <p className="text-[11px] md:text-xs text-slate-500">Track jobs and strategies</p>
                 </div>
-                <div className={`flex items-center gap-2 ${viewMode === 'DETAIL' ? 'mobile-hide-when-detail' : ''}`}>
+                <div className="flex items-center gap-2">
                     <AskRelanternButton
                         contextType="workOrder"
                         contextSummary={`Work Order Summary: ${workOrders.length} total WOs. Open: ${workOrders.filter(w => w.status === 'OPEN' || w.status === 'WIP').length}. Overdue: ${workOrders.filter(w => w.dueDate && new Date(w.dueDate) < new Date() && !['CLOSED', 'TECO', 'CANCELLED'].includes(w.status)).length}. PM-to-CM Ratio: ${workOrders.filter(w => (w.type as string) === 'PM').length}:${workOrders.filter(w => (w.type as string) === 'CM').length}.`}
@@ -607,14 +607,18 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     return (
         <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             {/* Header / Filters */}
-            <div className="p-3 md:p-4 border-b border-slate-200 space-y-3">
+            <div className="p-2 sm:p-3 md:p-4 border-b border-slate-200 space-y-2 sm:space-y-3">
                 <div className="flex flex-wrap justify-between items-center gap-2">
-                    <div>
+                    {/* Heading — hidden on mobile (outer page title covers it) */}
+                    <div className="hidden sm:block">
                         <h1 className="text-base md:text-lg font-bold text-slate-900">Work Orders</h1>
                         <p className="text-[11px] md:text-xs text-slate-500">Manage maintenance tasks, schedules, and resources.</p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <DensityToggle value={density} onChange={setDensity} />
+                        {/* Density toggle — desktop only */}
+                        <div className="hidden md:block">
+                            <DensityToggle value={density} onChange={setDensity} />
+                        </div>
                         <button onClick={onCreate} disabled={!canCreate} className={`hidden sm:flex bg-primary-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium items-center gap-1.5 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`} title={!canCreate ? 'Insufficient permissions' : 'Create new work order'}>
                             <Plus size={14} /> New Work Order
                         </button>
@@ -622,11 +626,11 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="relative flex-1 max-w-md">
-                        <Search className="absolute left-2.5 top-2 text-slate-400" size={14} />
+                    <div className="relative flex-1">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                         <input
                             type="text"
-                            placeholder="Search WO Number, Asset, Description..."
+                            placeholder="Search WO, Asset, Description..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
                             className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
@@ -3330,12 +3334,12 @@ const TasksTab: React.FC<{
     return (
         <div className="animate-in fade-in duration-300 space-y-0">
             {/* Header Bar */}
-            <div className="bg-white border border-slate-200 rounded-t-lg p-3 flex items-center justify-between">
-                <div className="flex items-center gap-4">
+            <div className="bg-white border border-slate-200 rounded-t-lg p-2 sm:p-3 flex items-center justify-between">
+                <div className="flex items-center gap-2 sm:gap-4">
                     <h3 className="font-bold text-slate-800 text-sm">Steps</h3>
                     {tasks.length > 0 && (
                         <div className="flex items-center gap-2">
-                            <div className="w-24 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                            <div className="w-16 sm:w-24 bg-slate-200 rounded-full h-1.5 overflow-hidden">
                                 <div
                                     className={`h-1.5 rounded-full transition-all duration-500 ${allDone ? 'bg-green-500' : 'bg-blue-500'}`}
                                     style={{ width: `${pct}%` }}
@@ -3344,7 +3348,7 @@ const TasksTab: React.FC<{
                             <span className={`text-[10px] font-bold whitespace-nowrap ${allDone ? 'text-green-600' : completed > 0 ? 'text-blue-600' : 'text-slate-400'}`}>
                                 {completed}/{tasks.length}
                             </span>
-                            <span className="text-[10px] text-slate-400 border-l border-slate-200 pl-2">
+                            <span className="hidden sm:inline text-[10px] text-slate-400 border-l border-slate-200 pl-2">
                                 {totalHrs.toFixed(1)}h total
                             </span>
                         </div>
@@ -3358,7 +3362,7 @@ const TasksTab: React.FC<{
                                     onUpdate(tasks.map(t => ({ ...t, status: 'COMPLETED' as const })));
                                 }
                             }}
-                            className="text-xs bg-green-600 text-white px-2.5 py-1.5 rounded hover:bg-green-700 flex items-center gap-1 font-medium"
+                            className="hidden sm:flex text-xs bg-green-600 text-white px-2.5 py-1.5 rounded hover:bg-green-700 items-center gap-1 font-medium"
                         >
                             <CheckCircle size={12} /> Complete All
                         </button>
@@ -3385,7 +3389,7 @@ const TasksTab: React.FC<{
                             {/* Collapsed Header Row */}
                             <div
                                 onClick={() => toggleExpand(task.id)}
-                                className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors group ${
+                                className={`flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2.5 sm:py-3 cursor-pointer transition-colors group ${
                                     isExpanded
                                         ? 'bg-blue-50 border-l-[3px] border-l-blue-500'
                                         : 'bg-white hover:bg-slate-50 border-l-[3px] border-l-transparent'
@@ -3418,8 +3422,8 @@ const TasksTab: React.FC<{
                                     })()}
                                 </div>
 
-                                {/* Resource badges (compact) */}
-                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                {/* Resource badges (compact) — hidden on mobile */}
+                                <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
                                     {laborCount > 0 && (
                                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 font-medium flex items-center gap-0.5">
                                             <Users size={9} /> {laborCount}
@@ -3883,20 +3887,47 @@ const TaskEditor: React.FC<{
 
     return (
         <div className="flex flex-col h-full">
-            {/* Compact Toolbar */}
-            <div className="px-4 py-2 border-b border-slate-200 bg-white flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2 flex-1">
-                    <span className="font-mono text-xs font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded">#{task.sequence}</span>
+            {/* Compact Toolbar — stacks on mobile */}
+            <div className="px-3 sm:px-4 py-2 border-b border-slate-200 bg-white space-y-1.5 sm:space-y-0">
+                {/* Row 1: Task description (full-width on mobile) */}
+                <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded flex-shrink-0">#{task.sequence}</span>
                     <input
                         type="text"
                         value={task.description}
                         onChange={(e) => onChange({ description: e.target.value })}
-                        className="flex-1 font-semibold text-sm text-slate-900 bg-transparent border-none focus:outline-none focus:ring-0"
+                        className="flex-1 font-semibold text-sm sm:text-sm text-slate-900 bg-transparent border-none focus:outline-none focus:ring-0 min-w-0"
                         placeholder="Task description..."
                     />
+                    {/* Delete — visible on all sizes */}
+                    <button onClick={onDelete} className="text-slate-400 hover:text-red-500 p-1 flex-shrink-0 sm:hidden"><Trash2 size={16} /></button>
                 </div>
-                <div className="flex items-center gap-2">
-                    {/* Compact Duration Input */}
+                {/* Row 2: Duration + Status + Delete (second row on mobile, inline on desktop) */}
+                <div className="flex items-center gap-2 sm:hidden">
+                    <div className="flex items-center gap-1 text-xs">
+                        <Clock size={12} className="text-slate-400" />
+                        <input
+                            type="number"
+                            value={task.estHours || ''}
+                            onChange={(e) => onChange({ estHours: parseFloat(e.target.value) || 0 })}
+                            className="w-14 px-1.5 py-1 text-xs text-right border border-slate-200 rounded focus:ring-1 focus:ring-primary-500"
+                            placeholder="0"
+                        />
+                        <span className="text-slate-400">hrs</span>
+                    </div>
+                    <select
+                        value={task.status}
+                        onChange={(e) => onChange({ status: e.target.value as any })}
+                        className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg ${task.status === 'COMPLETED' ? 'bg-green-100 text-green-700' : task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                        <option value="PENDING">PENDING</option>
+                        <option value="IN_PROGRESS">IN PROGRESS</option>
+                        <option value="COMPLETED">COMPLETED</option>
+                    </select>
+                </div>
+                {/* Desktop inline toolbar — hidden on mobile */}
+                <div className="hidden sm:flex items-center gap-2 -mt-1">
+                    <div className="flex-1" /> {/* spacer */}
                     <div className="flex items-center gap-1 text-xs">
                         <Clock size={12} className="text-slate-400" />
                         <input
@@ -3922,10 +3953,10 @@ const TaskEditor: React.FC<{
             </div>
 
             {/* Tab Bar: Instructions | Resources */}
-            <div className="px-4 py-0 border-b border-slate-200 bg-slate-50/50 flex items-center gap-0">
+            <div className="px-2 sm:px-4 py-0 border-b border-slate-200 bg-slate-50/50 flex items-center gap-0">
                 <button
                     onClick={() => onTabChange('instructions')}
-                    className={`px-4 py-2 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors ${
+                    className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors text-center ${
                         editorTab === 'instructions'
                             ? 'border-blue-600 text-blue-700 bg-white'
                             : 'border-transparent text-slate-400 hover:text-slate-600'
@@ -3936,7 +3967,7 @@ const TaskEditor: React.FC<{
                 </button>
                 <button
                     onClick={() => onTabChange('resources')}
-                    className={`px-4 py-2 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors flex items-center gap-1.5 ${
+                    className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 text-xs font-bold uppercase tracking-wide border-b-2 transition-colors flex items-center justify-center sm:justify-start gap-1.5 ${
                         editorTab === 'resources'
                             ? 'border-blue-600 text-blue-700 bg-white'
                             : 'border-transparent text-slate-400 hover:text-slate-600'
@@ -3955,7 +3986,7 @@ const TaskEditor: React.FC<{
                 </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-2 sm:p-3 md:p-5 space-y-3 sm:space-y-4">
 
                 {/* Warning Banner (always visible) */}
                 {dateWarning && (
@@ -3971,8 +4002,8 @@ const TaskEditor: React.FC<{
 
                 {/* Instructions Section (PRIMARY - Full Page) */}
                 <div className="bg-white rounded-lg border border-slate-200">
-                    <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between">
-                        <h4 className="text-xs font-bold text-slate-700 uppercase flex items-center gap-2">
+                    <div className="px-2 sm:px-3 py-1.5 sm:py-2 border-b border-slate-100 flex items-center justify-between">
+                        <h4 className="hidden sm:flex text-xs font-bold text-slate-700 uppercase items-center gap-2">
                             <ClipboardList size={14} /> Task Instructions
                         </h4>
                         <div className="flex items-center gap-2">
@@ -3991,12 +4022,12 @@ const TaskEditor: React.FC<{
                                 className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
                             >
                                 <Book size={12} />
-                                Import Template
+                                <span className="hidden sm:inline">Import Template</span>
                             </button>
                         </div>
                     </div>
 
-                    <div className="p-3">
+                    <div className="p-1.5 sm:p-3">
                         <ProcedureBuilder
                             instructions={task.instructions || []}
                             onChange={(blocks) => onChange({ instructions: blocks })}
@@ -4056,9 +4087,9 @@ const TaskEditor: React.FC<{
 
                 {/* Compact Project Scheduling (Only for PROJECT scope) */}
                 {jobContext.scope === 'PROJECT' && (
-                    <div className="bg-white rounded-lg border border-blue-100 p-3">
+                    <div className="bg-white rounded-lg border border-blue-100 p-2 sm:p-3">
                         <h4 className="text-xs font-bold text-blue-600 uppercase mb-2">Task Schedule (Project Mode)</h4>
-                        <div className="grid grid-cols-4 gap-2 text-xs">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                             <div>
                                 <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Start Date</label>
                                 <input

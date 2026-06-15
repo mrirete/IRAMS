@@ -152,10 +152,10 @@ export const ServiceRequests: React.FC = () => {
         <div className="flex h-[calc(100vh-6rem)] gap-6">
             {/* Main Board / List View */}
             <div className={`flex-1 flex flex-col transition-all duration-300 ${selectedRequest || isCreating ? 'hidden lg:flex lg:w-1/3 lg:flex-none' : 'w-full'}`}>
-                <div className="mb-6 flex flex-wrap justify-between items-center gap-3">
-                    <div>
-                        <h1 className="text-2xl font-bold text-slate-900">Maintenance Requests</h1>
-                        <p className="text-sm text-slate-500">Triage and convert issues to work orders.</p>
+                <div className="mb-3 sm:mb-6 flex flex-wrap justify-between items-center gap-3">
+                    <div className="hidden sm:block">
+                        <h1 className="text-lg md:text-2xl font-bold text-slate-900">Maintenance Requests</h1>
+                        <p className="text-xs sm:text-sm text-slate-500">Triage and convert issues to work orders.</p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                         <AskRelanternButton
