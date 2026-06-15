@@ -29,9 +29,9 @@ const SortableItem: React.FC<{ id: string, children: React.ReactNode, mode: 'EDI
                 <div
                     {...attributes}
                     {...listeners}
-                    className="absolute left-[-24px] top-4 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing p-1"
+                    className="absolute left-[-20px] top-4 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing p-1 hidden sm:block"
                 >
-                    <GripVertical size={20} />
+                    <GripVertical size={16} />
                 </div>
             )}
             {children}
@@ -165,7 +165,7 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={instructions.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                    <div className="space-y-3 pl-6">
+                    <div className="space-y-3 pl-1 sm:pl-6">
                         {instructions.map((block) => (
                             <SortableItem key={block.id} id={block.id} mode={mode}>
                                 {mode === 'EDIT' ? (
