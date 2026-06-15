@@ -1767,9 +1767,9 @@ const RequestDetail: React.FC<{
                 </div>
             )}
 
-            {/* ═══ Mobile Sticky Bottom Action Bar (thumb-reach zone) ═══ */}
+            {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}
             {request.status !== RequestStatus.CONVERTED && request.status !== RequestStatus.REJECTED && (
-                <div className="md:hidden flex-shrink-0 bg-white border-t border-slate-200 px-4 py-3 flex items-center gap-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+                <div className="sm:hidden mobile-detail-footer">
                     {canEdit && isEditable && (
                         <button
                             onClick={handleSave}

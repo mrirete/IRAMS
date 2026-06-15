@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 
 export interface TabDefinition {
     id: string;
@@ -25,10 +25,47 @@ export const UnifiedTabBar: React.FC<UnifiedTabBarProps> = ({
     bgClassName = 'bg-white',
 }) => {
     const visibleTabs = tabs.filter(t => t.show !== false);
+    const scrollRef = useRef<HTMLDivElement>(null);
+    const [hasOverflow, setHasOverflow] = useState(false);
+
+    // Detect horizontal overflow for fade indicator
+    const checkOverflow = useCallback(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const canScroll = el.scrollWidth > el.clientWidth;
+        const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2;
+        setHasOverflow(canScroll && !atEnd);
+    }, []);
+
+    useEffect(() => {
+        checkOverflow();
+        const el = scrollRef.current;
+        if (el) {
+            el.addEventListener('scroll', checkOverflow, { passive: true });
+            window.addEventListener('resize', checkOverflow);
+        }
+        return () => {
+            if (el) el.removeEventListener('scroll', checkOverflow);
+            window.removeEventListener('resize', checkOverflow);
+        };
+    }, [checkOverflow, visibleTabs.length]);
+
+    // Auto-scroll active tab into view
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        const activeBtn = el.querySelector('.unified-tab-active');
+        if (activeBtn) {
+            (activeBtn as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        }
+    }, [activeTab]);
 
     return (
-        <div className={`px-2 md:px-5 border-b border-slate-200 flex-shrink-0 ${bgClassName}`}>
-            <div className="flex gap-0.5 md:gap-1 overflow-x-auto scrollbar-hide">
+        <div className={`px-2 md:px-5 border-b border-slate-200 flex-shrink-0 ${bgClassName} tab-scroll-container ${hasOverflow ? 'has-overflow' : ''}`}>
+            <div
+                ref={scrollRef}
+                className="flex gap-0.5 md:gap-1 overflow-x-auto scrollbar-hide"
+            >
                 {visibleTabs.map(tab => {
                     const isActive = activeTab === tab.id;
                     const Icon = tab.icon;

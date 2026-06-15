@@ -483,39 +483,99 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
     };
 
 
+    const [showMobileSheet, setShowMobileSheet] = useState(false);
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
 
             {/* ── Toolbar (Edit Mode Only) ── */}
             {mode === 'EDIT' && !readOnly && (
-                <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm p-2 border-b border-blue-100 -mx-4 px-4 mb-4">
-                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                        {['Structure', 'Input', 'Inspection', 'Evidence', 'Safety'].map(cat => (
-                            <button
-                                key={cat}
-                                onClick={() => setActiveCategory(cat)}
-                                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors
-                                    ${activeCategory === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-                            >
-                                {cat}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-3">
-                        {BLOCK_TYPES.filter(t => t.category === activeCategory).map(tool => (
-                            <button
-                                key={tool.type}
-                                onClick={() => addBlock(tool.type)}
-                                className="flex items-center gap-2 p-2 rounded border border-slate-200 hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm transition text-left group"
-                            >
-                                <div className="p-1.5 bg-slate-100 rounded group-hover:bg-white text-slate-500 group-hover:text-blue-600 transition-colors">
-                                    <tool.icon size={14} />
+                <>
+                    {/* ═══ MOBILE: Compact "+ Add Block" button ═══ */}
+                    <div className="sm:hidden sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-slate-100 px-3 py-2 -mx-3">
+                        <button
+                            onClick={() => setShowMobileSheet(!showMobileSheet)}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 bg-primary-600 text-white rounded-xl text-sm font-semibold shadow-sm hover:bg-primary-500 transition-colors"
+                        >
+                            <Plus size={16} /> Add Block
+                        </button>
+
+                        {/* Bottom sheet */}
+                        {showMobileSheet && (
+                            <div className="fixed inset-0 z-[100] bg-black/40 flex items-end" onClick={() => setShowMobileSheet(false)}>
+                                <div
+                                    className="w-full bg-white rounded-t-2xl max-h-[70vh] overflow-y-auto animate-in slide-in-from-bottom duration-200"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex items-center justify-between p-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+                                        <h3 className="text-sm font-bold text-slate-900">Add Instruction Block</h3>
+                                        <button onClick={() => setShowMobileSheet(false)} className="p-1.5 rounded-lg hover:bg-slate-100">
+                                            <X size={18} className="text-slate-400" />
+                                        </button>
+                                    </div>
+                                    {/* Category pills */}
+                                    <div className="flex gap-2 p-3 overflow-x-auto scrollbar-hide border-b border-slate-50">
+                                        {['Structure', 'Input', 'Inspection', 'Evidence', 'Safety'].map(cat => (
+                                            <button
+                                                key={cat}
+                                                onClick={() => setActiveCategory(cat)}
+                                                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors
+                                                    ${activeCategory === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                            >
+                                                {cat}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {/* Block type grid */}
+                                    <div className="grid grid-cols-2 gap-2 p-3">
+                                        {BLOCK_TYPES.filter(t => t.category === activeCategory).map(tool => (
+                                            <button
+                                                key={tool.type + tool.label}
+                                                onClick={() => { addBlock(tool.type); setShowMobileSheet(false); }}
+                                                className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition text-left group active:scale-95"
+                                            >
+                                                <div className="p-2 bg-slate-100 rounded-lg group-hover:bg-white text-slate-500 group-hover:text-blue-600 transition-colors">
+                                                    <tool.icon size={16} />
+                                                </div>
+                                                <span className="text-sm font-medium text-slate-700 group-hover:text-blue-900">{tool.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
-                                <span className="text-xs font-medium text-slate-700 group-hover:text-blue-900">{tool.label}</span>
-                            </button>
-                        ))}
+                            </div>
+                        )}
                     </div>
-                </div>
+
+                    {/* ═══ DESKTOP/TABLET: Full toolbar ═══ */}
+                    <div className="hidden sm:block sticky top-0 z-10 bg-white/90 backdrop-blur-sm p-2 border-b border-blue-100 -mx-4 px-4 mb-4">
+                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                            {['Structure', 'Input', 'Inspection', 'Evidence', 'Safety'].map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setActiveCategory(cat)}
+                                    className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-colors
+                                        ${activeCategory === cat ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                                >
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mt-3">
+                            {BLOCK_TYPES.filter(t => t.category === activeCategory).map(tool => (
+                                <button
+                                    key={tool.type}
+                                    onClick={() => addBlock(tool.type)}
+                                    className="flex items-center gap-2 p-2 rounded border border-slate-200 hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm transition text-left group"
+                                >
+                                    <div className="p-1.5 bg-slate-100 rounded group-hover:bg-white text-slate-500 group-hover:text-blue-600 transition-colors">
+                                        <tool.icon size={14} />
+                                    </div>
+                                    <span className="text-xs font-medium text-slate-700 group-hover:text-blue-900">{tool.label}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </>
             )}
 
             {/* ── Instructions List ── */}

@@ -310,12 +310,12 @@ export const WorkOrders: React.FC = () => {
                 onSave={handleJobCreated}
                 dictionaries={dictionaries}
             />
-            <div className="flex flex-wrap justify-between items-center mb-3 md:mb-4 gap-2">
+            <div className={`flex flex-wrap justify-between items-center mb-3 md:mb-4 gap-2 ${viewMode === 'DETAIL' ? 'mobile-hide-when-detail' : ''}`}>
                 <div>
                     <h1 className="text-base md:text-lg font-bold text-slate-900">Work Order Manager</h1>
                     <p className="text-[11px] md:text-xs text-slate-500">Track jobs and strategies</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className={`flex items-center gap-2 ${viewMode === 'DETAIL' ? 'mobile-hide-when-detail' : ''}`}>
                     <AskRelanternButton
                         contextType="workOrder"
                         contextSummary={`Work Order Summary: ${workOrders.length} total WOs. Open: ${workOrders.filter(w => w.status === 'OPEN' || w.status === 'WIP').length}. Overdue: ${workOrders.filter(w => w.dueDate && new Date(w.dueDate) < new Date() && !['CLOSED', 'TECO', 'CANCELLED'].includes(w.status)).length}. PM-to-CM Ratio: ${workOrders.filter(w => (w.type as string) === 'PM').length}:${workOrders.filter(w => (w.type as string) === 'CM').length}.`}
@@ -1407,7 +1407,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             />
 
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-4 bg-slate-50/50">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-3 md:p-4 bg-slate-50/50">
                 <div className="max-w-7xl mx-auto">
                     {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
                     {activeTab === 'tasks' && (
@@ -1435,8 +1435,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 </div>
             </div>
 
-            {/* ═══ Mobile Sticky Bottom Action Bar (thumb-reach zone) ═══ */}
-            <div className="md:hidden sticky bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 px-4 py-3 flex items-center gap-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+            {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}
+            <div className="sm:hidden mobile-detail-footer">
                 <button
                     onClick={handleSave}
                     disabled={isSaving}
@@ -1463,7 +1463,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         className="flex-1 flex items-center justify-center gap-2 py-3 bg-white border-2 border-slate-300 text-slate-700 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-50"
                     >
                         <Lock size={16} />
-                        Close (Financial)
+                        Close
                     </button>
                 )}
             </div>
@@ -3437,8 +3437,8 @@ const TasksTab: React.FC<{
                                     )}
                                 </div>
 
-                                {/* Hours */}
-                                <span className="text-xs text-slate-500 font-medium flex-shrink-0 w-14 text-right">
+                                {/* Hours — hidden on mobile */}
+                                <span className="hidden sm:block text-xs text-slate-500 font-medium flex-shrink-0 w-14 text-right">
                                     {task.estHours}h
                                 </span>
 
@@ -3454,8 +3454,8 @@ const TasksTab: React.FC<{
                                 {/* Warning */}
                                 {hasWarning && <AlertTriangle size={14} className="text-amber-500 flex-shrink-0" />}
 
-                                {/* Move controls */}
-                                <div className={`flex items-center gap-0.5 flex-shrink-0 ${isExpanded ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'} transition-opacity`}>
+                                {/* Move controls — hidden on mobile (supervisor-only) */}
+                                <div className={`hidden sm:flex items-center gap-0.5 flex-shrink-0 ${isExpanded ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'} transition-opacity`}>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); moveTask(index, 'up'); }}
                                         className="p-1 hover:bg-slate-200 rounded text-slate-400 disabled:opacity-30"

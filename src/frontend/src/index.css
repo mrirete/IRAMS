@@ -813,10 +813,39 @@ select {
   .mobile-bottom-nav { display: none; }
 }
 
-/* Account for bottom nav height on mobile */
+/* Account for bottom nav + detail action footer on mobile */
 @media (max-width: 639px) {
   .eam-app main {
-    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   Mobile Detail Footer — Fixed above bottom nav
+   ═══════════════════════════════════════════════ */
+
+.mobile-detail-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  z-index: 45;
+  background: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid #e2e8f0;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.08);
+  animation: mobile-footer-enter 0.25s ease-out;
+}
+
+/* Hide mobile page-level chrome when detail is open */
+@media (max-width: 639px) {
+  .mobile-hide-when-detail {
+    display: none !important;
   }
 }
 
@@ -1818,4 +1847,33 @@ select {
 @keyframes mobile-footer-enter {
   from { transform: translateY(100%); opacity: 0; }
   to   { transform: translateY(0); opacity: 1; }
+}
+
+/* Compact header entrance animation */
+.unified-header-enter {
+  animation: header-fade-in 0.2s ease-out;
+}
+@keyframes header-fade-in {
+  from { opacity: 0.7; }
+  to   { opacity: 1; }
+}
+
+/* Tab scroll fade indicator */
+.tab-scroll-container {
+  position: relative;
+}
+.tab-scroll-container::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  background: linear-gradient(to right, transparent, white);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.tab-scroll-container.has-overflow::after {
+  opacity: 1;
 }

@@ -86,106 +86,42 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
         return () => document.removeEventListener('mousedown', handler);
     }, [showOverflow]);
 
-    // Collapsed breadcrumbs for mobile — show only last 2 segments
-    const mobileBreadcrumbs = breadcrumbs && breadcrumbs.length > 2
-        ? ['...', ...breadcrumbs.slice(-2)]
-        : breadcrumbs;
-
     return (
         <div className="border-b border-slate-200 bg-white flex-shrink-0 unified-header-enter">
-            {/* Breadcrumb row — collapsed on mobile */}
-            {breadcrumbs && breadcrumbs.length > 0 && (
-                <div className="px-3 md:px-5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center text-[10px] text-slate-400 gap-1 overflow-x-auto scrollbar-hide">
-                    {/* Mobile: collapsed breadcrumbs */}
-                    <span className="flex items-center gap-1 md:hidden">
-                        {mobileBreadcrumbs?.map((crumb, i) => (
-                            <React.Fragment key={i}>
-                                {i > 0 && <ChevronRight size={10} className="text-slate-300 flex-shrink-0" />}
-                                <span className="whitespace-nowrap">{crumb}</span>
-                            </React.Fragment>
-                        ))}
-                    </span>
-                    {/* Desktop: full breadcrumbs */}
-                    <span className="hidden md:flex items-center gap-1">
-                        {breadcrumbs.map((crumb, i) => (
-                            <React.Fragment key={i}>
-                                {i > 0 && <ChevronRight size={10} className="text-slate-300 flex-shrink-0" />}
-                                <span className="whitespace-nowrap">{crumb}</span>
-                            </React.Fragment>
-                        ))}
-                    </span>
-                </div>
-            )}
+            {/* ═══ MOBILE: Compact single-row header (<640px) ═══ */}
+            <div className="sm:hidden px-3 py-2 flex items-center gap-2 min-h-[48px]">
+                {/* Icon */}
+                {icon && <div className="flex-shrink-0">{icon}</div>}
 
-            {/* Main header row */}
-            <div className="px-3 py-2.5 md:px-5 md:py-3 flex items-center gap-2 md:gap-4 min-h-[48px] md:min-h-[56px]">
-                {/* Icon / Avatar */}
-                {icon && (
-                    <div className="flex-shrink-0">
-                        {icon}
-                    </div>
-                )}
-
-                {/* Title block — stacked on mobile */}
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <h1 className="text-base md:text-lg font-bold text-slate-900 truncate">{title}</h1>
-                        {status && (
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${statusClassName}`}>
-                                {status}
-                            </span>
-                        )}
-                        {badges}
-                    </div>
-                    {subtitle && (
-                        <p className="text-xs md:text-sm text-slate-500 truncate mt-0.5">{subtitle}</p>
-                    )}
-                    {metadata && (
-                        <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
-                            {metadata}
-                        </div>
+                {/* Title + status inline */}
+                <div className="flex-1 min-w-0 flex items-center gap-2">
+                    <h1 className="text-sm font-bold text-slate-900 truncate">{title}</h1>
+                    {status && (
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider border flex-shrink-0 ${statusClassName}`}>
+                            {status}
+                        </span>
                     )}
                 </div>
 
-                {/* Actions */}
-                <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+                {/* Actions — only primary + overflow */}
+                <div className="flex items-center gap-1 flex-shrink-0">
                     {isActionArray ? (
                         <>
-                            {/* Primary actions — always visible */}
                             {primaryActions.map((action, i) => (
                                 <button
-                                    key={`p-${i}`}
+                                    key={`mp-${i}`}
                                     onClick={action.onClick}
                                     disabled={action.disabled}
-                                    className={`px-2 py-1.5 md:px-3 rounded-lg text-xs md:text-sm font-medium flex items-center gap-1.5 md:gap-2 transition-colors ${
+                                    className={`p-2 rounded-lg transition-colors ${
                                         action.disabled ? 'opacity-50 cursor-not-allowed' : ''
                                     } ${variantStyles[action.variant || 'secondary']}`}
                                     title={action.label}
                                 >
                                     {action.icon}
-                                    <span className="hidden sm:inline">{action.label}</span>
                                 </button>
                             ))}
-
-                            {/* Desktop: show all overflow actions as buttons */}
-                            {overflowActions.map((action, i) => (
-                                <button
-                                    key={`s-${i}`}
-                                    onClick={action.onClick}
-                                    disabled={action.disabled}
-                                    className={`hidden md:flex px-2 py-1.5 md:px-3 rounded-lg text-xs md:text-sm font-medium items-center gap-1.5 md:gap-2 transition-colors ${
-                                        action.disabled ? 'opacity-50 cursor-not-allowed' : ''
-                                    } ${variantStyles[action.variant || 'secondary']}`}
-                                    title={action.label}
-                                >
-                                    {action.icon}
-                                    <span className="hidden sm:inline">{action.label}</span>
-                                </button>
-                            ))}
-
-                            {/* Mobile: overflow menu (⋯) — only if there ARE overflow actions */}
                             {overflowActions.length > 0 && (
-                                <div className="relative md:hidden" ref={overflowRef}>
+                                <div className="relative" ref={overflowRef}>
                                     <button
                                         onClick={() => setShowOverflow(!showOverflow)}
                                         className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
@@ -214,15 +150,84 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                             )}
                         </>
                     ) : actions}
-
-                    {/* Close button */}
                     <button
                         onClick={onClose}
-                        className="ml-1 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                         title="Close"
                     >
                         <X size={18} />
                     </button>
+                </div>
+            </div>
+
+            {/* ═══ DESKTOP/TABLET: Full header (≥640px) ═══ */}
+            <div className="hidden sm:block">
+                {/* Breadcrumb row (optional) */}
+                {breadcrumbs && breadcrumbs.length > 0 && (
+                    <div className="px-5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center text-[10px] text-slate-400 gap-1 overflow-x-auto scrollbar-hide">
+                        {breadcrumbs.map((crumb, i) => (
+                            <React.Fragment key={i}>
+                                {i > 0 && <ChevronRight size={10} className="text-slate-300 flex-shrink-0" />}
+                                <span className="whitespace-nowrap">{crumb}</span>
+                            </React.Fragment>
+                        ))}
+                    </div>
+                )}
+
+                {/* Main header row */}
+                <div className="px-5 py-3 flex items-center gap-4 min-h-[56px]">
+                    {/* Icon / Avatar */}
+                    {icon && <div className="flex-shrink-0">{icon}</div>}
+
+                    {/* Title block */}
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                            <h1 className="text-lg font-bold text-slate-900 truncate">{title}</h1>
+                            {status && (
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${statusClassName}`}>
+                                    {status}
+                                </span>
+                            )}
+                            {badges}
+                        </div>
+                        {subtitle && (
+                            <p className="text-sm text-slate-500 truncate mt-0.5">{subtitle}</p>
+                        )}
+                        {metadata && (
+                            <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
+                                {metadata}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        {isActionArray ? (
+                            <>
+                                {visibleActions.map((action, i) => (
+                                    <button
+                                        key={`d-${i}`}
+                                        onClick={action.onClick}
+                                        disabled={action.disabled}
+                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
+                                            action.disabled ? 'opacity-50 cursor-not-allowed' : ''
+                                        } ${variantStyles[action.variant || 'secondary']}`}
+                                        title={action.label}
+                                    >
+                                        {action.icon}
+                                        <span className="hidden sm:inline">{action.label}</span>
+                                    </button>
+                                ))}
+                            </>
+                        ) : actions}
+                        <button
+                            onClick={onClose}
+                            className="ml-1 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="Close"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

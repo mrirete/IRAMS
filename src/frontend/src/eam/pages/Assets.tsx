@@ -1449,8 +1449,8 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                             onTabChange={(id) => setActiveTab(id as TabId)}
                         />
 
-                        {/* Asset Path Breadcrumb — collapsed on mobile */}
-                        <div className="bg-slate-50 border-b border-slate-200 px-4 md:px-6 py-1.5 flex items-center text-[10px] z-10 sticky top-0">
+                        {/* Asset Path Breadcrumb — hidden on mobile (header already shows title) */}
+                        <div className="hidden sm:flex bg-slate-50 border-b border-slate-200 px-4 md:px-6 py-1.5 items-center text-[10px] z-10 sticky top-0">
                             <span className="font-bold mr-2 text-slate-500 uppercase tracking-wider flex items-center gap-1 flex-shrink-0">
                                 <Network size={10} className="text-slate-400" />
                                 <span className="hidden sm:inline">Path:</span>
@@ -1487,7 +1487,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         </div>
 
                         {/* Tab Content */}
-                        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+                        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50">
                             {activeTab === 'details' && <DetailsTab asset={selectedAsset} assetTypes={assetTypes} contacts={contacts} vendors={vendors} costCenters={costCenters} dictionaries={dictionaries} onUpdate={handleUpdateAsset} onRefreshContacts={refreshContacts} tagEditable={tagEditable} onChangeTag={handleChangeTag} />}
 
                             {activeTab === 'hierarchy' && <HierarchyTab asset={selectedAsset} assets={assets} onSelect={setSelectedAsset} />}
@@ -1525,9 +1525,9 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                             )}
                         </div>
 
-                        {/* ═══ Mobile Sticky Bottom Action Bar (thumb-reach zone) ═══ */}
+                        {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}
                         {canEdit && (
-                            <div className="md:hidden flex-shrink-0 bg-white border-t border-slate-200 px-4 py-3 flex items-center gap-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+                            <div className="sm:hidden mobile-detail-footer">
                                 <button
                                     onClick={handleSave}
                                     disabled={saving}
