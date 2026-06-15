@@ -38,7 +38,7 @@ export const DebugSave: React.FC = () => {
     return (
         <div className="p-10">
             <h1 className="text-2xl font-bold mb-4">Debug WO Save</h1>
-            <button onClick={runTest} className="bg-relantern-500 text-white px-4 py-2 rounded">
+            <button onClick={runTest} className="bg-primary-600 text-white px-4 py-2 rounded">
                 Run Update Test
             </button>
             <pre className="mt-4 bg-slate-100 p-4 rounded border border-slate-300 whitespace-pre-wrap font-mono text-sm">

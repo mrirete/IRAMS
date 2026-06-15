@@ -117,7 +117,7 @@ export const NexusAI: React.FC<NexusAIProps> = ({ isOpen, onClose, contextData }
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] rounded-lg p-3 text-sm shadow-sm ${msg.role === 'user'
-                ? 'bg-relantern-500 text-white rounded-br-none'
+                ? 'bg-primary-600 text-white rounded-br-none'
                 : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none'
               }`}>
               {msg.role === 'model' && (
@@ -160,7 +160,7 @@ export const NexusAI: React.FC<NexusAIProps> = ({ isOpen, onClose, contextData }
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="absolute right-2 top-2 p-1.5 bg-relantern-500 text-white rounded-md hover:bg-relantern-600 disabled:opacity-50 disabled:hover:bg-relantern-500 transition"
+            className="absolute right-2 top-2 p-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-500 disabled:opacity-50 disabled:hover:bg-primary-600 transition"
           >
             <Send size={16} />
           </button>

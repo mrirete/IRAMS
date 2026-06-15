@@ -97,7 +97,7 @@ const UploadModal: React.FC<{
                 </div>
                 <div className="p-4 border-t border-slate-200 flex justify-end gap-2">
                     <button onClick={onCancel} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">Cancel</button>
-                    <button onClick={() => onConfirm(items)} className="px-4 py-2 text-sm bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 font-medium shadow-sm">
+                    <button onClick={() => onConfirm(items)} className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-500 font-medium shadow-sm">
                         Upload {items.length} Document{items.length !== 1 ? 's' : ''}
                     </button>
                 </div>
@@ -369,7 +369,7 @@ export const FilesTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrde
                     </div>
                     {!isReadonly && (
                         <button onClick={() => fileInputRef.current?.click()} disabled={isUploading}
-                            className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded-lg hover:bg-relantern-600 flex items-center gap-1.5 transition disabled:opacity-50 shadow-sm">
+                            className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-500 flex items-center gap-1.5 transition disabled:opacity-50 shadow-sm">
                             {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                             {isUploading ? 'Uploading…' : 'Upload Document'}
                         </button>

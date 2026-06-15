@@ -299,7 +299,7 @@ const DictionaryModal: React.FC<DictionaryModalProps> = ({ isOpen, onClose, onSa
                         <button
                             type="submit"
                             disabled={isSaving}
-                            className="px-4 py-2 text-sm font-medium text-white bg-relantern-500 hover:bg-relantern-600 rounded-lg flex items-center gap-2"
+                            className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-500 rounded-lg flex items-center gap-2"
                         >
                             {isSaving ? <Activity className="animate-spin" size={16} /> : <Save size={16} />}
                             {entry ? 'Save Changes' : 'Create Entry'}
@@ -603,7 +603,7 @@ const DictionaryManager: React.FC = () => {
                         </div>
                         <button
                             onClick={handleAddClick}
-                            className="flex items-center gap-2 px-4 py-2 bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 text-sm font-medium transition-colors shadow-sm">
+                            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium transition-colors shadow-sm">
                             <Plus size={16} /> Add Entry
                         </button>
 
@@ -1216,7 +1216,7 @@ const UserPermissionManager: React.FC = () => {
                                             <button
                                                 onClick={handleSave}
                                                 disabled={isSaving}
-                                                className={`px-4 py-2 text-white rounded text-sm font-medium flex items-center gap-2 shadow-sm transition-all ${isSaving ? 'bg-slate-400 cursor-not-allowed' : saveSuccess ? 'bg-green-600 hover:bg-green-700' : 'bg-relantern-500 hover:bg-relantern-600'}`}
+                                                className={`px-4 py-2 text-white rounded text-sm font-medium flex items-center gap-2 shadow-sm transition-all ${isSaving ? 'bg-slate-400 cursor-not-allowed' : saveSuccess ? 'bg-green-600 hover:bg-green-700' : 'bg-primary-600 hover:bg-primary-500'}`}
                                             >
                                                 <Save size={16} className={isSaving ? "animate-spin" : ""} />
                                                 {isSaving ? "Saving..." : saveSuccess ? "Saved" : "Save Changes"}
@@ -1758,7 +1758,7 @@ const UserPermissionManager: React.FC = () => {
                                             }
                                         }
                                     }}
-                                    className="px-4 py-2 bg-relantern-500 text-white rounded font-medium hover:bg-relantern-600 transition shadow-sm"
+                                    className="px-4 py-2 bg-primary-600 text-white rounded font-medium hover:bg-primary-500 transition shadow-sm"
                                 >
                                     Create Profile
                                 </button>
@@ -1848,7 +1848,7 @@ const UserPermissionManager: React.FC = () => {
                                         }
                                     }
                                 }}
-                                className="px-6 py-3 bg-relantern-500 text-white rounded-lg font-bold hover:bg-relantern-600 transition shadow-md hover:shadow-lg flex items-center gap-2"
+                                className="px-6 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-500 transition shadow-md hover:shadow-lg flex items-center gap-2"
                             >
                                 <UserPlus size={18} /> Grant System Access
                             </button>

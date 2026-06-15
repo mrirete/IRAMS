@@ -615,7 +615,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                     </div>
                     <div className="flex items-center gap-2">
                         <DensityToggle value={density} onChange={setDensity} />
-                        <button onClick={onCreate} disabled={!canCreate} className={`hidden sm:flex bg-relantern-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium items-center gap-1.5 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`} title={!canCreate ? 'Insufficient permissions' : 'Create new work order'}>
+                        <button onClick={onCreate} disabled={!canCreate} className={`hidden sm:flex bg-primary-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium items-center gap-1.5 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`} title={!canCreate ? 'Insufficient permissions' : 'Create new work order'}>
                             <Plus size={14} /> New Work Order
                         </button>
                     </div>
@@ -1633,7 +1633,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     setShowNotificationModal(false);
                                     setPendingStatus(null);
                                 }}
-                                className="px-4 py-2 bg-relantern-500 text-white font-bold rounded-lg hover:bg-relantern-600 flex items-center gap-2 shadow-sm"
+                                className="px-4 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 flex items-center gap-2 shadow-sm"
                             >
                                 <Send size={16} /> Yes, Notify & Schedule
                             </button>
@@ -2501,7 +2501,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                         <button
                             onClick={addJournal}
                             disabled={!note.trim()}
-                            className="absolute bottom-2 right-2 p-1.5 sm:p-1.5 bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 disabled:opacity-50 disabled:hover:bg-relantern-500 transition min-w-[32px] min-h-[32px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                            className="absolute bottom-2 right-2 p-1.5 sm:p-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 disabled:hover:bg-primary-600 transition min-w-[32px] min-h-[32px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
                             title="Add entry (Ctrl+Enter)"
                         >
                             <ArrowRight size={14} />
@@ -3363,7 +3363,7 @@ const TasksTab: React.FC<{
                             <CheckCircle size={12} /> Complete All
                         </button>
                     )}
-                    <button onClick={addTask} className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600 flex items-center gap-1 font-medium">
+                    <button onClick={addTask} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1 font-medium">
                         <Plus size={14} /> Add
                     </button>
                 </div>
@@ -4033,7 +4033,7 @@ const TaskEditor: React.FC<{
                                         onChange({ observations: observationText });
                                         setShowObservations(false);
                                     }}
-                                    className="ml-auto text-xs bg-relantern-500 text-white px-3 py-1 rounded hover:bg-relantern-600 font-medium"
+                                    className="ml-auto text-xs bg-primary-600 text-white px-3 py-1 rounded hover:bg-primary-500 font-medium"
                                 >
                                     Save Observation
                                 </button>
@@ -4611,7 +4611,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                 <p className="mb-4">No Job Safety Analysis initialized for this job.</p>
                 <button
                     onClick={() => onUpdate({ jsa: { id: `jsa-${Date.now()}`, status: 'DRAFT', permits: [], hazards: [], signoffs: [] } })}
-                    className="bg-relantern-500 text-white px-4 py-2 rounded hover:bg-relantern-600"
+                    className="bg-primary-600 text-white px-4 py-2 rounded hover:bg-primary-500"
                 >
                     Init JSA
                 </button>
@@ -4933,7 +4933,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                 💾 Save
                             </button>
                         )}
-                        <button onClick={(e) => { e.preventDefault(); addHazard(); }} className="bg-relantern-500 hover:bg-relantern-600 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm flex items-center gap-1">
+                        <button onClick={(e) => { e.preventDefault(); addHazard(); }} className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm flex items-center gap-1">
                             + Hazard
                         </button>
                     </div>
@@ -6248,7 +6248,7 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
                     <button onClick={() => navigate('/recurring-work')} className="border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
                         <Repeat size={16} /> Full Manager
                     </button>
-                    <button onClick={onCreate} disabled={!canCreate} className={`bg-relantern-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`} title={!canCreate ? 'Insufficient permissions' : 'Create new strategy'}>
+                    <button onClick={onCreate} disabled={!canCreate} className={`bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`} title={!canCreate ? 'Insufficient permissions' : 'Create new strategy'}>
                         <Plus size={18} /> New Strategy
                     </button>
                 </div>
@@ -6299,7 +6299,7 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
                                         <button
                                             onClick={(e) => handleGenerate(pm.id, e)}
                                             disabled={generating === pm.id}
-                                            className="text-white bg-relantern-500 hover:bg-relantern-600 px-2 py-1 rounded text-xs flex items-center gap-1"
+                                            className="text-white bg-primary-600 hover:bg-primary-500 px-2 py-1 rounded text-xs flex items-center gap-1"
                                             title="Generate Work Order Now"
                                         >
                                             <Clock size={14} className={generating === pm.id ? 'animate-spin' : ''} /> Generate

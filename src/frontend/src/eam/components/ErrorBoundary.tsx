@@ -49,7 +49,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
                         <div className="flex gap-4">
                             <button
                                 onClick={() => window.location.reload()}
-                                className="px-4 py-2 bg-relantern-500 text-white rounded hover:bg-relantern-600 font-medium"
+                                className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-500 font-medium"
                             >
                                 Reload Application
                             </button>

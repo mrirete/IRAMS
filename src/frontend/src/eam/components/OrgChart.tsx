@@ -473,7 +473,7 @@ export const OrgChart: React.FC = () => {
                         {(!currentFolder || childLevelConfig) && (
                             <button
                                 onClick={() => handleAddChild(currentFolder || undefined)}
-                                className="flex items-center gap-1.5 px-3 py-2 bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 text-sm font-medium shadow-sm transition-colors"
+                                className="flex items-center gap-1.5 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium shadow-sm transition-colors"
                             >
                                 <Plus size={14} /> New {addLabel}
                             </button>

@@ -326,7 +326,7 @@ export const Readings: React.FC = () => {
                     <h2 className="font-bold text-slate-900">Assets</h2>
                     <button
                         onClick={() => setSelectedAssetId(null)} // Go to Batch Entry
-                        className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600 font-medium"
+                        className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 font-medium"
                     >
                         Entry Sheet
                     </button>
@@ -396,19 +396,19 @@ export const Readings: React.FC = () => {
                                         compact
                                     />
                                     <button
-                                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${activeTab === 'entry' ? 'bg-relantern-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${activeTab === 'entry' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                                         onClick={() => setActiveTab('entry')}
                                     >
                                         Entry Sheet
                                     </button>
                                     <button
-                                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${activeTab === 'history' ? 'bg-relantern-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${activeTab === 'history' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                                         onClick={() => setActiveTab('history')}
                                     >
                                         History & Analysis
                                     </button>
                                     <button
-                                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${activeTab === 'definitions' ? 'bg-relantern-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${activeTab === 'definitions' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                                         onClick={() => setActiveTab('definitions')}
                                     >
                                         Definitions
@@ -572,7 +572,7 @@ const TrendAnalysis: React.FC<{
                             <button
                                 key={def.id}
                                 onClick={() => setSelectedDefId(def.id)}
-                                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${selectedDefId === def.id ? 'bg-relantern-500 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
+                                className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${selectedDefId === def.id ? 'bg-primary-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}
                             >
                                 {def.category === 'METER' ? <Clock size={14} className="inline mr-1" /> : <Activity size={14} className="inline mr-1" />}
                                 {def.name}
@@ -801,7 +801,7 @@ const BatchEntryView: React.FC<{
                     )}
                     <button
                         onClick={handleSaveBatch}
-                        className="bg-relantern-500 hover:bg-relantern-600 text-white px-6 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2"
+                        className="bg-primary-600 hover:bg-primary-500 text-white px-6 py-2 rounded-lg font-bold shadow-sm flex items-center gap-2"
                     >
                         <Save size={16} /> Save All
                     </button>
@@ -911,7 +911,7 @@ const BatchEntryView: React.FC<{
                         <button
                             disabled={!selectedType}
                             onClick={handleAdd}
-                            className="w-full py-2 bg-relantern-500 text-white font-bold rounded-lg hover:bg-relantern-600 disabled:opacity-50"
+                            className="w-full py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 disabled:opacity-50"
                         >
                             Add to Entry Sheet
                         </button>
@@ -953,7 +953,7 @@ const DefinitionsManager: React.FC<{
             <div className="flex justify-end">
                 <button
                     onClick={() => setIsAddOpen(true)}
-                    className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600 flex items-center gap-1"
+                    className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1"
                 >
                     <Plus size={14} /> Add Point
                 </button>
@@ -979,7 +979,7 @@ const DefinitionsManager: React.FC<{
                         <button
                             disabled={!selectedType}
                             onClick={handleAdd}
-                            className="bg-relantern-500 text-white px-4 py-2 rounded text-sm font-bold hover:bg-relantern-600 disabled:opacity-50"
+                            className="bg-primary-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-primary-500 disabled:opacity-50"
                         >
                             Add
                         </button>

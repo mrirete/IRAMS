@@ -125,7 +125,7 @@ export const ConnectorDetail: React.FC = () => {
                     <button
                         onClick={handleSync}
                         disabled={isSyncing}
-                        className="flex items-center px-4 py-2.5 bg-accent-blue hover:bg-relantern-500 text-white font-bold rounded-lg transition-all disabled:opacity-50 shadow-lg shadow-blue-500/20 active:scale-95"
+                        className="flex items-center px-4 py-2.5 bg-accent-blue hover:bg-primary-600 text-white font-bold rounded-lg transition-all disabled:opacity-50 shadow-lg shadow-blue-500/20 active:scale-95"
                     >
                         {isSyncing ? <RefreshCw size={18} className="mr-2 animate-spin" /> : <Play size={18} className="mr-2" />}
                         {isSyncing ? 'Syncing...' : 'Sync Now'}

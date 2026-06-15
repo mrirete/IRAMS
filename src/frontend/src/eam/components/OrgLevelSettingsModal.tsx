@@ -240,7 +240,7 @@ export const OrgLevelSettingsModal: React.FC<OrgLevelSettingsModalProps> = ({
                             </div>
                             <button
                                 onClick={handleApplyTemplate}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-relantern-500 text-white text-xs font-medium rounded-lg hover:bg-relantern-600 transition-colors"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 text-white text-xs font-medium rounded-lg hover:bg-primary-500 transition-colors"
                             >
                                 <RotateCcw size={12} />
                                 Apply Template
@@ -369,7 +369,7 @@ export const OrgLevelSettingsModal: React.FC<OrgLevelSettingsModalProps> = ({
                             Cancel
                         </button>
                         <button onClick={handleSave} disabled={saving || levels.length === 0}
-                            className="px-4 py-2 bg-relantern-500 text-white hover:bg-relantern-600 rounded-lg text-sm font-medium disabled:opacity-50">
+                            className="px-4 py-2 bg-primary-600 text-white hover:bg-primary-500 rounded-lg text-sm font-medium disabled:opacity-50">
                             {saving ? 'Saving...' : 'Save Changes'}
                         </button>
                     </div>

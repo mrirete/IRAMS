@@ -93,7 +93,7 @@ export const ConnectorHub: React.FC = () => {
                 </div>
                 <Link
                     to="/admin/connectors/new"
-                    className="px-5 py-2.5 bg-accent-blue text-white font-semibold rounded-lg hover:bg-relantern-500 transition-all flex items-center space-x-2 shadow-lg shadow-blue-500/20 active:scale-95 w-fit"
+                    className="px-5 py-2.5 bg-accent-blue text-white font-semibold rounded-lg hover:bg-primary-600 transition-all flex items-center space-x-2 shadow-lg shadow-blue-500/20 active:scale-95 w-fit"
                 >
                     <Plus size={18} />
                     <span>Add Connector</span>
@@ -256,7 +256,7 @@ export const ConnectorHub: React.FC = () => {
                                 </div>
                                 <Link
                                     to="/admin/connectors/new"
-                                    className="mt-6 px-4 py-2 bg-accent-blue text-white font-semibold rounded-lg hover:bg-relantern-500 transition-colors shadow-sm"
+                                    className="mt-6 px-4 py-2 bg-accent-blue text-white font-semibold rounded-lg hover:bg-primary-600 transition-colors shadow-sm"
                                 >
                                     Configure First Connector
                                 </Link>

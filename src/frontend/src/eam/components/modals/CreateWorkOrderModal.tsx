@@ -318,7 +318,7 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="px-6 py-2 bg-relantern-500 text-white font-bold rounded-lg hover:bg-relantern-600 shadow-md flex items-center gap-2 disabled:opacity-50"
+                            className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-md flex items-center gap-2 disabled:opacity-50"
                         >
                             {submitting ? 'Creating...' : 'Create Work Order'}
                         </button>

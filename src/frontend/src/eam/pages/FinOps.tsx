@@ -1743,7 +1743,7 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                     </h3>
                     <button
                         onClick={handleRunDepreciation}
-                        className="flex items-center gap-2 px-4 py-2 bg-relantern-500 text-white text-sm rounded-lg hover:bg-relantern-600 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-500 transition-colors"
                     >
                         <Zap size={14} />
                         Run Depreciation

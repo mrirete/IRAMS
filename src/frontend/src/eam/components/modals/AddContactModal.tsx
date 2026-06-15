@@ -278,7 +278,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         </button>
                         <button
                             type="submit"
-                            className="px-6 py-2 bg-relantern-500 text-white rounded-md text-sm font-medium hover:bg-relantern-600 shadow-sm"
+                            className="px-6 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-500 shadow-sm"
                         >
                             Create Record
                         </button>

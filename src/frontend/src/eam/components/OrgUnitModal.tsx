@@ -332,7 +332,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                     <button
                         onClick={handleSave}
                         disabled={loading || !name || !code}
-                        className="px-4 py-2 bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 disabled:opacity-50 transition-colors font-medium"
+                        className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 transition-colors font-medium"
                     >
                         {loading ? 'Saving...' : (parentChanged ? 'Save & Move' : 'Save')}
                     </button>

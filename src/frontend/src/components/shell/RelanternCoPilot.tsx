@@ -429,7 +429,7 @@ export const RelanternCoPilot: React.FC = () => {
                                 {messages.map(msg => (
                                     <div key={msg.id} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
                                         <div className={`max-w-[88%] rounded-xl px-3.5 py-2.5 text-[13px] leading-relaxed ${msg.sender === 'user'
-                                            ? 'bg-relantern-600 text-white rounded-br-sm'
+                                            ? 'bg-primary-500 text-white rounded-br-sm'
                                             : 'bg-slate-50 text-slate-700 border border-slate-200 rounded-bl-sm'
                                             }`}
                                         >
@@ -487,7 +487,7 @@ export const RelanternCoPilot: React.FC = () => {
                                     <button
                                         onClick={handleSend}
                                         disabled={isLoading || !inputValue.trim()}
-                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-relantern-500 text-white hover:bg-relantern-600 disabled:opacity-30 disabled:bg-slate-300 transition-all"
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-30 disabled:bg-slate-300 transition-all"
                                     >
                                         <Send size={14} />
                                     </button>

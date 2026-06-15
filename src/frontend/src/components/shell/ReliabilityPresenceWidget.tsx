@@ -196,7 +196,7 @@ export const ReliabilityPresenceWidget: React.FC = () => {
                                             <h4 className="text-xs font-semibold text-brand-50 truncate leading-tight flex items-center gap-1.5">
                                                 {user.fullName}
                                                 {isSelf && (
-                                                    <span className="text-[9px] font-bold text-relantern-400 bg-relantern-500/10 px-1.5 py-0.2 rounded border border-relantern-500/20 uppercase tracking-wider scale-90">
+                                                    <span className="text-[9px] font-bold text-relantern-400 bg-primary-600/10 px-1.5 py-0.2 rounded border border-relantern-500/20 uppercase tracking-wider scale-90">
                                                         You
                                                     </span>
                                                 )}
@@ -300,7 +300,7 @@ export const ReliabilityPresenceWidget: React.FC = () => {
                                                     {user.fullName}
                                                 </h4>
                                                 {isSelf && (
-                                                    <span className="text-[8px] font-bold text-relantern-400 bg-relantern-500/10 px-1.5 py-0.2 rounded border border-relantern-500/20 uppercase tracking-wider">
+                                                    <span className="text-[8px] font-bold text-relantern-400 bg-primary-600/10 px-1.5 py-0.2 rounded border border-relantern-500/20 uppercase tracking-wider">
                                                         You
                                                     </span>
                                                 )}

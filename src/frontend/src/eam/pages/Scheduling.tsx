@@ -1391,7 +1391,7 @@ const MonthGrid: React.FC<{
                             className={`calendar-grid-cell min-h-[120px] border-b border-r border-slate-100 p-1 hover:bg-blue-50/30 transition-colors relative ${todayClass}`}
                         >
                             <span className={`text-xs font-bold p-1 ${isToday(new Date(currentDate.getFullYear(), currentDate.getMonth(), day))
-                                ? 'text-white bg-relantern-500 rounded-full w-6 h-6 flex items-center justify-center'
+                                ? 'text-white bg-primary-600 rounded-full w-6 h-6 flex items-center justify-center'
                                 : dayItems.length > 0 ? 'text-slate-800' : 'text-slate-400'
                                 }`}>{day}</span>
                             <div className="space-y-0.5 mt-1">
@@ -1430,7 +1430,7 @@ const WeekGrid: React.FC<{
                             <div className="text-[10px] font-bold text-slate-500 uppercase">{dayName}</div>
                             <div className={`text-lg font-bold mt-0.5 ${todayHighlight ? 'text-blue-600' : 'text-slate-800'}`}>
                                 {todayHighlight ? (
-                                    <span className="bg-relantern-500 text-white rounded-full w-8 h-8 inline-flex items-center justify-center">{dayNum}</span>
+                                    <span className="bg-primary-600 text-white rounded-full w-8 h-8 inline-flex items-center justify-center">{dayNum}</span>
                                 ) : dayNum}
                             </div>
                         </div>

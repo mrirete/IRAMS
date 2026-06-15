@@ -20,7 +20,7 @@ export const PwaReloadPrompt: React.FC = () => {
     return (
         <div className="fixed bottom-20 md:bottom-4 right-4 z-50 bg-slate-900 text-white p-4 rounded-lg shadow-xl border border-slate-700 max-w-sm animate-in slide-in-from-bottom duration-300">
             <div className="flex items-start gap-3">
-                <div className="p-2 bg-relantern-500 rounded-lg">
+                <div className="p-2 bg-primary-600 rounded-lg">
                     <RefreshCw size={20} className="animate-spin-slow" />
                 </div>
                 <div className="flex-1">
@@ -31,7 +31,7 @@ export const PwaReloadPrompt: React.FC = () => {
                     <div className="flex gap-2 mt-3">
                         <button
                             onClick={() => updateServiceWorker(true)}
-                            className="px-3 py-1.5 bg-relantern-500 hover:bg-relantern-600 rounded text-xs font-medium transition"
+                            className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 rounded text-xs font-medium transition"
                         >
                             Refresh Now
                         </button>

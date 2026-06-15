@@ -34,7 +34,7 @@ export const UnifiedEmptyState: React.FC<UnifiedEmptyStateProps> = ({
             {action && (
                 <button
                     onClick={action.onClick}
-                    className="mt-2 px-4 py-1.5 text-xs font-bold bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 transition-colors flex items-center gap-2 shadow-sm"
+                    className="mt-2 px-4 py-1.5 text-xs font-bold bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition-colors flex items-center gap-2 shadow-sm"
                 >
                     {action.icon}
                     {action.label}

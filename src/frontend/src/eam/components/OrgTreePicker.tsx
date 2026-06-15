@@ -154,7 +154,7 @@ export const OrgTreePicker: React.FC<OrgTreePickerProps> = ({
                     <button
                         onClick={() => toggleSelect(node.id)}
                         className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${isSelected
-                            ? 'bg-relantern-500 border-blue-600'
+                            ? 'bg-primary-600 border-blue-600'
                             : 'border-slate-300 hover:border-blue-400'
                             }`}
                     >

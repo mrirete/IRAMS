@@ -48,7 +48,7 @@ export const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
         info: {
             icon: <Info className="text-blue-600" size={24} />,
             bgIcon: 'bg-blue-100',
-            button: 'bg-relantern-500 hover:bg-relantern-600 text-white',
+            button: 'bg-primary-600 hover:bg-primary-500 text-white',
             border: 'border-blue-200'
         }
     };

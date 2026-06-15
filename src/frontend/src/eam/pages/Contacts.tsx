@@ -444,7 +444,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                 <button
                                     onClick={() => setIsAddModalOpen(true)}
                                     disabled={!canCreate}
-                                    className={`ml-2 hidden sm:flex items-center gap-2 px-4 py-2 bg-relantern-500 text-white rounded-lg transition shadow-sm font-medium ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`}
+                                    className={`ml-2 hidden sm:flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg transition shadow-sm font-medium ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
                                     title={!canCreate ? 'Insufficient permissions' : 'Add new person'}
                                 >
                                     <Plus size={18} /> Add Person

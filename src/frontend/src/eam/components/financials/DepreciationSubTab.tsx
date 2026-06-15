@@ -182,7 +182,7 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                 </p>
                                 <button
                                     onClick={() => setShowCapitalizeForm(true)}
-                                    className="px-4 py-2 bg-relantern-500 text-white text-xs rounded-lg font-medium hover:bg-relantern-600 transition shadow-sm inline-flex items-center gap-1.5"
+                                    className="px-4 py-2 bg-primary-600 text-white text-xs rounded-lg font-medium hover:bg-primary-500 transition shadow-sm inline-flex items-center gap-1.5"
                                 >
                                     <DollarSign size={14} />
                                     Capitalize Asset
@@ -219,7 +219,7 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                                     <button
                                         onClick={() => { onCapitalize(capCost, capSalvage, capLifeYears, capDate); setShowCapitalizeForm(false); }}
                                         disabled={saving || capCost <= 0}
-                                        className="px-3 py-1.5 bg-relantern-500 text-white rounded font-medium hover:bg-relantern-600 text-xs disabled:opacity-50"
+                                        className="px-3 py-1.5 bg-primary-600 text-white rounded font-medium hover:bg-primary-500 text-xs disabled:opacity-50"
                                     >
                                         {saving ? '...' : 'Confirm'}
                                     </button>
@@ -328,7 +328,7 @@ export const DepreciationSubTab: React.FC<DepreciationProps> = ({
                             <button
                                 onClick={() => { onAddBook(newBookType, newBookMethod); setShowAddBookModal(false); }}
                                 disabled={saving}
-                                className="px-4 py-2 bg-relantern-500 text-white rounded-lg font-medium hover:bg-relantern-600 text-sm disabled:opacity-50"
+                                className="px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-500 text-sm disabled:opacity-50"
                             >
                                 {saving ? 'Adding...' : 'Create Book'}
                             </button>

@@ -181,7 +181,7 @@ export const ManagementOfChange: React.FC = () => {
                     <button
                         onClick={() => setShowCreateModal(true)}
                         disabled={!canCreate}
-                        className={`px-4 py-2 bg-relantern-500 text-white rounded-lg text-sm font-medium transition flex items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`}
+                        className={`px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium transition flex items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
                         title={!canCreate ? 'Insufficient permissions' : 'Create new MoC request'}
                     >
                         <Plus size={16} /> New MoC Request
@@ -351,7 +351,7 @@ const MocDetailDrawer: React.FC<{
                                 const isPast = STATUS_FLOW.indexOf(moc.status) > i;
                                 return (
                                     <React.Fragment key={step}>
-                                        <div className={`px-2 py-1 rounded text-xs font-medium ${isActive ? 'bg-relantern-500 text-white' :
+                                        <div className={`px-2 py-1 rounded text-xs font-medium ${isActive ? 'bg-primary-600 text-white' :
                                             isPast ? 'bg-green-100 text-green-700' :
                                                 'bg-slate-100 text-slate-400'
                                             }`}>
@@ -430,7 +430,7 @@ const MocDetailDrawer: React.FC<{
                         {nextStatus && (
                             <button
                                 onClick={() => onStatusChange(moc, nextStatus)}
-                                className="flex-1 px-4 py-2 bg-relantern-500 text-white rounded-lg text-sm font-medium hover:bg-relantern-600 transition flex items-center justify-center gap-2"
+                                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-500 transition flex items-center justify-center gap-2"
                             >
                                 <ArrowRight size={16} />
                                 Advance to {nextStatus.replace(/_/g, ' ')}
@@ -586,7 +586,7 @@ const CreateMocModal: React.FC<{
                         <button
                             type="submit"
                             disabled={saving}
-                            className="flex-1 px-4 py-2 bg-relantern-500 text-white rounded-lg text-sm font-medium hover:bg-relantern-600 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                            className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-500 transition disabled:opacity-50 flex items-center justify-center gap-2"
                         >
                             {saving ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                             {saving ? 'Creating...' : 'Create MoC Request'}

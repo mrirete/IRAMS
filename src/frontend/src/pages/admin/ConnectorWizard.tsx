@@ -234,7 +234,7 @@ export const ConnectorWizard: React.FC = () => {
                         {!testResult && !isTesting && (
                             <button
                                 onClick={runConnectionTest}
-                                className="px-6 py-2.5 bg-accent-blue text-white rounded-lg font-semibold hover:bg-relantern-500 transition-all shadow-lg shadow-blue-500/20 active:scale-95"
+                                className="px-6 py-2.5 bg-accent-blue text-white rounded-lg font-semibold hover:bg-primary-600 transition-all shadow-lg shadow-blue-500/20 active:scale-95"
                             >
                                 Test Now
                             </button>
@@ -356,7 +356,7 @@ export const ConnectorWizard: React.FC = () => {
                             <button
                                 onClick={handleNext}
                                 disabled={isNextDisabled()}
-                                className="flex items-center px-6 py-2.5 bg-accent-blue text-white rounded-lg font-semibold hover:bg-relantern-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 active:scale-95"
+                                className="flex items-center px-6 py-2.5 bg-accent-blue text-white rounded-lg font-semibold hover:bg-primary-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-blue-500/20 active:scale-95"
                             >
                                 {isSaving ? (
                                     <><Loader2 size={18} className="mr-2 animate-spin" /> Activating...</>

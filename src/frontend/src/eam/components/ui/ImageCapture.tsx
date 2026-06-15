@@ -295,7 +295,7 @@ export const ImageCapture: React.FC<ImageCaptureProps> = ({
                                 className="w-14 h-14 bg-white border-4 border-blue-500 rounded-full hover:border-blue-600 
                                     active:scale-95 transition-all shadow-lg flex items-center justify-center"
                             >
-                                <div className="w-10 h-10 bg-blue-500 rounded-full hover:bg-relantern-500 transition" />
+                                <div className="w-10 h-10 bg-blue-500 rounded-full hover:bg-primary-600 transition" />
                             </button>
                         </div>
                     </div>

@@ -165,7 +165,7 @@ export const ServiceRequests: React.FC = () => {
                         />
                         <button
                             onClick={() => setIsCreating(true)}
-                            className="bg-relantern-500 hover:bg-relantern-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+                            className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
                         >
                             <Plus size={18} /> New Request
                         </button>
@@ -1499,7 +1499,7 @@ const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceReque
 
                             <div className="flex gap-3 pt-6">
                                 <button onClick={() => setStep(1)} className="px-6 py-3 border border-slate-300 rounded-lg text-slate-600 font-medium hover:bg-slate-50">Back</button>
-                                <button onClick={handleSubmit} className="flex-1 py-3 bg-relantern-500 text-white rounded-lg font-bold hover:bg-relantern-600 shadow-md">Save Request</button>
+                                <button onClick={handleSubmit} className="flex-1 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-500 shadow-md">Save Request</button>
                             </div>
                         </div>
                     )

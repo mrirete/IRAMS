@@ -247,7 +247,7 @@ export const PurchaseOrders: React.FC = () => {
                     <button
                         onClick={handleCreatePO}
                         disabled={!canCreate}
-                        className={`hidden sm:flex bg-relantern-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`}
+                        className={`hidden sm:flex bg-primary-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
                         title={!canCreate ? 'Insufficient permissions' : 'Create new purchase order'}
                     >
                         <Plus size={16} /> New PO
@@ -719,7 +719,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                         </div>
                         <div className="flex justify-end gap-2">
                             <button onClick={() => setImportOpen(false)} className="px-4 py-2 text-slate-600">Cancel</button>
-                            <button onClick={() => { showToast('Imported 5 items (Mock)', 'success'); setImportOpen(false); }} className="px-4 py-2 bg-relantern-500 text-white rounded">Process</button>
+                            <button onClick={() => { showToast('Imported 5 items (Mock)', 'success'); setImportOpen(false); }} className="px-4 py-2 bg-primary-600 text-white rounded">Process</button>
                         </div>
                     </div>
                 </div>
@@ -851,7 +851,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                                 </td>
                                 <td colSpan={3} className="px-4 py-3"></td>
                                 <td className="px-4 py-3 text-center">
-                                    <button onClick={handleAddItem} className="bg-relantern-500 text-white p-1.5 rounded hover:bg-relantern-600"><Plus size={16} /></button>
+                                    <button onClick={handleAddItem} className="bg-primary-600 text-white p-1.5 rounded hover:bg-primary-500"><Plus size={16} /></button>
                                 </td>
                             </tr>
                         </tbody>
@@ -947,7 +947,7 @@ const AuthoriseTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<Purchase
                     {canAuthorise && (
                         <button
                             onClick={() => onUpdate({ authorizedById: profile?.username || profile?.fullName || 'Unknown User' })}
-                            className="px-6 py-3 bg-relantern-500 text-white rounded-lg font-bold hover:bg-relantern-600 shadow-md"
+                            className="px-6 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-500 shadow-md"
                         >
                             Authorize Now
                         </button>

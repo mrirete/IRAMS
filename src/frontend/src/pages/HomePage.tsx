@@ -68,7 +68,7 @@ export const HomePage: React.FC = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
                     <h2 className="text-base font-semibold text-slate-800 flex items-center gap-2 mb-4">
-                        <span className="w-1.5 h-5 bg-relantern-500 rounded-full" />
+                        <span className="w-1.5 h-5 bg-primary-600 rounded-full" />
                         Reliability Digital Twin
                     </h2>
                     <div className="h-[350px]">

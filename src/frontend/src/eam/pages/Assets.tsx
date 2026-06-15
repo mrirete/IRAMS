@@ -745,7 +745,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 {canCreate && (
                                     <button
                                         onClick={() => openAddModal('Asset')}
-                                        className="p-1.5 bg-relantern-500 text-white rounded-md hover:bg-relantern-600 transition"
+                                        className="p-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-500 transition"
                                         title="New Asset"
                                     >
                                         <Plus size={14} />
@@ -936,7 +936,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 </button>
                                 <button
                                     onClick={() => openAddModal('Asset')}
-                                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-relantern-500 text-white rounded-md text-sm font-medium hover:bg-relantern-600 transition shadow-sm"
+                                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-500 transition shadow-sm"
                                 >
                                     <Plus size={16} /> New Asset
                                 </button>
@@ -1507,7 +1507,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 <div className="bg-white p-6 justify-center flex flex-col border border-slate-200 rounded-lg shadow-sm">
                                     <div className="flex justify-between items-center mb-4">
                                         <h3 className="font-bold text-slate-800">Files & Documents</h3>
-                                        <button className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600">+ Upload File</button>
+                                        <button className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500">+ Upload File</button>
                                     </div>
                                     <div className="flex flex-col items-center justify-center h-48 text-slate-400 border border-dashed border-slate-300 rounded-lg bg-slate-50">
                                         <FolderPlus size={48} className="mb-2 opacity-20" />
@@ -2899,7 +2899,7 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
                     <h3 className="font-bold text-slate-700">Bill of Materials (BOM)</h3>
                     <span className="text-[10px] text-slate-400">{bomItems.length} component{bomItems.length !== 1 ? 's' : ''}</span>
                 </div>
-                <button onClick={() => setIsAddOpen(true)} className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600">+ Add Part</button>
+                <button onClick={() => setIsAddOpen(true)} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500">+ Add Part</button>
             </div>
             {loading ? (
                 <div className="p-8 text-center text-slate-400">Loading BOM...</div>
@@ -3147,7 +3147,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     <button
                         onClick={handleSubmit}
                         disabled={!formData.tag || !formData.name || (!isLocation && !formData.criticality)}
-                        className="px-6 py-2 bg-relantern-500 text-white font-bold rounded-lg hover:bg-relantern-600 shadow-md flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-md flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         <CheckCircle size={16} /> Create {type}
                     </button>
@@ -3202,7 +3202,7 @@ function ReadingsTab({ asset, definitions, onAdd }: ReadingsTabProps) {
             <div className="flex justify-end relative">
                 <button
                     onClick={() => setIsAddOpen(!isAddOpen)}
-                    className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600 flex items-center gap-1"
+                    className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1"
                 >
                     <Plus size={14} /> Add Point
                 </button>
@@ -3223,7 +3223,7 @@ function ReadingsTab({ asset, definitions, onAdd }: ReadingsTabProps) {
                         <button
                             disabled={!selectedType}
                             onClick={handleAddSubmit}
-                            className="w-full py-1.5 bg-relantern-500 text-white text-xs font-bold rounded hover:bg-relantern-600 disabled:opacity-50"
+                            className="w-full py-1.5 bg-primary-600 text-white text-xs font-bold rounded hover:bg-primary-500 disabled:opacity-50"
                         >
                             Add
                         </button>
@@ -3301,7 +3301,7 @@ function ReadingsTab({ asset, definitions, onAdd }: ReadingsTabProps) {
                                 />
                                 <button
                                     onClick={() => handleSaveReading(def)}
-                                    className="bg-relantern-500 hover:bg-relantern-600 text-white px-2 rounded text-xs font-medium"
+                                    className="bg-primary-600 hover:bg-primary-500 text-white px-2 rounded text-xs font-medium"
                                 >
                                     Save
                                 </button>
@@ -3809,7 +3809,7 @@ function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, contac
                         <button
                             type="submit"
                             disabled={loading}
-                            className="px-3 py-1.5 bg-relantern-500 text-white rounded text-xs font-medium hover:bg-relantern-600 disabled:opacity-50"
+                            className="px-3 py-1.5 bg-primary-600 text-white rounded text-xs font-medium hover:bg-primary-500 disabled:opacity-50"
                         >
                             {loading ? 'Saving...' : 'Add Model'}
                         </button>

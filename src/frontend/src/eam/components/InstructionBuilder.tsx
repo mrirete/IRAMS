@@ -360,7 +360,7 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
                                         onClick={() => updateBlock(block.id, { yesNoNa: opt as any })}
                                         className={`flex-1 px-4 py-2 text-xs font-bold border first:rounded-l-lg last:rounded-r-lg
                                             ${block.yesNoNa === opt
-                                                ? 'bg-relantern-500 text-white border-blue-600'
+                                                ? 'bg-primary-600 text-white border-blue-600'
                                                 : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                                             }`}
                                     >

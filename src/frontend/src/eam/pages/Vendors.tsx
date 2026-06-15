@@ -132,7 +132,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                         </div>
                         <button
                             onClick={() => setIsAddModalOpen(true)}
-                            className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 transition shadow-sm text-sm font-medium"
+                            className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition shadow-sm text-sm font-medium"
                         >
                             <Plus size={16} /> Add Vendor
                         </button>
@@ -243,7 +243,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             <button onClick={() => setSelectedVendor(null)} className="lg:hidden text-slate-400 hover:text-slate-600 p-1 flex items-center gap-1 text-sm">
                                 <X size={18} /> Back
                             </button>
-                            <button onClick={handleSave} className="px-3 py-1.5 bg-relantern-500 text-white rounded hover:bg-relantern-600 flex items-center gap-2 text-sm">
+                            <button onClick={handleSave} className="px-3 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-500 flex items-center gap-2 text-sm">
                                 <Save size={16} /> Save
                             </button>
                             <button onClick={() => handleDeleteClick(selectedVendor.id, selectedVendor.name)} className="px-3 py-1.5 text-red-600 border border-red-200 rounded hover:bg-red-50 flex items-center gap-2 text-sm">
@@ -719,7 +719,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                 </div>
                                 <div className="mt-6 flex justify-end gap-2">
                                     <button type="button" onClick={() => setIsAddModalOpen(false)} className="px-4 py-2 text-slate-700 hover:bg-slate-100 rounded">Cancel</button>
-                                    <button type="submit" className="px-4 py-2 bg-relantern-500 text-white rounded hover:bg-relantern-600">Create Vendor</button>
+                                    <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-500">Create Vendor</button>
                                 </div>
                             </form>
                         </div>

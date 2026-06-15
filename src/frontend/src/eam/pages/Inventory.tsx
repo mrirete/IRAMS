@@ -174,7 +174,7 @@ function StockAdjustmentModal({ isOpen, onClose, item, onSuccess }: {
                     <button
                         onClick={handleProcess}
                         disabled={loading || !selectedLocationId || !quantity}
-                        className={`px-4 py-2 text-white font-bold rounded-lg flex items-center gap-2 ${loading || !selectedLocationId || !quantity ? 'bg-slate-300 cursor-not-allowed' : 'bg-relantern-500 hover:bg-relantern-600'}`}
+                        className={`px-4 py-2 text-white font-bold rounded-lg flex items-center gap-2 ${loading || !selectedLocationId || !quantity ? 'bg-slate-300 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-500'}`}
                     >
                         {loading ? 'Processing...' : 'Process'} <CheckCircle size={16} />
                     </button>
@@ -320,7 +320,7 @@ function StoreManagerModal({ isOpen, onClose, stores, onUpdateStores }: {
                         <div className="p-4 border-b border-slate-200">
                             <button
                                 onClick={handleStartCreate}
-                                className={`w-full py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition ${isCreating ? 'bg-relantern-500 text-white shadow-md' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                                className={`w-full py-2 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition ${isCreating ? 'bg-primary-600 text-white shadow-md' : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'}`}
                             >
                                 <Plus size={16} /> Add New Store
                             </button>
@@ -357,7 +357,7 @@ function StoreManagerModal({ isOpen, onClose, stores, onUpdateStores }: {
                                         </h2>
                                         <button
                                             onClick={handleSaveStore}
-                                            className="px-4 py-2 bg-relantern-500 text-white rounded-lg text-sm font-bold hover:bg-relantern-600 flex items-center gap-2"
+                                            className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-500 flex items-center gap-2"
                                         >
                                             <Save size={16} /> {isCreating ? 'Create Store' : 'Save Changes'}
                                         </button>
@@ -769,7 +769,7 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancel</button>
                     <button
                         onClick={handleSubmit}
-                        className="px-6 py-2 bg-relantern-500 text-white font-bold rounded-lg hover:bg-relantern-600 shadow-md flex items-center gap-2"
+                        className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-md flex items-center gap-2"
                     >
                         <CheckCircle size={16} /> Create Item
                     </button>
@@ -1060,7 +1060,7 @@ function StoresTab({ item, stores, onUpdate, canCreate = true, canEdit = true, c
                 <button
                     onClick={openAdd}
                     disabled={!canCreate}
-                    className={`text-xs bg-relantern-500 text-white px-3 py-1.5 rounded flex items-center gap-1 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`}
+                    className={`text-xs bg-primary-600 text-white px-3 py-1.5 rounded flex items-center gap-1 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
                     title={!canCreate ? 'Insufficient permissions' : 'Add Location'}
                 >
                     <Plus size={14} /> Add Location
@@ -1260,7 +1260,7 @@ function LocationModal({ isOpen, onClose, stores, existingLocation, onSave }: {
                 </div>
                 <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancel</button>
-                    <button onClick={handleSubmit} className="px-4 py-2 bg-relantern-500 text-white font-bold rounded-lg hover:bg-relantern-600">Save Location</button>
+                    <button onClick={handleSubmit} className="px-4 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500">Save Location</button>
                 </div>
             </div>
         </div>
@@ -1381,7 +1381,7 @@ function AddSupplierModal({ isOpen, onClose, onSave }: {
                     <button
                         onClick={handleSubmit}
                         disabled={!selectedContactId}
-                        className="w-full py-2 bg-relantern-500 text-white font-bold rounded-lg hover:bg-relantern-600 disabled:opacity-50 mt-4"
+                        className="w-full py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 disabled:opacity-50 mt-4"
                     >
                         Add Supplier
                     </button>
@@ -1422,7 +1422,7 @@ function SuppliersTab({ item, onUpdate, canCreate = true }: { item: InventoryIte
                 <button
                     onClick={() => setShowAddModal(true)}
                     disabled={!canCreate}
-                    className={`text-xs bg-relantern-500 text-white px-3 py-1.5 rounded ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`}
+                    className={`text-xs bg-primary-600 text-white px-3 py-1.5 rounded ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
                     title={!canCreate ? 'Insufficient permissions' : 'Add Supplier'}
                 >
                     + Add Supplier
@@ -1718,7 +1718,7 @@ function AddToAssetBOMModal({ isOpen, onClose, onSave, assets, itemCode }: {
                     <button
                         onClick={handleSave}
                         disabled={!selectedAssetId}
-                        className={`px-4 py-2 text-white font-bold rounded-lg ${!selectedAssetId ? 'bg-slate-300 cursor-not-allowed' : 'bg-relantern-500 hover:bg-relantern-600'}`}
+                        className={`px-4 py-2 text-white font-bold rounded-lg ${!selectedAssetId ? 'bg-slate-300 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-500'}`}
                     >
                         Assign to Asset
                     </button>
@@ -2441,7 +2441,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         <button
                             onClick={() => setShowAddModal(true)}
                             disabled={!canCreate}
-                            className={`bg-relantern-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`}
+                            className={`bg-primary-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
                             title={!canCreate ? 'Insufficient permissions' : 'Create new inventory item'}
                         >
                             <Plus size={16} /> New Item
@@ -2611,7 +2611,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                 <button
                                     onClick={handleSaveItem}
                                     disabled={!canEdit}
-                                    className={`bg-relantern-500 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 ${!canEdit ? 'opacity-50 cursor-not-allowed' : 'hover:bg-relantern-600'}`}
+                                    className={`bg-primary-600 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 ${!canEdit ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
                                     title={!canEdit ? 'Insufficient permissions' : 'Save changes'}
                                 >
                                     <Save size={14} /> Save

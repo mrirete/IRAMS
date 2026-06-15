@@ -93,7 +93,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ unit, onClose, o
                                 onClick={() => toggleSelection(c.id)}
                                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition ${selectedIds.has(c.id) ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'}`}
                             >
-                                <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold ${selectedIds.has(c.id) ? 'bg-relantern-500 text-white' : 'bg-slate-200 text-slate-600'}`}>
+                                <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold ${selectedIds.has(c.id) ? 'bg-primary-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
                                     {selectedIds.has(c.id) ? <Check size={14} /> : (c.firstName?.[0] || c.name[0])}
                                 </div>
                                 <div className="flex-1">
@@ -112,7 +112,7 @@ export const AddMemberModal: React.FC<AddMemberModalProps> = ({ unit, onClose, o
                         <button
                             disabled={selectedIds.size === 0 || loading}
                             onClick={handleSave}
-                            className="px-4 py-1.5 bg-relantern-500 text-white rounded text-sm font-medium hover:bg-relantern-600 disabled:opacity-50"
+                            className="px-4 py-1.5 bg-primary-600 text-white rounded text-sm font-medium hover:bg-primary-500 disabled:opacity-50"
                         >
                             {loading ? 'Saving...' : 'Add Selected'}
                         </button>

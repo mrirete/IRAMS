@@ -80,7 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
 
       <div className={sidebarClasses}>
         <div className="flex items-center h-16 px-6 bg-slate-950 border-b border-slate-800">
-          <div className="w-8 h-8 bg-relantern-500 rounded-lg flex items-center justify-center mr-3" aria-hidden="true">
+          <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center mr-3" aria-hidden="true">
             <span className="text-white font-bold">R</span>
           </div>
           <span className="text-white font-bold tracking-wider text-lg">RELANTERN</span>
@@ -103,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
               className={({ isActive }) => `
                         flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
                         ${isActive
-                  ? 'bg-relantern-500 text-white shadow-lg shadow-blue-900/20'
+                  ? 'bg-primary-600 text-white shadow-lg shadow-blue-900/20'
                   : 'hover:bg-slate-800 hover:text-white'
                 }
                     `}

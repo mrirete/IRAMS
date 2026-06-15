@@ -265,7 +265,7 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                         form="pm-form"
                         type="submit"
                         disabled={submitting || loading}
-                        className="px-6 py-2 text-sm font-bold text-white bg-relantern-500 hover:bg-relantern-600 rounded-lg disabled:opacity-50 shadow-lg shadow-blue-600/20"
+                        className="px-6 py-2 text-sm font-bold text-white bg-primary-600 hover:bg-primary-500 rounded-lg disabled:opacity-50 shadow-lg shadow-blue-600/20"
                     >
                         {submitting ? 'Creating Strategy...' : 'Create Strategy'}
                     </button>

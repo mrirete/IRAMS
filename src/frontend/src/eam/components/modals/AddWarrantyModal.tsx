@@ -116,7 +116,7 @@ export const AddWarrantyModal: React.FC<AddWarrantyModalProps> = ({ isOpen, onCl
                 </div>
                 <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium text-sm">Cancel</button>
-                    <button onClick={handleSubmit} className="px-4 py-2 bg-relantern-500 text-white rounded-lg font-medium hover:bg-relantern-600 text-sm">Save Warranty</button>
+                    <button onClick={handleSubmit} className="px-4 py-2 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-500 text-sm">Save Warranty</button>
                 </div>
             </div>
         </div>

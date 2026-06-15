@@ -399,7 +399,7 @@ export const ModelsTab: React.FC<{ contact: Contact }> = ({ contact }) => {
             <div className="p-4 bg-slate-50 border-b border-slate-200 flex gap-4">
                 <input className="w-40 text-sm border border-slate-300 rounded p-2" placeholder="Model Code" value={newModel.code} onChange={e => setNewModel({ ...newModel, code: e.target.value })} />
                 <input className="flex-1 text-sm border border-slate-300 rounded p-2" placeholder="Description" value={newModel.description} onChange={e => setNewModel({ ...newModel, description: e.target.value })} />
-                <button onClick={handleAdd} disabled={!newModel.code} className="px-4 py-2 bg-relantern-500 text-white rounded hover:bg-relantern-600 disabled:opacity-50 text-sm font-medium">Add Model</button>
+                <button onClick={handleAdd} disabled={!newModel.code} className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 text-sm font-medium">Add Model</button>
             </div>
             <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
@@ -537,7 +537,7 @@ export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) =
                     Certifications & Licenses
                 </h3>
                 {!showForm && (
-                    <button onClick={() => setShowForm(true)} className="text-sm bg-relantern-500 text-white px-3 py-1.5 rounded-lg hover:bg-relantern-600 flex items-center gap-1 transition-colors">
+                    <button onClick={() => setShowForm(true)} className="text-sm bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-500 flex items-center gap-1 transition-colors">
                         <Plus size={16} /> Add New
                     </button>
                 )}
@@ -596,7 +596,7 @@ export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) =
                     <div className="flex justify-end gap-2 pt-2">
                         <button onClick={resetForm} className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50">Cancel</button>
                         <button onClick={handleAdd} disabled={!formName.trim() || saving}
-                            className="px-4 py-2 text-sm bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 disabled:opacity-50 flex items-center gap-1">
+                            className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 flex items-center gap-1">
                             {saving ? 'Saving...' : <><Plus size={14} /> Save Qualification</>}
                         </button>
                     </div>
@@ -717,7 +717,7 @@ export const LaborTab: React.FC<{ contact: Contact, onChange: (c: Contact) => vo
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Standard Work Days</label>
                 <div className="flex gap-2">
                     {days.map(d => (
-                        <button key={d} onClick={() => toggleDay(d)} className={`h-8 w-8 rounded-full text-xs font-bold transition ${rules.days?.includes(d) ? 'bg-relantern-500 text-white shadow-md transform scale-105' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
+                        <button key={d} onClick={() => toggleDay(d)} className={`h-8 w-8 rounded-full text-xs font-bold transition ${rules.days?.includes(d) ? 'bg-primary-600 text-white shadow-md transform scale-105' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
                             {d.charAt(0)}
                         </button>
                     ))}

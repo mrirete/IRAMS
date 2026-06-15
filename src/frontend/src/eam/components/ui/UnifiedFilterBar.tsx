@@ -112,7 +112,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                                     flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
                                     transition-colors whitespace-nowrap
                                     ${action.variant === 'primary'
-                                        ? 'bg-relantern-500 hover:bg-relantern-600 text-white shadow-sm'
+                                        ? 'bg-primary-600 hover:bg-primary-500 text-white shadow-sm'
                                         : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                                     }
                                 `}

@@ -629,7 +629,7 @@ export const RecurringWork: React.FC = () => {
                         >
                             <Zap size={16} /> <span className="hidden xl:inline">Generate</span>
                         </button>
-                        <button onClick={() => setIsCreatePMOpen(true)} className="bg-relantern-500 hover:bg-relantern-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2">
+                        <button onClick={() => setIsCreatePMOpen(true)} className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2">
                             <Plus size={16} /> New
                         </button>
                     </div>
@@ -653,7 +653,7 @@ export const RecurringWork: React.FC = () => {
                                 key={s}
                                 onClick={() => { setStatusFilter(s); setSelectedIds(new Set()); }}
                                 className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border transition-all flex items-center gap-1.5 ${statusFilter === s
-                                    ? 'bg-relantern-500 text-white border-blue-600 shadow-sm'
+                                    ? 'bg-primary-600 text-white border-blue-600 shadow-sm'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
                                     }`}
                             >
@@ -850,7 +850,7 @@ export const RecurringWork: React.FC = () => {
                                 disabled={saving}
                                 className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition ${saveStatus === 'saved' ? 'bg-green-600 text-white' :
                                     saveStatus === 'error' ? 'bg-red-600 text-white' :
-                                        'bg-relantern-500 hover:bg-relantern-600 text-white'
+                                        'bg-primary-600 hover:bg-primary-500 text-white'
                                     } disabled:opacity-60`}
                             >
                                 {saving ? <Loader2 size={16} className="animate-spin" /> :
@@ -1645,7 +1645,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                         <h3 className="font-bold text-slate-800 text-sm uppercase">Auto-Assignment Rules</h3>
                         <p className="text-[10px] text-slate-400 mt-0.5">Define rules to automatically link matching assets to this PM strategy.</p>
                     </div>
-                    <button onClick={runRules} className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded-lg hover:bg-relantern-600 font-bold shadow-sm flex items-center gap-1.5">
+                    <button onClick={runRules} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-500 font-bold shadow-sm flex items-center gap-1.5">
                         <TrendingUp size={12} /> Run Rules Now
                     </button>
                 </div>
@@ -1981,7 +1981,7 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                         >
                             <BookOpen size={13} /> Library
                         </button>
-                        <button onClick={addTask} className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600 flex items-center gap-1">
+                        <button onClick={addTask} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1">
                             <Plus size={14} /> Add
                         </button>
                     </div>
@@ -2238,7 +2238,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                     <h3 className="font-bold text-slate-800">Job Safety Analysis (JSA) Template</h3>
                     <p className="text-sm text-slate-500">5×5 Risk Matrix · Hierarchy of Controls · ISO 31000 / ISO 45001</p>
                 </div>
-                <button onClick={addHazard} className="bg-relantern-500 hover:bg-relantern-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2">
+                <button onClick={addHazard} className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2">
                     <Plus size={16} /> Add Hazard
                 </button>
             </div>
@@ -2502,7 +2502,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             </p>
                         </div>
                     </div>
-                    <button onClick={addLabor} className="text-xs bg-relantern-500 text-white px-4 py-2 rounded-lg hover:bg-relantern-600 flex items-center gap-1 font-bold shadow-sm">
+                    <button onClick={addLabor} className="text-xs bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-500 flex items-center gap-1 font-bold shadow-sm">
                         <Plus size={14} /> Add Craft Requirement
                     </button>
                 </div>
@@ -2721,7 +2721,7 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
                             </>
                         )}
                     </div>
-                    <button onClick={addItem} className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600 flex items-center gap-1 shadow-sm">
+                    <button onClick={addItem} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1 shadow-sm">
                         <Plus size={14} /> Add Item
                     </button>
                 </div>
@@ -2731,7 +2731,7 @@ const InventoryTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<Recurrin
                 {inventory.length === 0 && (
                     <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                         <h3 className="font-bold text-slate-700">Required Spare Parts & Material</h3>
-                        <button onClick={addItem} className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600 flex items-center gap-1">
+                        <button onClick={addItem} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1">
                             <Plus size={14} /> Add Item
                         </button>
                     </div>
@@ -2946,7 +2946,7 @@ const FilesTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                 </div>
                 <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="text-xs bg-relantern-500 text-white px-3 py-1.5 rounded hover:bg-relantern-600 flex items-center gap-1 shadow-sm"
+                    className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1 shadow-sm"
                 >
                     <Plus size={14} /> Attach File
                 </button>

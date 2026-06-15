@@ -153,7 +153,7 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
                     </div>
                     <button
                         onClick={handleCreate}
-                        className="flex items-center gap-2 px-4 py-2 bg-relantern-500 text-white rounded-lg hover:bg-relantern-600 text-sm font-medium shadow-sm transition-colors"
+                        className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium shadow-sm transition-colors"
                     >
                         <Plus size={16} /> New Template
                     </button>
@@ -575,7 +575,7 @@ const TaskEditorModal: React.FC<{
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium">Cancel</button>
                     <button
                         onClick={() => onSave(formData, inventory, roles, localFiles)}
-                        className="px-6 py-2 bg-relantern-500 text-white rounded-lg text-sm font-bold hover:bg-relantern-600 shadow-sm"
+                        className="px-6 py-2 bg-primary-600 text-white rounded-lg text-sm font-bold hover:bg-primary-500 shadow-sm"
                     >
                         Save Template
                     </button>

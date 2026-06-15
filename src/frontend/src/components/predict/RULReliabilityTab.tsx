@@ -88,7 +88,7 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                                         </div>
                                         <div className="w-full bg-slate-50 rounded-full h-1.5 flex items-center relative">
                                             <div
-                                                className={`absolute h-1.5 rounded-full ${band.percentile === 50 ? 'bg-blue-400' : band.percentile === 80 ? 'bg-blue-500' : 'bg-relantern-500'}`}
+                                                className={`absolute h-1.5 rounded-full ${band.percentile === 50 ? 'bg-blue-400' : band.percentile === 80 ? 'bg-blue-500' : 'bg-primary-600'}`}
                                                 style={{ left: `${(band.lower_days / maxDays) * 100}%`, width: `${((band.upper_days - band.lower_days) / maxDays) * 100}%` }}
                                             />
                                             <div className="absolute w-2 h-3 bg-white rounded shadow" style={{ left: `calc(${(band.median_days / maxDays) * 100}% - 4px)` }} />

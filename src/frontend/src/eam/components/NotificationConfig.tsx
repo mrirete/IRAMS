@@ -319,7 +319,7 @@ export const NotificationConfig: React.FC = () => {
                                 <h3 className="font-bold text-slate-700">Notification Rules</h3>
                                 <button
                                     onClick={() => setEditingRule({ isActive: true, channels: ['IN_APP'], recipients: [], severity: 'INFO' })}
-                                    className="bg-relantern-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-relantern-600 flex items-center gap-2"
+                                    className="bg-primary-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-primary-500 flex items-center gap-2"
                                 >
                                     <Plus size={14} /> New Rule
                                 </button>
@@ -390,7 +390,7 @@ export const NotificationConfig: React.FC = () => {
                                             </button>
                                         )}
                                         <button onClick={() => setEditingRule(null)} className="text-slate-500 hover:text-slate-700 px-3 py-1.5 text-sm">Cancel</button>
-                                        <button onClick={handleSaveRule} className="bg-relantern-500 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-relantern-600 flex items-center gap-2">
+                                        <button onClick={handleSaveRule} className="bg-primary-600 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-primary-500 flex items-center gap-2">
                                             <Save size={14} /> Save
                                         </button>
                                     </div>
@@ -891,7 +891,7 @@ export const NotificationConfig: React.FC = () => {
                                         <button onClick={() => loadData()} className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded"><RefreshCw size={14} /></button>
                                         <button
                                             onClick={() => handleSimulateSend()}
-                                            className="bg-relantern-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-relantern-600 flex items-center gap-2"
+                                            className="bg-primary-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-primary-500 flex items-center gap-2"
                                         >
                                             <Send size={14} /> Simulate Send
                                         </button>
@@ -949,7 +949,7 @@ export const NotificationConfig: React.FC = () => {
                                 <h3 className="font-bold text-slate-700">Message Templates</h3>
                                 <button
                                     onClick={() => setEditingTemplate({ isActive: true, channelType: 'EMAIL' })}
-                                    className="bg-relantern-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-relantern-600 flex items-center gap-2"
+                                    className="bg-primary-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-primary-500 flex items-center gap-2"
                                 >
                                     <Plus size={14} /> New
                                 </button>
@@ -979,7 +979,7 @@ export const NotificationConfig: React.FC = () => {
                                     <h3 className="font-bold text-slate-800">{editingTemplate.id ? 'Edit Template' : 'New Template'}</h3>
                                     <div className="flex gap-2">
                                         <button onClick={() => setEditingTemplate(null)} className="text-slate-500 hover:text-slate-700 px-3 py-1.5 text-sm">Cancel</button>
-                                        <button onClick={handleSaveTemplate} className="bg-relantern-500 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-relantern-600 flex items-center gap-2">
+                                        <button onClick={handleSaveTemplate} className="bg-primary-600 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-primary-500 flex items-center gap-2">
                                             <Save size={14} /> Save
                                         </button>
                                     </div>
