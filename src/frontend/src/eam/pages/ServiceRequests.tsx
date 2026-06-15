@@ -1666,9 +1666,9 @@ const RequestDetail: React.FC<{
                 }
             />
 
-            {/* Action Buttons */}
+            {/* Action Buttons — hidden on mobile, visible md+ */}
             {request.status !== RequestStatus.CONVERTED && request.status !== RequestStatus.REJECTED && (
-                <div className="flex flex-wrap gap-2 p-3 border-b border-slate-200 bg-white items-center">
+                <div className="hidden md:flex flex-wrap gap-2 p-3 border-b border-slate-200 bg-white items-center">
                     {/* Debug info */}
                     <span className="text-xs text-slate-400">Status: {request.status}</span>
 
@@ -1677,7 +1677,7 @@ const RequestDetail: React.FC<{
                         onClick={handleSave}
                         disabled={isProcessing || !canEdit || !isEditable}
                         className={`px-3 py-1.5 text-sm font-medium rounded-lg flex items-center gap-1.5 ${canEdit && isEditable
-                            ? 'bg-relantern-500 text-white hover:bg-relantern-600'
+                            ? 'bg-primary-600 text-white hover:bg-primary-500'
                             : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                             } disabled:opacity-50`}
                     >
@@ -1764,6 +1764,55 @@ const RequestDetail: React.FC<{
                     >
                         {isProcessing ? 'Processing...' : 'Approve'}
                     </button>
+                </div>
+            )}
+
+            {/* ═══ Mobile Sticky Bottom Action Bar (thumb-reach zone) ═══ */}
+            {request.status !== RequestStatus.CONVERTED && request.status !== RequestStatus.REJECTED && (
+                <div className="md:hidden flex-shrink-0 bg-white border-t border-slate-200 px-4 py-3 flex items-center gap-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+                    {canEdit && isEditable && (
+                        <button
+                            onClick={handleSave}
+                            disabled={isProcessing}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
+                        >
+                            <Save size={16} />
+                            Save
+                        </button>
+                    )}
+                    {request.status === RequestStatus.AUTHORIZED && canApprove && (
+                        <button
+                            onClick={handleApprove}
+                            disabled={isProcessing}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl text-sm font-semibold transition-colors"
+                        >
+                            {isProcessing ? 'Processing...' : 'Approve'}
+                        </button>
+                    )}
+                    {request.status === RequestStatus.REVIEW && canAuthorize && (
+                        <button
+                            onClick={async () => {
+                                setIsProcessing(true);
+                                try {
+                                    const db = DatabaseService.getInstance();
+                                    await db.updateRequest(request.id, {
+                                        status: 'AUTHORIZED',
+                                        authorized_by: currentUser.id,
+                                        authorized_at: new Date().toISOString()
+                                    }, currentUser.id);
+                                    onStatusChange(request.id, RequestStatus.AUTHORIZED);
+                                } catch (e: any) {
+                                    showToast('Authorization failed: ' + e.message, 'error');
+                                } finally {
+                                    setIsProcessing(false);
+                                }
+                            }}
+                            disabled={isProcessing}
+                            className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition-colors"
+                        >
+                            Authorize
+                        </button>
+                    )}
                 </div>
             )}
 

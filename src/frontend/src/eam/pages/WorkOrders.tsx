@@ -1303,12 +1303,14 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         onClick: handleSave,
                         variant: 'primary' as const,
                         disabled: isSaving,
+                        isPrimary: true,
                     },
                     ...(localJob.status !== WorkOrderStatus.CLOSED && localJob.status !== WorkOrderStatus.TECO ? [{
                         label: 'Complete',
                         icon: <CheckCircle size={14} />,
                         onClick: () => setShowCompleteModal(true),
                         variant: 'secondary' as const,
+                        isPrimary: true,
                     }] : []),
                     ...(localJob.status === WorkOrderStatus.TECO ? [{
                         label: 'Close (Financial)',
@@ -1317,12 +1319,13 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             setShowFinancialCloseModal(true);
                         },
                         variant: 'secondary' as const,
+                        isPrimary: true,
                     }] : []),
                 ]}
             />
 
-            {/* Action Toolbar */}
-            <div className="px-3 py-2 md:px-5 md:py-2.5 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2 bg-slate-50/50">
+            {/* Action Toolbar — hidden on mobile, visible md+ */}
+            <div className="px-3 py-2 md:px-5 md:py-2.5 border-t border-slate-100 hidden md:flex flex-wrap justify-between items-center gap-2 bg-slate-50/50">
                 <div className="flex flex-wrap gap-1 md:gap-2">
                     <button className="flex items-center gap-1.5 px-2 py-1 md:px-2.5 md:py-1.5 text-[11px] md:text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white border border-transparent hover:border-slate-200 rounded transition-colors" title="Print Work Order">
                         <Printer size={14} /> Print
@@ -1430,6 +1433,39 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* ═══ Mobile Sticky Bottom Action Bar (thumb-reach zone) ═══ */}
+            <div className="md:hidden sticky bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 px-4 py-3 flex items-center gap-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+                <button
+                    onClick={handleSave}
+                    disabled={isSaving}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
+                >
+                    {isSaving
+                        ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        : <Download size={16} />
+                    }
+                    Save
+                </button>
+                {localJob.status !== WorkOrderStatus.CLOSED && localJob.status !== WorkOrderStatus.TECO && (
+                    <button
+                        onClick={() => setShowCompleteModal(true)}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-white border-2 border-primary-600 text-primary-600 rounded-xl text-sm font-semibold transition-colors hover:bg-primary-50"
+                    >
+                        <CheckCircle size={16} />
+                        Complete
+                    </button>
+                )}
+                {localJob.status === WorkOrderStatus.TECO && (
+                    <button
+                        onClick={() => setShowFinancialCloseModal(true)}
+                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-white border-2 border-slate-300 text-slate-700 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-50"
+                    >
+                        <Lock size={16} />
+                        Close (Financial)
+                    </button>
+                )}
             </div>
 
             {/* Completion Modal */}

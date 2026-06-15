@@ -1,5 +1,5 @@
-import React from 'react';
-import { X, ChevronRight } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { X, ChevronRight, MoreVertical } from 'lucide-react';
 
 export interface HeaderAction {
     label: string;
@@ -10,6 +10,8 @@ export interface HeaderAction {
     hidden?: boolean;
     /** Hide label on small screens, show only icon */
     compactLabel?: boolean;
+    /** Mark as primary — always visible. Non-primary actions go to overflow on mobile */
+    isPrimary?: boolean;
 }
 
 export interface UnifiedDetailHeaderProps {
@@ -36,10 +38,17 @@ export interface UnifiedDetailHeaderProps {
 }
 
 const variantStyles: Record<string, string> = {
-    primary: 'bg-relantern-500 hover:bg-relantern-600 text-white shadow-sm',
+    primary: 'bg-primary-600 hover:bg-primary-500 text-white shadow-sm',
     secondary: 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 shadow-sm',
     danger: 'bg-white border border-red-200 text-red-600 hover:bg-red-50 shadow-sm',
     ghost: 'text-slate-500 hover:text-slate-700 hover:bg-slate-100',
+};
+
+const overflowVariantStyles: Record<string, string> = {
+    primary: 'text-primary-600 font-semibold',
+    secondary: 'text-slate-700',
+    danger: 'text-red-600',
+    ghost: 'text-slate-600',
 };
 
 export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
@@ -54,21 +63,57 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
     badges,
     metadata,
 }) => {
-    // Support both HeaderAction[] array and raw JSX ReactNode
     const isActionArray = Array.isArray(actions);
     const visibleActions = isActionArray ? (actions as HeaderAction[]).filter(a => !a.hidden) : [];
 
+    // Split into primary (always visible) and overflow (hidden on mobile)
+    const primaryActions = visibleActions.filter(a => a.isPrimary || a.variant === 'primary');
+    const overflowActions = visibleActions.filter(a => !a.isPrimary && a.variant !== 'primary');
+
+    // Overflow menu state
+    const [showOverflow, setShowOverflow] = useState(false);
+    const overflowRef = useRef<HTMLDivElement>(null);
+
+    // Close overflow on outside click
+    useEffect(() => {
+        if (!showOverflow) return;
+        const handler = (e: MouseEvent) => {
+            if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
+                setShowOverflow(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showOverflow]);
+
+    // Collapsed breadcrumbs for mobile — show only last 2 segments
+    const mobileBreadcrumbs = breadcrumbs && breadcrumbs.length > 2
+        ? ['...', ...breadcrumbs.slice(-2)]
+        : breadcrumbs;
+
     return (
         <div className="border-b border-slate-200 bg-white flex-shrink-0 unified-header-enter">
-            {/* Breadcrumb row (optional) */}
+            {/* Breadcrumb row — collapsed on mobile */}
             {breadcrumbs && breadcrumbs.length > 0 && (
-                <div className="px-5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center text-[10px] text-slate-400 gap-1 overflow-x-auto scrollbar-hide">
-                    {breadcrumbs.map((crumb, i) => (
-                        <React.Fragment key={i}>
-                            {i > 0 && <ChevronRight size={10} className="text-slate-300 flex-shrink-0" />}
-                            <span className="whitespace-nowrap">{crumb}</span>
-                        </React.Fragment>
-                    ))}
+                <div className="px-3 md:px-5 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center text-[10px] text-slate-400 gap-1 overflow-x-auto scrollbar-hide">
+                    {/* Mobile: collapsed breadcrumbs */}
+                    <span className="flex items-center gap-1 md:hidden">
+                        {mobileBreadcrumbs?.map((crumb, i) => (
+                            <React.Fragment key={i}>
+                                {i > 0 && <ChevronRight size={10} className="text-slate-300 flex-shrink-0" />}
+                                <span className="whitespace-nowrap">{crumb}</span>
+                            </React.Fragment>
+                        ))}
+                    </span>
+                    {/* Desktop: full breadcrumbs */}
+                    <span className="hidden md:flex items-center gap-1">
+                        {breadcrumbs.map((crumb, i) => (
+                            <React.Fragment key={i}>
+                                {i > 0 && <ChevronRight size={10} className="text-slate-300 flex-shrink-0" />}
+                                <span className="whitespace-nowrap">{crumb}</span>
+                            </React.Fragment>
+                        ))}
+                    </span>
                 </div>
             )}
 
@@ -81,10 +126,10 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                     </div>
                 )}
 
-                {/* Title block */}
+                {/* Title block — stacked on mobile */}
                 <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                        <h1 className="text-lg font-bold text-slate-900 truncate">{title}</h1>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <h1 className="text-base md:text-lg font-bold text-slate-900 truncate">{title}</h1>
                         {status && (
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider border ${statusClassName}`}>
                                 {status}
@@ -93,7 +138,7 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                         {badges}
                     </div>
                     {subtitle && (
-                        <p className="text-sm text-slate-500 truncate mt-0.5">{subtitle}</p>
+                        <p className="text-xs md:text-sm text-slate-500 truncate mt-0.5">{subtitle}</p>
                     )}
                     {metadata && (
                         <div className="flex items-center gap-3 mt-1 text-xs text-slate-400">
@@ -103,25 +148,72 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0 action-bar-collapse">
-                    {isActionArray ? visibleActions.map((action, i) => (
-                        <button
-                            key={i}
-                            onClick={action.onClick}
-                            disabled={action.disabled}
-                            className={`px-2 py-1.5 md:px-3 rounded-lg text-xs md:text-sm font-medium flex items-center gap-1.5 md:gap-2 transition-colors ${
-                                action.disabled ? 'opacity-50 cursor-not-allowed' : ''
-                            } ${variantStyles[action.variant || 'secondary']} ${
-                                action.variant === 'primary' || action.variant === 'danger' ? '' : 'action-secondary'
-                            }`}
-                            title={action.label}
-                        >
-                            {action.icon}
-                            <span className={action.compactLabel ? 'hidden sm:inline' : 'hidden sm:inline'}>
-                                {action.label}
-                            </span>
-                        </button>
-                    )) : actions}
+                <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
+                    {isActionArray ? (
+                        <>
+                            {/* Primary actions — always visible */}
+                            {primaryActions.map((action, i) => (
+                                <button
+                                    key={`p-${i}`}
+                                    onClick={action.onClick}
+                                    disabled={action.disabled}
+                                    className={`px-2 py-1.5 md:px-3 rounded-lg text-xs md:text-sm font-medium flex items-center gap-1.5 md:gap-2 transition-colors ${
+                                        action.disabled ? 'opacity-50 cursor-not-allowed' : ''
+                                    } ${variantStyles[action.variant || 'secondary']}`}
+                                    title={action.label}
+                                >
+                                    {action.icon}
+                                    <span className="hidden sm:inline">{action.label}</span>
+                                </button>
+                            ))}
+
+                            {/* Desktop: show all overflow actions as buttons */}
+                            {overflowActions.map((action, i) => (
+                                <button
+                                    key={`s-${i}`}
+                                    onClick={action.onClick}
+                                    disabled={action.disabled}
+                                    className={`hidden md:flex px-2 py-1.5 md:px-3 rounded-lg text-xs md:text-sm font-medium items-center gap-1.5 md:gap-2 transition-colors ${
+                                        action.disabled ? 'opacity-50 cursor-not-allowed' : ''
+                                    } ${variantStyles[action.variant || 'secondary']}`}
+                                    title={action.label}
+                                >
+                                    {action.icon}
+                                    <span className="hidden sm:inline">{action.label}</span>
+                                </button>
+                            ))}
+
+                            {/* Mobile: overflow menu (⋯) — only if there ARE overflow actions */}
+                            {overflowActions.length > 0 && (
+                                <div className="relative md:hidden" ref={overflowRef}>
+                                    <button
+                                        onClick={() => setShowOverflow(!showOverflow)}
+                                        className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                                        aria-label="More actions"
+                                    >
+                                        <MoreVertical size={18} />
+                                    </button>
+                                    {showOverflow && (
+                                        <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-xl shadow-2xl z-[100] py-1 animate-in fade-in zoom-in-95 duration-150">
+                                            {overflowActions.map((action, i) => (
+                                                <button
+                                                    key={i}
+                                                    onClick={() => { action.onClick(); setShowOverflow(false); }}
+                                                    disabled={action.disabled}
+                                                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors hover:bg-slate-50 ${
+                                                        action.disabled ? 'opacity-50 cursor-not-allowed' : ''
+                                                    } ${overflowVariantStyles[action.variant || 'secondary']}`}
+                                                >
+                                                    {action.icon}
+                                                    {action.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </>
+                    ) : actions}
 
                     {/* Close button */}
                     <button

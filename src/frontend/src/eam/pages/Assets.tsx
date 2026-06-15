@@ -1385,6 +1385,16 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 </>
                             }
                             actions={[
+                                ...(canEdit ? [{
+                                    label: saving ? 'Saving...' : 'Save',
+                                    icon: saving
+                                        ? <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        : <Save size={14} />,
+                                    onClick: handleSave,
+                                    variant: 'primary' as const,
+                                    disabled: saving,
+                                    isPrimary: true,
+                                }] : []),
                                 {
                                     label: 'Analyze',
                                     icon: <Zap size={14} />,
@@ -1414,20 +1424,11 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     variant: 'danger' as const,
                                     compactLabel: true,
                                 }] : []),
-                                ...(canEdit ? [{
-                                    label: saving ? 'Saving...' : 'Save',
-                                    icon: saving
-                                        ? <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                                        : <Save size={14} />,
-                                    onClick: handleSave,
-                                    variant: 'primary' as const,
-                                    disabled: saving,
-                                }] : []),
                             ]}
                         />
 
-                        {/* AI Context Button — Rich Intelligence Brief */}
-                        <div className="px-4 py-1.5 border-b border-slate-100 bg-slate-50/30 flex items-center">
+                        {/* AI Context Button — hidden on mobile for space, shown md+ */}
+                        <div className="hidden md:flex px-4 py-1.5 border-b border-slate-100 bg-slate-50/30 items-center">
                             <AskRelanternButton
                                 contextType="assets"
                                 contextSummary={aiContextForAsset || `Loading asset intelligence for ${selectedAsset.tag}...`}
@@ -1448,28 +1449,40 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                             onTabChange={(id) => setActiveTab(id as TabId)}
                         />
 
-                        {/* Asset Path Breadcrumb (Moved Below Tabs) */}
-                        <div className="bg-slate-50 border-b border-slate-200 px-6 py-1.5 flex items-center text-[10px] z-10 sticky top-0">
+                        {/* Asset Path Breadcrumb — collapsed on mobile */}
+                        <div className="bg-slate-50 border-b border-slate-200 px-4 md:px-6 py-1.5 flex items-center text-[10px] z-10 sticky top-0">
                             <span className="font-bold mr-2 text-slate-500 uppercase tracking-wider flex items-center gap-1 flex-shrink-0">
                                 <Network size={10} className="text-slate-400" />
-                                Path:
+                                <span className="hidden sm:inline">Path:</span>
                             </span>
-                            <div className="flex items-center flex-wrap gap-1">
-                                {getAssetPath(selectedAsset).map((item, index, array) => (
-                                    <React.Fragment key={item.id}>
-                                        {index > 0 && <ChevronRight size={10} className="text-slate-300 mx-0.5 flex-shrink-0" />}
-                                        <button
-                                            onClick={() => setSelectedAsset(item)}
-                                            className={`px-1.5 py-0.5 rounded hover:bg-white hover:shadow-sm transition-all flex items-center gap-1 
-                                            ${index === array.length - 1 ? 'font-bold text-slate-800 bg-white border border-slate-200 shadow-sm' : 'text-slate-500 hover:text-blue-600'}`}
-                                        >
-                                            <span className={`w-1 h-1 rounded-full ${item.status === 'ACTIVE' ? 'bg-green-500' :
-                                                item.status === 'DOWN' ? 'bg-red-500' : 'bg-amber-500'
-                                                }`} />
-                                            {item.tag}
-                                        </button>
-                                    </React.Fragment>
-                                ))}
+                            <div className="flex items-center flex-wrap gap-1 overflow-x-auto scrollbar-hide">
+                                {(() => {
+                                    const fullPath = getAssetPath(selectedAsset);
+                                    // On mobile, collapse to last 2 segments with ellipsis
+                                    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+                                    const displayPath = isMobile && fullPath.length > 2
+                                        ? [{ id: 'ellipsis', tag: '...', status: '' } as any, ...fullPath.slice(-2)]
+                                        : fullPath;
+                                    return displayPath.map((item: any, index: number, array: any[]) => (
+                                        <React.Fragment key={item.id}>
+                                            {index > 0 && <ChevronRight size={10} className="text-slate-300 mx-0.5 flex-shrink-0" />}
+                                            {item.id === 'ellipsis' ? (
+                                                <span className="text-slate-400">...</span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => setSelectedAsset(item)}
+                                                    className={`px-1.5 py-0.5 rounded hover:bg-white hover:shadow-sm transition-all flex items-center gap-1 whitespace-nowrap
+                                                    ${index === array.length - 1 ? 'font-bold text-slate-800 bg-white border border-slate-200 shadow-sm' : 'text-slate-500 hover:text-blue-600'}`}
+                                                >
+                                                    <span className={`w-1 h-1 rounded-full ${item.status === 'ACTIVE' ? 'bg-green-500' :
+                                                        item.status === 'DOWN' ? 'bg-red-500' : 'bg-amber-500'
+                                                        }`} />
+                                                    {item.tag}
+                                                </button>
+                                            )}
+                                        </React.Fragment>
+                                    ));
+                                })()}
                             </div>
                         </div>
 
@@ -1511,6 +1524,29 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 </div>
                             )}
                         </div>
+
+                        {/* ═══ Mobile Sticky Bottom Action Bar (thumb-reach zone) ═══ */}
+                        {canEdit && (
+                            <div className="md:hidden flex-shrink-0 bg-white border-t border-slate-200 px-4 py-3 flex items-center gap-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+                                <button
+                                    onClick={handleSave}
+                                    disabled={saving}
+                                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
+                                >
+                                    {saving
+                                        ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        : <Save size={16} />
+                                    }
+                                    {saving ? 'Saving...' : 'Save Changes'}
+                                </button>
+                                <button
+                                    onClick={() => setSelectedAsset(null)}
+                                    className="px-4 py-3 bg-slate-100 text-slate-700 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-200"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )
             }
