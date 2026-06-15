@@ -13,6 +13,11 @@ import { MODULE_REGISTRY, MODULE_MAP } from '../config/moduleRegistry';
 
 const ALL_MODULE_IDS: ModuleId[] = MODULE_REGISTRY.map(m => m.id);
 
+/** Modules enabled by default at launch (excludes mock-heavy / deferred modules) */
+const LAUNCH_MODULE_IDS: ModuleId[] = MODULE_REGISTRY
+    .filter(m => m.launchReady !== false)
+    .map(m => m.id);
+
 /** Collect every child.id from modules that have children */
 const ALL_SUB_MODULE_IDS: string[] = MODULE_REGISTRY.flatMap(m => m.children?.map(c => c.id) ?? []);
 
@@ -34,7 +39,7 @@ interface LicenseContextValue {
 }
 
 const LicenseContext = createContext<LicenseContextValue>({
-    enabledModules: new Set(ALL_MODULE_IDS),
+    enabledModules: new Set(LAUNCH_MODULE_IDS),
     enabledSubModules: new Set(ALL_SUB_MODULE_IDS),
     isModuleEnabled: () => true,
     isSubModuleEnabled: () => true,
@@ -55,16 +60,14 @@ export const LicenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const stored = localStorage.getItem(STORAGE_KEY);
             if (stored) {
                 const parsed = new Set(JSON.parse(stored) as ModuleId[]);
-                // Auto-merge newly-registered modules that weren't in the stored set
-                // This prevents new modules (e.g. 'audits') from being blocked
-                // when an existing user has stale localStorage
-                for (const id of ALL_MODULE_IDS) {
+                // Auto-merge newly-registered LAUNCH-READY modules
+                for (const id of LAUNCH_MODULE_IDS) {
                     if (!parsed.has(id)) parsed.add(id);
                 }
                 return parsed;
             }
         } catch { /* ignore */ }
-        return new Set(ALL_MODULE_IDS);
+        return new Set(LAUNCH_MODULE_IDS);
     });
 
     const [enabledSubModules, setEnabledSubModules] = useState<Set<string>>(() => {

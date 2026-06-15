@@ -178,12 +178,12 @@ function App() {
                                 <Route path="/audits/corrective-actions" element={<Gated moduleId="audits"><PermissionGate module="audits"><AuditCorrectiveActionsPage /></PermissionGate></Gated>} />
                                 <Route path="/comply/regulatory-preparedness" element={<Gated moduleId="comply"><RegulatoryPreparednessPage /></Gated>} />
 
-                                {/* Intelligence tier */}
-                                <Route path="/vision" element={<Gated moduleId="predict"><VisionPage /></Gated>} />
-                                <Route path="/knowledge-graph" element={<Gated moduleId="predict"><KnowledgeGraphPage /></Gated>} />
-                                <Route path="/data-quality" element={<Gated moduleId="predict"><DataQualityPage /></Gated>} />
+                                {/* Intelligence tier (deferred — launchReady: false) */}
+                                <Route path="/vision" element={<Gated moduleId="vision"><VisionPage /></Gated>} />
+                                <Route path="/knowledge-graph" element={<Gated moduleId="intelligence"><KnowledgeGraphPage /></Gated>} />
+                                <Route path="/data-quality" element={<Gated moduleId="intelligence"><DataQualityPage /></Gated>} />
 
-                                {/* Sustainability tier */}
+                                {/* Sustainability tier (deferred — launchReady: false) */}
                                 <Route path="/sustain" element={<Gated moduleId="sustain"><SustainPage /></Gated>} />
 
                                 {/* Admin — ERS connector hub + EAM dictionaries/permissions */}

@@ -59,6 +59,8 @@ export interface ModuleDefinition {
     dependencies: ModuleId[];
     /** Sidebar section: 'eam' | 'ers' | 'platform' */
     section: ModuleSection;
+    /** If false, module is hidden from default license (demo/mock data only). Admin can still enable manually. */
+    launchReady?: boolean;
 }
 
 // ── Tier Metadata ────────────────────────────────────────
@@ -127,11 +129,9 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'reliability-modelling', label: 'Reliability Modelling', path: '/reliability-modelling' },
             { id: 'analyze-dash', label: 'Analyze', path: '/analyze' },
             { id: 'rcm-dash', label: 'RCM', path: '/rcm' },
-            { id: 'vision-dash', label: 'Vision', path: '/vision' },
-            { id: 'knowledge-dash', label: 'Knowledge & Data', path: '/knowledge-graph' },
         ],
-        routes: ['/predict', '/reliability-modelling', '/analyze', '/analyze/rca', '/rcm', '/vision', '/knowledge-graph'],
-        dependencies: ['core'], section: 'ers',
+        routes: ['/predict', '/reliability-modelling', '/analyze', '/analyze/rca', '/rcm'],
+        dependencies: ['core'], section: 'ers', launchReady: true,
     },
 
     {
@@ -174,7 +174,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         id: 'sustain', label: 'Sustain', description: 'Emissions tracking, ESG compliance',
         tier: 'sustainability', icon: RefreshCcw, path: '/sustain',
         routes: ['/sustain'],
-        dependencies: ['core'], section: 'ers',
+        dependencies: ['core'], section: 'ers', launchReady: false,
     },
     {
         id: 'finops', label: 'Financial Ops',
@@ -189,6 +189,25 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         tier: 'core', icon: FileBarChart, path: '/reports',
         routes: ['/reports'],
         dependencies: ['core'], section: 'platform',
+    },
+    // ── Deferred Modules (mock-heavy, hidden from launch) ─────
+    {
+        id: 'vision', label: 'Vision AI',
+        description: 'Computer vision for defect detection, drone surveys, AR inspections',
+        tier: 'intelligence', icon: Shield, path: '/vision',
+        routes: ['/vision'],
+        dependencies: ['predict'], section: 'ers', launchReady: false,
+    },
+    {
+        id: 'intelligence', label: 'Knowledge & Data',
+        description: 'Knowledge graph visualization, data quality scoring, digital twin',
+        tier: 'intelligence', icon: Shield, path: null,
+        children: [
+            { id: 'knowledge-dash', label: 'Knowledge Graph', path: '/knowledge-graph' },
+            { id: 'data-quality-dash', label: 'Data Quality', path: '/data-quality' },
+        ],
+        routes: ['/knowledge-graph', '/data-quality'],
+        dependencies: ['predict'], section: 'ers', launchReady: false,
     },
 ];
 
