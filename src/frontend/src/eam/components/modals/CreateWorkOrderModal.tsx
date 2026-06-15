@@ -20,6 +20,7 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
     const [dictionaries, setDictionaries] = useState<any[]>(propDictionaries || []); // Store dictionaries
     const [loadingData, setLoadingData] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
     const [formData, setFormData] = useState({
         title: '',
@@ -67,10 +68,16 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.title || !formData.assetId || !formData.priority || !formData.type) {
-            alert("Please fill all required fields (Asset, Description, Type, Priority).");
+        const errors: Record<string, string> = {};
+        if (!formData.assetId) errors.assetId = 'Asset is required';
+        if (!formData.title.trim()) errors.title = 'Work description is required';
+        if (!formData.type) errors.type = 'Work type is required';
+        if (!formData.priority) errors.priority = 'Priority is required';
+        if (Object.keys(errors).length > 0) {
+            setValidationErrors(errors);
             return;
         }
+        setValidationErrors({});
 
         const actorId = profile?.id || user?.id;
         if (!actorId) {
@@ -149,6 +156,7 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Required Asset <span className="text-red-500">*</span></label>
+                        {validationErrors.assetId && <p className="text-[11px] text-red-500 font-medium mb-1">{validationErrors.assetId}</p>}
                         <SearchableDropdown
                             options={assetOptions}
                             value={formData.assetId}
@@ -257,10 +265,11 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Work Description <span className="text-red-500">*</span></label>
+                        {validationErrors.title && <p className="text-[11px] text-red-500 font-medium mb-1">{validationErrors.title}</p>}
                         <input
                             required
                             type="text"
-                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                            className={`w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none ${validationErrors.title ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
                             placeholder="e.g. Pump P-101 Vibration High"
                             value={formData.title}
                             onChange={e => setFormData({ ...formData, title: e.target.value })}
@@ -270,9 +279,10 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 modal-grid-responsive">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Work Type <span className="text-red-500">*</span></label>
+                            {validationErrors.type && <p className="text-[11px] text-red-500 font-medium mb-1">{validationErrors.type}</p>}
                             <select
                                 required
-                                className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white"
+                                className={`w-full p-2 border rounded-lg text-sm bg-white ${validationErrors.type ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
                                 value={formData.type}
                                 onChange={e => setFormData({ ...formData, type: e.target.value })}
                             >
@@ -284,9 +294,10 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Priority <span className="text-red-500">*</span></label>
+                            {validationErrors.priority && <p className="text-[11px] text-red-500 font-medium mb-1">{validationErrors.priority}</p>}
                             <select
                                 required
-                                className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white"
+                                className={`w-full p-2 border rounded-lg text-sm bg-white ${validationErrors.priority ? 'border-red-400 bg-red-50' : 'border-slate-300'}`}
                                 value={formData.priority}
                                 onChange={e => setFormData({ ...formData, priority: e.target.value })}
                             >

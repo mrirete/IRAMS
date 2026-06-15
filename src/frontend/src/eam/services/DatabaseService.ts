@@ -11,7 +11,6 @@ import {
     WorkOrderFailureDataRecord,
     RecurringWorkRecord
 } from '../schema';
-import { MOCK_CONTACTS, MOCK_USERS, MOCK_ASSETS, MOCK_REQUESTS, MOCK_WORK_ORDERS } from '../constants';
 import { DataMapper } from './DataMapper';
 import {
     DictionaryType,
@@ -37,16 +36,29 @@ import {
     MessageTemplate,
     NotificationLog
 } from '../types';
-import { supabase } from '../lib/supabase'; // Migrated to Supabase
-import { FinOpsService } from './FinOpsService'; // Federation for Cost Centers
+import { supabase } from '../lib/supabase';
+import { FinOpsService } from './FinOpsService';
 import { errorLog } from './ErrorLogService';
 
 /**
- * DATABASE SERVICE (Supabase Hybrid Edition)
+ * DATABASE SERVICE (Supabase Edition)
  * 
- * - Contacts, Users, Dictionaries: Managed in Supabase (PostgreSQL)
- * - Assets: Supabase (Read Only for now)
- * - Requests, WorkOrders: Currently Hybrid/Memory (Migrate next)
+ * All core entities are managed in Supabase (PostgreSQL):
+ * - Contacts, Users, Organization Units
+ * - Assets, Asset Financials
+ * - Work Orders (+ tasks, labor, parts, JSA, failure data)
+ * - Service Requests
+ * - Inventory (items, stock, locations, transactions)
+ * - Recurring Work / PMs
+ * - Vendors, Manufacturer Models
+ * - Dictionaries (reference_codes)
+ * - Notification Rules, Channels, Events
+ * - Journal Entries, Entity Files
+ * - PTW Permits, Isolation Points, Approvals
+ * - Qualifications
+ * 
+ * RLS: Enabled on all tables via migration 0150 (authenticated user policies).
+ * Site-scoping: Application-side via filterAssetsBySiteScope().
  */
 
 export class DatabaseService {
@@ -344,20 +356,11 @@ export class DatabaseService {
     }
 
     public async deleteContact(contactId: string): Promise<void> {
-        // Validate UUID to prevent "invalid input syntax" error for mock data
+        // Validate UUID to prevent "invalid input syntax" error
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!uuidRegex.test(contactId)) {
-            console.warn(`Handling mock ID delete: ${contactId}. Updating local state.`);
-
-            // 1. Remove from LocalStorage Fallback
-            const local = this.getFromLocal('nexus_contacts') || [];
-            const updated = local.filter((c: any) => c.id !== contactId);
-            this.saveToLocal('nexus_contacts', updated);
-
-            // 2. Remove from Cache
-            this._cachedContacts = this._cachedContacts.filter(c => c.id !== contactId);
-
-            return;
+            console.error(`[DatabaseService] Invalid contact ID format: ${contactId}. Cannot delete non-UUID records.`);
+            throw new Error('Invalid contact ID format. All records must be synced to Supabase.');
         }
 
         // 1. Unlink any Users (set contact_id = null)
@@ -746,12 +749,18 @@ export class DatabaseService {
 
         const userIds = (users || []).map((u: any) => u.id);
 
-        // 3. Filter Work Orders (Mock/Hybrid) assigned to these Users
-        // Note: WOs are currently MOCK/Local in this service version (as per file header)
-        // We will fetch from local state (MOCK_WORK_ORDERS)
-        const allWOs = MOCK_WORK_ORDERS; // Or this.getFromLocal('nexus_work_orders')
+        // 3. Query work orders assigned to these users from Supabase
+        if (userIds.length === 0) return [];
+        const { data: woData, error: woError } = await supabase
+            .from('work_orders')
+            .select('*')
+            .in('assigned_to', userIds);
 
-        return allWOs.filter(wo => userIds.includes(wo.assignedTo));
+        if (woError) {
+            console.error('[DatabaseService] getWorkOrdersByOrgUnit error:', woError);
+            return [];
+        }
+        return (woData || []) as any;
     }
 
     public async deleteOrgUnit(id: string): Promise<void> {
@@ -1338,30 +1347,17 @@ export class DatabaseService {
             if (finError) console.warn("Failed to update financials for asset:", finError);
         }
         if (error) {
-            console.warn("Supabase Offline (updateAsset). Updating LocalStorage.");
-            const current = this.getFromLocal('nexus_assets') || [];
-            const index = current.findIndex((a: any) => a.id === asset.id);
-            if (index >= 0) {
-                current[index] = { ...current[index], ...row }; // Merge updates
-                this.saveToLocal('nexus_assets', current);
-            } else {
-                // If not found in local, maybe add it? safely ignore for now or add.
-                console.warn("Asset not found in local storage to update:", asset.id);
-            }
-            return;
+            console.error('[DatabaseService] updateAsset Supabase error:', error);
+            throw error;
         }
     }
 
     public async deleteAsset(assetId: string): Promise<void> {
         const { error } = await supabase.from('assets').delete().eq('id', assetId);
         if (error) {
-            console.warn("Supabase Offline (deleteAsset). Updating LocalStorage.");
-            const current = this.getFromLocal('nexus_assets') || [];
-            const filtered = current.filter((a: any) => a.id !== assetId);
-            this.saveToLocal('nexus_assets', filtered);
-            return;
+            console.error('[DatabaseService] deleteAsset Supabase error:', error);
+            throw error;
         }
-
     }
 
     // --- DICTIONARIES ---
@@ -2442,26 +2438,17 @@ export class DatabaseService {
             customFields: row.properties?.customFields || []
         });
 
-        // Offline Fallback
-        const localData = this.getFromLocal('nexus_inventory');
-
-        if (dbError || (!dbData || dbData.length === 0)) {
-            if (localData && localData.length > 0) {
-                return localData.map((i: any) => ({
-                    ...i,
-                    stockLocations: i.stockLocations || [],
-                    transactions: i.transactions || [],
-                    suppliers: i.suppliers || []
-                }));
-            }
+        if (dbError) {
+            console.error('[DatabaseService] getInventory error:', dbError);
+            errorLog.apiError('inventory_items', 'Error fetching inventory', dbError);
+            return [];
+        }
+        if (!dbData || dbData.length === 0) {
             return [];
         }
 
         const mapped = (dbData || []).map(mapToUI);
 
-        if (mapped.length > 0) {
-            this.saveToLocal('nexus_inventory', mapped);
-        }
 
         return mapped;
     }
@@ -4141,8 +4128,9 @@ export class DatabaseService {
     public async getNotificationRules(): Promise<any[]> { // Return Typed Objects from UI types or Records
         const { data, error } = await supabase.from('notification_rules').select('*');
         if (error) {
-            console.error("Error fetching notification rules:", error);
-            return this.getFromLocal('nexus_notification_rules') || [];
+            console.error('[DatabaseService] Error fetching notification rules:', error);
+            errorLog.apiError('notification_rules', 'Error fetching notification rules', error);
+            return [];
         }
 
         // Map DB snake_case to UI camelCase if needed, or stick to type
@@ -4163,7 +4151,6 @@ export class DatabaseService {
             escalationScope: r.escalation_scope || 'ORG_UNIT'
         }));
 
-        this.saveToLocal('nexus_notification_rules', mapped);
         return mapped;
     }
 

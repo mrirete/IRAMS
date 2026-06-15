@@ -9,8 +9,9 @@ import {
 } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
 
-// Test password for quick switch (development only)
-const TEST_PASSWORD = 'Password123!';
+// Quick Switch is DEVELOPMENT ONLY — stripped from production builds
+const IS_DEV = import.meta.env.DEV;
+const TEST_PASSWORD = IS_DEV ? 'Password123!' : '';
 
 // ── Stats for the dashboard preview ──
 const LIVE_STATS = [
@@ -25,7 +26,7 @@ export const Login: React.FC = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const [loadingUsers, setLoadingUsers] = useState(true);
+    const [loadingUsers, setLoadingUsers] = useState(IS_DEV);
     const [switchingUser, setSwitchingUser] = useState<string | null>(null);
     const [showQuickSwitch, setShowQuickSwitch] = useState(false);
     const [testUsers, setTestUsers] = useState<{ username: string; name: string; role: string }[]>([]);
@@ -58,7 +59,9 @@ export const Login: React.FC = () => {
     };
 
     // Load available users for quick switch
+    // Only load test users in development mode
     useEffect(() => {
+        if (!IS_DEV) { setLoadingUsers(false); return; }
         const loadUsers = async () => {
             setLoadingUsers(true);
             try {
@@ -306,15 +309,17 @@ export const Login: React.FC = () => {
                             </button>
                         </form>
 
-                        {/* Divider */}
+                        {/* Divider — DEV ONLY */}
+                        {IS_DEV && (
                         <div className="flex items-center gap-4 my-5">
                             <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
                             <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>or</span>
                             <div className="flex-1 h-px" style={{ background: '#e2e8f0' }} />
                         </div>
+                        )}
 
-                        {/* Quick Switch */}
-                        <button
+                        {/* Quick Switch — DEV ONLY */}
+                        {IS_DEV && (<button
                             onClick={() => setShowQuickSwitch(!showQuickSwitch)}
                             className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200"
                             style={{
@@ -384,9 +389,11 @@ export const Login: React.FC = () => {
                                         ))}
                                     </div>
                                 )}
-                                <p className="text-[9px] mt-3 text-center font-medium" style={{ color: '#92400e' }}>⚠ Testing only — remove in production</p>
+                                <p className="text-[9px] mt-3 text-center font-medium" style={{ color: '#92400e' }}>⚠ Development mode only — not visible in production</p>
                             </div>
                         )}
+                    </div>
+                    )}
                     </div>
 
 
