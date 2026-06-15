@@ -839,7 +839,7 @@ select {
 }
 
 /* Account for bottom nav + detail action footer on mobile */
-@media (max-width: 767px) {
+@media (max-width: 639px) {
   .eam-app main {
     padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px)) !important;
   }
@@ -867,8 +867,17 @@ select {
   animation: mobile-footer-enter 0.25s ease-out;
 }
 
+/* On md+ the sidebar (w-64 = 16rem) is always visible, offset the footer */
+@media (min-width: 768px) {
+  .mobile-detail-footer {
+    left: 16rem;          /* match Sidebar w-64 */
+    bottom: 0;            /* no bottom nav on md+ */
+    border-radius: 0;
+  }
+}
+
 /* Hide mobile page-level chrome when detail is open */
-@media (max-width: 767px) {
+@media (max-width: 639px) {
   .mobile-hide-when-detail {
     display: none !important;
   }

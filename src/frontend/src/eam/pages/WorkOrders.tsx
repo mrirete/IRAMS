@@ -1429,8 +1429,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 </div>
             </div>
 
-            {/* ═══ Mobile Sticky Bottom Action Bar (md+ hides — desktop header has buttons) ═══ */}
-            <div className="md:hidden mobile-detail-footer">
+            {/* ═══ Sticky Bottom Action Bar ═══ */}
+            <div className="mobile-detail-footer">
                 <Button
                     onClick={handleSave}
                     loading={isSaving}
