@@ -8,6 +8,10 @@ fix_*.ps1
 restore_files.ps1
 generate-pages.js
 
+# ── Build artifacts (force Vercel to run buildCommand) ────
+dist
+dist-ssr
+
 # ── Local Supabase CLI ───────────────────────────────────
 supabase/
 
