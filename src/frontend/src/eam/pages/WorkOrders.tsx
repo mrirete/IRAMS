@@ -403,7 +403,7 @@ export const WorkOrders: React.FC = () => {
             )}
 
             {viewMode === 'DETAIL' && (
-                selectedJob && <JobDetail job={selectedJob} onBack={handleBack} dictionaries={dictionaries} users={users} contacts={contacts} orgUnits={orgUnits} setDeleteModal={setDeleteModal} canEdit={canEdit} canDelete={canDelete} />
+                selectedJob && <JobDetail key={selectedJob.id} job={selectedJob} onBack={handleBack} dictionaries={dictionaries} users={users} contacts={contacts} orgUnits={orgUnits} setDeleteModal={setDeleteModal} canEdit={canEdit} canDelete={canDelete} />
             )}
 
             {showStatusModal && (
