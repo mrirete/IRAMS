@@ -342,6 +342,7 @@ export const Login: React.FC = () => {
                                 : <ChevronDown size={17} style={{ color: '#64748b' }} />
                             }
                         </button>
+                        )}
 
                         {/* Quick Switch Panel */}
                         {showQuickSwitch && (
@@ -392,8 +393,6 @@ export const Login: React.FC = () => {
                                 <p className="text-[9px] mt-3 text-center font-medium" style={{ color: '#92400e' }}>⚠ Development mode only — not visible in production</p>
                             </div>
                         )}
-                    </div>
-                    )}
                     </div>
 
 

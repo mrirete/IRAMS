@@ -123,8 +123,8 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                             value={block.valueString || ''}
                             onChange={(e) => onChange({ valueString: e.target.value })}
                             placeholder="Technician enters observations here..."
-                            className="w-full h-16 border border-slate-200 rounded bg-white text-slate-700 text-xs p-2 resize-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            rows={2}
+                            className="w-full min-h-[80px] border border-slate-200 rounded bg-white text-slate-700 text-sm p-2.5 resize-y focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                            rows={3}
                         />
                     </div>
                 );
@@ -225,12 +225,14 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                 <div className="flex-1">
                     <input
                         type="text"
-                        className={`w-full border-none p-0 focus:ring-0 placeholder:text-slate-300 bg-transparent ${isHeading ? 'text-base font-bold text-slate-800' : 'text-sm font-medium text-slate-700'}`}
+                        className={`w-full bg-transparent placeholder:text-slate-300 ${isHeading
+                            ? 'text-base font-bold text-slate-800 border-none p-0 focus:ring-0'
+                            : 'text-sm font-medium text-slate-700 border border-slate-200 rounded-md px-2.5 py-1.5 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 hover:border-slate-300 transition-colors'}`}
                         placeholder={isHeading ? 'Section heading...' : 'Enter instruction...'}
                         value={block.label}
                         onChange={(e) => onChange({ label: e.target.value })}
                     />
-                    <div className="text-[10px] text-slate-400 uppercase font-bold mt-0.5">
+                    <div className="text-[10px] text-slate-400 uppercase font-bold mt-1">
                         {getTypeLabel(block.type)}
                     </div>
                 </div>

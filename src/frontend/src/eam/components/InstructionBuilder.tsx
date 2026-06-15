@@ -157,8 +157,8 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
                             onChange={(e) => updateBlock(block.id, { valueString: e.target.value })}
                             placeholder="Enter notes/observation..."
                             readOnly={isEdit}
-                            className={`w-full p-2 border border-slate-300 rounded text-sm ${isEdit ? 'bg-slate-50 text-slate-400' : 'bg-white focus:border-blue-500 focus:ring-1 focus:ring-primary-500'}`}
-                            rows={2}
+                            className={`w-full p-2.5 border border-slate-300 rounded text-sm resize-y ${isEdit ? 'bg-slate-50 text-slate-400' : 'bg-white focus:border-blue-500 focus:ring-1 focus:ring-primary-500'}`}
+                            rows={3}
                         />
                     </div>
                 );

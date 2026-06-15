@@ -47,6 +47,18 @@
   --color-accent-safe: #10b981;
 
   --font-sans: 'Inter', 'Roboto', sans-serif;
+
+  /* ── Breakpoints (migrated from tailwind.config.js) ── */
+  --breakpoint-xs: 475px;
+
+  /* ── Radius scale — primitives standardize on these ── */
+  --radius-card: 0.75rem;   /* 12px — cards, drawers, large surfaces */
+  --radius-control: 0.5rem; /* 8px  — buttons, inputs, pills */
+
+  /* ── Elevation — 3 tiers, slate-tinted for a cool industrial feel ── */
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-raised: 0 4px 6px -1px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.06);
+  --shadow-overlay: 0 10px 25px -5px rgb(15 23 42 / 0.15), 0 8px 10px -6px rgb(15 23 42 / 0.10);
 }
 
 @layer base {
@@ -132,6 +144,19 @@ option {
 
   to {
     opacity: 1;
+  }
+}
+
+/* ── Modal entrance (ui/Overlay primitive) ── */
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
@@ -814,7 +839,7 @@ select {
 }
 
 /* Account for bottom nav + detail action footer on mobile */
-@media (max-width: 639px) {
+@media (max-width: 767px) {
   .eam-app main {
     padding-bottom: calc(8rem + env(safe-area-inset-bottom, 0px)) !important;
   }
@@ -843,7 +868,7 @@ select {
 }
 
 /* Hide mobile page-level chrome when detail is open */
-@media (max-width: 639px) {
+@media (max-width: 767px) {
   .mobile-hide-when-detail {
     display: none !important;
   }

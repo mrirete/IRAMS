@@ -59,6 +59,7 @@ import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { DensityToggle, type Density } from '../components/ui/DensityToggle';
+import { Button, Badge, StatusPill, PriorityPill, Modal, DataList, type DataColumn } from '../components/ui';
 import { supabase } from '../lib/supabase';
 import ersApi from '../services/ERSApiClient';
 
@@ -604,6 +605,114 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
         return <Clock size={14} className="text-slate-400" />;
     };
 
+    // ── Unified list definition: desktop dense table + mobile cards from ONE source (DataList) ──
+    const woColumns: DataColumn<WorkOrder>[] = [
+        {
+            id: 'select',
+            header: '',
+            hideOnCard: true,
+            widthClass: 'w-8',
+            headerCell: (
+                <input
+                    type="checkbox"
+                    checked={filteredJobs.length > 0 && selectedIds.size === filteredJobs.length}
+                    ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredJobs.length; }}
+                    onChange={toggleAll}
+                    className="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 cursor-pointer"
+                />
+            ),
+            render: (job) => (
+                <span onClick={(e) => e.stopPropagation()}>
+                    <input
+                        type="checkbox"
+                        checked={selectedIds.has(job.id)}
+                        onChange={() => toggleSelect(job.id)}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-primary-600 cursor-pointer"
+                    />
+                </span>
+            ),
+        },
+        { id: 'status', header: 'Status', render: (job) => <StatusPill status={job.status} /> },
+        {
+            id: 'wo',
+            header: 'WO Number',
+            cardTitle: true,
+            render: (job) => <span className="font-mono font-medium text-slate-900">{job.woNumber || job.id}</span>,
+        },
+        {
+            id: 'desc',
+            header: 'Description',
+            hideBelow: 'sm',
+            render: (job) => (
+                <div className="min-w-0">
+                    <div className="text-xs font-medium text-slate-900 truncate">{job.title}</div>
+                    <div className="text-[11px] text-slate-500 truncate">{job.description}</div>
+                </div>
+            ),
+        },
+        { id: 'asset', header: 'Asset', hideBelow: 'md', render: (job) => <span className="text-slate-600">{job.assetName || '—'}</span> },
+        {
+            id: 'type',
+            header: 'Type',
+            hideBelow: 'lg',
+            render: (job) => (
+                <div className="flex items-center gap-1">
+                    {job.type && <Badge tone="neutral" pill={false}>{job.type}</Badge>}
+                    {job.recurringWorkId && (
+                        <Badge tone="info" pill={false}><Repeat size={8} className="mr-0.5" />PM</Badge>
+                    )}
+                </div>
+            ),
+        },
+        { id: 'priority', header: 'Priority', render: (job) => <PriorityPill priority={job.priority} /> },
+        {
+            id: 'due',
+            header: 'Due Date',
+            align: 'right',
+            hideBelow: 'sm',
+            render: (job) => isOverdue(job)
+                ? <span className="text-red-600 font-bold text-xs">{getOverdueDays(job)}d overdue</span>
+                : <span className="text-slate-600 text-xs">{job.dueDate ? new Date(job.dueDate).toLocaleDateString() : '—'}</span>,
+        },
+    ];
+
+    // Rich mobile card (preserves overdue / Crit-A / RPN cues) rendered inside DataList's card surface.
+    const renderWoCard = (job: WorkOrder) => {
+        const overdue = isOverdue(job);
+        const overdueDays = getOverdueDays(job);
+        const rpn = getRPN(job);
+        const crit = getAssetCriticality(job);
+        return (
+            <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        {getStatusIcon(job.status)}
+                        <span className="text-sm font-bold text-slate-900 truncate">{job.woNumber || job.id}</span>
+                        {crit === 'A' && <span className="crit-a-badge">🔴 Crit-A</span>}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                        {rpn > 0 && (
+                            <span className={`rpn-badge ${rpn > 12 ? 'rpn-high' : rpn > 6 ? 'rpn-medium' : 'rpn-low'}`}>RPN:{rpn}</span>
+                        )}
+                        <PriorityPill priority={job.priority} />
+                    </div>
+                </div>
+                <p className="text-xs text-slate-700 line-clamp-1 font-medium">{job.title}</p>
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                    <span className="text-slate-500 truncate">{job.assetName || 'No Asset'}</span>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {job.type && <Badge tone="neutral" pill={false}>{job.type}</Badge>}
+                        {overdue ? (
+                            <span className="overdue-badge overdue-pulse">{overdueDays}d overdue</span>
+                        ) : (
+                            <span className="text-slate-400 text-[10px]">{job.dueDate ? new Date(job.dueDate).toLocaleDateString() : ''}</span>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             {/* Header / Filters */}
@@ -619,9 +728,16 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         <div className="hidden md:block">
                             <DensityToggle value={density} onChange={setDensity} />
                         </div>
-                        <button onClick={onCreate} disabled={!canCreate} className={`hidden sm:flex bg-primary-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium items-center gap-1.5 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`} title={!canCreate ? 'Insufficient permissions' : 'Create new work order'}>
-                            <Plus size={14} /> New Work Order
-                        </button>
+                        <Button
+                            onClick={onCreate}
+                            disabled={!canCreate}
+                            size="sm"
+                            leftIcon={<Plus size={14} />}
+                            className="hidden sm:inline-flex"
+                            title={!canCreate ? 'Insufficient permissions' : 'Create new work order'}
+                        >
+                            New Work Order
+                        </Button>
                     </div>
                 </div>
 
@@ -668,217 +784,91 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         </button>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button
+                        <Button
                             onClick={() => setShowBulkConfirm(true)}
                             disabled={bulkDeleting}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold shadow-sm transition disabled:opacity-50"
+                            variant="danger"
+                            size="sm"
+                            leftIcon={<Trash2 size={12} />}
                         >
-                            <Trash2 size={12} /> Delete Selected
-                        </button>
+                            Delete Selected
+                        </Button>
                     </div>
                 </div>
             )}
 
             {/* Bulk Delete Confirmation Modal */}
-            {showBulkConfirm && (
-                <div className="fixed inset-0 z-[999] bg-black/50 flex items-center justify-center p-4" onClick={() => !bulkDeleting && setShowBulkConfirm(false)}>
-                    <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                                <AlertTriangle size={20} className="text-red-600" />
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-slate-900">Delete {selectedIds.size} Work Order{selectedIds.size !== 1 ? 's' : ''}?</h3>
-                                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                    This will permanently delete the selected work orders and all associated tasks, parts, labor, and JSA records.<br />
-                                    <strong className="text-red-600">This action cannot be undone.</strong>
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-2 pt-2">
-                            <button
-                                onClick={() => setShowBulkConfirm(false)}
-                                disabled={bulkDeleting}
-                                className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={handleBulkDelete}
-                                disabled={bulkDeleting}
-                                className="px-4 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50 flex items-center gap-1.5"
-                            >
-                                {bulkDeleting
-                                    ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Deleting...</>
-                                    : <><Trash2 size={12} /> Delete {selectedIds.size} Work Order{selectedIds.size !== 1 ? 's' : ''}</>
-                                }
-                            </button>
-                        </div>
+            <Modal
+                open={showBulkConfirm}
+                onClose={() => !bulkDeleting && setShowBulkConfirm(false)}
+                title={`Delete ${selectedIds.size} Work Order${selectedIds.size !== 1 ? 's' : ''}?`}
+                size="sm"
+                footer={
+                    <>
+                        <Button variant="secondary" size="sm" onClick={() => setShowBulkConfirm(false)} disabled={bulkDeleting}>
+                            Cancel
+                        </Button>
+                        <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={handleBulkDelete}
+                            loading={bulkDeleting}
+                            leftIcon={!bulkDeleting ? <Trash2 size={12} /> : undefined}
+                        >
+                            {bulkDeleting ? 'Deleting…' : `Delete ${selectedIds.size} Work Order${selectedIds.size !== 1 ? 's' : ''}`}
+                        </Button>
+                    </>
+                }
+            >
+                <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                        <AlertTriangle size={20} className="text-red-600" />
                     </div>
+                    <p className="text-xs text-slate-500 leading-relaxed">
+                        This will permanently delete the selected work orders and all associated tasks, parts, labor, and JSA records.<br />
+                        <strong className="text-red-600">This action cannot be undone.</strong>
+                    </p>
                 </div>
-            )}
+            </Modal>
 
-            {/* ═══ Mobile Card View (< 768px) — GAP-02/08/09/10 Enhanced ═══ */}
-            <div className="mobile-cards flex-1 overflow-y-auto">
-                {/* GAP-01: Sort Toolbar */}
-                <div className="flex items-center gap-1 px-3 py-2 border-b border-slate-100 bg-slate-50/50 overflow-x-auto scrollbar-hide">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mr-1 flex-shrink-0">Sort:</span>
-                    {([['priority', 'Priority'], ['dueDate', 'Due Date'], ['status', 'Status'], ['created', 'Created']] as [SortField, string][]).map(([field, label]) => (
-                        <button
-                            key={field}
-                            onClick={() => handleSortChange(field)}
-                            className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-[10px] font-bold transition-all whitespace-nowrap ${
-                                sortField === field
-                                    ? 'bg-blue-600 text-white shadow-sm'
-                                    : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100'
-                            }`}
-                        >
-                            {label}
-                            {sortField === field && (
-                                <span className="text-[8px]">{sortAsc ? '↑' : '↓'}</span>
-                            )}
-                        </button>
-                    ))}
-                </div>
+            {/* ═══ Mobile sort toolbar (DataList renders the cards below) ═══ */}
+            <div className="md:hidden flex items-center gap-1 px-3 py-2 border-b border-slate-100 bg-slate-50/50 overflow-x-auto scrollbar-hide flex-shrink-0">
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mr-1 flex-shrink-0">Sort:</span>
+                {([['priority', 'Priority'], ['dueDate', 'Due Date'], ['status', 'Status'], ['created', 'Created']] as [SortField, string][]).map(([field, label]) => (
+                    <button
+                        key={field}
+                        onClick={() => handleSortChange(field)}
+                        className={`flex items-center gap-0.5 px-2 py-1 rounded-full text-[10px] font-bold transition-all whitespace-nowrap ${
+                            sortField === field
+                                ? 'bg-primary-600 text-white shadow-sm'
+                                : 'bg-white text-slate-500 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                    >
+                        {label}
+                        {sortField === field && (
+                            <span className="text-[8px]">{sortAsc ? '↑' : '↓'}</span>
+                        )}
+                    </button>
+                ))}
+            </div>
 
-                {filteredJobs.map(job => {
-                    const overdue = isOverdue(job);
-                    const overdueDays = getOverdueDays(job);
-                    const rpn = getRPN(job);
-                    const crit = getAssetCriticality(job);
-
-                    return (
-                        <div
-                            key={job.id}
-                            onClick={() => onSelect(job)}
-                            className={`mobile-card-v2 ${overdue ? 'overdue-strip' : ''} ${crit === 'A' ? 'crit-a-accent' : ''}`}
-                        >
-                            {/* Row 1: Status + WO Number + Badges */}
-                            <div className="mobile-card-header">
-                                <div className="flex items-center gap-2 min-w-0">
-                                    {getStatusIcon(job.status)}
-                                    <span className="text-sm font-bold text-slate-900 truncate">{job.woNumber || job.id}</span>
-                                    {crit === 'A' && <span className="crit-a-badge">🔴 Crit-A</span>}
-                                </div>
-                                <div className="flex items-center gap-1 flex-shrink-0">
-                                    {rpn > 0 && (
-                                        <span className={`rpn-badge ${rpn > 12 ? 'rpn-high' : rpn > 6 ? 'rpn-medium' : 'rpn-low'}`}>
-                                            RPN:{rpn}
-                                        </span>
-                                    )}
-                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${job.priority === 'HIGH' || job.priority === 'EMERGENCY' ? 'bg-red-100 text-red-700' : job.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}>
-                                        {job.priority}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Row 2: Title */}
-                            <p className="text-xs text-slate-700 line-clamp-1 font-medium">{job.title}</p>
-
-                            {/* Row 3: Asset + Due Date + Overdue Badge */}
-                            <div className="flex items-center justify-between gap-2 text-[11px]">
-                                <span className="text-slate-500 truncate">{job.assetName || 'No Asset'}</span>
-                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                    {job.type && (
-                                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 text-[9px] font-bold">{job.type}</span>
-                                    )}
-                                    {overdue ? (
-                                        <span className="overdue-badge overdue-pulse">
-                                            {overdueDays}d overdue
-                                        </span>
-                                    ) : (
-                                        <span className="text-slate-400 text-[10px]">
-                                            {job.dueDate ? new Date(job.dueDate).toLocaleDateString() : ''}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    );
-                })}
-                {filteredJobs.length === 0 && (
+            {/* ═══ Unified list — Fiori-dense table (md+) / MaintainX cards (mobile) ═══ */}
+            <DataList<WorkOrder>
+                columns={woColumns}
+                data={filteredJobs}
+                getRowId={(job) => job.id}
+                onRowClick={onSelect}
+                selectedId={null}
+                density={density}
+                renderCard={renderWoCard}
+                empty={
                     <div className="unified-empty-state">
                         <div className="unified-empty-state-icon"><Search size={20} /></div>
                         <div className="unified-empty-state-title">No Work Orders Found</div>
                         <div className="unified-empty-state-desc">Try adjusting your filters or search terms.</div>
                     </div>
-                )}
-            </div>
-
-            {/* ═══ Desktop Table View (>= 768px) ═══ */}
-            <div className={`desktop-table flex-1 overflow-y-auto overflow-x-hidden density-${density}`}>
-                <table className="w-full divide-y divide-slate-200 table-fixed">
-                    <thead className="bg-slate-50 sticky top-0 z-10">
-                        <tr>
-                            <th className="pl-3 pr-1 py-2 w-8">
-                                <input
-                                    type="checkbox"
-                                    checked={filteredJobs.length > 0 && selectedIds.size === filteredJobs.length}
-                                    ref={(el) => { if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < filteredJobs.length; }}
-                                    onChange={toggleAll}
-                                    className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 cursor-pointer"
-                                />
-                            </th>
-                            <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">Status</th>
-                            <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">WO Number</th>
-                            <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase hidden sm:table-cell">Description</th>
-                            <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase hidden md:table-cell">Asset</th>
-                            <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase hidden lg:table-cell">Type</th>
-                            <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-500 uppercase">Priority</th>
-                            <th className="px-3 py-2 text-right text-[10px] font-bold text-slate-500 uppercase hidden sm:table-cell">Due Date</th>
-                        </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-slate-200">
-                        {filteredJobs.map(job => (
-                            <tr
-                                key={job.id}
-                                onClick={() => onSelect(job)}
-                                className={`hover:bg-blue-50 cursor-pointer transition-colors ${selectedIds.has(job.id) ? 'bg-blue-50/70' : ''}`}
-                            >
-                                <td className="pl-3 pr-1 py-2.5" onClick={e => e.stopPropagation()}>
-                                    <input
-                                        type="checkbox"
-                                        checked={selectedIds.has(job.id)}
-                                        onChange={() => toggleSelect(job.id)}
-                                        className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 cursor-pointer"
-                                    />
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap">
-                                    <div className="flex items-center gap-1.5">
-                                        {getStatusIcon(job.status)}
-                                        <span className={`text-[10px] font-bold uppercase ${job.status === 'OPEN' ? 'text-slate-600' :
-                                            job.status === WorkOrderStatus.WIP ? 'text-blue-600' : 'text-green-600'
-                                            }`}>{job.status ? job.status.replace('_', ' ') : 'UNKNOWN'}</span>
-                                    </div>
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap text-xs font-mono font-medium text-slate-900">{job.woNumber || job.id}</td>
-                                <td className="px-3 py-2.5 hidden sm:table-cell">
-                                    <div className="text-xs font-medium text-slate-900 line-clamp-1">{job.title}</div>
-                                    <div className="text-[11px] text-slate-500 line-clamp-1">{job.description}</div>
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap text-xs text-slate-600 hidden md:table-cell">{job.assetName}</td>
-                                <td className="px-3 py-2.5 whitespace-nowrap hidden lg:table-cell">
-                                    <div className="flex items-center gap-1">
-                                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">{job.type}</span>
-                                        {job.recurringWorkId && (
-                                            <span className="px-1 py-0.5 rounded bg-blue-100 text-blue-600 text-[9px] font-bold flex items-center gap-0.5" title="Generated from PM">
-                                                <Repeat size={8} />PM
-                                            </span>
-                                        )}
-                                    </div>
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap">
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${job.priority === 'HIGH' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
-                                        }`}>{job.priority}</span>
-                                </td>
-                                <td className="px-3 py-2.5 whitespace-nowrap text-right text-xs text-slate-600 hidden sm:table-cell">
-                                    {job.dueDate ? new Date(job.dueDate).toLocaleDateString() : '-'}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+                }
+            />
         </div>
     );
 };
@@ -1439,36 +1429,40 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 </div>
             </div>
 
-            {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}
-            <div className="sm:hidden mobile-detail-footer">
-                <button
+            {/* ═══ Mobile Sticky Bottom Action Bar (md+ hides — desktop header has buttons) ═══ */}
+            <div className="md:hidden mobile-detail-footer">
+                <Button
                     onClick={handleSave}
-                    disabled={isSaving}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
+                    loading={isSaving}
+                    size="md"
+                    fullWidth
+                    leftIcon={<Download size={14} />}
                 >
-                    {isSaving
-                        ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        : <Download size={16} />
-                    }
                     Save
-                </button>
+                </Button>
                 {localJob.status !== WorkOrderStatus.CLOSED && localJob.status !== WorkOrderStatus.TECO && (
-                    <button
+                    <Button
                         onClick={() => setShowCompleteModal(true)}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-white border-2 border-primary-600 text-primary-600 rounded-xl text-sm font-semibold transition-colors hover:bg-primary-50"
+                        variant="secondary"
+                        size="md"
+                        fullWidth
+                        leftIcon={<CheckCircle size={14} />}
+                        className="border-2 border-primary-600 text-primary-600 hover:bg-primary-50"
                     >
-                        <CheckCircle size={16} />
                         Complete
-                    </button>
+                    </Button>
                 )}
                 {localJob.status === WorkOrderStatus.TECO && (
-                    <button
+                    <Button
                         onClick={() => setShowFinancialCloseModal(true)}
-                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-white border-2 border-slate-300 text-slate-700 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-50"
+                        variant="secondary"
+                        size="md"
+                        fullWidth
+                        leftIcon={<Lock size={14} />}
+                        className="border-2"
                     >
-                        <Lock size={16} />
                         Close
-                    </button>
+                    </Button>
                 )}
             </div>
 
