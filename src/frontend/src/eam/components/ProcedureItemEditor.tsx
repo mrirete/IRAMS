@@ -15,6 +15,51 @@ interface ProcedureItemEditorProps {
     onAddSibling?: () => void;
 }
 
+/** Collapsible observation field — hidden until technician clicks to add */
+const TextObservationField: React.FC<{ value: string; onChange: (val: string) => void }> = ({ value, onChange }) => {
+    const [isOpen, setIsOpen] = React.useState(!!value);
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    React.useEffect(() => {
+        if (isOpen && textareaRef.current && !value) {
+            textareaRef.current.focus();
+        }
+    }, [isOpen]);
+
+    if (!isOpen) {
+        return (
+            <button
+                onClick={() => setIsOpen(true)}
+                className="mt-2 w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-400 hover:text-blue-600 border border-dashed border-slate-200 hover:border-blue-300 rounded-lg bg-slate-50/50 hover:bg-blue-50/50 transition-all"
+            >
+                <PenTool size={12} />
+                Add Observation...
+            </button>
+        );
+    }
+
+    return (
+        <div className="mt-2">
+            <textarea
+                ref={textareaRef}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="Enter observation or comment..."
+                className="w-full min-h-[100px] border border-slate-200 rounded-lg bg-white text-slate-700 text-sm p-3 resize-y focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                rows={4}
+            />
+            {!value && (
+                <button
+                    onClick={() => setIsOpen(false)}
+                    className="text-[10px] text-slate-400 hover:text-slate-600 mt-1"
+                >
+                    Cancel
+                </button>
+            )}
+        </div>
+    );
+};
+
 export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block, onChange, onDelete, onDuplicate, onAddSibling }) => {
     const [showMenu, setShowMenu] = React.useState(false);
 
@@ -118,15 +163,10 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
 
             case 'TEXT':
                 return (
-                    <div className="mt-2">
-                        <textarea
-                            value={block.valueString || ''}
-                            onChange={(e) => onChange({ valueString: e.target.value })}
-                            placeholder="Technician enters observations here..."
-                            className="w-full min-h-[80px] border border-slate-200 rounded bg-white text-slate-700 text-sm p-2.5 resize-y focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                            rows={3}
-                        />
-                    </div>
+                    <TextObservationField
+                        value={block.valueString || ''}
+                        onChange={(val) => onChange({ valueString: val })}
+                    />
                 );
 
             case 'NUMBER':

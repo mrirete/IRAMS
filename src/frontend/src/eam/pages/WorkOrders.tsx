@@ -3883,20 +3883,7 @@ const TaskEditor: React.FC<{
         <div className="flex flex-col h-full">
             {/* Compact Toolbar — stacks on mobile */}
             <div className="px-3 sm:px-4 py-2 border-b border-slate-200 bg-white space-y-1.5 sm:space-y-0">
-                {/* Row 1: Task description (full-width on mobile) */}
-                <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded flex-shrink-0">#{task.sequence}</span>
-                    <input
-                        type="text"
-                        value={task.description}
-                        onChange={(e) => onChange({ description: e.target.value })}
-                        className="flex-1 font-semibold text-sm sm:text-sm text-slate-900 bg-transparent border-none focus:outline-none focus:ring-0 min-w-0"
-                        placeholder="Task description..."
-                    />
-                    {/* Delete — visible on all sizes */}
-                    <button onClick={onDelete} className="text-slate-400 hover:text-red-500 p-1 flex-shrink-0 sm:hidden"><Trash2 size={16} /></button>
-                </div>
-                {/* Row 2: Duration + Status + Delete (second row on mobile, inline on desktop) */}
+                {/* Mobile toolbar: Duration + Status + Delete */}
                 <div className="flex items-center gap-2 sm:hidden">
                     <div className="flex items-center gap-1 text-xs">
                         <Clock size={12} className="text-slate-400" />

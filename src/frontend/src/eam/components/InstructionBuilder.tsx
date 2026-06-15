@@ -14,6 +14,54 @@ interface InstructionBuilderProps {
     mode: 'EDIT' | 'EXECUTE'; // EDIT = Building the template, EXECUTE = Technician filling it out
 }
 
+/** Collapsible observation field — hidden until technician needs it */
+const CollapsibleObservation: React.FC<{ value: string; onChange: (val: string) => void; readOnly?: boolean }> = ({ value, onChange, readOnly }) => {
+    const [isOpen, setIsOpen] = useState(!!value);
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    React.useEffect(() => {
+        if (isOpen && textareaRef.current && !value) {
+            textareaRef.current.focus();
+        }
+    }, [isOpen]);
+
+    if (readOnly && !value) return null; // In edit mode, hide if nothing
+
+    if (!isOpen) {
+        return (
+            <button
+                onClick={() => setIsOpen(true)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-400 hover:text-blue-600 border border-dashed border-slate-200 hover:border-blue-300 rounded-lg bg-slate-50/50 hover:bg-blue-50/50 transition-all"
+            >
+                <PenTool size={12} />
+                Add Observation...
+            </button>
+        );
+    }
+
+    return (
+        <div>
+            <textarea
+                ref={textareaRef}
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="Enter observation or comment..."
+                readOnly={readOnly}
+                className={`w-full min-h-[100px] border border-slate-200 rounded-lg text-sm p-3 resize-y ${readOnly ? 'bg-slate-50 text-slate-400' : 'bg-white text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}`}
+                rows={4}
+            />
+            {!value && !readOnly && (
+                <button
+                    onClick={() => setIsOpen(false)}
+                    className="text-[10px] text-slate-400 hover:text-slate-600 mt-1"
+                >
+                    Cancel
+                </button>
+            )}
+        </div>
+    );
+};
+
 export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
     instructions,
     onChange,
@@ -152,13 +200,10 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
                         ) : (
                             <div className="font-medium text-slate-700 mb-2">{block.label}</div>
                         )}
-                        <textarea
+                        <CollapsibleObservation
                             value={block.valueString || ''}
-                            onChange={(e) => updateBlock(block.id, { valueString: e.target.value })}
-                            placeholder="Enter notes/observation..."
+                            onChange={(val) => updateBlock(block.id, { valueString: val })}
                             readOnly={isEdit}
-                            className={`w-full p-2.5 border border-slate-300 rounded text-sm resize-y ${isEdit ? 'bg-slate-50 text-slate-400' : 'bg-white focus:border-blue-500 focus:ring-1 focus:ring-primary-500'}`}
-                            rows={3}
                         />
                     </div>
                 );
