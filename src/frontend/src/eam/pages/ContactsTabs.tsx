@@ -554,7 +554,7 @@ export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) =
                         <div>
                             <label className="text-xs font-semibold text-slate-600 block mb-1">Type *</label>
                             <select value={formType} onChange={e => setFormType(e.target.value)}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-relantern-500 focus:border-blue-500">
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500">
                                 <option value="">Select type...</option>
                                 {qualTypes.map(qt => (
                                     <option key={qt.id} value={qt.code}>{qt.description}</option>
@@ -565,22 +565,22 @@ export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) =
                             <label className="text-xs font-semibold text-slate-600 block mb-1">Name *</label>
                             <input type="text" value={formName} onChange={e => setFormName(e.target.value)}
                                 placeholder="e.g. BOSIET, Working at Heights"
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-relantern-500 focus:border-blue-500" />
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500" />
                         </div>
                         <div>
                             <label className="text-xs font-semibold text-slate-600 block mb-1">Date Achieved</label>
                             <input type="date" value={formDateAchieved} onChange={e => setFormDateAchieved(e.target.value)}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-relantern-500 focus:border-blue-500" />
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500" />
                         </div>
                         <div>
                             <label className="text-xs font-semibold text-slate-600 block mb-1">Expiry Date</label>
                             <input type="date" value={formDateExpires} onChange={e => setFormDateExpires(e.target.value)}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-relantern-500 focus:border-blue-500" />
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500" />
                         </div>
                         <div>
                             <label className="text-xs font-semibold text-slate-600 block mb-1">Status</label>
                             <select value={formStatus} onChange={e => setFormStatus(e.target.value as any)}
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-relantern-500 focus:border-blue-500">
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500">
                                 <option value="Active">Active</option>
                                 <option value="Pending">Pending</option>
                                 <option value="Expired">Expired</option>
@@ -590,7 +590,7 @@ export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) =
                             <label className="text-xs font-semibold text-slate-600 block mb-1">Notes</label>
                             <input type="text" value={formNotes} onChange={e => setFormNotes(e.target.value)}
                                 placeholder="Certificate number, issuer, etc."
-                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-relantern-500 focus:border-blue-500" />
+                                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500" />
                         </div>
                     </div>
                     <div className="flex justify-end gap-2 pt-2">

@@ -151,7 +151,7 @@ const getGreeting = () => {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  OPEN: '#3b82f6', PLAN: '#8b5cf6', SCHEDULED: '#6366f1', WIP: '#f59e0b',
+  OPEN: '#246CFF', PLAN: '#8b5cf6', SCHEDULED: '#6366f1', WIP: '#f59e0b',
   HOLD: '#ef4444', REVIEW: '#10b981', COMP: '#14b8a6', TECO: '#22c55e',
   CLOSED: '#64748b', CANCELLED: '#94a3b8',
 };
@@ -186,7 +186,7 @@ const severityBg = (s: string) => {
   return 'border-l-blue-500 bg-blue-50/30';
 };
 
-const SPARKLINE_COLORS = { created: '#3b82f6', closed: '#22c55e' };
+const SPARKLINE_COLORS = { created: '#246CFF', closed: '#22c55e' };
 
 // ──────────────────────────────── Dashboard ────────────────────────────────
 export const Dashboard: React.FC = () => {
@@ -457,7 +457,7 @@ export const Dashboard: React.FC = () => {
             <h3 className="text-xs text-slate-500 font-medium">{kpi.label}</h3>
             <div className="flex items-end justify-between mt-1">
               <span className="text-2xl font-bold text-slate-900">{kpi.value}</span>
-              <ArrowRight size={14} className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-1 transition-all" />
+              <ArrowRight size={14} className="text-slate-300 group-hover:text-primary-600 group-hover:translate-x-1 transition-all" />
             </div>
             {idx === 0 && sparkDays.length > 0 && (
               <div className="h-8 mt-2 -mx-1">

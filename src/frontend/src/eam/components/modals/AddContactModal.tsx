@@ -172,7 +172,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Username <span className="text-red-500">*</span></label>
                         <input
                             required
-                            className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-relantern-500 focus:border-blue-500 font-mono"
+                            className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500 font-mono"
                             value={formData.code || ''}
                             onChange={e => setFormData({ ...formData, code: e.target.value })}
                             placeholder="e.g. jdoe, EMP-001"
@@ -203,7 +203,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                                 <label className="flex items-center gap-2 mb-4 cursor-pointer">
                                     <input
                                         type="checkbox"
-                                        className="rounded text-blue-600 focus:ring-relantern-500"
+                                        className="rounded text-blue-600 focus:ring-primary-500"
                                         checked={createUser}
                                         onChange={e => setCreateUser(e.target.checked)}
                                     />
@@ -232,7 +232,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                                                 className={`w-full text-sm rounded-md p-2 ${
                                                     userCreds.confirmPassword && userCreds.password !== userCreds.confirmPassword
                                                         ? 'border-red-400 focus:ring-red-500 focus:border-red-500'
-                                                        : 'border-slate-300 focus:ring-relantern-500 focus:border-blue-500'
+                                                        : 'border-slate-300 focus:ring-primary-500 focus:border-blue-500'
                                                 }`}
                                                 value={userCreds.confirmPassword}
                                                 onChange={e => setUserCreds({ ...userCreds, confirmPassword: e.target.value })}

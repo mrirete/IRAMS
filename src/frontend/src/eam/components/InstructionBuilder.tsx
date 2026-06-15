@@ -157,7 +157,7 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
                             onChange={(e) => updateBlock(block.id, { valueString: e.target.value })}
                             placeholder="Enter notes/observation..."
                             readOnly={isEdit}
-                            className={`w-full p-2 border border-slate-300 rounded text-sm ${isEdit ? 'bg-slate-50 text-slate-400' : 'bg-white focus:border-blue-500 focus:ring-1 focus:ring-relantern-500'}`}
+                            className={`w-full p-2 border border-slate-300 rounded text-sm ${isEdit ? 'bg-slate-50 text-slate-400' : 'bg-white focus:border-blue-500 focus:ring-1 focus:ring-primary-500'}`}
                             rows={2}
                         />
                     </div>
@@ -432,7 +432,7 @@ export const InstructionBuilder: React.FC<InstructionBuilderProps> = ({
                                                     newItems[idx].checked = e.target.checked;
                                                     updateBlock(block.id, { checklistItems: newItems });
                                                 }}
-                                                className="rounded text-blue-600 focus:ring-relantern-500"
+                                                className="rounded text-blue-600 focus:ring-primary-500"
                                             />
                                             <span className={`text-sm ${item.checked ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
                                                 {item.label}

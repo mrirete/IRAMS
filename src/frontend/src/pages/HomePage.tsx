@@ -34,7 +34,7 @@ export const HomePage: React.FC = () => {
                     </h1>
                     <div className="flex items-center gap-2 mt-1">
                         <p className="text-slate-500 text-xs md:text-sm">Relantern — Command Center</p>
-                        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${roleBadge === 'admin' ? 'bg-accent-cyan/10 text-accent-cyan border-accent-cyan/30' :
+                        <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border ${roleBadge === 'admin' ? 'bg-primary-100 text-primary-600 border-primary-200' :
                             roleBadge === 'engineer' ? 'bg-blue-500/10 text-blue-400 border-blue-500/30' :
                                 roleBadge === 'technician' ? 'bg-accent-safe/10 text-accent-safe border-accent-safe/30' :
                                     'bg-slate-100 text-slate-500 border-slate-300'
@@ -97,7 +97,7 @@ export const HomePage: React.FC = () => {
                     </button>
                     <button
                         onClick={() => navigate('/predict')}
-                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200 rounded-xl text-xs md:text-sm font-semibold transition-all hover:scale-105 whitespace-nowrap"
+                        className="flex items-center gap-2 px-3 md:px-4 py-2 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-xl text-xs md:text-sm font-semibold transition-all hover:scale-105 whitespace-nowrap"
                     >
                         <Sparkles size={14} /> Predictive
                     </button>

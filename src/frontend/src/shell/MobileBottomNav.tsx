@@ -7,7 +7,8 @@ import { LayoutDashboard, Wrench, Package, ClipboardList, MoreHorizontal } from 
  * Visible only on screens < 768px (hidden via CSS `.mobile-bottom-nav`).
  * Provides one-thumb access to the 4 most-used EAM modules + "More" overflow.
  *
- * Pattern: MaintainX / Upkeep / Limble mobile navigation paradigm.
+ * Pattern: MaintainX-style — operator/technician-first navigation.
+ * Color: MaintainX Blue (#246CFF) active state.
  */
 
 interface NavItem {
@@ -15,13 +16,15 @@ interface NavItem {
     label: string;
     icon: React.ElementType;
     path: string;
+    /** Show a notification badge dot */
+    badge?: boolean;
 }
 
 const NAV_ITEMS: NavItem[] = [
-    { id: 'home', label: 'Home', icon: LayoutDashboard, path: '/dashboard' },
-    { id: 'work', label: 'Work', icon: Wrench, path: '/work-orders' },
-    { id: 'assets', label: 'Assets', icon: Package, path: '/assets' },
-    { id: 'requests', label: 'Requests', icon: ClipboardList, path: '/work-requests' },
+    { id: 'home',     label: 'Home',     icon: LayoutDashboard, path: '/dashboard' },
+    { id: 'work',     label: 'My Work',  icon: Wrench,          path: '/work-orders' },
+    { id: 'requests', label: 'Requests', icon: ClipboardList,   path: '/requests' },
+    { id: 'assets',   label: 'Assets',   icon: Package,         path: '/assets' },
 ];
 
 export const MobileBottomNav: React.FC = () => {
@@ -36,7 +39,6 @@ export const MobileBottomNav: React.FC = () => {
     return (
         <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
             {NAV_ITEMS.map(item => {
-                const Icon = item.icon;
                 const active = isActive(item.path);
                 return (
                     <button
@@ -45,21 +47,30 @@ export const MobileBottomNav: React.FC = () => {
                         className={`mobile-bottom-nav-item ${active ? 'active' : ''}`}
                         aria-current={active ? 'page' : undefined}
                     >
-                        {React.createElement(item.icon as any, { size: 20, strokeWidth: active ? 2.2 : 1.8 })}
-                        <span>{item.label}</span>
+                        <span className="nav-icon relative">
+                            {React.createElement(item.icon as any, {
+                                size: 22,
+                                strokeWidth: active ? 2.4 : 1.6,
+                            })}
+                            {item.badge && <span className="nav-badge-dot" />}
+                        </span>
+                        <span className={`text-[10px] leading-none ${active ? 'font-bold' : 'font-medium'}`}>
+                            {item.label}
+                        </span>
                     </button>
                 );
             })}
             {/* "More" overflow — opens sidebar on tap */}
             <button
                 onClick={() => {
-                    // Dispatch a custom event that AppLayout's sidebar listens for
                     window.dispatchEvent(new CustomEvent('toggle-sidebar'));
                 }}
                 className="mobile-bottom-nav-item"
             >
-                <MoreHorizontal size={20} strokeWidth={1.8} />
-                <span>More</span>
+                <span className="nav-icon">
+                    <MoreHorizontal size={22} strokeWidth={1.6} />
+                </span>
+                <span className="text-[10px] leading-none font-medium">More</span>
             </button>
         </nav>
     );

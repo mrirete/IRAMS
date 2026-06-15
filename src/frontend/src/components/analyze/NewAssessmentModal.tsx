@@ -246,7 +246,7 @@ export const NewAssessmentModal: React.FC<NewAssessmentModalProps> = ({
                                 value={assessmentForm.title}
                                 onChange={e => setAssessmentForm(f => ({ ...f, title: e.target.value }))}
                                 placeholder="e.g. K-601 Compressor Vibration Failure"
-                                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-relantern-500/30"
+                                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-primary-500/30"
                             />
                         </div>
 
@@ -285,7 +285,7 @@ export const NewAssessmentModal: React.FC<NewAssessmentModalProps> = ({
                                         onChange={e => { setAssetSearch(e.target.value); setShowAssetDropdown(true); }}
                                         onFocus={() => setShowAssetDropdown(true)}
                                         placeholder="Search by tag, name, or level (e.g. system, equipment)…"
-                                        className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-relantern-500/30"
+                                        className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-9 pr-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-primary-500/30"
                                     />
                                 </div>
                             )}
@@ -491,7 +491,7 @@ export const NewAssessmentModal: React.FC<NewAssessmentModalProps> = ({
                                 onChange={e => setAssessmentForm(f => ({ ...f, description: e.target.value }))}
                                 placeholder="Describe the failure event or scope of analysis…"
                                 rows={3}
-                                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 resize-none focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-relantern-500/30"
+                                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 resize-none focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-primary-500/30"
                             />
                         </div>
 

@@ -1127,7 +1127,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                 <textarea
                                     value={job.jobDescription || job.description}
                                     onChange={(e) => onUpdate({ jobDescription: e.target.value })}
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-relantern-500"
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-primary-500"
                                     placeholder="Text to appear on the generated Work Order..."
                                 />
                             </div>
@@ -1197,13 +1197,13 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                         type="number"
                                         value={job.frequencyInterval}
                                         onChange={(e) => onUpdate({ frequencyInterval: parseFloat(e.target.value) })}
-                                        className="w-20 p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500"
+                                        className="w-20 p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
                                     />
                                     {job.scheduleType === 'TIME' ? (
                                         <select
                                             value={job.frequencyUnit}
                                             onChange={(e) => onUpdate({ frequencyUnit: e.target.value })}
-                                            className="flex-1 p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-relantern-500"
+                                            className="flex-1 p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500"
                                         >
                                             {timePeriods.length > 0
                                                 ? timePeriods.map(tp => <option key={tp.code} value={tp.code}>{tp.description || tp.code}</option>)
@@ -1219,7 +1219,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                         <select
                                             value={job.frequencyUnit}
                                             onChange={(e) => onUpdate({ frequencyUnit: e.target.value })}
-                                            className="flex-1 p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-relantern-500"
+                                            className="flex-1 p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500"
                                         >
                                             {readingTypes.length > 0
                                                 ? readingTypes.map(rt => <option key={rt.id} value={rt.code}>{rt.description || rt.code}</option>)
@@ -1237,7 +1237,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
 
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Lead Time (Days)</label>
-                                <input type="number" value={job.leadTimeDays} onChange={(e) => onUpdate({ leadTimeDays: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500" />
+                                <input type="number" value={job.leadTimeDays} onChange={(e) => onUpdate({ leadTimeDays: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
                             </div>
 
                             <div className="col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">
@@ -1245,7 +1245,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                 <select
                                     value={job.parentId || ''}
                                     onChange={(e) => onUpdate({ parentId: e.target.value })}
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-relantern-500"
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500"
                                 >
                                     <option value="">(None) - Independent Schedule</option>
                                     {jobs.filter(j => j.id !== job.id).map(j => (
@@ -1264,7 +1264,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Job Type</label>
-                                <select value={job.jobType} onChange={(e) => onUpdate({ jobType: e.target.value as WorkOrderType })} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-relantern-500">
+                                <select value={job.jobType} onChange={(e) => onUpdate({ jobType: e.target.value as WorkOrderType })} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500">
                                     {dictionaries.filter(d => d.type === 'WORK_TYPE' && d.active).length > 0
                                         ? dictionaries.filter(d => d.type === 'WORK_TYPE' && d.active).map(d => (
                                             <option key={d.code} value={d.code}>{d.description || d.code}</option>
@@ -1281,7 +1281,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Priority</label>
-                                <select value={job.priority} onChange={(e) => onUpdate({ priority: e.target.value })} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-relantern-500">
+                                <select value={job.priority} onChange={(e) => onUpdate({ priority: e.target.value })} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500">
                                     {dictionaries.filter(d => d.type === 'PRIORITY' && d.active).length > 0
                                         ? dictionaries.filter(d => d.type === 'PRIORITY' && d.active).map(d => (
                                             <option key={d.code} value={d.code}>{d.description || d.code}</option>
@@ -1296,7 +1296,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Center</label>
-                                <select value={job.costCenter || ''} onChange={(e) => onUpdate({ costCenter: e.target.value })} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-relantern-500">
+                                <select value={job.costCenter || ''} onChange={(e) => onUpdate({ costCenter: e.target.value })} className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500">
                                     <option value="">— Select —</option>
                                     {costCentres.length > 0
                                         ? costCentres.map(cc => <option key={cc.code} value={cc.code}>{cc.code} — {cc.description || ''}</option>)
@@ -1306,11 +1306,11 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Est. Duration (Hrs)</label>
-                                <input type="number" value={job.estDuration} onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500" />
+                                <input type="number" value={job.estDuration} onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Est. Downtime (Hrs)</label>
-                                <input type="number" value={job.estDowntime} onChange={(e) => onUpdate({ estDowntime: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500" />
+                                <input type="number" value={job.estDowntime} onChange={(e) => onUpdate({ estDowntime: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
                             </div>
                         </div>
                     </div>
@@ -1723,7 +1723,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                                     type="text"
                                     value={assetSearch}
                                     onChange={e => setAssetSearch(e.target.value)}
-                                    className="w-full text-sm p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-relantern-500"
+                                    className="w-full text-sm p-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary-500"
                                     placeholder="Search by tag, name, or ID..."
                                 />
                             </div>
@@ -1831,7 +1831,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                                                 const updated = job.assignedAssets.map((a, i) => i === idx ? { ...a, lastCompletedDate: e.target.value } : a);
                                                 onUpdate({ assignedAssets: updated });
                                             }
-                                        }} className="border border-slate-300 rounded px-2 py-1 text-sm text-slate-900 focus:ring-2 focus:ring-relantern-500" />
+                                        }} className="border border-slate-300 rounded px-2 py-1 text-sm text-slate-900 focus:ring-2 focus:ring-primary-500" />
                                     </td>
                                     {job.scheduleType === 'READING' && (
                                         <td className="px-4 py-3 text-sm">
@@ -2298,7 +2298,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                             value={h.hazard}
                                             onChange={(e) => updateHazard(h.id, 'hazard', e.target.value)}
                                             placeholder="e.g. Working at height, confined space entry, H₂S exposure..."
-                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500"
+                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
                                         />
                                     </div>
 
@@ -2372,7 +2372,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                             value={h.controls}
                                             onChange={(e) => updateHazard(h.id, 'controls', e.target.value)}
                                             placeholder="Describe the specific control measures, procedures, PPE requirements..."
-                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-relantern-500"
+                                            className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-primary-500"
                                         />
                                     </div>
 

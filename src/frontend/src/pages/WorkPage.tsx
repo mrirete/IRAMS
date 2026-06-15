@@ -67,13 +67,13 @@ export const WorkPage: React.FC = () => {
             <div className="flex border-b border-slate-200">
                 <button
                     onClick={() => setActiveTab('orders')}
-                    className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'orders' ? 'border-accent-cyan text-accent-cyan' : 'border-transparent text-slate-400 hover:text-slate-800 hover:border-slate-300'}`}
+                    className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'orders' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-400 hover:text-slate-800 hover:border-slate-300'}`}
                 >
                     Work Orders ({wos.length})
                 </button>
                 <button
                     onClick={() => setActiveTab('requests')}
-                    className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'requests' ? 'border-accent-cyan text-accent-cyan' : 'border-transparent text-slate-400 hover:text-slate-800 hover:border-slate-300'}`}
+                    className={`px-6 py-3 font-medium text-sm transition-colors border-b-2 ${activeTab === 'requests' ? 'border-primary-600 text-primary-600' : 'border-transparent text-slate-400 hover:text-slate-800 hover:border-slate-300'}`}
                 >
                     Work Requests ({wrs.length})
                 </button>
@@ -145,7 +145,7 @@ function WorkOrderTable({ wos, onRowClick }: { wos: WorkOrder[], onRowClick: (w:
     return (
         <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-                <thead className="text-xs text-slate-500 uppercase bg-brand-800/50 border-b border-slate-200">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
                     <tr>
                         <th className="px-6 py-4 font-semibold tracking-wider">WO Number</th>
                         <th className="px-6 py-4 font-semibold tracking-wider">Type</th>
@@ -159,7 +159,7 @@ function WorkOrderTable({ wos, onRowClick }: { wos: WorkOrder[], onRowClick: (w:
                 <tbody className="divide-y divide-brand-700/50">
                     {wos.map((wo) => (
                         <tr key={wo.id} onClick={() => onRowClick(wo)} className="hover:bg-slate-100/30 cursor-pointer transition-colors group">
-                            <td className="px-6 py-4 font-mono text-slate-800 group-hover:text-accent-cyan">{wo.wo_number}</td>
+                            <td className="px-6 py-4 font-mono text-slate-800 group-hover:text-primary-600">{wo.wo_number}</td>
                             <td className="px-6 py-4"><TypeBadge type={wo.type} /></td>
                             <td className="px-6 py-4 text-slate-800 font-medium truncate max-w-[250px]">{wo.title}</td>
                             <td className="px-6 py-4 text-slate-500 font-mono text-xs">{wo.asset_id.replace('ast-', '').toUpperCase()}</td>
@@ -193,7 +193,7 @@ function WorkRequestTable({ wrs, onRowClick }: { wrs: WorkRequest[], onRowClick:
                 <tbody className="divide-y divide-brand-700/50">
                     {wrs.map((wr) => (
                         <tr key={wr.id} onClick={() => onRowClick(wr)} className="hover:bg-slate-100/30 cursor-pointer transition-colors group">
-                            <td className="px-6 py-4 font-mono text-slate-800 group-hover:text-accent-cyan">{wr.wr_number}</td>
+                            <td className="px-6 py-4 font-mono text-slate-800 group-hover:text-primary-600">{wr.wr_number}</td>
                             <td className="px-6 py-4 text-slate-800 font-medium truncate max-w-[250px]">{wr.title}</td>
                             <td className="px-6 py-4 text-slate-500 font-mono text-xs">{wr.asset_id.replace('ast-', '').toUpperCase()}</td>
                             <td className="px-6 py-4"><RPNBadge rpn={wr.rpn} /></td>
@@ -269,13 +269,13 @@ function WODetailPanel({ wo, onClose, onTeco, onEdit, onDelete }: { wo: WorkOrde
     const deTaskId = (wo as any).properties?.de_task_id;
 
     return (
-        <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-brand-800 shadow-2xl border-l border-slate-200 z-50 flex flex-col transform transition-transform duration-300">
+        <div className="fixed inset-y-0 right-0 w-full md:w-[600px] bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col transform transition-transform duration-300">
             {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-slate-200/50 bg-brand-800/80 backdrop-blur-md">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-white">
                 <div>
                     <div className="flex items-center space-x-3 mb-1">
                         <TypeBadge type={wo.type} />
-                        <h2 className="text-xl font-bold text-brand-50 font-mono tracking-tight">{wo.wo_number}</h2>
+                        <h2 className="text-xl font-bold text-slate-900 font-mono tracking-tight">{wo.wo_number}</h2>
                     </div>
                     <p className="text-slate-500 text-sm truncate max-w-[400px]">{wo.title}</p>
                 </div>
@@ -285,10 +285,10 @@ function WODetailPanel({ wo, onClose, onTeco, onEdit, onDelete }: { wo: WorkOrde
                             <Trash2 size={18} />
                         </button>
                     )}
-                    <button onClick={onEdit} className="p-2 text-slate-500 hover:text-accent-cyan rounded-md hover:bg-slate-100/50 transition-colors" title="Edit WO">
+                    <button onClick={onEdit} className="p-2 text-slate-500 hover:text-primary-600 rounded-md hover:bg-primary-50 transition-colors" title="Edit WO">
                         <Pencil size={18} />
                     </button>
-                    <button onClick={onClose} className="p-2 text-slate-500 hover:text-white rounded-md hover:bg-slate-100/50 transition-colors">
+                    <button onClick={onClose} className="p-2 text-slate-500 hover:text-slate-800 rounded-md hover:bg-slate-100 transition-colors">
                         <XCircle size={24} />
                     </button>
                 </div>
@@ -299,7 +299,7 @@ function WODetailPanel({ wo, onClose, onTeco, onEdit, onDelete }: { wo: WorkOrde
                 {/* Meta Grid */}
                 <div className="grid grid-cols-2 gap-6 bg-slate-50 p-5 rounded-lg border border-slate-200/30">
                     <div><p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Status</p><WOStatusBadge status={wo.status} /></div>
-                    <div><p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Asset</p><a href={`/assets?id=${wo.asset_id}`} className="text-accent-cyan hover:underline font-mono font-medium cursor-pointer">{wo.asset_id.toUpperCase()}</a></div>
+                    <div><p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Asset</p><a href={`/assets?id=${wo.asset_id}`} className="text-primary-600 hover:underline font-mono font-medium cursor-pointer">{wo.asset_id.toUpperCase()}</a></div>
                     <div><p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Priority</p><PriorityBadge priority={wo.priority} /></div>
                     <div><p className="text-xs text-slate-400 uppercase tracking-wider mb-1">Crew</p><p className="text-slate-800">{wo.assigned_crew || 'Unassigned'}</p></div>
                 </div>
@@ -357,9 +357,9 @@ function WODetailPanel({ wo, onClose, onTeco, onEdit, onDelete }: { wo: WorkOrde
             </div>
 
             {/* Footer Action */}
-            <div className="p-6 border-t border-slate-200 bg-brand-800">
+            <div className="p-6 border-t border-slate-200 bg-white">
                 {wo.status === 'in_progress' && !isFailureCoding && (
-                    <button onClick={() => setIsFailureCoding(true)} className="w-full btn-primary bg-blue-600 hover:bg-blue-500 border-none shadow-lg shadow-blue-900/20 py-3">
+                    <button onClick={() => setIsFailureCoding(true)} className="w-full btn-blue py-3 shadow-lg">
                         <CheckCircle size={18} className="mr-2" /> Mark Technically Complete (TECO)
                     </button>
                 )}
@@ -411,10 +411,10 @@ function WRDetailPanel({ wr, onClose, onApprove, onReject, onDelete }: { wr: Wor
     const [signoff, setSignoff] = useState('');
 
     return (
-        <div className="fixed inset-y-0 right-0 w-full md:w-[500px] bg-brand-800 shadow-2xl border-l border-slate-200 z-50 flex flex-col">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200/50 bg-brand-800/80 backdrop-blur-md">
+        <div className="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl border-l border-slate-200 z-50 flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-slate-200 bg-white">
                 <div>
-                    <h2 className="text-xl font-bold text-brand-50 font-mono tracking-tight mb-1">{wr.wr_number}</h2>
+                    <h2 className="text-xl font-bold text-slate-900 font-mono tracking-tight mb-1">{wr.wr_number}</h2>
                     <WRStatusBadge status={wr.status} />
                 </div>
                 <div className="flex items-center gap-2">
@@ -432,7 +432,7 @@ function WRDetailPanel({ wr, onClose, onApprove, onReject, onDelete }: { wr: Wor
                     <p className="text-slate-500 text-sm bg-slate-50 p-4 rounded-md border border-slate-200/30">{wr.description}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div><span className="block text-slate-400 text-xs uppercase mb-1">Asset</span><a href={`/assets?id=${wr.asset_id}`} className="text-accent-cyan hover:underline font-mono cursor-pointer">{wr.asset_id.toUpperCase()}</a></div>
+                    <div><span className="block text-slate-400 text-xs uppercase mb-1">Asset</span><a href={`/assets?id=${wr.asset_id}`} className="text-primary-600 hover:underline font-mono cursor-pointer">{wr.asset_id.toUpperCase()}</a></div>
                     <div><span className="block text-slate-400 text-xs uppercase mb-1">Criticality</span><span className="text-slate-800">Class {wr.criticality}</span></div>
                     <div><span className="block text-slate-400 text-xs uppercase mb-1">Requester</span><span className="text-slate-800">{wr.requester}</span></div>
                     <div><span className="block text-slate-400 text-xs uppercase mb-1">Priority</span><PriorityBadge priority={wr.priority} /></div>
@@ -449,7 +449,7 @@ function WRDetailPanel({ wr, onClose, onApprove, onReject, onDelete }: { wr: Wor
             </div>
 
             {wr.status === 'pending_review' && (
-                <div className="p-6 border-t border-slate-200 bg-brand-800">
+                <div className="p-6 border-t border-slate-200 bg-white">
                     {!isRejecting ? (
                         <div className="flex space-x-3">
                             <button onClick={() => setIsRejecting(true)} className="btn-secondary flex-1 border-red-900/50 text-red-400 hover:bg-red-500/10 hover:border-red-500/30">Reject</button>
@@ -508,14 +508,14 @@ function StatusStepper({ currentStatus }: { currentStatus: string }) {
                             {/* Step circle + label */}
                             <div className="flex flex-col items-center min-w-0 flex-1">
                                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold border-2 transition-all ${isCurrent
-                                    ? 'border-accent-cyan bg-accent-cyan/20 text-accent-cyan shadow-[0_0_8px_rgba(0,210,255,0.3)]'
+                                    ? 'border-primary-600 bg-primary-50 text-primary-600 shadow-[0_0_8px_rgba(36,108,255,0.2)]'
                                     : isCompleted
                                         ? 'border-green-500 bg-green-500/20 text-green-400'
-                                        : 'border-slate-300 bg-brand-800 text-slate-400'
+                                        : 'border-slate-300 bg-white text-slate-400'
                                     }`}>
                                     {isCompleted ? '✓' : i + 1}
                                 </div>
-                                <span className={`mt-1.5 text-[9px] uppercase tracking-wider font-semibold truncate max-w-[60px] text-center ${isCurrent ? 'text-accent-cyan' : isCompleted ? 'text-green-400' : 'text-slate-400'
+                                <span className={`mt-1.5 text-[9px] uppercase tracking-wider font-semibold truncate max-w-[60px] text-center ${isCurrent ? 'text-primary-600' : isCompleted ? 'text-green-400' : 'text-slate-400'
                                     }`}>
                                     {STATUS_LABELS[step]}
                                 </span>

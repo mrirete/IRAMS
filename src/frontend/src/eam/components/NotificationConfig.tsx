@@ -734,7 +734,7 @@ export const NotificationConfig: React.FC = () => {
                                                         <input
                                                             type="checkbox"
                                                             checked={editingRule.channels?.includes(ch as any)}
-                                                            className="rounded text-blue-600 focus:ring-relantern-500"
+                                                            className="rounded text-blue-600 focus:ring-primary-500"
                                                             onChange={(e) => {
                                                                 const current = editingRule.channels || [];
                                                                 const next = e.target.checked ? [...current, ch] : current.filter(x => x !== ch);

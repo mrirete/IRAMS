@@ -430,7 +430,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                         placeholder="Search name, code, role..."
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-relantern-500 focus:outline-none"
+                                        className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:outline-none"
                                     />
                                 </div>
                                 <button

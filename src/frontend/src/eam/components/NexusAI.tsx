@@ -155,7 +155,7 @@ export const NexusAI: React.FC<NexusAIProps> = ({ isOpen, onClose, contextData }
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyPress}
             placeholder="Ask about RCA, FMEA, or Asset Strategy..."
-            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 resize-none h-12 scrollbar-hide"
+            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500 resize-none h-12 scrollbar-hide"
           />
           <button
             onClick={handleSend}

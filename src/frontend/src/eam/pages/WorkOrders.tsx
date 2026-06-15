@@ -435,7 +435,7 @@ export const WorkOrders: React.FC = () => {
                             <button
                                 onClick={handleStatusConfirm}
                                 disabled={(pendingStatus as string) === 'CANCELLED' && !statusNote.trim()}
-                                className="px-4 py-2 bg-relantern-500 text-white font-medium rounded-lg hover:bg-relantern-600 disabled:opacity-50"
+                                className="px-4 py-2 bg-primary-600 text-white font-medium rounded-lg hover:bg-primary-500 disabled:opacity-50"
                             >
                                 Confirm Update
                             </button>
@@ -629,7 +629,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                             placeholder="Search WO Number, Asset, Description..."
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-relantern-500"
+                            className="w-full pl-8 pr-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
                         />
                     </div>
                     <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
@@ -638,7 +638,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                                 key={status.code}
                                 onClick={() => setStatusFilter(status.code as any)}
                                 className={`whitespace-nowrap px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border transition-all ${statusFilter === status.code
-                                    ? 'bg-relantern-500 text-white border-blue-600 shadow-sm'
+                                    ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                                     }`}
                             >
@@ -747,7 +747,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         <div
                             key={job.id}
                             onClick={() => onSelect(job)}
-                            className={`mobile-card ${overdue ? 'overdue-strip' : ''} ${crit === 'A' ? 'crit-a-accent' : ''}`}
+                            className={`mobile-card-v2 ${overdue ? 'overdue-strip' : ''} ${crit === 'A' ? 'crit-a-accent' : ''}`}
                         >
                             {/* Row 1: Status + WO Number + Badges */}
                             <div className="mobile-card-header">
@@ -2321,7 +2321,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                     value={localActionTaken}
                                     onChange={(e) => setLocalActionTaken(e.target.value)}
                                     onBlur={flushActionTaken}
-                                    className="w-full h-14 p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-relantern-500 resize-none"
+                                    className="w-full h-14 p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 resize-none"
                                     placeholder="Describe the corrective action taken..."
                                 />
                             </div>
@@ -2372,7 +2372,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                             value={localLocalImpact}
                                             onChange={(e) => setLocalLocalImpact(e.target.value)}
                                             onBlur={flushLocalImpact}
-                                            className="w-full h-14 p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-relantern-500 resize-none"
+                                            className="w-full h-14 p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 resize-none"
                                             placeholder="Impact on the equipment/subsystem itself..."
                                         />
                                     </div>
@@ -2382,7 +2382,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                             value={localPlantWideImpact}
                                             onChange={(e) => setLocalPlantWideImpact(e.target.value)}
                                             onBlur={flushPlantWideImpact}
-                                            className="w-full h-14 p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-relantern-500 resize-none"
+                                            className="w-full h-14 p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 resize-none"
                                             placeholder="Impact on production, safety, or environment..."
                                         />
                                     </div>
@@ -2458,7 +2458,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                         <textarea
                             value={note}
                             onChange={(e) => setNote(e.target.value)}
-                            className="w-full border border-slate-300 rounded-lg p-2 md:p-3 text-xs h-16 focus:ring-1 focus:ring-relantern-500 pr-12 resize-none"
+                            className="w-full border border-slate-300 rounded-lg p-2 md:p-3 text-xs h-16 focus:ring-1 focus:ring-primary-500 pr-12 resize-none"
                             placeholder={`Add ${journalType.toLowerCase()} entry...`}
                             onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) addJournal(); }}
                         />
@@ -2736,7 +2736,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Description</label>
                         <textarea
                             defaultValue={job.description}
-                            className="w-full h-24 md:h-28 text-xs border border-slate-300 rounded bg-white px-2 py-1.5 resize-none focus:ring-2 focus:ring-relantern-500 outline-none"
+                            className="w-full h-24 md:h-28 text-xs border border-slate-300 rounded bg-white px-2 py-1.5 resize-none focus:ring-2 focus:ring-primary-500 outline-none"
                             placeholder="Detailed job requirements, scope of work, and instructions..."
                         />
                     </div>
@@ -3202,7 +3202,7 @@ const MetricsTab: React.FC<{ job: WorkOrder, users: any[], contacts: any[] }> = 
                 <div className="mt-4 pt-3 border-t border-slate-100">
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Notes</label>
                     <textarea
-                        className="w-full h-20 text-xs border border-slate-300 rounded-md bg-white p-2 resize-none focus:ring-1 focus:ring-relantern-500"
+                        className="w-full h-20 text-xs border border-slate-300 rounded-md bg-white p-2 resize-none focus:ring-1 focus:ring-primary-500"
                         placeholder="..."
                     />
                 </div>
@@ -3867,7 +3867,7 @@ const TaskEditor: React.FC<{
                             type="number"
                             value={task.estHours || ''}
                             onChange={(e) => onChange({ estHours: parseFloat(e.target.value) || 0 })}
-                            className="w-12 px-1 py-0.5 text-xs text-right border border-slate-200 rounded focus:ring-1 focus:ring-relantern-500"
+                            className="w-12 px-1 py-0.5 text-xs text-right border border-slate-200 rounded focus:ring-1 focus:ring-primary-500"
                             placeholder="0"
                         />
                         <span className="text-slate-400">hrs</span>
@@ -3980,7 +3980,7 @@ const TaskEditor: React.FC<{
                                 value={observationText}
                                 onChange={(e) => setObservationText(e.target.value)}
                                 placeholder="Add observations, findings, or notes about this task..."
-                                className="w-full p-2 text-sm border border-slate-200 rounded focus:ring-1 focus:ring-relantern-500 focus:border-blue-500 min-h-[60px] resize-y"
+                                className="w-full p-2 text-sm border border-slate-200 rounded focus:ring-1 focus:ring-primary-500 focus:border-blue-500 min-h-[60px] resize-y"
                                 rows={2}
                             />
                             <div className="mt-2 flex items-center gap-2">
@@ -4404,7 +4404,7 @@ const TaskEditor: React.FC<{
                                                     const updated = (jobContext.inventory || []).map(p => p.id === part.id ? { ...p, estQty: val } : p);
                                                     onUpdateJob({ inventory: updated });
                                                 }}
-                                                className="w-14 px-1 py-0.5 text-xs text-right border border-slate-300 rounded focus:ring-1 focus:ring-relantern-500"
+                                                className="w-14 px-1 py-0.5 text-xs text-right border border-slate-300 rounded focus:ring-1 focus:ring-primary-500"
                                             />
                                             {part.estUnitCost > 0 && (
                                                 <span className="text-[10px] font-medium text-blue-600 min-w-[40px] text-right" title="Line Cost">
@@ -5028,7 +5028,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                                     value={h.hazard}
                                                     onChange={(e) => updateHazard(h.id, 'hazard', e.target.value)}
                                                     placeholder="e.g. Working at height, confined space entry, H2S exposure..."
-                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500"
+                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500"
                                                 />
                                             </div>
 
@@ -5102,7 +5102,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                                     value={h.controls}
                                                     onChange={(e) => updateHazard(h.id, 'controls', e.target.value)}
                                                     placeholder="Describe the specific control measures, procedures, PPE requirements..."
-                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-relantern-500"
+                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-primary-500"
                                                 />
                                             </div>
 

@@ -179,7 +179,7 @@ export const ServiceRequests: React.FC = () => {
                         <input
                             type="text"
                             placeholder="Search requests..."
-                            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-relantern-500 focus:outline-none"
+                            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:outline-none"
                         />
                     </div>
                     <button className="p-2 border border-slate-300 rounded-lg bg-white text-slate-600 hover:bg-slate-50">
@@ -1303,7 +1303,7 @@ const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceReque
                                 className={`w-full h-40 p-4 pr-24 border rounded-xl text-lg focus:ring-2 shadow-sm resize-none transition-all ${
                                     isListening
                                         ? 'border-red-400 ring-2 ring-red-200 bg-red-50/30'
-                                        : 'border-slate-300 focus:ring-relantern-500 focus:border-blue-500'
+                                        : 'border-slate-300 focus:ring-primary-500 focus:border-blue-500'
                                 }`}
                             />
                             {/* Voice Dictation Button */}

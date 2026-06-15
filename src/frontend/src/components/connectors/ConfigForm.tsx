@@ -364,7 +364,7 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                                     <input type="checkbox" name="has_header"
                                         checked={config.has_header !== false}
                                         onChange={(e) => onChange({ ...config, has_header: e.target.checked })}
-                                        className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-relantern-500"
+                                        className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-primary-500"
                                     />
                                     Has Header Row
                                 </label>
@@ -448,7 +448,7 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                                     <input type="checkbox" name="ai_parsing_enabled"
                                         checked={config.ai_parsing_enabled ?? true}
                                         onChange={(e) => onChange({ ...config, ai_parsing_enabled: e.target.checked })}
-                                        className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-relantern-500"
+                                        className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-primary-500"
                                     />
                                     AI P&ID Parsing
                                 </label>
@@ -456,7 +456,7 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                                     <input type="checkbox" name="metadata_extraction"
                                         checked={config.metadata_extraction ?? true}
                                         onChange={(e) => onChange({ ...config, metadata_extraction: e.target.checked })}
-                                        className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-relantern-500"
+                                        className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-primary-500"
                                     />
                                     Extract Metadata
                                 </label>
@@ -464,7 +464,7 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                                     <input type="checkbox" name="watch_for_changes"
                                         checked={config.watch_for_changes ?? true}
                                         onChange={(e) => onChange({ ...config, watch_for_changes: e.target.checked })}
-                                        className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-relantern-500"
+                                        className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-primary-500"
                                     />
                                     Watch for Changes
                                 </label>
@@ -574,7 +574,7 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                                                     : current.filter((p: string) => p !== point);
                                                 onChange({ ...config, data_points: updated });
                                             }}
-                                            className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-relantern-500"
+                                            className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-primary-500"
                                         />
                                         {point.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                                     </label>

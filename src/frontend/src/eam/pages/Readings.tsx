@@ -673,7 +673,7 @@ const TrendAnalysis: React.FC<{
                                         type="checkbox"
                                         checked={row.active}
                                         onChange={(e) => onToggleActive(row.id, row.active)}
-                                        className="rounded text-blue-600 focus:ring-relantern-500 h-4 w-4 cursor-pointer"
+                                        className="rounded text-blue-600 focus:ring-primary-500 h-4 w-4 cursor-pointer"
                                         title={row.active ? "Click to Deactivate (will cascade)" : "Click to Activate (will restore chain)"}
                                     />
                                 </td>
@@ -843,14 +843,14 @@ const BatchEntryView: React.FC<{
                                         <div className="flex flex-nowrap gap-2 items-center">
                                             <input
                                                 type="date"
-                                                className="w-24 p-2 border border-slate-200 rounded text-xs focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none transition-all shadow-sm bg-white"
+                                                className="w-24 p-2 border border-slate-200 rounded text-xs focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none transition-all shadow-sm bg-white"
                                                 value={currentInput.date}
                                                 onChange={(e) => handleInputChange(def.id, 'date', e.target.value)}
                                             />
                                             {def.category !== 'METER' && (
                                                 <input
                                                     type="time"
-                                                    className="w-16 p-2 border border-slate-200 rounded text-xs focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none transition-all shadow-sm bg-white"
+                                                    className="w-16 p-2 border border-slate-200 rounded text-xs focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none transition-all shadow-sm bg-white"
                                                     value={currentInput.time}
                                                     onChange={(e) => handleInputChange(def.id, 'time', e.target.value)}
                                                 />
@@ -862,7 +862,7 @@ const BatchEntryView: React.FC<{
                                             <input
                                                 type="number"
                                                 placeholder="0.00"
-                                                className="w-24 p-2 border border-slate-200 rounded text-sm font-bold text-right focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none transition-all shadow-sm bg-white"
+                                                className="w-24 p-2 border border-slate-200 rounded text-sm font-bold text-right focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none transition-all shadow-sm bg-white"
                                                 value={currentInput.value}
                                                 onChange={(e) => handleInputChange(def.id, 'value', e.target.value)}
                                             />

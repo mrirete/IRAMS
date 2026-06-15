@@ -260,7 +260,7 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
                         <input
                             required
                             type="text"
-                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500 outline-none"
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                             placeholder="e.g. Pump P-101 Vibration High"
                             value={formData.title}
                             onChange={e => setFormData({ ...formData, title: e.target.value })}

@@ -41,7 +41,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 />
 
                 {/* bg-slate-50 + text-slate-900: light content area so EAM page headers are visible */}
-                <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 md:p-6 relative bg-slate-50 text-slate-900">
+                <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 relative bg-slate-50 text-slate-900">
                     {children}
                 </main>
             </div>

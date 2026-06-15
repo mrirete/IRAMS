@@ -778,7 +778,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                                         <div className="flex items-center gap-1">
                                             <input
                                                 type="number"
-                                                className="w-16 text-right text-sm border border-blue-300 rounded px-1 py-0.5 focus:ring-1 focus:ring-relantern-500"
+                                                className="w-16 text-right text-sm border border-blue-300 rounded px-1 py-0.5 focus:ring-1 focus:ring-primary-500"
                                                 value={item.qtyReceivedNow || ''}
                                                 placeholder="0"
                                                 onChange={(e) => handleItemChange(item.id, 'qtyReceivedNow', parseFloat(e.target.value))}

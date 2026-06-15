@@ -199,7 +199,7 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                                         type="text"
                                         required
                                         placeholder="e.g., Monthly Pump Inspection"
-                                        className="w-full text-sm border-slate-300 rounded-md focus:ring-2 focus:ring-relantern-500"
+                                        className="w-full text-sm border-slate-300 rounded-md focus:ring-2 focus:ring-primary-500"
                                         value={formData.title}
                                         onChange={e => setFormData({ ...formData, title: e.target.value })}
                                     />

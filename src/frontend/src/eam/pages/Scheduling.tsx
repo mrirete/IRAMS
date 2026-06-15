@@ -1699,7 +1699,7 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                                             type="checkbox"
                                             checked={selectedIds.has(job.id)}
                                             onChange={() => toggleSelect(job.id)}
-                                            className="rounded text-blue-600 focus:ring-relantern-500"
+                                            className="rounded text-blue-600 focus:ring-primary-500"
                                         />
                                     </td>
                                     <td className="px-6 py-4 text-sm font-mono font-medium text-blue-600">{job.id}</td>

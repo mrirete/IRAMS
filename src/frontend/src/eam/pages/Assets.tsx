@@ -763,7 +763,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     placeholder="Search assets..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-relantern-500 focus:outline-none bg-slate-50 focus:bg-white transition"
+                                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-primary-500 focus:outline-none bg-slate-50 focus:bg-white transition"
                                 />
                             </div>
                         </div>
@@ -1060,7 +1060,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 placeholder="Search tag, name..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
-                                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-relantern-500 focus:outline-none"
+                                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:outline-none"
                             />
                         </div>
                     )}
@@ -2178,7 +2178,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                         <textarea
                             value={asset.name}
                             onChange={(e) => handleChange('name', e.target.value)}
-                            className="w-full flex-1 text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 min-h-[5rem] resize-y focus:border-blue-500 focus:ring-1 focus:ring-relantern-500 outline-none transition-colors"
+                            className="w-full flex-1 text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 min-h-[5rem] resize-y focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
                             placeholder="Brief description (replaces Asset Name)..."
                         />
                     </div>
@@ -2240,7 +2240,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                         <select
                             value={asset.criticality}
                             onChange={(e) => handleChange('criticality', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-relantern-500 outline-none transition-colors"
+                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
                         >
                             <option value="">Select Criticality</option>
                             {dictionaries.filter(d => d.type === 'CRITICALITY' && d.active).map(c => (
@@ -2308,7 +2308,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             type="text"
                             value={asset.serialNumber || ''}
                             onChange={(e) => handleChange('serialNumber', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-relantern-500 outline-none transition-colors"
+                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
                         />
                     </div>
                     <div>
@@ -2317,7 +2317,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             type="text"
                             value={asset.department || ''}
                             onChange={(e) => handleChange('department', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-relantern-500 outline-none transition-colors"
+                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
                         />
                     </div>
                     <div className="col-span-1">
@@ -2325,7 +2325,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                         <select
                             value={asset.costCenter || ''}
                             onChange={(e) => handleChange('costCenter', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-relantern-500 outline-none transition-colors"
+                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
                         >
                             <option value="">(None)</option>
                             {costCenters.map(cc => (
@@ -2339,7 +2339,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             type="text"
                             value={asset.location || ''}
                             onChange={(e) => handleChange('location', e.target.value)}
-                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-relantern-500 outline-none transition-colors"
+                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
                         />
                     </div>
                 </div>
@@ -3039,7 +3039,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                             <input
                                 type="text"
                                 required
-                                className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-relantern-500 outline-none"
+                                className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none"
                                 placeholder="e.g. P-101-A"
                                 value={formData.tag}
                                 onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
@@ -3050,7 +3050,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                             <input
                                 type="text"
                                 required
-                                className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500 outline-none"
+                                className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                                 placeholder="e.g. Crude Feed Pump"
                                 value={formData.name}
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -3753,7 +3753,7 @@ function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, contac
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Model Code <span className="text-red-500">*</span></label>
                         <input
                             required
-                            className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-relantern-500 focus:border-blue-500"
+                            className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500"
                             value={modelCode}
                             onChange={e => setModelCode(e.target.value)}
                             placeholder="e.g. 3500-XL"

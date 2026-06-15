@@ -1265,7 +1265,7 @@ const UserPermissionManager: React.FC = () => {
                                                         <div>
                                                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Base Role (Primary)</label>
                                                             <select
-                                                                className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 font-medium focus:ring-2 focus:ring-relantern-500 focus:border-blue-500"
+                                                                className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-900 font-medium focus:ring-2 focus:ring-primary-500 focus:border-blue-500"
                                                                 value={linkedContact.defaultType}
                                                                 onChange={(e) => {
                                                                     const newRole = e.target.value;
@@ -1459,7 +1459,7 @@ const UserPermissionManager: React.FC = () => {
                                                                                 type="checkbox"
                                                                                 checked={!!isChecked}
                                                                                 onChange={() => toggleSite(site.id)}
-                                                                                className="rounded text-blue-600 focus:ring-relantern-500"
+                                                                                className="rounded text-blue-600 focus:ring-primary-500"
                                                                             />
                                                                             <span className="text-sm font-medium text-slate-700 flex items-center gap-2">
                                                                                 <MapPin size={14} className="text-slate-400" /> {site.tag} - {site.name}
@@ -1485,7 +1485,7 @@ const UserPermissionManager: React.FC = () => {
                                                                     type="checkbox"
                                                                     checked={selectedUser.dataScopeOverrides?.ownWorkOnly || false}
                                                                     onChange={(e) => toggleOwnWork(e.target.checked)}
-                                                                    className="rounded text-blue-600 focus:ring-relantern-500 h-4 w-4"
+                                                                    className="rounded text-blue-600 focus:ring-primary-500 h-4 w-4"
                                                                 />
                                                                 <div>
                                                                     <span className="text-sm font-bold text-slate-900 block">Limit to Own Assignments</span>
@@ -1669,7 +1669,7 @@ const UserPermissionManager: React.FC = () => {
                                                                                     type="checkbox"
                                                                                     checked={!!isEnabled}
                                                                                     onChange={(e) => handlePermissionChange(mod.key, action.key, e.target.checked)}
-                                                                                    className={`w-4 h-4 rounded text-blue-600 focus:ring-relantern-500 border-slate-300 cursor-pointer`}
+                                                                                    className={`w-4 h-4 rounded text-blue-600 focus:ring-primary-500 border-slate-300 cursor-pointer`}
                                                                                 />
                                                                             </td>
                                                                         );

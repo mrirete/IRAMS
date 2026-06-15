@@ -218,7 +218,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none"
+                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none"
                             placeholder="e.g. Operations"
                         />
                     </div>
@@ -229,7 +229,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                             type="text"
                             value={code}
                             onChange={(e) => setCode(e.target.value)}
-                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none font-mono"
+                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none font-mono"
                             placeholder="e.g. OPS"
                         />
                     </div>
@@ -240,7 +240,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                             <select
                                 value={type}
                                 onChange={(e) => setType(e.target.value as OrgUnitType)}
-                                className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none disabled:bg-gray-100 dark:disabled:bg-gray-600 disabled:cursor-not-allowed"
                                 disabled={true}
                             >
                                 {orgLevels.map(level => (
@@ -262,7 +262,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                             <select
                                 value={managerId}
                                 onChange={(e) => setManagerId(e.target.value)}
-                                className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none"
+                                className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none"
                             >
                                 <option value="">-- None --</option>
                                 {potentialManagers.map(m => (
@@ -281,7 +281,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                         <select
                             value={selectedParentId}
                             onChange={(e) => setSelectedParentId(e.target.value)}
-                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none"
+                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none"
                         >
                             <option value="">── Root (No Parent) ──</option>
                             {availableParents.map(u => (
@@ -315,7 +315,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                         <textarea
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-relantern-500 focus:border-blue-500 outline-none"
+                            className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white resize-none focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none"
                             rows={2}
                             placeholder="Brief description of this organizational unit"
                         />

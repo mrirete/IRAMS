@@ -482,7 +482,7 @@ export const RelanternCoPilot: React.FC = () => {
                                         onChange={e => setInputValue(e.target.value)}
                                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                                         placeholder={`Ask about ${pageContext.label.toLowerCase()}...`}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-relantern-500/30 focus:border-relantern-500 transition-all"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-12 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-relantern-500 transition-all"
                                     />
                                     <button
                                         onClick={handleSend}

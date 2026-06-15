@@ -157,22 +157,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         });
     }, [permissions, authLoading, isModuleEnabled, isAdminTier]);
 
-    // ── Relantern gradient highlight for active, crisp slate for inactive ──
+    // ── Blue active highlight for active, crisp slate for inactive ──
     const activeBgStyle: React.CSSProperties = {
-        background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)',
-        boxShadow: '0 2px 8px rgba(245, 158, 11, 0.25)',
+        background: '#F0F5FF',
+        color: '#246CFF',
+        borderLeft: '3px solid #246CFF',
     };
 
     const linkClass = (isActive: boolean) =>
         `w-full flex items-center px-3 py-2.5 rounded-xl text-[13.5px] transition-all duration-150 group tracking-[-0.01em] ${isActive
-            ? 'text-white font-semibold'
-            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800 font-medium'
+            ? 'text-primary-600 font-semibold'
+            : 'text-slate-600 hover:bg-primary-50 hover:text-slate-800 font-medium'
         }`;
 
     const subLinkClass = (isActive: boolean) =>
         `block w-full text-left px-3 py-1.5 rounded-lg text-[13px] transition-all duration-150 tracking-[-0.01em] ${isActive
-            ? 'text-white font-semibold'
-            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100 font-medium'
+            ? 'text-primary-600 font-semibold bg-primary-50'
+            : 'text-slate-500 hover:text-slate-700 hover:bg-primary-50 font-medium'
         }`;
 
     const renderModule = (mod: ModuleDefinition) => {
@@ -186,7 +187,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         <NavLink key="home" to="/" end className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                             {({ isActive }) => (
                                 <>
-                                    <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                                    <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                                     <span className="flex-1 text-left">Dashboard</span>
                                 </>
                             )}
@@ -196,7 +197,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         <NavLink key="assets" to="/assets" className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                             {({ isActive }) => (
                                 <>
-                                    <Database size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                                    <Database size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                                     <span className="flex-1 text-left">Asset Register</span>
                                 </>
                             )}
@@ -222,11 +223,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         className={linkClass(isSectionActive)}
                         style={isSectionActive ? activeBgStyle : undefined}
                     >
-                        <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isSectionActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                        <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isSectionActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                         <span className="flex-1 text-left">{mod.label}</span>
                         {isExpanded
-                            ? <ChevronDown size={14} className={isSectionActive ? 'text-white/70' : 'text-slate-400'} />
-                            : <ChevronRight size={14} className={isSectionActive ? 'text-white/70' : 'text-slate-400'} />
+                            ? <ChevronDown size={14} className={isSectionActive ? 'text-primary-400' : 'text-slate-400'} />
+                            : <ChevronRight size={14} className={isSectionActive ? 'text-primary-400' : 'text-slate-400'} />
                         }
                     </button>
 
@@ -263,7 +264,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 <NavLink key={mod.id} to={mod.path} onClick={onClose} className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                     {({ isActive }) => (
                         <>
-                            <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                            <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                             <span className="flex-1 text-left">{mod.label}</span>
                         </>
                     )}
@@ -361,11 +362,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             className={linkClass(isAdminActive)}
                             style={isAdminActive ? activeBgStyle : undefined}
                         >
-                            <Lock size={18} className={`mr-3 flex-shrink-0 transition-colors ${isAdminActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                            <Lock size={18} className={`mr-3 flex-shrink-0 transition-colors ${isAdminActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
                             <span className="flex-1 text-left">Admin</span>
                             {adminExpanded
-                                ? <ChevronDown size={14} className={isAdminActive ? 'text-white/70' : 'text-slate-400'} />
-                                : <ChevronRight size={14} className={isAdminActive ? 'text-white/70' : 'text-slate-400'} />
+                                ? <ChevronDown size={14} className={isAdminActive ? 'text-primary-400' : 'text-slate-400'} />
+                                : <ChevronRight size={14} className={isAdminActive ? 'text-primary-400' : 'text-slate-400'} />
                             }
                         </button>
 

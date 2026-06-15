@@ -83,13 +83,13 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
 
             {/* Right: Global Actions */}
             <div className="flex items-center gap-2 md:gap-4">
-                {/* Search */}
+                {/* Search — hidden on mobile, visible sm+ */}
                 <div className="relative hidden sm:block">
                     <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
                     <input
                         type="text"
                         placeholder="Search IRAMS..."
-                        className="bg-slate-50 border border-slate-200 rounded-lg text-sm pl-9 pr-4 py-1.5 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 w-40 md:w-56 text-slate-800 placeholder-slate-400 transition-all"
+                        className="bg-slate-50 border border-slate-200 rounded-lg text-sm pl-9 pr-4 py-1.5 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 w-40 md:w-56 text-slate-800 placeholder-slate-400 transition-all"
                     />
                 </div>
 
@@ -97,10 +97,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
 
                 <ReliabilityPresenceWidget />
 
-                {/* AI CoPilot Toggle — Relantern branded */}
+                {/* AI CoPilot Toggle — Relantern branded, hidden on small mobile */}
                 <button
                     onClick={() => window.dispatchEvent(new CustomEvent('toggle-copilot'))}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
+                    className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
                     title="Relantern CoPilot · AI Coach"
                 >
                     <Sparkles size={15} />
@@ -119,7 +119,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                     </button>
                 )}
 
-                <button className="text-slate-400 hover:text-slate-700 transition-colors hidden md:block">
+                <button className="text-slate-400 hover:text-slate-700 transition-colors hidden lg:block">
                     <Grid size={18} />
                 </button>
 

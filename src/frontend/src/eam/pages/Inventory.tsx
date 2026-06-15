@@ -425,7 +425,7 @@ function StoreManagerModal({ isOpen, onClose, stores, onUpdateStores }: {
                                                     <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Bin Code</label>
                                                     <input
                                                         type="text"
-                                                        className="w-full text-sm border border-slate-300 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-relantern-500 outline-none font-mono"
+                                                        className="w-full text-sm border border-slate-300 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-primary-500 outline-none font-mono"
                                                         placeholder="e.g. A-01"
                                                         value={newBinCode}
                                                         onChange={e => setNewBinCode(e.target.value)}
@@ -436,7 +436,7 @@ function StoreManagerModal({ isOpen, onClose, stores, onUpdateStores }: {
                                                     <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Description / Zone</label>
                                                     <input
                                                         type="text"
-                                                        className="w-full text-sm border border-slate-300 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-relantern-500 outline-none"
+                                                        className="w-full text-sm border border-slate-300 rounded-md px-2 py-1.5 focus:ring-2 focus:ring-primary-500 outline-none"
                                                         placeholder="e.g. Rack A - Top Shelf"
                                                         value={newBinDesc}
                                                         onChange={e => setNewBinDesc(e.target.value)}
@@ -607,7 +607,7 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Item Code <span className="text-red-500">*</span></label>
                         <input
                             type="text"
-                            className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-relantern-500 outline-none uppercase"
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none uppercase"
                             placeholder="e.g. BRG-6309-2RS"
                             value={formData.code}
                             onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
@@ -617,7 +617,7 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description <span className="text-red-500">*</span></label>
                         <input
                             type="text"
-                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-relantern-500 outline-none"
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                             placeholder="e.g. Deep Groove Ball Bearing"
                             value={formData.description}
                             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -718,7 +718,7 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Store / Warehouse</label>
                                 <select
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-relantern-500 outline-none"
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 outline-none"
                                     value={selectedStoreId}
                                     onChange={(e) => {
                                         setSelectedStoreId(e.target.value);
@@ -733,7 +733,7 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Bin Location</label>
                                 <select
-                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-relantern-500 outline-none"
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 outline-none"
                                     value={selectedBinCode}
                                     onChange={(e) => setSelectedBinCode(e.target.value)}
                                     disabled={currentBins.length === 0}
@@ -758,7 +758,7 @@ function AddInventoryModal({ isOpen, onClose, onSave, availableStores, dictionar
                                 type="checkbox"
                                 checked={formData.isCritical}
                                 onChange={(e) => setFormData({ ...formData, isCritical: e.target.checked })}
-                                className="rounded text-blue-600 focus:ring-relantern-500"
+                                className="rounded text-blue-600 focus:ring-primary-500"
                             />
                             Critical Spare
                         </label>
@@ -808,7 +808,7 @@ function DetailsTab({ item, dictionaries, contacts, vendors, onUpdate }: { item:
                                     type="checkbox"
                                     checked={item.isActive}
                                     onChange={e => handleChange('isActive', e.target.checked)}
-                                    className="rounded text-blue-600 focus:ring-relantern-500"
+                                    className="rounded text-blue-600 focus:ring-primary-500"
                                 />
                                 <span className="text-sm">Active</span>
                             </label>
@@ -828,7 +828,7 @@ function DetailsTab({ item, dictionaries, contacts, vendors, onUpdate }: { item:
                         <textarea
                             value={item.description}
                             onChange={e => handleChange('description', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2 h-20 resize-none hover:border-blue-400 focus:border-blue-500 focus:ring-1 focus:ring-relantern-500 transition-colors"
+                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2 h-20 resize-none hover:border-blue-400 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 transition-colors"
                         />
                     </div>
                     <div>
@@ -1371,7 +1371,7 @@ function AddSupplierModal({ isOpen, onClose, onSave }: {
                                     type="checkbox"
                                     checked={formData.isPreferred}
                                     onChange={e => setFormData({ ...formData, isPreferred: e.target.checked })}
-                                    className="rounded text-blue-600 focus:ring-relantern-500"
+                                    className="rounded text-blue-600 focus:ring-primary-500"
                                 />
                                 Preferred Vendor
                             </label>
@@ -1976,7 +1976,7 @@ function InventoryFinancialsTab({ item, onUpdate, dictionaries }: { item: Invent
                                 type="checkbox"
                                 checked={item.warrantyFromInstall || false}
                                 onChange={e => handleChange('warrantyFromInstall', e.target.checked)}
-                                className="rounded text-blue-600 focus:ring-relantern-500"
+                                className="rounded text-blue-600 focus:ring-primary-500"
                             />
                             <div>
                                 <span className="text-sm font-medium text-slate-700">Warranty Starts on Installation?</span>
