@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Search, CornerDownLeft, ArrowUp, ArrowDown, Wrench, Package, FileText } from 'lucide-react';
+import { Search, CornerDownLeft, ArrowUp, ArrowDown, Wrench, Package, FileText, AlertTriangle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { MODULE_REGISTRY } from '../config/moduleRegistry';
 import { DatabaseService } from '../eam/services/DatabaseService';
@@ -21,10 +21,22 @@ interface Command {
     label: string;
     hint?: string;
     icon: LucideIcon;
-    group: 'Pages' | 'Work Orders' | 'Assets';
+    group: 'Actions' | 'Pages' | 'Work Orders' | 'Assets';
     run: (nav: ReturnType<typeof useNavigate>) => void;
     status?: string;
 }
+
+// Quick actions (no navigation) — surfaces the operator flow on desktop too.
+const ACTION_COMMANDS: Command[] = [
+    {
+        id: 'action-report',
+        label: 'Report a Problem',
+        hint: 'Log a maintenance request',
+        icon: AlertTriangle,
+        group: 'Actions',
+        run: () => window.dispatchEvent(new CustomEvent('open-quick-report')),
+    },
+];
 
 interface AssetLite { id: string; tag?: string; name?: string }
 interface WorkOrderLite { id: string; wo_number?: string; title?: string; status?: string }
@@ -75,6 +87,7 @@ export const CommandPalette: React.FC<{ open: boolean; onClose: () => void }> = 
     // Build the filtered, ranked command list
     const results = useMemo<Command[]>(() => {
         const q = query.trim().toLowerCase();
+        const actions = ACTION_COMMANDS.filter(c => !q || c.label.toLowerCase().includes(q) || c.hint?.toLowerCase().includes(q));
         const pages = pageCommands.filter(c => !q || c.label.toLowerCase().includes(q) || c.hint?.toLowerCase().includes(q));
 
         const woCmds: Command[] = q
@@ -106,11 +119,11 @@ export const CommandPalette: React.FC<{ open: boolean; onClose: () => void }> = 
                     hint: a.name,
                     icon: Package,
                     group: 'Assets' as const,
-                    run: (nav) => nav('/assets'),
+                    run: (nav) => nav(`/assets?id=${a.id}`),
                 }))
             : [];
 
-        return [...pages.slice(0, q ? 6 : 12), ...woCmds, ...assetCmds];
+        return [...actions, ...pages.slice(0, q ? 6 : 12), ...woCmds, ...assetCmds];
     }, [query, pageCommands, workOrders, assets]);
 
     // Clamp active index when results change
@@ -144,7 +157,7 @@ export const CommandPalette: React.FC<{ open: boolean; onClose: () => void }> = 
 
     // Group results for rendering while keeping a flat index for keyboard nav
     let flatIdx = -1;
-    const groups: Command['group'][] = ['Pages', 'Work Orders', 'Assets'];
+    const groups: Command['group'][] = ['Actions', 'Pages', 'Work Orders', 'Assets'];
 
     return createPortal(
         <div className="fixed inset-0 z-[120] flex items-start justify-center p-4 pt-[12vh]">
