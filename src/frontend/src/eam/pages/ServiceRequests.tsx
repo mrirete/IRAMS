@@ -19,6 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
+import { PriorityPill } from '../components/ui';
 import { ScanAssetModal } from '../components/modals/ScanAssetModal';
 
 export const ServiceRequests: React.FC = () => {
@@ -598,12 +599,7 @@ const RequestColumn: React.FC<{
                         className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition cursor-pointer group"
                     >
                         <div className="flex justify-between items-start mb-2">
-                            <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${req.priority === 'HIGH' ? 'bg-red-50 text-red-700 border-red-100' :
-                                req.priority === 'MEDIUM' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                    'bg-slate-50 text-slate-600 border-slate-100'
-                                }`}>
-                                {req.priority}
-                            </div>
+                            <PriorityPill priority={req.priority} />
                             <div className="flex items-center gap-1">
                                 {req.isBreakdown && (
                                     <div className="text-[10px] flex items-center gap-1 text-red-700 bg-red-50 font-bold border border-red-100 px-1 py-0.5 rounded" title="Equipment Breakdown">
@@ -687,12 +683,7 @@ const MobileRequestGroup: React.FC<{
                                 className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 active:bg-slate-50 transition cursor-pointer"
                             >
                                 <div className="flex justify-between items-start mb-1.5">
-                                    <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase border ${req.priority === 'HIGH' || req.priority === 'EMERGENCY' ? 'bg-red-50 text-red-700 border-red-100' :
-                                        req.priority === 'MEDIUM' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                                            'bg-slate-50 text-slate-600 border-slate-100'
-                                        }`}>
-                                        {req.priority}
-                                    </div>
+                                    <PriorityPill priority={req.priority} />
                                     <div className="flex items-center gap-1">
                                         {req.isBreakdown && (
                                             <span className="text-[10px] flex items-center gap-0.5 text-red-700 bg-red-50 font-bold border border-red-100 px-1 py-0.5 rounded">

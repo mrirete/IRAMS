@@ -47,6 +47,7 @@ import { ImageGallery } from '../components/ui/ImageGallery';
 import { aiEngine, type JSAHazardSuggestion } from '../services/AIAnalysisEngine';
 import { SignaturePad } from '../components/ui/SignaturePad';
 import { DataMapper } from '../services/DataMapper';
+import { offlineQueue } from '../services/offlineQueue';
 import { CreateWorkOrderModal } from '../components/modals/CreateWorkOrderModal';
 import { CreatePMModal } from '../components/modals/CreatePMModal';
 import { OrgTreePicker } from '../components/OrgTreePicker';
@@ -977,20 +978,41 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         try {
             const dbRecord = DataMapper.toDBWorkOrder(updatedJob, dictionaries);
 
-            await DatabaseService.getInstance().updateWorkOrder(updatedJob.id, {
+            // Ensure every child row has a stable id so the offline replay (upsert-by-id)
+            // is idempotent even if a flush retries after a partial network failure.
+            const ensureIds = <T,>(arr?: T[]): T[] | undefined =>
+                Array.isArray(arr) ? arr.map(x => (x && !(x as { id?: string }).id ? { ...x, id: crypto.randomUUID() } : x)) : arr;
+
+            const extra = updatedJob as { properties?: Record<string, unknown>; enforceJobCostCenter?: boolean };
+            const dbUpdates = {
                 ...dbRecord,
-                tasks: updates.tasks !== undefined ? updates.tasks : updatedJob.tasks,
-                labor: updates.labor !== undefined ? updates.labor : updatedJob.labor,
-                inventory: updates.inventory !== undefined ? updates.inventory : updatedJob.inventory,
+                tasks: ensureIds(updates.tasks !== undefined ? updates.tasks : updatedJob.tasks),
+                labor: ensureIds(updates.labor !== undefined ? updates.labor : updatedJob.labor),
+                inventory: ensureIds(updates.inventory !== undefined ? updates.inventory : updatedJob.inventory),
                 jsa: updates.jsa !== undefined ? updates.jsa : updatedJob.jsa,
                 failureData: updatedJob.failureData,
                 // Persist journals into properties JSONB
                 properties: {
-                    ...((updatedJob as any).properties || {}),
-                    enforceJobCostCenter: (updatedJob as any).enforceJobCostCenter,
+                    ...(extra.properties || {}),
+                    enforceJobCostCenter: extra.enforceJobCostCenter,
                     journals: updatedJob.journals || [],
                 },
-            } as any, user?.id || 'unknown');
+            };
+
+            // Route through the offline queue: runs immediately when online, otherwise
+            // saves the whole WO state locally and replays on reconnect. TECO completion
+            // stays online (it needs server-side failure-code validation).
+            const { queued } = await offlineQueue.run(
+                'saveWorkOrder',
+                { id: updatedJob.id, updates: dbUpdates, actor: user?.id || 'unknown' },
+                `WO ${updatedJob.woNumber || updatedJob.id}`,
+            );
+            if (queued) {
+                // Offline: keep the optimistic UI; skip the server refetch.
+                showToast('Saved offline — this work order will sync when you reconnect.', 'info');
+                setIsSaving(false);
+                return;
+            }
 
             // --- REFETCH TO SYNC IDS ---
             const raw = await DatabaseService.getInstance().getWorkOrder(updatedJob.id);

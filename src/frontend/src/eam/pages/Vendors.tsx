@@ -9,6 +9,7 @@ import { Vendor, DictionaryEntry } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { useToast } from '../contexts/ToastContext';
+import { Button, Badge } from '../components/ui';
 
 interface VendorsProps {
     onAnalyze?: (context: string) => void;
@@ -130,12 +131,14 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             <Truck className="text-blue-600" size={24} />
                             <h2 className="text-xl font-bold text-slate-900">Vendor Directory</h2>
                         </div>
-                        <button
+                        <Button
                             onClick={() => setIsAddModalOpen(true)}
-                            className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition shadow-sm text-sm font-medium"
+                            size="sm"
+                            leftIcon={<Plus size={16} />}
+                            className="hidden sm:inline-flex"
                         >
-                            <Plus size={16} /> Add Vendor
-                        </button>
+                            Add Vendor
+                        </Button>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
@@ -173,9 +176,9 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                         </div>
                                     </div>
                                     <div className="mobile-card-contact-badge">
-                                        <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${vendor.type === 'MANUFACTURER' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                                        <Badge tone={vendor.type === 'MANUFACTURER' ? 'info' : 'success'}>
                                             {vendor.type === 'MANUFACTURER' ? 'MFR' : vendor.type === 'SUPPLIER' ? 'SUP' : 'VND'}
-                                        </span>
+                                        </Badge>
                                     </div>
                                 </div>
                             ))}
@@ -208,9 +211,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                             <div className="text-xs text-slate-500">{vendor.code}</div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${vendor.type === 'MANUFACTURER' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'}`}>
-                                                {vendor.type}
-                                            </span>
+                                            <Badge tone={vendor.type === 'MANUFACTURER' ? 'info' : 'success'}>{vendor.type}</Badge>
                                         </td>
                                         <td className="px-6 py-4 text-sm text-slate-500 hidden sm:table-cell">
                                             <div>{vendor.phone || '-'}</div>
@@ -243,9 +244,9 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             <button onClick={() => setSelectedVendor(null)} className="lg:hidden text-slate-400 hover:text-slate-600 p-1 flex items-center gap-1 text-sm">
                                 <X size={18} /> Back
                             </button>
-                            <button onClick={handleSave} className="px-3 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-500 flex items-center gap-2 text-sm">
-                                <Save size={16} /> Save
-                            </button>
+                            <Button onClick={handleSave} size="sm" leftIcon={<Save size={16} />}>
+                                Save
+                            </Button>
                             <button onClick={() => handleDeleteClick(selectedVendor.id, selectedVendor.name)} className="px-3 py-1.5 text-red-600 border border-red-200 rounded hover:bg-red-50 flex items-center gap-2 text-sm">
                                 <Trash2 size={16} /> Delete
                             </button>

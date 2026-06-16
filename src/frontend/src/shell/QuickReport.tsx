@@ -8,6 +8,7 @@ import { useAuth } from '../eam/contexts/AuthContext';
 import { useToast } from '../eam/contexts/ToastContext';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { DataMapper } from '../eam/services/DataMapper';
+import { offlineQueue } from '../eam/services/offlineQueue';
 import { RequestStatus, type ServiceRequest, type JobFile } from '../eam/types';
 
 /**
@@ -136,8 +137,19 @@ export const QuickReport: React.FC<{ open: boolean; onClose: () => void }> = ({ 
                 isBreakdown,
                 files,
             };
-            await DatabaseService.getInstance().createRequest(DataMapper.toDBRequest(newReq), user.id);
-            showToast(`Report submitted — priority ${priority}.`, 'success');
+            // Route through the offline queue: executes immediately when online,
+            // otherwise saves locally and replays on reconnect.
+            const { queued } = await offlineQueue.run(
+                'createServiceRequest',
+                { record: DataMapper.toDBRequest(newReq), actor: user.id },
+                `Report ${newReq.requestNumber}`,
+            );
+            showToast(
+                queued
+                    ? 'Saved offline — will sync automatically when you reconnect.'
+                    : `Report submitted — priority ${priority}.`,
+                queued ? 'info' : 'success',
+            );
             reset();
             onClose();
         } catch (e) {

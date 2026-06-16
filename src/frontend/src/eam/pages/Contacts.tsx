@@ -14,6 +14,7 @@ import { Contact, Qualification, CustomField, WorkOrder, DictionaryEntry, User }
 import { DatabaseService } from '../services/DatabaseService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
+import { Button } from '../components/ui';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 // Firestore imports removed in favor of DatabaseService (Supabase)
 
@@ -441,14 +442,15 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                 >
                                     <Upload size={16} /> Import
                                 </button>
-                                <button
+                                <Button
                                     onClick={() => setIsAddModalOpen(true)}
                                     disabled={!canCreate}
-                                    className={`ml-2 hidden sm:flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg transition shadow-sm font-medium ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
+                                    leftIcon={<Plus size={18} />}
+                                    className="ml-2 hidden sm:inline-flex"
                                     title={!canCreate ? 'Insufficient permissions' : 'Add new person'}
                                 >
-                                    <Plus size={18} /> Add Person
-                                </button>
+                                    Add Person
+                                </Button>
                             </div>
                         </div>
 

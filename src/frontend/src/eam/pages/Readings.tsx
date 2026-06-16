@@ -17,6 +17,8 @@ import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { Button } from '../components/ui';
+import { offlineQueue } from '../services/offlineQueue';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 
 export const Readings: React.FC = () => {
@@ -151,6 +153,7 @@ export const Readings: React.FC = () => {
 
         const updatedLogs = [...logs];
         const updatedDefs = [...definitions];
+        let queuedAny = false;
 
         for (const reading of newReadings) {
             if (reading.value === undefined || !reading.definitionId) continue;
@@ -215,9 +218,11 @@ export const Readings: React.FC = () => {
             };
 
             try {
-                // Save Reading
-                const savedLog = await DatabaseService.getInstance().logReading(dbLog);
-                updatedLogs.push(savedLog); // Use returned log with ID
+                // Save Reading — route through the offline queue so field readings
+                // logged without signal are saved locally and synced on reconnect.
+                const { queued } = await offlineQueue.run('logReading', dbLog, `Reading: ${def.name}`);
+                if (queued) queuedAny = true;
+                updatedLogs.push(newLog); // optimistic — dbLog.id is client-generated, so it's stable online or offline
 
                 // Update Definition Cache if needed (e.g. last reading)
                 // For now, we rely on logs reload or local optimistic?
@@ -256,7 +261,12 @@ export const Readings: React.FC = () => {
 
         setLogs(updatedLogs);
         setDefinitions(updatedDefs);
-        showToast('Readings saved successfully.', 'success');
+        showToast(
+            queuedAny
+                ? 'Saved offline — readings will sync when you reconnect.'
+                : 'Readings saved successfully.',
+            queuedAny ? 'info' : 'success',
+        );
     };
 
     // Meter Change logic
@@ -792,12 +802,13 @@ const BatchEntryView: React.FC<{
                 </div>
                 <div className="flex gap-2">
                     {singleAsset && onAddDefinition && (
-                        <button
+                        <Button
                             onClick={() => setIsAddOpen(true)}
-                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-bold text-sm border border-slate-300 flex items-center gap-2"
+                            variant="secondary"
+                            leftIcon={<Plus size={16} />}
                         >
-                            <Plus size={16} /> Add Reading
-                        </button>
+                            Add Reading
+                        </Button>
                     )}
                     <button
                         onClick={handleSaveBatch}
@@ -908,13 +919,13 @@ const BatchEntryView: React.FC<{
                                 <option key={t.id} value={t.code}>{t.description} ({t.categoryCode})</option>
                             ))}
                         </select>
-                        <button
+                        <Button
                             disabled={!selectedType}
                             onClick={handleAdd}
-                            className="w-full py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 disabled:opacity-50"
+                            fullWidth
                         >
                             Add to Entry Sheet
-                        </button>
+                        </Button>
                         {availableTypes.length === 0 && <p className="text-xs text-blue-600 mt-2 text-center">All dictionary types are already added.</p>}
                     </div>
                 </div>

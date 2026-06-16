@@ -4,6 +4,7 @@ import { TopBar } from './TopBar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useRelantern } from '../eam/contexts/RelanternContext';
 import { RelanternCoPilot } from '../components/shell/RelanternCoPilot';
+import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
 const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
@@ -30,6 +31,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         window.addEventListener('toggle-sidebar', handler);
         return () => window.removeEventListener('toggle-sidebar', handler);
     }, []);
+
+    // Register offline-queue executors once + replay any writes queued in a prior offline session.
+    useEffect(() => { initOfflineExecutors(); }, []);
 
     // Listen for the operator "Report a Problem" event (MobileBottomNav center button)
     useEffect(() => {

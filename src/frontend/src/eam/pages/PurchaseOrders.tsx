@@ -16,6 +16,20 @@ import { NotificationService } from '../services/NotificationService';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
+import { Badge, Button, type Tone } from '../components/ui';
+
+// PO status → design-system tone (parallels getStatusColor for the new Badge primitive)
+const poStatusTone = (status: string): Tone => {
+    switch (status) {
+        case 'OPEN': return 'info';
+        case 'PART_RECEIVED': return 'warning';
+        case 'ALL_RECEIVED': return 'success';
+        case 'CANCELLED': return 'danger';
+        case 'COMPLETED':
+        case 'DRAFT':
+        default: return 'neutral';
+    }
+};
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
@@ -244,14 +258,16 @@ export const PurchaseOrders: React.FC = () => {
             <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedPO ? 'w-1/3 hidden lg:flex' : 'w-full'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center">
                     <h2 className="font-bold text-slate-900">Purchase Orders</h2>
-                    <button
+                    <Button
                         onClick={handleCreatePO}
                         disabled={!canCreate}
-                        className={`hidden sm:flex bg-primary-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium items-center gap-2 ${!canCreate ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
+                        size="sm"
+                        leftIcon={<Plus size={16} />}
+                        className="hidden sm:inline-flex"
                         title={!canCreate ? 'Insufficient permissions' : 'Create new purchase order'}
                     >
-                        <Plus size={16} /> New PO
-                    </button>
+                        New PO
+                    </Button>
                 </div>
 
                 <div className="p-4 border-b border-slate-200 bg-slate-50 flex gap-2">
@@ -281,7 +297,7 @@ export const PurchaseOrders: React.FC = () => {
                             >
                                 <div className="flex justify-between items-start mb-0.5">
                                     <span className="font-mono text-xs font-bold text-slate-700">{po.poCode}</span>
-                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase border ${getStatusColor(po.status)}`}>{po.status.replace('_', ' ')}</span>
+                                    <Badge tone={poStatusTone(po.status)} dot>{po.status.replace('_', ' ')}</Badge>
                                 </div>
                                 <h3 className="text-sm font-bold text-slate-900 mb-1 line-clamp-1">{supplierName || 'Unknown Supplier'}</h3>
                                 <div className="flex justify-between items-center text-[11px] text-slate-500">
