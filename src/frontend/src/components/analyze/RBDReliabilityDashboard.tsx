@@ -78,10 +78,10 @@ const RBDReliabilityDashboard: React.FC<Props> = ({
         <div className="space-y-3 mt-3">
             {/* ═══ SYSTEM RELIABILITY DASHBOARD ═══ */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-cyan-50/30">
+                <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-primary-50/30">
                     <div className="flex items-center justify-between flex-wrap gap-2">
                         <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                            <Shield size={14} className="text-cyan-500" /> System Reliability R(t)
+                            <Shield size={14} className="text-primary-500" /> System Reliability R(t)
                         </h3>
                         <div className="flex items-center gap-3 text-[11px]">
                             <label className="flex items-center gap-1.5 text-slate-600 font-medium">
@@ -248,7 +248,7 @@ const RBDReliabilityDashboard: React.FC<Props> = ({
                                         <div className="flex flex-wrap gap-1.5">
                                             {kg.kVariants.map(kv => (
                                                 <span key={kv.k} className={`px-2 py-1 rounded text-[10px] font-mono font-semibold border ${kv.k === kg.group.k
-                                                    ? 'bg-cyan-50 border-cyan-300 text-cyan-700'
+                                                    ? 'bg-primary-50 border-primary-300 text-primary-700'
                                                     : 'bg-white border-slate-200 text-slate-600'}`}>
                                                     {kv.k}-of-{kg.blocks.length}: {(kv.r * 100).toFixed(2)}%
                                                 </span>

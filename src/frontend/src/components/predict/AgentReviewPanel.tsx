@@ -39,9 +39,9 @@ const STATUS_STYLES: Record<AgentActionStatus, { bg: string; text: string; label
 
 const AGENT_BADGES: Record<string, { icon: typeof Bot; color: string; label: string }> = {
     alert_to_wo: { icon: Wrench, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'WO Agent' },
-    vision_to_wo: { icon: Eye, color: 'text-cyan-600 bg-cyan-50 border-cyan-200', label: 'Vision Agent' },
+    vision_to_wo: { icon: Eye, color: 'text-primary-600 bg-primary-50 border-primary-200', label: 'Vision Agent' },
     bad_actor_rca: { icon: Search, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'RCA Agent' },
-    threshold_adapter: { icon: BarChart3, color: 'text-teal-600 bg-teal-50 border-teal-200', label: 'Threshold Agent' },
+    threshold_adapter: { icon: BarChart3, color: 'text-primary-600 bg-primary-50 border-primary-200', label: 'Threshold Agent' },
 };
 
 // ─── Component ───────────────────────────────────────────────

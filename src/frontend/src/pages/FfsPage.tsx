@@ -87,50 +87,50 @@ export const FfsPage: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowNew(false)}>
                     <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                            <div className="flex items-center gap-3"><div className="p-2 bg-cyan-50 rounded-lg text-cyan-600"><FileCheck size={20} /></div><div><h2 className="text-lg font-bold text-slate-800">New FFS Assessment</h2><p className="text-xs text-slate-500 mt-0.5">API 579-1 / ASME FFS-1</p></div></div>
+                            <div className="flex items-center gap-3"><div className="p-2 bg-primary-50 rounded-lg text-primary-600"><FileCheck size={20} /></div><div><h2 className="text-lg font-bold text-slate-800">New FFS Assessment</h2><p className="text-xs text-slate-500 mt-0.5">API 579-1 / ASME FFS-1</p></div></div>
                             <button onClick={() => setShowNew(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"><X size={18} /></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Target Asset</label>
-                                <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                     <option value="">Select asset…</option>{assetOptions.map(a => <option key={a.id} value={a.id}>{a.tag} — {a.name}</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">API 579 Part</label>
-                                    <select value={form.api_579_part} onChange={e => setForm(f => ({ ...f, api_579_part: e.target.value as FFSPart }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.api_579_part} onChange={e => setForm(f => ({ ...f, api_579_part: e.target.value as FFSPart }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         <option>Part 4 — General Metal Loss</option><option>Part 5 — Local Metal Loss</option><option>Part 6 — Pitting</option><option>Part 8 — HIC/SOHIC</option>
                                     </select>
                                 </div>
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Assessment Level</label>
-                                    <select value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value as FFSLevel }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.level} onChange={e => setForm(f => ({ ...f, level: e.target.value as FFSLevel }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         <option value="Level 1">Level 1</option><option value="Level 2">Level 2</option><option value="Level 3">Level 3</option>
                                     </select>
                                 </div>
                             </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Status</label>
-                                    <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as FFSStatusType }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as FFSStatusType }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         <option value="passed">Passed</option><option value="failed">Failed</option><option value="monitoring">Monitoring</option>
                                     </select>
                                 </div>
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">RSF</label>
-                                    <input type="number" step="0.01" min="0" max="1" value={form.rsf} onChange={e => setForm(f => ({ ...f, rsf: e.target.value }))} placeholder="0.82" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="number" step="0.01" min="0" max="1" value={form.rsf} onChange={e => setForm(f => ({ ...f, rsf: e.target.value }))} placeholder="0.82" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Life (yrs)</label>
-                                    <input type="number" step="0.5" value={form.remaining_life_years} onChange={e => setForm(f => ({ ...f, remaining_life_years: e.target.value }))} placeholder="8.5" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="number" step="0.5" value={form.remaining_life_years} onChange={e => setForm(f => ({ ...f, remaining_life_years: e.target.value }))} placeholder="8.5" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                             </div>
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Assessor</label>
-                                <input type="text" value={form.assessor} onChange={e => setForm(f => ({ ...f, assessor: e.target.value }))} placeholder="S. Jenkins" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                <input type="text" value={form.assessor} onChange={e => setForm(f => ({ ...f, assessor: e.target.value }))} placeholder="S. Jenkins" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                             </div>
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Recommended Action</label>
-                                <textarea value={form.recommended_action} onChange={e => setForm(f => ({ ...f, recommended_action: e.target.value }))} rows={2} placeholder="Continue monitoring. Next assessment in 4 years." className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 resize-none" />
+                                <textarea value={form.recommended_action} onChange={e => setForm(f => ({ ...f, recommended_action: e.target.value }))} rows={2} placeholder="Continue monitoring. Next assessment in 4 years." className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 resize-none" />
                             </div>
                         </div>
                         <div className="p-6 border-t border-slate-200 flex justify-end space-x-3">
                             <button onClick={() => setShowNew(false)} className="px-4 py-2.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={handleSubmit} disabled={!form.asset_id || !form.rsf || !form.assessor} className="px-6 py-2.5 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Create Assessment</button>
+                            <button onClick={handleSubmit} disabled={!form.asset_id || !form.rsf || !form.assessor} className="px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Create Assessment</button>
                         </div>
                     </div>
                 </div>

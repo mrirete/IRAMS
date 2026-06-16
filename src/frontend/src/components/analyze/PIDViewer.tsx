@@ -222,7 +222,7 @@ const EquipmentEditPopover: React.FC<{
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                    <Settings size={14} className="text-cyan-500" /> Edit {eq.type}
+                    <Settings size={14} className="text-primary-500" /> Edit {eq.type}
                 </h4>
                 <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={14} /></button>
             </div>
@@ -230,7 +230,7 @@ const EquipmentEditPopover: React.FC<{
                 <div>
                     <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Label / Tag</label>
                     <input value={label} onChange={e => setLabel(e.target.value)}
-                        className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-cyan-200 outline-none" />
+                        className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-primary-200 outline-none" />
                 </div>
                 <div>
                     <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Criticality</label>
@@ -261,7 +261,7 @@ const EquipmentEditPopover: React.FC<{
                             </div>
                             <button
                                 onClick={() => { window.location.href = `/assets?select=${eq.assetId}`; }}
-                                className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition-colors"
+                                className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors"
                             >
                                 <ExternalLink size={10} /> Open in Asset Register
                             </button>
@@ -284,7 +284,7 @@ const EquipmentEditPopover: React.FC<{
                                 <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-32 overflow-y-auto">
                                     {assetResults.map(a => (
                                         <button key={a.id} onClick={() => handleLinkAsset(a)}
-                                            className="w-full px-2.5 py-1.5 text-left text-[11px] hover:bg-cyan-50 flex justify-between items-center border-b border-slate-50 last:border-0">
+                                            className="w-full px-2.5 py-1.5 text-left text-[11px] hover:bg-primary-50 flex justify-between items-center border-b border-slate-50 last:border-0">
                                             <span className="text-slate-700 truncate">{a.name}</span>
                                             <span className="text-[9px] text-slate-400 font-mono shrink-0 ml-2">{a.tag}</span>
                                         </button>
@@ -303,7 +303,7 @@ const EquipmentEditPopover: React.FC<{
                     <div className="flex gap-2">
                         <button onClick={onClose} className="px-3 py-1 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
                         <button onClick={() => { onUpdate({ label, criticality }); onClose(); }}
-                            className="px-3 py-1 text-xs bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 font-medium">Save</button>
+                            className="px-3 py-1 text-xs bg-primary-500 text-white rounded-lg hover:bg-primary-600 font-medium">Save</button>
                     </div>
                 </div>
             </div>
@@ -464,7 +464,7 @@ const PIDViewer: React.FC<PIDViewerProps> = ({
                     <div className="flex items-center gap-1.5 flex-wrap">
                         {/* Drawing mode buttons */}
                         <button onClick={() => { setDrawMode('select'); setPlacingType(null); setConnectFrom(null); }}
-                            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors border ${drawMode === 'select' ? 'bg-cyan-50 text-cyan-700 border-cyan-200' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}>
+                            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg transition-colors border ${drawMode === 'select' ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'}`}>
                             <MousePointer size={12} /> Select
                         </button>
                         <button onClick={() => { setDrawMode('place'); setShowPalette(!showPalette); setConnectFrom(null); }}

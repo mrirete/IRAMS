@@ -463,7 +463,7 @@ export const RCMPage: React.FC = () => {
                   className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 focus:border-accent-cyan placeholder:text-slate-400 w-64"
                 />
               </div>
-              <button onClick={() => setShowNewStudy(true)} className="flex items-center gap-2 px-4 py-2.5 bg-accent-cyan hover:bg-cyan-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+              <button onClick={() => setShowNewStudy(true)} className="flex items-center gap-2 px-4 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]">
                 <Plus size={16} /> New RCM Study
               </button>
             </>
@@ -482,7 +482,7 @@ export const RCMPage: React.FC = () => {
                 <option value="closed">Closed</option>
               </select>
               {studyCollaborators.length > 0 && <AvatarStack collaborators={studyCollaborators} max={3} size="sm" />}
-              <button onClick={() => setShowTeamPanel(true)} className="relative flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-cyan-500/25 hover:shadow-xl hover:shadow-cyan-500/30 hover:scale-[1.02]" title="Invite people, teams, or departments">
+              <button onClick={() => setShowTeamPanel(true)} className="relative flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-500 hover:from-primary-600 hover:to-primary-600 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/30 hover:scale-[1.02]" title="Invite people, teams, or departments">
                 {studyCollaborators.length === 0 && (
                   <span className="absolute -top-1 -right-1 flex h-3 w-3">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
@@ -515,7 +515,7 @@ export const RCMPage: React.FC = () => {
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${isActive
-                  ? 'bg-accent-cyan text-brand-900 shadow-sm shadow-cyan-500/20'
+                  ? 'bg-accent-cyan text-brand-900 shadow-sm shadow-primary-500/20'
                   : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -707,7 +707,7 @@ export const RCMPage: React.FC = () => {
             <div className="p-6 pt-0 flex justify-end gap-3">
               <button onClick={() => setShowNewStudy(false)} className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>
               <button onClick={handleCreateStudy} disabled={!newStudyForm.title}
-                className="px-6 py-2 bg-accent-cyan hover:bg-cyan-400 disabled:opacity-40 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2">
+                className="px-6 py-2 bg-accent-cyan hover:bg-primary-400 disabled:opacity-40 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2">
                 <Shield size={16} /> Create Study
               </button>
             </div>
@@ -836,7 +836,7 @@ export const RCMPage: React.FC = () => {
             <div className="p-6 pt-0 flex justify-end gap-3">
               <button onClick={() => setEditingStudy(null)} className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>
               <button onClick={handleSaveEditStudy} disabled={!editStudyForm.title || saving}
-                className="px-6 py-2 bg-accent-cyan hover:bg-cyan-400 disabled:opacity-40 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2">
+                className="px-6 py-2 bg-accent-cyan hover:bg-primary-400 disabled:opacity-40 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2">
                 {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={16} />} Save Changes
               </button>
             </div>

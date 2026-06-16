@@ -19,8 +19,8 @@ const STATUS_CFG: Record<InspectionEventStatus, { label: string; icon: React.Rea
 };
 
 const NDT_COLOR: Record<string, string> = {
-    UT: 'bg-blue-500', PAUT: 'bg-cyan-500', MFL: 'bg-blue-500', VT: 'bg-green-500',
-    PT: 'bg-yellow-500', RT: 'bg-orange-500', MT: 'bg-pink-500', TOFD: 'bg-teal-500',
+    UT: 'bg-blue-500', PAUT: 'bg-primary-500', MFL: 'bg-blue-500', VT: 'bg-green-500',
+    PT: 'bg-yellow-500', RT: 'bg-orange-500', MT: 'bg-pink-500', TOFD: 'bg-primary-500',
 };
 
 export const InspectionSchedulePage: React.FC = () => {
@@ -96,7 +96,7 @@ export const InspectionSchedulePage: React.FC = () => {
                         <button onClick={() => setViewMode('calendar')} className={`px-3 py-1.5 text-xs rounded-lg transition-all ${viewMode === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><LayoutGrid size={14} /></button>
                         <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 text-xs rounded-lg transition-all ${viewMode === 'list' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><List size={14} /></button>
                     </div>
-                    <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 transition-colors shadow-sm">
+                    <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 transition-colors shadow-sm">
                         <Plus size={16} />Schedule Inspection
                     </button>
                 </div>
@@ -115,7 +115,7 @@ export const InspectionSchedulePage: React.FC = () => {
                 <div className="flex flex-wrap gap-2 flex-1">
                     {Object.entries(NDT_COLOR).map(([k, v]) => (
                         <button key={k} onClick={() => setNdeFilter(prev => prev === k ? 'all' : k as InspectionType)}
-                            className={`flex items-center text-[10px] font-medium px-2 py-1 rounded-md border transition-all ${ndeFilter === k ? 'border-cyan-400 bg-cyan-50 text-cyan-700' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}
+                            className={`flex items-center text-[10px] font-medium px-2 py-1 rounded-md border transition-all ${ndeFilter === k ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-transparent text-slate-600 hover:bg-slate-50'}`}
                         >
                             <span className={`w-3 h-3 rounded-sm ${v} mr-1.5`} />{k}
                         </button>
@@ -124,7 +124,7 @@ export const InspectionSchedulePage: React.FC = () => {
                 <select
                     value={statusFilter}
                     onChange={e => setStatusFilter(e.target.value as any)}
-                    className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-300"
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
                 >
                     <option value="all">All Statuses</option>
                     <option value="scheduled">Scheduled</option>
@@ -154,14 +154,14 @@ export const InspectionSchedulePage: React.FC = () => {
                                 return id.getDate() === day && id.getMonth() === now.getMonth() && id.getFullYear() === now.getFullYear();
                             });
                             return (
-                                <div key={day} className={`h-20 rounded-lg border ${day === now.getDate() ? 'border-cyan-300 bg-cyan-50/50' : 'border-slate-100'} p-1`}>
+                                <div key={day} className={`h-20 rounded-lg border ${day === now.getDate() ? 'border-primary-300 bg-primary-50/50' : 'border-slate-100'} p-1`}>
                                     <span className="text-[10px] text-slate-600 font-mono">{day}</span>
                                     <div className="flex flex-wrap gap-0.5 mt-0.5">
                                         {dayEvents.map(de => (
                                             <button
                                                 key={de.id}
                                                 onClick={() => navigate(`/comply/inspections/${de.id}`)}
-                                                className={`w-3 h-3 rounded-full ${NDT_COLOR[de.inspection_type] || 'bg-gray-500'} hover:ring-2 hover:ring-cyan-300 transition-all cursor-pointer`}
+                                                className={`w-3 h-3 rounded-full ${NDT_COLOR[de.inspection_type] || 'bg-gray-500'} hover:ring-2 hover:ring-primary-300 transition-all cursor-pointer`}
                                                 title={`${de.inspection_type} — ${getAssetName(de.asset_id)} (${de.status})`}
                                             />
                                         ))}
@@ -194,7 +194,7 @@ export const InspectionSchedulePage: React.FC = () => {
                                     <tr
                                         key={ins.id}
                                         onClick={() => navigate(`/comply/inspections/${ins.id}`)}
-                                        className="hover:bg-cyan-50/40 transition-colors cursor-pointer group"
+                                        className="hover:bg-primary-50/40 transition-colors cursor-pointer group"
                                     >
                                         <td className="px-5 py-3.5">
                                             <p className="text-slate-800 text-xs font-semibold">{ins.asset_name || getAssetName(ins.asset_id)}</p>
@@ -223,7 +223,7 @@ export const InspectionSchedulePage: React.FC = () => {
                                             </span>
                                         </td>
                                         <td className="px-5 py-3.5">
-                                            <ChevronRight size={14} className="text-slate-300 group-hover:text-cyan-500 transition-colors" />
+                                            <ChevronRight size={14} className="text-slate-300 group-hover:text-primary-500 transition-colors" />
                                         </td>
                                     </tr>
                                 );
@@ -247,7 +247,7 @@ export const InspectionSchedulePage: React.FC = () => {
                     <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
                         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-cyan-50 rounded-lg text-cyan-600"><CalendarDays size={20} /></div>
+                                <div className="p-2 bg-primary-50 rounded-lg text-primary-600"><CalendarDays size={20} /></div>
                                 <div>
                                     <h2 className="text-lg font-bold text-slate-800">Schedule Inspection</h2>
                                     <p className="text-xs text-slate-500 mt-0.5">Plan an NDT inspection event</p>
@@ -258,20 +258,20 @@ export const InspectionSchedulePage: React.FC = () => {
                         <div className="p-6 space-y-4">
                             <div>
                                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Target Asset</label>
-                                <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                     <option value="">Select asset…</option>{assetOptions.map(a => <option key={a.id} value={a.id}>{a.tag} — {a.name}</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">NDE Method</label>
-                                    <select value={form.inspection_type} onChange={e => setForm(f => ({ ...f, inspection_type: e.target.value as InspectionType }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.inspection_type} onChange={e => setForm(f => ({ ...f, inspection_type: e.target.value as InspectionType }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         {['UT', 'PAUT', 'MFL', 'VT', 'PT', 'RT', 'MT'].map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Governing Code</label>
-                                    <select value={form.governing_code} onChange={e => setForm(f => ({ ...f, governing_code: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.governing_code} onChange={e => setForm(f => ({ ...f, governing_code: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         <option value="">None</option>
                                         <option value="API 510">API 510 — Pressure Vessels</option>
                                         <option value="API 570">API 570 — Piping</option>
@@ -283,24 +283,24 @@ export const InspectionSchedulePage: React.FC = () => {
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Scheduled Date</label>
-                                    <input type="date" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="date" value={form.scheduled_date} onChange={e => setForm(f => ({ ...f, scheduled_date: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Inspector</label>
-                                    <input type="text" value={form.inspector} onChange={e => setForm(f => ({ ...f, inspector: e.target.value }))} placeholder="e.g. D. Chen" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="text" value={form.inspector} onChange={e => setForm(f => ({ ...f, inspector: e.target.value }))} placeholder="e.g. D. Chen" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Description</label>
-                                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Inspection scope and objectives…" rows={2} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 resize-none" />
+                                <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Inspection scope and objectives…" rows={2} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 resize-none" />
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Approval Mode</label>
                                 <div className="flex gap-3">
                                     {(['simple', 'two_step'] as const).map(mode => (
-                                        <label key={mode} className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${form.approval_mode === mode ? 'border-cyan-400 bg-cyan-50 text-cyan-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                                        <label key={mode} className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${form.approval_mode === mode ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
                                             <input type="radio" name="approval" value={mode} checked={form.approval_mode === mode} onChange={() => setForm(f => ({ ...f, approval_mode: mode }))} className="sr-only" />
-                                            <span className={`w-3 h-3 rounded-full border-2 ${form.approval_mode === mode ? 'border-cyan-500 bg-cyan-500' : 'border-slate-300'}`} />
+                                            <span className={`w-3 h-3 rounded-full border-2 ${form.approval_mode === mode ? 'border-primary-500 bg-primary-500' : 'border-slate-300'}`} />
                                             <span className="text-xs font-semibold">{mode === 'simple' ? 'Simple' : '2-Step'}</span>
                                         </label>
                                     ))}
@@ -309,7 +309,7 @@ export const InspectionSchedulePage: React.FC = () => {
                         </div>
                         <div className="p-6 border-t border-slate-200 flex justify-end space-x-3">
                             <button onClick={() => setShowNew(false)} className="px-4 py-2.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={handleSubmit} disabled={!form.asset_id || !form.scheduled_date || !form.inspector} className="px-6 py-2.5 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+                            <button onClick={handleSubmit} disabled={!form.asset_id || !form.scheduled_date || !form.inspector} className="px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
                                 Schedule
                             </button>
                         </div>

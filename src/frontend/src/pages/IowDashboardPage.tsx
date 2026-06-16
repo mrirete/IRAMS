@@ -93,43 +93,43 @@ export const IowDashboardPage: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowNew(false)}>
                     <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                            <div className="flex items-center gap-3"><div className="p-2 bg-cyan-50 rounded-lg text-cyan-600"><Activity size={20} /></div><div><h2 className="text-lg font-bold text-slate-800">New IOW Parameter</h2><p className="text-xs text-slate-500 mt-0.5">Define an Integrity Operating Window</p></div></div>
+                            <div className="flex items-center gap-3"><div className="p-2 bg-primary-50 rounded-lg text-primary-600"><Activity size={20} /></div><div><h2 className="text-lg font-bold text-slate-800">New IOW Parameter</h2><p className="text-xs text-slate-500 mt-0.5">Define an Integrity Operating Window</p></div></div>
                             <button onClick={() => setShowNew(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"><X size={18} /></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Target Asset</label>
-                                <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                     <option value="">Select asset…</option>{assetOptions.map(a => <option key={a.id} value={a.id}>{a.tag} — {a.name}</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Parameter Name</label>
-                                    <input type="text" value={form.parameter_name} onChange={e => setForm(f => ({ ...f, parameter_name: e.target.value }))} placeholder="e.g. Operating Pressure" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="text" value={form.parameter_name} onChange={e => setForm(f => ({ ...f, parameter_name: e.target.value }))} placeholder="e.g. Operating Pressure" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Unit</label>
-                                    <input type="text" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} placeholder="e.g. barg, °C, mm/s" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="text" value={form.unit} onChange={e => setForm(f => ({ ...f, unit: e.target.value }))} placeholder="e.g. barg, °C, mm/s" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                             </div>
                             <div className="grid grid-cols-3 gap-4">
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">IOW Type</label>
-                                    <select value={form.iow_type} onChange={e => setForm(f => ({ ...f, iow_type: e.target.value as IOWType }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.iow_type} onChange={e => setForm(f => ({ ...f, iow_type: e.target.value as IOWType }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         <option value="critical">Critical</option><option value="standard">Standard</option><option value="informational">Informational</option>
                                     </select>
                                 </div>
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Low Limit</label>
-                                    <input type="number" step="0.1" value={form.low_limit} onChange={e => setForm(f => ({ ...f, low_limit: e.target.value }))} placeholder="—" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="number" step="0.1" value={form.low_limit} onChange={e => setForm(f => ({ ...f, low_limit: e.target.value }))} placeholder="—" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">High Limit</label>
-                                    <input type="number" step="0.1" value={form.high_limit} onChange={e => setForm(f => ({ ...f, high_limit: e.target.value }))} placeholder="—" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="number" step="0.1" value={form.high_limit} onChange={e => setForm(f => ({ ...f, high_limit: e.target.value }))} placeholder="—" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                             </div>
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Current Value</label>
-                                <input type="number" step="0.1" value={form.current_value} onChange={e => setForm(f => ({ ...f, current_value: e.target.value }))} placeholder="Enter current reading" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                <input type="number" step="0.1" value={form.current_value} onChange={e => setForm(f => ({ ...f, current_value: e.target.value }))} placeholder="Enter current reading" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                             </div>
                         </div>
                         <div className="p-6 border-t border-slate-200 flex justify-end space-x-3">
                             <button onClick={() => setShowNew(false)} className="px-4 py-2.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={handleSubmit} disabled={!form.asset_id || !form.parameter_name || !form.unit || !form.current_value} className="px-6 py-2.5 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Add Parameter</button>
+                            <button onClick={handleSubmit} disabled={!form.asset_id || !form.parameter_name || !form.unit || !form.current_value} className="px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Add Parameter</button>
                         </div>
                     </div>
                 </div>

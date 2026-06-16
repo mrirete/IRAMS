@@ -62,7 +62,7 @@ const ReliabilityModellingPage: React.FC = () => {
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
                 <div>
                     <div className="flex items-center gap-2.5">
-                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-teal-500 to-cyan-600" />
+                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-primary-500 to-primary-700" />
                         <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight">Reliability Modelling</h1>
                     </div>
                     <p className="text-slate-500 text-xs sm:text-sm mt-1.5 ml-4">
@@ -73,12 +73,12 @@ const ReliabilityModellingPage: React.FC = () => {
                     {context?.asset && (
                     <button
                         onClick={handleAnalyzeNavigate}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-600 rounded-xl text-xs sm:text-sm transition-all border border-slate-200 shadow-sm hover:shadow group"
+                        className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-600 rounded-control text-xs sm:text-sm transition-all border border-slate-200 shadow-sm hover:shadow group"
                         title={`Investigate ${context.asset.tag} — RCA & Defect Elimination`}
                     >
-                        <Search size={14} className="text-slate-400 group-hover:text-teal-500 transition-colors" />
+                        <Search size={14} className="text-slate-400 group-hover:text-primary-600 transition-colors" />
                         <span>Investigate in RCA</span>
-                        <span className="text-[10px] font-mono px-1.5 py-0.5 bg-teal-50 text-teal-600 rounded-md border border-teal-200">
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 bg-primary-50 text-primary-600 rounded-md border border-primary-200">
                             {context.asset.tag}
                         </span>
                         <ArrowRight size={15} className="text-slate-400 group-hover:translate-x-0.5 transition-transform" />

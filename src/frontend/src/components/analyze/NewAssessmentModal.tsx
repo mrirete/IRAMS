@@ -33,8 +33,8 @@ const TAXONOMY_BADGES: Record<string, { label: string; color: string }> = {
     site: { label: 'SITE', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
     unit: { label: 'UNIT', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
     system: { label: 'SYSTEM', color: 'bg-blue-500/20 text-blue-300 border-blue-500/30' },
-    equipment: { label: 'EQUIP', color: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30' },
-    subunit: { label: 'SUBUNIT', color: 'bg-teal-500/20 text-teal-300 border-teal-500/30' },
+    equipment: { label: 'EQUIP', color: 'bg-primary-500/20 text-primary-300 border-primary-500/30' },
+    subunit: { label: 'SUBUNIT', color: 'bg-primary-500/20 text-primary-300 border-primary-500/30' },
     component: { label: 'COMP', color: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' },
     location: { label: 'LOC', color: 'bg-amber-500/20 text-amber-300 border-amber-500/30' },
 };
@@ -441,7 +441,7 @@ export const NewAssessmentModal: React.FC<NewAssessmentModalProps> = ({
                                                 <span className="text-xs font-semibold text-slate-700">
                                                     {assessmentForm.maintenanceData.source === 'manual' ? 'Manual Data' : `Data from ${assessmentForm.maintenanceData.connectorName}`}
                                                 </span>
-                                                <span className={`text-[10px] px-1.5 py-0.5 rounded border ml-auto ${assessmentForm.maintenanceData.source === 'manual' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-cyan-500/20 text-cyan-300 border-cyan-500/30'}`}>
+                                                <span className={`text-[10px] px-1.5 py-0.5 rounded border ml-auto ${assessmentForm.maintenanceData.source === 'manual' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' : 'bg-primary-500/20 text-primary-300 border-primary-500/30'}`}>
                                                     {assessmentForm.maintenanceData.source === 'manual' ? 'MANUAL' : 'CONNECTED'}
                                                 </span>
                                             </div>
@@ -499,7 +499,7 @@ export const NewAssessmentModal: React.FC<NewAssessmentModalProps> = ({
                         <button
                             onClick={handleCreateAssessment}
                             disabled={!assessmentForm.title || !assessmentForm.asset_id}
-                            className="w-full py-3 bg-accent-cyan hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed text-brand-900 font-bold rounded-xl text-sm transition-colors shadow-[0_0_20px_rgba(6,182,212,0.15)]"
+                            className="w-full py-3 bg-accent-cyan hover:bg-primary-400 disabled:opacity-40 disabled:cursor-not-allowed text-brand-900 font-bold rounded-xl text-sm transition-colors shadow-[0_0_20px_rgba(6,182,212,0.15)]"
                         >
                             Create Analysis
                         </button>

@@ -37,7 +37,7 @@ export const RbiPage: React.FC = () => {
         if (s >= 20) return 'bg-red-500/80 hover:bg-red-500';
         if (s >= 15) return 'bg-orange-500/60 hover:bg-orange-500';
         if (s >= 10) return 'bg-yellow-500/40 hover:bg-yellow-500/60';
-        if (s >= 5) return 'bg-cyan-500/20 hover:bg-cyan-500/30';
+        if (s >= 5) return 'bg-primary-500/20 hover:bg-primary-500/30';
         return 'bg-green-500/10 hover:bg-green-500/20';
     };
     const matrixCounts = (pof: number, cofIdx: number) => rbiAssessments.filter(a => a.pof_score === pof && a.cof_score === cofLabels[cofIdx]).length;
@@ -46,7 +46,7 @@ export const RbiPage: React.FC = () => {
         if (r === 'Very High') return 'text-red-700 bg-red-50 border border-red-200';
         if (r === 'High') return 'text-orange-700 bg-orange-50 border border-orange-200';
         if (r === 'Medium-High') return 'text-amber-700 bg-amber-50 border border-amber-200';
-        if (r === 'Medium') return 'text-cyan-700 bg-cyan-50 border border-cyan-200';
+        if (r === 'Medium') return 'text-primary-700 bg-primary-50 border border-primary-200';
         return 'text-emerald-700 bg-emerald-50 border border-emerald-200';
     };
 
@@ -136,39 +136,39 @@ export const RbiPage: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowNew(false)}>
                     <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                            <div className="flex items-center gap-3"><div className="p-2 bg-cyan-50 rounded-lg text-cyan-600"><Shield size={20} /></div><div><h2 className="text-lg font-bold text-slate-800">New RBI Assessment</h2><p className="text-xs text-slate-500 mt-0.5">API 580/581 risk quantification</p></div></div>
+                            <div className="flex items-center gap-3"><div className="p-2 bg-primary-50 rounded-lg text-primary-600"><Shield size={20} /></div><div><h2 className="text-lg font-bold text-slate-800">New RBI Assessment</h2><p className="text-xs text-slate-500 mt-0.5">API 580/581 risk quantification</p></div></div>
                             <button onClick={() => setShowNew(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"><X size={18} /></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Target Asset</label>
-                                <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                <select value={form.asset_id} onChange={e => setForm(f => ({ ...f, asset_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                     <option value="">Select asset…</option>{assetOptions.map(a => <option key={a.id} value={a.id}>{a.tag} — {a.name}</option>)}
                                 </select>
                             </div>
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Governing Code</label>
-                                <select value={form.governing_code} onChange={e => setForm(f => ({ ...f, governing_code: e.target.value as GoverningCode }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                <select value={form.governing_code} onChange={e => setForm(f => ({ ...f, governing_code: e.target.value as GoverningCode }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                     <option value="API 510">API 510</option><option value="API 653">API 653</option><option value="ASME B31.3">ASME B31.3</option><option value="API 570">API 570</option>
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">PoF Score (1–5)</label>
-                                    <select value={form.pof_score} onChange={e => setForm(f => ({ ...f, pof_score: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.pof_score} onChange={e => setForm(f => ({ ...f, pof_score: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}</option>)}
                                     </select>
                                 </div>
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">CoF Score (A–E)</label>
-                                    <select value={form.cof_score} onChange={e => setForm(f => ({ ...f, cof_score: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.cof_score} onChange={e => setForm(f => ({ ...f, cof_score: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         {['A', 'B', 'C', 'D', 'E'].map(c => <option key={c} value={c}>{c}</option>)}
                                     </select>
                                 </div>
                             </div>
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Assessor</label>
-                                <input type="text" value={form.assessor} onChange={e => setForm(f => ({ ...f, assessor: e.target.value }))} placeholder="e.g. S. Jenkins" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                <input type="text" value={form.assessor} onChange={e => setForm(f => ({ ...f, assessor: e.target.value }))} placeholder="e.g. S. Jenkins" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                             </div>
                         </div>
                         <div className="p-6 border-t border-slate-200 flex justify-end space-x-3">
                             <button onClick={() => setShowNew(false)} className="px-4 py-2.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={handleSubmit} disabled={!form.asset_id || !form.assessor} className="px-6 py-2.5 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Create Assessment</button>
+                            <button onClick={handleSubmit} disabled={!form.asset_id || !form.assessor} className="px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Create Assessment</button>
                         </div>
                     </div>
                 </div>

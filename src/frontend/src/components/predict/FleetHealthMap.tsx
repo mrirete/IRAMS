@@ -127,7 +127,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
     const totalCount = totalAssetCount ?? effectiveData.length;
 
     const critChips: { value: CritFilter; label: string; color: string; activeColor: string }[] = [
-        { value: 'all', label: 'All', color: 'text-slate-500 border-slate-200 bg-white hover:bg-slate-50', activeColor: 'text-cyan-700 bg-cyan-50 border-cyan-300' },
+        { value: 'all', label: 'All', color: 'text-slate-500 border-slate-200 bg-white hover:bg-slate-50', activeColor: 'text-primary-700 bg-primary-50 border-primary-300' },
         { value: 'A', label: 'Crit A', color: 'text-slate-500 border-slate-200 bg-white hover:bg-red-50', activeColor: 'text-red-700 bg-red-50 border-red-300' },
         { value: 'B', label: 'Crit B', color: 'text-slate-500 border-slate-200 bg-white hover:bg-yellow-50', activeColor: 'text-yellow-700 bg-yellow-50 border-yellow-300' },
         { value: 'C', label: 'Crit C', color: 'text-slate-500 border-slate-200 bg-white hover:bg-slate-50', activeColor: 'text-slate-700 bg-slate-100 border-slate-400' },
@@ -178,7 +178,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                             placeholder="Search by name, tag, or system..."
                             value={search}
                             onChange={e => { setSearch(e.target.value); setPage(0); }}
-                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300/40 focus:border-cyan-400 placeholder:text-slate-400 transition-all"
+                            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300/40 focus:border-primary-400 placeholder:text-slate-400 transition-all"
                         />
                         {search && (
                             <button onClick={() => { setSearch(''); setPage(0); }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors">
@@ -205,7 +205,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                         <button
                                             key={opt.value}
                                             onClick={() => { setSort(opt.value); setSortOpen(false); setPage(0); }}
-                                            className={`w-full px-4 py-2.5 text-left text-xs font-medium transition-colors ${sort === opt.value ? 'bg-cyan-50 text-cyan-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                                            className={`w-full px-4 py-2.5 text-left text-xs font-medium transition-colors ${sort === opt.value ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:bg-slate-50'}`}
                                         >
                                             {opt.label}
                                         </button>
@@ -219,14 +219,14 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                     <div className="flex border border-slate-200 rounded-lg overflow-hidden">
                         <button
                             onClick={() => setViewMode('grid')}
-                            className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-cyan-50 text-cyan-600' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+                            className={`p-2 transition-colors ${viewMode === 'grid' ? 'bg-primary-50 text-primary-600' : 'bg-white text-slate-400 hover:text-slate-600'}`}
                             title="Grid view"
                         >
                             <LayoutGrid size={14} />
                         </button>
                         <button
                             onClick={() => setViewMode('list')}
-                            className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-cyan-50 text-cyan-600' : 'bg-white text-slate-400 hover:text-slate-600'}`}
+                            className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-primary-50 text-primary-600' : 'bg-white text-slate-400 hover:text-slate-600'}`}
                             title="List view"
                         >
                             <List size={14} />
@@ -249,7 +249,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                     {(search || critFilter !== 'all') && (
                         <button
                             onClick={() => { setSearch(''); setCritFilter('all'); setPage(0); }}
-                            className="ml-auto text-[10px] text-cyan-600 hover:text-cyan-700 font-medium"
+                            className="ml-auto text-[10px] text-primary-600 hover:text-primary-700 font-medium"
                         >
                             Clear filters
                         </button>
@@ -327,13 +327,13 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                 <button
                                     key={asset.asset_id}
                                     onClick={() => onAssetSelect(asset.asset_id)}
-                                    className={`w-full grid grid-cols-12 gap-2 px-4 py-3 text-left border-b border-slate-100 last:border-b-0 transition-all hover:bg-slate-50 ${isSelected ? 'bg-cyan-50/50 border-l-[3px] border-l-accent-cyan' : 'border-l-[3px] border-l-transparent'}`}
+                                    className={`w-full grid grid-cols-12 gap-2 px-4 py-3 text-left border-b border-slate-100 last:border-b-0 transition-all hover:bg-slate-50 ${isSelected ? 'bg-primary-50/50 border-l-[3px] border-l-accent-cyan' : 'border-l-[3px] border-l-transparent'}`}
                                 >
                                     {/* Asset Info */}
                                     <div className="col-span-5 flex items-center gap-2.5 min-w-0">
                                         <div className={`w-2 h-2 rounded-full shrink-0 ${getHealthDot(asset.health_index)}`} />
                                         <div className="min-w-0">
-                                            <p className={`text-xs font-semibold truncate ${isSelected ? 'text-cyan-700' : 'text-slate-800'}`}>{asset.asset_name}</p>
+                                            <p className={`text-xs font-semibold truncate ${isSelected ? 'text-primary-700' : 'text-slate-800'}`}>{asset.asset_name}</p>
                                             <p className="text-[10px] text-slate-400 truncate">{asset.unit}</p>
                                         </div>
                                     </div>
@@ -405,7 +405,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
                                 <button
                                     key={i}
                                     onClick={() => setPage(i)}
-                                    className={`w-6 h-6 rounded text-[10px] font-bold transition-all ${i === safePage ? 'bg-cyan-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'}`}
+                                    className={`w-6 h-6 rounded text-[10px] font-bold transition-all ${i === safePage ? 'bg-primary-500 text-white shadow-sm' : 'text-slate-400 hover:bg-slate-100'}`}
                                 >
                                     {i + 1}
                                 </button>

@@ -552,7 +552,7 @@ const USE_CASES = [
 function UseCasesPanel() {
     const [expanded, setExpanded] = useState(false);
     return (
-        <div className="bg-gradient-to-r from-blue-50 via-blue-50 to-cyan-50 border border-blue-200/60 rounded-xl overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-50 via-blue-50 to-primary-50 border border-blue-200/60 rounded-xl overflow-hidden">
             <button onClick={() => setExpanded(!expanded)}
                 className="w-full flex items-center justify-between px-4 py-3 hover:bg-white/30 transition-colors">
                 <div className="flex items-center gap-2.5">
@@ -1020,10 +1020,10 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
 
                     {/* ── PM Recommendation Panel ────────────── */}
                     {fit.beta > 1 && asset && (
-                        <div className="bg-gradient-to-r from-teal-50 via-cyan-50 to-sky-50 border-2 border-teal-200 rounded-2xl p-5">
+                        <div className="bg-gradient-to-r from-primary-50 via-primary-50 to-sky-50 border-2 border-primary-200 rounded-2xl p-5">
                             <div className="flex items-start justify-between flex-wrap gap-3">
                                 <div className="flex items-start gap-3">
-                                    <div className="p-2.5 rounded-xl bg-teal-100 text-teal-600">
+                                    <div className="p-2.5 rounded-xl bg-primary-100 text-primary-600">
                                         <Wrench size={20} />
                                     </div>
                                     <div>
@@ -1037,7 +1037,7 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                                         </h5>
                                         <p className="text-xs text-slate-600 mt-1.5 leading-relaxed max-w-xl">
                                             Based on β = {fit.beta} and η = {fit.eta.toLocaleString()} hrs, schedule PM replacement every{' '}
-                                            <strong className="text-teal-700">
+                                            <strong className="text-primary-700">
                                                 {Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8)).toLocaleString()} hours
                                             </strong>{' '}
                                             ({Math.round((fit.beta > 3 ? 70 : fit.beta > 2 ? 75 : 80))}% of η) to maintain ≥{Math.round((fit.beta > 3 ? 70 : fit.beta > 2 ? 75 : 80))}% reliability.
@@ -1047,7 +1047,7 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                                 </div>
                                 <button
                                     onClick={() => setShowPMModal(true)}
-                                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-sm font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-sm font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
                                 >
                                     <Wrench size={15} />
                                     Create PM Program
@@ -1749,12 +1749,12 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
 
             {/* ═══════════ BRIDGE TO SPARES ═══════════ */}
             {onSendToSpares && mtbfResult.mtbf > 0 && mtbfResult.mtbf < Infinity && (
-                <div className="flex items-center justify-between p-2.5 bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-xl">
-                    <div className="text-[11px] text-teal-700">
+                <div className="flex items-center justify-between p-2.5 bg-gradient-to-r from-primary-50 to-primary-50 border border-primary-200 rounded-xl">
+                    <div className="text-[11px] text-primary-700">
                         <span className="font-semibold">Next:</span> Use MTBF ({Math.round(mtbfResult.mtbf).toLocaleString()}h) for spares analysis
                     </div>
                     <button onClick={() => onSendToSpares(mtbfResult.mtbf)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-xs font-medium rounded-lg shadow-sm hover:shadow-md transition-all shrink-0 ml-3">
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-xs font-medium rounded-lg shadow-sm hover:shadow-md transition-all shrink-0 ml-3">
                         📦 Spares →
                     </button>
                 </div>

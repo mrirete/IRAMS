@@ -150,7 +150,7 @@ export const MonteCarloResults: React.FC<{
                 {/* Convergence Monitor */}
                 <div className="bg-white border border-slate-200 rounded-xl p-4">
                     <h4 className="text-sm font-bold text-slate-800 mb-1 flex items-center gap-1.5">
-                        <Clock size={14} className="text-cyan-500" /> Convergence Monitor
+                        <Clock size={14} className="text-primary-500" /> Convergence Monitor
                     </h4>
                     <p className="text-[10px] text-slate-400 mb-3">
                         Running average Ao ·{' '}
@@ -203,10 +203,10 @@ export const MonteCarloResults: React.FC<{
 
             {/* ═══ MC → WORK MANAGEMENT ACTIONS ═══ */}
             {asset && (
-                <div className="bg-gradient-to-r from-slate-50 via-teal-50/30 to-cyan-50/30 border border-teal-200/60 rounded-2xl p-5 space-y-4">
+                <div className="bg-gradient-to-r from-slate-50 via-primary-50/30 to-primary-50/30 border border-primary-200/60 rounded-2xl p-5 space-y-4">
                     <div className="flex items-center gap-2">
-                        <div className="p-1.5 rounded-lg bg-teal-100">
-                            <Wrench size={14} className="text-teal-600" />
+                        <div className="p-1.5 rounded-lg bg-primary-100">
+                            <Wrench size={14} className="text-primary-600" />
                         </div>
                         <h4 className="text-sm font-bold text-slate-800">Work Management Actions</h4>
                         <span className="text-[10px] text-slate-400 ml-auto font-mono">{output.rtfRuns.length.toLocaleString()} runs · {asset.tag}</span>
@@ -227,7 +227,7 @@ export const MonteCarloResults: React.FC<{
                                 </p>
                                 <button
                                     onClick={onCreatePM}
-                                    className="mt-3 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-bold rounded-lg shadow-md hover:shadow-lg hover:scale-[1.02] transition-all"
+                                    className="mt-3 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-primary-500 text-white text-xs font-bold rounded-lg shadow-md hover:shadow-lg hover:scale-[1.02] transition-all"
                                 >
                                     <Wrench size={13} /> Create PM Program
                                 </button>
@@ -305,7 +305,7 @@ export const MonteCarloResults: React.FC<{
             <div className="flex flex-wrap gap-3">
                 {onSendToRAM && (
                     <button onClick={() => onSendToRAM(rtf.mtbfSim, rtf.downtime.p50, rtf.ao.p50 / 100)}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all">
+                        className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-sm font-semibold rounded-lg shadow-md hover:shadow-lg transition-all">
                         <ArrowRight size={14} /> Send to RAM Dashboard
                     </button>
                 )}

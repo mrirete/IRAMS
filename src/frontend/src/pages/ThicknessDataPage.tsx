@@ -71,33 +71,33 @@ export const ThicknessDataPage: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowNew(false)}>
                     <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="p-6 border-b border-slate-200 flex items-center justify-between">
-                            <div className="flex items-center gap-3"><div className="p-2 bg-cyan-50 rounded-lg text-cyan-600"><Ruler size={20} /></div><div><h2 className="text-lg font-bold text-slate-800">New UT Reading</h2><p className="text-xs text-slate-500 mt-0.5">Record an ultrasonic thickness measurement</p></div></div>
+                            <div className="flex items-center gap-3"><div className="p-2 bg-primary-50 rounded-lg text-primary-600"><Ruler size={20} /></div><div><h2 className="text-lg font-bold text-slate-800">New UT Reading</h2><p className="text-xs text-slate-500 mt-0.5">Record an ultrasonic thickness measurement</p></div></div>
                             <button onClick={() => setShowNew(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"><X size={18} /></button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">CML Location</label>
-                                <select value={form.cml_id} onChange={e => setForm(f => ({ ...f, cml_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                <select value={form.cml_id} onChange={e => setForm(f => ({ ...f, cml_id: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                     <option value="">Select CML…</option>
                                     {cmls.map(c => <option key={c.id} value={c.id}>{c.cml_number} — {c.component_type.replace(/_/g, ' ')} ({c.orientation})</option>)}
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Measured Thickness (mm)</label>
-                                    <input type="number" step="0.1" value={form.measured_thickness_mm} onChange={e => setForm(f => ({ ...f, measured_thickness_mm: e.target.value }))} placeholder="e.g. 10.4" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                    <input type="number" step="0.1" value={form.measured_thickness_mm} onChange={e => setForm(f => ({ ...f, measured_thickness_mm: e.target.value }))} placeholder="e.g. 10.4" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                                 </div>
                                 <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">UT Method</label>
-                                    <select value={form.ut_method} onChange={e => setForm(f => ({ ...f, ut_method: e.target.value as UTMethod }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500">
+                                    <select value={form.ut_method} onChange={e => setForm(f => ({ ...f, ut_method: e.target.value as UTMethod }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500">
                                         <option value="ut_contact">UT Contact</option><option value="ut_compression">UT Compression</option><option value="paut">PAUT</option><option value="scan">Scan</option>
                                     </select>
                                 </div>
                             </div>
                             <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Technician</label>
-                                <input type="text" value={form.technician} onChange={e => setForm(f => ({ ...f, technician: e.target.value }))} placeholder="e.g. D. Chen" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500" />
+                                <input type="text" value={form.technician} onChange={e => setForm(f => ({ ...f, technician: e.target.value }))} placeholder="e.g. D. Chen" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                             </div>
                         </div>
                         <div className="p-6 border-t border-slate-200 flex justify-end space-x-3">
                             <button onClick={() => setShowNew(false)} className="px-4 py-2.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={handleSubmit} disabled={!form.cml_id || !form.measured_thickness_mm || !form.technician} className="px-6 py-2.5 bg-cyan-600 text-white text-sm font-semibold rounded-lg hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Record Reading</button>
+                            <button onClick={handleSubmit} disabled={!form.cml_id || !form.measured_thickness_mm || !form.technician} className="px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Record Reading</button>
                         </div>
                     </div>
                 </div>

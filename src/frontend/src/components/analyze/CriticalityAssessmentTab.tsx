@@ -403,7 +403,7 @@ export const CriticalityAssessmentTab: React.FC = () => {
                                 <option value="C">Set C</option>
                             </select>
                             <button onClick={handleBatchUpdate} disabled={saving}
-                                className="px-3 py-1 bg-accent-cyan text-brand-900 rounded text-xs font-semibold hover:bg-cyan-400 transition-colors disabled:opacity-50"
+                                className="px-3 py-1 bg-accent-cyan text-brand-900 rounded text-xs font-semibold hover:bg-primary-400 transition-colors disabled:opacity-50"
                             >
                                 {saving ? 'Applying…' : 'Apply'}
                             </button>
@@ -607,7 +607,7 @@ export const CriticalityAssessmentTab: React.FC = () => {
                                                                 <button
                                                                     onClick={(e) => { e.stopPropagation(); handleSave(); }}
                                                                     disabled={saving}
-                                                                    className="px-4 py-2 bg-accent-cyan text-brand-900 rounded-lg text-xs font-bold hover:bg-cyan-400 transition-colors flex items-center gap-2 disabled:opacity-50"
+                                                                    className="px-4 py-2 bg-accent-cyan text-brand-900 rounded-lg text-xs font-bold hover:bg-primary-400 transition-colors flex items-center gap-2 disabled:opacity-50"
                                                                 >
                                                                     {saving ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}
                                                                     {saving ? 'Saving…' : 'Save Assessment'}

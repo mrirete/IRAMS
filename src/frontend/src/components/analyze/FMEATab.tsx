@@ -84,7 +84,7 @@ export const FMEATab: React.FC<FMEATabProps> = ({
                             <p className="text-sm text-slate-500 mb-4">No FMEA studies created yet.</p>
                             <button
                                 onClick={onNewFMEA}
-                                className="inline-flex items-center gap-2 px-4 py-2 bg-accent-cyan hover:bg-cyan-400 text-brand-900 font-medium rounded-lg text-sm transition-colors"
+                                className="inline-flex items-center gap-2 px-4 py-2 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-medium rounded-lg text-sm transition-colors"
                             >
                                 <Plus size={16} /> Create Your First FMEA Study
                             </button>
@@ -104,7 +104,7 @@ export const FMEATab: React.FC<FMEATabProps> = ({
                                                 type="text"
                                                 value={editTitle}
                                                 onChange={e => setEditTitle(e.target.value)}
-                                                className="flex-1 px-3 py-2 border border-teal-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                                                className="flex-1 px-3 py-2 border border-primary-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                                                 placeholder="Worksheet Title"
                                                 autoFocus
                                             />
@@ -119,7 +119,7 @@ export const FMEATab: React.FC<FMEATabProps> = ({
                                                 <option value="closed">Closed</option>
                                             </select>
                                             <button onClick={handleSaveEdit} disabled={saving}
-                                                className="p-2 text-teal-600 hover:bg-teal-50 rounded-lg transition-colors">
+                                                className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
                                                 <Check size={16} />
                                             </button>
                                             <button onClick={handleCancelEdit}

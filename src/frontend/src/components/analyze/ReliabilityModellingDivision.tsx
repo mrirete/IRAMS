@@ -15,8 +15,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     Activity, TrendingUp, Package, Cpu, Dices,
     Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
-    AlertCircle, Check, X,
+    AlertCircle, Check, X, Wrench, ChevronRight,
 } from 'lucide-react';
+import { Button } from '../../eam/components/ui';
+import { CreatePMFromWeibullModal, type WeibullPMData } from './CreatePMFromWeibullModal';
 
 // Individual calculator tabs exported from the Toolkit
 import {
@@ -81,13 +83,13 @@ function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId }:
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
                         <input type="text" value={title} onChange={e => setTitle(e.target.value)}
-                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                             placeholder="e.g. GT-301 MTBF Analysis Q1 2026" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Notes (optional)</label>
                         <textarea value={notes} onChange={e => setNotes(e.target.value)}
-                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                             placeholder="Add context, assumptions, or remarks..." />
                     </div>
                 </div>
@@ -95,7 +97,7 @@ function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId }:
                     <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
                     <button onClick={() => { onSave(title, notes); onClose(); }}
                         disabled={!title.trim()}
-                        className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50">
+                        className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50">
                         {editingId ? 'Update' : 'Save'}
                     </button>
                 </div>
@@ -151,7 +153,7 @@ function SavedAnalysesPanel({ analyses, activeId, onLoad, onEdit, onDelete, load
             <button onClick={() => setExpanded(!expanded)}
                 className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
                 <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                    <FolderOpen size={16} className="text-teal-500" />
+                    <FolderOpen size={16} className="text-primary-500" />
                     Saved Analyses ({analyses.length})
                 </div>
                 {expanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
@@ -162,9 +164,9 @@ function SavedAnalysesPanel({ analyses, activeId, onLoad, onEdit, onDelete, load
                         <div className="px-4 py-6 text-center text-xs text-slate-400 animate-pulse">Loading saved analyses...</div>
                     ) : analyses.map(a => (
                         <div key={a.id}
-                            className={`flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors ${a.id === activeId ? 'bg-teal-50 border-l-2 border-teal-500' : ''}`}>
+                            className={`flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors ${a.id === activeId ? 'bg-primary-50 border-l-2 border-primary-500' : ''}`}>
                             <div className="flex-1 min-w-0">
-                                <p className={`font-medium truncate ${a.id === activeId ? 'text-teal-700' : 'text-slate-700'}`}>{a.title}</p>
+                                <p className={`font-medium truncate ${a.id === activeId ? 'text-primary-700' : 'text-slate-700'}`}>{a.title}</p>
                                 <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
                                     <span className="px-1.5 py-0.5 bg-slate-100 rounded font-medium uppercase">{a.analysis_type}</span>
                                     {a.asset_tag && <span>[U+1F4CC] {a.asset_tag}</span>}
@@ -173,7 +175,7 @@ function SavedAnalysesPanel({ analyses, activeId, onLoad, onEdit, onDelete, load
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
                                 <button onClick={() => onLoad(a)} title="Load"
-                                    className={`p-1.5 rounded-lg transition-colors ${a.id === activeId ? 'text-teal-600 bg-teal-100' : 'text-slate-400 hover:text-teal-600 hover:bg-teal-50'}`}>
+                                    className={`p-1.5 rounded-lg transition-colors ${a.id === activeId ? 'text-primary-600 bg-primary-100' : 'text-slate-400 hover:text-primary-600 hover:bg-primary-50'}`}>
                                     <FolderOpen size={14} />
                                 </button>
                                 <button onClick={() => onEdit(a)} title="Edit"
@@ -189,6 +191,66 @@ function SavedAnalysesPanel({ analyses, activeId, onLoad, onEdit, onDelete, load
                     ))}
                 </div>
             )}
+        </div>
+    );
+}
+
+// ─── Workflow Spine ───────────────────────────────────────────
+// Makes the reliability differentiator path explicit & one-click:
+//   Model & Measure → Fit Weibull → Simulate (Monte Carlo) → Create PM
+function WorkflowSpine({ activeCalc, weibullFit, onGoto, onCreatePM }: {
+    activeCalc: CalcTab;
+    weibullFit: { beta: number; eta: number; r2: number } | null;
+    onGoto: (tab: CalcTab) => void;
+    onCreatePM: () => void;
+}) {
+    const activeStage = activeCalc === 'rbd' || activeCalc === 'ram' ? 0 : activeCalc === 'weibull' ? 1 : activeCalc === 'montecarlo' ? 2 : -1;
+    const hasFit = !!weibullFit;
+
+    const stages = [
+        { i: 0, label: 'Model & Measure', sub: 'RBD · RAM', tab: 'ram' as CalcTab, done: hasFit },
+        { i: 1, label: 'Fit Weibull', sub: hasFit ? `β=${weibullFit!.beta} · η=${weibullFit!.eta.toLocaleString()}h` : 'β, η from failures', tab: 'weibull' as CalcTab, done: hasFit },
+        { i: 2, label: 'Simulate', sub: 'Monte Carlo · P10/P50/P90', tab: 'montecarlo' as CalcTab, done: false },
+    ];
+
+    return (
+        <div className="flex items-stretch gap-2 bg-white border border-slate-200 rounded-card shadow-card p-2 overflow-x-auto no-scrollbar">
+            {stages.map((s, idx) => {
+                const isActive = activeStage === s.i;
+                const state = isActive ? 'active' : s.done ? 'done' : 'idle';
+                return (
+                    <React.Fragment key={s.i}>
+                        <button
+                            onClick={() => onGoto(s.tab)}
+                            className={`flex items-center gap-2.5 px-3 py-2 rounded-control text-left transition-colors shrink-0 ${isActive ? 'bg-primary-50 ring-1 ring-primary-200' : 'hover:bg-slate-50'}`}
+                        >
+                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${state === 'active' ? 'bg-primary-600 text-white' : state === 'done' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                {state === 'done' ? <Check size={13} /> : s.i + 1}
+                            </span>
+                            <span className="min-w-0">
+                                <span className={`block text-[13px] font-semibold leading-tight ${isActive ? 'text-primary-700' : 'text-slate-700'}`}>{s.label}</span>
+                                <span className="block text-[10px] text-slate-400 leading-tight truncate max-w-[150px]">{s.sub}</span>
+                            </span>
+                        </button>
+                        {idx < stages.length - 1 && <ChevronRight size={16} className="text-slate-300 self-center shrink-0" />}
+                    </React.Fragment>
+                );
+            })}
+
+            {/* Act — Create PM (the EAM bridge) */}
+            <ChevronRight size={16} className="text-slate-300 self-center shrink-0" />
+            <div className="flex items-center ml-auto shrink-0 pl-1">
+                <Button
+                    size="sm"
+                    variant={hasFit ? 'cta' : 'secondary'}
+                    disabled={!hasFit}
+                    onClick={onCreatePM}
+                    leftIcon={<Wrench size={14} />}
+                    title={hasFit ? 'Create a PM program from the Weibull fit' : 'Fit a Weibull model first'}
+                >
+                    Create PM
+                </Button>
+            </div>
         </div>
     );
 }
@@ -223,6 +285,10 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     const [currentInputs, setCurrentInputs] = useState<Record<string, any>>({});
     const [currentResults, setCurrentResults] = useState<Record<string, any>>({});
     const [currentAsset, setCurrentAsset] = useState<{ id: string; tag: string; name: string } | null>(null);
+
+    // Persistent Weibull fit (drives the workflow spine + one-click Create PM)
+    const [weibullFit, setWeibullFit] = useState<{ beta: number; eta: number; r2: number; b10: number; dataPoints: number } | null>(null);
+    const [showCreatePM, setShowCreatePM] = useState(false);
 
     // Load saved analyses
     const loadSavedAnalyses = useCallback(async () => {
@@ -328,6 +394,12 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 if (prev?.beta === results.beta && prev?.eta === results.eta) return prev;
                 return { beta: results.beta, eta: results.eta, dataStr: inputs?.dataStr };
             });
+            // Capture the full fit for the spine + Create-PM bridge
+            const beta = results.beta as number;
+            const eta = results.eta as number;
+            const b10 = (results.b10 as number) ?? eta * Math.pow(-Math.log(0.9), 1 / beta);
+            const dataPoints = (results.dataPoints as number) ?? (results.ranks?.length as number) ?? Number(inputs?.failures) ?? 0;
+            setWeibullFit({ beta, eta, r2: (results.r2 as number) ?? 0, b10, dataPoints });
         }
     }, []);
 
@@ -417,8 +489,36 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         });
     }, [currentAsset, currentResults, activeCalc, onContextChange]);
 
+    // One-click Create-PM payload, built from the persistent Weibull fit
+    const weibullPMData: WeibullPMData | null = weibullFit && currentAsset
+        ? {
+            asset: currentAsset,
+            beta: weibullFit.beta,
+            eta: weibullFit.eta,
+            r2: weibullFit.r2,
+            b10: weibullFit.b10,
+            pmInterval: 0, // modal derives from β/η
+            dataPoints: weibullFit.dataPoints,
+        }
+        : null;
+
     return (
         <div className="space-y-4">
+            {/* Workflow spine — Model & Measure → Fit Weibull → Simulate → Create PM */}
+            <WorkflowSpine
+                activeCalc={activeCalc}
+                weibullFit={weibullFit}
+                onGoto={handleTabSwitch}
+                onCreatePM={() => {
+                    if (!weibullPMData) {
+                        setSaveToast('Fit a Weibull model first to create a PM.');
+                        setTimeout(() => setSaveToast(null), 3000);
+                        return;
+                    }
+                    setShowCreatePM(true);
+                }}
+            />
+
             {/* Calculator sub-tab bar — scrollable on mobile */}
             <div className="-mx-1 px-1" style={{ overflow: 'visible' }}>
                 <div className="flex items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm overflow-x-auto no-scrollbar" style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
@@ -429,7 +529,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                             title={`${tab.phase}: ${tab.desc}`}
                             style={{ scrollSnapAlign: 'start' }}
                             className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-[13px] font-medium transition-all whitespace-nowrap shrink-0 ${activeCalc === tab.id
-                                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md shadow-teal-500/20'
+                                ? 'bg-gradient-to-r from-primary-500 to-primary-500 text-white shadow-md shadow-primary-500/20'
                                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                                 }`}
                         >
@@ -443,7 +543,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                     {currentAnalysisType && (
                         <button
                             onClick={() => { setEditingAnalysis(null); setShowSaveModal(true); }}
-                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 rounded-lg shadow-sm hover:shadow-md transition-all shrink-0"
+                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-sm hover:shadow-md transition-all shrink-0"
                         >
                             <Save size={13} />
                             {activeAnalysisId ? 'Save As' : 'Save'}
@@ -454,8 +554,8 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
             {/* Toast notification */}
             {saveToast && (
-                <div className="flex items-center gap-2 px-4 py-2.5 bg-teal-50 border border-teal-200 rounded-xl text-sm text-teal-700 font-medium animate-in slide-in-from-top duration-200">
-                    <Check size={16} className="text-teal-500" />
+                <div className="flex items-center gap-2 px-4 py-2.5 bg-primary-50 border border-primary-200 rounded-xl text-sm text-primary-700 font-medium animate-in slide-in-from-top duration-200">
+                    <Check size={16} className="text-primary-500" />
                     {saveToast}
                 </div>
             )}
@@ -495,6 +595,19 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 onConfirm={handleDelete}
                 onCancel={() => setDeleteTarget(null)}
             />
+
+            {/* Create PM from the Weibull fit — the reliability → EAM bridge */}
+            {weibullPMData && (
+                <CreatePMFromWeibullModal
+                    isOpen={showCreatePM}
+                    onClose={() => setShowCreatePM(false)}
+                    onSuccess={() => {
+                        setSaveToast('PM program created from Weibull fit ✓');
+                        setTimeout(() => setSaveToast(null), 4000);
+                    }}
+                    data={weibullPMData}
+                />
+            )}
         </div>
     );
 };

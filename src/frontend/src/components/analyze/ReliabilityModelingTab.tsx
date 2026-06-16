@@ -803,14 +803,14 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
             <div className="flex items-center gap-2 flex-wrap">
                 <button onClick={() => { setReliabilityTab('rbd'); setActiveStudy(null); }}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${reliabilityTab === 'rbd'
-                        ? 'bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm'
+                        ? 'bg-primary-50 text-primary-700 border border-primary-200 shadow-sm'
                         : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-700 hover:bg-slate-50'
                         }`}>
                     <Cpu size={14} /> Reliability Block Diagram
                 </button>
                 <button onClick={() => { setReliabilityTab('pid'); setActivePidStudy(null); }}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${reliabilityTab === 'pid'
-                        ? 'bg-cyan-50 text-cyan-700 border border-cyan-200 shadow-sm'
+                        ? 'bg-primary-50 text-primary-700 border border-primary-200 shadow-sm'
                         : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-700 hover:bg-slate-50'
                         }`}>
                     <Wrench size={14} /> P&ID Viewer
@@ -826,11 +826,11 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                     {/* ═══ STUDIES LIST (Landing Page) ═══ */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2"><LayoutGrid size={16} className="text-cyan-600" /> RBD Studies</h3>
+                            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2"><LayoutGrid size={16} className="text-primary-600" /> RBD Studies</h3>
                             <p className="text-xs text-slate-500 mt-0.5">Create and manage reliability block diagram studies for different systems and scenarios</p>
                         </div>
                         <button onClick={() => setShowNewModal(true)}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-cyan-600 to-teal-600 text-white text-sm font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
+                            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-primary-600 to-primary-600 text-white text-sm font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
                             <Plus size={14} /> New Study
                         </button>
                     </div>
@@ -859,7 +859,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
 
                     {studiesLoading ? (
                         <div className="flex items-center justify-center py-16">
-                            <Loader2 size={24} className="animate-spin text-cyan-600" />
+                            <Loader2 size={24} className="animate-spin text-primary-600" />
                             <span className="ml-2 text-sm text-slate-500">Loading studies…</span>
                         </div>
                     ) : studies.length === 0 ? (
@@ -869,7 +869,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                             <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Create your first study to model system reliability with block diagrams, link assets, and calculate availability.</p>
                             <div className="flex items-center justify-center gap-2 mt-4">
                                 <button onClick={() => setShowNewModal(true)}
-                                    className="flex items-center gap-1.5 px-4 py-2 bg-cyan-600 text-white text-xs font-medium rounded-lg hover:bg-cyan-700 transition-colors">
+                                    className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 text-white text-xs font-medium rounded-lg hover:bg-primary-700 transition-colors">
                                     <Plus size={12} /> Create New Study
                                 </button>
                                 <button onClick={() => handleCreateStudy('Demo — Gas Compression Train', 'Sample RBD with series & parallel blocks for demonstration', DEMO_RBD)}
@@ -891,7 +891,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                 const uniqueAssets = [...new Set(linkedAssets)];
                                 return (
                                     <div key={study.id} onClick={() => handleOpenStudy(study)}
-                                        className="group relative bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-cyan-300 hover:shadow-md transition-all">
+                                        className="group relative bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-primary-300 hover:shadow-md transition-all">
                                         {/* Delete confirm overlay */}
                                         {deleteConfirm === study.id && (
                                             <div className="absolute inset-0 bg-white/95 rounded-xl z-10 flex flex-col items-center justify-center gap-2 p-4" onClick={e => e.stopPropagation()}>
@@ -909,16 +909,16 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                                                         <input value={renameValue} onChange={e => setRenameValue(e.target.value)} autoFocus
                                                             onKeyDown={e => { if (e.key === 'Enter') handleRenameStudy(study.id, renameValue); if (e.key === 'Escape') setRenamingStudyId(null); }}
-                                                            className="text-sm font-semibold text-slate-800 bg-cyan-50 border border-cyan-300 rounded px-1.5 py-0.5 w-full outline-none" />
+                                                            className="text-sm font-semibold text-slate-800 bg-primary-50 border border-primary-300 rounded px-1.5 py-0.5 w-full outline-none" />
                                                         <button onClick={() => handleRenameStudy(study.id, renameValue)} className="p-0.5 text-emerald-500 hover:bg-emerald-50 rounded"><Check size={12} /></button>
                                                         <button onClick={() => setRenamingStudyId(null)} className="p-0.5 text-slate-400 hover:bg-slate-100 rounded"><XIcon size={12} /></button>
                                                     </div>
                                                 ) : (
-                                                    <h4 className="text-sm font-semibold text-slate-800 truncate group-hover:text-cyan-700 transition-colors">{study.title}</h4>
+                                                    <h4 className="text-sm font-semibold text-slate-800 truncate group-hover:text-primary-700 transition-colors">{study.title}</h4>
                                                 )}
                                                 {study.description && <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{study.description}</p>}
                                             </div>
-                                            <ChevronRight size={14} className="text-slate-300 group-hover:text-cyan-500 transition-colors mt-0.5 shrink-0 ml-2" />
+                                            <ChevronRight size={14} className="text-slate-300 group-hover:text-primary-500 transition-colors mt-0.5 shrink-0 ml-2" />
                                         </div>
                                         {/* Metrics row */}
                                         <div className="flex items-center gap-3 mb-2 text-[10px]">
@@ -935,7 +935,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                             <div className="flex items-center gap-1 mb-2 flex-wrap">
                                                 <Link2 size={9} className="text-slate-400 shrink-0" />
                                                 {uniqueAssets.slice(0, 3).map(tag => (
-                                                    <span key={tag} className="px-1.5 py-0.5 bg-cyan-50 text-cyan-600 rounded text-[9px] font-mono font-medium">{tag}</span>
+                                                    <span key={tag} className="px-1.5 py-0.5 bg-primary-50 text-primary-600 rounded text-[9px] font-mono font-medium">{tag}</span>
                                                 ))}
                                                 {uniqueAssets.length > 3 && <span className="text-[9px] text-slate-400">+{uniqueAssets.length - 3} more</span>}
                                             </div>
@@ -948,7 +948,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                             </div>
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
                                                 <button onClick={() => { setRenamingStudyId(study.id); setRenameValue(study.title); }} title="Rename" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Edit3 size={12} /></button>
-                                                <button onClick={() => handleDuplicateStudy(study)} title="Duplicate" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-cyan-600"><Copy size={12} /></button>
+                                                <button onClick={() => handleDuplicateStudy(study)} title="Duplicate" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary-600"><Copy size={12} /></button>
                                                 <button onClick={() => setDeleteConfirm(study.id)} title="Delete" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"><Trash2 size={12} /></button>
                                             </div>
                                         </div>
@@ -966,17 +966,17 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                 <div>
                                     <label className="text-xs font-medium text-slate-600">Study Title *</label>
                                     <input value={newTitle} onChange={e => setNewTitle(e.target.value)} autoFocus placeholder="e.g. Gas Compression System A"
-                                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-cyan-400 focus:ring-1 focus:ring-cyan-200 outline-none" />
+                                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-400 focus:ring-1 focus:ring-primary-200 outline-none" />
                                 </div>
                                 <div>
                                     <label className="text-xs font-medium text-slate-600">Description</label>
                                     <textarea value={newDesc} onChange={e => setNewDesc(e.target.value)} rows={2} placeholder="Brief description of the system being modeled…"
-                                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-cyan-400 focus:ring-1 focus:ring-cyan-200 outline-none resize-none" />
+                                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-400 focus:ring-1 focus:ring-primary-200 outline-none resize-none" />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2">
                                     <button onClick={() => setShowNewModal(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg">Cancel</button>
                                     <button onClick={() => handleCreateStudy(newTitle || 'Untitled Study', newDesc)} disabled={!newTitle.trim()}
-                                        className="px-4 py-2 bg-cyan-600 text-white text-sm font-medium rounded-lg hover:bg-cyan-700 disabled:opacity-40 transition-colors">
+                                        className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:opacity-40 transition-colors">
                                         Create Study
                                     </button>
                                 </div>
@@ -1000,7 +1000,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                         </div>
                         <AvatarStack collaborators={(activeStudy as any).collaborators || []} size="md" />
                         <button onClick={() => setShowRbdTeam(true)}
-                            className="relative flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-cyan-500/25 hover:shadow-xl hover:shadow-cyan-500/30 hover:scale-[1.02]"
+                            className="relative flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-500 hover:from-primary-600 hover:to-primary-600 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/30 hover:scale-[1.02]"
                             title="Invite people, teams, or departments to collaborate on this study">
                             {!((activeStudy as any).collaborators?.length) && (
                               <span className="absolute -top-1 -right-1 flex h-3 w-3">
@@ -1083,7 +1083,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                             </div>
                             {onSendToRAM && (
                                 <button onClick={() => onSendToRAM(systemMetrics.mtbf, systemMetrics.mttr, systemMetrics.ao)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-xs font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-xs font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
                                     <Send size={12} /> Send to RAM Dashboard
                                 </button>
                             )}
@@ -1309,9 +1309,9 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
 
                     {uploading && (
                         <div className="absolute inset-0 z-50 bg-white/70 flex items-center justify-center rounded-xl">
-                            <div className="flex items-center gap-2 px-4 py-2 bg-cyan-50 border border-cyan-200 rounded-lg shadow-lg">
-                                <Loader2 size={16} className="animate-spin text-cyan-600" />
-                                <span className="text-sm font-medium text-cyan-700">Uploading P&ID image…</span>
+                            <div className="flex items-center gap-2 px-4 py-2 bg-primary-50 border border-primary-200 rounded-lg shadow-lg">
+                                <Loader2 size={16} className="animate-spin text-primary-600" />
+                                <span className="text-sm font-medium text-primary-700">Uploading P&ID image…</span>
                             </div>
                         </div>
                     )}

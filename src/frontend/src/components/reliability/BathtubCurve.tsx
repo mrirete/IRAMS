@@ -417,7 +417,7 @@ const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, on
                         {onCreatePM && beta > 1 && (
                             <button
                                 onClick={onCreatePM}
-                                className="mt-3 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-teal-500 to-cyan-500 text-white text-xs font-bold rounded-lg shadow-md hover:shadow-lg hover:scale-[1.02] transition-all"
+                                className="mt-3 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-xs font-bold rounded-lg shadow-md hover:shadow-lg hover:scale-[1.02] transition-all"
                             >
                                 <Wrench size={13} />
                                 Create PM Program from Analysis
@@ -464,13 +464,13 @@ const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, on
                         {/* Strategy */}
                         <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
                             <h6 className="text-xs font-bold text-slate-700 mb-2.5 flex items-center gap-1.5">
-                                <Shield size={12} className="text-teal-500" />
+                                <Shield size={12} className="text-primary-500" />
                                 Recommended Strategy
                             </h6>
                             <ul className="space-y-1.5">
                                 {zone.strategy.map((s, i) => (
                                     <li key={i} className="text-[11px] text-slate-600 flex items-start gap-2">
-                                        <span className="mt-1 w-1.5 h-1.5 rounded-full bg-teal-400 shrink-0" />
+                                        <span className="mt-1 w-1.5 h-1.5 rounded-full bg-primary-400 shrink-0" />
                                         {s}
                                     </li>
                                 ))}

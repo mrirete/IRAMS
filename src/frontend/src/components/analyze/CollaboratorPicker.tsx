@@ -16,7 +16,7 @@ type CollabRole = StudyCollaborator['role'];
 
 const ROLE_META: Record<CollabRole, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
     owner:    { label: 'Owner',    color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200',  icon: <Shield size={10} /> },
-    editor:   { label: 'Editor',   color: 'text-cyan-600',   bg: 'bg-cyan-50 border-cyan-200',    icon: <Pencil size={10} /> },
+    editor:   { label: 'Editor',   color: 'text-primary-600',   bg: 'bg-primary-50 border-primary-200',    icon: <Pencil size={10} /> },
     reviewer: { label: 'Reviewer', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', icon: <Eye size={10} /> },
     viewer:   { label: 'Viewer',   color: 'text-slate-500',  bg: 'bg-slate-50 border-slate-200',  icon: <Eye size={10} /> },
 };
@@ -29,8 +29,8 @@ const getInitials = (name: string) => {
 };
 
 const AVATAR_COLORS = [
-    'bg-cyan-500', 'bg-blue-500', 'bg-amber-500', 'bg-emerald-500',
-    'bg-rose-500', 'bg-blue-500', 'bg-pink-500', 'bg-teal-500',
+    'bg-primary-500', 'bg-blue-500', 'bg-amber-500', 'bg-emerald-500',
+    'bg-rose-500', 'bg-blue-500', 'bg-pink-500', 'bg-primary-500',
 ];
 const colorFor = (id: string) => AVATAR_COLORS[Math.abs([...id].reduce((a, c) => a + c.charCodeAt(0), 0)) % AVATAR_COLORS.length];
 
@@ -142,7 +142,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
 
     const accent = accentColor === 'violet'
         ? { btn: 'bg-primary-600 hover:bg-primary-500', light: 'bg-blue-50 border-blue-200 text-blue-700', ring: 'focus:ring-blue-200 focus:border-blue-400' }
-        : { btn: 'bg-cyan-600 hover:bg-cyan-700', light: 'bg-cyan-50 border-cyan-200 text-cyan-700', ring: 'focus:ring-cyan-200 focus:border-cyan-400' };
+        : { btn: 'bg-primary-600 hover:bg-primary-700', light: 'bg-primary-50 border-primary-200 text-primary-700', ring: 'focus:ring-primary-200 focus:border-primary-400' };
 
     return (
         <div className="fixed inset-0 z-50 bg-black/30 flex justify-end" onClick={onClose}>
@@ -151,7 +151,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
                     <div>
                         <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                            <Users size={16} className={accentColor === 'violet' ? 'text-blue-600' : 'text-cyan-600'} /> Study Team
+                            <Users size={16} className={accentColor === 'violet' ? 'text-blue-600' : 'text-primary-600'} /> Study Team
                         </h3>
                         <p className="text-xs text-slate-400 mt-0.5">{collaborators.length} member{collaborators.length !== 1 ? 's' : ''}</p>
                     </div>

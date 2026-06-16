@@ -36,7 +36,7 @@ const TYPE_COLORS: Record<InspectionType, string> = {
     VT: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     MT: 'bg-blue-50 text-blue-700 border-blue-200',
     PT: 'bg-rose-50 text-rose-700 border-rose-200',
-    MFL: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    MFL: 'bg-primary-50 text-primary-700 border-primary-200',
 };
 
 type ActivePanel = 'findings' | 'checklist' | 'notes' | 'team' | 'vision';
@@ -207,7 +207,7 @@ const InspectionDetailPage: React.FC = () => {
                     <AlertTriangle size={48} className="mx-auto text-slate-300 mb-4" />
                     <h2 className="text-lg font-bold text-slate-600">Inspection Not Found</h2>
                     <p className="text-sm text-slate-400 mt-1">ID: {inspectionId}</p>
-                    <button onClick={() => navigate('/comply/inspection-schedule')} className="mt-4 px-4 py-2 text-sm text-white bg-cyan-500 rounded-lg hover:bg-cyan-600 transition-colors">
+                    <button onClick={() => navigate('/comply/inspection-schedule')} className="mt-4 px-4 py-2 text-sm text-white bg-primary-500 rounded-lg hover:bg-primary-600 transition-colors">
                         Back to Schedule
                     </button>
                 </div>
@@ -230,7 +230,7 @@ const InspectionDetailPage: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
             {/* ── HEADER ── */}
             <div className="space-y-3">
-                <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-cyan-600 transition-colors">
+                <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary-600 transition-colors">
                     <ArrowLeft size={14} /> Back
                 </button>
 
@@ -259,7 +259,7 @@ const InspectionDetailPage: React.FC = () => {
                         {/* Actions */}
                         <div className="flex items-center gap-2 sm:ml-auto">
                             {(localInsp.status === 'scheduled' || localInsp.status === 'overdue') && (
-                                <button onClick={startInspection} className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg hover:from-cyan-600 hover:to-blue-600 shadow-sm transition-all">
+                                <button onClick={startInspection} className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-primary-500 to-blue-500 rounded-lg hover:from-primary-600 hover:to-blue-600 shadow-sm transition-all">
                                     <Play size={12} /> Start Inspection
                                 </button>
                             )}
@@ -310,7 +310,7 @@ const InspectionDetailPage: React.FC = () => {
                         onClick={() => setActivePanel(p.key)}
                         className={`flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-lg whitespace-nowrap transition-all ${
                             activePanel === p.key
-                                ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-sm'
+                                ? 'bg-gradient-to-r from-primary-500 to-blue-500 text-white shadow-sm'
                                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
                         }`}
                     >
@@ -447,7 +447,7 @@ const InspectionDetailPage: React.FC = () => {
                 {activePanel === 'vision' && (
                     <div className="space-y-4">
                         <div className="flex items-center gap-2">
-                            <div className="w-1 h-5 rounded-full bg-gradient-to-b from-cyan-400 to-blue-400" />
+                            <div className="w-1 h-5 rounded-full bg-gradient-to-b from-primary-400 to-blue-400" />
                             <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider">Vision AI Findings</h2>
                         </div>
                         <VisionCorrosionPanel assetId={localInsp.asset_id} assetName={localInsp.asset_name} />

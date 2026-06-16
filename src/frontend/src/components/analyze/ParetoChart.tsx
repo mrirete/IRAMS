@@ -285,7 +285,7 @@ export const ParetoChart: React.FC<Props> = ({ data, criteria, threshold, onBarC
             {/* Legend */}
             <div className="flex items-center justify-center gap-6 mt-2 text-xs text-slate-500">
                 <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 rounded-sm bg-cyan-500" /> Vital Few (≤80%)
+                    <span className="w-3 h-3 rounded-sm bg-primary-500" /> Vital Few (≤80%)
                 </span>
                 <span className="flex items-center gap-1.5">
                     <span className="w-3 h-3 rounded-sm bg-slate-700" /> Useful Many

@@ -177,7 +177,7 @@ const EditPopover: React.FC<{
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                    <Settings size={14} className="text-cyan-500" /> Edit Block
+                    <Settings size={14} className="text-primary-500" /> Edit Block
                 </h4>
                 <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded"><X size={14} /></button>
             </div>
@@ -199,9 +199,9 @@ const EditPopover: React.FC<{
                             ? `This block is in a standby configuration. It activates only when the primary fails.`
                             : `This block is not assigned to any group. It operates as an independent series element.`;
                 return (
-                    <div className="mb-3 p-2.5 rounded-lg bg-gradient-to-r from-slate-50 to-cyan-50/30 border border-slate-100">
+                    <div className="mb-3 p-2.5 rounded-lg bg-gradient-to-r from-slate-50 to-primary-50/30 border border-slate-100">
                         <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[10px] font-bold text-cyan-600 uppercase tracking-wider">Arrangement</span>
+                            <span className="text-[10px] font-bold text-primary-600 uppercase tracking-wider">Arrangement</span>
                             <span className="text-[10px] font-semibold text-slate-700 px-1.5 py-0.5 bg-white rounded border border-slate-200">{arrangementLabel}</span>
                         </div>
                         {grp && <p className="text-[10px] text-slate-500 mb-1">Group: <strong className="text-slate-700">{grp.label}</strong> · {siblingCount} sibling(s)</p>}
@@ -214,7 +214,7 @@ const EditPopover: React.FC<{
                 <div>
                     <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Name</label>
                     <input value={name} onChange={e => setName(e.target.value)}
-                        className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-cyan-200 outline-none" />
+                        className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-primary-200 outline-none" />
                 </div>
                 <div className="grid grid-cols-3 gap-2">
                     <div>
@@ -243,7 +243,7 @@ const EditPopover: React.FC<{
                             const typeColors: Record<string, string> = {
                                 parallel: 'text-violet-700 bg-violet-50 border-violet-200',
                                 standby: 'text-amber-700 bg-amber-50 border-amber-200',
-                                series: 'text-cyan-700 bg-cyan-50 border-cyan-200',
+                                series: 'text-primary-700 bg-primary-50 border-primary-200',
                                 'k-of-n': 'text-indigo-700 bg-indigo-50 border-indigo-200',
                             };
                             const typeLabels: Record<string, string> = {
@@ -304,7 +304,7 @@ const EditPopover: React.FC<{
                                 </div>
                                 <button
                                     onClick={() => { window.location.href = `/assets?select=${block.assetId}`; }}
-                                    className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition-colors"
+                                    className="w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 text-[10px] font-semibold text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors"
                                 >
                                     <ExternalLink size={10} /> Open in Asset Register
                                 </button>
@@ -327,7 +327,7 @@ const EditPopover: React.FC<{
                                     <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-32 overflow-y-auto">
                                         {assetResults.map(a => (
                                             <button key={a.id} onClick={() => { onLinkAsset(a); setAssetOpen(false); setAssetQuery(''); }}
-                                                className="w-full px-2.5 py-1.5 text-left text-[11px] hover:bg-cyan-50 flex justify-between items-center border-b border-slate-50 last:border-0">
+                                                className="w-full px-2.5 py-1.5 text-left text-[11px] hover:bg-primary-50 flex justify-between items-center border-b border-slate-50 last:border-0">
                                                 <span className="text-slate-700 truncate">{a.name}</span>
                                                 <span className="text-[9px] text-slate-400 font-mono shrink-0 ml-2">{a.tag}</span>
                                             </button>
@@ -346,7 +346,7 @@ const EditPopover: React.FC<{
                         <div className="flex gap-2">
                             {onInsertSeries && (
                                 <button onClick={onInsertSeries}
-                                    className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition-colors">
+                                    className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-2 text-[11px] font-semibold text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors">
                                     <ArrowRight size={13} /> + Series After
                                 </button>
                             )}
@@ -368,7 +368,7 @@ const EditPopover: React.FC<{
                     <div className="flex gap-2">
                         <button onClick={onClose} className="px-3 py-1 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
                         <button onClick={save}
-                            className="px-3 py-1 text-xs bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 font-medium">Save</button>
+                            className="px-3 py-1 text-xs bg-primary-500 text-white rounded-lg hover:bg-primary-600 font-medium">Save</button>
                     </div>
                 </div>
             </div>
@@ -389,7 +389,7 @@ const AddGroupModal: React.FC<{
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={onClose}>
             <div className="bg-white rounded-xl shadow-2xl border border-slate-200 p-5 w-96" onClick={e => e.stopPropagation()}>
                 <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-                    <Layers size={14} className="text-cyan-500" /> Create Group
+                    <Layers size={14} className="text-primary-500" /> Create Group
                 </h4>
                 <div className="space-y-3">
                     <div>
@@ -423,7 +423,7 @@ const AddGroupModal: React.FC<{
                     <button onClick={onClose} className="px-4 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
                     <button
                         onClick={() => { if (label.trim()) { onAdd(type, label.trim(), type === 'k-of-n' ? +k : undefined); onClose(); } }}
-                        className="px-4 py-1.5 text-xs bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 font-medium">Create</button>
+                        className="px-4 py-1.5 text-xs bg-primary-500 text-white rounded-lg hover:bg-primary-600 font-medium">Create</button>
                 </div>
             </div>
         </div>
@@ -1054,7 +1054,7 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
                     </div>
                     <div className="flex items-center gap-1.5">
                         <button onClick={() => onAddBlock()}
-                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-lg hover:bg-cyan-100 transition-colors">
+                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors">
                             <Plus size={12} /> Add Block
                         </button>
                         <button onClick={() => setShowGroupModal(true)}
@@ -1071,7 +1071,7 @@ const ReliabilityBlockDiagram: React.FC<Props> = ({
                             <Image size={12} /> PNG
                         </button>
                         <button onClick={() => setShowLegend(v => !v)}
-                            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-colors ${showLegend ? 'text-cyan-700 bg-cyan-50 border-cyan-200' : 'text-slate-500 bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                            className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-colors ${showLegend ? 'text-primary-700 bg-primary-50 border-primary-200' : 'text-slate-500 bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
                             <Info size={12} /> Legend
                         </button>
                     </div>

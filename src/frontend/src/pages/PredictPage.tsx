@@ -297,7 +297,7 @@ export const PredictPage: React.FC = () => {
                     {/* New Insight Button */}
                     <button
                         onClick={() => setShowNewInsight(true)}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-accent-cyan hover:bg-cyan-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]"
                     >
                         <Plus size={16} /> New Prediction
                     </button>
@@ -554,7 +554,7 @@ export const PredictPage: React.FC = () => {
                                     <button
                                         onClick={handleCreateInsight}
                                         disabled={!insightForm.title || !insightForm.asset_id}
-                                        className="px-6 py-2 bg-accent-cyan hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2"
+                                        className="px-6 py-2 bg-accent-cyan hover:bg-primary-400 disabled:opacity-40 disabled:cursor-not-allowed text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2"
                                     >
                                         <Cpu size={16} /> Run Prediction
                                     </button>
@@ -587,8 +587,8 @@ export const PredictPage: React.FC = () => {
                                     <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ${critColor}`}>Crit {critLevel || '?'}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <h2 className="text-lg font-bold text-slate-800 leading-tight group-hover:text-cyan-700 transition-colors">{selectedAsset?.name || selectedAssetId}</h2>
-                                    <ChevronDown size={14} className="text-slate-300 group-hover:text-cyan-500 transition-colors" />
+                                    <h2 className="text-lg font-bold text-slate-800 leading-tight group-hover:text-primary-700 transition-colors">{selectedAsset?.name || selectedAssetId}</h2>
+                                    <ChevronDown size={14} className="text-slate-300 group-hover:text-primary-500 transition-colors" />
                                 </div>
                                 <div className="flex items-center gap-2 mt-0.5">
                                     {selectedAsset?.system && (
@@ -632,7 +632,7 @@ export const PredictPage: React.FC = () => {
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
-                            ? 'bg-accent-cyan text-brand-900 shadow-sm shadow-cyan-500/20'
+                            ? 'bg-accent-cyan text-brand-900 shadow-sm shadow-primary-500/20'
                             : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                             }`}
                     >
@@ -710,7 +710,7 @@ export const PredictPage: React.FC = () => {
                                                             </div>
                                                         </div>
                                                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${cColor}`}>{asset.criticality}</span>
-                                                        <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border transition-all ${isHidden ? 'bg-white border-slate-300' : 'bg-accent-cyan border-accent-cyan text-white shadow-sm shadow-cyan-500/20'}`}>{!isHidden && <Check size={14} strokeWidth={3} />}</div>
+                                                        <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 border transition-all ${isHidden ? 'bg-white border-slate-300' : 'bg-accent-cyan border-accent-cyan text-white shadow-sm shadow-primary-500/20'}`}>{!isHidden && <Check size={14} strokeWidth={3} />}</div>
                                                     </button>
                                                 );
                                             })
@@ -782,7 +782,7 @@ export const PredictPage: React.FC = () => {
                         {/* Header */}
                         <div className="p-5 border-b border-slate-200 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-cyan-50 rounded-xl text-cyan-600 border border-cyan-100">
+                                <div className="p-2 bg-primary-50 rounded-xl text-primary-600 border border-primary-100">
                                     <Wrench size={20} />
                                 </div>
                                 <div>
@@ -805,7 +805,7 @@ export const PredictPage: React.FC = () => {
                                 <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto">
                                     The corrective work order has been inserted into the EAM work queue. It will appear in <strong>Work Management</strong>.
                                 </p>
-                                <button onClick={() => { setWrModalOpen(false); setWrSuccess(false); }} className="mt-4 px-5 py-2 bg-accent-cyan text-brand-900 font-semibold rounded-lg text-sm hover:bg-cyan-400 transition-colors">
+                                <button onClick={() => { setWrModalOpen(false); setWrSuccess(false); }} className="mt-4 px-5 py-2 bg-accent-cyan text-brand-900 font-semibold rounded-lg text-sm hover:bg-primary-400 transition-colors">
                                     Done
                                 </button>
                             </div>
@@ -819,9 +819,9 @@ export const PredictPage: React.FC = () => {
                                 )}
 
                                 {/* Pre-populated source badge */}
-                                <div className="flex items-center gap-2 px-3 py-2 bg-cyan-50 border border-cyan-100 rounded-lg">
-                                    <FileWarning size={14} className="text-cyan-600" />
-                                    <p className="text-xs text-cyan-700">
+                                <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary-100 rounded-lg">
+                                    <FileWarning size={14} className="text-primary-600" />
+                                    <p className="text-xs text-primary-700">
                                         <strong>Source:</strong> Predictive Insights · {selectedAsset?.tag || selectedAssetId} · HI {systemHealth.toFixed(0)}/100
                                     </p>
                                 </div>
@@ -832,7 +832,7 @@ export const PredictPage: React.FC = () => {
                                         type="text"
                                         value={wrForm.title}
                                         onChange={e => setWrForm(f => ({ ...f, title: e.target.value }))}
-                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 focus:border-cyan-500"
+                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500"
                                     />
                                 </div>
 
@@ -842,7 +842,7 @@ export const PredictPage: React.FC = () => {
                                         <select
                                             value={wrForm.workType}
                                             onChange={e => setWrForm(f => ({ ...f, workType: e.target.value }))}
-                                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
                                         >
                                             <option value="CM">CM — Corrective</option>
                                             <option value="PdM">PdM — Predictive</option>
@@ -854,7 +854,7 @@ export const PredictPage: React.FC = () => {
                                         <select
                                             value={wrForm.priority}
                                             onChange={e => setWrForm(f => ({ ...f, priority: e.target.value }))}
-                                            className={`w-full px-3 py-2.5 border rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-cyan-500/30 ${wrForm.priority === 'EMERGENCY' ? 'bg-red-50 border-red-300 text-red-700' : wrForm.priority === 'URGENT' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
+                                            className={`w-full px-3 py-2.5 border rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500/30 ${wrForm.priority === 'EMERGENCY' ? 'bg-red-50 border-red-300 text-red-700' : wrForm.priority === 'URGENT' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
                                         >
                                             <option value="ROUTINE">Routine</option>
                                             <option value="URGENT">Urgent</option>
@@ -869,7 +869,7 @@ export const PredictPage: React.FC = () => {
                                         value={wrForm.description}
                                         onChange={e => setWrForm(f => ({ ...f, description: e.target.value }))}
                                         rows={5}
-                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 font-mono leading-relaxed"
+                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30 font-mono leading-relaxed"
                                     />
                                 </div>
 
@@ -922,7 +922,7 @@ export const PredictPage: React.FC = () => {
                                             }
                                         }}
                                         disabled={wrSubmitting || !wrForm.title.trim()}
-                                        className="flex items-center gap-2 px-5 py-2.5 bg-accent-cyan hover:bg-cyan-400 text-brand-900 font-bold rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-bold rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                                     >
                                         {wrSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Wrench size={16} />}
                                         {wrSubmitting ? 'Creating...' : 'Create Work Order'}

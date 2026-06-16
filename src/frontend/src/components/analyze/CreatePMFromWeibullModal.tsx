@@ -145,10 +145,10 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto mx-4 animate-in zoom-in-95 duration-200">
                 {/* ── Header ──────────────────────────────────── */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-teal-50 to-cyan-50">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-gradient-to-r from-primary-50 to-primary-50">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-teal-100 flex items-center justify-center">
-                            <Wrench size={20} className="text-teal-600" />
+                        <div className="w-10 h-10 rounded-xl bg-primary-100 flex items-center justify-center">
+                            <Wrench size={20} className="text-primary-600" />
                         </div>
                         <div>
                             <h3 className="text-lg font-bold text-slate-800">Create PM Program</h3>
@@ -206,16 +206,16 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                         </div>
 
                         {/* ── PM Interval Recommendation ──────────── */}
-                        <div className="mx-6 mt-4 p-4 bg-teal-50 border border-teal-200 rounded-xl">
+                        <div className="mx-6 mt-4 p-4 bg-primary-50 border border-primary-200 rounded-xl">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 rounded-lg bg-teal-100 text-teal-600">
+                                <div className="p-2 rounded-lg bg-primary-100 text-primary-600">
                                     <Clock size={18} />
                                 </div>
                                 <div>
-                                    <p className="text-sm font-bold text-teal-800">
+                                    <p className="text-sm font-bold text-primary-800">
                                         Recommended: every {intervalHours.toLocaleString()} hours
                                     </p>
-                                    <p className="text-xs text-teal-600 mt-0.5">
+                                    <p className="text-xs text-primary-600 mt-0.5">
                                         ≈ {hoursToReadable(intervalHours)} · {Math.round(intervalHours / data.eta * 100)}% of η
                                     </p>
                                 </div>
@@ -232,7 +232,7 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                                 <input
                                     type="text" value={title}
                                     onChange={e => setTitle(e.target.value)}
-                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                                 />
                             </div>
 
@@ -253,7 +253,7 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                                                 case 'MONTHS': setIntervalHours(v * 720); break;
                                             }
                                         }}
-                                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                                     />
                                 </div>
                                 <div>
@@ -292,7 +292,7 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                                 <input
                                     type="date" value={nextDueDate}
                                     onChange={e => setNextDueDate(e.target.value)}
-                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                                    className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                                 />
                             </div>
 
@@ -302,7 +302,7 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                                 <textarea
                                     value={description}
                                     onChange={e => setDescription(e.target.value)}
-                                    className="w-full p-3 border border-slate-300 rounded-lg text-xs text-slate-600 font-mono h-32 resize-none bg-slate-50 focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500"
+                                    className="w-full p-3 border border-slate-300 rounded-lg text-xs text-slate-600 font-mono h-32 resize-none bg-slate-50 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                                 />
                             </div>
                         </div>
@@ -322,7 +322,7 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                                 <button
                                     onClick={handleSubmit}
                                     disabled={submitting || !title.trim()}
-                                    className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-teal-500 to-cyan-500 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center gap-2"
+                                    className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center gap-2"
                                 >
                                     {submitting ? (
                                         <><Loader2 size={14} className="animate-spin" /> Creating...</>

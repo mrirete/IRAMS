@@ -150,14 +150,14 @@ function getISOZone(tag: string, value: number): { zone: string; color: string; 
     if (k.includes('vib')) {
         // ISO 10816-3 Class II (15-75 kW): Good <2.8, Acceptable <7.1, Alert <18, Danger >18
         if (value < 2.8) return { zone: 'A', color: 'text-emerald-600', bgColor: 'bg-emerald-50' };
-        if (value < 7.1) return { zone: 'B', color: 'text-cyan-600', bgColor: 'bg-cyan-50' };
+        if (value < 7.1) return { zone: 'B', color: 'text-primary-600', bgColor: 'bg-primary-50' };
         if (value < 18) return { zone: 'C', color: 'text-amber-600', bgColor: 'bg-amber-50' };
         return { zone: 'D', color: 'text-red-600', bgColor: 'bg-red-50' };
     }
     if (k.includes('temp')) {
         // Temperature severity: Normal <80, Watch <100, Alert <130, Danger >130
         if (value < 80) return { zone: 'Normal', color: 'text-emerald-600', bgColor: 'bg-emerald-50' };
-        if (value < 100) return { zone: 'Watch', color: 'text-cyan-600', bgColor: 'bg-cyan-50' };
+        if (value < 100) return { zone: 'Watch', color: 'text-primary-600', bgColor: 'bg-primary-50' };
         if (value < 130) return { zone: 'Alert', color: 'text-amber-600', bgColor: 'bg-amber-50' };
         return { zone: 'Danger', color: 'text-red-600', bgColor: 'bg-red-50' };
     }
@@ -229,7 +229,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                     {onCreateWR && (
                         <button
                             onClick={onCreateWR}
-                            className="flex items-center gap-1.5 px-3 py-2 bg-cyan-50 border border-cyan-200 rounded-lg text-xs font-semibold text-cyan-700 hover:bg-cyan-100 hover:border-cyan-300 transition-all"
+                            className="flex items-center gap-1.5 px-3 py-2 bg-primary-50 border border-primary-200 rounded-lg text-xs font-semibold text-primary-700 hover:bg-primary-100 hover:border-primary-300 transition-all"
                         >
                             <Wrench size={13} /> Create Work Request
                         </button>
@@ -242,7 +242,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                 <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                            <div className="p-1.5 bg-cyan-50 rounded-lg text-cyan-600 border border-cyan-100">
+                            <div className="p-1.5 bg-primary-50 rounded-lg text-primary-600 border border-primary-100">
                                 <Gauge size={16} />
                             </div>
                             <div>
@@ -479,7 +479,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                     className="w-full flex items-center justify-between px-5 py-3.5 bg-slate-50/70 hover:bg-slate-50 transition-colors text-left"
                 >
                     <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 bg-cyan-50 rounded-lg text-cyan-600 border border-cyan-100">
+                        <div className="p-1.5 bg-primary-50 rounded-lg text-primary-600 border border-primary-100">
                             <Activity size={16} />
                         </div>
                         <div>

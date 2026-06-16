@@ -39,11 +39,11 @@ export const FMECADivision: React.FC<FMECADivisionProps> = ({
                         key={tab.id}
                         onClick={() => setActiveSubTab(tab.id)}
                         className={`group flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-250 ${activeSubTab === tab.id
-                            ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md shadow-teal-500/20'
+                            ? 'bg-gradient-to-r from-primary-500 to-primary-500 text-white shadow-md shadow-primary-500/20'
                             : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                             }`}
                     >
-                        <span className={`transition-colors duration-250 ${activeSubTab === tab.id ? 'text-white/90' : 'text-slate-400 group-hover:text-teal-500'}`}>{tab.icon}</span>
+                        <span className={`transition-colors duration-250 ${activeSubTab === tab.id ? 'text-white/90' : 'text-slate-400 group-hover:text-primary-500'}`}>{tab.icon}</span>
                         <span>{tab.label}</span>
                     </button>
                 ))}
@@ -51,7 +51,7 @@ export const FMECADivision: React.FC<FMECADivisionProps> = ({
 
             {/* Description */}
             <div className="flex items-center gap-2 px-1">
-                <div className="w-1 h-3.5 rounded-full bg-gradient-to-b from-teal-400 to-cyan-400" />
+                <div className="w-1 h-3.5 rounded-full bg-gradient-to-b from-primary-400 to-primary-400" />
                 <p className="text-xs text-slate-500">
                     {SUB_TABS.find(t => t.id === activeSubTab)?.desc}
                 </p>
