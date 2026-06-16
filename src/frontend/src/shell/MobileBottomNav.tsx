@@ -1,30 +1,32 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Wrench, Package, ClipboardList, MoreHorizontal } from 'lucide-react';
+import { LayoutDashboard, Wrench, Package, Plus, MoreHorizontal } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 /**
- * MobileBottomNav — Native-app style bottom tab bar for mobile viewports.
+ * MobileBottomNav — native-app style bottom tab bar for mobile viewports.
  * Visible only on screens < 768px (hidden via CSS `.mobile-bottom-nav`).
- * Provides one-thumb access to the 4 most-used EAM modules + "More" overflow.
  *
- * Pattern: MaintainX-style — operator/technician-first navigation.
- * Color: MaintainX Blue (#246CFF) active state.
+ * Pattern: MaintainX-style operator/technician-first navigation with a raised
+ * center "Report" button that opens the QuickReport bottom sheet (operator's
+ * fastest path to log a problem). Color: MaintainX Blue (#246CFF) active state.
  */
 
 interface NavItem {
     id: string;
     label: string;
-    icon: React.ElementType;
+    icon: LucideIcon;
     path: string;
-    /** Show a notification badge dot */
     badge?: boolean;
 }
 
-const NAV_ITEMS: NavItem[] = [
-    { id: 'home',     label: 'Home',     icon: LayoutDashboard, path: '/dashboard' },
-    { id: 'work',     label: 'My Work',  icon: Wrench,          path: '/work-orders' },
-    { id: 'requests', label: 'Requests', icon: ClipboardList,   path: '/requests' },
-    { id: 'assets',   label: 'Assets',   icon: Package,         path: '/assets' },
+// Two items either side of the raised center "Report" action.
+const LEFT_ITEMS: NavItem[] = [
+    { id: 'home', label: 'Home',    icon: LayoutDashboard, path: '/dashboard' },
+    { id: 'work', label: 'My Work', icon: Wrench,          path: '/work-orders' },
+];
+const RIGHT_ITEMS: NavItem[] = [
+    { id: 'assets', label: 'Assets', icon: Package, path: '/assets' },
 ];
 
 export const MobileBottomNav: React.FC = () => {
@@ -36,35 +38,48 @@ export const MobileBottomNav: React.FC = () => {
         return location.pathname.startsWith(path);
     };
 
+    const renderItem = (item: NavItem) => {
+        const active = isActive(item.path);
+        const Icon = item.icon;
+        return (
+            <button
+                key={item.id}
+                onClick={() => navigate(item.path)}
+                className={`mobile-bottom-nav-item ${active ? 'active' : ''}`}
+                aria-current={active ? 'page' : undefined}
+            >
+                <span className="nav-icon relative">
+                    <Icon size={22} strokeWidth={active ? 2.4 : 1.6} />
+                    {item.badge && <span className="nav-badge-dot" />}
+                </span>
+                <span className={`text-[10px] leading-none ${active ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
+            </button>
+        );
+    };
+
     return (
         <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
-            {NAV_ITEMS.map(item => {
-                const active = isActive(item.path);
-                return (
-                    <button
-                        key={item.id}
-                        onClick={() => navigate(item.path)}
-                        className={`mobile-bottom-nav-item ${active ? 'active' : ''}`}
-                        aria-current={active ? 'page' : undefined}
-                    >
-                        <span className="nav-icon relative">
-                            {React.createElement(item.icon as any, {
-                                size: 22,
-                                strokeWidth: active ? 2.4 : 1.6,
-                            })}
-                            {item.badge && <span className="nav-badge-dot" />}
-                        </span>
-                        <span className={`text-[10px] leading-none ${active ? 'font-bold' : 'font-medium'}`}>
-                            {item.label}
-                        </span>
-                    </button>
-                );
-            })}
+            {LEFT_ITEMS.map(renderItem)}
+
+            {/* Raised center "Report" action — opens the QuickReport bottom sheet */}
+            <button
+                onClick={() => window.dispatchEvent(new CustomEvent('open-quick-report'))}
+                className="mobile-bottom-nav-item"
+                aria-label="Report a problem"
+            >
+                <span className="flex flex-col items-center -mt-5">
+                    <span className="w-12 h-12 rounded-full bg-primary-600 text-white flex items-center justify-center shadow-lg shadow-primary-600/30 border-4 border-white active:scale-95 transition-transform">
+                        <Plus size={24} strokeWidth={2.6} />
+                    </span>
+                    <span className="text-[10px] leading-none font-bold text-primary-600 mt-1">Report</span>
+                </span>
+            </button>
+
+            {RIGHT_ITEMS.map(renderItem)}
+
             {/* "More" overflow — opens sidebar on tap */}
             <button
-                onClick={() => {
-                    window.dispatchEvent(new CustomEvent('toggle-sidebar'));
-                }}
+                onClick={() => window.dispatchEvent(new CustomEvent('toggle-sidebar'))}
                 className="mobile-bottom-nav-item"
             >
                 <span className="nav-icon">

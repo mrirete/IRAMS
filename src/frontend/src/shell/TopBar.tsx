@@ -83,15 +83,24 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
 
             {/* Right: Global Actions */}
             <div className="flex items-center gap-2 md:gap-4">
-                {/* Search — hidden on mobile, visible sm+ */}
-                <div className="relative hidden sm:block">
-                    <Search size={14} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Search IRAMS..."
-                        className="bg-slate-50 border border-slate-200 rounded-lg text-sm pl-9 pr-4 py-1.5 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500/30 w-40 md:w-56 text-slate-800 placeholder-slate-400 transition-all"
-                    />
-                </div>
+                {/* Search → opens the global Command Palette (⌘K). Hidden on mobile, visible sm+ */}
+                <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
+                    className="relative hidden sm:flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg text-sm pl-3 pr-2 py-1.5 w-40 md:w-56 text-slate-400 hover:border-slate-300 hover:bg-white transition-all"
+                    aria-label="Search (Ctrl+K)"
+                >
+                    <Search size={14} className="flex-shrink-0" />
+                    <span className="flex-1 text-left truncate">Search IRAMS...</span>
+                    <kbd className="hidden md:inline text-[10px] font-semibold text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 bg-white">⌘K</kbd>
+                </button>
+                {/* Mobile search icon — also opens the palette */}
+                <button
+                    onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
+                    className="sm:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
+                    aria-label="Search"
+                >
+                    <Search size={18} />
+                </button>
 
                 <NotificationCenter />
 

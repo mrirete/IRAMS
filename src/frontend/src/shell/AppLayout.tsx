@@ -8,6 +8,8 @@ import { RelanternCoPilot } from '../components/shell/RelanternCoPilot';
 // ── Lazy-loaded panels (not needed on initial render) ──
 const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
 const DevicePreviewer = lazy(() => import('../components/dev/DevicePreviewer').then(m => ({ default: m.DevicePreviewer })));
+const QuickReport = lazy(() => import('./QuickReport').then(m => ({ default: m.QuickReport })));
+const CommandPalette = lazy(() => import('./CommandPalette').then(m => ({ default: m.CommandPalette })));
 
 interface AppLayoutProps {
     children: React.ReactNode;
@@ -16,18 +18,41 @@ interface AppLayoutProps {
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-    const [isMainFrame, setIsMainFrame] = useState(true);
+    const [isQuickReportOpen, setIsQuickReportOpen] = useState(false);
+    const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+    // Computed once at mount (lazy init) — avoids a setState-in-effect cascade.
+    const [isMainFrame] = useState(() => typeof window === 'undefined' || window.top === window.self);
     const { isOpen: isRelanternOpen, contextData, contextType, closeRelantern } = useRelantern();
-
-    useEffect(() => {
-        setIsMainFrame(window.top === window.self);
-    }, []);
 
     // Listen for custom sidebar toggle events from MobileBottomNav "More" button
     useEffect(() => {
         const handler = () => setIsSidebarOpen(prev => !prev);
         window.addEventListener('toggle-sidebar', handler);
         return () => window.removeEventListener('toggle-sidebar', handler);
+    }, []);
+
+    // Listen for the operator "Report a Problem" event (MobileBottomNav center button)
+    useEffect(() => {
+        const handler = () => setIsQuickReportOpen(true);
+        window.addEventListener('open-quick-report', handler);
+        return () => window.removeEventListener('open-quick-report', handler);
+    }, []);
+
+    // Global command palette: ⌘K / Ctrl+K, plus the `open-command-palette` event (TopBar search)
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+                e.preventDefault();
+                setIsPaletteOpen(prev => !prev);
+            }
+        };
+        const onEvent = () => setIsPaletteOpen(true);
+        window.addEventListener('keydown', onKey);
+        window.addEventListener('open-command-palette', onEvent);
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            window.removeEventListener('open-command-palette', onEvent);
+        };
     }, []);
 
     return (
@@ -67,6 +92,20 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
             {/* Relantern CoPilot — Floating AI Coach (MaintainX-style) */}
             <RelanternCoPilot />
+
+            {/* Operator "Report a Problem" — bottom sheet, lazy loaded on first open */}
+            {isQuickReportOpen && (
+                <Suspense fallback={null}>
+                    <QuickReport open onClose={() => setIsQuickReportOpen(false)} />
+                </Suspense>
+            )}
+
+            {/* Global Command Palette (⌘K) — lazy loaded on first open */}
+            {isPaletteOpen && (
+                <Suspense fallback={null}>
+                    <CommandPalette open onClose={() => setIsPaletteOpen(false)} />
+                </Suspense>
+            )}
 
             {/* Mobile Bottom Tab Navigation — visible only on < 768px */}
             <MobileBottomNav />
