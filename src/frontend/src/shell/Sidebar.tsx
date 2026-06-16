@@ -402,9 +402,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 )}
             </nav>
 
-            {/* ── Version Footer ── */}
-            <div className="px-5 py-3 border-t border-slate-200/80 text-[10px] text-slate-400 font-medium">
-                IRAMS by Relantern · v2.0
+            {/* ── Version Footer ── build SHA lets you confirm at a glance which commit is deployed ── */}
+            <div
+                className="px-5 py-3 border-t border-slate-200/80 text-[10px] text-slate-400 font-medium"
+                title={`Built ${__BUILD_TIME__}`}
+            >
+                IRAMS by Relantern · v2.0 · <span className="font-mono text-slate-500">{__BUILD_SHA__}</span>
             </div>
         </div>
     );
