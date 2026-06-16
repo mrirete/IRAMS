@@ -1,15 +1,22 @@
 import React from 'react';
-import { TrendingUp, AlertTriangle, Activity } from 'lucide-react';
+import { TrendingUp, AlertTriangle, Activity, Hourglass } from 'lucide-react';
 import { useIntegrity } from '../hooks/useIntegrity';
+import { REMAINING_LIFE_CAP_YEARS } from '../eam/utils/integrityCalcs';
 
 export const CorrosionRatesPage: React.FC = () => {
-    const { corrosionRates, cmls, summary } = useIntegrity();
+    const { corrosionRates, cmls, summary, assessments } = useIntegrity();
+
+    const minLife = summary.min_remaining_life_years;
+    const lifeAtCap = minLife !== null && minLife >= REMAINING_LIFE_CAP_YEARS;
+    const lifeColor = minLife === null ? 'text-slate-400' : minLife < 2 ? 'text-red-500' : minLife < 5 ? 'text-amber-500' : 'text-emerald-500';
+    const lifeBg = minLife === null ? 'bg-slate-50' : minLife < 2 ? 'bg-red-50' : minLife < 5 ? 'bg-amber-50' : 'bg-emerald-50';
 
     return (
         <div className="space-y-6 pb-20">
-            <div><h1 className="text-2xl font-bold text-slate-800 tracking-tight">Corrosion Rate Monitoring</h1><p className="text-slate-500 text-sm mt-1">Short-term vs long-term rates — accelerating corrosion detection</p></div>
+            <div><h1 className="text-2xl font-bold text-slate-800 tracking-tight">Corrosion Rate Monitoring</h1><p className="text-slate-500 text-sm mt-1">API 510/570/653 corrosion rates &amp; remaining life — computed from thickness readings</p></div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                <Kpi label="Min Remaining Life" value={minLife === null ? '—' : lifeAtCap ? `>${REMAINING_LIFE_CAP_YEARS} yr` : `${minLife} yr`} icon={Hourglass} color={lifeColor} bg={lifeBg} />
                 <Kpi label="Avg Short-Term" value={`${summary.avg_corrosion_rate} mm/yr`} icon={TrendingUp} />
                 <Kpi label="Accelerating" value={summary.accelerating_count} icon={AlertTriangle} color="text-red-500" bg="bg-red-50" />
                 <Kpi label="Total CMLs" value={summary.total_cmls} icon={Activity} />
@@ -32,6 +39,8 @@ export const CorrosionRatesPage: React.FC = () => {
                             <th className="px-6 py-4">Component</th>
                             <th className="px-6 py-4 text-right">Short-Term (mm/yr)</th>
                             <th className="px-6 py-4 text-right">Long-Term (mm/yr)</th>
+                            <th className="px-6 py-4 text-right">Remaining Life</th>
+                            <th className="px-6 py-4 text-right">Next Insp. Due</th>
                             <th className="px-6 py-4">Type</th>
                             <th className="px-6 py-4 text-center">Accelerating?</th>
                             <th className="px-6 py-4 text-right">Last Reading</th>
@@ -40,13 +49,19 @@ export const CorrosionRatesPage: React.FC = () => {
                     <tbody className="divide-y divide-slate-100">
                         {corrosionRates.map(cr => {
                             const cml = cmls.find(c => c.id === cr.cml_id);
+                            const a = assessments.get(cr.cml_id);
+                            const life = a?.remaining_life_years ?? null;
+                            const lifeCapped = life !== null && life >= REMAINING_LIFE_CAP_YEARS;
+                            const lifeTone = a?.below_tmin ? 'text-red-600 font-bold' : life === null ? 'text-slate-400' : life < 2 ? 'text-red-600 font-bold' : life < 5 ? 'text-amber-600 font-semibold' : 'text-slate-700';
                             return (
-                                <tr key={cr.cml_id} className={`hover:bg-slate-50 transition-colors ${cr.is_accelerating ? 'bg-red-50/50' : ''}`}>
+                                <tr key={cr.cml_id} className={`hover:bg-slate-50 transition-colors ${cr.is_accelerating || a?.below_tmin ? 'bg-red-50/50' : ''}`}>
                                     <td className="px-6 py-4 font-mono text-slate-700">{cml?.cml_number || cr.cml_id}</td>
                                     <td className="px-6 py-4 font-mono text-xs text-slate-500">{cr.asset_id.toUpperCase()}</td>
                                     <td className="px-6 py-4 text-slate-600 capitalize">{cml?.component_type.replace(/_/g, ' ') || '—'}</td>
                                     <td className="px-6 py-4 text-right font-mono text-slate-800 font-medium">{cr.short_term_rate_mmpy.toFixed(2)}</td>
                                     <td className="px-6 py-4 text-right font-mono text-slate-600">{cr.long_term_rate_mmpy.toFixed(2)}</td>
+                                    <td className={`px-6 py-4 text-right font-mono ${lifeTone}`}>{a?.below_tmin ? 'BELOW T-MIN' : life === null ? '—' : lifeCapped ? `>${REMAINING_LIFE_CAP_YEARS} yr` : `${life.toFixed(1)} yr`}</td>
+                                    <td className="px-6 py-4 text-right font-mono text-xs text-slate-500">{a ? new Date(a.next_inspection_due).toLocaleDateString() : '—'}</td>
                                     <td className="px-6 py-4"><span className="px-2 py-1 text-xs bg-slate-100 text-slate-600 rounded capitalize font-medium">{cr.rate_type}</span></td>
                                     <td className="px-6 py-4 text-center">{cr.is_accelerating ? <span className="text-red-600 font-bold">⚠ YES</span> : <span className="text-emerald-500">—</span>}</td>
                                     <td className="px-6 py-4 text-right font-mono text-xs text-slate-500">{new Date(cr.last_reading_date).toLocaleDateString()}</td>

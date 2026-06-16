@@ -10,6 +10,7 @@ import {
 } from '../mockData/integrity';
 import integrityService from '../eam/services/IntegrityService';
 import { demoSeed } from '../config/demoMode';
+import { assessAllCMLs, assessmentToCorrosionRate, type CMLAssessment } from '../eam/utils/integrityCalcs';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  HOOK — Supabase first; mock seed only in DEMO_DATA mode (empty otherwise)
@@ -116,27 +117,40 @@ export function useIntegrity() {
         integrityService.updateInspection(id, updates as any).catch(() => { });
     }, []);
 
+    // ── API-510/570/653 assessments computed from thickness readings ──
+    // Derive corrosion rate + remaining life from the raw readings (the data
+    // inspectors actually capture) rather than trusting pre-stored rates.
+    const assessments = useMemo<Map<string, CMLAssessment>>(
+        () => assessAllCMLs(cmls, readings),
+        [cmls, readings],
+    );
+
+    // Effective corrosion rates: computed where we have ≥2 readings, else stored.
+    const effectiveCorrosionRates = useMemo<CorrosionRate[]>(() => {
+        const computed = Array.from(assessments.values()).map(assessmentToCorrosionRate);
+        const computedIds = new Set(computed.map(c => c.cml_id));
+        const storedOnly = corrosionRates.filter(c => !computedIds.has(c.cml_id));
+        return [...computed, ...storedOnly];
+    }, [assessments, corrosionRates]);
+
     // ── Summary computations ──────────────────────────────────────────
     const summary = useMemo<IntegritySummary>(() => {
-        const latestByCml = new Map<string, number>();
-        readings.forEach(r => {
-            const prev = latestByCml.get(r.cml_id);
-            if (!prev || r.measured_thickness_mm < prev) latestByCml.set(r.cml_id, r.measured_thickness_mm);
-        });
-        let belowTmin = 0;
-        cmls.forEach(c => {
-            const measured = latestByCml.get(c.id);
-            if (measured !== undefined && measured < c.tmin_mm) belowTmin++;
-        });
+        const assessed = Array.from(assessments.values());
+        const belowTmin = assessed.filter(a => a.below_tmin).length;
 
-        const rates = corrosionRates.map(c => c.short_term_rate_mmpy);
+        const rates = effectiveCorrosionRates.map(c => c.short_term_rate_mmpy);
         const avgRate = rates.length ? rates.reduce((a, b) => a + b, 0) / rates.length : 0;
+
+        const lives = assessed.map(a => a.remaining_life_years).filter((v): v is number => v !== null);
+        const minLife = lives.length ? Math.min(...lives) : null;
 
         return {
             total_cmls: cmls.length,
             cmls_below_tmin: belowTmin,
             avg_corrosion_rate: parseFloat(avgRate.toFixed(3)),
-            accelerating_count: corrosionRates.filter(c => c.is_accelerating).length,
+            min_remaining_life_years: minLife,
+            cmls_assessed: assessed.length,
+            accelerating_count: effectiveCorrosionRates.filter(c => c.is_accelerating).length,
             rbi_high_risk_count: rbiAssessments.filter(r => r.risk_rank === 'High' || r.risk_rank === 'Very High').length,
             active_damage_mechs: damageMechanisms.filter(dm => dm.status === 'active').length,
             ai_suggested_pending: damageMechanisms.filter(dm => dm.source === 'ai_suggested').length,
@@ -149,13 +163,14 @@ export function useIntegrity() {
             inspections_overdue: inspections.filter(i => i.status === 'overdue').length,
             inspections_completed_ytd: inspections.filter(i => i.status === 'completed').length,
         };
-    }, [cmls, readings, corrosionRates, rbiAssessments, damageMechanisms, ffsAssessments, iowParameters, inspections]);
+    }, [cmls, assessments, effectiveCorrosionRates, rbiAssessments, damageMechanisms, ffsAssessments, iowParameters, inspections]);
 
     return {
         loading,
         cmls,
         readings,
-        corrosionRates,
+        corrosionRates: effectiveCorrosionRates,
+        assessments,
         rbiAssessments,
         damageMechanisms,
         ffsAssessments,

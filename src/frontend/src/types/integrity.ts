@@ -248,6 +248,10 @@ export interface IntegritySummary {
     cmls_below_tmin: number;
     avg_corrosion_rate: number;
     accelerating_count: number;
+    /** Min remaining life across all assessed CMLs (years); null when none assessed */
+    min_remaining_life_years: number | null;
+    /** How many CMLs had enough readings to compute a rate */
+    cmls_assessed: number;
     rbi_high_risk_count: number;
     active_damage_mechs: number;
     ai_suggested_pending: number;
