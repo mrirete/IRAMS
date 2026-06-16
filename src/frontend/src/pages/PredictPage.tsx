@@ -20,7 +20,7 @@ interface NewInsightForm {
 
 const INSIGHT_TYPES: { value: InsightType; label: string; description: string; icon: React.ReactNode; color: string }[] = [
     { value: 'digital_twin', label: 'Digital Twin Snapshot', description: 'Create a new health baseline for an asset digital twin with current sensor data', icon: <Cpu size={20} />, color: 'text-accent-cyan bg-accent-cyan/10 border-accent-cyan/30' },
-    { value: 'rul_analysis', label: 'RUL Forecast', description: 'Run a Remaining Useful Life prediction using Weibull / Monte Carlo distributions', icon: <Clock size={20} />, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+    { value: 'rul_analysis', label: 'RUL Forecast', description: 'Heuristic Remaining Useful Life estimate from health-index trend (experimental — for rigorous fits use Reliability Modelling)', icon: <Clock size={20} />, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
     { value: 'alert_config', label: 'Prediction Alert Rule', description: 'Configure AI-driven alert thresholds for vibration, temperature, or flow anomalies', icon: <Zap size={20} />, color: 'text-yellow-500 bg-yellow-500/10 border-yellow-500/30' },
     { value: 'degradation_model', label: 'Degradation Model', description: 'Fit a degradation curve (corrosion / erosion / fatigue) to time-series failure data', icon: <BarChart2 size={20} />, color: 'text-red-400 bg-red-500/10 border-red-500/30' },
 ];
@@ -284,8 +284,13 @@ export const PredictPage: React.FC = () => {
             {/* Page Header */}
             <div className="flex flex-col md:flex-row md:justify-between md:items-end gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-800 font-sans tracking-tight">Predictive Insights</h1>
-                    <p className="text-slate-500 text-sm mt-1">AI-driven failure prediction and digital twin health monitoring</p>
+                    <div className="flex items-center gap-2.5">
+                        <h1 className="text-2xl font-bold text-slate-800 font-sans tracking-tight">Predictive Insights</h1>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 border border-amber-200">
+                            <FileWarning size={11} /> Experimental
+                        </span>
+                    </div>
+                    <p className="text-slate-500 text-sm mt-1">Condition-based health monitoring & heuristic forecasts — directional triage, not a fitted reliability model</p>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -313,6 +318,15 @@ export const PredictPage: React.FC = () => {
                         <Search size={16} className="text-slate-400 group-hover:text-accent-cyan transition-colors shrink-0" />
                     </button>
                 </div>
+            </div>
+
+            {/* ═══ Experimental disclaimer — keep heuristic forecasts from being mistaken for fitted reliability models ═══ */}
+            <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-card text-sm">
+                <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-amber-800 leading-relaxed">
+                    <strong>Experimental:</strong> Health Index and RUL here are <strong>heuristic estimates</strong> from condition trends — useful for triage, not for life decisions. For rigorous Weibull fits and Monte-Carlo availability analysis, use{' '}
+                    <a href="/reliability-modelling" className="font-semibold underline decoration-amber-400 underline-offset-2 hover:text-amber-900">Reliability Modelling</a>.
+                </p>
             </div>
 
             {/* ═══ Command Palette Modal ═══ */}
