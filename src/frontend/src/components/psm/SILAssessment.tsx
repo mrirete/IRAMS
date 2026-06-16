@@ -126,7 +126,7 @@ function SIFCard({ sif, onUpdate, onDelete }: {
                 <div className="flex justify-end gap-2">
                     <button onClick={() => setEditing(false)} className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600">Cancel</button>
                     <button onClick={() => { onUpdate(sif.id, form); setEditing(false); }}
-                        className="text-xs px-3 py-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600">Save</button>
+                        className="text-xs px-3 py-1.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600">Save</button>
                 </div>
             </div>
         );
@@ -213,7 +213,7 @@ const SILAssessmentPanel: React.FC<SILAssessmentProps> = ({ study, onRefresh }) 
                         <p className="text-xs text-slate-400 mt-0.5">IEC 61508 / IEC 61511 — SIL Assessment & Verification</p>
                     </div>
                     <button onClick={handleAdd}
-                        className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-1.5 rounded-lg hover:shadow-md transition-all">
+                        className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 px-3 py-1.5 rounded-lg hover:shadow-md transition-all">
                         <Plus size={12} /> Add SIF
                     </button>
                 </div>

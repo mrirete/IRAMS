@@ -19,7 +19,7 @@ const ELEMENT_STYLES: Record<BowTieElementType, { bg: string; border: string; te
     threat:              { bg: 'bg-orange-50',   border: 'border-orange-300', text: 'text-orange-700', label: 'Threat' },
     consequence:         { bg: 'bg-blue-50',   border: 'border-blue-300', text: 'text-blue-700', label: 'Consequence' },
     prevention_barrier:  { bg: 'bg-blue-50',     border: 'border-blue-300',   text: 'text-blue-700',   label: 'Prevention Barrier' },
-    mitigation_barrier:  { bg: 'bg-teal-50',     border: 'border-teal-300',   text: 'text-teal-700',   label: 'Mitigation Barrier' },
+    mitigation_barrier:  { bg: 'bg-primary-50',     border: 'border-primary-300',   text: 'text-primary-700',   label: 'Mitigation Barrier' },
     escalation_factor:   { bg: 'bg-amber-50',    border: 'border-amber-300',  text: 'text-amber-700',  label: 'Escalation Factor' },
     escalation_barrier:  { bg: 'bg-green-50',    border: 'border-green-300',  text: 'text-green-700',  label: 'Escalation Barrier' },
 };
@@ -208,10 +208,10 @@ const BowTieDiagram: React.FC<BowTieDiagramProps> = ({ study, onRefresh }) => {
 
                         {/* Mitigation Barriers */}
                         <div className="space-y-2">
-                            <div className="text-[10px] font-bold uppercase text-teal-500 tracking-wider text-center mb-2">Mitigation</div>
+                            <div className="text-[10px] font-bold uppercase text-primary-500 tracking-wider text-center mb-2">Mitigation</div>
                             {mitigationBarriers.map(b => <ElementCard key={b.id} element={b} onUpdate={updateElement} onDelete={deleteElement} />)}
                             <button onClick={() => addElement('mitigation_barrier')}
-                                className="w-full text-xs text-teal-500 hover:bg-teal-50 border border-dashed border-teal-300 rounded-lg py-2 flex items-center justify-center gap-1">
+                                className="w-full text-xs text-primary-500 hover:bg-primary-50 border border-dashed border-primary-300 rounded-lg py-2 flex items-center justify-center gap-1">
                                 <Plus size={12} /> Barrier
                             </button>
                         </div>

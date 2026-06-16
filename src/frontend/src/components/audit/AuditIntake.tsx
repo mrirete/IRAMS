@@ -173,7 +173,7 @@ export const AuditIntake: React.FC<Props> = ({ initialData, onComplete }) => {
         <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
             {/* Header */}
             <div className="text-center mb-2">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-primary-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
                     <ClipboardList size={24} className="text-white" />
                 </div>
                 <h2 className="text-2xl font-black text-slate-800">Step 1 — Intake & Scope</h2>
@@ -676,7 +676,7 @@ export const AuditIntake: React.FC<Props> = ({ initialData, onComplete }) => {
                 <button
                     onClick={() => canSubmit && onComplete(form)}
                     disabled={!canSubmit}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-40 transition-all flex items-center gap-2 hover:scale-[1.02]"
+                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-primary-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg disabled:opacity-40 transition-all flex items-center gap-2 hover:scale-[1.02]"
                 >
                     Proceed to Document Review <ArrowRight size={16} />
                 </button>

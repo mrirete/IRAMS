@@ -101,7 +101,7 @@ const EventTree: React.FC<EventTreeProps> = ({ study, onRefresh }) => {
                         <p className="text-xs text-slate-400 mt-0.5">IEC 62502:2010 — Event Tree Analysis</p>
                     </div>
                     <button onClick={handleAdd}
-                        className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-1.5 rounded-lg hover:shadow-md transition-all">
+                        className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 px-3 py-1.5 rounded-lg hover:shadow-md transition-all">
                         <Plus size={12} /> New Event Tree
                     </button>
                 </div>
@@ -128,7 +128,7 @@ const EventTree: React.FC<EventTreeProps> = ({ study, onRefresh }) => {
                             <div>
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-[10px] font-semibold text-slate-500 uppercase">Safety Function Headers</span>
-                                    <button onClick={addHeader} className="text-[10px] text-teal-600 flex items-center gap-0.5"><Plus size={10} /> Add</button>
+                                    <button onClick={addHeader} className="text-[10px] text-primary-600 flex items-center gap-0.5"><Plus size={10} /> Add</button>
                                 </div>
                                 {form.headers.map((h, idx) => (
                                     <div key={idx} className="flex items-center gap-2 mb-1">
@@ -147,7 +147,7 @@ const EventTree: React.FC<EventTreeProps> = ({ study, onRefresh }) => {
 
                             <div className="flex justify-end gap-2">
                                 <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg">Cancel</button>
-                                <button onClick={handleSave} className="text-xs px-3 py-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600">Calculate & Save</button>
+                                <button onClick={handleSave} className="text-xs px-3 py-1.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600">Calculate & Save</button>
                             </div>
                         </div>
                     ) : (

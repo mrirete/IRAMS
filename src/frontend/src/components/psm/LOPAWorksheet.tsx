@@ -59,7 +59,7 @@ function IPLEditor({ ipls, onChange }: { ipls: IPL[]; onChange: (ipls: IPL[]) =>
         <div className="space-y-2">
             <div className="flex items-center justify-between">
                 <span className="text-[10px] font-semibold uppercase text-slate-500">Independent Protection Layers</span>
-                <button onClick={addIPL} className="text-[10px] text-teal-600 hover:text-teal-700 flex items-center gap-0.5"><Plus size={10} /> Add IPL</button>
+                <button onClick={addIPL} className="text-[10px] text-primary-600 hover:text-primary-700 flex items-center gap-0.5"><Plus size={10} /> Add IPL</button>
             </div>
             {ipls.map((ipl, idx) => (
                 <div key={idx} className="flex items-center gap-2 bg-slate-50 rounded-lg p-2">
@@ -197,7 +197,7 @@ function ScenarioCard({ scenario, onUpdate, onDelete }: {
                             {form.ie_frequency && form.ipls.length > 0 && (
                                 <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
                                     <div className="flex items-center gap-2 mb-2">
-                                        <Calculator size={14} className="text-teal-500" />
+                                        <Calculator size={14} className="text-primary-500" />
                                         <span className="text-[10px] font-semibold uppercase text-slate-500">Live Calculation</span>
                                     </div>
                                     <div className="grid grid-cols-3 gap-3 text-xs">
@@ -234,7 +234,7 @@ function ScenarioCard({ scenario, onUpdate, onDelete }: {
                             )}
                             <div className="flex justify-end gap-2">
                                 <button onClick={() => setEditing(false)} className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
-                                <button onClick={handleSave} className="text-xs px-3 py-1.5 bg-teal-500 text-white rounded-lg hover:bg-teal-600">Save</button>
+                                <button onClick={handleSave} className="text-xs px-3 py-1.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600">Save</button>
                             </div>
                         </>
                     ) : (
@@ -320,7 +320,7 @@ const LOPAWorksheet: React.FC<LOPAWorksheetProps> = ({ study, onRefresh }) => {
                         </p>
                     </div>
                     <button onClick={handleAdd}
-                        className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-1.5 rounded-lg hover:shadow-md transition-all">
+                        className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 px-3 py-1.5 rounded-lg hover:shadow-md transition-all">
                         <Plus size={12} /> Add Scenario
                     </button>
                 </div>

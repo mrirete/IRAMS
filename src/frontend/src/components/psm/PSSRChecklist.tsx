@@ -74,7 +74,7 @@ const PSSRChecklist: React.FC<PSSRChecklistProps> = ({ study, onRefresh }) => {
                     <ClipboardList size={32} className="text-slate-300 mx-auto mb-3" />
                     <p className="text-sm text-slate-500 mb-3">No checklist items yet.</p>
                     <button onClick={handleInit}
-                        className="text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 px-4 py-2 rounded-lg hover:shadow-md transition-all">
+                        className="text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 px-4 py-2 rounded-lg hover:shadow-md transition-all">
                         Initialize Standard PSSR Checklist (25 items)
                     </button>
                 </div>

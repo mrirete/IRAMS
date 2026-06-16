@@ -89,7 +89,7 @@ const STUDY_TYPE_CONFIG: Record<PSMStudyType, StudyTypeConfig> = {
             { key: 'consequence_categories', label: 'Consequence Endpoints', type: 'select', options: ['Safety (fatality)', 'Safety (injury)', 'Environmental', 'Financial', 'Reputation'], tooltip: 'Worst credible consequence category per CCPS methodology' },
         ],
         teamRoles: ['LOPA Facilitator', 'Scribe', 'Process Safety Engineer', 'SIS Engineer', 'Operations Rep', 'Reliability Engineer'],
-        color: 'from-teal-500 to-cyan-500',
+        color: 'from-primary-500 to-primary-500',
     },
     bowtie: {
         label: 'Bow-Tie Analysis',
@@ -184,8 +184,8 @@ const TAXONOMY_BADGES: Record<string, { label: string; color: string }> = {
     site:      { label: 'SITE',    color: 'bg-blue-100 text-blue-700 border-blue-200' },
     unit:      { label: 'UNIT',    color: 'bg-blue-100 text-blue-700 border-blue-200' },
     system:    { label: 'SYSTEM',  color: 'bg-blue-100 text-blue-700 border-blue-200' },
-    equipment: { label: 'EQUIP',   color: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
-    subunit:   { label: 'SUBUNIT', color: 'bg-teal-100 text-teal-700 border-teal-200' },
+    equipment: { label: 'EQUIP',   color: 'bg-primary-100 text-primary-700 border-primary-200' },
+    subunit:   { label: 'SUBUNIT', color: 'bg-primary-100 text-primary-700 border-primary-200' },
     component: { label: 'COMP',    color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
     location:  { label: 'LOC',     color: 'bg-amber-100 text-amber-700 border-amber-200' },
 };
@@ -367,7 +367,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                     <button
                                         onClick={() => s.num <= step && setStep(s.num)}
                                         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
-                                            s.num === step ? 'bg-teal-50 text-teal-700 ring-1 ring-teal-200' :
+                                            s.num === step ? 'bg-primary-50 text-primary-700 ring-1 ring-primary-200' :
                                             s.num < step ? 'bg-emerald-50 text-emerald-600' :
                                             'bg-slate-50 text-slate-400'
                                         }`}
@@ -412,7 +412,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                     value={title}
                                     onChange={e => setTitle(e.target.value)}
                                     placeholder={`e.g. ${studyType === 'hazop' ? 'Gas Compression Unit HAZOP' : studyType === 'lopa' ? 'H₂S Release LOPA — Amine Unit' : studyType === 'pssr' ? 'Turbine T-201 Post-MOC PSSR' : `${config.label} — [Process Unit]`}`}
-                                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400"
+                                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400"
                                 />
                             </div>
 
@@ -422,7 +422,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                 <select
                                     value={methodology}
                                     onChange={e => setMethodology(e.target.value)}
-                                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400"
+                                    className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400"
                                 >
                                     {config.methodologies.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
@@ -467,7 +467,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                             onChange={e => { setAssetSearch(e.target.value); setShowAssetDropdown(true); }}
                                             onFocus={() => setShowAssetDropdown(true)}
                                             placeholder="Search by tag, name, or level…"
-                                            className="w-full border border-slate-200 rounded-lg pl-9 pr-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400"
+                                            className="w-full border border-slate-200 rounded-lg pl-9 pr-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400"
                                         />
                                     </div>
                                 )}
@@ -478,7 +478,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                             const badge = TAXONOMY_BADGES[a.taxonomy_level] || TAXONOMY_BADGES.equipment;
                                             return (
                                                 <button key={a.id}
-                                                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-teal-50 transition-colors text-left"
+                                                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-primary-50 transition-colors text-left"
                                                         onClick={() => {
                                                             setAssetId(a.id); setAssetTag(a.tag); setAssetName(a.name);
                                                             setShowAssetDropdown(false); setAssetSearch('');
@@ -501,12 +501,12 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                 <div>
                                     <label className="text-xs text-slate-500 font-medium mb-1.5 block">Study Date</label>
                                     <input type="date" value={studyDate} onChange={e => setStudyDate(e.target.value)}
-                                           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400" />
+                                           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400" />
                                 </div>
                                 <div>
                                     <label className="text-xs text-slate-500 font-medium mb-1.5 block">Next Review Date</label>
                                     <input type="date" value={nextReview} onChange={e => setNextReview(e.target.value)}
-                                           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400" />
+                                           className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400" />
                                 </div>
                             </div>
                         </div>
@@ -521,7 +521,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                 </label>
                                 <input value={facilitator} onChange={e => setFacilitator(e.target.value)}
                                        placeholder="e.g. Jane Smith — Senior Process Safety Engineer"
-                                       className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400" />
+                                       className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400" />
                             </div>
 
                             {/* Scope */}
@@ -530,7 +530,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                 <textarea value={scopeDescription} onChange={e => setScopeDescription(e.target.value)}
                                           rows={3}
                                           placeholder={`Define the scope and boundaries of this ${config.label}. Include system boundaries, operating modes, and any exclusions.`}
-                                          className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400" />
+                                          className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400" />
                             </div>
 
                             {/* Team Members */}
@@ -542,7 +542,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                         <span className="text-[10px] text-slate-400 font-normal">— multidisciplinary team required</span>
                                     </label>
                                     <button onClick={addTeamMember}
-                                            className="flex items-center gap-1 text-[11px] font-medium text-teal-600 hover:text-teal-700 transition-colors">
+                                            className="flex items-center gap-1 text-[11px] font-medium text-primary-600 hover:text-primary-700 transition-colors">
                                         <Plus size={12} /> Add Member
                                     </button>
                                 </div>
@@ -558,15 +558,15 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                             <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100">
                                                 <input value={member.name} onChange={e => updateTeamMember(idx, 'name', e.target.value)}
                                                        placeholder="Full Name"
-                                                       className="flex-1 min-w-0 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-400/30" />
+                                                       className="flex-1 min-w-0 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-primary-400/30" />
                                                 <select value={member.role} onChange={e => updateTeamMember(idx, 'role', e.target.value)}
-                                                        className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-400/30">
+                                                        className="bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-700 focus:outline-none focus:ring-1 focus:ring-primary-400/30">
                                                     {config.teamRoles.map(r => <option key={r} value={r}>{r}</option>)}
                                                     <option value="Other">Other</option>
                                                 </select>
                                                 <input value={member.company || ''} onChange={e => updateTeamMember(idx, 'company', e.target.value)}
                                                        placeholder="Company"
-                                                       className="w-28 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-400/30" />
+                                                       className="w-28 bg-white border border-slate-200 rounded-md px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-primary-400/30" />
                                                 <button onClick={() => removeTeamMember(idx)}
                                                         className="p-1 text-slate-400 hover:text-red-500 transition-colors">
                                                     <Trash2 size={12} />
@@ -604,10 +604,10 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                     {field.type === 'textarea' ? (
                                         <textarea value={metadata[field.key] || ''} onChange={e => setMetadata(m => ({ ...m, [field.key]: e.target.value }))}
                                                   rows={2} placeholder={field.placeholder}
-                                                  className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400" />
+                                                  className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 resize-none focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400" />
                                     ) : field.type === 'select' ? (
                                         <select value={metadata[field.key] || ''} onChange={e => setMetadata(m => ({ ...m, [field.key]: e.target.value }))}
-                                                className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400">
+                                                className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400">
                                             <option value="">— Select —</option>
                                             {field.options?.map(o => <option key={o} value={o}>{o}</option>)}
                                         </select>
@@ -615,7 +615,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                         <input type={field.type === 'number' ? 'number' : 'text'}
                                                value={metadata[field.key] || ''} onChange={e => setMetadata(m => ({ ...m, [field.key]: field.type === 'number' ? parseFloat(e.target.value) || '' : e.target.value }))}
                                                placeholder={field.placeholder}
-                                               className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400/30 focus:border-teal-400" />
+                                               className="w-full border border-slate-200 rounded-lg px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-400/30 focus:border-primary-400" />
                                     )}
                                 </div>
                             ))}
@@ -715,7 +715,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                 <button
                                     onClick={() => setStep(s => s + 1)}
                                     disabled={(step === 1 && !step1Valid) || (step === 2 && !step2Valid)}
-                                    className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-medium rounded-lg text-xs hover:shadow-md hover:shadow-teal-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                    className="flex items-center gap-1 px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-500 text-white font-medium rounded-lg text-xs hover:shadow-md hover:shadow-primary-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
                                     Next <ChevronRight size={14} />
                                 </button>
@@ -723,7 +723,7 @@ export const CreateStudyModal: React.FC<CreateStudyModalProps> = ({
                                 <button
                                     onClick={handleCreate}
                                     disabled={creating}
-                                    className="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-bold rounded-lg text-xs hover:shadow-lg hover:shadow-teal-500/20 transition-all disabled:opacity-60"
+                                    className="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-primary-500 to-primary-500 text-white font-bold rounded-lg text-xs hover:shadow-lg hover:shadow-primary-500/20 transition-all disabled:opacity-60"
                                 >
                                     {creating ? (
                                         <><span className="animate-spin inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full" /> Creating…</>

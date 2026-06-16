@@ -201,7 +201,7 @@ function RiskModal({ entry, onSave, onCancel }: {
 
                 <div className="flex justify-end gap-2 pt-2">
                     <button onClick={onCancel} className="text-xs px-4 py-2 border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
-                    <button onClick={() => onSave(form)} className="text-xs px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600">Save</button>
+                    <button onClick={() => onSave(form)} className="text-xs px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600">Save</button>
                 </div>
             </div>
         </div>
@@ -265,7 +265,7 @@ const RiskRegister: React.FC = () => {
                         <p className="text-xs text-slate-400 mt-0.5">ISO 31000:2018 — Master Risk Log</p>
                     </div>
                     <button onClick={() => setEditingEntry({ status: 'open', category: 'safety' })}
-                        className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-1.5 rounded-lg hover:shadow-md transition-all">
+                        className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 px-3 py-1.5 rounded-lg hover:shadow-md transition-all">
                         <Plus size={12} /> New Risk
                     </button>
                 </div>

@@ -102,7 +102,7 @@ function StudyListPanel({ studies, studyType, onSelect, onNew, selectedId }: {
                 </div>
                 <button
                     onClick={onNew}
-                    className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-1.5 rounded-lg hover:shadow-md hover:shadow-teal-500/20 transition-all"
+                    className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 px-3 py-1.5 rounded-lg hover:shadow-md hover:shadow-primary-500/20 transition-all"
                 >
                     <Plus size={12} /> New
                 </button>
@@ -117,7 +117,7 @@ function StudyListPanel({ studies, studyType, onSelect, onNew, selectedId }: {
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         placeholder="Search studies..."
-                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500/30 focus:border-teal-400"
+                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-400"
                     />
                 </div>
             </div>
@@ -134,7 +134,7 @@ function StudyListPanel({ studies, studyType, onSelect, onNew, selectedId }: {
                             key={study.id}
                             onClick={() => onSelect(study)}
                             className={`w-full text-left p-3 hover:bg-slate-50 transition-colors flex items-center gap-3 ${
-                                selectedId === study.id ? 'bg-teal-50/50 border-l-2 border-teal-500' : ''
+                                selectedId === study.id ? 'bg-primary-50/50 border-l-2 border-primary-500' : ''
                             }`}
                         >
                             <div className="flex-1 min-w-0">
@@ -285,11 +285,11 @@ export const PsmPage: React.FC = () => {
                         onClick={() => { setActiveDivision(div.id); setSelectedStudy(null); }}
                         className={`group flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-250 whitespace-nowrap ${
                             activeDivision === div.id
-                                ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-md shadow-teal-500/20'
+                                ? 'bg-gradient-to-r from-primary-500 to-primary-500 text-white shadow-md shadow-primary-500/20'
                                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                         }`}
                     >
-                        <span className={`transition-colors ${activeDivision === div.id ? 'text-white/90' : 'text-slate-400 group-hover:text-teal-500'}`}>
+                        <span className={`transition-colors ${activeDivision === div.id ? 'text-white/90' : 'text-slate-400 group-hover:text-primary-500'}`}>
                             {div.icon}
                         </span>
                         <span>{div.label}</span>
@@ -299,7 +299,7 @@ export const PsmPage: React.FC = () => {
 
             {/* Division description */}
             <div className="flex items-center gap-2 px-1">
-                <div className="w-1 h-3.5 rounded-full bg-gradient-to-b from-teal-400 to-cyan-400" />
+                <div className="w-1 h-3.5 rounded-full bg-gradient-to-b from-primary-400 to-primary-400" />
                 <p className="text-xs text-slate-500">
                     {DIVISIONS.find(d => d.id === activeDivision)?.desc}
                 </p>
@@ -323,7 +323,7 @@ export const PsmPage: React.FC = () => {
                                 onClick={() => { setHazardSubTab(tab.id); setSelectedStudy(null); }}
                                 className={`flex-1 py-2 px-3 rounded-md text-xs font-medium transition-all ${
                                     hazardSubTab === tab.id
-                                        ? 'bg-white text-teal-700 shadow-sm'
+                                        ? 'bg-white text-primary-700 shadow-sm'
                                         : 'text-slate-500 hover:text-slate-700'
                                 }`}
                             >
@@ -378,7 +378,7 @@ export const PsmPage: React.FC = () => {
                                 onClick={() => { setRiskSubTab(tab.id); setSelectedStudy(null); }}
                                 className={`flex-1 py-2 px-3 rounded-md text-xs font-medium transition-all ${
                                     riskSubTab === tab.id
-                                        ? 'bg-white text-teal-700 shadow-sm'
+                                        ? 'bg-white text-primary-700 shadow-sm'
                                         : 'text-slate-500 hover:text-slate-700'
                                 }`}
                             >

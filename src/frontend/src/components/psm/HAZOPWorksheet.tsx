@@ -51,16 +51,16 @@ function DeviationRow({ dev, onUpdate, onDelete }: {
 
     if (editing) {
         return (
-            <tr className="bg-teal-50/30">
+            <tr className="bg-primary-50/30">
                 <td className="p-2">
                     <select value={form.guide_word} onChange={e => setForm(f => ({ ...f, guide_word: e.target.value }))}
-                        className="w-full text-xs border border-slate-200 rounded px-2 py-1 focus:ring-2 focus:ring-teal-400/30">
+                        className="w-full text-xs border border-slate-200 rounded px-2 py-1 focus:ring-2 focus:ring-primary-400/30">
                         {GUIDE_WORDS.map(gw => <option key={gw} value={gw}>{gw}</option>)}
                     </select>
                 </td>
                 <td className="p-2">
                     <select value={form.parameter} onChange={e => setForm(f => ({ ...f, parameter: e.target.value }))}
-                        className="w-full text-xs border border-slate-200 rounded px-2 py-1 focus:ring-2 focus:ring-teal-400/30">
+                        className="w-full text-xs border border-slate-200 rounded px-2 py-1 focus:ring-2 focus:ring-primary-400/30">
                         {PARAMETERS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
                 </td>
@@ -250,7 +250,7 @@ function NodeSection({ node, onUpdateNode, onDeleteNode, onRefresh }: {
 
                     <div className="p-3 border-t border-slate-50">
                         <button onClick={handleAddDeviation}
-                            className="flex items-center gap-1.5 text-xs text-teal-600 hover:text-teal-700 font-medium hover:bg-teal-50 px-3 py-1.5 rounded-lg transition-colors">
+                            className="flex items-center gap-1.5 text-xs text-primary-600 hover:text-primary-700 font-medium hover:bg-primary-50 px-3 py-1.5 rounded-lg transition-colors">
                             <Plus size={12} /> Add Deviation
                         </button>
                     </div>
@@ -351,7 +351,7 @@ const HAZOPWorksheet: React.FC<HAZOPWorksheetProps> = ({ study, onRefresh }) => 
 
             {/* Add Node */}
             <button onClick={handleAddNode}
-                className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-300 rounded-xl text-sm font-medium text-slate-500 hover:border-teal-400 hover:text-teal-600 hover:bg-teal-50/30 transition-all">
+                className="w-full flex items-center justify-center gap-2 p-4 border-2 border-dashed border-slate-300 rounded-xl text-sm font-medium text-slate-500 hover:border-primary-400 hover:text-primary-600 hover:bg-primary-50/30 transition-all">
                 <Plus size={16} /> Add Process Node
             </button>
         </div>

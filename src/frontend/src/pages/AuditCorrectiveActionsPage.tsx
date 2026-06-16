@@ -221,7 +221,7 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase ${sevCfg.bg} ${sevCfg.color}`}>{sevCfg.label}</span>
                                                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md uppercase ${stCfg.bg} ${stCfg.color}`}>{stCfg.label}</span>
                                                 {action.workOrderId && (
-                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-cyan-100 text-cyan-700 flex items-center gap-0.5">
+                                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-700 flex items-center gap-0.5">
                                                         <Wrench size={8} /> {action.workOrderId}
                                                     </span>
                                                 )}
@@ -266,7 +266,7 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                             <Eye size={16} />
                                         </button>
                                         {!action.workOrderId && action.status !== 'closed' && (
-                                            <button className="p-2 rounded-lg hover:bg-cyan-50 text-slate-400 hover:text-cyan-600 transition-colors" title="Convert to Work Order">
+                                            <button className="p-2 rounded-lg hover:bg-primary-50 text-slate-400 hover:text-primary-600 transition-colors" title="Convert to Work Order">
                                                 <Wrench size={16} />
                                             </button>
                                         )}

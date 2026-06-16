@@ -56,7 +56,7 @@ function PHARow({ item, onUpdate, onDelete }: {
 
     if (editing) {
         return (
-            <tr className="bg-teal-50/30">
+            <tr className="bg-primary-50/30">
                 <td className="p-2">
                     <select value={form.item_type} onChange={e => setForm(f => ({ ...f, item_type: e.target.value as PHAItemType }))}
                         className="w-full text-xs border border-slate-200 rounded px-2 py-1">
@@ -262,7 +262,7 @@ const PHAWorksheet: React.FC<PHAWorksheetProps> = ({ study, onRefresh }) => {
                 </div>
 
                 <button onClick={handleAdd}
-                    className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-teal-500 to-cyan-500 px-3 py-1.5 rounded-lg hover:shadow-md hover:shadow-teal-500/20 transition-all">
+                    className="flex items-center gap-1 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 px-3 py-1.5 rounded-lg hover:shadow-md hover:shadow-primary-500/20 transition-all">
                     <Plus size={12} /> Add Item
                 </button>
             </div>

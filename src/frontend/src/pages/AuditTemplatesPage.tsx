@@ -81,7 +81,7 @@ const CATEGORY_CONFIG: Record<TemplateCategory, CategoryStyle> = {
         label: 'Environmental', icon: <Leaf size={20} />,
         color: 'text-emerald-600', bg: 'bg-emerald-50',
         border: 'border-l-emerald-500', gradient: 'from-emerald-50/80 via-white to-white',
-        ring: 'ring-emerald-300 shadow-emerald-500/10', iconBg: 'bg-gradient-to-br from-emerald-500 to-teal-600',
+        ring: 'ring-emerald-300 shadow-emerald-500/10', iconBg: 'bg-gradient-to-br from-emerald-500 to-primary-600',
         accentBar: 'bg-emerald-500',
     },
     custom: {
