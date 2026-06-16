@@ -1997,7 +1997,14 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                 <span className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-1.5 rounded">{task.sequence}</span>
                                 <span className="text-[10px] text-slate-400">{(task.instructions || []).length} steps</span>
                             </div>
-                            <div className="font-medium text-slate-900 text-sm mb-1">{task.description}</div>
+                            <input
+                                type="text"
+                                value={task.description}
+                                onChange={(e) => { e.stopPropagation(); updateTask(task.id, { description: e.target.value }); }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-full font-medium text-slate-900 text-sm mb-1 bg-transparent border-none p-0 focus:ring-0 focus:outline-none placeholder:text-slate-300"
+                                placeholder="Enter task step name..."
+                            />
                             <div className="flex justify-between items-center text-xs text-slate-500">
                                 <span>{task.estHours} Hrs</span>
                             </div>

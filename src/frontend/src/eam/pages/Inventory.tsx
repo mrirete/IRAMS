@@ -21,6 +21,7 @@ import { AskRelanternButton } from '../components/AskRelanternButton';
 import { useAuth } from '../contexts/AuthContext';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
+import { Badge, Button, type Tone } from '../components/ui';
 import { InventoryItemRecord } from '../schema';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import type { ImportType } from '../services/assetTemplates';
@@ -2510,11 +2511,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
 
                     {filteredInventory.map(item => {
                         const stockStatus = item.totalQtyOnHand === 0 ? 'OUT' : item.totalQtyOnHand <= (item.minLevel || 0) ? 'LOW' : 'OK';
-                        const stockColors = {
-                            OUT: 'bg-red-100 text-red-700 border-red-200',
-                            LOW: 'bg-amber-100 text-amber-700 border-amber-200',
-                            OK: 'bg-green-100 text-green-700 border-green-200'
-                        };
+                        const stockTones: Record<string, Tone> = { OUT: 'danger', LOW: 'warning', OK: 'success' };
                         const stockLabels = { OUT: 'Out of Stock', LOW: 'Low Stock', OK: 'In Stock' };
                         const primaryLocation = item.stockLocations?.[0];
 
@@ -2549,10 +2546,8 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                         <div className="flex justify-between items-start mb-0.5">
                                             <span className="font-mono text-xs font-bold text-slate-700">{item.code}</span>
                                             <div className="flex items-center gap-1 flex-shrink-0">
-                                                {item.isCritical && <span className="crit-a-badge">⚡ Critical</span>}
-                                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${stockColors[stockStatus]}`}>
-                                                    {stockLabels[stockStatus]}
-                                                </span>
+                                                {item.isCritical && <Badge tone="warning">⚡ Critical</Badge>}
+                                                <Badge tone={stockTones[stockStatus]} dot>{stockLabels[stockStatus]}</Badge>
                                             </div>
                                         </div>
                                         {/* Row 2: Description */}
@@ -2605,17 +2600,12 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         }
                         actions={
                             <>
-                                <button onClick={() => setShowStockModal(true)} disabled={!canEdit} className={`px-3 py-1 bg-white border border-slate-300 rounded text-xs font-medium text-slate-700 flex items-center gap-1.5 ${!canEdit ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`} title={!canEdit ? 'Insufficient permissions' : 'Adjust stock'}>
-                                    <ClipboardCheck size={14} /> Adjust
-                                </button>
-                                <button
-                                    onClick={handleSaveItem}
-                                    disabled={!canEdit}
-                                    className={`bg-primary-600 text-white px-3 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 ${!canEdit ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-500'}`}
-                                    title={!canEdit ? 'Insufficient permissions' : 'Save changes'}
-                                >
-                                    <Save size={14} /> Save
-                                </button>
+                                <Button variant="secondary" size="sm" onClick={() => setShowStockModal(true)} disabled={!canEdit} leftIcon={<ClipboardCheck size={14} />} title={!canEdit ? 'Insufficient permissions' : 'Adjust stock'}>
+                                    Adjust
+                                </Button>
+                                <Button size="sm" onClick={handleSaveItem} disabled={!canEdit} leftIcon={<Save size={14} />} title={!canEdit ? 'Insufficient permissions' : 'Save changes'}>
+                                    Save
+                                </Button>
                             </>
                         }
                     />

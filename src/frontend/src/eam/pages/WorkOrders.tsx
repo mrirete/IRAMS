@@ -3402,9 +3402,17 @@ const TasksTab: React.FC<{
                                     {task.sequence}
                                 </span>
 
-                                {/* Task description */}
+                                {/* Task description — editable inline */}
                                 <div className="flex-1 min-w-0">
-                                    <div className="font-medium text-sm text-slate-900 truncate">{task.description}</div>
+                                    <input
+                                        type="text"
+                                        value={task.description}
+                                        onChange={(e) => updateTask(task.id, { description: e.target.value })}
+                                        onClick={(e) => e.stopPropagation()}
+                                        onFocus={(e) => e.stopPropagation()}
+                                        className="w-full font-medium text-sm text-slate-900 bg-transparent border-none p-0 focus:ring-0 focus:outline-none placeholder:text-slate-300 truncate"
+                                        placeholder="Enter task step name..."
+                                    />
                                     {/* Dependency indicator */}
                                     {task.predecessorTaskId && (() => {
                                         const pred = tasks.find(t => t.id === task.predecessorTaskId);
@@ -3415,6 +3423,15 @@ const TasksTab: React.FC<{
                                         ) : null;
                                     })()}
                                 </div>
+
+                                {/* Delete task button — always visible */}
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
+                                    className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0"
+                                    title="Delete task step"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
 
                                 {/* Resource badges (compact) — hidden on mobile */}
                                 <div className="hidden sm:flex items-center gap-1.5 flex-shrink-0">
@@ -4008,7 +4025,7 @@ const TaskEditor: React.FC<{
                         </div>
                     </div>
 
-                    <div className="p-1.5 sm:p-3">
+                    <div className="p-2 sm:p-3">
                         <ProcedureBuilder
                             instructions={task.instructions || []}
                             onChange={(blocks) => onChange({ instructions: blocks })}

@@ -17,6 +17,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { DatabaseService } from '../services/DatabaseService';
 import ersApi, { BadActorEntry } from '../services/ERSApiClient';
+import { Button } from '../components/ui';
 
 // ──────────────────────────────── Fetcher ────────────────────────────────
 // Exported so Login can prefetch dashboard data before navigating
@@ -246,7 +247,7 @@ export const Dashboard: React.FC = () => {
         {/* KPI Cards skeleton */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => (
-            <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <div key={i} className="bg-white p-4 rounded-card shadow-card border border-slate-200">
               <div className="flex justify-between items-start mb-3">
                 <div className="w-9 h-9 bg-slate-100 rounded-lg"></div>
                 <div className="h-5 bg-slate-100 rounded-full w-16"></div>
@@ -258,12 +259,12 @@ export const Dashboard: React.FC = () => {
         </div>
         {/* Work panels skeleton */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-72"></div>
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 h-72"></div>
+          <div className="bg-white rounded-card shadow-card border border-slate-200 h-72"></div>
+          <div className="bg-white rounded-card shadow-card border border-slate-200 h-72"></div>
         </div>
         {/* Analytics cards skeleton */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <div key={i} className="bg-white rounded-xl shadow-sm border border-slate-200 h-48"></div>)}
+          {[1,2,3,4].map(i => <div key={i} className="bg-white rounded-card shadow-card border border-slate-200 h-48"></div>)}
         </div>
       </div>
     );
@@ -416,9 +417,9 @@ export const Dashboard: React.FC = () => {
             contextType="dashboard"
             contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
           />
-          <button onClick={() => refetch()} className="px-2.5 sm:px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-1.5 transition">
-            <RefreshCw size={14} /> <span className="hidden xs:inline">Refresh</span>
-          </button>
+          <Button variant="secondary" size="sm" onClick={() => refetch()} leftIcon={<RefreshCw size={14} />}>
+            <span className="hidden xs:inline">Refresh</span>
+          </Button>
         </div>
       </div>
 
@@ -426,7 +427,7 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         {quickActions.map(qa => (
           <button key={qa.label} onClick={() => navigate(qa.path)}
-            className={`${qa.color} text-white rounded-xl p-2.5 sm:p-3.5 flex flex-col sm:flex-row items-center gap-1.5 sm:gap-3 transition-all shadow-sm hover:shadow-md active:scale-[0.98] min-h-[52px]`}
+            className={`${qa.color} text-white rounded-xl p-2.5 sm:p-3.5 flex flex-col sm:flex-row items-center gap-1.5 sm:gap-3 transition-all shadow-sm hover:shadow-raised active:scale-[0.98] min-h-[52px]`}
           >
             <qa.icon size={18} className="flex-shrink-0" />
             <span className="text-[11px] sm:text-sm font-semibold text-center sm:text-left leading-tight">{qa.label}</span>
@@ -438,7 +439,7 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((kpi, idx) => (
           <button key={kpi.label} onClick={() => navigate(kpi.path)}
-            className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-md hover:border-slate-300 transition-all text-left group"
+            className="bg-white p-4 rounded-card shadow-card border border-slate-200 hover:shadow-raised hover:border-slate-300 transition-all text-left group"
           >
             <div className="flex justify-between items-start mb-2">
               <div className={`p-2 rounded-lg ${kpi.bgIcon}`}>{kpi.icon}</div>
@@ -477,7 +478,7 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* ── My Work & Activity (merged panel) ── */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-card shadow-card border border-slate-200 overflow-hidden">
           {/* Overdue alert banner */}
           {overdue.length > 0 && (
             <button onClick={() => navigate('/work-orders?filter=overdue')}
@@ -561,7 +562,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* ── Notifications ── */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-card shadow-card border border-slate-200 overflow-hidden">
           <div className="px-5 py-3.5 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-2">
               <BellRing size={16} className="text-blue-600" />
@@ -603,7 +604,7 @@ export const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
 
         {/* PM Schedule Compliance */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <div className="bg-white p-5 rounded-card shadow-card border border-slate-200">
           <div className="flex items-center gap-2 mb-3">
             <Gauge size={16} className="text-emerald-600" />
             <h4 className="text-sm font-semibold text-slate-900">PM Compliance</h4>
@@ -639,7 +640,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Backlog Aging */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <div className="bg-white p-5 rounded-card shadow-card border border-slate-200">
           <div className="flex items-center gap-2 mb-3">
             <Clock size={16} className="text-amber-600" />
             <h4 className="text-sm font-semibold text-slate-900">Backlog Aging</h4>
@@ -664,7 +665,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Top 5 Bad Actors — Pareto (ISO 55000 Monthly Analysis) */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <div className="bg-white p-5 rounded-card shadow-card border border-slate-200">
           <div className="flex items-center gap-2 mb-3">
             <Skull size={16} className="text-red-600" />
             <h4 className="text-sm font-semibold text-slate-900">Top Bad Actors</h4>
@@ -770,7 +771,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* Defect Elimination Summary */}
-        <button onClick={() => navigate('/analyze?division=defect_elimination')} className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md hover:border-blue-200 transition-all text-left group">
+        <button onClick={() => navigate('/analyze?division=defect_elimination')} className="bg-white p-5 rounded-card shadow-card border border-slate-200 hover:shadow-raised hover:border-blue-200 transition-all text-left group">
           <div className="flex items-center gap-2 mb-3">
             <Target size={16} className="text-blue-600" />
             <h4 className="text-sm font-semibold text-slate-900">Defect Elimination</h4>
@@ -798,7 +799,7 @@ export const Dashboard: React.FC = () => {
         </button>
 
         {/* Fleet Reliability (MTBF/MTTR) */}
-        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+        <div className="bg-white p-5 rounded-card shadow-card border border-slate-200">
           <div className="flex items-center gap-2 mb-3">
             <Timer size={16} className="text-blue-600" />
             <h4 className="text-sm font-semibold text-slate-900">Fleet Reliability</h4>

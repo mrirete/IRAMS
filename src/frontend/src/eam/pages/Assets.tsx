@@ -39,6 +39,7 @@ import { AskRelanternButton } from '../components/AskRelanternButton';
 import { aiContextService } from '../services/AIContextService';
 import { AssetQRCode } from '../components/AssetQRCode';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
+import { Button } from '../components/ui';
 import { ReliabilityIntelligenceTab } from '../components/ReliabilityIntelligenceTab';
 
 interface AssetsProps {
@@ -934,12 +935,14 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 >
                                     <MapPin size={16} /> New Location
                                 </button>
-                                <button
+                                <Button
                                     onClick={() => openAddModal('Asset')}
-                                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-500 transition shadow-sm"
+                                    size="sm"
+                                    leftIcon={<Plus size={16} />}
+                                    className="hidden sm:inline-flex"
                                 >
-                                    <Plus size={16} /> New Asset
-                                </button>
+                                    New Asset
+                                </Button>
                             </>
                         )}
                     </div>
@@ -1528,17 +1531,15 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}
                         {canEdit && (
                             <div className="sm:hidden mobile-detail-footer">
-                                <button
+                                <Button
                                     onClick={handleSave}
-                                    disabled={saving}
-                                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-50"
+                                    loading={saving}
+                                    size="lg"
+                                    fullWidth
+                                    leftIcon={<Save size={16} />}
                                 >
-                                    {saving
-                                        ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        : <Save size={16} />
-                                    }
                                     {saving ? 'Saving...' : 'Save Changes'}
-                                </button>
+                                </Button>
                                 <button
                                     onClick={() => setSelectedAsset(null)}
                                     className="px-4 py-3 bg-slate-100 text-slate-700 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-200"
