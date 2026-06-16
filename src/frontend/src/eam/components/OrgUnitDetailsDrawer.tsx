@@ -161,7 +161,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                 <div className="col-span-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
                     <textarea
-                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm p-2"
+                        className="mt-1 block w-full rounded-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 shadow-sm focus:border-blue-500 focus:ring-primary-500 sm:text-sm p-2"
                         rows={3}
                         value={formData.description || ''}
                         onChange={e => setFormData({ ...formData, description: e.target.value })}
@@ -176,7 +176,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                         </span>
                         <input
                             type="text"
-                            className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 focus:ring-primary-500 focus:border-blue-500 sm:text-sm"
                             value={formData.location || ''}
                             onChange={e => setFormData({ ...formData, location: e.target.value })}
                         />
@@ -190,7 +190,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                         </span>
                         <input
                             type="email"
-                            className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-r-md border-gray-300 dark:border-gray-700 dark:bg-gray-800 focus:ring-primary-500 focus:border-blue-500 sm:text-sm"
                             value={formData.email || ''}
                             onChange={e => setFormData({ ...formData, email: e.target.value })}
                         />

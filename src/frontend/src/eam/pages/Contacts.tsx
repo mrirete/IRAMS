@@ -520,7 +520,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                                 type="checkbox"
                                                 checked={selectedContactIds.size === filteredContacts.length && filteredContacts.length > 0}
                                                 onChange={toggleSelectAllContacts}
-                                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-primary-500 cursor-pointer"
                                                 title="Select all"
                                             />
                                         </th>
@@ -550,7 +550,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                                             type="checkbox"
                                                             checked={selectedContactIds.has(contact.id)}
                                                             onChange={() => toggleSelectContact(contact.id)}
-                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-primary-500 cursor-pointer"
                                                         />
                                                     </td>
                                                     <td className="px-6 py-4 whitespace-nowrap">

@@ -1601,7 +1601,7 @@ const UserPermissionManager: React.FC = () => {
                                                                             handlePermissionChange(suite.key, 'viewCosts', false);
                                                                         }
                                                                     }}
-                                                                    className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${toggleBg} ${isEnabled ? 'focus:ring-blue-500' : 'focus:ring-slate-400'}`}
+                                                                    className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 ${toggleBg} ${isEnabled ? 'focus:ring-primary-500' : 'focus:ring-slate-400'}`}
                                                                     role="switch"
                                                                     aria-checked={isEnabled}
                                                                     aria-label={`Toggle ${suite.label}`}
@@ -2052,7 +2052,7 @@ export const Admin: React.FC = () => {
                                         <button
                                             id="seed-dictionaries-btn"
                                             onClick={handleSeedDictionaries}
-                                            className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-sm"
+                                            className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-sm"
                                         >
                                             Seed Dictionaries
                                         </button>

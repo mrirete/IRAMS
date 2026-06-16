@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, MessageSquare, CheckCircle, BrainCircuit, X, Loader2 } from 'lucide-react';
+import { Bot, Send, CheckCircle, Sparkles, X, Loader2 } from 'lucide-react';
 import { apiPost } from '../api/client';
+import { Button } from '../eam/components/ui';
 
 const AGENTS = [
     { id: '1', name: 'Master AI', initial: 'M' },
@@ -118,21 +119,27 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
     };
 
     return (
-        <div className="w-80 h-full bg-white border-l border-slate-200 flex flex-col z-20 shadow-2xl">
+        <div className="w-80 h-full bg-white border-l border-slate-200 flex flex-col z-20 shadow-overlay">
             {/* Agent Roster Header */}
-            <div className="p-4 border-b border-slate-200 relative">
+            <div className="p-4 border-b border-slate-200 relative bg-gradient-to-br from-primary-700 to-primary-600 text-white">
                 <button
                     onClick={onClose}
-                    className="absolute top-4 right-4 text-slate-500 hover:text-slate-800 p-1 bg-slate-100/50 hover:bg-slate-200 rounded-full transition-colors"
+                    className="absolute top-3.5 right-3.5 text-white/70 hover:text-white p-1 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                    aria-label="Close AI panel"
                 >
                     <X size={14} />
                 </button>
-                <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                        <BrainCircuit size={18} className="text-accent-blue" />
+                <div className="flex items-center justify-between mb-3 pr-8">
+                    <h3 className="font-semibold flex items-center gap-2">
+                        <span className="w-7 h-7 rounded-control bg-relantern-500 flex items-center justify-center shadow-sm">
+                            <Sparkles size={15} className="text-white" />
+                        </span>
                         Specialist Agents
                     </h3>
-                    <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-800">L3 Active</span>
+                    <span className="flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/15 text-white">
+                        <span className="w-1.5 h-1.5 rounded-full bg-accent-safe animate-pulse" />
+                        L3 Active
+                    </span>
                 </div>
 
                 {/* Avatars */}
@@ -140,7 +147,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
                     {AGENTS.map(agent => (
                         <div
                             key={agent.id}
-                            className="w-8 h-8 rounded-full bg-slate-100 border border-slate-300 flex items-center justify-center text-xs font-bold text-slate-800 cursor-pointer hover:border-accent-blue hover:bg-slate-200 transition-colors"
+                            className="w-8 h-8 rounded-full bg-white/15 border border-white/25 flex items-center justify-center text-xs font-bold text-white cursor-pointer hover:bg-white/30 transition-colors"
                             title={agent.name}
                         >
                             {agent.initial}
@@ -150,16 +157,16 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
             </div>
 
             {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
                 {messages.map(msg => (
                     <div key={msg.id} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
 
-                        <div className={`max-w-[85%] rounded-lg p-3 text-sm ${msg.sender === 'user'
-                            ? 'bg-accent-blue text-white rounded-br-none'
-                            : 'bg-slate-100 text-slate-800 rounded-bl-none border border-slate-300'
+                        <div className={`max-w-[85%] rounded-card p-3 text-sm shadow-card ${msg.sender === 'user'
+                            ? 'bg-primary-600 text-white rounded-br-sm'
+                            : 'bg-white text-slate-800 rounded-bl-sm border border-slate-200'
                             }`}>
                             {msg.sender === 'agent' && (
-                                <div className="flex items-center gap-1.5 mb-1.5 text-xs text-slate-400 font-medium">
+                                <div className="flex items-center gap-1.5 mb-1.5 text-xs text-primary-600 font-semibold">
                                     <Bot size={12} />
                                     <span>{AGENTS.find(a => a.id === msg.agentId)?.name} Agent</span>
                                 </div>
@@ -168,12 +175,12 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
                             <p className="leading-relaxed">{msg.text}</p>
 
                             {msg.sender === 'agent' && msg.confidence && (
-                                <div className="mt-2 pt-2 border-t border-slate-300 flex justify-between items-center text-xs">
-                                    <span className={`flex items-center gap-1 ${msg.confidence > 80 ? 'text-accent-safe' : 'text-accent-warn'}`}>
+                                <div className="mt-2 pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
+                                    <span className={`flex items-center gap-1 font-medium ${msg.confidence > 80 ? 'text-accent-safe' : 'text-accent-warn'}`}>
                                         <CheckCircle size={10} />
                                         {msg.confidence}% Conf
                                     </span>
-                                    <span className="text-slate-400 bg-white px-1.5 py-0.5 rounded uppercase" style={{ fontSize: '0.65rem' }}>
+                                    <span className="text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded uppercase font-semibold" style={{ fontSize: '0.65rem' }}>
                                         {msg.tier}
                                     </span>
                                 </div>
@@ -185,9 +192,9 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
 
                 {isLoading && (
                     <div className="flex items-start">
-                        <div className="bg-slate-100 text-slate-800 rounded-lg rounded-bl-none border border-slate-300 p-3 max-w-[85%] flex items-center gap-2 text-sm text-slate-600">
-                            <Loader2 size={14} className="animate-spin text-accent-blue" />
-                            Thinking...
+                        <div className="bg-white text-slate-600 rounded-card rounded-bl-sm border border-slate-200 p-3 max-w-[85%] flex items-center gap-2 text-sm shadow-card">
+                            <Loader2 size={14} className="animate-spin text-primary-600" />
+                            Thinking…
                         </div>
                     </div>
                 )}
@@ -196,26 +203,28 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
             </div>
 
             {/* Input Area */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200">
-                <div className="relative">
+            <div className="p-4 bg-white border-t border-slate-200">
+                <div className="relative flex items-center gap-2">
                     <input
                         type="text"
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Ask ERS AI..."
-                        className="w-full bg-white border border-slate-300 rounded-lg pl-4 pr-10 py-2.5 text-sm text-slate-800 placeholder-brand-500 focus:outline-none focus:border-accent-blue"
+                        placeholder="Ask IRAMS AI…"
+                        className="flex-1 bg-slate-50 border border-slate-300 rounded-control pl-4 pr-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
                     />
-                    <button
+                    <Button
+                        size="sm"
                         onClick={handleSend}
                         disabled={isLoading || !inputValue.trim()}
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2 text-accent-blue p-1.5 hover:bg-slate-100 rounded-md disabled:opacity-50 disabled:hover:bg-transparent"
+                        aria-label="Send message"
+                        className="!px-3"
                     >
-                        <MessageSquare size={16} />
-                    </button>
+                        <Send size={16} />
+                    </Button>
                 </div>
                 <p className="text-center mt-2 text-xs text-slate-400">
-                    Agent router will dispatch to the best specialist.
+                    Agent router dispatches to the best specialist.
                 </p>
             </div>
 

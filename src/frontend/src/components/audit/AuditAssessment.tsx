@@ -255,7 +255,7 @@ export const AuditAssessment: React.FC<Props> = ({ registration, onComplete }) =
               placeholder={answers.length >= 5 ? 'Dimension complete. Moving to next...' : 'Describe your organization\'s approach...'}
               disabled={loading || loadingQuestions || answers.length >= 5}
               rows={2}
-              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30 disabled:opacity-50 text-slate-800 placeholder:text-slate-400"
+              className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-primary-400/30 disabled:opacity-50 text-slate-800 placeholder:text-slate-400"
             />
             <button
               onClick={handleSubmitAnswer}

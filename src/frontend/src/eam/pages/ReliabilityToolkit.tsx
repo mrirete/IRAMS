@@ -956,7 +956,7 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                     Time-to-Failure Data (hrs, comma-sep)
                 </label>
                 <textarea value={dataStr} onChange={e => setDataStr(e.target.value)} placeholder="20, 42, 55, 73, 95..."
-                    className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono h-12 md:h-16 resize-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500" />
+                    className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono h-12 md:h-16 resize-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500" />
             </div>
 
             {fit && (
@@ -1594,18 +1594,18 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
                             <div>
                                 <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Operating Hours</label>
                                 <input type="number" value={totalHours} onChange={e => setTotalHours(e.target.value)} placeholder="e.g. 8760"
-                                    className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-10" />
+                                    className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 h-10" />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                                 <div>
                                     <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Failures</label>
                                     <input type="number" value={failures} onChange={e => setFailures(e.target.value)} placeholder="0"
-                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-10" />
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 h-10" />
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-0.5">Confidence</label>
                                     <select value={confidence} onChange={e => setConfidence(Number(e.target.value))}
-                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 h-10">
+                                        className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 h-10">
                                         <option value={60}>60%</option><option value={80}>80%</option><option value={90}>90%</option><option value={95}>95%</option>
                                     </select>
                                 </div>

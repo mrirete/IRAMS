@@ -193,7 +193,7 @@ const FailureModeTreeNode: React.FC<{
                 defaultValue={fm.failure_mode_description}
                 onChange={e => debouncedUpdate('failure_mode_description', e.target.value)}
                 placeholder="What failed? e.g. Shaft seal leaking"
-                className="w-full text-xs text-slate-700 bg-blue-50/30 border border-blue-300/70 rounded-lg px-2.5 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 mt-1 transition-colors placeholder:text-slate-300"
+                className="w-full text-xs text-slate-700 bg-blue-50/30 border border-blue-300/70 rounded-lg px-2.5 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 mt-1 transition-colors placeholder:text-slate-300"
               />
             </div>
             <div>
@@ -203,7 +203,7 @@ const FailureModeTreeNode: React.FC<{
                 defaultValue={fm.failure_cause_description || ''}
                 onChange={e => debouncedUpdate('failure_cause_description', e.target.value)}
                 placeholder="Why? e.g. Wear, corrosion, fatigue"
-                className="w-full text-xs text-slate-700 bg-blue-50/30 border border-blue-300/70 rounded-lg px-2.5 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500/20 mt-1 transition-colors placeholder:text-slate-300"
+                className="w-full text-xs text-slate-700 bg-blue-50/30 border border-blue-300/70 rounded-lg px-2.5 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 mt-1 transition-colors placeholder:text-slate-300"
               />
             </div>
           </div>

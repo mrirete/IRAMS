@@ -334,7 +334,7 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                                     <button
                                         onClick={handleAddModel}
                                         disabled={addingModel || !newModelCode.trim()}
-                                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1 text-sm whitespace-nowrap"
+                                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 flex items-center gap-1 text-sm whitespace-nowrap"
                                     >
                                         <Plus size={14} /> {addingModel ? 'Adding...' : 'Add Model'}
                                     </button>

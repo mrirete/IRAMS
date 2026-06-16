@@ -47,7 +47,7 @@ export const UnifiedFilterBar: React.FC<UnifiedFilterBarProps> = ({
                     value={searchValue}
                     onChange={(e) => onSearchChange(e.target.value)}
                     placeholder={searchPlaceholder}
-                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:outline-none bg-slate-50/50"
+                    className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:border-blue-500 focus:outline-none bg-slate-50/50"
                 />
                 {searchValue && (
                     <button

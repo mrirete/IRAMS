@@ -2099,7 +2099,7 @@ const SearchableSelect: React.FC<{
                             <button
                                 onClick={submitManualEntry}
                                 disabled={!manualCode || !manualDesc || !!duplicateError}
-                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-primary-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                             >
                                 <Check size={12} /> Apply
                             </button>
@@ -2568,11 +2568,11 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                             <textarea
                                                 value={editText}
                                                 onChange={(e) => setEditText(e.target.value)}
-                                                className="w-full border border-blue-300 rounded p-1.5 text-xs bg-blue-50 focus:ring-1 focus:ring-blue-500 resize-none h-16"
+                                                className="w-full border border-blue-300 rounded p-1.5 text-xs bg-blue-50 focus:ring-1 focus:ring-primary-500 resize-none h-16"
                                                 autoFocus
                                             />
                                             <div className="flex gap-1.5">
-                                                <button onClick={() => saveEdit(j.id)} className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-700">Save</button>
+                                                <button onClick={() => saveEdit(j.id)} className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-primary-500">Save</button>
                                                 <button onClick={() => setEditingId(null)} className="px-2 py-0.5 text-[10px] text-slate-500 bg-slate-100 rounded hover:bg-slate-200">Cancel</button>
                                             </div>
                                         </div>
@@ -2839,7 +2839,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                 <label className="flex items-center gap-2.5 cursor-pointer select-none bg-white p-3 rounded-lg border border-blue-200/60 shadow-sm w-full transition hover:bg-slate-50">
                                     <input
                                         type="checkbox"
-                                        className="rounded border-blue-300 text-blue-600 w-4 h-4 focus:ring-blue-500 cursor-pointer"
+                                        className="rounded border-blue-300 text-blue-600 w-4 h-4 focus:ring-primary-500 cursor-pointer"
                                         checked={job.properties?.staging_confirmed || false}
                                         onChange={(e) => onUpdate({
                                             properties: {
@@ -4203,7 +4203,7 @@ const TaskEditor: React.FC<{
                                         placeholder="Filter roles..."
                                         value={resourceSearchRole}
                                         onChange={(e) => setResourceSearchRole(e.target.value)}
-                                        className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg mb-2 focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                                        className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg mb-2 focus:ring-2 focus:ring-primary-400 focus:border-primary-600"
                                     />
                                 )}
                                 <div className="space-y-1.5">
@@ -4259,7 +4259,7 @@ const TaskEditor: React.FC<{
                                                             type="number" min="1" step="1"
                                                             value={labor.headcount || 1}
                                                             onChange={(e) => updateTaskLabor(labor.id, { headcount: parseInt(e.target.value) || 1 })}
-                                                            className="w-10 px-1 py-1 text-xs text-center bg-white border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-colors"
+                                                            className="w-10 px-1 py-1 text-xs text-center bg-white border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-primary-400 focus:border-primary-600 transition-colors"
                                                             title="Number of people needed for this role"
                                                         />
                                                     </div>
@@ -4267,7 +4267,7 @@ const TaskEditor: React.FC<{
                                                         type="number" min="0.5" step="0.5"
                                                         value={labor.estDuration}
                                                         onChange={(e) => updateTaskLabor(labor.id, { estDuration: parseFloat(e.target.value) || 0 })}
-                                                        className="w-14 px-1 py-1 text-xs text-right bg-white border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-colors"
+                                                        className="w-14 px-1 py-1 text-xs text-right bg-white border border-slate-200 rounded-lg text-slate-700 focus:ring-2 focus:ring-primary-400 focus:border-primary-600 transition-colors"
                                                         title="Est. Hours per person"
                                                     />
                                                     <span className="text-[10px] text-slate-400">hrs</span>
@@ -4381,7 +4381,7 @@ const TaskEditor: React.FC<{
                                                 placeholder="Search by name, username, or craft..."
                                                 value={resourceSearchPeople}
                                                 onChange={(e) => setResourceSearchPeople(e.target.value)}
-                                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg mb-1.5 focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg mb-1.5 focus:ring-2 focus:ring-primary-400 focus:border-primary-600"
                                             />
                                             <div className="border border-slate-200 rounded-lg max-h-56 overflow-y-auto p-1.5 text-xs">
                                                 {sortedAssignableUsers.map(({ user, contact }, idx) => {
@@ -4458,7 +4458,7 @@ const TaskEditor: React.FC<{
                                 placeholder="Search parts..."
                                 value={resourceSearchParts}
                                 onChange={(e) => setResourceSearchParts(e.target.value)}
-                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg mb-3 focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg mb-3 focus:ring-2 focus:ring-primary-400 focus:border-primary-600"
                             />
                         )}
                         <div className="space-y-1.5">
@@ -4996,9 +4996,9 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                         <div className="bg-white border-2 border-blue-200 rounded-lg p-4 flex items-end gap-3 animate-in fade-in">
                             <div className="flex-1">
                                 <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Save as JSA Template</label>
-                                <input type="text" value={templateName} onChange={e => setTemplateName(e.target.value)} placeholder="e.g. Hot Work - Compressor, Confined Space Entry" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" autoFocus />
+                                <input type="text" value={templateName} onChange={e => setTemplateName(e.target.value)} placeholder="e.g. Hot Work - Compressor, Confined Space Entry" className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500" autoFocus />
                             </div>
-                            <button onClick={handleSaveTemplate} disabled={!templateName.trim()} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 disabled:opacity-50 shadow-sm">Save</button>
+                            <button onClick={handleSaveTemplate} disabled={!templateName.trim()} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-primary-500 disabled:opacity-50 shadow-sm">Save</button>
                             <button onClick={() => { setShowTemplateSave(false); setTemplateName(''); }} className="px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg">Cancel</button>
                         </div>
                     )}
@@ -5021,7 +5021,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                                 <p className="text-[10px] text-slate-400">{tpl.hazards.length} hazard{tpl.hazards.length !== 1 ? 's' : ''}</p>
                                             </div>
                                             <div className="flex gap-2">
-                                                <button onClick={() => handleLoadTemplate(tpl)} className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm">Load</button>
+                                                <button onClick={() => handleLoadTemplate(tpl)} className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-primary-500 shadow-sm">Load</button>
                                                 <button onClick={() => handleDeleteTemplate(tpl.name)} className="text-xs text-slate-400 hover:text-red-500 px-2 py-1 rounded hover:bg-red-50">Delete</button>
                                             </div>
                                         </div>
@@ -5302,7 +5302,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                         <h3 className="font-bold text-slate-800">Permits to Work</h3>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">{permits.length}</span>
                     </div>
-                    <button onClick={(e) => { e.preventDefault(); if (!showCreatePermit) { setNewPermit((prev: any) => ({ ...prev, description: job.description || prev.description })); } setShowCreatePermit(!showCreatePermit); }} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm">
+                    <button onClick={(e) => { e.preventDefault(); if (!showCreatePermit) { setNewPermit((prev: any) => ({ ...prev, description: job.description || prev.description })); } setShowCreatePermit(!showCreatePermit); }} className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded text-sm font-bold shadow-sm">
                         + New Permit
                     </button>
                 </summary>
@@ -5320,7 +5320,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                     <select
                                         value={newPermit.permitType}
                                         onChange={e => setNewPermit({ ...newPermit, permitType: e.target.value })}
-                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500"
                                     >
                                         {permitTypes.map(pt => (
                                             <option key={pt.code} value={pt.code}>{pt.description}</option>
@@ -5370,7 +5370,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                 <button
                                     onClick={handleCreatePermit}
                                     disabled={!newPermit.description}
-                                    className="px-4 py-2 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 shadow-sm"
+                                    className="px-4 py-2 text-sm font-bold text-white bg-primary-600 hover:bg-primary-500 rounded-lg disabled:opacity-50 shadow-sm"
                                 >
                                     Create Permit
                                 </button>
@@ -5417,7 +5417,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                     {permit.status === 'APPROVED' && (
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handlePermitStatusChange(permit.id, 'ISSUED'); }}
-                                            className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm"
+                                            className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-primary-500 shadow-sm"
                                         >
                                             Issue Permit
                                         </button>
@@ -5434,7 +5434,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                         <>
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); handleReturnPermit(permit.id); }}
-                                                className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 shadow-sm"
+                                                className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-primary-500 shadow-sm"
                                             >
                                                 Return Permit
                                             </button>
@@ -5605,7 +5605,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                                             type="checkbox"
                                                             checked={permit.toolboxTalkCompleted}
                                                             onChange={(e) => handleUpdatePermit(permit.id, { toolboxTalkCompleted: e.target.checked })}
-                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-primary-500"
                                                             disabled={permit.status !== 'APPROVED'}
                                                         />
                                                         <span className="text-sm font-bold text-slate-700">Toolbox Talk Completed</span>
@@ -6757,7 +6757,7 @@ const MyWorkTodayView: React.FC<MyWorkTodayViewProps> = ({
                                     {job.status === 'SCHED' && (
                                         <button
                                             onClick={() => handleStartJob(job)}
-                                            className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition shadow shadow-blue-500/25"
+                                            className="flex-1 py-2 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-lg text-xs transition shadow shadow-blue-500/25"
                                         >
                                             Start Job 🛠️
                                         </button>

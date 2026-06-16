@@ -675,7 +675,7 @@ export function RCAInvestigationPage() {
                             </>
                         )}
                         <button 
-                            className="px-4.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
+                            className="px-4.5 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-500 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
                             onClick={handleSave} 
                             disabled={saving}
                         >
@@ -745,7 +745,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Investigation Title *</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         value={draft.title} 
                                         onChange={e => setDraft(d => ({ ...d, title: e.target.value }))} 
                                         placeholder="e.g. Premature Seal Failure — PMP-411" 
@@ -754,7 +754,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">RCA Category</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={draft.rca_category} 
                                         onChange={e => setDraft(d => ({ ...d, rca_category: e.target.value }))}
                                     >
@@ -767,7 +767,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Investigation Type</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={draft.investigation_type} 
                                         onChange={e => setDraft(d => ({ ...d, investigation_type: e.target.value }))}
                                     >
@@ -781,7 +781,7 @@ export function RCAInvestigationPage() {
                             <div className="mb-5">
                                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Problem Statement (What happened?) *</label>
                                 <textarea 
-                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm min-h-[90px] resize-y"
+                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm min-h-[90px] resize-y"
                                     value={draft.problem_statement} 
                                     onChange={e => setDraft(d => ({ ...d, problem_statement: e.target.value }))} 
                                     placeholder="Describe the failure event, symptoms, and sequence of events…" 
@@ -824,7 +824,7 @@ export function RCAInvestigationPage() {
                                                 onChange={e => { setNewAssetSearch(e.target.value); setShowNewAssetDropdown(true); }}
                                                 onFocus={() => setShowNewAssetDropdown(true)}
                                                 placeholder="Search asset register by tag, name, or level…"
-                                                className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                                className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                             />
                                             {showNewAssetDropdown && (
                                                 <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto border-t border-slate-100">
@@ -922,7 +922,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Event Date</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         type="date" 
                                         value={draft.event_date} 
                                         onChange={e => setDraft(d => ({ ...d, event_date: e.target.value }))} 
@@ -931,7 +931,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Event Location / Functional Path</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         value={draft.event_location} 
                                         onChange={e => setDraft(d => ({ ...d, event_location: e.target.value }))} 
                                         placeholder="e.g. Site A › Unit 1 › System A" 
@@ -950,7 +950,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">What component failed? (What)</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         value={draft.event_what} 
                                         onChange={e => setDraft(d => ({ ...d, event_what: e.target.value }))} 
                                         placeholder="e.g. Pump Mechanical Seal Carbon Face" 
@@ -959,7 +959,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">How did it fail? (How)</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         value={draft.event_how} 
                                         onChange={e => setDraft(d => ({ ...d, event_how: e.target.value }))} 
                                         placeholder="e.g. Heavy thermal cracking and chipping along face" 
@@ -971,7 +971,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Downtime (Hours)</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         type="number" 
                                         value={draft.event_how_much.downtime_hrs || ''} 
                                         onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, downtime_hrs: Number(e.target.value) } }))} 
@@ -980,7 +980,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Estimated Cost ($)</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         type="number" 
                                         value={draft.event_how_much.cost || ''} 
                                         onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, cost: Number(e.target.value) } }))} 
@@ -989,7 +989,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Safety Tier Impact</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={draft.event_how_much.safety_tier || ''} 
                                         onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, safety_tier: e.target.value } }))}
                                     >
@@ -1003,7 +1003,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Environmental Impact</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={draft.event_how_much.env_impact || ''} 
                                         onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, env_impact: e.target.value } }))}
                                     >
@@ -1051,7 +1051,7 @@ export function RCAInvestigationPage() {
                                 <div className="w-full md:w-40 shrink-0">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Evidence Type</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={newEvType} 
                                         onChange={e => setNewEvType(e.target.value)}
                                     >
@@ -1067,7 +1067,7 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Evidence Title</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="Title / Reference Tag" 
                                         value={newEvTitle} 
                                         onChange={e => setNewEvTitle(e.target.value)} 
@@ -1076,7 +1076,7 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Content / Attachment details</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="Content / URL / Note Details" 
                                         value={newEvContent} 
                                         onChange={e => setNewEvContent(e.target.value)} 
@@ -1318,7 +1318,7 @@ export function RCAInvestigationPage() {
                             </div>
                             <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
                                 <select
-                                    className="w-full sm:w-64 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer shrink-0"
+                                    className="w-full sm:w-64 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer shrink-0"
                                     value={inv.method || 'five_why'}
                                     onChange={async e => {
                                         const newMethod = e.target.value;
@@ -1407,7 +1407,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Node Type</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newNodeType} 
                                             onChange={e => setNewNodeType(e.target.value)}
                                         >
@@ -1421,7 +1421,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Cause Layer</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newNodeCauseCategory} 
                                             onChange={e => setNewNodeCauseCategory(e.target.value)}
                                         >
@@ -1432,7 +1432,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">ISO 14224 Code</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newNodeCauseCode} 
                                             onChange={e => setNewNodeCauseCode(e.target.value)}
                                         >
@@ -1444,7 +1444,7 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1 lg:flex-[2]">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Statement Description</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="Description of this Causal Event" 
                                         value={newNodeDesc} 
                                         onChange={e => setNewNodeDesc(e.target.value)} 
@@ -1497,7 +1497,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Type</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newBarrierType} 
                                             onChange={e => setNewBarrierType(e.target.value)}
                                         >
@@ -1507,7 +1507,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Classification</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newBarrierClass} 
                                             onChange={e => setNewBarrierClass(e.target.value)}
                                         >
@@ -1517,7 +1517,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Effectiveness</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newBarrierAssessment} 
                                             onChange={e => setNewBarrierAssessment(e.target.value)}
                                         >
@@ -1528,7 +1528,7 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1 lg:flex-[2]">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Safeguard Description</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="Trips, training guidelines, mechanical containment, etc." 
                                         value={newBarrierDesc} 
                                         onChange={e => setNewBarrierDesc(e.target.value)} 
@@ -1616,7 +1616,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Target Cause Category</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newActionCategory} 
                                             onChange={e => setNewActionCategory(e.target.value)}
                                         >
@@ -1626,7 +1626,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Action Horizon</label>
                                         <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             value={newActionType} 
                                             onChange={e => setNewActionType(e.target.value)}
                                         >
@@ -1638,7 +1638,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Assignee</label>
                                         <input 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                             placeholder="Assignee Name" 
                                             value={newActionAssignee} 
                                             onChange={e => setNewActionAssignee(e.target.value)} 
@@ -1647,7 +1647,7 @@ export function RCAInvestigationPage() {
                                     <div>
                                         <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Due Date</label>
                                         <input 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                             type="date" 
                                             value={newActionDue} 
                                             onChange={e => setNewActionDue(e.target.value)} 
@@ -1657,7 +1657,7 @@ export function RCAInvestigationPage() {
                                 <div className="flex-1 lg:flex-[2]">
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Action Recommendation Details</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         placeholder="e.g. Conduct MoC to replace seal grade to Viton Extreme-90" 
                                         value={newActionDesc} 
                                         onChange={e => setNewActionDesc(e.target.value)} 
@@ -1728,7 +1728,7 @@ export function RCAInvestigationPage() {
                                             <span className="text-sm font-bold text-slate-800">{a.action_description}</span>
                                         </div>
                                         <select 
-                                            className="w-full sm:w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs shrink-0"
+                                            className="w-full sm:w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs shrink-0"
                                             value={a.status} 
                                             onChange={async e => {
                                                 const updated = await analyzeService.updateRCACorrectiveAction(a.id, { status: e.target.value as any });
@@ -1763,7 +1763,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Effectiveness Review Due Date</label>
                                     <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                         type="date" 
                                         value={inv.effectiveness_due?.split('T')[0] || ''} 
                                         onChange={async e => {
@@ -1775,7 +1775,7 @@ export function RCAInvestigationPage() {
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Effectiveness Verification Status</label>
                                     <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                         value={inv.effectiveness_status || 'pending'} 
                                         onChange={async e => {
                                             await analyzeService.updateRCAInvestigation(inv.id, { effectiveness_status: e.target.value } as any);
@@ -1793,7 +1793,7 @@ export function RCAInvestigationPage() {
                             <div>
                                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Root Cause Summary (Final Engineering Sign-off)</label>
                                 <textarea 
-                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm min-h-[100px] resize-y"
+                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm min-h-[100px] resize-y"
                                     value={inv.root_cause_summary || ''} 
                                     onChange={async e => {
                                         const val = e.target.value;
@@ -1886,7 +1886,7 @@ export function RCAInvestigationPage() {
                                             <input 
                                                 value={deDraft.title}
                                                 onChange={e => setDeDraft(d => ({ ...d, title: e.target.value }))}
-                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
                                             />
                                         </div>
 
@@ -1922,7 +1922,7 @@ export function RCAInvestigationPage() {
                                             <select 
                                                 value={deDraft.priority}
                                                 onChange={e => setDeDraft(d => ({ ...d, priority: e.target.value as any }))}
-                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
+                                                className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
                                             >
                                                 <option value="critical">Critical</option>
                                                 <option value="high">High</option>
@@ -1939,7 +1939,7 @@ export function RCAInvestigationPage() {
                                                     type="number" 
                                                     value={deDraft.annualCost}
                                                     onChange={e => setDeDraft(d => ({ ...d, annualCost: Number(e.target.value) }))}
-                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
                                                 />
                                             </div>
                                             <div>
@@ -1948,7 +1948,7 @@ export function RCAInvestigationPage() {
                                                     type="number" 
                                                     value={deDraft.estimatedSavings}
                                                     onChange={e => setDeDraft(d => ({ ...d, estimatedSavings: Number(e.target.value) }))}
-                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
                                                 />
                                             </div>
                                             <div>
@@ -1957,7 +1957,7 @@ export function RCAInvestigationPage() {
                                                     type="number" 
                                                     value={deDraft.implementationCost}
                                                     onChange={e => setDeDraft(d => ({ ...d, implementationCost: Number(e.target.value) }))}
-                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
+                                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm mt-1"
                                                 />
                                             </div>
                                         </div>
@@ -1998,7 +1998,7 @@ export function RCAInvestigationPage() {
                     ) : <div />}
                     {activeStep < 6 ? (
                         <button 
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow"
+                            className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow"
                             onClick={async () => { await handleSave(); goStep(activeStep + 1); }}
                         >
                             Next <ChevronRight size={15} strokeWidth={2.5} />

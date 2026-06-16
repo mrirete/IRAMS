@@ -235,7 +235,7 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                             disabled={!selectedContact}
                             className={`px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2 ${
                                 selectedContact
-                                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                    ? 'bg-primary-600 hover:bg-primary-500 text-white'
                                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
                         >

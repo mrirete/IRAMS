@@ -289,13 +289,13 @@ export const ScanAssetModal: React.FC<ScanAssetModalProps> = ({ isOpen, onClose,
                                         onChange={(e) => setManualInput(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && handleManualSearch()}
                                         placeholder="e.g. P-101A, GEN-001, K-205..."
-                                        className="flex-1 p-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                        className="flex-1 p-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none"
                                         autoFocus
                                     />
                                     <button
                                         onClick={handleManualSearch}
                                         disabled={!manualInput.trim()}
-                                        className="px-4 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-300 transition flex items-center gap-1.5"
+                                        className="px-4 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-primary-500 disabled:opacity-50 disabled:bg-slate-300 transition flex items-center gap-1.5"
                                     >
                                         <Search size={16} /> Find
                                     </button>

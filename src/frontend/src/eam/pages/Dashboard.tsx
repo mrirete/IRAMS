@@ -370,9 +370,9 @@ export const Dashboard: React.FC = () => {
 
   // ── Quick Actions ──
   const quickActions = [
-    { label: 'Create Work Order', icon: Wrench, color: 'bg-blue-600 hover:bg-blue-700', path: '/work-orders?action=create' },
+    { label: 'Create Work Order', icon: Wrench, color: 'bg-primary-600 hover:bg-primary-500', path: '/work-orders?action=create' },
     { label: 'Log Request', icon: Inbox, color: 'bg-emerald-600 hover:bg-emerald-700', path: '/requests?action=create' },
-    { label: 'Add Asset', icon: Plus, color: 'bg-blue-600 hover:bg-blue-700', path: '/assets?action=create' },
+    { label: 'Add Asset', icon: Plus, color: 'bg-primary-600 hover:bg-primary-500', path: '/assets?action=create' },
     { label: 'View Reports', icon: BarChart3, color: 'bg-slate-700 hover:bg-slate-800', path: '/reports' },
   ];
 

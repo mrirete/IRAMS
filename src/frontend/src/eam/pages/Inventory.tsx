@@ -2000,7 +2000,7 @@ function InventoryFinancialsTab({ item, onUpdate, dictionaries }: { item: Invent
                                 type="checkbox"
                                 checked={item.isCapitalSpare || false}
                                 onChange={e => handleChange('isCapitalSpare', e.target.checked)}
-                                className="mt-1 rounded text-blue-600 focus:ring-blue-500"
+                                className="mt-1 rounded text-blue-600 focus:ring-primary-500"
                             />
                             <div>
                                 <span className="text-sm font-bold text-slate-800 flex items-center gap-2">
@@ -2500,7 +2500,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                 type="checkbox"
                                 checked={selectedIds.size === filteredInventory.length && filteredInventory.length > 0}
                                 onChange={toggleSelectAll}
-                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-primary-500 cursor-pointer"
                                 title="Select all"
                             />
                             <span className="text-xs text-slate-500 font-medium">
@@ -2535,7 +2535,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                                     return next;
                                                 });
                                             }}
-                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-primary-500 cursor-pointer"
                                         />
                                     </div>
                                     <div className="w-10 h-10 bg-slate-200 rounded flex-shrink-0 flex items-center justify-center text-slate-500">

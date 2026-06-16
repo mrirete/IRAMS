@@ -131,7 +131,7 @@ export const CustomDashboardTab: React.FC<CustomDashboardTabProps> = ({ widgetDa
               <div className="px-6 py-5">
                 <input
                   autoFocus
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 font-medium"
+                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-slate-50 font-medium"
                   placeholder="e.g. Daily Operations, Monthly Review..."
                   value={newDashName}
                   onChange={e => setNewDashName(e.target.value)}
@@ -185,7 +185,7 @@ export const CustomDashboardTab: React.FC<CustomDashboardTabProps> = ({ widgetDa
                     {renaming === d.id ? (
                       <input
                         autoFocus
-                        className="flex-1 text-sm border border-blue-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="flex-1 text-sm border border-blue-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500"
                         value={renameValue}
                         onChange={e => setRenameValue(e.target.value)}
                         onBlur={() => handleRename(d.id)}
@@ -367,7 +367,7 @@ export const CustomDashboardTab: React.FC<CustomDashboardTabProps> = ({ widgetDa
             <div className="px-6 py-5">
               <input
                 autoFocus
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 font-medium"
+                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-slate-50 font-medium"
                 placeholder="e.g. Daily Operations, Monthly Review..."
                 value={newDashName}
                 onChange={e => setNewDashName(e.target.value)}

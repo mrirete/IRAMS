@@ -1591,7 +1591,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     placeholder="Search by tag or name..."
                                     value={moveTargetSearch}
                                     onChange={(e) => setMoveTargetSearch(e.target.value)}
-                                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-400 focus:outline-none"
                                     autoFocus
                                 />
                             </div>
@@ -1714,7 +1714,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 <button
                                     onClick={handleMoveToParent}
                                     disabled={!moveTargetId || !validateMove(Array.from(selectedIds), moveTargetId!).valid}
-                                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-2"
+                                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-medium flex items-center gap-2"
                                 >
                                     <FolderInput size={14} /> Confirm Move
                                 </button>
@@ -2095,7 +2095,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             readOnly={!tagEditable}
                             className={`w-full text-sm border shadow-sm rounded-md p-2 outline-none transition-colors ${
                                 tagEditable
-                                    ? 'border-blue-400 bg-blue-50/30 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+                                    ? 'border-blue-400 bg-blue-50/30 focus:border-blue-500 focus:ring-1 focus:ring-primary-500'
                                     : 'border-slate-200 bg-slate-50 text-slate-700 cursor-not-allowed'
                             }`}
                             title={!tagEditable ? 'Asset tag is locked after creation. Use "Change" for audited changes.' : 'Set the asset tag (one-time — locks on save)'}
@@ -2151,7 +2151,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                                     type="text"
                                     value={newTag}
                                     onChange={e => setNewTag(e.target.value)}
-                                    className="w-full text-sm border border-slate-300 rounded-md p-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                    className="w-full text-sm border border-slate-300 rounded-md p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none"
                                     placeholder="Enter new asset tag..."
                                     autoFocus
                                 />
@@ -2162,7 +2162,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                                 <textarea
                                     value={changeReason}
                                     onChange={e => setChangeReason(e.target.value)}
-                                    className="w-full text-sm border border-slate-300 rounded-md p-2 min-h-[4rem] focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-y"
+                                    className="w-full text-sm border border-slate-300 rounded-md p-2 min-h-[4rem] focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none resize-y"
                                     placeholder="Explain why this tag is being changed (required for audit)..."
                                 />
                             </div>
@@ -2887,7 +2887,7 @@ function BOMTab({ asset, onUpdate }: { asset: Asset, onUpdate: (a: Asset) => voi
                         </div>
                         <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
                             <button onClick={() => setPromoteItem(null)} className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded text-sm font-medium">Cancel</button>
-                            <button onClick={handlePromote} className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700">
+                            <button onClick={handlePromote} className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm font-bold hover:bg-primary-500">
                                 Promote & Assign MAT#
                             </button>
                         </div>
@@ -4034,7 +4034,7 @@ function AddPartModal({ isOpen, onClose, onAddLinked, onCreateMaterial, onAddTex
                     <button onClick={onClose} className="px-3 py-1.5 text-slate-600 hover:bg-slate-100 rounded text-sm font-medium">Cancel</button>
                     {mode === 'link' && (
                         <button onClick={handleLinkSubmit} disabled={!selectedItemId || linkQty <= 0}
-                            className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm font-bold hover:bg-blue-700 disabled:opacity-50">
+                            className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm font-bold hover:bg-primary-500 disabled:opacity-50">
                             Add to BOM
                         </button>
                     )}

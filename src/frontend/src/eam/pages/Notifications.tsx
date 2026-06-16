@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     Bell, CheckCircle, AlertTriangle, Info, Clock,
-    Trash2, CheckSquare, Search, Filter, Archive, ExternalLink,
+    Trash2, CheckSquare, Search, ExternalLink,
     Shield, Zap, Package, Wrench, FileText, BarChart3, RefreshCw
 } from 'lucide-react';
 import { AskRelanternButton } from '../components/AskRelanternButton';
@@ -10,6 +10,7 @@ import { aiContextService } from '../services/AIContextService';
 import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/DatabaseService';
 import { Link } from 'react-router-dom';
+import { Button } from '../components/ui';
 
 type SeverityFilter = 'ALL' | 'CRITICAL' | 'WARNING' | 'INFO' | 'SUCCESS';
 type TypeFilter = 'ALL' | 'APPROVAL_REQUIRED' | 'ASSIGNMENT' | 'STATUS_CHANGE' | 'SLA_BREACH' | 'INVENTORY_ALERT' | 'SCHEDULE_ALERT' | 'SAFETY_ALERT' | 'COST_THRESHOLD' | 'AI_RECOMMENDATION' | 'SYSTEM';
@@ -157,18 +158,20 @@ export const Notifications: React.FC = () => {
                             warningCount: notifications.filter(n => n.severity === 'WARNING' && !n.isRead).length,
                         })}
                     />
-                    <button
+                    <Button
+                        variant="secondary"
                         onClick={() => { setLoading(true); loadNotifications(); }}
-                        className="px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                        leftIcon={<RefreshCw size={14} className={loading ? 'animate-spin' : ''} />}
                     >
-                        <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
-                    </button>
-                    <button
+                        Refresh
+                    </Button>
+                    <Button
+                        variant="secondary"
                         onClick={handleMarkAllRead}
-                        className="px-4 py-2 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                        leftIcon={<CheckSquare size={16} />}
                     >
-                        <CheckSquare size={16} /> Mark all read
-                    </button>
+                        Mark all read
+                    </Button>
                 </div>
             </div>
 
@@ -254,7 +257,7 @@ export const Notifications: React.FC = () => {
                     filteredNotifications.map(n => (
                         <div
                             key={n.id}
-                            className={`p-4 rounded-xl border shadow-sm transition-all relative group ${getSeverityBg(n.severity)} ${!n.isRead ? 'border-l-4 border-l-blue-500' : ''}`}
+                            className={`p-4 rounded-card border shadow-card hover:shadow-raised transition-all relative group ${getSeverityBg(n.severity)} ${!n.isRead ? 'border-l-4 border-l-primary-600' : ''}`}
                         >
                             <div className="flex items-start gap-4">
                                 <div className="mt-1 flex-shrink-0">{getSeverityIcon(n.severity)}</div>
@@ -307,12 +310,14 @@ export const Notifications: React.FC = () => {
                                 {/* Actions */}
                                 <div className="flex flex-col gap-2 items-end flex-shrink-0">
                                     {n.severity === 'CRITICAL' && !n.isAcknowledged && (
-                                        <button
+                                        <Button
+                                            variant="danger"
+                                            size="sm"
                                             onClick={() => handleAcknowledge(n.id)}
-                                            className="bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm animate-pulse"
+                                            className="animate-pulse"
                                         >
                                             Acknowledge
-                                        </button>
+                                        </Button>
                                     )}
                                     {!n.isRead && (
                                         <button

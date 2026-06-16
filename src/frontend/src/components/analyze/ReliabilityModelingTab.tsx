@@ -1150,7 +1150,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                             <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Create your first P&ID to visualize process equipment, upload background drawings, and overlay live asset health data.</p>
                             <div className="flex items-center justify-center gap-2 mt-4">
                                 <button onClick={() => setShowNewPidModal(true)}
-                                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-primary-500 transition-colors">
                                     <Plus size={12} /> Create New P&ID
                                 </button>
                                 <button onClick={() => handleCreatePidStudy('Demo — Process Unit', 'Sample P&ID with ISA 5.1 symbols')}
@@ -1223,7 +1223,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                 <div className="flex justify-end gap-2 pt-2">
                                     <button onClick={() => setShowNewPidModal(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg">Cancel</button>
                                     <button onClick={() => handleCreatePidStudy(newPidTitle || 'Untitled P&ID', newPidDesc)} disabled={!newPidTitle.trim()}
-                                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-primary-500 disabled:opacity-40 transition-colors">
                                         Create P&ID
                                     </button>
                                 </div>

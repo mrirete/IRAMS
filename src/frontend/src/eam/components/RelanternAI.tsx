@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, AlertTriangle, ShieldCheck, Sparkles, TrendingUp, DollarSign, Wrench, BarChart3, Target, Loader2, Clock, Search } from 'lucide-react';
 import { createRelanternChat, proxyAIChat, isAIProxyEnabled } from '../services/geminiService';
 import { ChatMessage } from '../types';
+import { Button } from './ui';
 
 // ─── Quick Action Chip Definitions by Context ─────────────
 const QUICK_ACTIONS: Record<string, { label: string; icon: React.ReactNode; prompt: string }[]> = {
@@ -260,7 +261,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
       {/* Header */}
       <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-4 flex justify-between items-center shadow-md">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/20">
             <Bot size={18} className="text-white" />
           </div>
           <div>
@@ -283,7 +284,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
               key={i}
               onClick={() => handleQuickAction(chip.prompt)}
               disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 text-slate-700 rounded-full hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 transition-all shadow-sm disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 text-slate-700 rounded-full hover:border-primary-400 hover:bg-primary-50 hover:text-primary-700 transition-all shadow-sm disabled:opacity-50"
             >
               {chip.icon}
               {chip.label}
@@ -296,9 +297,9 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
       <div className="flex-1 overflow-y-auto p-4 bg-slate-50 space-y-4">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] rounded-lg p-3 text-sm shadow-sm ${msg.role === 'user'
-              ? 'bg-blue-600 text-white rounded-br-none'
-              : 'bg-white text-slate-700 border border-slate-200 rounded-bl-none'
+            <div className={`max-w-[85%] rounded-card p-3 text-sm shadow-card ${msg.role === 'user'
+              ? 'bg-primary-600 text-white rounded-br-sm'
+              : 'bg-white text-slate-700 border border-slate-200 rounded-bl-sm'
               }`}>
               {msg.role === 'model' && (
                 <div className="mb-1.5"><HITLBadge /></div>
@@ -307,7 +308,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
                 {renderMarkdown(msg.text)}
               </div>
               {/* Timestamp */}
-              <div className={`text-[9px] mt-1.5 ${msg.role === 'user' ? 'text-blue-200' : 'text-slate-300'}`}>
+              <div className={`text-[9px] mt-1.5 ${msg.role === 'user' ? 'text-primary-200' : 'text-slate-300'}`}>
                 <Clock size={8} className="inline mr-1" />
                 {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
@@ -317,7 +318,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-white border border-slate-200 p-3 rounded-lg rounded-bl-none shadow-sm flex items-center gap-2">
-              <Loader2 size={14} className="animate-spin text-blue-400" />
+              <Loader2 size={14} className="animate-spin text-primary-500" />
               <span className="text-xs text-slate-400">Analyzing...</span>
             </div>
           </div>
@@ -339,15 +340,17 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyPress}
             placeholder="Ask about TCO, RCA, FMEA, PM strategy, or asset ROI..."
-            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-10 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none h-12 scrollbar-hide"
+            className="w-full bg-slate-50 border border-slate-300 rounded-lg pl-3 pr-12 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-600 resize-none h-12 scrollbar-hide"
           />
-          <button
+          <Button
+            size="sm"
             onClick={() => handleSend()}
             disabled={!input.trim() || isLoading}
-            className="absolute right-2 top-2 p-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-md hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 transition"
+            aria-label="Send message"
+            className="absolute right-2 top-1.5 !px-2"
           >
             <Send size={16} />
-          </button>
+          </Button>
         </div>
         <p className="text-[9px] text-slate-300 mt-1 text-center">
           Powered by Gemini · All responses are advisory · ISO 55000 · HITL

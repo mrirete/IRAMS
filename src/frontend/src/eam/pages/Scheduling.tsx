@@ -25,6 +25,7 @@ import { CapacityChart } from '../components/scheduling/CapacityChart';
 import { InteractiveGantt } from '../components/scheduling/InteractiveGantt';
 import { SchedulePrintModal, PrintExportButton } from '../components/scheduling/SchedulePrint';
 import { NotificationService } from '../services/NotificationService';
+import { Button } from '../components/ui';
 
 // --- Scheduling Constants ---
 const FROZEN_ZONE_DAYS = 7; // Industry standard — weekly schedule lock
@@ -861,25 +862,25 @@ export const Scheduling: React.FC = () => {
                     <div className="flex bg-white rounded-lg p-1 border border-slate-200 shadow-sm">
                         <button
                             onClick={() => setViewMode('CALENDAR')}
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'CALENDAR' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'CALENDAR' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <CalendarIcon size={16} /><span className="hidden sm:inline">Calendar</span>
                         </button>
                         <button
                             onClick={() => setViewMode('GANTT')}
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'GANTT' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'GANTT' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <BarChart2 size={16} /><span className="hidden sm:inline">Gantt</span>
                         </button>
                         <button
                             onClick={() => setViewMode('BACKLOG')}
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'BACKLOG' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'BACKLOG' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <List size={16} /><span className="hidden sm:inline">Backlog</span>
                         </button>
                         <button
                             onClick={() => setViewMode('MRS')}
-                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'MRS' ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'MRS' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
                             <Users size={16} /><span className="hidden sm:inline">Resources</span>
                         </button>
@@ -892,7 +893,7 @@ export const Scheduling: React.FC = () => {
             <ScheduleKPIs jobs={jobs} recurringJobs={recurringJobs} materialStatusMap={materialStatusMap} />
 
             {/* Content Area */}
-            <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden relative flex flex-col">
+            <div className="flex-1 bg-white rounded-card shadow-card border border-slate-200 overflow-hidden relative flex flex-col">
                 {viewMode === 'CALENDAR' && (
                     <>
                         {/* Calendar Toolbar */}
@@ -906,7 +907,7 @@ export const Scheduling: React.FC = () => {
                                         placeholder="Search WO, asset, title..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white w-56 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                                        className="pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white w-56 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-600"
                                     />
                                 </div>
                                 {/* Scale Switcher */}
@@ -916,7 +917,7 @@ export const Scheduling: React.FC = () => {
                                             key={scale}
                                             onClick={() => setCalendarScale(scale)}
                                             className={`px-3 py-1 text-[11px] font-bold rounded-md transition ${calendarScale === scale
-                                                ? 'bg-white text-blue-600 shadow-sm'
+                                                ? 'bg-white text-primary-600 shadow-sm'
                                                 : 'text-slate-500 hover:text-slate-700'
                                                 }`}
                                         >
@@ -928,7 +929,7 @@ export const Scheduling: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => setShowProjections(!showProjections)}
-                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showProjections ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showProjections ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
                                 >
                                     {showProjections ? <Eye size={14} /> : <EyeOff size={14} />}
                                     {showProjections ? 'Hide Projections' : 'Show Projections'}
@@ -1260,7 +1261,7 @@ const CalendarView: React.FC<{
                                 <div className={`text-xs font-bold uppercase ${todayHere ? 'text-blue-600' : 'text-slate-500'}`}>
                                     {day.toLocaleDateString('default', { weekday: 'short' })}
                                 </div>
-                                <div className={`text-sm font-bold ${todayHere ? 'bg-blue-600 text-white rounded-full w-7 h-7 flex items-center justify-center' : 'text-slate-800'}`}>
+                                <div className={`text-sm font-bold ${todayHere ? 'bg-primary-600 text-white rounded-full w-7 h-7 flex items-center justify-center' : 'text-slate-800'}`}>
                                     {day.getDate()}
                                 </div>
                                 <div className="text-xs text-slate-400">{day.toLocaleDateString('default', { month: 'short' })}</div>
@@ -1630,12 +1631,12 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                 {selectedIds.size > 0 && (
                     <div className="flex gap-2 animate-in fade-in slide-in-from-right-4">
                         <span className="text-sm font-bold text-slate-600 self-center mr-2">{selectedIds.size} Selected</span>
-                        <button onClick={handleBulkAssign} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded text-sm font-medium">
-                            <UserPlus size={16} /> Assign
-                        </button>
-                        <button onClick={() => handleBulkPriority('P1')} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-300 text-red-600 hover:bg-red-50 rounded text-sm font-medium">
-                            <Zap size={16} /> Set P1 (Emergency)
-                        </button>
+                        <Button variant="secondary" size="sm" onClick={handleBulkAssign} leftIcon={<UserPlus size={16} />}>
+                            Assign
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => handleBulkPriority('P1')} leftIcon={<Zap size={16} />} className="!text-red-600 hover:!bg-red-50">
+                            Set P1 (Emergency)
+                        </Button>
                     </div>
                 )}
             </div>

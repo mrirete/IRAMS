@@ -74,7 +74,7 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
                 <h3 className="font-semibold text-lg">People</h3>
                 <div className="flex items-center gap-2">
                     <span className="text-xs font-medium bg-blue-500 px-2 py-0.5 rounded-full">{contacts.length}</span>
-                    <button onClick={onClose} className="hover:bg-blue-700 p-1 rounded">
+                    <button onClick={onClose} className="hover:bg-primary-500 p-1 rounded">
                         ✕
                     </button>
                 </div>
@@ -87,7 +87,7 @@ export const DraggableUserList: React.FC<DraggableUserListProps> = ({ isOpen, on
                     <input
                         type="text"
                         placeholder="Search people..."
-                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:text-gray-100"
+                        className="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md focus:ring-primary-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:text-gray-100"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />

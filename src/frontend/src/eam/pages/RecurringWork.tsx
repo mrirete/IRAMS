@@ -611,7 +611,7 @@ export const RecurringWork: React.FC = () => {
     return (
         <div className="flex h-[calc(100vh-6rem)] gap-6 relative">
             {/* List Sidebar */}
-            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${isFullscreen ? 'hidden' : selectedJob ? 'w-1/3 hidden lg:flex' : 'w-full'}`}>
+            <div className={`flex flex-col bg-white rounded-card shadow-card border border-slate-200 overflow-hidden transition-all duration-300 ${isFullscreen ? 'hidden' : selectedJob ? 'w-1/3 hidden lg:flex' : 'w-full'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center">
                     <h2 className="font-bold text-slate-900">Recurring Jobs</h2>
                     <div className="flex gap-2">
@@ -624,7 +624,7 @@ export const RecurringWork: React.FC = () => {
                         </button>
                         <button
                             onClick={() => setShowGenerator(true)}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
+                            className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
                             title="Run Job Generator"
                         >
                             <Zap size={16} /> <span className="hidden xl:inline">Generate</span>
@@ -774,7 +774,7 @@ export const RecurringWork: React.FC = () => {
                             <button onClick={() => handleBulkStatusChange('ACTIVE')} className="px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-[11px] font-bold flex items-center gap-1.5 hover:bg-green-200">
                                 <PlayCircle size={13} /> Activate
                             </button>
-                            <button onClick={handleBulkGenerate} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 hover:bg-blue-700">
+                            <button onClick={handleBulkGenerate} className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-[11px] font-bold flex items-center gap-1.5 hover:bg-primary-500">
                                 <Zap size={13} /> Generate
                             </button>
                         </div>
@@ -905,7 +905,7 @@ export const RecurringWork: React.FC = () => {
             {showGenerator && (
                 <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center backdrop-blur-sm p-4">
                     <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
-                        <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-blue-600 text-white rounded-t-2xl">
+                        <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-primary-600 text-white rounded-t-2xl">
                             <div>
                                 <h2 className="text-xl font-bold flex items-center gap-2"><Zap size={20} /> Recurring Job Generator</h2>
                                 <p className="text-blue-100 text-sm">Process due PMs and create Work Orders.</p>
@@ -931,7 +931,7 @@ export const RecurringWork: React.FC = () => {
                             </div>
                             <button
                                 onClick={handleRunGenerator}
-                                className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md flex items-center gap-2"
+                                className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-md flex items-center gap-2"
                             >
                                 <Play size={16} fill="currentColor" /> Run Analysis
                             </button>
@@ -1329,7 +1329,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                         <select
                             value={job.rcmStrategy || ''}
                             onChange={(e) => onUpdate({ rcmStrategy: e.target.value as any || undefined })}
-                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 ${criticality === 'A' && !job.rcmStrategy ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
+                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 ${criticality === 'A' && !job.rcmStrategy ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
                         >
                             <option value="">— Select Strategy —</option>
                             {rcmStrategies.length > 0
@@ -1348,7 +1348,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                         <select
                             value={job.functionalFailureCode || ''}
                             onChange={(e) => onUpdate({ functionalFailureCode: e.target.value || undefined })}
-                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 ${criticality === 'A' && !job.functionalFailureCode ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
+                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 ${criticality === 'A' && !job.functionalFailureCode ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
                         >
                             <option value="">— Select —</option>
                             {functionalFailures.length > 0
@@ -1367,7 +1367,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                         <select
                             value={job.failureModeCode || ''}
                             onChange={(e) => onUpdate({ failureModeCode: e.target.value || undefined })}
-                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 ${criticality === 'A' && !job.failureModeCode ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
+                            className={`w-full p-2 border rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500 ${criticality === 'A' && !job.failureModeCode ? 'border-red-300 bg-red-50' : 'border-slate-300'}`}
                         >
                             <option value="">— Select —</option>
                             {failureModes.length > 0 ? (() => {
@@ -1436,7 +1436,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             <textarea
                                 value={job.localImpact || ''}
                                 onChange={(e) => onUpdate({ localImpact: e.target.value })}
-                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 resize-none placeholder:text-slate-400"
+                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-primary-500 resize-none placeholder:text-slate-400"
                                 placeholder="Describe the local effect on this equipment or subsystem if the failure mode occurs (e.g., 'Pump seizure, loss of lubrication to bearings')..."
                             />
                             <p className="text-[10px] text-slate-400 mt-1">Impact on the equipment/subsystem itself when the failure occurs.</p>
@@ -1446,7 +1446,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             <textarea
                                 value={job.plantWideImpact || ''}
                                 onChange={(e) => onUpdate({ plantWideImpact: e.target.value })}
-                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-blue-500 resize-none placeholder:text-slate-400"
+                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-2 focus:ring-primary-500 resize-none placeholder:text-slate-400"
                                 placeholder="Describe the broader impact on plant operations, safety, or environment (e.g., 'Loss of cooling water to reactor, emergency shutdown required')..."
                             />
                             <p className="text-[10px] text-slate-400 mt-1">Wider consequence to production output, personnel safety, or environmental compliance.</p>
@@ -2605,7 +2605,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                             type="number"
                                             value={l.estDuration}
                                             onChange={(e) => updateLabor(l.id, 'estDuration', parseFloat(e.target.value) || 0)}
-                                            className="w-16 text-sm bg-white border border-slate-200 rounded-lg p-1.5 text-right text-slate-700 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-colors"
+                                            className="w-16 text-sm bg-white border border-slate-200 rounded-lg p-1.5 text-right text-slate-700 focus:ring-2 focus:ring-primary-400 focus:border-primary-600 transition-colors"
                                             min="0" step="0.5"
                                         />
                                     </td>
@@ -2614,7 +2614,7 @@ const LaborTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                             type="number"
                                             value={l.estRate || 0}
                                             onChange={(e) => updateLabor(l.id, 'estRate', parseFloat(e.target.value) || 0)}
-                                            className="w-20 text-sm bg-white border border-slate-200 rounded-lg p-1.5 text-right text-slate-700 focus:ring-2 focus:ring-blue-400 focus:border-blue-400 transition-colors"
+                                            className="w-20 text-sm bg-white border border-slate-200 rounded-lg p-1.5 text-right text-slate-700 focus:ring-2 focus:ring-primary-400 focus:border-primary-600 transition-colors"
                                             min="0" step="5"
                                         />
                                     </td>

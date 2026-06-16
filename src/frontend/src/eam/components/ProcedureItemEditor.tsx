@@ -45,7 +45,7 @@ const TextObservationField: React.FC<{ value: string; onChange: (val: string) =>
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="Enter observation or comment..."
-                className="w-full min-h-[100px] border border-slate-200 rounded-lg bg-white text-slate-700 text-sm p-3 resize-y focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full min-h-[100px] border border-slate-200 rounded-lg bg-white text-slate-700 text-sm p-3 resize-y focus:ring-1 focus:ring-primary-500 focus:border-blue-500"
                 rows={4}
             />
             {!value && (
@@ -268,7 +268,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                         <textarea
                             className={`w-full bg-transparent placeholder:text-slate-300 resize-none ${isHeading
                                 ? 'text-base font-bold text-slate-800 border-none p-0 focus:ring-0'
-                                : 'text-sm font-medium text-slate-700 border border-slate-200 rounded-md px-2.5 py-2 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 hover:border-slate-300 transition-colors'}`}
+                                : 'text-sm font-medium text-slate-700 border border-slate-200 rounded-md px-2.5 py-2 focus:ring-1 focus:ring-primary-500 focus:border-blue-500 hover:border-slate-300 transition-colors'}`}
                             placeholder={isHeading ? 'Section heading...' : 'Enter instruction...'}
                             value={block.label}
                             onChange={(e) => onChange({ label: e.target.value })}
@@ -290,7 +290,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                             <label className="flex items-center gap-1.5 cursor-pointer bg-slate-50 px-2 py-1.5 rounded border border-slate-100 hover:bg-slate-100 transition-colors">
                                 <input
                                     type="checkbox"
-                                    className="rounded-sm border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                                    className="rounded-sm border-slate-300 text-blue-600 focus:ring-primary-500 w-3.5 h-3.5"
                                     checked={block.required}
                                     onChange={(e) => onChange({ required: e.target.checked })}
                                 />

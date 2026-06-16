@@ -47,7 +47,7 @@ const CollapsibleObservation: React.FC<{ value: string; onChange: (val: string) 
                 onChange={(e) => onChange(e.target.value)}
                 placeholder="Enter observation or comment..."
                 readOnly={readOnly}
-                className={`w-full min-h-[100px] border border-slate-200 rounded-lg text-sm p-3 resize-y ${readOnly ? 'bg-slate-50 text-slate-400' : 'bg-white text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500'}`}
+                className={`w-full min-h-[100px] border border-slate-200 rounded-lg text-sm p-3 resize-y ${readOnly ? 'bg-slate-50 text-slate-400' : 'bg-white text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-primary-500'}`}
                 rows={4}
             />
             {!value && !readOnly && (

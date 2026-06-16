@@ -130,7 +130,7 @@ export const FinancialsOverviewSubTab: React.FC<OverviewProps> = ({
                                 <button onClick={() => { setIsEditingDowntime(false); setEditedDowntimeCost(financialRecord?.downtimeCostPerHour || 0); }} className="px-1.5 py-0.5 text-[10px] text-slate-500 hover:text-slate-700 border border-slate-200 rounded">
                                     Cancel
                                 </button>
-                                <button onClick={onSaveDowntimeCost} disabled={saving} className="px-1.5 py-0.5 text-[10px] bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                                <button onClick={onSaveDowntimeCost} disabled={saving} className="px-1.5 py-0.5 text-[10px] bg-blue-600 text-white rounded hover:bg-primary-500 disabled:opacity-50">
                                     {saving ? '...' : 'Save'}
                                 </button>
                             </div>

@@ -415,7 +415,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                                             setEditingSelected(false);
                                         }
                                     }}
-                                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-md cursor-pointer"
+                                    className="px-2.5 py-1 bg-primary-600 hover:bg-primary-500 text-white text-[10px] font-bold rounded-md cursor-pointer"
                                 >
                                     Save
                                 </button>
@@ -465,7 +465,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                                             handleUpdateProbabilityWithHistory(selectedEvent.id, val);
                                         }
                                     }}
-                                    className="w-16 px-1.5 py-0.5 border border-slate-200 bg-white rounded-md outline-none text-center font-bold text-slate-800 shadow-xs focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                                    className="w-16 px-1.5 py-0.5 border border-slate-200 bg-white rounded-md outline-none text-center font-bold text-slate-800 shadow-xs focus:border-blue-500 focus:ring-1 focus:ring-primary-500/20"
                                 />
                             </div>
                         )}

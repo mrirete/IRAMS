@@ -559,7 +559,7 @@ const FunctionalFailureSelector: React.FC<{
                                 <button
                                     onClick={submitManualEntry}
                                     disabled={!manualCode || !manualDesc || !!duplicateError}
-                                    className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+                                    className="px-3 py-1.5 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-primary-500 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                                 >
                                     <Check size={12} /> Apply
                                 </button>
@@ -1178,7 +1178,7 @@ const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceReque
                                                 value={assetSearch}
                                                 onChange={(e) => setAssetSearch(e.target.value)}
                                                 placeholder="Search by tag, name, or location..."
-                                                className="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                className="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none"
                                                 autoFocus
                                             />
                                         </div>
@@ -1384,7 +1384,7 @@ const CreationForm: React.FC<{ onClose: () => void, onSubmit: (req: ServiceReque
                                     id="isBreakdown"
                                     checked={isBreakdown}
                                     onChange={(e) => setIsBreakdown(e.target.checked)}
-                                    className="w-5 h-5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                    className="w-5 h-5 text-blue-600 rounded border-slate-300 focus:ring-primary-500"
                                 />
                                 <label htmlFor="isBreakdown" className="text-sm font-medium text-slate-700 cursor-pointer">
                                     This is a Breakdown (Equipment is stopped or cannot fulfill its function)
@@ -1737,7 +1737,7 @@ const RequestDetail: React.FC<{
                         }}
                         disabled={request.status !== RequestStatus.REVIEW || isProcessing || !canAuthorize}
                         className={`px-3 py-1.5 text-sm font-medium rounded-lg ${request.status === RequestStatus.REVIEW && canAuthorize
-                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            ? 'bg-blue-600 text-white hover:bg-primary-500'
                             : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                             }`}
                     >
@@ -1912,7 +1912,7 @@ const RequestDetail: React.FC<{
                                             checked={request.isBreakdown || false}
                                             disabled={!isEditable}
                                             onChange={(e) => onUpdate({ ...request, isBreakdown: e.target.checked })}
-                                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 disabled:opacity-50"
+                                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-primary-500 disabled:opacity-50"
                                         />
                                         <label htmlFor={`breakdown-${request.id}`} className={`text-sm font-medium ${!isEditable ? 'text-slate-400' : 'text-slate-700 cursor-pointer'}`}>
                                             Breakdown (Equipment stopped)

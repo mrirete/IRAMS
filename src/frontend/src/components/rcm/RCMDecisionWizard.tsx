@@ -296,7 +296,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                             justification: rec.reasoning,
                           });
                         }}
-                        className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold rounded-lg transition-colors"
+                        className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-[10px] font-bold rounded-lg transition-colors"
                       >
                         <Check size={11} /> Accept Recommendation
                       </button>

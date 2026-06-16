@@ -491,7 +491,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                             <select
                                 value={formData.personId}
                                 onChange={e => handlePersonChange(e.target.value)}
-                                className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none bg-white"
+                                className="w-full px-3 py-2 text-sm border border-blue-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:outline-none bg-white"
                             >
                                 <option value="">— Select Technician —</option>
                                 {people.map(p => (
@@ -569,7 +569,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                                         description: formData.description || (wo ? `WO: ${wo.job_id} — ${wo.description || ''}` : ''),
                                     });
                                 }}
-                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:outline-none"
                             >
                                 <option value="">— No WO (ad-hoc) —</option>
                                 {workOrders.slice(0, 50).map(wo => (
@@ -2020,12 +2020,12 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                             <input
                                 type="text"
                                 placeholder="Search warranties..."
-                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                             />
                         </div>
                         <button
                             onClick={() => setIsAddModalOpen(true)}
-                            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-primary-500 transition-colors"
                         >
                             <Plus size={14} />
                             Add Warranty
@@ -2093,7 +2093,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                     <textarea
                                                         value={claimForm.failureDescription}
                                                         onChange={e => setClaimForm({ ...claimForm, failureDescription: e.target.value })}
-                                                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none resize-none"
+                                                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:outline-none resize-none"
                                                         rows={2}
                                                         placeholder="Describe the failure or defect..."
                                                     />
@@ -2104,7 +2104,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                         <select
                                                             value={claimForm.claimType}
                                                             onChange={e => setClaimForm({ ...claimForm, claimType: e.target.value as any })}
-                                                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                                                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:outline-none"
                                                         >
                                                             <option value="REPAIR">Repair</option>
                                                             <option value="REPLACEMENT">Replacement</option>
@@ -2117,7 +2117,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                             type="number"
                                                             value={claimForm.amount}
                                                             onChange={e => setClaimForm({ ...claimForm, amount: e.target.value })}
-                                                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none"
+                                                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:outline-none"
                                                             placeholder="0.00"
                                                         />
                                                     </div>
@@ -2133,7 +2133,7 @@ const WarrantiesTab: React.FC<WarrantiesTabProps> = ({ warranties, assets, vendo
                                                 <button
                                                     onClick={handleFileClaim}
                                                     disabled={!claimForm.failureDescription || filingClaim}
-                                                    className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+                                                    className="px-4 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 transition-colors flex items-center gap-1.5"
                                                 >
                                                     {filingClaim ? (
                                                         <>
@@ -2336,7 +2336,7 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
                                             {claim.status === 'DRAFT' && (
                                                 <button
                                                     onClick={() => openAction(claim.id, 'SUBMIT')}
-                                                    className="px-2.5 py-1 text-[10px] font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                                                    className="px-2.5 py-1 text-[10px] font-bold bg-blue-600 text-white rounded-lg hover:bg-primary-500 transition"
                                                 >
                                                     Submit →
                                                 </button>
@@ -2435,7 +2435,7 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
                                 className={`px-4 py-2 text-sm font-bold text-white rounded-lg disabled:opacity-50 ${
                                     actionType === 'REJECT' ? 'bg-red-600 hover:bg-red-700' :
                                     actionType === 'APPROVE' ? 'bg-emerald-600 hover:bg-emerald-700' :
-                                    'bg-blue-600 hover:bg-blue-700'
+                                    'bg-primary-600 hover:bg-primary-500'
                                 }`}
                             >
                                 {processing ? '...' : actionType === 'SUBMIT' ? 'Submit to Vendor' :

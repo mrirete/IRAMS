@@ -141,7 +141,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
     }, [tab, selectedRole, onAdd]);
 
     const accent = accentColor === 'violet'
-        ? { btn: 'bg-blue-600 hover:bg-blue-700', light: 'bg-blue-50 border-blue-200 text-blue-700', ring: 'focus:ring-blue-200 focus:border-blue-400' }
+        ? { btn: 'bg-primary-600 hover:bg-primary-500', light: 'bg-blue-50 border-blue-200 text-blue-700', ring: 'focus:ring-blue-200 focus:border-blue-400' }
         : { btn: 'bg-cyan-600 hover:bg-cyan-700', light: 'bg-cyan-50 border-cyan-200 text-cyan-700', ring: 'focus:ring-cyan-200 focus:border-cyan-400' };
 
     return (

@@ -239,7 +239,7 @@ export const AdminActivityPage: React.FC = () => {
                         value={search}
                         onChange={e => { setSearch(e.target.value); setPage(0); }}
                         placeholder="Search changes, users, record IDs..."
-                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all font-medium"
+                        className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-primary-500/20 transition-all font-medium"
                     />
                 </div>
 
@@ -273,7 +273,7 @@ export const AdminActivityPage: React.FC = () => {
 
                 <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none font-semibold whitespace-nowrap">
                     <input type="checkbox" checked={filterPrivileged} onChange={e => { setFilterPrivileged(e.target.checked); setPage(0); }}
-                        className="rounded border-slate-300 bg-white text-blue-600 focus:ring-blue-500 w-4 h-4" />
+                        className="rounded border-slate-300 bg-white text-blue-600 focus:ring-primary-500 w-4 h-4" />
                     <AlertTriangle size={13} className="text-amber-500" /> Privileged only
                 </label>
 

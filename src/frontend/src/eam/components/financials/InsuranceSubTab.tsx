@@ -145,7 +145,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                                             <button onClick={() => setEditingId(null)} className="px-2 py-1 text-xs text-slate-600 hover:text-slate-800 border border-slate-200 rounded flex items-center gap-1">
                                                 <X size={12} /> Cancel
                                             </button>
-                                            <button onClick={handleSave} disabled={saving} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50">
+                                            <button onClick={handleSave} disabled={saving} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-primary-500 flex items-center gap-1 disabled:opacity-50">
                                                 <Save size={12} /> {saving ? '...' : 'Save'}
                                             </button>
                                         </div>
@@ -226,7 +226,7 @@ export const InsuranceSubTab: React.FC<InsuranceProps> = ({
                             <button onClick={() => { setShowClaimForm(false); setClaimDescription(''); setClaimEstDamage(0); }} className="px-2 py-1 text-xs text-slate-600 hover:text-slate-800 border border-slate-200 rounded flex items-center gap-1">
                                 <X size={12} /> Cancel
                             </button>
-                            <button onClick={handleFileClaim} disabled={saving || !claimDescription} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50">
+                            <button onClick={handleFileClaim} disabled={saving || !claimDescription} className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-primary-500 flex items-center gap-1 disabled:opacity-50">
                                 <Save size={12} /> {saving ? '...' : 'File Claim'}
                             </button>
                         </div>

@@ -359,7 +359,7 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
                         <div className="flex gap-2">
                             <button onClick={() => { if (pasteData.trim()) handleCSVImport(pasteData); }}
                                 disabled={!pasteData.trim()}
-                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-40">
+                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-primary-500 disabled:opacity-40">
                                 Parse & Apply
                             </button>
                             <button onClick={downloadTemplate}

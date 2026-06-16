@@ -106,7 +106,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                 {/* TEXT */}
                 {block.type === 'TEXT' && (
                     <textarea
-                        className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary-500"
                         placeholder="Enter observations..."
                         value={block.valueString || ''}
                         onChange={(e) => onChange({ valueString: e.target.value })}
@@ -120,7 +120,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                     <div className="flex items-center gap-2">
                         <input
                             type="number"
-                            className="flex-1 border border-slate-300 rounded-lg p-3 text-sm font-mono focus:ring-2 focus:ring-blue-500"
+                            className="flex-1 border border-slate-300 rounded-lg p-3 text-sm font-mono focus:ring-2 focus:ring-primary-500"
                             placeholder="Enter value..."
                             value={block.valueNumber ?? ''}
                             onChange={(e) => onChange({ valueNumber: parseFloat(e.target.value) })}
@@ -134,7 +134,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                 {block.type === 'DATE' && (
                     <input
                         type="date"
-                        className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500"
+                        className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary-500"
                         value={block.valueDate || ''}
                         onChange={(e) => onChange({ valueDate: e.target.value })}
                         disabled={readOnly}
@@ -219,7 +219,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                         <div className="flex items-center gap-2 mb-2">
                             <input
                                 type="number"
-                                className={`flex-1 border-2 rounded-lg p-3 text-lg font-mono font-bold focus:ring-2 focus:ring-blue-500 ${block.isOutOfSpec ? 'border-red-300 bg-red-50 text-red-900' : 'border-slate-300'}`}
+                                className={`flex-1 border-2 rounded-lg p-3 text-lg font-mono font-bold focus:ring-2 focus:ring-primary-500 ${block.isOutOfSpec ? 'border-red-300 bg-red-50 text-red-900' : 'border-slate-300'}`}
                                 placeholder="0.00"
                                 value={block.valueNumber ?? ''}
                                 onChange={(e) => handleConditionChange(parseFloat(e.target.value))}
@@ -249,7 +249,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                         <div className="flex items-center gap-2 mb-2">
                             <input
                                 type="number"
-                                className="flex-1 border-2 rounded-lg p-3 text-lg font-mono font-bold focus:ring-2 focus:ring-blue-500 border-slate-300"
+                                className="flex-1 border-2 rounded-lg p-3 text-lg font-mono font-bold focus:ring-2 focus:ring-primary-500 border-slate-300"
                                 placeholder="Current reading"
                                 value={block.valueNumber ?? ''}
                                 onChange={(e) => onChange({ valueNumber: parseFloat(e.target.value) })}
@@ -277,7 +277,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                             <label key={item.id} className="flex items-center gap-3 p-2 rounded hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200">
                                 <input
                                     type="checkbox"
-                                    className="rounded p-2 text-blue-600 focus:ring-blue-500 w-5 h-5 border-slate-300"
+                                    className="rounded p-2 text-blue-600 focus:ring-primary-500 w-5 h-5 border-slate-300"
                                     checked={item.checked}
                                     onChange={(e) => {
                                         const newItems = [...(block.checklistItems || [])];
@@ -301,7 +301,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                             <label key={step.id} className="flex items-start gap-3 p-2 rounded hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-200">
                                 <input
                                     type="checkbox"
-                                    className="rounded text-blue-600 focus:ring-blue-500 w-5 h-5 border-slate-300 mt-0.5"
+                                    className="rounded text-blue-600 focus:ring-primary-500 w-5 h-5 border-slate-300 mt-0.5"
                                     checked={step.completed}
                                     onChange={(e) => {
                                         const newSteps = [...(block.procedureSteps || [])];

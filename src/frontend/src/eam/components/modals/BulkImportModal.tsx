@@ -420,7 +420,7 @@ export default function BulkImportModal({
                         {step === 'validate' && parseResult && parseResult.validCount > 0 && (
                             <button
                                 onClick={handleImport}
-                                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold text-sm flex items-center gap-2"
+                                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-primary-500 transition font-semibold text-sm flex items-center gap-2"
                             >
                                 Import {parseResult.validCount} of {parseResult.rows.length} {typeLabel}
                                 <ChevronRight size={16} />
