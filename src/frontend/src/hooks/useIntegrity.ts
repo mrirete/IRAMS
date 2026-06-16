@@ -9,20 +9,21 @@ import {
     MOCK_DAMAGE_MECHS, MOCK_FFS, MOCK_IOW, MOCK_INSPECTIONS
 } from '../mockData/integrity';
 import integrityService from '../eam/services/IntegrityService';
+import { demoSeed } from '../config/demoMode';
 
 // ═══════════════════════════════════════════════════════════════════════
-//  HOOK — tries Supabase first, falls back to mock data
+//  HOOK — Supabase first; mock seed only in DEMO_DATA mode (empty otherwise)
 // ═══════════════════════════════════════════════════════════════════════
 
 export function useIntegrity() {
-    const [cmls, setCmls] = useState<CML[]>(MOCK_CMLS);
-    const [readings, setReadings] = useState<ThicknessReading[]>(MOCK_READINGS);
-    const [corrosionRates, setCorrosionRates] = useState<CorrosionRate[]>(MOCK_CORROSION);
-    const [rbiAssessments, setRbiAssessments] = useState<RBIAssessment[]>(MOCK_RBI);
-    const [damageMechanisms, setDamageMechanisms] = useState<DamageMechanism[]>(MOCK_DAMAGE_MECHS);
-    const [ffsAssessments, setFfsAssessments] = useState<FFSAssessment[]>(MOCK_FFS);
-    const [iowParameters, setIowParameters] = useState<IOWParameter[]>(MOCK_IOW);
-    const [inspections, setInspections] = useState<InspectionEvent[]>(MOCK_INSPECTIONS);
+    const [cmls, setCmls] = useState<CML[]>(() => demoSeed(MOCK_CMLS, []));
+    const [readings, setReadings] = useState<ThicknessReading[]>(() => demoSeed(MOCK_READINGS, []));
+    const [corrosionRates, setCorrosionRates] = useState<CorrosionRate[]>(() => demoSeed(MOCK_CORROSION, []));
+    const [rbiAssessments, setRbiAssessments] = useState<RBIAssessment[]>(() => demoSeed(MOCK_RBI, []));
+    const [damageMechanisms, setDamageMechanisms] = useState<DamageMechanism[]>(() => demoSeed(MOCK_DAMAGE_MECHS, []));
+    const [ffsAssessments, setFfsAssessments] = useState<FFSAssessment[]>(() => demoSeed(MOCK_FFS, []));
+    const [iowParameters, setIowParameters] = useState<IOWParameter[]>(() => demoSeed(MOCK_IOW, []));
+    const [inspections, setInspections] = useState<InspectionEvent[]>(() => demoSeed(MOCK_INSPECTIONS, []));
     const [loading, setLoading] = useState(true);
 
     // ── Fetch from Supabase via IntegrityService ──────────────────────

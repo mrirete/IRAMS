@@ -8,20 +8,21 @@ import {
     MOCK_VISION, MOCK_DRONE, MOCK_DQ, MOCK_VIOLATIONS
 } from '../mockData/strategy';
 import analyzeService from '../eam/services/AnalyzeService';
+import { demoSeed } from '../config/demoMode';
 
 // ═══════════════════════════════════════════════════════════════════════
-//  HOOK — tries Supabase first, falls back to mock data
+//  HOOK — Supabase first; mock seed only in DEMO_DATA mode (empty otherwise)
 // ═══════════════════════════════════════════════════════════════════════
 
 export function useStrategy() {
-    const [carbon, setCarbon] = useState<CarbonMetrics[]>(MOCK_CARBON);
-    const [repairVsReplace] = useState(MOCK_RVR);
-    const [waste] = useState(MOCK_WASTE);
-    const [climateRisks, setClimateRisks] = useState<ClimateRisk[]>(MOCK_CLIMATE);
-    const [visionResults, setVisionResults] = useState<VisionResult[]>(MOCK_VISION);
-    const [droneSurveys, setDroneSurveys] = useState<DroneSurvey[]>(MOCK_DRONE);
-    const [dataQuality] = useState(MOCK_DQ);
-    const [dataViolations] = useState(MOCK_VIOLATIONS);
+    const [carbon, setCarbon] = useState<CarbonMetrics[]>(() => demoSeed(MOCK_CARBON, []));
+    const [repairVsReplace] = useState(() => demoSeed(MOCK_RVR, [] as typeof MOCK_RVR));
+    const [waste] = useState(() => demoSeed(MOCK_WASTE, [] as typeof MOCK_WASTE));
+    const [climateRisks, setClimateRisks] = useState<ClimateRisk[]>(() => demoSeed(MOCK_CLIMATE, []));
+    const [visionResults, setVisionResults] = useState<VisionResult[]>(() => demoSeed(MOCK_VISION, []));
+    const [droneSurveys, setDroneSurveys] = useState<DroneSurvey[]>(() => demoSeed(MOCK_DRONE, []));
+    const [dataQuality] = useState(() => demoSeed(MOCK_DQ, [] as typeof MOCK_DQ));
+    const [dataViolations] = useState(() => demoSeed(MOCK_VIOLATIONS, [] as typeof MOCK_VIOLATIONS));
     const [loading, setLoading] = useState(true);
 
     // ── Fetch from Supabase via AnalyzeService ────────────────────────

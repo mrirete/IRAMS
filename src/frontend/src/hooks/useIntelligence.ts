@@ -26,13 +26,16 @@ import {
 import predictionService from '../eam/services/PredictionService';
 import type { TwinState as DbTwinState, RULEstimate as DbRULEstimate, PredictionAlert as DbAlert, SensorReading as DbSensor } from '../eam/services/PredictionService';
 import analyzeService from '../eam/services/AnalyzeService';
+import { DEMO_DATA } from '../config/demoMode';
 
 // Re-export the asset picker type
 export type { AssetOption } from '../mockData/intelligence';
 export { MOCK_PREDICT_ASSETS as MOCK_ASSETS } from '../mockData/intelligence';
 
-// Environment flag: default to mock mode for standalone frontend dev
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
+// Show fabricated sample data ONLY in demo mode. In production (default) the
+// hook stays empty when the DB/API has nothing, so buyers never see fake
+// reliability numbers presented as real.
+const USE_MOCK = DEMO_DATA;
 
 // Local aliases for the mock data used in this hook
 const assetTwins = MOCK_TWIN_STATES;
@@ -194,11 +197,11 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
                     else setNetwork(mockNetwork);
                 }
 
-                // Network graph (always mock for now)
-                if (!network) setNetwork(mockNetwork);
+                // Network graph — demo-only sample (no real graph backend yet)
+                if (!network && USE_MOCK) setNetwork(mockNetwork);
             } catch {
-                // Fallback to mock on any error
-                if (!cancelled) {
+                // On error: show sample data only in demo mode; production stays empty
+                if (!cancelled && USE_MOCK) {
                     setAlerts(mockAlerts);
                     setFmea(mockFMEA);
                     setRcas(mockRCAs);
@@ -225,16 +228,16 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
                 if (cancelled) return;
 
                 if (dbTwin) setTwinHealth(normalizeTwin(dbTwin));
-                else setTwinHealth(assetTwins[selectedAssetId] || assetTwins['ast-k601']);
+                else setTwinHealth(USE_MOCK ? (assetTwins[selectedAssetId] || assetTwins['ast-k601']) : null);
 
                 if (dbRul) setRulEstimate(normalizeRUL(dbRul));
-                else setRulEstimate(assetRUL[selectedAssetId] || assetRUL['ast-k601']);
+                else setRulEstimate(USE_MOCK ? (assetRUL[selectedAssetId] || assetRUL['ast-k601']) : null);
 
                 if (dbSensors.length > 0) {
                     setSensorData(prev => ({ ...prev, [selectedAssetId]: dbSensors.map(normalizeSensor) }));
                 }
             } catch {
-                if (!cancelled) {
+                if (!cancelled && USE_MOCK) {
                     setTwinHealth(assetTwins[selectedAssetId] || assetTwins['ast-k601']);
                     setRulEstimate(assetRUL[selectedAssetId] || assetRUL['ast-k601']);
                 }
@@ -261,8 +264,8 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
                         generated_at: dbSnapshot.generated_at,
                         top_assets: dbSnapshot.top_assets as any,
                     });
-                } else {
-                    // Mock fallback
+                } else if (USE_MOCK) {
+                    // Demo-only sample Pareto
                     const topAssets = badActorsByCriteria[paretoCriteria] || badActorsByCriteria['cost'];
                     const totalPct = topAssets[topAssets.length - 1]?.cumulative_pct || 0;
                     setBadActors({
@@ -274,9 +277,11 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
                         generated_at: new Date().toISOString(),
                         top_assets: topAssets,
                     });
+                } else {
+                    setBadActors(null);
                 }
             } catch {
-                if (!cancelled) {
+                if (!cancelled && USE_MOCK) {
                     const topAssets = badActorsByCriteria[paretoCriteria] || badActorsByCriteria['cost'];
                     setBadActors({
                         report_period: '2026-02', criteria: paretoCriteria as any,
@@ -294,8 +299,8 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
     }, [alerts]);
 
     const getSensorTrends = useCallback((assetId: string): SensorTrend[] => {
-        // Prefer live Supabase data, fall back to mock
-        return sensorData[assetId] || mockSensorTrends[assetId] || [];
+        // Prefer live Supabase data; demo-only sample fallback
+        return sensorData[assetId] || (USE_MOCK ? mockSensorTrends[assetId] : undefined) || [];
     }, [sensorData]);
 
     // Refetch Predict data for a specific asset (after running a new prediction)
