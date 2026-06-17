@@ -125,8 +125,14 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 // Let's generate a UUID for strict typing, though Edge Function might override it.
                 const userId = self.crypto.randomUUID();
 
-                // If email is empty, generate a unique placeholder to avoid unique constraint violation
-                const userEmail = formData.email || `${formData.code}+${Date.now()}@noemail.local`;
+                // The auth-login email MUST match the virtual-email convention the Login
+                // screen derives from the username (see Login.tsx → loginWithUsername):
+                //   `${username.toLowerCase()}@cainergy.com`
+                // Using the contact's personal email (or a noemail.local placeholder) here
+                // registers the Supabase Auth account under an address the login flow never
+                // tries, so the new user can never sign in. The contact's real email is still
+                // stored separately on the contact record below.
+                const userEmail = `${formData.code.toLowerCase()}@cainergy.com`;
 
                 console.log('[AddContactModal] Creating user with:', { username: formData.code, email: userEmail });
 
@@ -137,10 +143,12 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                     contact_id: contactId,
                     status: 'active',
                     roles: [formData.type], // Use selected type as role
-                    password: userCreds.password, // This property is not in User type but passed to Service
                     created_at: new Date().toISOString(),
                     updated_at: new Date().toISOString()
-                } as any); // Password already in object
+                } as any, userCreds.password); // password MUST be the 2nd arg — that's what routes
+                                               // through the secure create_auth_user RPC that actually
+                                               // creates the auth.users record. Passing it inside the
+                                               // object leaves it undefined and no auth account is made.
             }
 
             onSave(newContact);
