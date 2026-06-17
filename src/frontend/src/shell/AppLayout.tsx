@@ -9,7 +9,7 @@ import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 // ── Lazy-loaded panels (not needed on initial render) ──
 const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
 const DevicePreviewer = lazy(() => import('../components/dev/DevicePreviewer').then(m => ({ default: m.DevicePreviewer })));
-const QuickReport = lazy(() => import('./QuickReport').then(m => ({ default: m.QuickReport })));
+const ReportRequestForm = lazy(() => import('../eam/components/ReportRequestForm').then(m => ({ default: m.ReportRequestForm })));
 const CommandPalette = lazy(() => import('./CommandPalette').then(m => ({ default: m.CommandPalette })));
 
 interface AppLayoutProps {
@@ -100,7 +100,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             {/* Operator "Report a Problem" — bottom sheet, lazy loaded on first open */}
             {isQuickReportOpen && (
                 <Suspense fallback={null}>
-                    <QuickReport open onClose={() => setIsQuickReportOpen(false)} />
+                    <ReportRequestForm open onClose={() => setIsQuickReportOpen(false)} />
                 </Suspense>
             )}
 
