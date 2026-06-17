@@ -9,6 +9,7 @@ import { ImageCapture } from './ui/ImageCapture';
 import { ScanAssetModal } from './modals/ScanAssetModal';
 import { FunctionalFailureSelector } from './FunctionalFailureSelector';
 import { DatabaseService } from '../services/DatabaseService';
+import { useToast } from '../contexts/ToastContext';
 import { useCreateServiceRequest } from '../hooks/useCreateServiceRequest';
 import { computeRequestPriority } from '../lib/serviceRequest';
 import type { Asset, JobFile } from '../types';
@@ -46,7 +47,7 @@ interface SpeechRecognitionLike {
     continuous: boolean;
     onresult: (e: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void;
     onend: () => void;
-    onerror: () => void;
+    onerror: (e: { error?: string }) => void;
     start: () => void;
     stop: () => void;
 }
@@ -62,6 +63,7 @@ export const ReportRequestForm: React.FC<{
     onClose: () => void;
     onCreated?: () => void;
 }> = ({ open, onClose, onCreated }) => {
+    const { showToast } = useToast();
     const { create, submitting } = useCreateServiceRequest(() => {
         reset();
         onCreated?.();
@@ -205,8 +207,16 @@ export const ReportRequestForm: React.FC<{
 
     // ── Voice dictation ──
     const toggleDictation = useCallback(() => {
-        if (!SpeechRecognition) return;
         if (listening) { recognitionRef.current?.stop(); return; }
+        if (!SpeechRecognition) {
+            showToast('Voice input is not supported in this browser. Try Chrome, Edge, or Safari.', 'error');
+            return;
+        }
+        // Web Speech only works on a secure origin (https / localhost).
+        if (typeof window !== 'undefined' && !window.isSecureContext) {
+            showToast('Voice input requires a secure (https) connection.', 'error');
+            return;
+        }
         const rec = new SpeechRecognition();
         rec.lang = 'en-US';
         rec.continuous = true;
@@ -219,11 +229,27 @@ export const ReportRequestForm: React.FC<{
             if (finalText) setDesc(prev => (prev ? prev + ' ' : '') + finalText.trim());
         };
         rec.onend = () => setListening(false);
-        rec.onerror = () => setListening(false);
+        rec.onerror = (e) => {
+            setListening(false);
+            console.error('[ReportRequestForm] speech recognition error:', e.error);
+            if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                showToast('Microphone access denied. Allow mic permission for this site, then try again.', 'error');
+            } else if (e.error === 'no-speech') {
+                showToast('No speech detected — try again and speak clearly.', 'info');
+            } else if (e.error && e.error !== 'aborted') {
+                showToast(`Voice input error: ${e.error}`, 'error');
+            }
+        };
         recognitionRef.current = rec;
-        rec.start();
-        setListening(true);
-    }, [SpeechRecognition, listening]);
+        try {
+            rec.start();
+            setListening(true);
+        } catch (err) {
+            console.error('[ReportRequestForm] could not start dictation:', err);
+            showToast('Could not start voice input. Try again.', 'error');
+            setListening(false);
+        }
+    }, [SpeechRecognition, listening, showToast]);
 
     const handleSubmit = () => {
         create({
