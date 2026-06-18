@@ -335,6 +335,8 @@ export interface ReliabilityAnalysis {
     inputs: Record<string, any>;
     results: Record<string, any>;
     notes: string | null;
+    linked_pm_id?: string | null;     // recurring_work id produced from this analysis
+    linked_pm_title?: string | null;
     created_by: string | null;
     created_at: string;
     updated_at: string;
@@ -566,6 +568,23 @@ class AnalyzeService {
         } catch (e) {
             console.error('Error deleting reliability analysis:', e);
             return false;
+        }
+    }
+
+    /** Stamp the PM (recurring_work) produced from an analysis onto its record. */
+    async linkPMToAnalysis(analysisId: string, pmId: string, pmTitle: string): Promise<ReliabilityAnalysis | null> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_reliability_analyses')
+                .update({ linked_pm_id: pmId, linked_pm_title: pmTitle })
+                .eq('id', analysisId)
+                .select()
+                .single();
+            if (error) { console.error('AnalyzeService.linkPMToAnalysis:', error); throw error; }
+            return data as ReliabilityAnalysis;
+        } catch (e) {
+            console.error('Error linking PM to analysis:', e);
+            return null;
         }
     }
 

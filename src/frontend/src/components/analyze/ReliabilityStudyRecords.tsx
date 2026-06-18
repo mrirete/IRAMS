@@ -11,7 +11,7 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-    History, Search, Clock, X, ChevronDown, ChevronUp, FolderOpen, ArrowUpDown, User, Layers,
+    History, Search, Clock, X, ChevronDown, ChevronUp, FolderOpen, ArrowUpDown, User, Layers, Wrench,
 } from 'lucide-react';
 import { Button } from '../../eam/components/ui';
 import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy } from '../../eam/services/AnalyzeService';
@@ -109,6 +109,18 @@ function StudyDetail({ versions, onClose, onLoad }: {
                         {study.created_by && <span><User size={11} className="inline mr-1" />{study.created_by}</span>}
                         {study.asset_name && <span className="text-slate-400">{study.asset_name}</span>}
                     </div>
+
+                    {study.linked_pm_id && (
+                        <div>
+                            <h4 className="text-xs font-bold text-slate-500 uppercase mb-1.5">Linked PM program</h4>
+                            <a
+                                href={`/recurring-work?id=${study.linked_pm_id}`}
+                                className="inline-flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors"
+                            >
+                                <Wrench size={14} /> {study.linked_pm_title || 'PM program'}
+                            </a>
+                        </div>
+                    )}
 
                     {study.notes && (
                         <div>
@@ -230,6 +242,11 @@ export function StudyRecordsPanel({ analyses, studies, loading, onLoad }: {
                     {versions.length > 1 && (
                         <span className="px-1.5 py-0.5 bg-primary-50 text-primary-600 rounded font-semibold flex items-center gap-1">
                             <Layers size={9} /> {versions.length} versions
+                        </span>
+                    )}
+                    {latest.linked_pm_id && (
+                        <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded font-semibold flex items-center gap-1" title={`Linked PM: ${latest.linked_pm_title || 'PM program'}`}>
+                            <Wrench size={9} /> PM
                         </span>
                     )}
                 </div>
