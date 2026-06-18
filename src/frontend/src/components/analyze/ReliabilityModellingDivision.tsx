@@ -36,6 +36,7 @@ import { MonteCarloSimTab } from '../../eam/components/MonteCarloSimTab';
 // Service
 import analyzeService from '../../eam/services/AnalyzeService';
 import type { ReliabilityAnalysis, ReliabilityAnalysisType } from '../../eam/services/AnalyzeService';
+import { useAuth } from '../../eam/contexts/AuthContext';
 
 type CalcTab = 'ram' | 'weibull' | 'spares' | 'rbd' | 'montecarlo';
 
@@ -167,10 +168,18 @@ function SavedAnalysesPanel({ analyses, activeId, onLoad, onEdit, onDelete, load
                             className={`flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors ${a.id === activeId ? 'bg-primary-50 border-l-2 border-primary-500' : ''}`}>
                             <div className="flex-1 min-w-0">
                                 <p className={`font-medium truncate ${a.id === activeId ? 'text-primary-700' : 'text-slate-700'}`}>{a.title}</p>
-                                <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400 mt-0.5">
                                     <span className="px-1.5 py-0.5 bg-slate-100 rounded font-medium uppercase">{a.analysis_type}</span>
-                                    {a.asset_tag && <span>[U+1F4CC] {a.asset_tag}</span>}
-                                    <span><Clock size={9} className="inline" /> {new Date(a.updated_at).toLocaleDateString()}</span>
+                                    {a.asset_tag && <span>{a.asset_tag}</span>}
+                                    <span title={`Created ${new Date(a.created_at).toLocaleString()}`}>
+                                        <Clock size={9} className="inline" /> {new Date(a.created_at).toLocaleDateString()}
+                                    </span>
+                                    {a.updated_at !== a.created_at && (
+                                        <span title={`Last updated ${new Date(a.updated_at).toLocaleString()}`}>
+                                            · edited {new Date(a.updated_at).toLocaleDateString()}
+                                        </span>
+                                    )}
+                                    {a.created_by && <span>· by {a.created_by}</span>}
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
@@ -267,6 +276,10 @@ interface DivisionProps {
 }
 
 export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange }) => {
+    const { profile, user } = useAuth();
+    // Human-readable author stamped on saved studies (falls back gracefully).
+    const currentAuthor = profile?.username || profile?.fullName || user?.email || null;
+
     const [activeCalc, setActiveCalc] = useState<CalcTab>('ram');
 
 
@@ -332,7 +345,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 inputs: currentInputs,
                 results: currentResults,
                 notes: notes || null,
-                created_by: null,
+                created_by: currentAuthor,
             });
             if (saved) {
                 setSavedAnalyses(prev => [saved, ...prev]);
@@ -342,7 +355,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         }
         setEditingAnalysis(null);
         setTimeout(() => setSaveToast(null), 3000);
-    }, [currentAnalysisType, currentInputs, currentResults, currentAsset, editingAnalysis]);
+    }, [currentAnalysisType, currentInputs, currentResults, currentAsset, editingAnalysis, currentAuthor]);
 
     // Load handler — broadcast loaded inputs via state
     const [loadedData, setLoadedData] = useState<{ inputs: Record<string, any>; results: Record<string, any> } | null>(null);
