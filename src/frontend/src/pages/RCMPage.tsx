@@ -12,6 +12,7 @@ import {
   Shield, Plus, Search, ArrowLeft, LayoutList, Layers, GitBranch, Wrench,
   Users, Edit3, Trash2, Save, X, RefreshCw, CheckCircle, AlertTriangle,
 } from 'lucide-react';
+import { ScrollTabStrip } from '../eam/components/ui';
 import { rcmService } from '../eam/services/RCMService';
 import type {
   RCMStudy, RCMFunction, RCMFailureMode, RCMDecision,
@@ -505,7 +506,7 @@ export const RCMPage: React.FC = () => {
 
       {/* ═══ Tab Navigation (when study selected) ═══ */}
       {selectedStudy && (
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm overflow-x-auto">
+        <ScrollTabStrip activeId={activeTab} className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
           {RCM_TABS.map(tab => {
             const isActive = activeTab === tab.id;
             const progress = tab.id !== 'dashboard' ? tabProgress[tab.id as 'functions' | 'decisions' | 'tasks'] : null;
@@ -513,6 +514,7 @@ export const RCMPage: React.FC = () => {
             return (
               <button
                 key={tab.id}
+                data-active={isActive}
                 onClick={() => setActiveTab(tab.id)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${isActive
                   ? 'bg-accent-cyan text-brand-900 shadow-sm shadow-primary-500/20'
@@ -540,7 +542,7 @@ export const RCMPage: React.FC = () => {
               </button>
             );
           })}
-        </div>
+        </ScrollTabStrip>
       )}
 
       {/* ═══ Tab Content ═══ */}

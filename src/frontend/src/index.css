@@ -1924,3 +1924,19 @@ select {
 .tab-scroll-container.has-overflow::after {
   opacity: 1;
 }
+.tab-scroll-container::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  background: linear-gradient(to left, transparent, white);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 1;
+}
+.tab-scroll-container.has-overflow-start::before {
+  opacity: 1;
+}

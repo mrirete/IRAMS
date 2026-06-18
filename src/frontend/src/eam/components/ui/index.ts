@@ -27,3 +27,5 @@ export { DensityToggle } from './DensityToggle';
 export type { Density } from './DensityToggle';
 export { UnifiedFilterBar } from './UnifiedFilterBar';
 export type { UnifiedFilterBarProps, FilterPill, FilterBarAction } from './UnifiedFilterBar';
+export { ScrollTabStrip } from './ScrollTabStrip';
+export type { ScrollTabStripProps } from './ScrollTabStrip';

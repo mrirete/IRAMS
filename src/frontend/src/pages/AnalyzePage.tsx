@@ -23,6 +23,7 @@ import NewAssessmentModal from '../components/analyze/NewAssessmentModal';
 import ReliabilitySpecialist from '../components/analyze/ReliabilitySpecialist';
 
 // ── Services ─────────────────────────────────────────────────
+import { ScrollTabStrip } from '../eam/components/ui';
 import analyzeService from '../eam/services/AnalyzeService';
 import type { ParetoResult, StudyCollaborator } from '../eam/services/AnalyzeService';
 import { type DefectEliminationTask } from '../components/analyze/DefectEliminationPanel';
@@ -519,64 +520,29 @@ export const AnalyzePage: React.FC = () => {
             </div>
 
             {/* ── Division Tab Bar (primary tools) ─────────────── */}
-            <div className="-mx-1 px-1" style={{ overflow: 'visible' }}>
-                <div className="flex gap-1.5 bg-gradient-to-r from-slate-50 via-white to-slate-50 p-1.5 rounded-2xl border border-slate-200/80 shadow-sm min-w-max backdrop-blur-sm">
-                    {DIVISIONS.map(div => (
-                        <div key={div.id} style={{ position: 'relative' }}
-                            onMouseEnter={e => {
-                                const tip = e.currentTarget.querySelector('[data-tooltip]') as HTMLElement;
-                                if (tip) tip.style.opacity = '1';
-                            }}
-                            onMouseLeave={e => {
-                                const tip = e.currentTarget.querySelector('[data-tooltip]') as HTMLElement;
-                                if (tip) tip.style.opacity = '0';
-                            }}
-                        >
-                            <button
-                                onClick={() => setActiveDivision(div.id)}
-                                className={`relative flex items-center gap-2.5 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap ${activeDivision === div.id
-                                    ? 'bg-gradient-to-r from-blue-600 to-blue-600 text-white shadow-lg shadow-blue-500/25 scale-[1.02]'
-                                    : 'text-slate-500 hover:text-slate-800 hover:bg-white hover:shadow-md'
-                                    }`}
-                            >
-                                <span className={`transition-colors duration-300 ${activeDivision === div.id ? 'text-white/90' : 'text-slate-400'}`}>{div.icon}</span>
-                                <span>{div.label}</span>
-                                {activeDivision === div.id && (
-                                    <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-1 bg-white/30 rounded-full" />
-                                )}
-                            </button>
-                            {/* Tooltip — appears ABOVE the button to avoid overflow clipping */}
-                            <div data-tooltip style={{
-                                position: 'absolute', left: '50%', transform: 'translateX(-50%)',
-                                bottom: '100%', marginBottom: 10,
-                                zIndex: 50, pointerEvents: 'none',
-                                opacity: 0, transition: 'opacity 0.2s ease',
-                            }}>
-                                <div style={{
-                                    background: 'linear-gradient(135deg, #0f172a, #1e293b)',
-                                    border: '1px solid #334155',
-                                    borderRadius: 12,
-                                    padding: '12px 16px',
-                                    maxWidth: 300,
-                                    minWidth: 200,
-                                    boxShadow: '0 12px 40px rgba(0,0,0,0.45), 0 4px 12px rgba(0,0,0,0.25)',
-                                    position: 'relative' as const,
-                                }}>
-                                    <div style={{ fontSize: 12, fontWeight: 500, color: '#e2e8f0', lineHeight: 1.6 }}>
-                                        {div.description}
-                                    </div>
-                                    {/* Arrow pointing DOWN */}
-                                    <div style={{
-                                        position: 'absolute' as const, bottom: -6, left: '50%', transform: 'translateX(-50%) rotate(45deg)',
-                                        width: 10, height: 10,
-                                        background: '#1e293b', borderRight: '1px solid #334155', borderBottom: '1px solid #334155',
-                                    }} />
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
+            <ScrollTabStrip
+                activeId={activeDivision}
+                className="flex gap-1.5 bg-gradient-to-r from-slate-50 via-white to-slate-50 p-1.5 rounded-2xl border border-slate-200/80 shadow-sm backdrop-blur-sm"
+            >
+                {DIVISIONS.map(div => (
+                    <button
+                        key={div.id}
+                        data-active={activeDivision === div.id}
+                        title={div.description}
+                        onClick={() => setActiveDivision(div.id)}
+                        className={`relative flex items-center gap-2.5 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap ${activeDivision === div.id
+                            ? 'bg-gradient-to-r from-blue-600 to-blue-600 text-white shadow-lg shadow-blue-500/25 scale-[1.02]'
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-white hover:shadow-md'
+                            }`}
+                    >
+                        <span className={`transition-colors duration-300 ${activeDivision === div.id ? 'text-white/90' : 'text-slate-400'}`}>{div.icon}</span>
+                        <span>{div.label}</span>
+                        {activeDivision === div.id && (
+                            <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-1 bg-white/30 rounded-full" />
+                        )}
+                    </button>
+                ))}
+            </ScrollTabStrip>
 
 
             {/* ── Main Content + Reliability Specialist sidebar ── */}
