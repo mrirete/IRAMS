@@ -15,7 +15,7 @@ import { supabase } from '../lib/supabase';
 import * as jStat from 'jstat';
 import { MonteCarloSimTab } from '../components/MonteCarloSimTab';
 import { ScrollTabStrip } from '../components/ui';
-import BathtubCurve from '../../components/reliability/BathtubCurve';
+import LifecycleAnalysis from '../../components/reliability/LifecycleAnalysis';
 import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/analyze/CreatePMFromWeibullModal';
 
 // ─── Corrective WO type codes (dictionary-aligned) ──────────
@@ -973,10 +973,12 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                 <>
                     {/* Parameters */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        <ResultCard label="Shape (β)" value={fit.beta} color="blue" />
-                        <ResultCard label="Scale (η)" value={fit.eta} unit="hrs" color="purple" />
-                        <ResultCard label="R²" value={fit.r2} color={fit.r2 >= 0.9 ? 'green' : 'amber'} />
-                        <ResultCard label="B10 Life" value={Math.round(weibullBLife(fit.beta, fit.eta, 10))} unit="hrs" color="green" />
+                        <ResultCard label="Shape (β)" value={fit.beta} color="blue"
+                            sub={fit.beta < 1 ? 'Infant mortality' : fit.beta <= 1.5 ? 'Random failures' : 'Wear-out'} />
+                        <ResultCard label="Scale (η)" value={fit.eta} unit="hrs" color="purple" sub="Life at 63.2% failed" />
+                        <ResultCard label="R²" value={fit.r2} color={fit.r2 >= 0.9 ? 'green' : 'amber'}
+                            sub={fit.r2 >= 0.9 ? 'Fit quality — excellent' : 'Fit quality — weak, use caution'} />
+                        <ResultCard label="B10 Life" value={Math.round(weibullBLife(fit.beta, fit.eta, 10))} unit="hrs" color="green" sub="10% fail / 90% survive" />
                     </div>
 
 
@@ -995,7 +997,7 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                         </div>
                     </div>
 
-                    {/* Reliability & CDF curves — collapsible */}
+                    {/* Reliability curve R(t) — single annotated line, collapsible */}
                     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
                         <button
                             type="button"
@@ -1004,8 +1006,8 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                         >
                             <span className="text-sm font-bold text-slate-500 flex items-center gap-2">
                                 <Activity size={14} className="text-emerald-400" />
-                                Reliability R(t) & Cumulative Failure F(t)
-                                <span className="text-[10px] font-normal text-slate-400 ml-1">Probability curves</span>
+                                Reliability R(t)
+                                <span className="text-[10px] font-normal text-slate-400 ml-1">Probability of surviving to time t</span>
                             </span>
                             {showRtFt
                                 ? <ChevronUp size={16} className="text-slate-400" />
@@ -1017,11 +1019,20 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                                     <LineChart data={fit.plotData}>
                                         <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                                         <XAxis dataKey="t" label={{ value: 'Time (hours)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                                        <YAxis label={{ value: 'Probability %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} domain={[0, 100]} />
-                                        <Tooltip />
-                                        <Legend />
-                                        <Line type="monotone" dataKey="reliability" stroke="#10b981" strokeWidth={2} name="Reliability R(t)" dot={false} />
-                                        <Line type="monotone" dataKey="failure" stroke="#ef4444" strokeWidth={2} name="Failure CDF F(t)" dot={false} />
+                                        <YAxis label={{ value: 'Reliability %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} domain={[0, 100]} />
+                                        <Tooltip formatter={(v: any) => `${Math.round(v)}%`} />
+                                        <Line type="monotone" dataKey="reliability" stroke="#10b981" strokeWidth={2.5} name="Reliability R(t)" dot={false} />
+                                        {/* B10 — 90% surviving */}
+                                        <ReferenceLine x={Math.round(weibullBLife(fit.beta, fit.eta, 10))} stroke="#059669" strokeDasharray="4 3"
+                                            label={{ value: 'B10', position: 'top', fill: '#059669', fontSize: 10, fontWeight: 700 }} />
+                                        {/* η — characteristic life (63.2% failed) */}
+                                        <ReferenceLine x={Math.round(fit.eta)} stroke="#8b5cf6" strokeDasharray="6 4"
+                                            label={{ value: 'η', position: 'top', fill: '#7c3aed', fontSize: 11, fontWeight: 700 }} />
+                                        {/* Recommended PM interval (wear-out only) */}
+                                        {fit.beta > 1 && (
+                                            <ReferenceLine x={Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8))} stroke="#0ea5e9" strokeDasharray="3 3"
+                                                label={{ value: 'PM', position: 'top', fill: '#0284c7', fontSize: 10, fontWeight: 700 }} />
+                                        )}
                                     </LineChart>
                                 </ResponsiveContainer>
                             </div>
@@ -1066,8 +1077,8 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                         </div>
                     )}
 
-                    {/* ── Bathtub Curve — Hazard Rate h(t) ────── */}
-                    <BathtubCurve
+                    {/* ── Lifecycle Analysis — Hazard Rate h(t) ────── */}
+                    <LifecycleAnalysis
                         beta={fit.beta}
                         eta={fit.eta}
                         r2={fit.r2}

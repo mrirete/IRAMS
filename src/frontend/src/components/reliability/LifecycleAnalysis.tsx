@@ -1,8 +1,13 @@
 /**
- * BathtubCurve — Data-Driven Hazard Rate h(t) Visualization
+ * LifecycleAnalysis — Data-Driven Hazard Rate h(t) Visualization
  *
  * Plots the ACTUAL Weibull hazard rate function:
  *   h(t) = (β/η) × (t/η)^(β−1)
+ *
+ * NOTE: This is the single-Weibull hazard rate (monotonic — falling, flat,
+ * or rising with β), NOT a literal bathtub curve (a superposition of all
+ * three phases). The three-zone bathtub context is overlaid as a classifier
+ * so you can see which lifecycle phase the fitted β falls in.
  *
  * The curve shape is entirely data-driven from the fitted Weibull
  * parameters (β, η) — not a generic textbook illustration.
@@ -20,7 +25,7 @@ import {
 import { AlertTriangle, Shield, TrendingUp, Wrench, Info, ChevronDown, ChevronUp, Zap, Clock } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────
-interface BathtubCurveProps {
+interface LifecycleAnalysisProps {
     beta: number;
     eta: number;
     r2?: number;
@@ -188,7 +193,7 @@ const HazardTooltip = ({ active, payload }: any) => {
 // ═══════════════════════════════════════════════════════════════
 //  MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
-const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, onCreatePM }) => {
+const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, assetTag, onCreatePM }) => {
     const [showDetails, setShowDetails] = useState(false);
     const zone = useMemo(() => classifyZone(beta), [beta]);
     const data = useMemo(() => generateHazardData(beta, eta), [beta, eta]);
@@ -223,7 +228,7 @@ const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, on
                     <div>
                         <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                             <Zap size={16} className="text-blue-500" />
-                            Hazard Rate h(t) — Data-Driven
+                            Lifecycle Analysis — Hazard Rate h(t)
                         </h4>
                         <p className="text-[11px] text-slate-400 mt-0.5">
                             h(t) = (β/η) × (t/η)<sup>β−1</sup> · Calculated from your failure data · ISO 14224
@@ -505,4 +510,4 @@ const BathtubCurve: React.FC<BathtubCurveProps> = ({ beta, eta, r2, assetTag, on
     );
 };
 
-export default BathtubCurve;
+export default LifecycleAnalysis;
