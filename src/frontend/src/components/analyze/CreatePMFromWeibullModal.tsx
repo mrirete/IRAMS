@@ -29,7 +29,7 @@ export interface WeibullPMData {
 interface CreatePMFromWeibullModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSuccess?: () => void;
+    onSuccess?: (pmId?: string, pmTitle?: string) => void;
     data: WeibullPMData;
 }
 
@@ -116,7 +116,7 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
         if (!title.trim()) return;
         setSubmitting(true);
         try {
-            await DatabaseService.getInstance().createPM({
+            const createdPM = await DatabaseService.getInstance().createPM({
                 title,
                 description,
                 asset_id: data.asset.id,
@@ -129,7 +129,7 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
             });
             setSuccess(true);
             setTimeout(() => {
-                onSuccess?.();
+                onSuccess?.(createdPM?.id, title);
                 onClose();
             }, 2000);
         } catch (err: any) {

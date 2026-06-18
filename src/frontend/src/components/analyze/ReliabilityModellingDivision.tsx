@@ -734,8 +734,21 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 <CreatePMFromWeibullModal
                     isOpen={showCreatePM}
                     onClose={() => setShowCreatePM(false)}
-                    onSuccess={() => {
-                        setSaveToast('PM program created from Weibull fit ✓');
+                    onSuccess={async (pmId, pmTitle) => {
+                        // Link the PM back to the loaded Weibull study for traceability.
+                        if (pmId && activeAnalysisId) {
+                            const updated = await analyzeService.linkPMToAnalysis(activeAnalysisId, pmId, pmTitle || 'PM');
+                            if (updated) {
+                                setSavedAnalyses(prev => prev.map(a => a.id === updated.id ? updated : a));
+                                setSaveToast('PM created & linked to this study ✓');
+                            } else {
+                                setSaveToast('PM program created ✓');
+                            }
+                        } else if (pmId) {
+                            setSaveToast('PM created ✓ — save the Weibull study to link it.');
+                        } else {
+                            setSaveToast('PM program created ✓');
+                        }
                         setTimeout(() => setSaveToast(null), 4000);
                     }}
                     data={weibullPMData}
