@@ -11,7 +11,7 @@
  *
  * Features: Asset-WO data integration, save/edit/delete for all calculators.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     Activity, TrendingUp, Package, Cpu, Dices,
     Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
@@ -50,25 +50,30 @@ const CALC_TABS: { id: CalcTab; label: string; icon: React.ReactNode; phase: str
 ];
 
 // ─── Save Analysis Modal ──────────────────────────────────────
-function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId }: {
+function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId, initialTitle, initialNotes }: {
     isOpen: boolean;
     onClose: () => void;
     onSave: (title: string, notes: string) => void;
     analysisType: ReliabilityAnalysisType;
     editingId: string | null;
+    initialTitle?: string;
+    initialNotes?: string;
 }) {
     const [title, setTitle] = useState('');
     const [notes, setNotes] = useState('');
 
     useEffect(() => {
-        if (isOpen) {
-            if (!editingId) {
-                const typeLabel = analysisType.toUpperCase();
-                setTitle(`${typeLabel} Analysis — ${new Date().toLocaleDateString()}`);
-            }
+        if (!isOpen) return;
+        if (editingId) {
+            // Editing an existing version — prefill its current title/notes.
+            setTitle(initialTitle || '');
+            setNotes(initialNotes || '');
+        } else {
+            const typeLabel = analysisType.toUpperCase();
+            setTitle(`${typeLabel} Analysis — ${new Date().toLocaleDateString()}`);
             setNotes('');
         }
-    }, [isOpen, analysisType, editingId]);
+    }, [isOpen, analysisType, editingId, initialTitle, initialNotes]);
 
     if (!isOpen) return null;
 
@@ -314,49 +319,75 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
     useEffect(() => { loadSavedAnalyses(); }, [loadSavedAnalyses]);
 
-    // Filter analyses by current tab
+    // Collapse to the current (highest) version per lineage — for the per-tab list
+    const currentVersionAnalyses = useMemo(() => {
+        const byRoot = new Map<string, ReliabilityAnalysis>();
+        for (const a of savedAnalyses) {
+            const root = a.root_id || a.id;
+            const cur = byRoot.get(root);
+            if (!cur || (a.version || 1) > (cur.version || 1)) byRoot.set(root, a);
+        }
+        return Array.from(byRoot.values());
+    }, [savedAnalyses]);
+
+    // Filter analyses by current tab (current versions only)
     const currentAnalysisType = CALC_TABS.find(t => t.id === activeCalc)?.analysisType;
     const filteredAnalyses = currentAnalysisType
-        ? savedAnalyses.filter(a => a.analysis_type === currentAnalysisType)
+        ? currentVersionAnalyses.filter(a => a.analysis_type === currentAnalysisType)
         : [];
 
-    // Save handler
+    // Save handler — snapshots: append a version, never overwrite run data.
     const handleSave = useCallback(async (title: string, notes: string) => {
         if (!currentAnalysisType) return;
 
+        // Editing = metadata only (rename / re-note) on a specific version.
         if (editingAnalysis) {
-            // Update existing
-            const updated = await analyzeService.updateReliabilityAnalysis(editingAnalysis.id, {
-                title, notes,
-                inputs: currentInputs,
-                results: currentResults,
-            });
+            const updated = await analyzeService.updateReliabilityAnalysis(editingAnalysis.id, { title, notes });
             if (updated) {
                 setSavedAnalyses(prev => prev.map(a => a.id === updated.id ? updated : a));
-                setSaveToast('Analysis updated ✓');
+                setSaveToast('Study details updated ✓');
             }
-        } else {
-            // Create new
-            const saved = await analyzeService.saveReliabilityAnalysis({
-                asset_id: currentAsset?.id || null,
-                asset_tag: currentAsset?.tag || null,
-                asset_name: currentAsset?.name || null,
-                analysis_type: currentAnalysisType,
-                title,
-                inputs: currentInputs,
-                results: currentResults,
-                notes: notes || null,
-                created_by: currentAuthor,
-            });
+            setEditingAnalysis(null);
+            setTimeout(() => setSaveToast(null), 3000);
+            return;
+        }
+
+        const payload = {
+            asset_id: currentAsset?.id || null,
+            asset_tag: currentAsset?.tag || null,
+            asset_name: currentAsset?.name || null,
+            analysis_type: currentAnalysisType,
+            title,
+            inputs: currentInputs,
+            results: currentResults,
+            notes: notes || null,
+            created_by: currentAuthor,
+        };
+
+        // If a study is loaded, append a new version to its lineage; otherwise start one.
+        const active = activeAnalysisId ? savedAnalyses.find(a => a.id === activeAnalysisId) : null;
+        if (active) {
+            const root = active.root_id || active.id;
+            const nextVersion = Math.max(0, ...savedAnalyses
+                .filter(a => (a.root_id || a.id) === root)
+                .map(a => a.version || 1)) + 1;
+            const saved = await analyzeService.saveReliabilityVersion(root, nextVersion, payload);
             if (saved) {
                 setSavedAnalyses(prev => [saved, ...prev]);
                 setActiveAnalysisId(saved.id);
-                setSaveToast('Analysis saved ✓');
+                setSaveToast(`Saved as version ${nextVersion} ✓`);
+            }
+        } else {
+            const saved = await analyzeService.saveReliabilityAnalysis(payload);
+            if (saved) {
+                setSavedAnalyses(prev => [saved, ...prev]);
+                setActiveAnalysisId(saved.id);
+                setSaveToast('Study saved ✓');
             }
         }
         setEditingAnalysis(null);
         setTimeout(() => setSaveToast(null), 3000);
-    }, [currentAnalysisType, currentInputs, currentResults, currentAsset, editingAnalysis, currentAuthor]);
+    }, [currentAnalysisType, currentInputs, currentResults, currentAsset, editingAnalysis, currentAuthor, activeAnalysisId, savedAnalyses]);
 
     // Load handler — broadcast loaded inputs via state
     const [loadedData, setLoadedData] = useState<{ inputs: Record<string, any>; results: Record<string, any> } | null>(null);
@@ -564,10 +595,11 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                     {currentAnalysisType && (
                         <button
                             onClick={() => { setEditingAnalysis(null); setShowSaveModal(true); }}
+                            title={activeAnalysisId ? 'Save the current state as a new dated version' : 'Save this study'}
                             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-sm hover:shadow-md transition-all shrink-0"
                         >
                             <Save size={13} />
-                            {activeAnalysisId ? 'Save As' : 'Save'}
+                            {activeAnalysisId ? 'Save new version' : 'Save'}
                         </button>
                     )}
                 </div>
@@ -607,6 +639,8 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 onSave={handleSave}
                 analysisType={currentAnalysisType || 'mtbf'}
                 editingId={editingAnalysis?.id || null}
+                initialTitle={editingAnalysis?.title}
+                initialNotes={editingAnalysis?.notes || ''}
             />
 
             {/* Delete Confirmation */}

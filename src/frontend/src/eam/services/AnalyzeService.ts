@@ -310,6 +310,8 @@ export type ReliabilityAnalysisType = 'mtbf' | 'weibull' | 'availability' | 'spa
 
 export interface ReliabilityAnalysis {
     id: string;
+    root_id: string | null;   // lineage id — all versions of a study share this
+    version: number;          // 1-based snapshot number within the lineage
     asset_id: string | null;
     asset_tag: string | null;
     asset_name: string | null;
@@ -476,18 +478,45 @@ class AnalyzeService {
     }
 
     async saveReliabilityAnalysis(
-        analysis: Omit<ReliabilityAnalysis, 'id' | 'created_at' | 'updated_at'>
+        analysis: Omit<ReliabilityAnalysis, 'id' | 'root_id' | 'version' | 'created_at' | 'updated_at'>
     ): Promise<ReliabilityAnalysis | null> {
         try {
+            // First version of a new lineage — the row is its own root.
+            const id = crypto.randomUUID();
+            const row = { ...analysis, id, root_id: id, version: 1 };
             const { data, error } = await supabase
                 .from('ers_reliability_analyses')
-                .insert(analysis)
+                .insert(row)
                 .select()
                 .single();
             if (error) { console.error('AnalyzeService.saveReliabilityAnalysis:', error); throw error; }
             return data as ReliabilityAnalysis;
         } catch (e) {
             console.error('Error saving reliability analysis:', e);
+            return null;
+        }
+    }
+
+    /**
+     * Append a new immutable version (snapshot) to an existing study lineage.
+     * Prior versions are preserved so results can be trended over time.
+     */
+    async saveReliabilityVersion(
+        rootId: string,
+        version: number,
+        analysis: Omit<ReliabilityAnalysis, 'id' | 'root_id' | 'version' | 'created_at' | 'updated_at'>
+    ): Promise<ReliabilityAnalysis | null> {
+        try {
+            const row = { ...analysis, id: crypto.randomUUID(), root_id: rootId, version };
+            const { data, error } = await supabase
+                .from('ers_reliability_analyses')
+                .insert(row)
+                .select()
+                .single();
+            if (error) { console.error('AnalyzeService.saveReliabilityVersion:', error); throw error; }
+            return data as ReliabilityAnalysis;
+        } catch (e) {
+            console.error('Error saving reliability version:', e);
             return null;
         }
     }
