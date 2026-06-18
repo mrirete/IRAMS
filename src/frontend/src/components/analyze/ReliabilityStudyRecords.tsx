@@ -14,7 +14,7 @@ import {
     History, Search, Clock, X, ChevronDown, ChevronUp, FolderOpen, ArrowUpDown, User, Layers,
 } from 'lucide-react';
 import { Button } from '../../eam/components/ui';
-import type { ReliabilityAnalysis, ReliabilityAnalysisType } from '../../eam/services/AnalyzeService';
+import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy } from '../../eam/services/AnalyzeService';
 
 const TYPE_LABELS: Record<string, string> = {
     mtbf: 'RAM / MTBF',
@@ -145,8 +145,9 @@ function StudyDetail({ versions, onClose, onLoad }: {
 }
 
 // ─── Main register panel ──────────────────────────────────────
-export function StudyRecordsPanel({ analyses, loading, onLoad }: {
+export function StudyRecordsPanel({ analyses, studies, loading, onLoad }: {
     analyses: ReliabilityAnalysis[];      // ALL versions across all lineages
+    studies: ReliabilityStudy[];          // parent study containers
     loading: boolean;
     onLoad: (a: ReliabilityAnalysis) => void;
 }) {
@@ -195,6 +196,48 @@ export function StudyRecordsPanel({ analyses, loading, onLoad }: {
 
     const detailVersions = detailRoot ? (lineages.find(l => l.root === detailRoot)?.versions ?? null) : null;
 
+    // Group filtered lineages under their parent study (+ an "ungrouped" bucket)
+    const studyById = useMemo(() => new Map(studies.map(s => [s.id, s])), [studies]);
+    const sections = useMemo(() => {
+        const byStudy = new Map<string, typeof filtered>();
+        for (const l of filtered) {
+            const key = (l.latest.study_id && studyById.has(l.latest.study_id)) ? l.latest.study_id : '__ungrouped__';
+            const arr = byStudy.get(key) ?? byStudy.set(key, []).get(key)!;
+            arr.push(l);
+        }
+        const studySections = studies
+            .filter(s => byStudy.has(s.id))
+            .map(s => ({ study: s, lineages: byStudy.get(s.id)! }));
+        return { studySections, ungrouped: byStudy.get('__ungrouped__') ?? [] };
+    }, [filtered, studies, studyById]);
+
+    const isEmpty = sections.studySections.length === 0 && sections.ungrouped.length === 0;
+
+    // Single lineage row (reused across study sections and the ungrouped bucket)
+    const renderRow = ({ root, latest, versions }: typeof filtered[number]) => (
+        <button
+            key={root}
+            onClick={() => setDetailRoot(root)}
+            className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
+        >
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-700 truncate">{latest.title}</p>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400 mt-0.5">
+                    <span className="px-1.5 py-0.5 bg-slate-100 rounded font-medium uppercase">{TYPE_LABELS[latest.analysis_type] || latest.analysis_type}</span>
+                    {latest.asset_tag && <span className="font-mono">{latest.asset_tag}</span>}
+                    <span title={fmtDateTime(latest.created_at)}><Clock size={9} className="inline" /> {fmtDate(latest.created_at)}</span>
+                    {latest.created_by && <span>· by {latest.created_by}</span>}
+                    {versions.length > 1 && (
+                        <span className="px-1.5 py-0.5 bg-primary-50 text-primary-600 rounded font-semibold flex items-center gap-1">
+                            <Layers size={9} /> {versions.length} versions
+                        </span>
+                    )}
+                </div>
+            </div>
+            <ChevronDown size={14} className="-rotate-90 text-slate-300 shrink-0" />
+        </button>
+    );
+
     return (
         <div className="bg-white border border-slate-200 rounded-card shadow-card overflow-hidden">
             <button onClick={() => setExpanded(v => !v)} className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
@@ -237,39 +280,41 @@ export function StudyRecordsPanel({ analyses, loading, onLoad }: {
                         </button>
                     </div>
 
-                    {/* List */}
-                    <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                    {/* List — grouped under parent studies, then an ungrouped bucket */}
+                    <div className="max-h-80 overflow-y-auto">
                         {loading ? (
                             <div className="px-4 py-8 text-center text-xs text-slate-400 animate-pulse">Loading study records…</div>
-                        ) : filtered.length === 0 ? (
+                        ) : isEmpty ? (
                             <div className="px-4 py-8 text-center text-xs text-slate-400">
                                 {lineages.length === 0
                                     ? 'No studies saved yet. Run a calculation and hit Save to start the record.'
                                     : 'No studies match your filters.'}
                             </div>
-                        ) : filtered.map(({ root, latest, versions }) => (
-                            <button
-                                key={root}
-                                onClick={() => setDetailRoot(root)}
-                                className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 transition-colors"
-                            >
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium text-slate-700 truncate">{latest.title}</p>
-                                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-400 mt-0.5">
-                                        <span className="px-1.5 py-0.5 bg-slate-100 rounded font-medium uppercase">{TYPE_LABELS[latest.analysis_type] || latest.analysis_type}</span>
-                                        {latest.asset_tag && <span className="font-mono">{latest.asset_tag}</span>}
-                                        <span title={fmtDateTime(latest.created_at)}><Clock size={9} className="inline" /> {fmtDate(latest.created_at)}</span>
-                                        {latest.created_by && <span>· by {latest.created_by}</span>}
-                                        {versions.length > 1 && (
-                                            <span className="px-1.5 py-0.5 bg-primary-50 text-primary-600 rounded font-semibold flex items-center gap-1">
-                                                <Layers size={9} /> {versions.length} versions
-                                            </span>
-                                        )}
+                        ) : (
+                            <>
+                                {sections.studySections.map(({ study, lineages: rows }) => (
+                                    <div key={study.id}>
+                                        <div className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 border-y border-slate-100 sticky top-0 z-10">
+                                            <FolderOpen size={13} className="text-primary-500 shrink-0" />
+                                            <span className="text-xs font-bold text-slate-700 truncate">{study.name}</span>
+                                            {study.asset_tag && <span className="text-[10px] font-mono text-slate-400">{study.asset_tag}</span>}
+                                            <span className="text-[10px] text-slate-400 ml-auto shrink-0">{rows.length} {rows.length === 1 ? 'analysis' : 'analyses'}</span>
+                                        </div>
+                                        <div className="divide-y divide-slate-50">{rows.map(renderRow)}</div>
                                     </div>
-                                </div>
-                                <ChevronDown size={14} className="-rotate-90 text-slate-300 shrink-0" />
-                            </button>
-                        ))}
+                                ))}
+                                {sections.ungrouped.length > 0 && (
+                                    <div>
+                                        {sections.studySections.length > 0 && (
+                                            <div className="px-4 py-1.5 bg-slate-50 border-y border-slate-100 sticky top-0 z-10">
+                                                <span className="text-xs font-bold text-slate-500">Ungrouped</span>
+                                            </div>
+                                        )}
+                                        <div className="divide-y divide-slate-50">{sections.ungrouped.map(renderRow)}</div>
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
                 </div>
             )}
