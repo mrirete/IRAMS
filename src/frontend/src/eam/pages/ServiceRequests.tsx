@@ -5,7 +5,6 @@ import {
     X, User, Camera, Zap, Trash2, Save,
     MoreHorizontal, QrCode, ChevronLeft, Bot, ShieldCheck, FileText, AlertOctagon, ChevronDown, ChevronRight, Mic, Package, MapPin, Edit3, Check
 } from 'lucide-react';
-import { MOCK_REQUESTS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_WORK_ORDERS } from '../constants';
 import { ServiceRequest, RequestStatus, Asset, JobFile, WorkOrderStatus, WorkOrderType } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';

@@ -86,29 +86,31 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const fetchProfile = async (currentUser: SupabaseUser) => {
         try {
-            // A. Get User Profile — try by email first, then by username
+            // A. Get User Profile — single round-trip: match email OR the derived
+            // username (email prefix, case-insensitive — e.g. "J.test1" → "j.test1").
+            // Previously this was two sequential queries, which gated first paint.
             let userData: any = null;
             let userError: any = null;
 
-            const emailResult = await supabase
-                .from('users')
-                .select('*')
-                .eq('email', currentUser.email)
-                .maybeSingle();
+            const derivedUser = currentUser.email?.split('@')[0] || '';
+            const orFilters = [
+                currentUser.email ? `email.eq.${currentUser.email}` : '',
+                derivedUser ? `username.ilike.${derivedUser}` : '',
+            ].filter(Boolean).join(',');
 
-            if (emailResult.data) {
-                userData = emailResult.data;
-            } else {
-                // Fallback: try by username (email prefix) — case-insensitive
-                // because usernames like "J.test1" derive as "j.test1" from email
-                const derivedUser = currentUser.email?.split('@')[0] || '';
-                const usernameResult = await supabase
+            if (orFilters) {
+                const userLookup = await supabase
                     .from('users')
                     .select('*')
-                    .ilike('username', derivedUser)
-                    .maybeSingle();
-                userData = usernameResult.data;
-                userError = usernameResult.error;
+                    .or(orFilters)
+                    .limit(2);
+
+                if (userLookup.error) {
+                    userError = userLookup.error;
+                } else if (userLookup.data && userLookup.data.length > 0) {
+                    // Prefer an exact email match, else fall back to the username match.
+                    userData = userLookup.data.find((u: any) => u.email === currentUser.email) || userLookup.data[0];
+                }
             }
 
             if (userError || !userData) {
