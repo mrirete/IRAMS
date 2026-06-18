@@ -35,7 +35,7 @@ import { MonteCarloSimTab } from '../../eam/components/MonteCarloSimTab';
 
 // Service
 import analyzeService from '../../eam/services/AnalyzeService';
-import type { ReliabilityAnalysis, ReliabilityAnalysisType } from '../../eam/services/AnalyzeService';
+import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy } from '../../eam/services/AnalyzeService';
 import { useAuth } from '../../eam/contexts/AuthContext';
 import { StudyRecordsPanel } from './ReliabilityStudyRecords';
 
@@ -50,17 +50,23 @@ const CALC_TABS: { id: CalcTab; label: string; icon: React.ReactNode; phase: str
 ];
 
 // ─── Save Analysis Modal ──────────────────────────────────────
-function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId, initialTitle, initialNotes }: {
+function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId, initialTitle, initialNotes, showStudyPicker, studies, defaultStudyName }: {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (title: string, notes: string) => void;
+    onSave: (title: string, notes: string, study?: { studyId: string | null; newName?: string }) => void;
     analysisType: ReliabilityAnalysisType;
     editingId: string | null;
     initialTitle?: string;
     initialNotes?: string;
+    showStudyPicker?: boolean;                       // true only when starting a new lineage
+    studies?: ReliabilityStudy[];                    // existing studies (already asset-scoped by caller)
+    defaultStudyName?: string;                       // suggested name when creating a new study
 }) {
     const [title, setTitle] = useState('');
     const [notes, setNotes] = useState('');
+    // Study selection: a study id, '__none__' (ungrouped), or '__new__' (create)
+    const [studySel, setStudySel] = useState<string>('__none__');
+    const [newStudyName, setNewStudyName] = useState('');
 
     useEffect(() => {
         if (!isOpen) return;
@@ -73,16 +79,32 @@ function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId, i
             setTitle(`${typeLabel} Analysis — ${new Date().toLocaleDateString()}`);
             setNotes('');
         }
-    }, [isOpen, analysisType, editingId, initialTitle, initialNotes]);
+        // Default to the most recent matching study if one exists, else ungrouped.
+        setStudySel(studies && studies.length > 0 ? studies[0].id : '__none__');
+        setNewStudyName(defaultStudyName || '');
+    }, [isOpen, analysisType, editingId, initialTitle, initialNotes, studies, defaultStudyName]);
 
     if (!isOpen) return null;
+
+    const handleConfirm = () => {
+        let study: { studyId: string | null; newName?: string } | undefined;
+        if (showStudyPicker) {
+            if (studySel === '__new__') study = { studyId: null, newName: newStudyName };
+            else if (studySel === '__none__') study = { studyId: null };
+            else study = { studyId: studySel };
+        }
+        onSave(title, notes, study);
+        onClose();
+    };
+
+    const confirmDisabled = !title.trim() || (showStudyPicker && studySel === '__new__' && !newStudyName.trim());
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 animate-in zoom-in duration-200">
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
                     <h3 className="text-lg font-bold text-slate-800">
-                        {editingId ? '✏️ Update Analysis' : '[U+1F4BE] Save Analysis'}
+                        {editingId ? 'Update study details' : 'Save study'}
                     </h3>
                     <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg"><X size={18} /></button>
                 </div>
@@ -93,6 +115,26 @@ function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId, i
                             className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                             placeholder="e.g. GT-301 MTBF Analysis Q1 2026" />
                     </div>
+
+                    {/* Study assignment — only when starting a new analysis lineage */}
+                    {showStudyPicker && (
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Study</label>
+                            <select value={studySel} onChange={e => setStudySel(e.target.value)}
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500">
+                                <option value="__none__">No study (ungrouped)</option>
+                                {(studies || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                <option value="__new__">+ New study…</option>
+                            </select>
+                            {studySel === '__new__' && (
+                                <input type="text" value={newStudyName} onChange={e => setNewStudyName(e.target.value)}
+                                    className="mt-2 w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                    placeholder="New study name — e.g. GT-301 Reliability Review Q2 2026" />
+                            )}
+                            <p className="text-[11px] text-slate-400 mt-1">Group this analysis with others for the same asset (RBD, RAM, Weibull, Monte Carlo).</p>
+                        </div>
+                    )}
+
                     <div>
                         <label className="block text-sm font-medium text-slate-700 mb-1">Notes (optional)</label>
                         <textarea value={notes} onChange={e => setNotes(e.target.value)}
@@ -102,8 +144,8 @@ function SaveAnalysisModal({ isOpen, onClose, onSave, analysisType, editingId, i
                 </div>
                 <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
                     <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
-                    <button onClick={() => { onSave(title, notes); onClose(); }}
-                        disabled={!title.trim()}
+                    <button onClick={handleConfirm}
+                        disabled={confirmDisabled}
                         className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50">
                         {editingId ? 'Update' : 'Save'}
                     </button>
@@ -291,6 +333,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
     // Saved analyses state
     const [savedAnalyses, setSavedAnalyses] = useState<ReliabilityAnalysis[]>([]);
+    const [savedStudies, setSavedStudies] = useState<ReliabilityStudy[]>([]);
     const [savedLoading, setSavedLoading] = useState(false);
     const [activeAnalysisId, setActiveAnalysisId] = useState<string | null>(null);
     const [saveToast, setSaveToast] = useState<string | null>(null);
@@ -309,11 +352,15 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     const [weibullFit, setWeibullFit] = useState<{ beta: number; eta: number; r2: number; b10: number; dataPoints: number } | null>(null);
     const [showCreatePM, setShowCreatePM] = useState(false);
 
-    // Load saved analyses
+    // Load saved analyses + studies
     const loadSavedAnalyses = useCallback(async () => {
         setSavedLoading(true);
-        const analyses = await analyzeService.getReliabilityAnalyses();
+        const [analyses, studies] = await Promise.all([
+            analyzeService.getReliabilityAnalyses(),
+            analyzeService.getReliabilityStudies(),
+        ]);
         setSavedAnalyses(analyses);
+        setSavedStudies(studies);
         setSavedLoading(false);
     }, []);
 
@@ -337,7 +384,8 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         : [];
 
     // Save handler — snapshots: append a version, never overwrite run data.
-    const handleSave = useCallback(async (title: string, notes: string) => {
+    // `study` carries the study assignment for a NEW lineage (existing id or a new name).
+    const handleSave = useCallback(async (title: string, notes: string, study?: { studyId: string | null; newName?: string }) => {
         if (!currentAnalysisType) return;
 
         // Editing = metadata only (rename / re-note) on a specific version.
@@ -352,7 +400,33 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             return;
         }
 
+        // If a study is loaded, append a new version to its lineage; otherwise start one.
+        const active = activeAnalysisId ? savedAnalyses.find(a => a.id === activeAnalysisId) : null;
+
+        // Resolve study assignment. Version appends inherit the lineage's study;
+        // a fresh lineage uses the picker choice (existing id, a new study, or none).
+        let studyId: string | null = active ? (active.study_id ?? null) : null;
+        if (!active && study) {
+            if (study.newName?.trim()) {
+                const createdStudy = await analyzeService.createReliabilityStudy({
+                    name: study.newName.trim(),
+                    asset_id: currentAsset?.id || null,
+                    asset_tag: currentAsset?.tag || null,
+                    asset_name: currentAsset?.name || null,
+                    description: null,
+                    created_by: currentAuthor,
+                });
+                if (createdStudy) {
+                    setSavedStudies(prev => [createdStudy, ...prev]);
+                    studyId = createdStudy.id;
+                }
+            } else {
+                studyId = study.studyId ?? null;
+            }
+        }
+
         const payload = {
+            study_id: studyId,
             asset_id: currentAsset?.id || null,
             asset_tag: currentAsset?.tag || null,
             asset_name: currentAsset?.name || null,
@@ -364,8 +438,6 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             created_by: currentAuthor,
         };
 
-        // If a study is loaded, append a new version to its lineage; otherwise start one.
-        const active = activeAnalysisId ? savedAnalyses.find(a => a.id === activeAnalysisId) : null;
         if (active) {
             const root = active.root_id || active.id;
             const nextVersion = Math.max(0, ...savedAnalyses
@@ -552,6 +624,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             {/* Study Records — consolidated dated register of every saved study */}
             <StudyRecordsPanel
                 analyses={savedAnalyses}
+                studies={savedStudies}
                 loading={savedLoading}
                 onLoad={handleLoad}
             />
@@ -641,6 +714,11 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 editingId={editingAnalysis?.id || null}
                 initialTitle={editingAnalysis?.title}
                 initialNotes={editingAnalysis?.notes || ''}
+                showStudyPicker={!editingAnalysis && !activeAnalysisId}
+                studies={currentAsset?.id
+                    ? savedStudies.filter(s => s.asset_id === currentAsset.id)
+                    : savedStudies}
+                defaultStudyName={`${currentAsset?.tag || 'Asset'} Reliability Study — ${new Date().toLocaleDateString()}`}
             />
 
             {/* Delete Confirmation */}

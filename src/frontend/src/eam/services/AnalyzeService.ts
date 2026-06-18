@@ -308,10 +308,25 @@ export interface DETask {
 // Reliability Analyses (calculator persistence)
 export type ReliabilityAnalysisType = 'mtbf' | 'weibull' | 'availability' | 'spares' | 'maintainability' | 'montecarlo';
 
+// Reliability Study — parent container grouping an asset's analyses.
+export interface ReliabilityStudy {
+    id: string;
+    name: string;
+    asset_id: string | null;
+    asset_tag: string | null;
+    asset_name: string | null;
+    description: string | null;
+    status: 'active' | 'archived';
+    created_by: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
 export interface ReliabilityAnalysis {
     id: string;
     root_id: string | null;   // lineage id — all versions of a study share this
     version: number;          // 1-based snapshot number within the lineage
+    study_id: string | null;  // parent study (null = ungrouped)
     asset_id: string | null;
     asset_tag: string | null;
     asset_name: string | null;
@@ -550,6 +565,75 @@ class AnalyzeService {
             return true;
         } catch (e) {
             console.error('Error deleting reliability analysis:', e);
+            return false;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  RELIABILITY STUDIES (parent grouping)
+    // ══════════════════════════════════════════════════════════
+
+    async getReliabilityStudies(): Promise<ReliabilityStudy[]> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_reliability_studies')
+                .select('*')
+                .order('updated_at', { ascending: false });
+            if (error) { console.error('AnalyzeService.getReliabilityStudies:', error); throw error; }
+            return (data ?? []) as ReliabilityStudy[];
+        } catch (e) {
+            console.error('Error fetching reliability studies:', e);
+            return [];
+        }
+    }
+
+    async createReliabilityStudy(
+        study: Omit<ReliabilityStudy, 'id' | 'status' | 'created_at' | 'updated_at'> & { status?: 'active' | 'archived' }
+    ): Promise<ReliabilityStudy | null> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_reliability_studies')
+                .insert({ status: 'active', ...study })
+                .select()
+                .single();
+            if (error) { console.error('AnalyzeService.createReliabilityStudy:', error); throw error; }
+            return data as ReliabilityStudy;
+        } catch (e) {
+            console.error('Error creating reliability study:', e);
+            return null;
+        }
+    }
+
+    async updateReliabilityStudy(
+        id: string,
+        updates: Partial<Pick<ReliabilityStudy, 'name' | 'description' | 'status'>>
+    ): Promise<ReliabilityStudy | null> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_reliability_studies')
+                .update(updates)
+                .eq('id', id)
+                .select()
+                .single();
+            if (error) { console.error('AnalyzeService.updateReliabilityStudy:', error); throw error; }
+            return data as ReliabilityStudy;
+        } catch (e) {
+            console.error('Error updating reliability study:', e);
+            return null;
+        }
+    }
+
+    async deleteReliabilityStudy(id: string): Promise<boolean> {
+        try {
+            // study_id FK is ON DELETE SET NULL, so member analyses become ungrouped.
+            const { error } = await supabase
+                .from('ers_reliability_studies')
+                .delete()
+                .eq('id', id);
+            if (error) { console.error('AnalyzeService.deleteReliabilityStudy:', error); throw error; }
+            return true;
+        } catch (e) {
+            console.error('Error deleting reliability study:', e);
             return false;
         }
     }
