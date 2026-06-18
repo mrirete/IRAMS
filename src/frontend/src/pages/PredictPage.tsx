@@ -5,6 +5,7 @@ import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
 import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
+import { ScrollTabStrip } from '../eam/components/ui';
 import predictionService from '../eam/services/PredictionService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import type { FleetAssetHealth } from '../types/intelligence';
@@ -626,12 +627,13 @@ export const PredictPage: React.FC = () => {
             </div>
 
             {/* ═══ TAB NAVIGATION ═══ */}
-            <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
+            <ScrollTabStrip activeId={activeTab} className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
                 {PREDICT_TABS.map(tab => (
                     <button
                         key={tab.id}
+                        data-active={activeTab === tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === tab.id
                             ? 'bg-accent-cyan text-brand-900 shadow-sm shadow-primary-500/20'
                             : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                             }`}
@@ -642,7 +644,7 @@ export const PredictPage: React.FC = () => {
                             }`}>— {tab.description}</span>
                     </button>
                 ))}
-            </div>
+            </ScrollTabStrip>
 
             {/* ═══ TAB CONTENT ═══ */}
             {activeTab === 'overview' && (

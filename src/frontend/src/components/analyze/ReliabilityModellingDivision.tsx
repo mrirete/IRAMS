@@ -17,7 +17,7 @@ import {
     Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
     AlertCircle, Check, X, Wrench, ChevronRight,
 } from 'lucide-react';
-import { Button } from '../../eam/components/ui';
+import { Button, ScrollTabStrip } from '../../eam/components/ui';
 import { CreatePMFromWeibullModal, type WeibullPMData } from './CreatePMFromWeibullModal';
 
 // Individual calculator tabs exported from the Toolkit
@@ -645,11 +645,15 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             />
 
             {/* Calculator sub-tab bar — scrollable on mobile */}
-            <div className="-mx-1 px-1" style={{ overflow: 'visible' }}>
-                <div className="flex items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm overflow-x-auto no-scrollbar" style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}>
+            <ScrollTabStrip
+                activeId={activeCalc}
+                className="flex items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm"
+                style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+            >
                     {CALC_TABS.map(tab => (
                         <button
                             key={tab.id}
+                            data-active={activeCalc === tab.id}
                             onClick={() => handleTabSwitch(tab.id)}
                             title={`${tab.phase}: ${tab.desc}`}
                             style={{ scrollSnapAlign: 'start' }}
@@ -675,8 +679,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                             {activeAnalysisId ? 'Save new version' : 'Save'}
                         </button>
                     )}
-                </div>
-            </div>
+            </ScrollTabStrip>
 
             {/* Toast notification */}
             {saveToast && (
