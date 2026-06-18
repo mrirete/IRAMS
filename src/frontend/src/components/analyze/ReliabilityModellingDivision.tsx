@@ -37,6 +37,7 @@ import { MonteCarloSimTab } from '../../eam/components/MonteCarloSimTab';
 import analyzeService from '../../eam/services/AnalyzeService';
 import type { ReliabilityAnalysis, ReliabilityAnalysisType } from '../../eam/services/AnalyzeService';
 import { useAuth } from '../../eam/contexts/AuthContext';
+import { StudyRecordsPanel } from './ReliabilityStudyRecords';
 
 type CalcTab = 'ram' | 'weibull' | 'spares' | 'rbd' | 'montecarlo';
 
@@ -517,6 +518,13 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
     return (
         <div className="space-y-4">
+            {/* Study Records — consolidated dated register of every saved study */}
+            <StudyRecordsPanel
+                analyses={savedAnalyses}
+                loading={savedLoading}
+                onLoad={handleLoad}
+            />
+
             {/* Workflow spine — Model & Measure → Fit Weibull → Simulate → Create PM */}
             <WorkflowSpine
                 activeCalc={activeCalc}
