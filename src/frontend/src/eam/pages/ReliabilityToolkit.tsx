@@ -14,11 +14,21 @@ import { supabase } from '../lib/supabase';
 // @ts-ignore
 import * as jStat from 'jstat';
 import { MonteCarloSimTab } from '../components/MonteCarloSimTab';
+import { ScrollTabStrip } from '../components/ui';
 import BathtubCurve from '../../components/reliability/BathtubCurve';
 import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/analyze/CreatePMFromWeibullModal';
 
 // ─── Corrective WO type codes (dictionary-aligned) ──────────
 const CORRECTIVE_WO_TYPES = ['CM', 'EM'];
+
+/**
+ * Shared form-control style for the Toolkit calculators — matches the
+ * design-system Field control (primary focus ring, 40px touch target on
+ * mobile) so every calculator input looks consistent with the rest of the app.
+ */
+const CONTROL_CLS =
+    'w-full rounded-lg border border-slate-300 bg-white px-3 py-2 min-h-[40px] md:min-h-0 text-sm text-slate-900 ' +
+    'placeholder:text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-400 focus:border-primary-500';
 
 /* ╔══════════════════════════════════════════════════════════════╗
    ║  RELIABILITY ENGINEERING TOOLKIT                             ║
@@ -668,17 +678,17 @@ export function MTBFTab({ onStateChange, loadedData }: TabProps = {}) {
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Total Operating Hours</label>
                     <input type="number" value={totalHours} onChange={e => setTotalHours(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        className={CONTROL_CLS} />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Number of Failures</label>
                     <input type="number" value={failures} onChange={e => setFailures(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        className={CONTROL_CLS} />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Confidence Level (%)</label>
                     <select value={confidence} onChange={e => setConfidence(Number(e.target.value))}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm">
+                        className={CONTROL_CLS}>
                         <option value={60}>60%</option>
                         <option value={80}>80%</option>
                         <option value={90}>90%</option>
@@ -688,7 +698,7 @@ export function MTBFTab({ onStateChange, loadedData }: TabProps = {}) {
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Repair Times (hours, comma-sep)</label>
                     <input type="text" value={repairTimesStr} onChange={e => setRepairTimesStr(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" placeholder="4, 6, 8, 2" />
+                        className={CONTROL_CLS} placeholder="4, 6, 8, 2" />
                 </div>
             </div>
 
@@ -823,23 +833,23 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">MTBF (hours)</label>
                     <input type="number" value={mtbf} onChange={e => setMtbf(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        className={CONTROL_CLS} />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">MTTR (hours)</label>
                     <input type="number" value={mttr} onChange={e => setMttr(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        className={CONTROL_CLS} />
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">MLDT (hours)</label>
                     <input type="number" value={mldt} onChange={e => setMldt(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        className={CONTROL_CLS} />
                     <p className="text-[10px] text-slate-400 mt-0.5">Mean logistics delay time</p>
                 </div>
                 <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">Target Ao (%)</label>
                     <input type="number" value={targetAo} onChange={e => setTargetAo(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                        className={CONTROL_CLS} />
                 </div>
             </div>
 
@@ -1323,7 +1333,7 @@ export function MaintainabilityTab({ onStateChange, loadedData }: TabProps = {})
                     Repair Times (hours, comma-separated)
                 </label>
                 <textarea value={dataStr} onChange={e => setDataStr(e.target.value)}
-                    className="w-full p-3 border border-slate-300 rounded-lg text-sm font-mono h-20" />
+                    className={`${CONTROL_CLS} font-mono h-20`} />
                 <p className="text-xs text-slate-400 mt-1">{repairTimes.length} data points</p>
             </div>
 
@@ -1847,6 +1857,8 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
 // ═══════════════════════════════════════════════════════════════
 export const ReliabilityToolkit: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabId>('mtbf');
+    const [showHelp, setShowHelp] = useState(false);
+    const activeTabDef = TABS.find(t => t.id === activeTab);
 
     // ── Weibull → Monte Carlo bridge state ──
     const [weibullBridge, setWeibullBridge] = useState<{ beta: number; eta: number; dataStr?: string } | null>(null);
@@ -1862,38 +1874,71 @@ export const ReliabilityToolkit: React.FC = () => {
     }, []);
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-                    <Calculator size={24} className="text-blue-600" /> Reliability Engineering Toolkit
-                </h1>
-                <p className="text-sm text-slate-500 mt-1">
-                    ISO 14224 • MIL-HDBK-338 • Interactive calculators with auto-population from ERS work order data
-                </p>
+        <div className="space-y-5">
+            {/* ── Page Header — gradient accent bar (matches Reliability Modelling) ── */}
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
+                <div>
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-primary-500 to-primary-700" />
+                        <h1 className="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
+                            <Calculator size={22} className="text-primary-600" /> Reliability Engineering Toolkit
+                        </h1>
+                    </div>
+                    <p className="text-slate-500 text-xs sm:text-sm mt-1.5 ml-4">
+                        Interactive calculators with auto-population from ERS work order data · ISO 14224 · MIL-HDBK-338
+                    </p>
+                </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1">
-                {TABS.map(tab => (
+            {/* ── Tabs + inline help popover ── */}
+            <div className="flex items-center gap-2">
+                <ScrollTabStrip
+                    activeId={activeTab}
+                    className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm flex-1"
+                >
+                    {TABS.map(tab => (
+                        <button
+                            key={tab.id}
+                            data-active={activeTab === tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            title={tab.desc}
+                            className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap shrink-0 ${activeTab === tab.id
+                                ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-sm shadow-primary-500/20'
+                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                                }`}
+                        >
+                            <span className={activeTab === tab.id ? 'text-white/90' : 'text-slate-400'}>{tab.icon}</span>
+                            <span>{tab.label}</span>
+                        </button>
+                    ))}
+                </ScrollTabStrip>
+
+                {/* Compact help — popover replaces the old full-width description box */}
+                <div className="relative shrink-0">
                     <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${activeTab === tab.id
-                            ? 'bg-white text-blue-700 border border-b-white border-slate-200 -mb-[1px] shadow-sm'
-                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                        onClick={() => setShowHelp(s => !s)}
+                        className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${showHelp
+                            ? 'bg-primary-50 border-primary-200 text-primary-600'
+                            : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50'
                             }`}
-                        title={tab.desc}
+                        title="About this calculator"
+                        aria-label="About this calculator"
                     >
-                        {tab.icon} {tab.label}
+                        <HelpCircle size={18} />
                     </button>
-                ))}
-            </div>
-
-            {/* Description */}
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-start gap-2">
-                <HelpCircle size={16} className="text-slate-400 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-slate-500">{TABS.find(t => t.id === activeTab)?.desc}</p>
+                    {showHelp && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setShowHelp(false)} />
+                            <div className="absolute right-0 top-full mt-2 w-72 z-50 bg-white border border-slate-200 rounded-xl shadow-xl p-4 animate-in fade-in slide-in-from-top-1 duration-150">
+                                <div className="flex items-center gap-2 mb-1.5">
+                                    <span className="text-primary-600">{activeTabDef?.icon}</span>
+                                    <h4 className="text-sm font-bold text-slate-800">{activeTabDef?.label}</h4>
+                                </div>
+                                <p className="text-xs text-slate-500 leading-relaxed">{activeTabDef?.desc}</p>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Active Tab Content */}
