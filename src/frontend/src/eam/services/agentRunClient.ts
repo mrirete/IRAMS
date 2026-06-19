@@ -79,3 +79,16 @@ export function runCorrosionSentinel(assetTag?: string): Promise<AgentRunRespons
         : 'Scan the fleet for corrosion risk: flag the CMLs nearest end-of-life or below t-min and recommend inspections.';
     return runAgent('corrosion_sentinel', query);
 }
+
+/** PM Optimizer — finds over-frequent, ineffective or redundant PM programs. */
+export function runPmOptimizer(assetTag?: string): Promise<AgentRunResponse> {
+    const query = assetTag
+        ? `Review the PM program for asset ${assetTag} and recommend cost-saving changes.`
+        : 'Review the PM program across the fleet and recommend the highest-value cost-saving changes.';
+    return runAgent('pm_optimizer', query);
+}
+
+/** Reliability & Integrity Digest — cited weekly briefing across the fleet. */
+export function runReliabilityDigest(): Promise<AgentRunResponse> {
+    return runAgent('reliability_digest', 'Produce this week\'s reliability & integrity digest for the fleet.');
+}

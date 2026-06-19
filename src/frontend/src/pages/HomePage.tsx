@@ -2,6 +2,9 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, Sparkles, BarChart2, Download, Clock } from 'lucide-react';
+import AdvisoryAgentPanel from '../eam/components/ui/AdvisoryAgentPanel';
+import { Wrench } from 'lucide-react';
+import { runReliabilityDigest, runPmOptimizer } from '../eam/services/agentRunClient';
 import { DigitalTwin } from '../dashboards/DigitalTwin';
 import { KnowledgeGraphView } from '../dashboards/KnowledgeGraphView';
 import { KpiStrip } from '../components/dashboard/KpiStrip';
@@ -48,6 +51,27 @@ export const HomePage: React.FC = () => {
                     <span className="font-mono">{new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
                 </div>
             </div>
+
+            {/* ═══ Reliability & Integrity AI Digest ═══ */}
+            <AdvisoryAgentPanel
+                title="Reliability & Integrity Digest"
+                subtitle="AI weekly briefing — bad actors, corrosion risk & work backlog"
+                icon={<Sparkles size={16} />}
+                accent="indigo"
+                runLabel="Generate digest"
+                onRun={() => runReliabilityDigest()}
+            />
+
+            {/* ═══ PM Optimizer (AI) — cut PM cost ═══ */}
+            <AdvisoryAgentPanel
+                title="PM Optimizer"
+                subtitle="AI finds over-frequent, ineffective or redundant PMs to cut cost"
+                icon={<Wrench size={16} />}
+                accent="emerald"
+                runLabel="Optimise PMs"
+                inputPlaceholder="Asset tag (optional)"
+                onRun={(tag) => runPmOptimizer(tag || undefined)}
+            />
 
             {/* ═══ Section 1: Hero KPI Strip ═══ */}
             <KpiStrip />
