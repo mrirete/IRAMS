@@ -64,19 +64,25 @@ export const ScrollTabStrip: React.FC<ScrollTabStripProps> = ({
     useEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
-        const active = el.querySelector('[data-active="true"]') as HTMLElement | null;
         // Centre the active tab by scrolling ONLY this strip. scrollIntoView()
         // would bubble up and scroll every scrollable ancestor — on mobile that
-        // drags the whole page sideways (content clipped on the left edge).
-        if (active && el.scrollWidth > el.clientWidth + 1) {
-            const cRect = el.getBoundingClientRect();
-            const aRect = active.getBoundingClientRect();
-            const delta = (aRect.left - cRect.left) - (el.clientWidth - aRect.width) / 2;
-            el.scrollBy({ left: delta, behavior: 'smooth' });
-        }
-        // Overflow state may change after content/layout settles.
-        const id = window.setTimeout(checkOverflow, 0);
-        return () => window.clearTimeout(id);
+        // drags the whole page sideways. We run after layout has painted (rAF)
+        // AND again shortly after, because on first mount the strip's width can
+        // be 0/unsettled while sibling content (charts) lays out — otherwise the
+        // active tab (e.g. Weibull) stays clipped off-screen.
+        const center = () => {
+            const active = el.querySelector('[data-active="true"]') as HTMLElement | null;
+            if (active && el.scrollWidth > el.clientWidth + 1) {
+                const cRect = el.getBoundingClientRect();
+                const aRect = active.getBoundingClientRect();
+                const delta = (aRect.left - cRect.left) - (el.clientWidth - aRect.width) / 2;
+                if (Math.abs(delta) > 1) el.scrollBy({ left: delta, behavior: 'smooth' });
+            }
+            checkOverflow();
+        };
+        const raf = requestAnimationFrame(center);
+        const t = window.setTimeout(center, 180);
+        return () => { cancelAnimationFrame(raf); window.clearTimeout(t); };
     }, [activeId, checkOverflow]);
 
     return (
