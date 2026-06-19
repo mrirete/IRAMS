@@ -478,27 +478,25 @@ export const RCATab: React.FC<RCATabProps> = ({
                         background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0',
                         overflow: 'hidden', boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
                     }}>
-                        {/* Table Header Bar */}
-                        <div style={{
-                            padding: '16px 20px', borderBottom: '1px solid #e2e8f0',
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            background: '#f8fafc',
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {/* Table Header Bar — responsive: stacks on mobile, side-by-side on sm+ */}
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"
+                            style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                            {/* Left: icon + label + count + scope toggle */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                 <div style={{
                                     width: 28, height: 28, borderRadius: 8,
                                     background: 'linear-gradient(135deg, #eef2ff, #e0e7ff)', border: '1px solid #c7d2fe',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                                 }}>
                                     <GitMerge size={14} color="#6366f1" />
                                 </div>
                                 <span style={{ fontSize: 15, fontWeight: 700, color: '#1e293b' }}>Investigations</span>
                                 <span style={{
                                     background: '#eff6ff', color: '#2563eb', fontSize: 12, fontWeight: 700,
-                                    padding: '3px 12px', borderRadius: 12, border: '1px solid #bfdbfe',
+                                    padding: '3px 10px', borderRadius: 12, border: '1px solid #bfdbfe', flexShrink: 0,
                                 }}>{portfolioList.length}{rcaScope === 'mine' ? `/${rcas.length}` : ''}</span>
                                 {/* Scope toggle */}
-                                <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 6, padding: 2, marginLeft: 4 }}>
+                                <div style={{ display: 'flex', background: '#f1f5f9', borderRadius: 6, padding: 2 }}>
                                     <button
                                         onClick={() => setRcaScope('all')}
                                         style={{
@@ -521,17 +519,18 @@ export const RCATab: React.FC<RCATabProps> = ({
                                     >My RCAs</button>
                                 </div>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                {/* Search */}
-                                <div style={{ position: 'relative' }}>
-                                    <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+                            {/* Right: search + filter + new button — full width on mobile */}
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                                {/* Search — flex-1 so it fills available space */}
+                                <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                                    <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                                     <input
                                         value={portfolioSearch}
                                         onChange={e => setPortfolioSearch(e.target.value)}
                                         placeholder="Search investigations..."
                                         style={{
                                             padding: '7px 12px 7px 32px', fontSize: 13, border: '1px solid #e2e8f0',
-                                            borderRadius: 8, width: 220, outline: 'none', background: '#fff', color: '#1e293b',
+                                            borderRadius: 8, width: '100%', outline: 'none', background: '#fff', color: '#1e293b',
                                         }}
                                     />
                                 </div>
@@ -540,8 +539,8 @@ export const RCATab: React.FC<RCATabProps> = ({
                                     value={portfolioFilter}
                                     onChange={e => setPortfolioFilter(e.target.value)}
                                     style={{
-                                        padding: '7px 12px', fontSize: 13, border: '1px solid #e2e8f0',
-                                        borderRadius: 8, background: '#fff', color: '#1e293b', cursor: 'pointer', outline: 'none',
+                                        padding: '7px 10px', fontSize: 13, border: '1px solid #e2e8f0',
+                                        borderRadius: 8, background: '#fff', color: '#1e293b', cursor: 'pointer', outline: 'none', flexShrink: 0,
                                     }}
                                 >
                                     <option value="all">All Statuses</option>
@@ -550,16 +549,18 @@ export const RCATab: React.FC<RCATabProps> = ({
                                     <option value="review">Review</option>
                                     <option value="closed">Closed</option>
                                 </select>
-                                {/* New Investigation */}
+                                {/* New Investigation — shorter label on mobile */}
                                 <button
                                     onClick={onNewAssessment}
                                     style={{
-                                        display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px',
+                                        display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px',
                                         background: '#6366f1', color: '#fff', border: 'none', borderRadius: 8,
-                                        fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                                        fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap',
                                     }}
                                 >
-                                    <Plus size={14} /> New Investigation
+                                    <Plus size={14} />
+                                    <span className="hidden sm:inline">New Investigation</span>
+                                    <span className="sm:hidden">New</span>
                                 </button>
                             </div>
                         </div>

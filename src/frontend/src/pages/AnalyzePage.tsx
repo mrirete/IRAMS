@@ -34,10 +34,10 @@ type ParetoCriteria = 'cost' | 'downtime' | 'wo_frequency';
 type AssessmentType = 'fmea' | 'rca' | 'criticality' | 'bad_actor';
 
 // ── Division Tabs ────────────────────────────────────────────
-const DIVISIONS: { id: Division; label: string; icon: React.ReactNode; description: string }[] = [
-    { id: 'rca', label: 'Root Cause Analysis', icon: <GitMerge size={16} />, description: 'Formal failure investigations — 5-Why, Fishbone, Fault Tree · problem type determines the tool' },
-    { id: 'defect_elimination', label: 'Defect Elimination', icon: <Target size={16} />, description: 'Identify bad actors → detect patterns → eliminate chronic defects to prevent reoccurrence' },
-    { id: 'oee', label: 'OEE Analysis', icon: <Gauge size={16} />, description: 'Overall Equipment Effectiveness — Availability, Performance, Quality, and equivalent capacity loss hours' },
+const DIVISIONS: { id: Division; label: string; mobileLabel: string; icon: React.ReactNode; description: string }[] = [
+    { id: 'rca', label: 'Root Cause Analysis', mobileLabel: 'RCA', icon: <GitMerge size={16} />, description: 'Formal failure investigations — 5-Why, Fishbone, Fault Tree · problem type determines the tool' },
+    { id: 'defect_elimination', label: 'Defect Elimination', mobileLabel: 'DE', icon: <Target size={16} />, description: 'Identify bad actors → detect patterns → eliminate chronic defects to prevent reoccurrence' },
+    { id: 'oee', label: 'OEE Analysis', mobileLabel: 'OEE', icon: <Gauge size={16} />, description: 'Overall Equipment Effectiveness — Availability, Performance, Quality, and equivalent capacity loss hours' },
 ];
 
 // ═════════════════════════════════════════════════════════════
@@ -530,13 +530,14 @@ export const AnalyzePage: React.FC = () => {
                         data-active={activeDivision === div.id}
                         title={div.description}
                         onClick={() => setActiveDivision(div.id)}
-                        className={`relative flex items-center gap-2.5 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap ${activeDivision === div.id
+                        className={`relative flex items-center gap-2 sm:gap-2.5 px-3 sm:px-5 py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all duration-300 whitespace-nowrap ${activeDivision === div.id
                             ? 'bg-gradient-to-r from-blue-600 to-blue-600 text-white shadow-lg shadow-blue-500/25 scale-[1.02]'
                             : 'text-slate-500 hover:text-slate-800 hover:bg-white hover:shadow-md'
                             }`}
                     >
                         <span className={`transition-colors duration-300 ${activeDivision === div.id ? 'text-white/90' : 'text-slate-400'}`}>{div.icon}</span>
-                        <span>{div.label}</span>
+                        <span className="hidden sm:inline">{div.label}</span>
+                        <span className="sm:hidden">{div.mobileLabel}</span>
                         {activeDivision === div.id && (
                             <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-6 h-1 bg-white/30 rounded-full" />
                         )}

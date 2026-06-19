@@ -271,32 +271,35 @@ function WorkflowSpine({ activeCalc, weibullFit, onGoto, onCreatePM }: {
     ];
 
     return (
-        <div className="flex items-stretch gap-2 bg-white border border-slate-200 rounded-card shadow-card p-2 overflow-x-auto no-scrollbar">
-            {stages.map((s, idx) => {
-                const isActive = activeStage === s.i;
-                const state = isActive ? 'active' : s.done ? 'done' : 'idle';
-                return (
-                    <React.Fragment key={s.i}>
-                        <button
-                            onClick={() => onGoto(s.tab)}
-                            className={`flex items-center gap-2.5 px-3 py-2 rounded-control text-left transition-colors shrink-0 ${isActive ? 'bg-primary-50 ring-1 ring-primary-200' : 'hover:bg-slate-50'}`}
-                        >
-                            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${state === 'active' ? 'bg-primary-600 text-white' : state === 'done' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                {state === 'done' ? <Check size={13} /> : s.i + 1}
-                            </span>
-                            <span className="min-w-0">
-                                <span className={`block text-[13px] font-semibold leading-tight ${isActive ? 'text-primary-700' : 'text-slate-700'}`}>{s.label}</span>
-                                <span className="block text-[10px] text-slate-400 leading-tight truncate max-w-[150px]">{s.sub}</span>
-                            </span>
-                        </button>
-                        {idx < stages.length - 1 && <ChevronRight size={16} className="text-slate-300 self-center shrink-0" />}
-                    </React.Fragment>
-                );
-            })}
+        <div className="flex items-stretch bg-white border border-slate-200 rounded-card shadow-card p-2 gap-2">
+            {/* Scrollable steps — horizontal scroll on mobile */}
+            <div className="flex items-stretch gap-2 overflow-x-auto no-scrollbar flex-1 min-w-0">
+                {stages.map((s, idx) => {
+                    const isActive = activeStage === s.i;
+                    const state = isActive ? 'active' : s.done ? 'done' : 'idle';
+                    return (
+                        <React.Fragment key={s.i}>
+                            <button
+                                onClick={() => onGoto(s.tab)}
+                                className={`flex items-center gap-2.5 px-3 py-2 rounded-control text-left transition-colors shrink-0 ${isActive ? 'bg-primary-50 ring-1 ring-primary-200' : 'hover:bg-slate-50'}`}
+                            >
+                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${state === 'active' ? 'bg-primary-600 text-white' : state === 'done' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    {state === 'done' ? <Check size={13} /> : s.i + 1}
+                                </span>
+                                <span className="min-w-0">
+                                    <span className={`block text-[13px] font-semibold leading-tight ${isActive ? 'text-primary-700' : 'text-slate-700'}`}>{s.label}</span>
+                                    <span className="block text-[10px] text-slate-400 leading-tight truncate max-w-[150px]">{s.sub}</span>
+                                </span>
+                            </button>
+                            {idx < stages.length - 1 && <ChevronRight size={16} className="text-slate-300 self-center shrink-0" />}
+                        </React.Fragment>
+                    );
+                })}
+            </div>
 
-            {/* Act — Create PM (the EAM bridge) */}
-            <ChevronRight size={16} className="text-slate-300 self-center shrink-0" />
-            <div className="flex items-center ml-auto shrink-0 pl-1">
+            {/* Act — Create PM: always visible, pinned right outside scroll area */}
+            <div className="flex items-center shrink-0 gap-1 border-l border-slate-100 pl-2">
+                <ChevronRight size={16} className="text-slate-300 shrink-0 hidden sm:block" />
                 <Button
                     size="sm"
                     variant={hasFit ? 'cta' : 'secondary'}
@@ -305,7 +308,8 @@ function WorkflowSpine({ activeCalc, weibullFit, onGoto, onCreatePM }: {
                     leftIcon={<Wrench size={14} />}
                     title={hasFit ? 'Create a PM program from the Weibull fit' : 'Fit a Weibull model first'}
                 >
-                    Create PM
+                    <span className="hidden sm:inline">Create PM</span>
+                    <span className="sm:hidden">PM</span>
                 </Button>
             </div>
         </div>
@@ -644,12 +648,13 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 }}
             />
 
-            {/* Calculator sub-tab bar — scrollable on mobile */}
-            <ScrollTabStrip
-                activeId={activeCalc}
-                className="flex items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm"
-                style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
-            >
+            {/* Calculator sub-tab bar — scrollable on mobile, Save pinned outside scroll area */}
+            <div className="flex items-stretch gap-2">
+                <ScrollTabStrip
+                    activeId={activeCalc}
+                    className="flex items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm"
+                    style={{ scrollSnapType: 'x mandatory', WebkitOverflowScrolling: 'touch' }}
+                >
                     {CALC_TABS.map(tab => (
                         <button
                             key={tab.id}
@@ -667,19 +672,20 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold hidden sm:inline ${activeCalc === tab.id ? 'bg-white/20 text-white/80' : 'bg-slate-100 text-slate-400'}`}>{tab.phase}</span>
                         </button>
                     ))}
+                </ScrollTabStrip>
 
-                    {/* Save button inline */}
-                    {currentAnalysisType && (
-                        <button
-                            onClick={() => { setEditingAnalysis(null); setShowSaveModal(true); }}
-                            title={activeAnalysisId ? 'Save the current state as a new dated version' : 'Save this study'}
-                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-sm hover:shadow-md transition-all shrink-0"
-                        >
-                            <Save size={13} />
-                            {activeAnalysisId ? 'Save new version' : 'Save'}
-                        </button>
-                    )}
-            </ScrollTabStrip>
+                {/* Save button — always visible, pinned outside scroll horizon */}
+                {currentAnalysisType && (
+                    <button
+                        onClick={() => { setEditingAnalysis(null); setShowSaveModal(true); }}
+                        title={activeAnalysisId ? 'Save the current state as a new dated version' : 'Save this study'}
+                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-sm hover:shadow-md transition-all"
+                    >
+                        <Save size={13} />
+                        <span className="hidden sm:inline">{activeAnalysisId ? 'Save version' : 'Save'}</span>
+                    </button>
+                )}
+            </div>
 
             {/* Toast notification */}
             {saveToast && (

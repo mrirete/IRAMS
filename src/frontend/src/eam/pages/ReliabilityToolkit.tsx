@@ -1761,8 +1761,8 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
 
             {/* ═══════════ FORMULA BAR (compact) ═══════════ */}
             {(hasReliabilityData || hasMaintainabilityData) && (
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
-                    <p className="text-[11px] text-slate-500 font-mono">
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center overflow-x-auto">
+                    <p className="text-[11px] text-slate-500 font-mono whitespace-nowrap">
                         Ao = MTBF / (MTBF + MRT) = {mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} / ({mtbfResult.mtbf === Infinity ? '∞' : mtbfResult.mtbf.toFixed(0)} + {mrt.toFixed(1)})
                     </p>
                 </div>
@@ -1770,8 +1770,8 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
 
             {/* ═══════════ BRIDGE TO SPARES ═══════════ */}
             {onSendToSpares && mtbfResult.mtbf > 0 && mtbfResult.mtbf < Infinity && (
-                <div className="flex items-center justify-between p-2.5 bg-gradient-to-r from-primary-50 to-primary-50 border border-primary-200 rounded-xl">
-                    <div className="text-[11px] text-primary-700">
+                <div className="flex items-center flex-wrap gap-2 p-2.5 bg-gradient-to-r from-primary-50 to-primary-50 border border-primary-200 rounded-xl">
+                    <div className="text-[11px] text-primary-700 flex-1 min-w-0">
                         <span className="font-semibold">Next:</span> Use MTBF ({Math.round(mtbfResult.mtbf).toLocaleString()}h) for spares analysis
                     </div>
                     <button onClick={() => onSendToSpares(mtbfResult.mtbf)}
