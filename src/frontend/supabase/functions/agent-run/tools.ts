@@ -340,9 +340,173 @@ const scanCorrosionRisk: AgentTool = {
   },
 };
 
+// ── analyze_pm_effectiveness ───────────────────────────────────────────────
+// Heuristic PM optimization: per active PM program, annual frequency vs the
+// asset's actual corrective-failure history → over-maintenance / ineffective /
+// redundant candidates. (WOs link to a PM only by type, so analysis is at the
+// asset level.)
+function annualEvents(interval: number, unit: string): number | null {
+  if (!interval || interval <= 0) return null;
+  const u = (unit || "").toLowerCase();
+  if (u.startsWith("day")) return 365 / interval;
+  if (u.startsWith("week")) return 52 / interval;
+  if (u.startsWith("month")) return 12 / interval;
+  if (u.startsWith("year")) return 1 / interval;
+  return null; // hours/km = usage-based, not annualizable here
+}
+
+const analyzePmEffectiveness: AgentTool = {
+  name: "analyze_pm_effectiveness",
+  description:
+    "Find PM-program optimization opportunities: for each active preventive task it compares the annual PM frequency to the asset's real corrective-failure history over the last year and flags over-maintenance (frequent PMs, no failures), ineffective PMs (failures persist despite PM), and redundant PMs (multiple active PMs on one asset). Scope with asset_tag/asset_id, else fleet.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: { type: "string" },
+      asset_id: { type: "string" },
+      limit: { type: "integer", description: "Max opportunities to return (default 15)." },
+    },
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const limit = Number.isFinite(args?.limit) ? Math.max(1, Math.min(50, args.limit)) : 15;
+    let assetId: string | null = args?.asset_id ?? null;
+    if (!assetId && args?.asset_tag) {
+      const { data: a } = await ctx.db.from("assets").select("id").ilike("tag", args.asset_tag).limit(1);
+      if (a && a[0]) assetId = a[0].id;
+    }
+
+    let pmQuery = ctx.db
+      .from("recurring_work")
+      .select("id, code, title, asset_id, frequency_interval, frequency_unit, job_type, est_duration")
+      .eq("active", true);
+    if (assetId) pmQuery = pmQuery.eq("asset_id", String(assetId));
+    const { data: pms, error: pmErr } = await pmQuery.limit(3000);
+    if (pmErr) throw new Error(`recurring_work query failed: ${pmErr.message}`);
+    if (!pms || pms.length === 0) {
+      return { data: { active_pms: 0, opportunities: [] }, sources: [], warnings: ["No active PM programs found for the scope."] };
+    }
+
+    // Corrective-failure counts per asset over the last 12 months.
+    const assetIds = [...new Set(pms.map((p: Record<string, any>) => p.asset_id))];
+    const cutoff = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+    const failByAsset = new Map<string, number>();
+    if (assetIds.length) {
+      const { data: wos } = await ctx.db
+        .from("work_orders")
+        .select("asset_id, type, created_at, wo_failure_data(failure_mode_code)")
+        .in("asset_id", assetIds.map(String))
+        .gte("created_at", cutoff)
+        .limit(20000);
+      for (const w of wos ?? []) {
+        const isFailure = w.wo_failure_data || String(w.type).toUpperCase() === "CM";
+        if (isFailure) failByAsset.set(w.asset_id, (failByAsset.get(w.asset_id) ?? 0) + 1);
+      }
+    }
+
+    // Count active PMs per asset+job_type for redundancy.
+    const pmsByAssetType = new Map<string, number>();
+    for (const p of pms as Record<string, any>[]) {
+      const k = `${p.asset_id}|${p.job_type}`;
+      pmsByAssetType.set(k, (pmsByAssetType.get(k) ?? 0) + 1);
+    }
+
+    const opps = (pms as Record<string, any>[]).map((p) => {
+      const annual = annualEvents(Number(p.frequency_interval), p.frequency_unit);
+      const failures = failByAsset.get(p.asset_id) ?? 0;
+      const redundant = (pmsByAssetType.get(`${p.asset_id}|${p.job_type}`) ?? 1) > 1;
+      let category = "ok";
+      if (redundant) category = "redundant";
+      else if (failures >= 3) category = "ineffective";
+      else if (annual !== null && annual >= 6 && failures === 0) category = "over_maintenance";
+      return {
+        pm_code: p.code, pm_title: p.title, asset_id: p.asset_id, job_type: p.job_type,
+        annual_pm_events: annual === null ? null : Math.round(annual * 10) / 10,
+        est_duration: Number(p.est_duration) || 0,
+        corrective_failures_12mo: failures,
+        category,
+      };
+    }).filter((o) => o.category !== "ok")
+      .sort((a, b) => (b.annual_pm_events ?? 0) - (a.annual_pm_events ?? 0))
+      .slice(0, limit);
+
+    const aIds = [...new Set(opps.map((o) => o.asset_id))];
+    if (aIds.length) {
+      const { data: assets } = await ctx.db.from("assets").select("id, tag, name").in("id", aIds.map(String));
+      const byId = new Map((assets ?? []).map((a: Record<string, any>) => [a.id, a]));
+      for (const o of opps as Record<string, any>[]) {
+        const m = byId.get(o.asset_id);
+        o.asset_tag = m?.tag ?? "(unknown)";
+        ctx.sources.push({ kind: "recurring_work", ref: o.pm_code, label: `${o.pm_code} on ${o.asset_tag}` });
+      }
+    }
+
+    return {
+      data: {
+        active_pms: pms.length,
+        opportunity_count: opps.length,
+        opportunities: opps,
+        legend: "over_maintenance=frequent PM, zero failures (consider extending interval / condition-based); ineffective=>=3 failures despite PM (redesign task or root-cause); redundant=multiple active PMs of same job_type on one asset (consolidate).",
+      },
+      sources: [{ kind: "recurring_work", ref: assetId ?? "fleet", label: `${pms.length} active PM programs` }],
+    };
+  },
+};
+
+// ── summarize_work_backlog ─────────────────────────────────────────────────
+// Fleet status snapshot for the Reliability Digest: open WO load + overdue PMs.
+const summarizeWorkBacklog: AgentTool = {
+  name: "summarize_work_backlog",
+  description:
+    "Summarise current maintenance load: open work orders by status, the assets with the most open work, and how many active PM programs are past due. Use for a status/digest overview.",
+  parameters: { type: "object", properties: {} },
+  tier: 1,
+  async run(_args, ctx: ToolContext): Promise<ToolResult> {
+    const { data: wos } = await ctx.db.from("work_orders").select("status, asset_id").limit(50000);
+    const openStatuses = new Set(["OPEN", "WIP", "PLAN"]);
+    const byStatus: Record<string, number> = {};
+    const openByAsset = new Map<string, number>();
+    for (const w of wos ?? []) {
+      const s = String(w.status || "UNKNOWN").toUpperCase();
+      byStatus[s] = (byStatus[s] ?? 0) + 1;
+      if (openStatuses.has(s) && w.asset_id) openByAsset.set(w.asset_id, (openByAsset.get(w.asset_id) ?? 0) + 1);
+    }
+    const openTotal = [...openStatuses].reduce((n, s) => n + (byStatus[s] ?? 0), 0);
+
+    const nowIso = new Date().toISOString();
+    const { data: overduePms } = await ctx.db
+      .from("recurring_work")
+      .select("id")
+      .eq("active", true)
+      .lt("next_due_date", nowIso)
+      .limit(5000);
+
+    const topAssetsRaw = [...openByAsset.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const ids = topAssetsRaw.map(([id]) => id);
+    const tagById = new Map<string, string>();
+    if (ids.length) {
+      const { data: assets } = await ctx.db.from("assets").select("id, tag").in("id", ids);
+      for (const a of assets ?? []) tagById.set(a.id, a.tag);
+    }
+    const topAssets = topAssetsRaw.map(([id, n]) => ({ asset_tag: tagById.get(id) ?? "(unknown)", open_wos: n }));
+
+    return {
+      data: {
+        open_work_orders: openTotal,
+        by_status: byStatus,
+        overdue_pm_count: (overduePms ?? []).length,
+        top_assets_by_open_work: topAssets,
+      },
+      sources: [{ kind: "work_orders", ref: "backlog", label: `${(wos ?? []).length} WOs scanned` }],
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [rankBadActors.name]: rankBadActors,
   [draftDeTask.name]: draftDeTask,
   [queryFailureHistory.name]: queryFailureHistory,
   [scanCorrosionRisk.name]: scanCorrosionRisk,
+  [analyzePmEffectiveness.name]: analyzePmEffectiveness,
+  [summarizeWorkBacklog.name]: summarizeWorkBacklog,
 };
