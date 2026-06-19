@@ -286,9 +286,11 @@ function WorkflowSpine({ activeCalc, weibullFit, onGoto, onCreatePM }: {
                                 <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${state === 'active' ? 'bg-primary-600 text-white' : state === 'done' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
                                     {state === 'done' ? <Check size={13} /> : s.i + 1}
                                 </span>
-                                <span className="min-w-0">
+                                {/* On mobile only the ACTIVE step shows its label (others = just the
+                                    numbered circle) so the 3-step bar + PM button never overflows/clips. */}
+                                <span className={`min-w-0 ${isActive ? 'block' : 'hidden sm:block'}`}>
                                     <span className={`block text-[13px] font-semibold leading-tight ${isActive ? 'text-primary-700' : 'text-slate-700'}`}>{s.label}</span>
-                                    <span className="block text-[10px] text-slate-400 leading-tight truncate max-w-[150px]">{s.sub}</span>
+                                    <span className="hidden sm:block text-[10px] text-slate-400 leading-tight truncate max-w-[150px]">{s.sub}</span>
                                 </span>
                             </button>
                             {idx < stages.length - 1 && <ChevronRight size={16} className="text-slate-300 self-center shrink-0" />}

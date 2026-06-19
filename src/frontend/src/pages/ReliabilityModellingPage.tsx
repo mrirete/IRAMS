@@ -57,7 +57,7 @@ const ReliabilityModellingPage: React.FC = () => {
     }, [navigate, context]);
 
     return (
-        <div className="space-y-5 p-4 sm:p-6 max-w-[1600px] mx-auto">
+        <div className="space-y-5 px-3 py-4 sm:p-6 max-w-[1760px] mx-auto">
             {/* ── Page Header ─────────────────────────────────── */}
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
                 <div>
