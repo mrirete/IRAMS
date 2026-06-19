@@ -101,12 +101,20 @@ Hard rules: citations required; "state uncertainty, don't guess"; safety **exclu
 - **Phase 2 — Weibull Analyst + Manual Reader (RAG).** Wrap the existing Weibull/MC math; stand up pgvector embeddings for manuals.
 - **Phase 3 — CMMS Analyst (import) + Supervisor.** File ingest + multi‑agent "analyse this asset end‑to‑end."
 
-## 9. Open decisions (need your call)
+## 9. Decisions (resolved 2026‑06‑19)
 
-1. **Orchestration host** — Supabase Edge Function vs. the existing AI‑proxy backend. (Recommend: whichever already holds the Gemini key server‑side.)
-2. **Flagship pick** — Bad Actor Hunter (data‑rich) vs. RCA Challenger (no plumbing). (Recommend: Bad Actor Hunter for the moat; RCA Challenger if you want a demo this week.)
-3. **Provider** — staying on **Gemini** (Relantern), confirmed.
-4. **Autonomy ceiling at launch** — confirm Tier 2 (draft + human approve) as the hard cap.
+1. **Orchestration host → Supabase Edge Function.** The `VITE_AI_PROXY_URL` backend has no code in the repo (prod falls back to the direct client), but `supabase/functions/create-user` proves Edge Functions are already used + deployable. Edge Function is co‑located with the DB (RLS + `ers_agent_actions`/`ers_ai_audit_log`/`ers_rag_documents`), verifies the caller's Supabase JWT, and keeps the Gemini key as a Supabase secret. Lowest‑effort *and* most secure.
+2. **Flagship → Bad Actor Hunter.** Data + `bad_actor/analyzer.py` exist; deterministic/defensible; the reliability moat.
+3. **Provider → Gemini** (Relantern). Not Claude.
+4. **Autonomy ceiling → Tier 2** (draft + human approve). Tier 3 (act) stays off at launch.
+
+## 9a. Phase 0 + flagship build plan (next)
+
+1. **Edge Function `agent-run`** (`supabase/functions/agent-run/`): verifies JWT → routes to an agent → runs the Gemini function‑calling loop → enforces tier → writes the trace to `ers_agent_actions` + `ers_ai_audit_log` → returns a structured `AgentResponse`. Gemini key = Supabase secret.
+2. **`AgentTool` registry** (server side): typed tools with JSON‑schema params; first tools — `query_wo_cost`, `bad_actor_rank` (wraps the analyzer logic), `pareto`, `draft_de_task` (proposal only).
+3. **Bad Actor Hunter agent**: system prompt + the four tools above + Tier‑2 cap; returns a ranked, **cited** list with drafted Defect‑Elimination tasks for human approval.
+4. **Frontend wiring**: call `agent-run` from `AgentService`; render results + proposals in the existing `AgentReviewPanel` / Relantern co‑pilot; approval writes the DE task via the normal path.
+5. **Governance/audit assertions**: every run logged; proposals never auto‑write; citations required.
 
 ## 10. Extended agent catalog
 
