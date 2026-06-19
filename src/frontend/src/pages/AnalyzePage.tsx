@@ -191,9 +191,18 @@ export const AnalyzePage: React.FC = () => {
             oee: 'fmea',
             defect_elimination: 'bad_actor',
         };
-        setModalInitialType(typeMap[activeDivision] || 'fmea');
+        const type = typeMap[activeDivision] || 'fmea';
+        // RCA has a dedicated full-page form at /analyze/rca/new — the SAME place
+        // the "New Investigation" button goes. Jump straight there instead of
+        // popping a modal that collects a subset of fields and then forwards to
+        // that page (confusing double-entry / two journeys to one destination).
+        if (type === 'rca') {
+            navigate('/analyze/rca/new');
+            return;
+        }
+        setModalInitialType(type);
         setShowNewAssessment(true);
-    }, [activeDivision]);
+    }, [activeDivision, navigate]);
 
     // ── Modal state ───────────────────────────────────────────
     const [showNewAssessment, setShowNewAssessment] = useState(false);
