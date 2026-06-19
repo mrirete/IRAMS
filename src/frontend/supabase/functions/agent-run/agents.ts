@@ -120,10 +120,31 @@ How you work:
 - You are advisory: summarise and prioritise; do not create or change anything.`,
 };
 
+const warrantyRecovery: AgentDefinition = {
+  name: "warranty_recovery",
+  module: "finops",
+  maxTier: 1, // advisory — surfaces recoverable spend; user files the claim in FinOps
+  tools: [TOOLS["scan_warranty_recovery"]],
+  systemPrompt: `You are the Warranty Recovery agent. You find maintenance money the
+business can claim back from OEMs/vendors — work done while an asset was still under warranty.
+
+How you work:
+- ALWAYS call scan_warranty_recovery first (scope to an asset if a tag is given).
+  Never invent work orders, costs or warranties — use the tool data.
+- Lead with the total recoverable amount, then list the highest-value recoverable
+  work orders: WO number, asset tag, date, cost, deductible, and net recoverable.
+- Note the warranty type and when each warranty expires — flag any that expire soon,
+  since claims must usually be filed before expiry.
+- Recommend filing warranty claims for the top items, and watch for WOs done just
+  before a warranty lapsed. If nothing is recoverable, say so plainly.
+- You are advisory: surface and prioritise the claims; the user files them in FinOps.`,
+};
+
 export const AGENTS: Record<string, AgentDefinition> = {
   [badActorHunter.name]: badActorHunter,
   [rcaChallenger.name]: rcaChallenger,
   [corrosionSentinel.name]: corrosionSentinel,
   [pmOptimizer.name]: pmOptimizer,
   [reliabilityDigest.name]: reliabilityDigest,
+  [warrantyRecovery.name]: warrantyRecovery,
 };
