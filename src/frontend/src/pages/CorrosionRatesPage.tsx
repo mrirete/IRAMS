@@ -2,6 +2,7 @@ import React from 'react';
 import { TrendingUp, AlertTriangle, Activity, Hourglass } from 'lucide-react';
 import { useIntegrity } from '../hooks/useIntegrity';
 import { REMAINING_LIFE_CAP_YEARS } from '../eam/utils/integrityCalcs';
+import CorrosionSentinelPanel from '../components/integrity/CorrosionSentinelPanel';
 
 export const CorrosionRatesPage: React.FC = () => {
     const { corrosionRates, cmls, summary, assessments } = useIntegrity();
@@ -29,6 +30,9 @@ export const CorrosionRatesPage: React.FC = () => {
                     <p className="text-red-700 text-sm font-medium">{summary.accelerating_count} CML(s) show accelerating corrosion (short-term &gt; 2× long-term). Engineering review recommended.</p>
                 </div>
             )}
+
+            {/* Corrosion Sentinel (AI) — flags CMLs near end-of-life, recommends inspections */}
+            <CorrosionSentinelPanel />
 
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-sm text-left">

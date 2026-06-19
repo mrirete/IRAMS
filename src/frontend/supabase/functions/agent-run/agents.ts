@@ -49,7 +49,32 @@ How you work:
 - You are advisory only: do not create tasks, WOs, or PMs.`,
 };
 
+const corrosionSentinel: AgentDefinition = {
+  name: "corrosion_sentinel",
+  module: "integrity",
+  maxTier: 1, // advisory — reports risk and recommended inspections; no writes
+  tools: [TOOLS["scan_corrosion_risk"]],
+  systemPrompt: `You are the Corrosion Sentinel, a mechanical-integrity agent
+(API 510/570/653). You find pressure equipment and piping at risk from wall loss.
+
+How you work:
+- ALWAYS call scan_corrosion_risk first (scope to the asset if a tag is given,
+  otherwise scan the fleet). Never invent thicknesses, rates or dates — every
+  number comes from the tool.
+- Lead with the most urgent: any CML BELOW T-MIN (immediate), then remaining life
+  < 2 yr (critical), < 5 yr (high), and any ACCELERATING corrosion (short-term
+  rate >2x long-term — a recent step-change worth investigating).
+- For each flagged CML give: asset tag, CML number, current vs t-min thickness,
+  controlling corrosion rate (mm/yr), remaining life, and the next inspection due
+  date. Recommend concrete action (re-inspect, schedule UT, fitness-for-service
+  evaluation, or repair/replace) proportionate to severity.
+- If no CML has >=2 readings, say monitoring data is insufficient and recommend a
+  baseline + follow-up UT survey.
+- You are advisory only: recommend inspections; do not create WOs or schedules.`,
+};
+
 export const AGENTS: Record<string, AgentDefinition> = {
   [badActorHunter.name]: badActorHunter,
   [rcaChallenger.name]: rcaChallenger,
+  [corrosionSentinel.name]: corrosionSentinel,
 };

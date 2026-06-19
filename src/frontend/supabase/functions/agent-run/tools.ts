@@ -221,8 +221,128 @@ const queryFailureHistory: AgentTool = {
   },
 };
 
+// ── scan_corrosion_risk ────────────────────────────────────────────────────
+// API-510/570/653 corrosion assessment from thickness readings. Faithfully
+// replicates src/eam/utils/integrityCalcs.ts assessCML() server-side.
+const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
+const RL_CAP = 99;
+function codeMaxIntervalYears(component: string): number {
+  if (component?.startsWith("piping") || component === "weld") return 5; // API 570
+  if (component?.startsWith("tank")) return 10;                          // API 653
+  return 10;                                                             // API 510 vessels
+}
+
+const scanCorrosionRisk: AgentTool = {
+  name: "scan_corrosion_risk",
+  description:
+    "Assess mechanical-integrity corrosion risk from thickness readings: per CML it computes short/long-term corrosion rates, remaining life and the next inspection date (API 510/570/653), and flags CMLs below t-min, near end-of-life, or accelerating. Provide an asset_tag/asset_id to scope to one asset, else it scans the fleet.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: { type: "string", description: "Limit to one asset by tag." },
+      asset_id: { type: "string", description: "Limit to one asset by UUID." },
+      max_remaining_life_years: { type: "number", description: "Flag CMLs with remaining life below this (default 10)." },
+      limit: { type: "integer", description: "Max at-risk CMLs to return (default 15)." },
+    },
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const threshold = Number.isFinite(args?.max_remaining_life_years) ? args.max_remaining_life_years : 10;
+    const limit = Number.isFinite(args?.limit) ? Math.max(1, Math.min(50, args.limit)) : 15;
+
+    let assetId: string | null = args?.asset_id ?? null;
+    if (!assetId && args?.asset_tag) {
+      const { data: a } = await ctx.db.from("assets").select("id").ilike("tag", args.asset_tag).limit(1);
+      if (a && a[0]) assetId = a[0].id;
+    }
+
+    let cmlQuery = ctx.db.from("ers_cmls").select("id, asset_id, cml_number, component_type, nominal_thickness_mm, tmin_mm");
+    if (assetId) cmlQuery = cmlQuery.eq("asset_id", assetId);
+    const { data: cmls, error: cmlErr } = await cmlQuery.limit(2000);
+    if (cmlErr) throw new Error(`ers_cmls query failed: ${cmlErr.message}`);
+    if (!cmls || cmls.length === 0) {
+      return { data: { assessed: 0, at_risk: [] }, sources: [], warnings: ["No CMLs found for the requested scope."] };
+    }
+
+    const cmlIds = cmls.map((c: Record<string, any>) => c.id);
+    const { data: readings, error: rErr } = await ctx.db
+      .from("ers_thickness_readings")
+      .select("cml_id, reading_date, measured_thickness_mm")
+      .in("cml_id", cmlIds)
+      .limit(20000);
+    if (rErr) throw new Error(`thickness readings query failed: ${rErr.message}`);
+
+    const byCml = new Map<string, { date: string; t: number }[]>();
+    for (const r of readings ?? []) {
+      if (!Number.isFinite(Number(r.measured_thickness_mm))) continue;
+      const arr = byCml.get(r.cml_id) ?? [];
+      arr.push({ date: r.reading_date, t: Number(r.measured_thickness_mm) });
+      byCml.set(r.cml_id, arr);
+    }
+
+    const yrs = (a: string, b: string) => (new Date(b).getTime() - new Date(a).getTime()) / MS_PER_YEAR;
+
+    const assessed: Record<string, any>[] = [];
+    for (const c of cmls as Record<string, any>[]) {
+      const series = (byCml.get(c.id) ?? []).sort((x, y) => new Date(x.date).getTime() - new Date(y.date).getTime());
+      if (series.length < 2) continue;
+      const first = series[0], prev = series[series.length - 2], last = series[series.length - 1];
+      const ltY = yrs(first.date, last.date), stY = yrs(prev.date, last.date);
+      const longTerm = ltY > 0 ? (first.t - last.t) / ltY : 0;
+      const shortTerm = stY > 0 ? (prev.t - last.t) / stY : 0;
+      const controlling = Math.max(shortTerm, longTerm, 0);
+      const belowTmin = last.t <= Number(c.tmin_mm);
+      const remainingLife = belowTmin ? 0 : controlling <= 0 ? RL_CAP : Math.min((last.t - Number(c.tmin_mm)) / controlling, RL_CAP);
+      const interval = Math.max(0, Math.min(remainingLife / 2, codeMaxIntervalYears(c.component_type)));
+      const due = new Date(new Date(last.date).getTime() + interval * MS_PER_YEAR);
+      const accelerating = longTerm > 0 && shortTerm > 2 * longTerm;
+
+      assessed.push({
+        cml_id: c.id, cml_number: c.cml_number, asset_id: c.asset_id, component_type: c.component_type,
+        t_actual_mm: Math.round(last.t * 1000) / 1000, tmin_mm: Number(c.tmin_mm),
+        controlling_rate_mmpy: Math.round(controlling * 1e4) / 1e4,
+        remaining_life_years: Math.round(remainingLife * 10) / 10,
+        below_tmin: belowTmin, is_accelerating: accelerating,
+        next_inspection_due: due.toISOString().slice(0, 10),
+        severity: belowTmin ? "BELOW T-MIN" : remainingLife < 2 ? "critical" : remainingLife < 5 ? "high" : "watch",
+      });
+    }
+
+    const atRisk = assessed
+      .filter((a) => a.below_tmin || a.is_accelerating || a.remaining_life_years < threshold)
+      .sort((a, b) => a.remaining_life_years - b.remaining_life_years)
+      .slice(0, limit);
+
+    // Resolve asset tags for the at-risk subset.
+    const aIds = [...new Set(atRisk.map((a) => a.asset_id))];
+    if (aIds.length) {
+      const { data: assets } = await ctx.db.from("assets").select("id, tag, name").in("id", aIds);
+      const tagById = new Map((assets ?? []).map((a: Record<string, any>) => [a.id, a]));
+      for (const a of atRisk) {
+        const meta = tagById.get(a.asset_id);
+        a.asset_tag = meta?.tag ?? "(unknown)";
+        a.asset_name = meta?.name ?? "(unknown asset)";
+        ctx.sources.push({ kind: "ers_cmls", ref: a.cml_id, label: `CML ${a.cml_number} on ${a.asset_tag}` });
+      }
+    }
+
+    return {
+      data: {
+        cmls_assessed: assessed.length,
+        at_risk_count: atRisk.length,
+        threshold_years: threshold,
+        at_risk: atRisk,
+        methodology: "Per CML: LT rate=(t_first−t_last)/yrs, ST rate=(t_prev−t_last)/yrs, controlling=max(ST,LT,0); remaining life=(t_actual−t_min)/controlling; next inspection=half remaining life capped to code max (API 510/570/653).",
+      },
+      sources: [{ kind: "ers_cmls", ref: assetId ?? "fleet", label: `${cmls.length} CMLs, ${(readings ?? []).length} readings` }],
+      warnings: assessed.length === 0 ? ["No CML has ≥2 thickness readings — cannot derive corrosion rates yet."] : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [rankBadActors.name]: rankBadActors,
   [draftDeTask.name]: draftDeTask,
   [queryFailureHistory.name]: queryFailureHistory,
+  [scanCorrosionRisk.name]: scanCorrosionRisk,
 };
