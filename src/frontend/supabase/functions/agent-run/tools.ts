@@ -1,0 +1,166 @@
+// Deterministic tools for the reliability agents. The LLM decides WHICH tool
+// to call; the math/data lives here. Every tool returns cited sources.
+import type { AgentTool, ToolContext, ToolResult } from "./types.ts";
+
+// ── rank_bad_actors ──────────────────────────────────────────────────────
+// Folds "query WO cost/frequency" + "Pareto" into one deterministic tool
+// (more reliable than asking the LLM to chain three calls). Mirrors the
+// methodology in layer2-modules/ers-analyze/bad_actor/analyzer.py.
+const rankBadActors: AgentTool = {
+  name: "rank_bad_actors",
+  description:
+    "Rank assets as maintenance 'bad actors' over a period, by total work-order cost or work-order frequency, with Pareto cumulative percentages. Returns the worst N assets with their costs, WO counts and asset tags. Use this before drafting any defect-elimination task.",
+  parameters: {
+    type: "object",
+    properties: {
+      criteria: {
+        type: "string",
+        enum: ["cost", "wo_frequency"],
+        description: "Ranking criterion: total maintenance cost, or number of work orders.",
+      },
+      period_days: {
+        type: "integer",
+        description: "Look-back window in days (default 365).",
+      },
+      top_n: {
+        type: "integer",
+        description: "How many worst assets to return (default 5).",
+      },
+    },
+    required: ["criteria"],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const criteria: string = args?.criteria === "wo_frequency" ? "wo_frequency" : "cost";
+    const periodDays: number = Number.isFinite(args?.period_days) ? Math.max(1, args.period_days) : 365;
+    const topN: number = Number.isFinite(args?.top_n) ? Math.max(1, Math.min(20, args.top_n)) : 5;
+
+    const cutoff = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: wos, error } = await ctx.db
+      .from("work_orders")
+      .select("asset_id, frozen_labor_cost, frozen_material_cost, created_at, status")
+      .gte("created_at", cutoff)
+      .limit(20000);
+    if (error) throw new Error(`work_orders query failed: ${error.message}`);
+
+    const agg = new Map<string, { cost: number; count: number }>();
+    for (const wo of wos ?? []) {
+      if (!wo.asset_id) continue;
+      const cost = (Number(wo.frozen_labor_cost) || 0) + (Number(wo.frozen_material_cost) || 0);
+      const cur = agg.get(wo.asset_id) ?? { cost: 0, count: 0 };
+      cur.cost += cost;
+      cur.count += 1;
+      agg.set(wo.asset_id, cur);
+    }
+
+    const metric = (v: { cost: number; count: number }) => (criteria === "cost" ? v.cost : v.count);
+    const grandTotal = [...agg.values()].reduce((s, v) => s + metric(v), 0) || 1;
+
+    const sorted = [...agg.entries()].sort((a, b) => metric(b[1]) - metric(a[1])).slice(0, topN);
+
+    // Resolve asset tags/names for the ranked subset.
+    const ids = sorted.map(([id]) => id);
+    const tagById = new Map<string, { tag: string; name: string; criticality: string }>();
+    if (ids.length) {
+      const { data: assets } = await ctx.db
+        .from("assets")
+        .select("id, tag, name, criticality")
+        .in("id", ids);
+      for (const a of assets ?? []) tagById.set(a.id, { tag: a.tag, name: a.name, criticality: a.criticality });
+    }
+
+    let cumulative = 0;
+    const ranked = sorted.map(([assetId, v], i) => {
+      cumulative += metric(v);
+      const meta = tagById.get(assetId);
+      ctx.sources.push({ kind: "work_orders", ref: assetId, label: `${v.count} WOs for ${meta?.tag ?? assetId}` });
+      return {
+        rank: i + 1,
+        asset_id: assetId,
+        asset_tag: meta?.tag ?? "(unknown)",
+        asset_name: meta?.name ?? "(unknown asset)",
+        criticality: meta?.criticality ?? null,
+        total_cost: Math.round(v.cost),
+        wo_count: v.count,
+        cumulative_pct: Math.round((cumulative / grandTotal) * 1000) / 10,
+      };
+    });
+
+    return {
+      data: {
+        criteria,
+        period_days: periodDays,
+        assets_analysed: agg.size,
+        ranked,
+        methodology: "Aggregated frozen labor+material cost and WO count per asset over the window; sorted by criterion; cumulative % = Pareto share of grand total.",
+      },
+      sources: [{ kind: "work_orders", ref: `created_at>=${cutoff}`, label: `${(wos ?? []).length} work orders in window` }],
+      warnings: (wos ?? []).length === 0 ? ["No work orders found in the period — results are empty."] : undefined,
+    };
+  },
+};
+
+// ── draft_de_task ─────────────────────────────────────────────────────────
+// Produces a Defect-Elimination task PROPOSAL (never writes). Recorded to
+// ers_agent_actions (pending_review) for a human to approve.
+const draftDeTask: AgentTool = {
+  name: "draft_de_task",
+  description:
+    "Draft a Defect-Elimination task for a bad-actor asset. This does NOT create anything — it queues a proposal for human approval. Only call after rank_bad_actors. Provide a concrete root cause and proposed solution grounded in the data.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_id: { type: "string", description: "Asset UUID from rank_bad_actors." },
+      asset_name: { type: "string" },
+      title: { type: "string", description: "Short task title." },
+      priority: { type: "string", enum: ["critical", "high", "medium", "low"] },
+      root_cause_summary: { type: "string" },
+      proposed_solution: { type: "string" },
+      annual_cost: { type: "number", description: "Current annual cost of this defect (from the ranking)." },
+      estimated_savings: { type: "number" },
+      implementation_cost: { type: "number" },
+    },
+    required: ["asset_name", "title", "root_cause_summary", "proposed_solution"],
+  },
+  tier: 2,
+  // deno-lint-ignore require-await
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const annual = Number(args?.annual_cost) || 0;
+    const savings = Number(args?.estimated_savings) || 0;
+    const impl = Number(args?.implementation_cost) || 0;
+    const payback = savings > 0 ? Math.round((impl / savings) * 12 * 10) / 10 : 0;
+
+    const payload = {
+      asset_id: args?.asset_id ?? null,
+      asset_name: String(args?.asset_name),
+      title: String(args?.title ?? "Defect elimination"),
+      status: "identified",
+      priority: ["critical", "high", "medium", "low"].includes(args?.priority) ? args.priority : "medium",
+      annual_cost: annual,
+      estimated_savings: savings,
+      implementation_cost: impl,
+      payback_months: payback,
+      root_cause_summary: String(args?.root_cause_summary ?? ""),
+      proposed_solution: String(args?.proposed_solution ?? ""),
+      created_by: "bad_actor_hunter",
+    };
+
+    ctx.proposals.push({
+      agent_type: "bad_actor_hunter",
+      action_type: "draft_de_task",
+      asset_id: args?.asset_id ?? null,
+      draft_payload: payload,
+    });
+
+    return {
+      data: { drafted: true, title: payload.title, asset: payload.asset_name },
+      sources: [{ kind: "proposal", ref: payload.title, label: "DE task draft (pending review)" }],
+    };
+  },
+};
+
+export const TOOLS: Record<string, AgentTool> = {
+  [rankBadActors.name]: rankBadActors,
+  [draftDeTask.name]: draftDeTask,
+};
