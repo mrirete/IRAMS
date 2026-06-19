@@ -225,7 +225,7 @@ const RBDReliabilityDashboard: React.FC<Props> = ({
                                         {kg.group.type}{kg.group.k ? ` (k=${kg.group.k})` : ''}
                                     </span>
                                 </div>
-                                <div className="grid grid-cols-3 gap-2 text-[10px] mb-2">
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[10px] mb-2">
                                     <div><span className="text-slate-500">Blocks:</span> <strong>{kg.blocks.length}</strong></div>
                                     <div><span className="text-slate-500">Avg R:</span> <strong className="font-mono">{(kg.avgR * 100).toFixed(2)}%</strong></div>
                                     <div><span className="text-slate-500">Group R:</span> <strong className="font-mono" style={{ color: aoColor(kg.groupR) }}>{(kg.groupR * 100).toFixed(2)}%</strong></div>

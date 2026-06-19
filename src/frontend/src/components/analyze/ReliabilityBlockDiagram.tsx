@@ -216,7 +216,7 @@ const EditPopover: React.FC<{
                     <input value={name} onChange={e => setName(e.target.value)}
                         className="w-full mt-0.5 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:ring-2 focus:ring-primary-200 outline-none" />
                 </div>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <div>
                         <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">MTBF (h)</label>
                         <input type="number" value={mtbf} onChange={e => setMtbf(e.target.value)}

@@ -83,7 +83,7 @@ function SIFCard({ sif, onUpdate, onDelete }: {
                     <textarea value={form.sif_description || ''} onChange={e => setForm(f => ({ ...f, sif_description: e.target.value }))}
                         className="w-full text-xs border border-slate-200 rounded px-2 py-1.5 min-h-[40px]" />
                 </div>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
                         <label className="text-[10px] font-semibold text-slate-500 uppercase mb-1 block">Target SIL</label>
                         <select value={form.target_sil ?? ''} onChange={e => setForm(f => ({ ...f, target_sil: e.target.value ? Number(e.target.value) : null }))}

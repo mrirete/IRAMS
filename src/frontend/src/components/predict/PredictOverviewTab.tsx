@@ -380,7 +380,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
             )}
 
             {/* ═══ SECTION 3: KPI STRIP (compact — derived analytics) ═══ */}
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
 
                 {/* ── Health Index (compact with inline sub-indices) ── */}
                 <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 hover:shadow-sm hover:border-slate-300 transition-all cursor-default group">
