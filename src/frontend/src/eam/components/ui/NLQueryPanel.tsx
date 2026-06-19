@@ -16,6 +16,7 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import { aiEngine } from '../../services/AIAnalysisEngine';
+import { supabase } from '../../lib/supabase';
 
 // ── Styles ──────────────────────────────────────────────────
 
@@ -174,12 +175,8 @@ const NLQueryPanel: React.FC<NLQueryPanelProps> = ({ onClose }) => {
         setError('');
 
         try {
-            // Get Supabase session token for backend auth
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-            const sb = createClient(supabaseUrl, supabaseKey);
-            const { data: { session } } = await sb.auth.getSession();
+            // Get Supabase session token for backend auth (shared singleton — no 2nd GoTrue instance)
+            const { data: { session } } = await supabase.auth.getSession();
             const token = session?.access_token || '';
 
             const proxyUrl = import.meta.env.VITE_AI_PROXY_URL || '';

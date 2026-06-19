@@ -17,6 +17,7 @@
  */
 
 import type { AuditIntakeData } from './AuditTypes';
+import { supabase } from '../lib/supabase';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -99,17 +100,7 @@ export class AuditPeopleBridge {
      */
     private async findByUsername(username: string): Promise<PersonBridgeRecord | null> {
         try {
-            // Supabase query — will be wired when people table exists
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-            if (!supabaseUrl || !supabaseKey) {
-                console.warn('[AuditPeopleBridge] Supabase not configured — operating in offline mode.');
-                return null;
-            }
-
-            const supabase = createClient(supabaseUrl, supabaseKey);
+            // Shared singleton client (never a second GoTrue instance — avoids token races).
             const { data, error } = await supabase
                 .from('people')
                 .select('*')
@@ -163,16 +154,7 @@ export class AuditPeopleBridge {
         };
 
         try {
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-            if (!supabaseUrl || !supabaseKey) {
-                console.warn('[AuditPeopleBridge] Supabase not configured — returning local record.');
-                return { ...record, id: `local-${username}-${Date.now()}` };
-            }
-
-            const supabase = createClient(supabaseUrl, supabaseKey);
+            // Shared singleton client (never a second GoTrue instance — avoids token races).
             const { data, error } = await supabase
                 .from('people')
                 .insert(record)
@@ -204,13 +186,7 @@ export class AuditPeopleBridge {
         assessmentNumber?: string
     ): Promise<boolean> {
         try {
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-            const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-            if (!supabaseUrl || !supabaseKey) return false;
-
-            const supabase = createClient(supabaseUrl, supabaseKey);
+            // Shared singleton client (never a second GoTrue instance — avoids token races).
             const { error } = await supabase
                 .from('people')
                 .update({

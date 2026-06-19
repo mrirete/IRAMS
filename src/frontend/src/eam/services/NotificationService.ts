@@ -1,5 +1,6 @@
 import { DatabaseService } from './DatabaseService';
 import { ModuleName } from '../types';
+import { supabase } from '../lib/supabase';
 
 export class NotificationService {
 
@@ -759,11 +760,7 @@ export class NotificationService {
      */
     private static async resolveOrgChartSupervisor(userId: string): Promise<string | null> {
         try {
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
-            const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
-            if (!supabaseUrl || !supabaseKey) return null;
-            const supabase = createClient(supabaseUrl, supabaseKey);
+            // Shared singleton client (never a second GoTrue instance — avoids token races).
 
             // Find the user's contact record
             const { data: contact } = await supabase
@@ -827,11 +824,7 @@ export class NotificationService {
         entitySiteId?: string
     ): Promise<string[]> {
         try {
-            const { createClient } = await import('@supabase/supabase-js');
-            const supabaseUrl = (import.meta as any).env?.VITE_SUPABASE_URL;
-            const supabaseKey = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
-            if (!supabaseUrl || !supabaseKey) return [];
-            const supabase = createClient(supabaseUrl, supabaseKey);
+            // Shared singleton client (never a second GoTrue instance — avoids token races).
 
             // === ORG_UNIT scope: walk up the org tree ===
             if (scope === 'ORG_UNIT' && contextUserId) {
