@@ -92,3 +92,11 @@ export function runPmOptimizer(assetTag?: string): Promise<AgentRunResponse> {
 export function runReliabilityDigest(): Promise<AgentRunResponse> {
     return runAgent('reliability_digest', 'Produce this week\'s reliability & integrity digest for the fleet.');
 }
+
+/** Warranty Recovery — completed WOs done under active warranty (recoverable spend). */
+export function runWarrantyRecovery(assetTag?: string): Promise<AgentRunResponse> {
+    const query = assetTag
+        ? `Find recoverable warranty spend for asset ${assetTag} and recommend claims.`
+        : 'Scan the fleet for recoverable warranty spend and recommend the highest-value claims.';
+    return runAgent('warranty_recovery', query);
+}

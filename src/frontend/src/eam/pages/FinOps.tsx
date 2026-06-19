@@ -20,6 +20,9 @@ import {
 } from '../services/FinOpsService';
 import { DatabaseService } from '../services/DatabaseService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
+import AdvisoryAgentPanel from '../components/ui/AdvisoryAgentPanel';
+import { runWarrantyRecovery } from '../services/agentRunClient';
+import { ReceiptText } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 
 type TabId = 'dashboard' | 'cost_centers' | 'budget_control' | 'forecast' | 'depreciation' | 'warranties' | 'claims' | 'vendor_intel' | 'supply_chain' | 'insurance';
@@ -965,6 +968,17 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) =>
 
     return (
         <div className="space-y-6">
+            {/* Warranty Recovery (AI) — surfaces recoverable spend under active warranty */}
+            <AdvisoryAgentPanel
+                title="Warranty Recovery"
+                subtitle="AI finds completed work done under active warranty — money to claim back"
+                icon={<ReceiptText size={16} />}
+                accent="emerald"
+                runLabel="Find recoverable"
+                inputPlaceholder="Asset tag (optional)"
+                onRun={(tag) => runWarrantyRecovery(tag || undefined)}
+            />
+
             {/* KPI Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 {kpis.map((kpi, idx) => (

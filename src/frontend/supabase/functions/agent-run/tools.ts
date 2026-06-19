@@ -502,6 +502,109 @@ const summarizeWorkBacklog: AgentTool = {
   },
 };
 
+// ── scan_warranty_recovery ─────────────────────────────────────────────────
+// Find completed work orders that fall inside an active warranty window — money
+// the business may be able to recover from the OEM/vendor (cost minus deductible).
+const scanWarrantyRecovery: AgentTool = {
+  name: "scan_warranty_recovery",
+  description:
+    "Find recoverable maintenance spend: completed work orders performed while the asset was under an active warranty. Returns each recoverable WO with its cost, the warranty deductible, and the net recoverable amount. Scope with asset_tag/asset_id, else fleet.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: { type: "string" },
+      asset_id: { type: "string" },
+      limit: { type: "integer", description: "Max recoverable WOs to return (default 20)." },
+    },
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const limit = Number.isFinite(args?.limit) ? Math.max(1, Math.min(100, args.limit)) : 20;
+    const today = new Date().toISOString().slice(0, 10);
+
+    let assetId: string | null = args?.asset_id ?? null;
+    if (!assetId && args?.asset_tag) {
+      const { data: a } = await ctx.db.from("assets").select("id").ilike("tag", args.asset_tag).limit(1);
+      if (a && a[0]) assetId = a[0].id;
+    }
+
+    let wQuery = ctx.db
+      .from("warranties")
+      .select("id, asset_id, warranty_type, start_date, end_date, deductible, status")
+      .eq("status", "ACTIVE");
+    if (assetId) wQuery = wQuery.eq("asset_id", String(assetId));
+    const { data: warranties, error: wErr } = await wQuery.limit(5000);
+    if (wErr) throw new Error(`warranties query failed: ${wErr.message}`);
+    const active = (warranties ?? []).filter((w: Record<string, any>) => !w.end_date || w.end_date >= today);
+    if (active.length === 0) {
+      return { data: { active_warranties: 0, recoverable: [] }, sources: [], warnings: ["No active warranties for the scope."] };
+    }
+
+    const byAsset = new Map<string, Record<string, any>[]>();
+    for (const w of active) {
+      const arr = byAsset.get(w.asset_id) ?? [];
+      arr.push(w);
+      byAsset.set(w.asset_id, arr);
+    }
+    const assetIds = [...byAsset.keys()];
+
+    // Completed WOs for those assets (CLOSED/TECO) with any cost.
+    const { data: wos, error: woErr } = await ctx.db
+      .from("work_orders")
+      .select("wo_number, title, asset_id, status, created_at, frozen_labor_cost, frozen_material_cost")
+      .in("asset_id", assetIds.map(String))
+      .in("status", ["CLOSED", "TECO"])
+      .limit(20000);
+    if (woErr) throw new Error(`work_orders query failed: ${woErr.message}`);
+
+    const recoverable: Record<string, any>[] = [];
+    for (const wo of wos ?? []) {
+      const cost = (Number(wo.frozen_labor_cost) || 0) + (Number(wo.frozen_material_cost) || 0);
+      if (cost <= 0) continue;
+      const day = String(wo.created_at).slice(0, 10);
+      // Match a warranty whose window contains the WO date.
+      const cover = (byAsset.get(wo.asset_id) ?? []).find(
+        (w) => day >= String(w.start_date) && (!w.end_date || day <= String(w.end_date)),
+      );
+      if (!cover) continue;
+      const deductible = Number(cover.deductible) || 0;
+      const net = Math.max(0, cost - deductible);
+      if (net <= 0) continue;
+      recoverable.push({
+        wo_number: wo.wo_number, wo_title: wo.title, asset_id: wo.asset_id, wo_date: day,
+        wo_cost: Math.round(cost), deductible: Math.round(deductible), recoverable_amount: Math.round(net),
+        warranty_type: cover.warranty_type, warranty_end: cover.end_date,
+      });
+    }
+
+    recoverable.sort((a, b) => b.recoverable_amount - a.recoverable_amount);
+    const top = recoverable.slice(0, limit);
+    const totalRecoverable = recoverable.reduce((s, r) => s + r.recoverable_amount, 0);
+
+    const aIds = [...new Set(top.map((r) => r.asset_id))];
+    if (aIds.length) {
+      const { data: assets } = await ctx.db.from("assets").select("id, tag, name").in("id", aIds.map(String));
+      const byId = new Map((assets ?? []).map((a: Record<string, any>) => [a.id, a]));
+      for (const r of top as Record<string, any>[]) {
+        const m = byId.get(r.asset_id);
+        r.asset_tag = m?.tag ?? "(unknown)";
+        ctx.sources.push({ kind: "work_orders", ref: r.wo_number, label: `${r.wo_number} on ${r.asset_tag}` });
+      }
+    }
+
+    return {
+      data: {
+        active_warranties: active.length,
+        recoverable_wo_count: recoverable.length,
+        total_recoverable_amount: totalRecoverable,
+        recoverable: top,
+      },
+      sources: [{ kind: "warranties", ref: assetId ?? "fleet", label: `${active.length} active warranties` }],
+      warnings: recoverable.length === 0 ? ["No completed WOs with cost fall inside an active warranty window."] : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [rankBadActors.name]: rankBadActors,
   [draftDeTask.name]: draftDeTask,
@@ -509,4 +612,5 @@ export const TOOLS: Record<string, AgentTool> = {
   [scanCorrosionRisk.name]: scanCorrosionRisk,
   [analyzePmEffectiveness.name]: analyzePmEffectiveness,
   [summarizeWorkBacklog.name]: summarizeWorkBacklog,
+  [scanWarrantyRecovery.name]: scanWarrantyRecovery,
 };
