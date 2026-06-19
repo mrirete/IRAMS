@@ -68,3 +68,14 @@ export function runRcaChallenger(rcaText: string, assetTag?: string): Promise<Ag
         : `Proposed root cause / analysis to challenge:\n${rcaText}`;
     return runAgent('rca_challenger', query);
 }
+
+/**
+ * Corrosion Sentinel — API 510/570/653 corrosion-risk assessment from thickness
+ * readings. Pass an asset tag to scope to one asset, else it scans the fleet.
+ */
+export function runCorrosionSentinel(assetTag?: string): Promise<AgentRunResponse> {
+    const query = assetTag
+        ? `Assess corrosion risk for asset ${assetTag}: flag CMLs near end-of-life or below t-min and recommend inspections.`
+        : 'Scan the fleet for corrosion risk: flag the CMLs nearest end-of-life or below t-min and recommend inspections.';
+    return runAgent('corrosion_sentinel', query);
+}
