@@ -8,6 +8,7 @@
 import React from 'react';
 import { Target, BarChart3, GitMerge, ClipboardList, TrendingUp, CheckCircle2, ArrowRight } from 'lucide-react';
 import DefectEliminationPanel, { type DefectEliminationTask } from './DefectEliminationPanel';
+import BadActorHunterPanel from './BadActorHunterPanel';
 import type { StudyCollaborator } from '../../eam/services/AnalyzeService';
 
 interface DefectEliminationDivisionProps {
@@ -110,6 +111,9 @@ export const DefectEliminationDivision: React.FC<DefectEliminationDivisionProps>
                     ))}
                 </div>
             </div>
+
+            {/* ── Bad Actor Hunter (AI) — ranks worst assets, drafts DE tasks ── */}
+            <BadActorHunterPanel onApprove={onCreateTask} />
 
             {/* ── Defect Elimination Panel — task list + detail ── */}
             <DefectEliminationPanel
