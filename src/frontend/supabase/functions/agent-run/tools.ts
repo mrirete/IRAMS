@@ -160,7 +160,69 @@ const draftDeTask: AgentTool = {
   },
 };
 
+// ── query_failure_history ─────────────────────────────────────────────────
+// Evidence lookup for the RCA Challenger: recent failures for an asset
+// (work_orders joined to wo_failure_data). Read-only, cited.
+const queryFailureHistory: AgentTool = {
+  name: "query_failure_history",
+  description:
+    "Look up an asset's recent failure history (work orders + failure mode/cause/remedy codes) to check a proposed root cause against the evidence. Provide asset_tag or asset_id.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: { type: "string", description: "Asset tag (e.g. P-101)." },
+      asset_id: { type: "string", description: "Asset UUID (if known)." },
+      limit: { type: "integer", description: "Max work orders to return (default 25)." },
+    },
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const limit = Number.isFinite(args?.limit) ? Math.max(1, Math.min(100, args.limit)) : 25;
+
+    let assetId: string | null = args?.asset_id ?? null;
+    let assetTag: string | null = args?.asset_tag ?? null;
+    if (!assetId && assetTag) {
+      const { data: a } = await ctx.db.from("assets").select("id, tag").ilike("tag", assetTag).limit(1);
+      if (a && a[0]) { assetId = a[0].id; assetTag = a[0].tag; }
+    }
+    if (!assetId) {
+      return { data: { error: "No matching asset found", asset_tag: assetTag }, sources: [], warnings: ["Provide a valid asset_tag or asset_id."] };
+    }
+
+    const { data: wos, error } = await ctx.db
+      .from("work_orders")
+      .select("wo_number, title, type, created_at, wo_failure_data(failure_mode_code, failure_cause_code, remedy_code, comments)")
+      .eq("asset_id", assetId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(`failure history query failed: ${error.message}`);
+
+    const history = (wos ?? []).map((w: Record<string, any>) => ({
+      wo_number: w.wo_number,
+      title: w.title,
+      type: w.type,
+      date: w.created_at,
+      failure: w.wo_failure_data
+        ? {
+            mode: w.wo_failure_data.failure_mode_code,
+            cause: w.wo_failure_data.failure_cause_code,
+            remedy: w.wo_failure_data.remedy_code,
+            comments: w.wo_failure_data.comments,
+          }
+        : null,
+    }));
+
+    ctx.sources.push({ kind: "work_orders", ref: assetId, label: `${history.length} WOs for ${assetTag ?? assetId}` });
+    return {
+      data: { asset_id: assetId, asset_tag: assetTag, work_order_count: history.length, history },
+      sources: [{ kind: "work_orders", ref: assetId, label: `failure history (${history.length} WOs)` }],
+      warnings: history.length === 0 ? ["No work-order history for this asset — critique the reasoning on its own merits."] : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [rankBadActors.name]: rankBadActors,
   [draftDeTask.name]: draftDeTask,
+  [queryFailureHistory.name]: queryFailureHistory,
 };

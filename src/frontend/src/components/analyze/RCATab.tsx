@@ -16,6 +16,7 @@ import { TeamPanel, AvatarStack } from './CollaboratorPicker';
 import EAMContextPanel from './EAMContextPanel';
 import WOPickerModal from './WOPickerModal';
 import type { WOPickerResult } from './WOPickerModal';
+import RcaChallengerPanel from './RcaChallengerPanel';
 import { useAssetContext } from '../../contexts/AssetContext';
 import { useConnectors } from '../../hooks/useConnectors';
 import ParetoAnalysisTab from './ParetoAnalysisTab';
@@ -467,6 +468,9 @@ export const RCATab: React.FC<RCATabProps> = ({
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     return (
         <div className="space-y-6">
+
+            {/* RCA Challenger (AI) — adversarially stress-test a proposed root cause */}
+            <RcaChallengerPanel />
 
             {/* â•â•â•â•â•â•â• PORTFOLIO LANDING VIEW â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
             {viewMode === 'portfolio' && (
