@@ -39,12 +39,33 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Only precache the HTML shell, CSS, and small critical assets
-        globPatterns: ['**/*.{html,ico,png,svg,woff2}'],
-        // Exclude large JS chunks from precache — they load on-demand via lazy routes
+        // Always activate the newest SW and purge stale precaches, so a returning
+        // visitor never gets served an old shell that points at purged asset hashes
+        // (the white-screen-on-deploy bug).
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        // Disable the plugin's default precache navigation fallback — index.html is
+        // no longer precached, so the default createHandlerBoundToURL('index.html')
+        // would throw. Navigations are handled network-first by the runtime route below.
+        navigateFallback: null as unknown as string,
+        // Precache only small static assets — NOT index.html. The HTML shell is
+        // served network-first (below) so it always references the CURRENT bundle
+        // hashes; precaching it cache-first is exactly what caused the white screen.
+        globPatterns: ['**/*.{ico,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 256 * 1024, // 256KB — only small assets
-        // Cache JS/CSS at runtime (on first navigation to each route)
         runtimeCaching: [
+          {
+            // HTML navigations — always try the network first (fresh shell when
+            // online), falling back to the last cached shell only when offline.
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'app-shell',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 8, maxAgeSeconds: 7 * 24 * 60 * 60 },
+            },
+          },
           {
             urlPattern: /\.(?:js|css)$/,
             handler: 'StaleWhileRevalidate',
