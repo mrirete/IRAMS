@@ -827,7 +827,6 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                     <div className="flex items-center justify-between">
                         <div>
                             <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2"><LayoutGrid size={16} className="text-primary-600" /> RBD Studies</h3>
-                            <p className="text-xs text-slate-500 mt-0.5">Create and manage reliability block diagram studies for different systems and scenarios</p>
                         </div>
                         <button onClick={() => setShowNewModal(true)}
                             className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-primary-600 to-primary-600 text-white text-sm font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
