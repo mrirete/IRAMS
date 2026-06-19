@@ -56,3 +56,15 @@ const DEFAULT_BAD_ACTOR_QUERY =
 export function runBadActorHunter(query: string = DEFAULT_BAD_ACTOR_QUERY): Promise<AgentRunResponse> {
     return runAgent('bad_actor_hunter', query);
 }
+
+/**
+ * RCA Challenger — adversarially critiques a proposed root cause.
+ * Pass the proposed root cause / 5-Why text; include the asset tag for
+ * evidence-grounded critique (the agent checks failure history).
+ */
+export function runRcaChallenger(rcaText: string, assetTag?: string): Promise<AgentRunResponse> {
+    const query = assetTag
+        ? `Asset: ${assetTag}\n\nProposed root cause / analysis to challenge:\n${rcaText}`
+        : `Proposed root cause / analysis to challenge:\n${rcaText}`;
+    return runAgent('rca_challenger', query);
+}
