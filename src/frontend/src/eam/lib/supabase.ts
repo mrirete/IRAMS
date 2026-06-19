@@ -12,4 +12,15 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || SUPABASE_URL_DEFAULT;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY_DEFAULT;
 
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// Single shared client. Creating additional createClient() instances in the same
+// browser shares this storage key and causes GoTrue refresh-token rotation races:
+// one instance rotates the refresh token, the others' stale token then fails →
+// spurious sign-out → login loop (worst on mobile, where tabs get suspended and
+// resumed). ALWAYS import this instance; never call createClient() elsewhere.
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+    auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+    },
+});
