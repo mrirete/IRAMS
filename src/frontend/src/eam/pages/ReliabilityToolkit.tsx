@@ -987,7 +987,7 @@ export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
                     {/* B-Life Table */}
                     <div className="bg-white border border-slate-200 rounded-xl p-3">
                         <h4 className="text-xs font-bold text-slate-800 mb-2">B-Life Values</h4>
-                        <div className="grid grid-cols-5 gap-1.5">
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
                             {[1, 5, 10, 50, 63.2].map(pct => (
                                 <div key={pct} className="text-center p-1.5 bg-slate-50 rounded-lg">
                                     <p className="text-[9px] text-slate-500">B{pct}%</p>

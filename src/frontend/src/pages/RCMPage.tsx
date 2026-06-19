@@ -694,7 +694,7 @@ export const RCMPage: React.FC = () => {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Study Type</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {(['classical', 'streamlined', 'back_to_basics'] as const).map(type => (
                     <button key={type} onClick={() => setNewStudyForm(f => ({ ...f, study_type: type }))}
                       className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all capitalize ${newStudyForm.study_type === type
@@ -817,7 +817,7 @@ export const RCMPage: React.FC = () => {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Study Type</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {(['classical', 'streamlined', 'back_to_basics'] as const).map(type => (
                     <button key={type} onClick={() => setEditStudyForm(f => ({ ...f, study_type: type }))}
                       className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all capitalize ${editStudyForm.study_type === type

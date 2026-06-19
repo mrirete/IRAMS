@@ -200,7 +200,7 @@ function ScenarioCard({ scenario, onUpdate, onDelete }: {
                                         <Calculator size={14} className="text-primary-500" />
                                         <span className="text-[10px] font-semibold uppercase text-slate-500">Live Calculation</span>
                                     </div>
-                                    <div className="grid grid-cols-3 gap-3 text-xs">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                                         <div>
                                             <span className="text-slate-400">Mitigated Freq:</span>
                                             <span className="ml-1 font-mono font-bold text-slate-700">
