@@ -50,13 +50,17 @@ export const UnifiedTabBar: React.FC<UnifiedTabBarProps> = ({
         };
     }, [checkOverflow, visibleTabs.length]);
 
-    // Auto-scroll active tab into view
+    // Centre the active tab by scrolling ONLY this strip. scrollIntoView() would
+    // scroll every scrollable ancestor and drag the whole page sideways on mobile.
     useEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
-        const activeBtn = el.querySelector('.unified-tab-active');
-        if (activeBtn) {
-            (activeBtn as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        const activeBtn = el.querySelector('.unified-tab-active') as HTMLElement | null;
+        if (activeBtn && el.scrollWidth > el.clientWidth + 1) {
+            const cRect = el.getBoundingClientRect();
+            const aRect = activeBtn.getBoundingClientRect();
+            const delta = (aRect.left - cRect.left) - (el.clientWidth - aRect.width) / 2;
+            el.scrollBy({ left: delta, behavior: 'smooth' });
         }
     }, [activeTab]);
 
