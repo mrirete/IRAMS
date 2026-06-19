@@ -64,9 +64,15 @@ export const ScrollTabStrip: React.FC<ScrollTabStripProps> = ({
     useEffect(() => {
         const el = scrollRef.current;
         if (!el) return;
-        const active = el.querySelector('[data-active="true"]');
-        if (active) {
-            (active as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        const active = el.querySelector('[data-active="true"]') as HTMLElement | null;
+        // Centre the active tab by scrolling ONLY this strip. scrollIntoView()
+        // would bubble up and scroll every scrollable ancestor — on mobile that
+        // drags the whole page sideways (content clipped on the left edge).
+        if (active && el.scrollWidth > el.clientWidth + 1) {
+            const cRect = el.getBoundingClientRect();
+            const aRect = active.getBoundingClientRect();
+            const delta = (aRect.left - cRect.left) - (el.clientWidth - aRect.width) / 2;
+            el.scrollBy({ left: delta, behavior: 'smooth' });
         }
         // Overflow state may change after content/layout settles.
         const id = window.setTimeout(checkOverflow, 0);
