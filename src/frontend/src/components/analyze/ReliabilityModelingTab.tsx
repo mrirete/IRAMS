@@ -799,21 +799,22 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
 
     return (
         <div className="space-y-4">
-            {/* Sub-tab toggle */}
+            {/* RBD is the default view; this single button toggles to/from the P&ID Viewer
+                (replaces the redundant always-on "Reliability Block Diagram" button). */}
             <div className="flex items-center gap-2 flex-wrap">
-                <button onClick={() => { setReliabilityTab('rbd'); setActiveStudy(null); }}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${reliabilityTab === 'rbd'
-                        ? 'bg-primary-50 text-primary-700 border border-primary-200 shadow-sm'
-                        : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-700 hover:bg-slate-50'
-                        }`}>
-                    <Cpu size={14} /> Reliability Block Diagram
-                </button>
-                <button onClick={() => { setReliabilityTab('pid'); setActivePidStudy(null); }}
+                <button
+                    onClick={() => {
+                        if (reliabilityTab === 'pid') { setReliabilityTab('rbd'); setActiveStudy(null); }
+                        else { setReliabilityTab('pid'); setActivePidStudy(null); }
+                    }}
+                    title={reliabilityTab === 'pid' ? 'Back to Reliability Block Diagram' : 'Open the P&ID Viewer'}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${reliabilityTab === 'pid'
                         ? 'bg-primary-50 text-primary-700 border border-primary-200 shadow-sm'
                         : 'bg-white text-slate-500 border border-slate-200 hover:text-slate-700 hover:bg-slate-50'
                         }`}>
-                    <Wrench size={14} /> P&ID Viewer
+                    {reliabilityTab === 'pid'
+                        ? <><ArrowLeft size={14} /> Block Diagram</>
+                        : <><Wrench size={14} /> P&ID Viewer</>}
                 </button>
             </div>
 
