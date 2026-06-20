@@ -3,10 +3,13 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useRelantern } from '../eam/contexts/RelanternContext';
-import { RelanternCoPilot } from '../components/shell/RelanternCoPilot';
 import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
+// RelanternCoPilot statically pulled in geminiService (@google/genai, ~130 KB gz)
+// on every page. Lazy-load it so that AI chunk stays off the critical path; its
+// floating button just appears a beat after first paint.
+const RelanternCoPilot = lazy(() => import('../components/shell/RelanternCoPilot').then(m => ({ default: m.RelanternCoPilot })));
 const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
 const DevicePreviewer = lazy(() => import('../components/dev/DevicePreviewer').then(m => ({ default: m.DevicePreviewer })));
 const ReportRequestForm = lazy(() => import('../eam/components/ReportRequestForm').then(m => ({ default: m.ReportRequestForm })));
@@ -94,8 +97,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 </Suspense>
             )}
 
-            {/* Relantern CoPilot — Floating AI Coach (MaintainX-style) */}
-            <RelanternCoPilot />
+            {/* Relantern CoPilot — Floating AI Coach (lazy: keeps the AI client off the critical path) */}
+            <Suspense fallback={null}>
+                <RelanternCoPilot />
+            </Suspense>
 
             {/* Operator "Report a Problem" — bottom sheet, lazy loaded on first open */}
             {isQuickReportOpen && (
