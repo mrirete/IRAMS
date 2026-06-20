@@ -836,16 +836,16 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
 
                     {/* Search & Sort bar */}
                     {studies.length > 0 && (
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                             <div className="flex-1 flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2">
                                 <Search size={14} className="text-slate-400 shrink-0" />
                                 <input value={studySearch} onChange={e => setStudySearch(e.target.value)}
                                     placeholder="Search studies by title or description…"
-                                    className="flex-1 text-sm outline-none bg-transparent text-slate-700 placeholder-slate-400" />
+                                    className="flex-1 min-w-0 text-sm outline-none bg-transparent text-slate-700 placeholder-slate-400" />
                                 {studySearch && <button onClick={() => setStudySearch('')} className="text-slate-400 hover:text-slate-600"><XIcon size={14} /></button>}
                             </div>
                             <select value={studySort} onChange={e => setStudySort(e.target.value as typeof studySort)}
-                                className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 outline-none cursor-pointer">
+                                className="w-full sm:w-auto px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-600 outline-none cursor-pointer">
                                 <option value="newest">Newest First</option>
                                 <option value="oldest">Oldest First</option>
                                 <option value="name_az">Name A→Z</option>

@@ -272,8 +272,9 @@ function WorkflowSpine({ activeCalc, weibullFit, onGoto, onCreatePM }: {
 
     return (
         <div className="flex flex-wrap items-center bg-white border border-slate-200 rounded-card shadow-card p-2 gap-2">
-            {/* Steps WRAP on mobile so the full flow + PM button never clips */}
-            <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+            {/* Steps: hidden on mobile (redundant with the calc tabs) — the bar then
+                shows just the Create-PM action. Full stepper returns at ≥sm. */}
+            <div className="hidden sm:flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
                 {stages.map((s, idx) => {
                     const isActive = activeStage === s.i;
                     const state = isActive ? 'active' : s.done ? 'done' : 'idle';
@@ -299,8 +300,8 @@ function WorkflowSpine({ activeCalc, weibullFit, onGoto, onCreatePM }: {
                 })}
             </div>
 
-            {/* Act — Create PM: always visible (divider only when inline on ≥sm) */}
-            <div className="flex items-center shrink-0 gap-1 sm:border-l border-slate-100 sm:pl-2">
+            {/* Act — Create PM: always visible (alone on mobile; divider when inline ≥sm) */}
+            <div className="flex items-center shrink-0 gap-1 ml-auto sm:border-l border-slate-100 sm:pl-2">
                 <ChevronRight size={16} className="text-slate-300 shrink-0 hidden sm:block" />
                 <Button
                     size="sm"
