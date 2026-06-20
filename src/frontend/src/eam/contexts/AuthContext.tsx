@@ -32,7 +32,10 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<SupabaseUser | null>(null);
     const [profile, setProfile] = useState<User | null>(null);
-    const [permissions, setPermissions] = useState<Record<string, ModulePermissions> | null>(null);
+    // Start fail-closed (BASE_PACKAGE_DEFAULTS) so the first paint — which now
+    // happens before the profile finishes loading in the background — never
+    // exposes more than the baseline permission set.
+    const [permissions, setPermissions] = useState<Record<string, ModulePermissions> | null>({ ...BASE_PACKAGE_DEFAULTS });
     const [role, setRole] = useState<string | null>(null);
     const [dataScope, setDataScope] = useState<DataScope | null>(null);
     const [loading, setLoading] = useState(true);
@@ -41,12 +44,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // 1. Check active session
         supabase.auth.getSession().then(({ data: { session } }) => {
             setUser(session?.user ?? null);
+            // Session check is done → unblock the app immediately. The profile,
+            // role, permissions and data-scope load in the BACKGROUND via
+            // fetchProfile (permissions stay fail-closed until it resolves), so
+            // the UI no longer waits two Supabase round-trips before first paint.
+            setLoading(false);
             if (session?.user) {
                 fetchProfile(session.user);
             } else {
-                // No Supabase session — user must log in
                 console.log('[AuthContext] No Supabase session — redirecting to login.');
-                setLoading(false);
             }
         }).catch(err => {
             console.error("Auth initialization error:", err);
@@ -65,10 +71,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     // double-fetch from getSession + onAuthStateChange race)
                     if (profile && profile.id === session.user.id) return;
                     setProfile(null);
-                    setPermissions(null);
+                    setPermissions({ ...BASE_PACKAGE_DEFAULTS }); // stay fail-closed while the new profile loads
                     setRole(null);
                     setDataScope(null);
-                    setLoading(true);
+                    // Don't re-block the app — the session is already known; the
+                    // profile reloads in the background.
                     fetchProfile(session.user);
                 }
                 // TOKEN_REFRESHED: user object updated, but profile stays intact
