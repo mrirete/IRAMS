@@ -6,9 +6,9 @@ import { useRelantern } from '../eam/contexts/RelanternContext';
 import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
-// RelanternCoPilot + geminiService now dynamically import @google/genai
-// (~130 KB gz) on first AI use, so the chunk is fully off the critical path.
-const RelanternCoPilot = lazy(() => import('../components/shell/RelanternCoPilot').then(m => ({ default: m.RelanternCoPilot })));
+// RelanternAI (Reliability Specialist) is the single AI chat panel — opened from
+// the TopBar button and the per-page "Ask Specialist" buttons. geminiService
+// dynamically imports @google/genai on first AI use, off the critical path.
 const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
 const DevicePreviewer = lazy(() => import('../components/dev/DevicePreviewer').then(m => ({ default: m.DevicePreviewer })));
 const ReportRequestForm = lazy(() => import('../eam/components/ReportRequestForm').then(m => ({ default: m.ReportRequestForm })));
@@ -95,11 +95,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     <DevicePreviewer onClose={() => setIsPreviewOpen(false)} />
                 </Suspense>
             )}
-
-            {/* Relantern CoPilot — Floating AI Coach (lazy: keeps the AI client off the critical path) */}
-            <Suspense fallback={null}>
-                <RelanternCoPilot />
-            </Suspense>
 
             {/* Operator "Report a Problem" — bottom sheet, lazy loaded on first open */}
             {isQuickReportOpen && (

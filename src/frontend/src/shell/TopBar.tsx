@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { NotificationCenter } from '../components/shell/NotificationCenter';
 import { ReliabilityPresenceWidget } from '../components/shell/ReliabilityPresenceWidget';
+import { useRelantern } from '../eam/contexts/RelanternContext';
 
 const ROLE_COLORS: Record<string, string> = {
     admin: 'bg-blue-50 text-blue-600 border-blue-200',
@@ -24,6 +25,7 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview }) => {
     const { user, logout } = useAuth();
+    const { openRelantern } = useRelantern();
     const navigate = useNavigate();
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -106,14 +108,14 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
 
                 <ReliabilityPresenceWidget />
 
-                {/* AI CoPilot Toggle — Relantern branded, shown on mobile too (icon-only) */}
+                {/* Reliability Specialist — opens the AI panel (shown on mobile too, icon-only) */}
                 <button
-                    onClick={() => window.dispatchEvent(new CustomEvent('toggle-copilot'))}
+                    onClick={() => openRelantern('General reliability & maintenance assistance — ask about any asset, work order, or analysis.', 'general')}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
-                    title="Relantern CoPilot · AI Coach"
+                    title="Reliability Specialist · AI"
                 >
                     <Sparkles size={15} />
-                    <span className="font-bold text-xs hidden md:inline">CoPilot</span>
+                    <span className="font-bold text-xs hidden md:inline">Specialist</span>
                 </button>
 
                 {/* Device Preview Toggle */}
