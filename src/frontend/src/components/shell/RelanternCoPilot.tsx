@@ -316,7 +316,7 @@ export const RelanternCoPilot: React.FC = () => {
             {/* ═══ FAB — Always visible ═══ */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className={`fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 w-14 h-14 rounded-2xl shadow-lg shadow-relantern-500/30 flex items-center justify-center transition-all duration-300 group ${isOpen
+                className={`fixed bottom-28 md:bottom-24 right-4 md:right-6 z-50 w-14 h-14 rounded-2xl shadow-lg shadow-relantern-500/30 flex items-center justify-center transition-all duration-300 group ${isOpen
                     ? 'bg-slate-700 hover:bg-slate-600 rotate-0'
                     : 'bg-gradient-to-br from-relantern-500 to-relantern-700 hover:from-relantern-400 hover:to-relantern-600 hover:shadow-xl hover:shadow-relantern-500/40 hover:scale-105'
                     }`}
@@ -336,7 +336,7 @@ export const RelanternCoPilot: React.FC = () => {
 
             {/* ═══ Expanded Panel ═══ */}
             {isOpen && (
-                <div className={`fixed bottom-36 md:bottom-24 right-4 md:right-6 z-50 ${panelWidth} ${panelHeight} bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-black/20 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 zoom-in-95 duration-200`}>
+                <div className={`fixed bottom-44 md:bottom-44 right-4 md:right-6 z-50 ${panelWidth} ${panelHeight} bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-black/20 flex flex-col overflow-hidden animate-in slide-in-from-bottom-4 zoom-in-95 duration-200`}>
 
                     {/* ─── Header ─── */}
                     <div className="px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-relantern-50 to-white flex items-center justify-between shrink-0">
