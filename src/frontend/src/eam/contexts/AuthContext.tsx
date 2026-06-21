@@ -27,6 +27,36 @@ const AuthContext = createContext<AuthContextType>({
     signOut: async () => { },
 });
 
+// ── Optimistic profile cache ────────────────────────────────────────────────
+// Last-known profile/permissions are cached per-user so warm loads paint
+// instantly while the real values revalidate in the background. WRITTEN only
+// from the verified fetchProfile path, and READ only when the stored userId
+// matches the current session — so it can speed up but never expose another
+// user's data or render against malformed data.
+const PROFILE_CACHE_KEY = 'ers_auth_profile_v1';
+interface CachedAuth {
+    userId: string;
+    profile: User;
+    permissions: Record<string, ModulePermissions>;
+    role: string;
+    dataScope: DataScope;
+}
+const readProfileCache = (userId: string): CachedAuth | null => {
+    try {
+        const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+        if (!raw) return null;
+        const c = JSON.parse(raw) as CachedAuth;
+        if (c?.userId === userId && c.profile?.id && c.permissions && c.role && c.dataScope) return c;
+    } catch { /* ignore parse/storage errors */ }
+    return null;
+};
+const writeProfileCache = (c: CachedAuth): void => {
+    try { localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(c)); } catch { /* quota / private mode */ }
+};
+const clearProfileCache = (): void => {
+    try { localStorage.removeItem(PROFILE_CACHE_KEY); } catch { /* ignore */ }
+};
+
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -42,9 +72,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.auth.getSession().then(({ data: { session } }) => {
             setUser(session?.user ?? null);
             if (session?.user) {
+                // Optimistic: paint the last-known profile instantly on warm loads
+                // (clears the gate with a valid non-null profile), then revalidate.
+                const cached = readProfileCache(session.user.id);
+                if (cached) {
+                    setProfile(cached.profile);
+                    setPermissions(cached.permissions);
+                    setRole(cached.role);
+                    setDataScope(cached.dataScope);
+                    setLoading(false);
+                }
                 fetchProfile(session.user);
             } else {
                 // No Supabase session — user must log in
+                clearProfileCache();
                 console.log('[AuthContext] No Supabase session — redirecting to login.');
                 setLoading(false);
             }
@@ -73,6 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
                 // TOKEN_REFRESHED: user object updated, but profile stays intact
             } else {
+                clearProfileCache();
                 setProfile(null);
                 setPermissions(null);
                 setRole(null);
@@ -180,7 +222,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             // Commit a complete, non-null profile + fail-closed permissions, then
             // unblock the app (1 round-trip).
-            setProfile({
+            const resolvedProfile: User = {
                 id: userData.id,
                 username: userData.username,
                 contactId: userData.contact_id,
@@ -190,15 +232,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 email: currentUser.email || '',
                 department: '',
                 roleLabel: roleCode,
-            });
-            setRole(roleCode);
-            setPermissions(finalPermissions);
-            setDataScope({
+            };
+            const resolvedScope: DataScope = {
                 siteIds: dbScope?.siteIds || ['*'],
                 departmentIds: dbScope?.departmentIds || [],
                 ownWorkOnly: dbScope?.ownWorkOnly || false,
-            });
+            };
+            setProfile(resolvedProfile);
+            setRole(roleCode);
+            setPermissions(finalPermissions);
+            setDataScope(resolvedScope);
             setLoading(false);
+            // Cache for instant warm-load hydration next time.
+            writeProfileCache({ userId: currentUser.id, profile: resolvedProfile, permissions: finalPermissions, role: roleCode, dataScope: resolvedScope });
 
             // ── Background enrichment (does NOT block first paint) ──
             // 1. Contact → better display name / email / department, and a role
@@ -265,6 +311,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const signOut = async () => {
         await supabase.auth.signOut();
         localStorage.removeItem('ers_access_token');
+        clearProfileCache();
         setProfile(null);
         setPermissions(null);
         setRole(null);
