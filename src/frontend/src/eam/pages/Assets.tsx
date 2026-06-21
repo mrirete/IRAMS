@@ -1082,10 +1082,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         const isLoc = isLocation(asset);
                         const isSelected = selectedIds.has(asset.id);
 
-                        // Tree connector dimensions
-                        const INDENT_PX = 32;           // Horizontal indent per depth level
-                        const LINE_LEFT_OFFSET = 16;    // Center of the vertical line within each indent level
-                        const BRANCH_WIDTH = 20;        // Width of horizontal branch arm
+                        // Tree connector dimensions are now defined responsively via CSS variables in index.css
 
                         return (
                             <div
@@ -1102,7 +1099,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                                 <div
                                                     key={`vl-${i}`}
                                                     className="tree-vline"
-                                                    style={{ left: `${8 + i * INDENT_PX + LINE_LEFT_OFFSET}px` }}
+                                                    style={{ left: `calc(8px + ${i} * var(--tree-indent) + var(--tree-line-left))` }}
                                                 />
                                             )
                                         ))}
@@ -1110,10 +1107,10 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                         <div
                                             className="tree-hbranch"
                                             style={{
-                                                left: `${8 + (asset.depth - 1) * INDENT_PX + LINE_LEFT_OFFSET}px`,
+                                                left: `calc(8px + ${asset.depth - 1} * var(--tree-indent) + var(--tree-line-left))`,
                                                 top: 0,
                                                 height: '100%',
-                                                width: `${BRANCH_WIDTH}px`
+                                                width: 'var(--tree-branch-width)'
                                             }}
                                         />
                                         {/* Continuation line below for non-last siblings */}
@@ -1121,7 +1118,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                             <div
                                                 className="tree-vline-below"
                                                 style={{
-                                                    left: `${8 + (asset.depth - 1) * INDENT_PX + LINE_LEFT_OFFSET}px`,
+                                                    left: `calc(8px + ${asset.depth - 1} * var(--tree-indent) + var(--tree-line-left))`,
                                                     top: '50%',
                                                     height: '50%'
                                                 }}
@@ -1132,11 +1129,11 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
 
                                 {/* ── Card Content ── */}
                                 <div
-                                    className={`hierarchy-card flex items-center gap-2 px-3 py-2 mx-1 my-0.5 cursor-pointer group bg-white
+                                    className={`hierarchy-card flex items-center gap-1.5 sm:gap-2 px-2 py-1.5 sm:px-3 sm:py-2 mx-1 my-0.5 cursor-pointer group bg-white
                                         ${isLoc ? 'hierarchy-card--location' : 'hierarchy-card--equipment'}
                                         ${isSelected ? 'hierarchy-card--selected' : ''}
                                     `}
-                                    style={{ marginLeft: `${8 + asset.depth * INDENT_PX + (asset.depth > 0 ? BRANCH_WIDTH + 4 : 0)}px` }}
+                                    style={{ marginLeft: `calc(8px + ${asset.depth} * var(--tree-indent) + ${asset.depth > 0 ? 'var(--tree-branch-width) + 4px' : '0px'})` }}
                                     onClick={() => handleRowClick(asset)}
                                 >
                                     {/* Checkbox */}
@@ -1170,12 +1167,12 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     </div>
 
                                     {/* Type Icon */}
-                                    <div className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
+                                    <div className={`flex-shrink-0 w-6 h-6 sm:w-8 sm:h-8 rounded-md sm:rounded-lg flex items-center justify-center ${
                                         isLoc
                                             ? 'bg-emerald-100 text-emerald-600'
                                             : 'bg-blue-100 text-blue-600'
                                     }`}>
-                                        {isLoc ? <MapPin size={14} /> : <Package size={14} />}
+                                        {isLoc ? <MapPin size={14} className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : <Package size={14} className="w-3 h-3 sm:w-3.5 sm:h-3.5" />}
                                     </div>
 
                                     {/* Content */}
@@ -1316,7 +1313,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 {/* Inline BOM Expansion — only for equipment/maintainable items */}
                                 {!isLocation(asset) && expandedBOMIds.has(asset.id) && (
                                     <div className="mx-2 mb-2 p-4 bg-slate-50 rounded-lg border border-slate-200 shadow-inner"
-                                         style={{ marginLeft: `${16 + asset.depth * INDENT_PX + (asset.depth > 0 ? BRANCH_WIDTH + 4 : 0)}px` }}>
+                                         style={{ marginLeft: `calc(16px + ${asset.depth} * var(--tree-indent) + ${asset.depth > 0 ? 'var(--tree-branch-width) + 4px' : '0px'})` }}>
                                         <BOMTab asset={asset} onUpdate={handleUpdateAsset} />
                                     </div>
                                 )}

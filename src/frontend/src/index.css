@@ -472,7 +472,23 @@ select {
 .hierarchy-row {
   position: relative;
   transition: background 0.15s ease, box-shadow 0.15s ease;
+  /* Tree spacing tokens with responsive overrides */
+  --tree-indent: 26px;
+  --tree-line-left: 13px;
+  --tree-branch-width: 14px;
+  --tree-line-width: 2px;
+  --tree-line-color: #cbd5e1; /* slate-300 style, slightly lighter slate-200/300 */
 }
+
+@media (max-width: 639px) {
+  .hierarchy-row {
+    --tree-indent: 14px;
+    --tree-line-left: 7px;
+    --tree-branch-width: 8px;
+    --tree-line-width: 1.5px;
+  }
+}
+
 .hierarchy-row:hover {
   background: rgba(16, 185, 129, 0.04);
 }
@@ -485,9 +501,9 @@ select {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
+  width: var(--tree-line-width);
   border-radius: 1px;
-  background: #d1d5db;           /* slate-300 */
+  background: var(--tree-line-color);
   pointer-events: none;
   z-index: 1;
 }
@@ -504,10 +520,10 @@ select {
   position: absolute;
   top: 0;
   left: 0;
-  width: 2px;
+  width: var(--tree-line-width);
   height: 50%;
   border-radius: 1px;
-  background: #d1d5db;
+  background: var(--tree-line-color);
 }
 /* Horizontal segment of the branch (from midpoint to right) */
 .tree-hbranch::after {
@@ -516,9 +532,9 @@ select {
   top: 50%;
   left: 0;
   width: 100%;
-  height: 2px;
+  height: var(--tree-line-width);
   border-radius: 1px;
-  background: #d1d5db;
+  background: var(--tree-line-color);
   transform: translateY(-50%);
 }
 
@@ -526,9 +542,9 @@ select {
 .tree-vline-below {
   position: absolute;
   bottom: 0;
-  width: 2px;
+  width: var(--tree-line-width);
   border-radius: 1px;
-  background: #d1d5db;
+  background: var(--tree-line-color);
   pointer-events: none;
   z-index: 1;
 }
@@ -539,22 +555,23 @@ select {
   z-index: 2;
   border-radius: 10px;
   transition: box-shadow 0.2s ease, transform 0.15s ease, border-color 0.2s ease;
-  border: 1px solid transparent;
+  border: 1px solid #e2e8f0; /* Default subtle border for all hierarchy cards */
 }
 .hierarchy-card:hover {
   box-shadow: 0 2px 8px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
-  border-color: #e2e8f0;
+  border-color: #cbd5e1;
   transform: translateY(-1px);
 }
 .hierarchy-card.hierarchy-card--selected {
   border-color: #10b981;
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15), 0 2px 8px rgba(0,0,0,0.06);
 }
+/* Left accent borders removed to save space on mobile and create a cleaner tree-like aesthetic */
 .hierarchy-card.hierarchy-card--location {
-  border-left: 3px solid #10b981;
+  border-left-width: 1px;
 }
 .hierarchy-card.hierarchy-card--equipment {
-  border-left: 3px solid #3b82f6;
+  border-left-width: 1px;
 }
 
 /* Fade-in for expanding children */
