@@ -1,4 +1,15 @@
-import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
+/**
+ * @google/genai is loaded LAZILY via dynamic import() inside the client factory.
+ * This keeps ~130 KB off every cold-load's critical path.  In production proxy
+ * mode (which uses fetch, not the SDK) the library may never be fetched at all.
+ *
+ * Consumers that need the `Chat` type at the type level can import it from here:
+ *   import type { GeminiChat } from './geminiService';
+ */
+
+// Re-export the Chat type for consumers (type-only — zero runtime cost)
+export type { Chat as GeminiChat } from '@google/genai';
+
 import { RELANTERN_SYSTEM_INSTRUCTION } from '../constants';
 import { PSM_SYSTEM_SUPPLEMENT } from '../../components/psm/PSMAdvisorPrompts';
 import { supabase } from '../lib/supabase';
@@ -21,11 +32,24 @@ const USE_PROXY = !!AI_PROXY_URL;
 // This ensures the Gemini API key is not bundled into the production build.
 const _devApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 
-let _ai: GoogleGenAI | null = null;
-const getAI = (): GoogleGenAI => {
+// Cached module + client instance — populated on first AI use
+let _genaiModule: typeof import('@google/genai') | null = null;
+let _ai: InstanceType<typeof import('@google/genai').GoogleGenAI> | null = null;
+
+/**
+ * Lazily loads @google/genai and returns a GoogleGenAI client instance.
+ * The module is fetched once on the first call; subsequent calls return
+ * the cached instance synchronously (via the resolved _ai reference).
+ */
+const getAI = async () => {
   if (!_ai) {
+    // Dynamic import — Vite will code-split this into its own chunk
+    if (!_genaiModule) {
+      _genaiModule = await import('@google/genai');
+    }
+    const { GoogleGenAI } = _genaiModule;
+
     if (USE_PROXY) {
-      // In production mode: never use the direct client
       console.info('[geminiService] Using backend AI proxy. Direct Gemini client disabled.');
       _ai = new GoogleGenAI({ apiKey: 'proxy-mode-no-key-needed' });
     } else if (!_devApiKey) {
@@ -198,8 +222,9 @@ export const proxyAIRAGQuery = async (
 export const isAIProxyEnabled = (): boolean => USE_PROXY;
 
 
-export const createRelanternChat = (): Chat => {
-  return getAI().chats.create({
+export const createRelanternChat = async () => {
+  const ai = await getAI();
+  return ai.chats.create({
     model: 'gemini-2.5-flash',
     config: {
       systemInstruction: RELANTERN_SYSTEM_INSTRUCTION,
@@ -216,12 +241,13 @@ export const createRelanternChat = (): Chat => {
  * covering OSHA 1910.119, IEC 61882/61511/61508, ISO 31000, CCPS, and SIL tables.
  * Optionally layers on a per-study-type persona supplement for specialized behavior.
  */
-export const createPSMAdvisorChat = (studyContext?: string, personaSupplement?: string): Chat => {
+export const createPSMAdvisorChat = async (studyContext?: string, personaSupplement?: string) => {
   const psmInstruction = RELANTERN_SYSTEM_INSTRUCTION + '\n\n' + PSM_SYSTEM_SUPPLEMENT +
     (personaSupplement ? '\n\n' + personaSupplement : '') +
     (studyContext ? `\n\n═══ ACTIVE STUDY CONTEXT ═══\n${studyContext}` : '');
 
-  return getAI().chats.create({
+  const ai = await getAI();
+  return ai.chats.create({
     model: 'gemini-2.5-flash',
     config: {
       systemInstruction: psmInstruction,
@@ -234,7 +260,8 @@ export const createPSMAdvisorChat = (studyContext?: string, personaSupplement?: 
 
 export const analyzeAssetData = async (assetContext: string): Promise<string> => {
   try {
-    const response: GenerateContentResponse = await getAI().models.generateContent({
+    const ai = await getAI();
+    const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: `Analyze the following asset context and provide a reliability strategy summary (RCM based). Context: ${assetContext}`,
       config: {

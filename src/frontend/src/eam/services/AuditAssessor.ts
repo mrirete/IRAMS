@@ -11,7 +11,7 @@
  * to generate organization-specific, value-aligned questions and scoring.
  */
 
-import { GoogleGenAI, type Chat, type GenerateContentResponse } from '@google/genai';
+// @google/genai is loaded lazily via dynamic import() — zero cost if proxy is used.
 import type { AuditIntakeData, DocumentReviewItem, SiteVerificationItem, InterviewRecord } from './AuditTypes';
 import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
 
@@ -20,9 +20,15 @@ import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
 const _devApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 const _proxyConfigured = !!import.meta.env.VITE_AI_PROXY_URL;
 
-let _ai: GoogleGenAI | null = null;
-const getAI = (): GoogleGenAI => {
+let _genaiModule: typeof import('@google/genai') | null = null;
+let _ai: InstanceType<typeof import('@google/genai').GoogleGenAI> | null = null;
+
+const getAI = async () => {
     if (!_ai) {
+        if (!_genaiModule) {
+            _genaiModule = await import('@google/genai');
+        }
+        const { GoogleGenAI } = _genaiModule;
         const keyToUse = (!_proxyConfigured && _devApiKey) ? _devApiKey : 'not-configured';
         _ai = new GoogleGenAI({ apiKey: keyToUse });
     }
@@ -261,7 +267,7 @@ function buildContextBlock(ctx?: AuditContext): string {
 // ─── Engine Class ──────────────────────────────────────────────────
 
 export class AuditAssessor {
-    private chat: Chat | null = null;
+    private chat: any = null;
     private registration: AuditRegistration | null = null;
     private auditContext: AuditContext | null = null;
 
@@ -537,7 +543,8 @@ Respond as JSON:
         // Path 2: Direct Gemini (development/fallback — never used when proxy is configured)
         if (!_devApiKey || _proxyConfigured) return JSON.stringify({ error: 'AI not configured. Set VITE_AI_PROXY_URL or VITE_GEMINI_API_KEY.' });
         try {
-            const response: GenerateContentResponse = await getAI().models.generateContent({
+            const ai = await getAI();
+            const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: prompt,
                 config: {

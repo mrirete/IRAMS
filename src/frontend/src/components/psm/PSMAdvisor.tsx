@@ -137,13 +137,15 @@ const PSMAdvisor: React.FC<PSMAdvisorProps> = ({
             }]);
 
             // Create new chat session with persona-specific system instruction
-            try {
-                const contextHeader = buildStudyContextHeader(study);
-                chatSessionRef.current = createPSMAdvisorChat(contextHeader, persona.systemSupplement);
-                contextPrimedRef.current = false;
-            } catch (err) {
-                console.error('[PSMAdvisor] Failed to create chat session:', err);
-            }
+            (async () => {
+                try {
+                    const contextHeader = buildStudyContextHeader(study);
+                    chatSessionRef.current = await createPSMAdvisorChat(contextHeader, persona.systemSupplement);
+                    contextPrimedRef.current = false;
+                } catch (err) {
+                    console.error('[PSMAdvisor] Failed to create chat session:', err);
+                }
+            })();
         }
     }, [isOpen, study?.id, persona]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -186,7 +188,7 @@ const PSMAdvisor: React.FC<PSMAdvisorProps> = ({
         try {
             if (!chatSessionRef.current) {
                 const contextHeader = buildStudyContextHeader(study);
-                chatSessionRef.current = createPSMAdvisorChat(contextHeader, persona.systemSupplement);
+                chatSessionRef.current = await createPSMAdvisorChat(contextHeader, persona.systemSupplement);
             }
 
             const result = await chatSessionRef.current.sendMessage({ message: messageText });

@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createRelanternChat, proxyAIChat, isAIProxyEnabled } from '../../eam/services/geminiService';
-import type { Chat } from '@google/genai';
+import type { GeminiChat } from '../../eam/services/geminiService';
 import { useAssetLookup } from '../../hooks/useAssetLookup';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 
@@ -115,7 +115,7 @@ export const RelanternCoPilot: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [fabPulse, setFabPulse] = useState(true);
     const abortRef = useRef<AbortController | null>(null);
-    const chatRef = useRef<Chat | null>(null);
+    const chatRef = useRef<GeminiChat | null>(null);
 
     // Proxy-first architecture: route through backend AI proxy when available
     const useProxy = isAIProxyEnabled();
@@ -200,7 +200,7 @@ export const RelanternCoPilot: React.FC = () => {
             } else {
                 // ── Dev-only fallback: direct Gemini SDK ──
                 if (!chatRef.current) {
-                    chatRef.current = createRelanternChat();
+                    chatRef.current = await createRelanternChat();
                 }
                 const contextPrompt = `[Context: ${pageContextStr}]\n\n${userText}`;
                 const response = await chatRef.current.sendMessage({ message: contextPrompt });

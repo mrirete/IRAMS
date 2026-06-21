@@ -25,10 +25,14 @@ export const NexusAI: React.FC<NexusAIProps> = ({ isOpen, onClose, contextData }
 
   useEffect(() => {
     if (isOpen && !chatSessionRef.current) {
-      chatSessionRef.current = createNexusChat();
-    }
-    // If context data is provided when opening, send it silently to prime the chat
-    if (isOpen && contextData && chatSessionRef.current) {
+      (async () => {
+        chatSessionRef.current = await createNexusChat();
+        // If context data is provided when opening, send it silently to prime the chat
+        if (contextData && chatSessionRef.current) {
+          await chatSessionRef.current.sendMessage({ message: `Current Context: ${contextData}. Please wait for my question.` });
+        }
+      })();
+    } else if (isOpen && contextData && chatSessionRef.current) {
       const prime = async () => {
         await chatSessionRef.current.sendMessage({ message: `Current Context: ${contextData}. Please wait for my question.` });
       }
@@ -56,7 +60,7 @@ export const NexusAI: React.FC<NexusAIProps> = ({ isOpen, onClose, contextData }
 
     try {
       if (!chatSessionRef.current) {
-        chatSessionRef.current = createNexusChat();
+        chatSessionRef.current = await createNexusChat();
       }
 
       const result = await chatSessionRef.current.sendMessage({ message: input });
