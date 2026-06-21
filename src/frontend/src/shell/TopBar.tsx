@@ -106,10 +106,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
 
                 <ReliabilityPresenceWidget />
 
-                {/* AI CoPilot Toggle — Relantern branded, hidden on small mobile */}
+                {/* AI CoPilot Toggle — Relantern branded, shown on mobile too (icon-only) */}
                 <button
                     onClick={() => window.dispatchEvent(new CustomEvent('toggle-copilot'))}
-                    className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
                     title="Relantern CoPilot · AI Coach"
                 >
                     <Sparkles size={15} />
