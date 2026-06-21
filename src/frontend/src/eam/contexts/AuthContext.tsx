@@ -157,106 +157,123 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 return;
             }
 
-            // ── Resolve EVERYTHING the gate needs from the `users` row alone, so it
-            // clears after ONE round-trip. Role, permissions (client-side templates)
-            // and data-scope are all derivable here. The linked Contact (display
-            // name / dept) and the custom-role permission dict are enriched in the
-            // BACKGROUND afterwards — the profile is set NON-NULL first, so nothing
-            // ever renders against a null profile.
-            const roleCode = (userData.roles && Array.isArray(userData.roles) && userData.roles.length > 0)
-                ? userData.roles[0] : 'GUEST';
+            // Map DB User to UI User — start with basic fields,
+            // then enrich from linked Contact
+            let contactName = userData.username;
+            let contactEmail = currentUser.email || '';
+            let contactDepartment = '';
+            let contactRoleLabel = '';
 
-            // Permission templates are the authoritative source; the reference_codes
-            // dict only matters for roles WITHOUT a template (fetched in background).
-            const templatePerms = ROLE_PERMISSION_TEMPLATES[roleCode];
-            const basePermissions: Record<string, ModulePermissions> = templatePerms || { ...BASE_PACKAGE_DEFAULTS };
-            const userOverrides = userData.permission_overrides || {};
-            const finalPermissions = { ...basePermissions };
-            Object.keys(userOverrides).forEach(moduleKey => {
-                finalPermissions[moduleKey] = { ...(finalPermissions[moduleKey] || {}), ...userOverrides[moduleKey] };
-            });
+            // ── Parallel fetch: Contact + Role permissions (saves ~500ms) ──
+            // Both queries are independent — no reason to wait for one before the other.
+            const contactPromise = userData.contact_id
+                ? supabase
+                    .from('contacts')
+                    .select('name, email, roles, organization_unit_id, organization_units(name)')
+                    .eq('id', userData.contact_id)
+                    .maybeSingle()
+                : Promise.resolve({ data: null, error: null });
 
-            const dbScope = userData.data_scope_overrides as Partial<DataScope> | null;
+            // Pre-compute roleCode for the reference_codes query
+            let preRoleCode = 'GUEST';
+            if (userData.roles && Array.isArray(userData.roles) && userData.roles.length > 0) {
+                preRoleCode = userData.roles[0];
+            }
 
-            // Commit a complete, non-null profile + fail-closed permissions, then
-            // unblock the app (1 round-trip).
+            const dictPromise = supabase
+                .from('reference_codes')
+                .select('properties')
+                .eq('category', 'CONTACT_TYPE')
+                .eq('code', preRoleCode)
+                .maybeSingle();
+
+            const [contactResult, dictResult] = await Promise.all([contactPromise, dictPromise]);
+
+            // Process contact data
+            if (contactResult.data) {
+                const contactData = contactResult.data;
+                contactName = contactData.name || userData.username;
+                contactEmail = contactData.email || contactEmail;
+                contactDepartment = (contactData as any).organization_units?.name || '';
+                contactRoleLabel = (contactData.roles && (contactData.roles as string[]).length > 0)
+                    ? (contactData.roles as string[])[0] : '';
+            }
+
             setProfile({
                 id: userData.id,
                 username: userData.username,
                 contactId: userData.contact_id,
                 status: userData.status,
                 mfaEnabled: userData.mfa_enabled,
-                fullName: userData.username,        // enriched with contact name below
-                email: currentUser.email || '',
-                department: '',
-                roleLabel: roleCode,
+                fullName: contactName,
+                email: contactEmail,
+                department: contactDepartment,
+                roleLabel: contactRoleLabel,
             });
-            setRole(roleCode);
-            setPermissions(finalPermissions);
-            setDataScope({
-                siteIds: dbScope?.siteIds || ['*'],
-                departmentIds: dbScope?.departmentIds || [],
-                ownWorkOnly: dbScope?.ownWorkOnly || false,
-            });
-            setLoading(false);
 
-            // ── Background enrichment (does NOT block first paint) ──
-            // 1. Contact → better display name / email / department, and a role
-            //    fallback when the users row had no role.
-            if (userData.contact_id) {
-                supabase
-                    .from('contacts')
-                    .select('name, email, roles, organization_unit_id, organization_units(name)')
-                    .eq('id', userData.contact_id)
-                    .maybeSingle()
-                    .then(({ data: c }: any) => {
-                        if (!c) return;
-                        const contactRoleLabel = (c.roles && (c.roles as string[]).length > 0) ? (c.roles as string[])[0] : '';
-                        setProfile(prev => prev ? {
-                            ...prev,
-                            fullName: c.name || prev.fullName,
-                            email: c.email || prev.email,
-                            department: c.organization_units?.name || prev.department,
-                            roleLabel: prev.roleLabel && prev.roleLabel !== 'GUEST' ? prev.roleLabel : (contactRoleLabel || prev.roleLabel),
-                        } : prev);
-                        if (roleCode === 'GUEST' && contactRoleLabel) setRole(contactRoleLabel);
-                    });
+            // B. Resolve Role (via Contact or direct role)
+            let roleCode = preRoleCode;
+            if (roleCode === 'GUEST' && contactRoleLabel) {
+                // Fall back to contact's defaultType if no role in users table
+                roleCode = contactRoleLabel;
             }
-            // 2. Custom-role permission dict — only when no code template exists.
-            if (!templatePerms) {
-                supabase
-                    .from('reference_codes')
-                    .select('properties')
-                    .eq('category', 'CONTACT_TYPE')
-                    .eq('code', roleCode)
-                    .maybeSingle()
-                    .then(({ data: d, error: e }: any) => {
-                        if (e || !d?.properties?.permissions) return;
-                        const merged: Record<string, ModulePermissions> = { ...d.properties.permissions };
-                        Object.keys(userOverrides).forEach(mk => { merged[mk] = { ...(merged[mk] || {}), ...userOverrides[mk] }; });
-                        setPermissions(merged);
-                    });
+
+            setRole(roleCode);
+
+            // C. Get Base Permissions from Dictionaries
+            const dictData = dictResult.data;
+            const dictError = dictResult.error;
+
+            // Permission templates imported from '../constants/rolePermissions'
+            // ROLE_PERMISSION_TEMPLATES, BASE_PACKAGE_DEFAULTS are the single source of truth
+
+            let basePermissions: Record<string, ModulePermissions>;
+
+            // ══ Permission Resolution: Code Templates → DB Override → Fallback ══
+            if (ROLE_PERMISSION_TEMPLATES[roleCode]) {
+                // Primary: Use hardcoded role template (version-controlled, authoritative)
+                basePermissions = ROLE_PERMISSION_TEMPLATES[roleCode];
+            } else if (!dictError && dictData?.properties?.permissions) {
+                // Secondary: DB-stored permissions for custom/dynamic roles
+                basePermissions = dictData.properties.permissions;
+            } else {
+                // Tertiary: Fail-closed with BASE_PACKAGE_DEFAULTS
+                console.warn(`[AuthContext] ⚠ Unknown role "${roleCode}" — applying BASE_PACKAGE_DEFAULTS (fail-closed)`);
+                basePermissions = BASE_PACKAGE_DEFAULTS;
             }
+
+            // D. Apply User Overrides (Deep Merge)
+            const userOverrides = userData.permission_overrides || {};
+            const finalPermissions = { ...basePermissions };
+
+            // Merge overrides: if user has override for a module, merge it in
+            Object.keys(userOverrides).forEach(moduleKey => {
+                finalPermissions[moduleKey] = {
+                    ...(finalPermissions[moduleKey] || {}), // Base or empty
+                    ...userOverrides[moduleKey]             // Override
+                };
+            });
+
+
+            setPermissions(finalPermissions);
+
+            // E. Resolve Data Scope (Site/Department boundaries)
+            // null data_scope_overrides = Global Access (matches SAP PM convention)
+            const dbScope = userData.data_scope_overrides as Partial<DataScope> | null;
+            const resolvedScope: DataScope = {
+                siteIds: dbScope?.siteIds || ['*'],         // null/missing = all sites
+                departmentIds: dbScope?.departmentIds || [], // empty = all departments
+                ownWorkOnly: dbScope?.ownWorkOnly || false,
+            };
+            setDataScope(resolvedScope);
 
         } catch (error) {
             console.error("Error fetching profile:", error);
-            // Safety net (fail-closed per NIST/ISO 55000). Crucially, set a NON-NULL
-            // profile so the app never renders against a null profile when the gate
-            // clears below — even if the users query failed.
-            setProfile(prev => prev ?? {
-                id: currentUser.id,
-                username: currentUser.email?.split('@')[0] || 'user',
-                contactId: '',
-                status: 'active',
-                mfaEnabled: false,
-                fullName: currentUser.email?.split('@')[0] || 'User',
-                email: currentUser.email || '',
-                department: '',
-                roleLabel: 'USER',
-            });
-            setPermissions(prev => prev ?? { ...BASE_PACKAGE_DEFAULTS });
-            setRole(prev => prev ?? 'USER');
-            setDataScope(prev => prev ?? { siteIds: ['*'], departmentIds: [], ownWorkOnly: false });
+            // Safety net: Base Package defaults on error (fail-closed per NIST/ISO 55000)
+            if (!permissions) {
+                setPermissions({ ...BASE_PACKAGE_DEFAULTS });
+                setRole('USER');
+            }
         } finally {
             setLoading(false);
         }
