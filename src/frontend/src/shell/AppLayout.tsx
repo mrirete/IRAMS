@@ -6,9 +6,8 @@ import { useRelantern } from '../eam/contexts/RelanternContext';
 import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
-// RelanternCoPilot statically pulled in geminiService (@google/genai, ~130 KB gz)
-// on every page. Lazy-load it so that AI chunk stays off the critical path; its
-// floating button just appears a beat after first paint.
+// RelanternCoPilot + geminiService now dynamically import @google/genai
+// (~130 KB gz) on first AI use, so the chunk is fully off the critical path.
 const RelanternCoPilot = lazy(() => import('../components/shell/RelanternCoPilot').then(m => ({ default: m.RelanternCoPilot })));
 const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
 const DevicePreviewer = lazy(() => import('../components/dev/DevicePreviewer').then(m => ({ default: m.DevicePreviewer })));

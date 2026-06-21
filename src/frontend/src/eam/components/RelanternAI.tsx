@@ -147,11 +147,13 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
 
   useEffect(() => {
     if (isOpen && !useProxy && !chatSessionRef.current) {
-      try {
-        chatSessionRef.current = createRelanternChat();
-      } catch (err) {
-        console.error('[ReliabilitySpecialist] Failed to create chat session:', err);
-      }
+      (async () => {
+        try {
+          chatSessionRef.current = await createRelanternChat();
+        } catch (err) {
+          console.error('[ReliabilitySpecialist] Failed to create chat session:', err);
+        }
+      })();
     }
     if (isOpen && contextData) {
       if (useProxy) {
@@ -203,7 +205,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
       } else {
         // Direct Gemini SDK fallback (dev mode)
         if (!chatSessionRef.current) {
-          chatSessionRef.current = createRelanternChat();
+          chatSessionRef.current = await createRelanternChat();
         }
         const result = await chatSessionRef.current.sendMessage({ message: messageText });
         responseText = typeof result?.text === 'string' ? result.text : (result?.text?.() || 'No response received.');

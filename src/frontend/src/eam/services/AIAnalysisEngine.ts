@@ -6,8 +6,8 @@
  *
  * SECURITY: In production, ALL AI calls route through the backend proxy
  * (VITE_AI_PROXY_URL). The direct Gemini client is a DEV-ONLY fallback.
+ * @google/genai is loaded lazily via dynamic import() — zero cost if proxy is used.
  */
-import { GoogleGenAI, type GenerateContentResponse } from '@google/genai';
 import { RELANTERN_SYSTEM_INSTRUCTION } from '../constants';
 import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
 
@@ -17,15 +17,24 @@ import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
 const _devApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 const _proxyConfigured = !!import.meta.env.VITE_AI_PROXY_URL;
 
-// Only create the direct client in dev mode (no proxy configured)
-const ai = (!_proxyConfigured && _devApiKey) ? new GoogleGenAI({ apiKey: _devApiKey }) : null;
+// Cached module + client instance — populated on first AI use
+let _genaiModule: typeof import('@google/genai') | null = null;
+let _ai: any = null;
 
-if (ai && !_proxyConfigured) {
+const getAI = async () => {
+  if (!_ai && !_proxyConfigured && _devApiKey) {
+    if (!_genaiModule) {
+      _genaiModule = await import('@google/genai');
+    }
+    const { GoogleGenAI } = _genaiModule;
     console.warn(
         '[AIAnalysisEngine] ⚠️ Using DIRECT Gemini client (dev mode). ' +
         'For production, set VITE_AI_PROXY_URL to route through the backend proxy.'
     );
-}
+    _ai = new GoogleGenAI({ apiKey: _devApiKey });
+  }
+  return _ai;
+};
 
 // ─── Response Types ─────────────────────────────────────────
 
@@ -282,6 +291,7 @@ async function callGemini(prompt: string, temperature: number = 0.3): Promise<st
             const msg = proxyError instanceof Error ? proxyError.message : String(proxyError);
             console.warn('[AIAnalysisEngine] Proxy call failed, falling back to direct:', msg);
             // If proxy fails AND we have a direct API key, fall through
+            const ai = await getAI();
             if (!ai) {
                 return JSON.stringify({ error: msg });
             }
@@ -289,11 +299,12 @@ async function callGemini(prompt: string, temperature: number = 0.3): Promise<st
     }
 
     // ── Path 2: Direct Gemini Client (development/fallback) ──
+    const ai = await getAI();
     if (!ai) return JSON.stringify({ error: 'AI not configured. Set VITE_AI_PROXY_URL or VITE_GEMINI_API_KEY in .env' });
     try {
         const sysInstruction = (RELANTERN_SYSTEM_INSTRUCTION || '') +
             '\n\nIMPORTANT: Always respond with valid JSON only. No markdown, no code fences, just raw JSON.';
-        const response: GenerateContentResponse = await ai.models.generateContent({
+        const response = await ai.models.generateContent({
             model: 'gemini-2.0-flash',
             contents: prompt,
             config: {
