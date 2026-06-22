@@ -89,6 +89,8 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [critFilter, setCritFilter] = useState<Set<string>>(new Set());
+    const [showFilter, setShowFilter] = useState(false);
     const [activeTab, setActiveTab] = useState<TabId>('details');
     const [aiContextForAsset, setAiContextForAsset] = useState<string>('');
 
@@ -259,11 +261,14 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
     };
 
     const treeData = useMemo(() => {
-        if (searchTerm) {
-            return assets.filter(a =>
-                a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                a.tag.toLowerCase().includes(searchTerm.toLowerCase())
-            ).map(a => ({ ...a, children: [], depth: 0, isLastChild: false, ancestorLastFlags: [] }));
+        const hasCrit = critFilter.size > 0;
+        if (searchTerm || hasCrit) {
+            const term = searchTerm.toLowerCase();
+            return assets.filter(a => {
+                const matchSearch = !searchTerm || a.name.toLowerCase().includes(term) || a.tag.toLowerCase().includes(term);
+                const matchCrit = !hasCrit || critFilter.has((a.criticality as string) || '');
+                return matchSearch && matchCrit;
+            }).map(a => ({ ...a, children: [], depth: 0, isLastChild: false, ancestorLastFlags: [] }));
         }
 
         const buildTree = (parentId: string | null | undefined, depth: number): TreeNode[] => {
@@ -293,7 +298,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
 
         const roots = buildTree(null, 0);
         return flatten(roots);
-    }, [assets, searchTerm, expandedIds]);
+    }, [assets, searchTerm, critFilter, expandedIds]);
 
 
     const handleAddReadingDef = (assetId: string, typeCode: string) => {
@@ -1068,9 +1073,38 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         </div>
                     )}
 
-                    <button className="p-2 border border-slate-300 rounded-lg bg-white text-slate-600 hover:bg-slate-50">
-                        <Filter size={18} />
-                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowFilter(s => !s)}
+                            className={`p-2 border rounded-lg transition-colors ${critFilter.size > 0 ? 'border-primary-400 bg-primary-50 text-primary-600' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}
+                            title="Filter by criticality"
+                        >
+                            <Filter size={18} />
+                        </button>
+                        {showFilter && (
+                            <>
+                                <div className="fixed inset-0 z-40" onClick={() => setShowFilter(false)} />
+                                <div className="absolute right-0 top-full mt-1 z-50 w-44 bg-white border border-slate-200 rounded-lg shadow-xl p-2">
+                                    <div className="text-[11px] font-semibold text-slate-500 px-1.5 pb-1">Criticality</div>
+                                    {['A', 'B', 'C'].map(c => (
+                                        <label key={c} className="flex items-center gap-2 px-1.5 py-1.5 rounded hover:bg-slate-50 cursor-pointer text-sm">
+                                            <input
+                                                type="checkbox"
+                                                checked={critFilter.has(c)}
+                                                onChange={() => setCritFilter(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; })}
+                                                className="rounded border-slate-300 w-4 h-4"
+                                            />
+                                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${c === 'A' ? 'bg-red-500' : c === 'B' ? 'bg-orange-500' : 'bg-blue-500'}`}>{c}</span>
+                                            <span className="text-slate-600">Criticality {c}</span>
+                                        </label>
+                                    ))}
+                                    {critFilter.size > 0 && (
+                                        <button onClick={() => setCritFilter(new Set())} className="w-full mt-1 text-xs text-slate-500 hover:text-slate-700 py-1 border-t border-slate-100">Clear filter</button>
+                                    )}
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
 
                 {/* ─── Card-Based Hierarchy View with Tree Connector Lines ─── */}
