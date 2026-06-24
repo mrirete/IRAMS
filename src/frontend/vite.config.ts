@@ -21,6 +21,15 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      // ── RETIRE the service worker ──────────────────────────────────────────
+      // The PWA SW caused repeated stale-cache pain (white screens, login loops,
+      // stale builds, "click → must refresh"). selfDestroying generates a SW that
+      // unregisters itself and clears all caches on each client's next visit, so
+      // every client is cleaned up and the app is then served fresh from Vercel's
+      // CDN with no SW. (Drops offline/precache — a worthwhile trade under heavy
+      // active deployment.) The manifest/workbox config below is ignored while
+      // selfDestroying is on, kept only so it's easy to re-enable later.
+      selfDestroying: true,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
