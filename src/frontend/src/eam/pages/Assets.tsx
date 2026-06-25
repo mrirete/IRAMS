@@ -1561,22 +1561,21 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
 
                         {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}
                         {canEdit && (
-                            <div className="sm:hidden mobile-detail-footer">
+                            <div className="sm:hidden mobile-detail-footer justify-end">
+                                <button
+                                    onClick={() => setSelectedAsset(null)}
+                                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-200"
+                                >
+                                    Close
+                                </button>
                                 <Button
                                     onClick={handleSave}
                                     loading={saving}
-                                    size="lg"
-                                    fullWidth
+                                    size="md"
                                     leftIcon={<Save size={16} />}
                                 >
                                     {saving ? 'Saving...' : 'Save Changes'}
                                 </Button>
-                                <button
-                                    onClick={() => setSelectedAsset(null)}
-                                    className="px-4 py-3 bg-slate-100 text-slate-700 rounded-xl text-sm font-semibold transition-colors hover:bg-slate-200"
-                                >
-                                    Close
-                                </button>
                             </div>
                         )}
                     </div>

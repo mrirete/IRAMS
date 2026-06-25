@@ -1739,6 +1739,7 @@ Respond as JSON:
         }
 
         // Direct path: use Gemini SDK with inline image parts
+        const ai = await getAI();
         if (!ai) {
             return { defectsDetected: [], overallCondition: 'fair', recommendedFollowUp: 'AI not configured.', aiConfidence: 0 };
         }

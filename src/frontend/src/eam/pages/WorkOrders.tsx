@@ -1452,22 +1452,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             </div>
 
             {/* ═══ Sticky Bottom Action Bar ═══ */}
-            <div className="mobile-detail-footer">
-                <Button
-                    onClick={handleSave}
-                    loading={isSaving}
-                    size="md"
-                    fullWidth
-                    leftIcon={<Download size={14} />}
-                >
-                    Save
-                </Button>
+            <div className="mobile-detail-footer justify-end">
                 {localJob.status !== WorkOrderStatus.CLOSED && localJob.status !== WorkOrderStatus.TECO && (
                     <Button
                         onClick={() => setShowCompleteModal(true)}
                         variant="secondary"
                         size="md"
-                        fullWidth
                         leftIcon={<CheckCircle size={14} />}
                         className="border-2 border-primary-600 text-primary-600 hover:bg-primary-50"
                     >
@@ -1479,13 +1469,20 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         onClick={() => setShowFinancialCloseModal(true)}
                         variant="secondary"
                         size="md"
-                        fullWidth
                         leftIcon={<Lock size={14} />}
                         className="border-2"
                     >
                         Close
                     </Button>
                 )}
+                <Button
+                    onClick={handleSave}
+                    loading={isSaving}
+                    size="md"
+                    leftIcon={<Download size={14} />}
+                >
+                    Save
+                </Button>
             </div>
 
             {/* Completion Modal */}
