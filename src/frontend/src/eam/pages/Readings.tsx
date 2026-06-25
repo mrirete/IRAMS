@@ -651,7 +651,7 @@ const TrendAnalysis: React.FC<{
             </div>
 
             {/* History Table */}
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
                 <div className="p-4 bg-slate-50 border-b border-slate-200 font-bold text-slate-700 text-sm flex justify-between items-center">
                     <span>Reading History</span>
                     <button className="text-xs bg-white border border-slate-300 px-3 py-1 rounded hover:bg-slate-100 flex items-center gap-1">
