@@ -3344,6 +3344,10 @@ const TasksTab: React.FC<{
     const pct = tasks.length > 0 ? Math.round((completed / tasks.length) * 100) : 0;
     const allDone = completed === tasks.length && tasks.length > 0;
 
+    // Desktop master-detail: always have a step selected (default to first).
+    // Mobile accordion still reads expandedTaskId directly (null = all collapsed).
+    const selectedTask = tasks.find(t => t.id === expandedTaskId) || tasks[0];
+
     return (
         <div className="animate-in fade-in duration-300 space-y-0">
             {/* Header Bar */}
@@ -3386,8 +3390,101 @@ const TasksTab: React.FC<{
                 </div>
             </div>
 
-            {/* Stacked Accordion */}
-            <div className="border-x border-b border-slate-200 rounded-b-lg overflow-hidden bg-slate-50/50">
+            {/* ═══════════ Desktop: Master–Detail (lg+) ═══════════ */}
+            <div className="hidden lg:grid lg:grid-cols-[300px_minmax(0,1fr)] border-x border-b border-slate-200 rounded-b-lg overflow-hidden bg-white lg:h-[calc(100vh-270px)] lg:min-h-[460px]">
+                {/* Left rail: step list */}
+                <aside className="border-r border-slate-200 bg-slate-50/50 overflow-y-auto">
+                    {tasks.map((task, index) => {
+                        const isSelected = selectedTask?.id === task.id;
+                        const tLabor = (job.labor || []).filter(l => l.jobTaskId === task.id);
+                        const tParts = (job.inventory || []).filter(i => i.jobTaskId === task.id);
+                        const laborCount = tLabor.reduce((s, l) => s + (l.headcount || 1), 0);
+                        const partsCount = tParts.length;
+                        const hasWarning = (task.estStartDate && job.dateDueStart && task.estStartDate < job.dateDueStart) ||
+                                           (task.estFinishDate && job.dueDate && task.estFinishDate > job.dueDate);
+                        return (
+                            <div
+                                key={task.id}
+                                onClick={() => setExpandedTaskId(task.id)}
+                                className={`group px-3 py-2.5 cursor-pointer border-b border-slate-100 border-l-[3px] transition-colors ${
+                                    isSelected ? 'bg-blue-50 border-l-blue-500' : 'bg-white hover:bg-slate-50 border-l-transparent'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className={`font-mono text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${isSelected ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>{task.sequence}</span>
+                                    <span className={`flex-1 truncate text-sm font-medium ${task.description ? 'text-slate-800' : 'text-slate-400 italic'}`}>{task.description || 'Untitled step'}</span>
+                                    <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                        task.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                                        task.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700' :
+                                        'bg-slate-100 text-slate-500'
+                                    }`}>{task.status === 'IN_PROGRESS' ? 'WIP' : task.status === 'COMPLETED' ? 'DONE' : 'PEND'}</span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-1 pl-[34px] text-[10px] text-slate-400">
+                                    <span>{task.estHours || 0}h</span>
+                                    {laborCount > 0 && <span className="flex items-center gap-0.5"><Users size={9} />{laborCount}</span>}
+                                    {partsCount > 0 && <span className="flex items-center gap-0.5"><Box size={9} />{partsCount}</span>}
+                                    {(task.instructions?.length || 0) > 0 && <span className="flex items-center gap-0.5"><ClipboardList size={9} />{task.instructions?.length}</span>}
+                                    {hasWarning && <AlertTriangle size={10} className="text-amber-500" />}
+                                    <span className="flex-1" />
+                                    <span className="hidden group-hover:flex items-center gap-0.5">
+                                        <button onClick={(e) => { e.stopPropagation(); moveTask(index, 'up'); }} disabled={index === 0} className="p-0.5 hover:bg-slate-200 rounded text-slate-400 disabled:opacity-30"><MoveUp size={11} /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); moveTask(index, 'down'); }} disabled={index === tasks.length - 1} className="p-0.5 hover:bg-slate-200 rounded text-slate-400 disabled:opacity-30"><MoveDown size={11} /></button>
+                                    </span>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {tasks.length === 0 && (
+                        <div className="text-center py-12 px-4 text-slate-400">
+                            <ClipboardList size={32} className="mx-auto mb-2 opacity-20" />
+                            <p className="text-xs font-medium">No steps yet</p>
+                            <button onClick={addTask} className="mt-3 text-xs text-primary-600 font-semibold hover:underline">+ Add first step</button>
+                        </div>
+                    )}
+                </aside>
+                {/* Right pane: editor for the selected step */}
+                <section className="bg-white min-w-0 flex flex-col overflow-hidden">
+                    {selectedTask ? (
+                        <>
+                            <div className="px-4 py-2.5 border-b border-slate-200 flex items-center gap-3 bg-white flex-shrink-0">
+                                <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-700 flex-shrink-0">{selectedTask.sequence}</span>
+                                <input
+                                    type="text"
+                                    value={selectedTask.description}
+                                    onChange={(e) => updateTask(selectedTask.id, { description: e.target.value })}
+                                    className="flex-1 min-w-0 font-semibold text-base text-slate-900 bg-transparent border-none p-0 focus:ring-0 focus:outline-none placeholder:text-slate-300"
+                                    placeholder="Enter task step name..."
+                                />
+                                <button onClick={() => deleteTask(selectedTask.id)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0" title="Delete step"><Trash2 size={15} /></button>
+                            </div>
+                            <div className="flex-1 min-h-0">
+                                <TaskEditor
+                                    task={selectedTask}
+                                    onChange={(updates) => updateTask(selectedTask.id, updates)}
+                                    onDelete={() => deleteTask(selectedTask.id)}
+                                    onUpdateJob={onUpdateJob}
+                                    jobContext={job}
+                                    availableOrgUnits={availableOrgUnits}
+                                    availableUsers={availableUsers}
+                                    contacts={contacts}
+                                    dictionaries={dictionaries}
+                                    editorTab={editorTab}
+                                    onTabChange={setEditorTab}
+                                />
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8">
+                            <ClipboardList size={40} className="mb-3 opacity-20" />
+                            <p className="text-sm font-medium">Select a step to plan</p>
+                            <p className="text-xs mt-1">Choose a step on the left, or add a new one.</p>
+                        </div>
+                    )}
+                </section>
+            </div>
+
+            {/* ═══════════ Mobile: Stacked Accordion (< lg) ═══════════ */}
+            <div className="lg:hidden border-x border-b border-slate-200 rounded-b-lg overflow-hidden bg-slate-50/50">
                 {tasks.map((task, index) => {
                     const isExpanded = expandedTaskId === task.id;
                     const tLabor = (job.labor || []).filter(l => l.jobTaskId === task.id);
