@@ -2529,7 +2529,7 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
                                     onClick={() => !isCurrent && onSelect(bc)}
                                     disabled={isCurrent}
                                     className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-all ${isCurrent
-                                        ? 'bg-slate-800 text-white font-semibold shadow-sm'
+                                        ? 'bg-primary-50 text-primary-700 font-semibold ring-1 ring-primary-200'
                                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-800 cursor-pointer'
                                     }`}
                                 >
@@ -2544,15 +2544,15 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
 
             {/* ── Current Asset Identity ── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-4 bg-gradient-to-r from-slate-800 to-slate-700">
+                <div className="p-4 bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
                     <div className="flex items-start justify-between">
                         <div>
                             <div className="flex items-center gap-2 mb-1">
                                 <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${currentLevel.color}`}>{currentLevel.tag}</span>
-                                <span className="text-xs text-slate-300 font-medium">{currentLevel.label}</span>
+                                <span className="text-xs text-slate-500 font-medium">{currentLevel.label}</span>
                             </div>
-                            <h3 className="text-lg font-bold text-white">{asset.tag}</h3>
-                            <p className="text-sm text-slate-300 mt-0.5">{asset.name}</p>
+                            <h3 className="text-lg font-bold text-slate-800">{asset.tag}</h3>
+                            <p className="text-sm text-slate-500 mt-0.5">{asset.name}</p>
                         </div>
                         <div className="flex flex-col items-end gap-2">
                             {asset.criticality && (
@@ -2561,7 +2561,7 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
                                     Crit {asset.criticality} — {getCrit(asset.criticality).label}
                                 </div>
                             )}
-                            <div className="flex items-center gap-1 text-xs text-slate-300">
+                            <div className="flex items-center gap-1 text-xs text-slate-500">
                                 {statusIcon(asset.status)}
                                 <span>{asset.status}</span>
                             </div>
@@ -2570,13 +2570,13 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
                     {/* Health bar */}
                     <div className="mt-3 flex items-center gap-2">
                         <span className="text-[10px] text-slate-400 uppercase font-semibold">Health</span>
-                        <div className="flex-1 h-1.5 bg-slate-600 rounded-full overflow-hidden">
+                        <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
                             <div
-                                className={`h-full rounded-full transition-all ${asset.healthScore >= 80 ? 'bg-emerald-400' : asset.healthScore >= 50 ? 'bg-amber-400' : 'bg-red-400'}`}
+                                className={`h-full rounded-full transition-all ${asset.healthScore >= 80 ? 'bg-emerald-500' : asset.healthScore >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
                                 style={{ width: `${asset.healthScore}%` }}
                             />
                         </div>
-                        <span className="text-xs text-white font-semibold">{asset.healthScore}%</span>
+                        <span className="text-xs text-slate-800 font-semibold">{asset.healthScore}%</span>
                     </div>
                 </div>
 
