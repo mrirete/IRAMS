@@ -1424,7 +1424,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-3 md:p-4 bg-slate-50/50">
-                <div className="max-w-7xl mx-auto">
+                <div className="w-full">
                     {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
                     {activeTab === 'tasks' && (
                         <TasksTab
