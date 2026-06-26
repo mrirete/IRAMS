@@ -2357,7 +2357,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                             </div>
 
                             <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Failure Cause <span className="text-slate-400 font-normal">(Optional)</span></label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Failure Cause <span className="text-slate-400 font-normal">(Optional)</span></label>
                                 <SearchableSelect
                                     value={job.failureData?.failureCause || ''}
                                     onChange={handleFailureCauseChange}
@@ -2369,7 +2369,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                             </div>
 
                             <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Action Taken <span className="text-slate-400 font-normal">(Optional)</span></label>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Action Taken <span className="text-slate-400 font-normal">(Optional)</span></label>
                                 <textarea
                                     value={localActionTaken}
                                     onChange={(e) => setLocalActionTaken(e.target.value)}
@@ -2420,7 +2420,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                     <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Local Effect <span className="text-slate-400 font-normal">(Equipment)</span></label>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Local Effect <span className="text-slate-400 font-normal">(Equipment)</span></label>
                                         <textarea
                                             value={localLocalImpact}
                                             onChange={(e) => setLocalLocalImpact(e.target.value)}
@@ -2430,7 +2430,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Plant-Wide Effect <span className="text-slate-400 font-normal">(Production/Safety)</span></label>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Plant-Wide Effect <span className="text-slate-400 font-normal">(Production/Safety)</span></label>
                                         <textarea
                                             value={localPlantWideImpact}
                                             onChange={(e) => setLocalPlantWideImpact(e.target.value)}
@@ -2462,7 +2462,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                 : 'Complete this work order and optionally raise a follow-up for additional corrective actions, secondary defects, or related remediation work.'}
                         </p>
                         <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Follow-Up Description <span className="text-red-500">*</span></label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Follow-Up Description <span className="text-red-500">*</span></label>
                             <textarea
                                 value={followUpDescription}
                                 onChange={(e) => onFollowUpDescriptionChange?.(e.target.value)}
@@ -2651,20 +2651,20 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Asset</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Asset</label>
                         <div className="flex gap-1.5">
                             <input type="text"
                                 defaultValue={job.assetCode ? `${job.assetCode} - ${job.assetName} ` : job.assetName}
-                                className="w-full text-xs border border-slate-300 rounded bg-slate-50 px-2 py-1.5 text-slate-700 font-medium"
+                                className="w-full text-sm border border-slate-300 rounded-lg bg-slate-50 px-3 py-2.5 text-slate-700 font-medium"
                                 readOnly
                             />
                             <button className="p-1.5 bg-slate-100 border border-slate-300 rounded text-slate-600 hover:bg-slate-200 flex-shrink-0"><Folder size={14} /></button>
                         </div>
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Status</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Status</label>
                         <select
-                            className="w-full text-xs border border-slate-300 rounded bg-white px-2 py-1.5"
+                            className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
                             value={job.status}
                             onChange={(e) => onUpdate({ status: e.target.value as any })}
                         >
@@ -2679,8 +2679,8 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
                     {/* Hierarchy Path */}
                     <div className="md:col-span-2">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Asset Hierarchy Path</label>
-                        <div className="flex items-center gap-1 text-[11px] text-slate-600 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 overflow-x-auto">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Asset Hierarchy Path</label>
+                        <div className="flex items-center gap-1 text-[11px] text-slate-600 bg-slate-50 px-3 py-2.5 rounded border border-slate-200 overflow-x-auto">
                             {job.assetPath?.map((p, i) => (
                                 <React.Fragment key={i}>
                                     <span className="whitespace-nowrap">{p}</span>
@@ -2692,9 +2692,9 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                     </div>
 
                     <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Work Type {job.recurringWorkId && <Lock size={10} className="inline text-slate-400 ml-1" />}</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Work Type {job.recurringWorkId && <Lock size={10} className="inline text-slate-400 ml-1" />}</label>
                         <select
-                            className={`w-full text-xs border rounded px-2 py-1.5 ${job.recurringWorkId ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed' : 'border-slate-300 bg-white'}`}
+                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${job.recurringWorkId ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed' : 'border-slate-300 bg-white'}`}
                             value={job.type}
                             onChange={(e) => onUpdate({ type: e.target.value as any })}
                             disabled={!!job.recurringWorkId}
@@ -2709,9 +2709,9 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                         </select>
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Scope</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Scope</label>
                         <select
-                            className={`w-full text-xs border rounded px-2 py-1.5 font-medium ${job.scope === 'PROJECT' ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white border-slate-300'
+                            className={`w-full text-sm border rounded-lg px-3 py-2.5 font-medium ${job.scope === 'PROJECT' ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-white border-slate-300'
                                 }`}
                             value={job.scope || 'STANDARD'}
                             onChange={(e) => onUpdate({ scope: e.target.value as WorkOrderScope })}
@@ -2721,9 +2721,9 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                         </select>
                     </div>
                     <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Priority</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Priority</label>
                         <select
-                            className="w-full text-xs border border-slate-300 rounded bg-white px-2 py-1.5"
+                            className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
                             value={job.priority}
                             onChange={(e) => onUpdate({ priority: e.target.value as any })}
                         >
@@ -2737,9 +2737,9 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                     </div>
 
                     <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cost Centre</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Cost Centre</label>
                         <select
-                            className="w-full text-xs border border-slate-300 rounded bg-white px-2 py-1.5"
+                            className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
                             value={job.costCenter || ''}
                             onChange={(e) => onUpdate({ costCenter: e.target.value })}
                         >
@@ -2765,7 +2765,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                     </div>
 
                     <div className="md:col-span-2">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Safety Notes (Auto-Populated)</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Safety Notes (Auto-Populated)</label>
                         <div className="px-2.5 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex gap-1.5">
                             <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
                             <p>CAUTION: H2S Risk in area. Personal Gas Monitor Required.</p>
@@ -2773,23 +2773,23 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                     </div>
 
                     <div className="md:col-span-2">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Parent Work Order</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Parent Work Order</label>
                         <div className="flex gap-1.5">
                             <input
                                 type="text"
                                 defaultValue={job.parentWoId || ''}
                                 placeholder="Link to Parent WO..."
-                                className="w-full text-xs border border-slate-300 rounded bg-white px-2 py-1.5"
+                                className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
                             />
                             <button className="p-1.5 bg-slate-100 border border-slate-300 rounded text-slate-600 hover:bg-slate-200 flex-shrink-0"><Folder size={14} /></button>
                         </div>
                     </div>
 
                     <div className="md:col-span-2">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Description</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Description</label>
                         <textarea
                             defaultValue={job.description}
-                            className="w-full h-24 md:h-28 text-xs border border-slate-300 rounded bg-white px-2 py-1.5 resize-none focus:ring-2 focus:ring-primary-500 outline-none"
+                            className="w-full h-24 md:h-28 text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5 resize-none focus:ring-2 focus:ring-primary-500 outline-none"
                             placeholder="Detailed job requirements, scope of work, and instructions..."
                         />
                     </div>
@@ -2878,43 +2878,43 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Due Date</label>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Due Date</label>
                                     <input
                                         key={`due-std-${job.id}`}
                                         type="date"
                                         value={job.dueDate ? formatDateForInput(job.dueDate) : ''}
                                         onChange={(e) => handleScheduleChange('dueDate', e.target.value)}
-                                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white font-medium"
+                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white font-medium"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Duration (Hrs)</label>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Est. Duration (Hrs)</label>
                                     <input
                                         type="number"
                                         value={job.estDuration || ''}
                                         onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })}
-                                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white"
+                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
                                         placeholder="0"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Downtime (Hrs)</label>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Est. Downtime (Hrs)</label>
                                     <input
                                         type="number"
                                         value={job.estDowntime || ''}
                                         onChange={(e) => onUpdate({ estDowntime: parseFloat(e.target.value) })}
-                                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white"
+                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
                                         placeholder="0"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Date Completed</label>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Date Completed</label>
                                     <input
                                         key={`fin-std-${job.id}`}
                                         type="date"
                                         value={job.dateFinished ? formatDateForInput(job.dateFinished) : ''}
                                         onChange={(e) => onUpdate({ dateFinished: e.target.value })}
-                                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white"
+                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
                                     />
                                 </div>
                             </div>
@@ -2945,7 +2945,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                         type="date"
                                         value={job.dateDueStart ? formatDateForInput(job.dateDueStart) : ''}
                                         onChange={(e) => handleScheduleChange('dateDueStart', e.target.value)}
-                                        className="w-full text-xs border border-blue-200 rounded px-2 py-1.5 bg-blue-50/50 font-medium"
+                                        className="w-full text-sm border border-blue-200 rounded-lg px-3 py-2.5 bg-blue-50/50 font-medium"
                                     />
                                     {(job.timeDueStart) ? (
                                         <div className="flex gap-1 items-center">
@@ -2953,7 +2953,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                                 type="time"
                                                 value={job.timeDueStart || ''}
                                                 onChange={(e) => handleScheduleChange('timeDueStart', e.target.value)}
-                                                className="flex-1 text-xs border border-blue-200 rounded px-2 py-1 bg-blue-50/50"
+                                                className="flex-1 text-sm border border-blue-200 rounded-lg px-2 py-1 bg-blue-50/50"
                                             />
                                             <button
                                                 onClick={() => handleScheduleChange('timeDueStart', '')}
@@ -2976,13 +2976,13 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                             type="date"
                                             value={job.dateStarted ? formatDateForInput(job.dateStarted) : ''}
                                             onChange={(e) => onUpdate({ dateStarted: e.target.value })}
-                                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white"
+                                            className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
                                         />
                                         <input
                                             type="time"
                                             value={job.timeStarted || ''}
                                             onChange={(e) => onUpdate({ timeStarted: e.target.value })}
-                                            className="w-20 text-xs border border-slate-300 rounded px-1.5 py-1.5 bg-white"
+                                            className="w-20 text-sm border border-slate-300 rounded-lg px-1.5 py-1.5 bg-white"
                                         />
                                     </div>
                                 </div>
@@ -2996,7 +2996,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                         type="date"
                                         value={job.dueDate ? formatDateForInput(job.dueDate) : ''}
                                         onChange={(e) => handleScheduleChange('dueDate', e.target.value)}
-                                        className="w-full text-xs border border-blue-200 rounded px-2 py-1.5 bg-blue-50/50 font-medium"
+                                        className="w-full text-sm border border-blue-200 rounded-lg px-3 py-2.5 bg-blue-50/50 font-medium"
                                     />
                                     {(job.timeDueFinish) ? (
                                         <div className="flex gap-1 items-center">
@@ -3004,7 +3004,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                                 type="time"
                                                 value={job.timeDueFinish || ''}
                                                 onChange={(e) => handleScheduleChange('timeDueFinish', e.target.value)}
-                                                className="flex-1 text-xs border border-blue-200 rounded px-2 py-1 bg-blue-50/50"
+                                                className="flex-1 text-sm border border-blue-200 rounded-lg px-2 py-1 bg-blue-50/50"
                                             />
                                             <button
                                                 onClick={() => handleScheduleChange('timeDueFinish', '')}
@@ -3027,13 +3027,13 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                             type="date"
                                             value={job.dateFinished ? formatDateForInput(job.dateFinished) : ''}
                                             onChange={(e) => onUpdate({ dateFinished: e.target.value })}
-                                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white"
+                                            className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
                                         />
                                         <input
                                             type="time"
                                             value={job.timeFinished || ''}
                                             onChange={(e) => onUpdate({ timeFinished: e.target.value })}
-                                            className="w-20 text-xs border border-slate-300 rounded px-1.5 py-1.5 bg-white"
+                                            className="w-20 text-sm border border-slate-300 rounded-lg px-1.5 py-1.5 bg-white"
                                         />
                                     </div>
                                 </div>
@@ -3044,21 +3044,21 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             {/* Estimates */}
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <span className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Duration (Hrs)</span>
+                                    <span className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Est. Duration (Hrs)</span>
                                     <input
                                         type="number"
                                         value={job.estDuration || ''}
                                         onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })}
-                                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5"
+                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5"
                                     />
                                 </div>
                                 <div>
-                                    <span className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Est. Downtime (Hrs)</span>
+                                    <span className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Est. Downtime (Hrs)</span>
                                     <input
                                         type="number"
                                         value={job.estDowntime || ''}
                                         onChange={(e) => onUpdate({ estDowntime: parseFloat(e.target.value) })}
-                                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5"
+                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5"
                                     />
                                 </div>
                             </div>
@@ -3253,9 +3253,9 @@ const MetricsTab: React.FC<{ job: WorkOrder, users: any[], contacts: any[] }> = 
                 </div>
 
                 <div className="mt-4 pt-3 border-t border-slate-100">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Notes</label>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Notes</label>
                     <textarea
-                        className="w-full h-20 text-xs border border-slate-300 rounded-md bg-white p-2 resize-none focus:ring-1 focus:ring-primary-500"
+                        className="w-full h-20 text-sm border border-slate-300 rounded-lg bg-white p-2 resize-none focus:ring-1 focus:ring-primary-500"
                         placeholder="..."
                     />
                 </div>
