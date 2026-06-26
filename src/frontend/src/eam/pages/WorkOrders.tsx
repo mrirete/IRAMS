@@ -2594,9 +2594,133 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     );
 };
 
+// ─── Asset Picker (SAP search-help / MaintainX-style): search assets, color-coded by node type ───
+const AssetPickerModal: React.FC<{
+    open: boolean;
+    assets: any[];
+    currentAssetId?: string;
+    onClose: () => void;
+    onSelect: (asset: any, path: string[]) => void;
+}> = ({ open, assets, currentAssetId, onClose, onSelect }) => {
+    const [search, setSearch] = useState('');
+    if (!open) return null;
+    const isLoc = (a: any) =>
+        a?.isLocation === true ||
+        /location/i.test(String(a?.assetType || a?.type || '')) ||
+        String(a?.assetCategory || a?.asset_category || '').toLowerCase() === 'location';
+    const buildPath = (asset: any): string[] => {
+        const path: string[] = [];
+        let cur = asset?.parentId ? assets.find(a => a.id === asset.parentId) : null;
+        let guard = 0;
+        while (cur && guard++ < 25) {
+            path.unshift(cur.tag || cur.name);
+            cur = cur.parentId ? assets.find(a => a.id === cur.parentId) : null;
+        }
+        return path;
+    };
+    const q = search.trim().toLowerCase();
+    const filtered = assets
+        .filter(a => !q || String(a.tag || '').toLowerCase().includes(q) || String(a.name || '').toLowerCase().includes(q))
+        .slice(0, 300);
+    return (
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><Package size={16} className="text-blue-600" /> Select Asset</h3>
+                    <button onClick={onClose}><X size={18} className="text-slate-400 hover:text-slate-600" /></button>
+                </div>
+                <div className="p-3 border-b border-slate-100">
+                    <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by tag or name…" className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-primary-500 outline-none" />
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                    {filtered.length === 0 ? (
+                        <div className="p-10 text-center text-slate-400 text-sm">No assets found</div>
+                    ) : filtered.map(a => {
+                        const loc = isLoc(a);
+                        const path = buildPath(a);
+                        return (
+                            <button key={a.id} onClick={() => { onSelect(a, path); onClose(); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-left border-b border-slate-100 hover:bg-slate-50 transition-colors ${a.id === currentAssetId ? 'bg-blue-50' : ''}`}>
+                                <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${loc ? 'bg-emerald-100 text-emerald-600' : 'bg-blue-100 text-blue-600'}`}>{loc ? <MapPin size={14} /> : <Package size={14} />}</span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block text-sm font-semibold text-slate-800 truncate">{a.tag}</span>
+                                    <span className="block text-xs text-slate-500 truncate">{path.length > 0 ? `${path.join(' › ')} › ` : ''}{a.name}</span>
+                                </span>
+                                {a.id === currentAssetId && <CheckCircle size={15} className="text-blue-500 flex-shrink-0" />}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// ─── Parent Work Order Picker (SAP superior-order style) ───
+const ParentWoPickerModal: React.FC<{
+    open: boolean;
+    workOrders: any[];
+    excludeId?: string;
+    currentId?: string;
+    onClose: () => void;
+    onSelect: (wo: any) => void;
+}> = ({ open, workOrders, excludeId, currentId, onClose, onSelect }) => {
+    const [search, setSearch] = useState('');
+    if (!open) return null;
+    const num = (w: any) => w.woNumber || w.wo_number || w.id;
+    const title = (w: any) => w.title || w.description || '';
+    const q = search.trim().toLowerCase();
+    const filtered = workOrders
+        .filter(w => w.id !== excludeId)
+        .filter(w => !q || String(num(w)).toLowerCase().includes(q) || String(title(w)).toLowerCase().includes(q))
+        .slice(0, 300);
+    return (
+        <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+                <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2"><FileText size={16} className="text-blue-600" /> Select Parent Work Order</h3>
+                    <button onClick={onClose}><X size={18} className="text-slate-400 hover:text-slate-600" /></button>
+                </div>
+                <div className="p-3 border-b border-slate-100">
+                    <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by WO number or title…" className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-primary-500 outline-none" />
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                    {filtered.length === 0 ? (
+                        <div className="p-10 text-center text-slate-400 text-sm">No work orders found</div>
+                    ) : filtered.map(w => (
+                        <button key={w.id} onClick={() => { onSelect(w); onClose(); }} className={`w-full flex items-center gap-3 px-4 py-2.5 text-left border-b border-slate-100 hover:bg-slate-50 transition-colors ${w.id === currentId ? 'bg-blue-50' : ''}`}>
+                            <span className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 bg-blue-100 text-blue-600"><FileText size={14} /></span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-sm font-semibold text-slate-800 truncate">{num(w)}</span>
+                                <span className="block text-xs text-slate-500 truncate">{title(w)}</span>
+                            </span>
+                            {w.id === currentId && <CheckCircle size={15} className="text-blue-500 flex-shrink-0" />}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
 const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
+
+    // ── Asset / Parent-WO pickers (SAP/MaintainX best practice: editable, locked once TECO/CLOSED) ──
+    const isRefLocked = job.status === WorkOrderStatus.CLOSED || job.status === WorkOrderStatus.TECO;
+    const [showAssetPicker, setShowAssetPicker] = useState(false);
+    const [showParentPicker, setShowParentPicker] = useState(false);
+    const [pickAssets, setPickAssets] = useState<any[]>([]);
+    const [pickWOs, setPickWOs] = useState<any[]>([]);
+    useEffect(() => {
+        DatabaseService.getInstance().getAssets().then(a => setPickAssets(a || [])).catch(() => {});
+        DatabaseService.getInstance().getWorkOrders().then(w => setPickWOs((w as any[]) || [])).catch(() => {});
+    }, []);
+    const parentWoLabel = (() => {
+        if (!job.parentWoId) return '';
+        const w = pickWOs.find((x: any) => x.id === job.parentWoId);
+        return w ? (w.woNumber || w.wo_number || job.parentWoId) : job.parentWoId;
+    })();
 
     const handleScheduleChange = (field: keyof WorkOrder, value: string) => {
         const updates: Partial<WorkOrder> = { [field]: value };
@@ -2645,6 +2769,21 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 animate-in fade-in duration-300">
+            <AssetPickerModal
+                open={showAssetPicker}
+                assets={pickAssets}
+                currentAssetId={job.assetId}
+                onClose={() => setShowAssetPicker(false)}
+                onSelect={(asset, path) => onUpdate({ assetId: asset.id, assetCode: asset.tag, assetName: asset.name, assetPath: path })}
+            />
+            <ParentWoPickerModal
+                open={showParentPicker}
+                workOrders={pickWOs}
+                excludeId={job.id}
+                currentId={job.parentWoId}
+                onClose={() => setShowParentPicker(false)}
+                onSelect={(wo) => onUpdate({ parentWoId: wo.id })}
+            />
             {/* Core Info */}
             <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2652,11 +2791,17 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Asset</label>
                         <div className="flex gap-1.5">
                             <input type="text"
-                                defaultValue={job.assetCode ? `${job.assetCode} - ${job.assetName} ` : job.assetName}
+                                value={job.assetCode ? `${job.assetCode} - ${job.assetName}` : (job.assetName || '')}
                                 className="w-full text-sm border border-slate-300 rounded-lg bg-slate-50 px-3 py-2.5 text-slate-700 font-medium"
                                 readOnly
                             />
-                            <button className="p-1.5 bg-slate-100 border border-slate-300 rounded text-slate-600 hover:bg-slate-200 flex-shrink-0"><Folder size={14} /></button>
+                            <button
+                                type="button"
+                                onClick={() => !isRefLocked && setShowAssetPicker(true)}
+                                disabled={isRefLocked}
+                                title={isRefLocked ? 'Asset is locked on completed/closed work orders' : 'Browse & change asset'}
+                                className={`p-1.5 border rounded-lg flex-shrink-0 transition-colors ${isRefLocked ? 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed' : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'}`}
+                            ><Folder size={14} /></button>
                         </div>
                     </div>
                     <div>
@@ -2702,11 +2847,26 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                         <div className="flex gap-1.5">
                             <input
                                 type="text"
-                                defaultValue={job.parentWoId || ''}
-                                placeholder="Link to Parent WO..."
-                                className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
+                                value={parentWoLabel}
+                                readOnly
+                                placeholder="No parent linked"
+                                className="w-full text-sm border border-slate-300 rounded-lg bg-slate-50 px-3 py-2.5"
                             />
-                            <button className="p-1.5 bg-slate-100 border border-slate-300 rounded text-slate-600 hover:bg-slate-200 flex-shrink-0"><Folder size={14} /></button>
+                            {job.parentWoId && !isRefLocked && (
+                                <button
+                                    type="button"
+                                    onClick={() => onUpdate({ parentWoId: '' })}
+                                    title="Clear parent work order"
+                                    className="p-1.5 bg-slate-100 border border-slate-300 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-500 flex-shrink-0 transition-colors"
+                                ><X size={14} /></button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => !isRefLocked && setShowParentPicker(true)}
+                                disabled={isRefLocked}
+                                title={isRefLocked ? 'Locked on completed/closed work orders' : 'Browse & link parent WO'}
+                                className={`p-1.5 border rounded-lg flex-shrink-0 transition-colors ${isRefLocked ? 'bg-slate-50 border-slate-200 text-slate-300 cursor-not-allowed' : 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'}`}
+                            ><Folder size={14} /></button>
                         </div>
                     </div>
 
