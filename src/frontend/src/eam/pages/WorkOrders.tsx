@@ -2675,17 +2675,16 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                         </select>
                     </div>
 
-                    {/* Hierarchy Path */}
+                    {/* Hierarchy Path — color-coded: locations (emerald) › asset (blue), matching the asset tree */}
                     <div className="md:col-span-2">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Asset Hierarchy Path</label>
-                        <div className="flex items-center gap-1 text-[11px] text-slate-600 bg-slate-50 px-3 py-2.5 rounded border border-slate-200 overflow-x-auto">
+                        <div className="flex items-center gap-1 text-[10px] bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 overflow-x-auto">
                             {job.assetPath?.map((p, i) => (
                                 <React.Fragment key={i}>
-                                    <span className="whitespace-nowrap">{p}</span>
-                                    <ChevronRight size={10} className="text-slate-400 flex-shrink-0" />
+                                    <span className="whitespace-nowrap font-semibold text-emerald-600">{p}</span>
+                                    <ChevronRight size={10} className="text-slate-300 flex-shrink-0" />
                                 </React.Fragment>
                             ))}
-                            <span className="font-bold whitespace-nowrap">{job.assetName}</span>
+                            <span className="whitespace-nowrap font-bold text-blue-600">{job.assetName}</span>
                         </div>
                     </div>
 
