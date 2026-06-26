@@ -1423,7 +1423,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             />
 
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 sm:p-3 md:p-4 bg-slate-50/50">
+            <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 pb-32 sm:pb-5 md:pb-6 bg-slate-50/50">
                 <div className="max-w-7xl mx-auto">
                     {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
                     {activeTab === 'tasks' && (
@@ -2644,10 +2644,10 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     };
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 animate-in fade-in duration-300">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 animate-in fade-in duration-300">
             {/* Core Info */}
-            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm space-y-3">
-                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3">General Information</h3>
+            <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-sm text-slate-800 border-b border-slate-100 pb-2.5 mb-1">General Information</h3>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
@@ -2857,8 +2857,8 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             </div>
 
             {/* Scheduling & Progress */}
-            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm space-y-3">
-                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-2">
+            <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+                <h3 className="font-bold text-sm text-slate-800 border-b border-slate-100 pb-2.5 mb-1 flex items-center gap-2">
                     <Clock className="text-blue-600" size={15} /> Scheduling & Progress
                     {job.scope === 'PROJECT' && (
                         <span className="ml-auto text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
