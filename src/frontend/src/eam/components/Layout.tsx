@@ -5,7 +5,6 @@ import { Menu, Search, Bell, User, Bot, HelpCircle, LogOut, ChevronDown, CheckCi
 import { RelanternAI } from './RelanternAI';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
-import { PwaReloadPrompt } from './PwaReloadPrompt';
 import { BottomNav } from './BottomNav';
 import { NetworkStatusBanner } from './NetworkStatusBanner';
 import { PullToRefreshWrapper } from './PullToRefreshWrapper';
@@ -423,7 +422,6 @@ export const Layout: React.FC<LayoutProps> = ({ children, nexusContext, setNexus
           onClose={() => { setAiOpen(false); setNexusContext(undefined); }}
           contextData={nexusContext}
         />
-        <PwaReloadPrompt />
         <BottomNav onOpenSidebar={() => setSidebarOpen(true)} unreadCount={unreadCount} />
         <NetworkStatusBanner />
       </div >

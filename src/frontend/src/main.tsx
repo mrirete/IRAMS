@@ -4,6 +4,31 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 
+// ── One-time service-worker teardown ────────────────────────────────────────
+// The app no longer uses a service worker. Earlier builds shipped a PWA SW set to
+// `selfDestroying` AND re-registered it on every load (useRegisterSW), so each
+// visit did: register → SW unregisters/clears caches/reloads → register again …
+// which is the root cause of the "must refresh twice before the page shows" bug.
+// Here we unregister ANY existing SW and purge its caches exactly once, then — only
+// if a SW was actually controlling this page load (i.e. it may have served a stale
+// shell) — reload a single time to pull a clean, network-served build. We never
+// register a service worker again (vite-plugin-pwa injectRegister is off).
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((regs) => {
+    if (regs.length === 0) return;
+    const hadController = !!navigator.serviceWorker.controller;
+    Promise.all(regs.map((r) => r.unregister()))
+      .then(() => (typeof caches !== 'undefined' ? caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))) : null))
+      .then(() => {
+        if (hadController && !sessionStorage.getItem('ers_sw_purged')) {
+          sessionStorage.setItem('ers_sw_purged', '1');
+          window.location.reload();
+        }
+      })
+      .catch(() => {});
+  }).catch(() => {});
+}
+
 // ── Auto-recover from stale lazy-chunk loads after a deploy ──────────────────
 // When a new build deploys, an already-open page still references the OLD hashed
 // route chunks. Navigating to a lazy route (clicking an item to open its detail)

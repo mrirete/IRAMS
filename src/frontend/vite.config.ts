@@ -30,6 +30,12 @@ export default defineConfig({
       // active deployment.) The manifest/workbox config below is ignored while
       // selfDestroying is on, kept only so it's easy to re-enable later.
       selfDestroying: true,
+      // Do NOT auto-inject a registration script. The app no longer registers a
+      // service worker at all (see main.tsx for the one-time teardown). Without
+      // this, removing the useRegisterSW hook would make the plugin silently
+      // inject its own registration into index.html — re-creating the
+      // register → self-destruct → reload loop that caused "refresh twice".
+      injectRegister: false,
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'pwa-192x192.png', 'pwa-512x512.png'],
       manifest: {
