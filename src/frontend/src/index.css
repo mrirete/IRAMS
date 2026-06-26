@@ -897,12 +897,12 @@ select {
   animation: mobile-footer-enter 0.25s ease-out;
 }
 
-/* On md+ the sidebar (w-64 = 16rem) is always visible, offset the footer */
-@media (min-width: 768px) {
+/* Mobile-only affordance. On >=sm the detail panels already expose
+   Save/Complete in their top-right header, so hide the bottom bar to reclaim
+   space. (Robust against utility-vs-class ordering — beats the base display:flex.) */
+@media (min-width: 640px) {
   .mobile-detail-footer {
-    left: 16rem;          /* match Sidebar w-64 */
-    bottom: 0;            /* no bottom nav on md+ */
-    border-radius: 0;
+    display: none;
   }
 }
 

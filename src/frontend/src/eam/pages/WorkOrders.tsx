@@ -2647,8 +2647,6 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 animate-in fade-in duration-300">
             {/* Core Info */}
             <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                <h3 className="font-bold text-sm text-slate-800 border-b border-slate-100 pb-2.5 mb-1">General Information</h3>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Asset</label>
@@ -2688,6 +2686,28 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                 </React.Fragment>
                             ))}
                             <span className="font-bold whitespace-nowrap">{job.assetName}</span>
+                        </div>
+                    </div>
+
+                    <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Description</label>
+                        <textarea
+                            defaultValue={job.description}
+                            className="w-full h-24 md:h-28 text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5 resize-none focus:ring-2 focus:ring-primary-500 outline-none"
+                            placeholder="Detailed job requirements, scope of work, and instructions..."
+                        />
+                    </div>
+
+                    <div className="md:col-span-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Parent Work Order</label>
+                        <div className="flex gap-1.5">
+                            <input
+                                type="text"
+                                defaultValue={job.parentWoId || ''}
+                                placeholder="Link to Parent WO..."
+                                className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
+                            />
+                            <button className="p-1.5 bg-slate-100 border border-slate-300 rounded text-slate-600 hover:bg-slate-200 flex-shrink-0"><Folder size={14} /></button>
                         </div>
                     </div>
 
@@ -2772,27 +2792,6 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                         </div>
                     </div>
 
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Parent Work Order</label>
-                        <div className="flex gap-1.5">
-                            <input
-                                type="text"
-                                defaultValue={job.parentWoId || ''}
-                                placeholder="Link to Parent WO..."
-                                className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
-                            />
-                            <button className="p-1.5 bg-slate-100 border border-slate-300 rounded text-slate-600 hover:bg-slate-200 flex-shrink-0"><Folder size={14} /></button>
-                        </div>
-                    </div>
-
-                    <div className="md:col-span-2">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Description</label>
-                        <textarea
-                            defaultValue={job.description}
-                            className="w-full h-24 md:h-28 text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5 resize-none focus:ring-2 focus:ring-primary-500 outline-none"
-                            placeholder="Detailed job requirements, scope of work, and instructions..."
-                        />
-                    </div>
 
                     {/* Material Staging Card */}
                     {job.inventory && job.inventory.length > 0 && (
@@ -2858,14 +2857,13 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
             {/* Scheduling & Progress */}
             <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                <h3 className="font-bold text-sm text-slate-800 border-b border-slate-100 pb-2.5 mb-1 flex items-center gap-2">
-                    <Clock className="text-blue-600" size={15} /> Scheduling & Progress
-                    {job.scope === 'PROJECT' && (
-                        <span className="ml-auto text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+                {job.scope === 'PROJECT' && (
+                    <div className="flex justify-end">
+                        <span className="text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
                             Turnaround / Project Mode
                         </span>
-                    )}
-                </h3>
+                    </div>
+                )}
 
                 <div className="space-y-3">
 
