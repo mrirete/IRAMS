@@ -58,7 +58,7 @@ import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { assessReadiness, assessCloseout, classifyWork, type ReadinessResult } from '../services/workReadiness';
-import { computeAssetReliability, type AssetReliability } from '../services/reliabilityMetrics';
+import { computeAssetReliability, computePMEffectiveness, pmEffectivenessKpi, kpisToAIContext, type AssetReliability } from '../services/reliabilityMetrics';
 import { useRelantern } from '../contexts/RelanternContext';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
@@ -389,7 +389,7 @@ export const WorkOrders: React.FC = () => {
             )}
 
             {viewMode === 'PM_LIST' && (
-                <PMList pms={pms} dictionaries={dictionaries} assets={assets} onCreate={() => setIsCreatePMOpen(true)} onRefresh={loadOrders} canCreate={canCreate} canDelete={canDelete} />
+                <PMList pms={pms} dictionaries={dictionaries} assets={assets} onCreate={() => setIsCreatePMOpen(true)} onRefresh={loadOrders} canCreate={canCreate} canDelete={canDelete} workOrders={workOrders} />
             )}
 
             {viewMode === 'MY_WORK' && (
@@ -6650,10 +6650,31 @@ const ResourcesTab: React.FC<{
 
 
 
-const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: any[], onCreate: () => void, onRefresh?: () => void, canCreate?: boolean, canDelete?: boolean }> = ({ pms, dictionaries, assets, onCreate, onRefresh, canCreate = true, canDelete = true }) => {
+const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: any[], onCreate: () => void, onRefresh?: () => void, canCreate?: boolean, canDelete?: boolean, workOrders?: WorkOrder[] }> = ({ pms, dictionaries, assets, onCreate, onRefresh, canCreate = true, canDelete = true, workOrders = [] }) => {
     const navigate = useNavigate();
     const { showToast } = useToast();
+    const { openRelantern } = useRelantern();
     const [generating, setGenerating] = useState<string | null>(null);
+
+    // SMRP 5.4.13 — PM & PdM Effectiveness (overall + per-PM).
+    const pmEff = useMemo(() => computePMEffectiveness(workOrders), [workOrders]);
+
+    // Ask the Reliability Specialist to advise which PMs to reduce/eliminate, off
+    // the actual KPI results (low effectiveness or no findings = candidates).
+    const handleOptimizePMs = () => {
+        const lowValue = pms.filter(pm => { const e = pmEff.byPM[pm.id]; return e && e.written >= 2 && (e.pct ?? 100) < 50; });
+        const noFindings = pms.filter(pm => !pmEff.byPM[pm.id]);
+        const kpiBlock = kpisToAIContext([pmEffectivenessKpi(pmEff)]);
+        const context = [
+            `PM/PdM PROGRAM OPTIMISATION`,
+            kpiBlock,
+            `Active strategies: ${pms.length}.`,
+            lowValue.length ? `Low-effectiveness PMs (generate corrective work that's mostly unnecessary): ${lowValue.slice(0, 10).map(p => `${p.description || p.title} [${pmEff.byPM[p.id].pct}%]`).join('; ')}.` : `No clearly low-effectiveness PMs.`,
+            noFindings.length ? `PMs generating NO corrective work (possible over-maintenance — review against the failure mode): ${noFindings.slice(0, 12).map(p => `${p.description || p.title} (${p.frequency_interval || ''} ${p.frequency_unit || ''})`).join('; ')}.` : '',
+        ].filter(Boolean).join('\n');
+        const prompt = `As a reliability engineer applying RCM, advise on this PM/PdM programme. Be specific and concise:\n1. Which PMs add little value (low effectiveness, or consuming resources without catching defects) and should be REDUCED in frequency or ELIMINATED — and why.\n2. Which "no findings" PMs are genuinely protective vs over-maintenance (consider the failure mode, criticality, and P-F interval).\n3. Where PdM/condition-based tasks should replace fixed-interval PMs.\nGive a short prioritised action list the planner can execute.`;
+        openRelantern(context, 'workOrder', prompt);
+    };
 
     const getAssetLabel = (assetId: string | null | undefined) => {
         if (!assetId) return '-';
@@ -6715,10 +6736,23 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden animate-in fade-in duration-500 h-full flex flex-col">
             <div className="p-4 border-b border-slate-200 flex justify-between items-center shrink-0">
                 <div>
-                    <h2 className="font-bold text-slate-800">Recurring Maintenance Strategies</h2>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-bold text-slate-800">Recurring Maintenance Strategies</h2>
+                        {pmEff.overall.written > 0 && (
+                            <span
+                                title="SMRP 5.4.13 — PM & PdM Effectiveness = necessary ÷ written PM/PdM corrective work orders. Higher = PM/PdM is catching real defects."
+                                className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${(pmEff.overall.pct ?? 0) >= 70 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : (pmEff.overall.pct ?? 0) >= 40 ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-red-100 text-red-700 border-red-200'}`}
+                            >
+                                PM/PdM Effectiveness {pmEff.overall.pct}% ({pmEff.overall.necessary}/{pmEff.overall.written})
+                            </span>
+                        )}
+                    </div>
                     <p className="text-xs text-slate-500">Manage PM intervals, templates, and auto-generation rules.</p>
                 </div>
                 <div className="flex gap-2">
+                    <button onClick={handleOptimizePMs} className="border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2" title="Ask the Reliability Specialist which PMs to optimise or eliminate">
+                        <Sparkles size={16} /> Optimise PMs
+                    </button>
                     <button onClick={() => navigate('/recurring-work')} className="border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
                         <Repeat size={16} /> Full Manager
                     </button>
@@ -6737,6 +6771,7 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Frequency</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Next Due</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider" title="SMRP 5.4.13 — PM & PdM Effectiveness">Effectiveness</th>
                             <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
@@ -6768,6 +6803,17 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
                                         <span className={`px-2 py-1 text-xs font-bold rounded-full ${statusInfo.classes}`}>
                                             {statusInfo.label}
                                         </span>
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        {(() => {
+                                            const e = pmEff.byPM[pm.id];
+                                            if (!e || e.written === 0) {
+                                                return <span className="text-[11px] text-slate-400 italic" title="No corrective work generated from this PM — either protective, or possible over-maintenance. Use Optimise PMs.">No findings</span>;
+                                            }
+                                            const pct = e.pct ?? 0;
+                                            const cls = pct >= 70 ? 'bg-emerald-100 text-emerald-700' : pct >= 40 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700';
+                                            return <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${cls}`} title={`${e.necessary} necessary of ${e.written} PM/PdM corrective work orders`}>{pct}%</span>;
+                                        })()}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2">
                                         <button
