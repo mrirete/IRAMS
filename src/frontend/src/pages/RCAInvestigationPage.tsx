@@ -10,6 +10,7 @@ import {
 import { analyzeService } from '../eam/services/AnalyzeService';
 import { ImageGallery } from '../eam/components/ui/ImageGallery';
 import CauseAnalysisSection from '../components/analyze/CauseAnalysisSection';
+import { RcaChallengerPanel } from '../components/analyze/RcaChallengerPanel';
 import FiveWhySection from '../components/analyze/FiveWhySection';
 import { TeamPanel, AvatarStack } from '../components/analyze/CollaboratorPicker';
 import { NotificationService } from '../eam/services/NotificationService';
@@ -1546,6 +1547,19 @@ export function RCAInvestigationPage() {
                                 </button>
                             </div>
                         </div>
+                        {/* Challenge — AI stress-tests THIS cause analysis against the asset's evidence */}
+                        <RcaChallengerPanel
+                            initialText={[
+                                inv.problem_statement ? `Problem: ${inv.problem_statement}` : '',
+                                (() => {
+                                    const rc = nodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
+                                    const why = nodes.filter(n => n.node_type === 'why').sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
+                                    const c = rc.length ? rc : why;
+                                    return c.length ? `Proposed cause(s): ${c.map(n => n.description).join(' → ')}` : (inv.root_cause_summary ? `Proposed root cause: ${inv.root_cause_summary}` : '');
+                                })(),
+                            ].filter(Boolean).join('\n\n')}
+                            assetTag={allHierarchyAssets.find(a => a.id === (inv.asset_id || draft.asset_id))?.tag || ''}
+                        />
                     </div>
                 )}
 
