@@ -972,6 +972,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     // Debounce refs for auto-save
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingUpdatesRef = useRef<Partial<WorkOrder>>({});
+    // Bumped on every local edit. The post-save refetch only re-syncs state if this
+    // hasn't changed during the save round-trip — otherwise the refetch would
+    // overwrite keystrokes typed while saving (the "letters disappear" bug).
+    const editVersionRef = useRef(0);
 
     // Update local job if props change (e.g. navigation between jobs)
     useEffect(() => {
@@ -1033,6 +1037,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     // ── Core DB persist function (called after debounce or immediately) ──
     const persistToDb = useCallback(async (updatedJob: WorkOrder, originalJob: WorkOrder, updates: Partial<WorkOrder>) => {
         if (!updatedJob.id) return;
+        const versionAtSaveStart = editVersionRef.current;
         setIsSaving(true);
         try {
             const dbRecord = DataMapper.toDBWorkOrder(updatedJob, dictionaries);
@@ -1153,7 +1158,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         };
                     })(),
                 };
-                setLocalJob(refreshedJob);
+                // Only re-sync from the server if the user hasn't typed since this
+                // save began — otherwise we'd clobber in-flight keystrokes.
+                if (editVersionRef.current === versionAtSaveStart) {
+                    setLocalJob(refreshedJob);
+                }
             }
 
             showToast('Work Order saved', 'success');
@@ -1229,6 +1238,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         }
 
         // 1. Optimistic UI Update — instant, no lag
+        editVersionRef.current++;
         const updated = { ...localJob, ...updates };
         setLocalJob(updated);
 
