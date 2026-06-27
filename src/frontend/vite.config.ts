@@ -100,6 +100,20 @@ export default defineConfig({
         ],
       },
     }),
+    // Emit a tiny, uncached version.json at build time. The running app polls it
+    // to detect a newer deploy and offer a one-click refresh (see UpdateBanner) —
+    // a service-worker-free update mechanism with no forced reloads.
+    {
+      name: 'emit-version-json',
+      generateBundle() {
+        // @ts-ignore — rollup PluginContext provides emitFile at runtime
+        this.emitFile({
+          type: 'asset',
+          fileName: 'version.json',
+          source: JSON.stringify({ sha: BUILD_SHA, builtAt: BUILD_TIME }),
+        });
+      },
+    },
   ],
 
   build: {

@@ -10,6 +10,7 @@ import { RelanternProvider } from './eam/contexts/RelanternContext';
 import { DashboardProvider } from './eam/stores/DashboardStore';
 import { AppLayout } from './shell/AppLayout';
 import { ModuleGate } from './components/ModuleGate';
+import { UpdateBanner } from './components/UpdateBanner';
 import { PermissionGate } from './eam/components/PermissionGate';
 // Admin pages — lazy loaded (admin-only, no need in main bundle)
 const ConnectorHub = lazy(() => import('./pages/admin/ConnectorHub').then(m => ({ default: m.ConnectorHub })));
@@ -108,6 +109,7 @@ function App() {
               <AssetProvider>
                 <RelanternProvider>
                 <DashboardProvider>
+                  <UpdateBanner />
                   <Routes>
                     {/* Public — Login (EAM Supabase auth) */}
                     <Route path="/login" element={<Suspense fallback={<Loading />}><EamLogin /></Suspense>} />

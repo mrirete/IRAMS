@@ -11,6 +11,10 @@
       "destination": "/assets/$1"
     },
     {
+      "source": "/version.json",
+      "destination": "/version.json"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
