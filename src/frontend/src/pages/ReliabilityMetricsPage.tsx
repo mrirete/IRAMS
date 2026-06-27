@@ -90,11 +90,14 @@ export const ReliabilityMetricsPage: React.FC = () => {
         const fleetMtbf = mtbfs.length ? Math.round(mtbfs.reduce((s, v) => s + v, 0) / mtbfs.length) : null;
         const mttrs = assetRel.map(a => a.rel.mttrHours).filter((v): v is number => v != null);
         const fleetMttr = mttrs.length ? Math.round((mttrs.reduce((s, v) => s + v, 0) / mttrs.length) * 10) / 10 : null;
+        const fleetAvail = (fleetMtbf != null && fleetMttr != null && (fleetMtbf + fleetMttr / 24) > 0)
+            ? Math.round((fleetMtbf / (fleetMtbf + fleetMttr / 24)) * 1000) / 10 : null;
         const bad = assetRel.filter(a => a.rel.failures12mo > 0).sort((a, b) => b.rel.failures12mo - a.rel.failures12mo).slice(0, 8);
 
         const list: ReliabilityKpi[] = [
             { key: 'pct_proactive', label: '% Proactive', value: proPct, display: proPct == null ? 'N/A' : `${proPct}%`, unit: '%', direction: 'higher-better', benchmark: '>= 80%', definition: 'Preventive or fully-planned work vs reactive (last 90 days). World-class >= 80%.' },
             pmEffectivenessKpi(pmEff),
+            { key: 'availability', label: 'Availability', value: fleetAvail, display: fleetAvail == null ? 'N/A' : `${fleetAvail}%`, unit: '%', direction: 'higher-better', benchmark: '>= 90%', definition: 'Inherent availability Ai = MTBF / (MTBF + MTTR). Driven by repair downtime (MTTR). World-class >= 90%.' },
             { key: 'fleet_mtbf', label: 'Fleet MTBF', value: fleetMtbf, display: fleetMtbf == null ? 'N/A' : `${fleetMtbf}d`, unit: 'days', direction: 'higher-better', definition: 'Mean Time Between Failures, averaged across assets (SMRP equipment reliability).' },
             { key: 'fleet_mttr', label: 'Fleet MTTR', value: fleetMttr, display: fleetMttr == null ? 'N/A' : `${fleetMttr}h`, unit: 'hours', direction: 'lower-better', definition: 'Mean Time To Repair, averaged across assets.' },
             { key: 'failures_12mo', label: 'Failures (12mo)', value: totalFailures12, display: String(totalFailures12), direction: 'lower-better', definition: 'Total corrective failures across the fleet in the last 12 months.' },
@@ -106,6 +109,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
         if (k.value == null) return 'text-slate-400';
         if (k.key === 'pct_proactive') return k.value >= 80 ? 'text-emerald-600' : k.value >= 60 ? 'text-amber-500' : 'text-red-500';
         if (k.key === 'pm_pdm_effectiveness') return k.value >= 70 ? 'text-emerald-600' : k.value >= 40 ? 'text-amber-500' : 'text-red-500';
+        if (k.key === 'availability') return k.value >= 90 ? 'text-emerald-600' : k.value >= 75 ? 'text-amber-500' : 'text-red-500';
         return 'text-slate-800';
     };
 
@@ -147,7 +151,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
             ) : (
                 <>
                     {/* KPI cards */}
-                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                         {kpis.map(k => (
                             <div key={k.key} className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 md:p-4" title={`${k.smrpRef ? k.smrpRef + ' — ' : ''}${k.definition}`}>
                                 <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 flex items-center gap-1">

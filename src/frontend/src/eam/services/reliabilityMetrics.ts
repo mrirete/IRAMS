@@ -16,6 +16,7 @@ export interface AssetReliability {
   lastFailureDate?: string;    // ISO date of the most recent failure
   mtbfDays?: number;           // SMRP: Mean Time Between Failures (days)
   mttrHours?: number;          // SMRP: Mean Time To Repair (hours)
+  availabilityPct?: number;    // SMRP inherent availability Ai = MTBF/(MTBF+MTTR), %
   recurringModes: { mode: string; count: number }[]; // failure modes seen >=2× (12mo)
   repeatFailure: boolean;      // a mode recurred, or >=3 failures in 12 months
   recommendRCA: boolean;       // data-driven RCA trigger
@@ -81,6 +82,13 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     }
   }
 
+  // SMRP inherent availability Ai = MTBF / (MTBF + MTTR) — driven by repair downtime.
+  let availabilityPct: number | undefined;
+  if (mtbfDays != null && mttrHours != null) {
+    const denom = mtbfDays + mttrHours / 24;
+    if (denom > 0) availabilityPct = Math.round((mtbfDays / denom) * 1000) / 10;
+  }
+
   const lastFailureDate = failures.length
     ? failures.map(eventDate).filter(Boolean).sort((a, b) => new Date(b as string).getTime() - new Date(a as string).getTime())[0]
     : undefined;
@@ -102,6 +110,7 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     lastFailureDate,
     mtbfDays,
     mttrHours,
+    availabilityPct,
     recurringModes,
     repeatFailure,
     recommendRCA,
