@@ -58,6 +58,7 @@ import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { assessReadiness, assessCloseout, classifyWork, type ReadinessResult } from '../services/workReadiness';
+import { computeAssetReliability, type AssetReliability } from '../services/reliabilityMetrics';
 import { useRelantern } from '../contexts/RelanternContext';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
@@ -2310,6 +2311,17 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
         'SYSTEM': 'bg-slate-200 text-slate-600'
     };
 
+    // Phase 4: asset reliability context (failure history → MTBF/MTTR + RCA signal).
+    const [relMetrics, setRelMetrics] = useState<AssetReliability | null>(null);
+    useEffect(() => {
+        let active = true;
+        if (!job.assetId) { setRelMetrics(null); return; }
+        DatabaseService.getInstance().getWorkOrdersByAssetId(job.assetId)
+            .then(recs => { if (active) setRelMetrics(computeAssetReliability(recs as any[])); })
+            .catch(() => { if (active) setRelMetrics(null); });
+        return () => { active = false; };
+    }, [job.assetId]);
+
     // Gate 2: Closeout quality — advisory strip + Specialist review.
     const { openRelantern } = useRelantern();
     const closeout = assessCloseout(job, { isPreventive });
@@ -2328,6 +2340,8 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
             `Failure coding (ISO 14224): mode=${fd.failureMode || 'none'}, cause=${fd.failureCause || 'none'}, remedy=${fd.remedyCode || 'none'}.`,
             `Actuals: duration=${job.actualDuration || 0}h.`,
             `Closeout quality: ${closeout.score}% | Missing required: ${missing}.`,
+            relMetrics ? `Asset reliability (12mo): ${relMetrics.failures12mo} failure(s)${relMetrics.mtbfDays != null ? `, MTBF ${relMetrics.mtbfDays}d` : ''}${relMetrics.recurringModes.length ? `, recurring modes: ${relMetrics.recurringModes.map(m => `${m.mode}×${m.count}`).join(', ')}` : ''}.` : '',
+            relMetrics?.recommendRCA ? `RCA SIGNAL: ${relMetrics.rcaReason}` : '',
             isPreventive ? `This is preventive/inspection work.` : `This is corrective work — failure coding expected.`,
         ].filter(Boolean).join('\n');
         const prompt = `As a reliability engineer, review this work order's CLOSE-OUT quality for a trustworthy ISO 14224 record. Be specific and concise. Provide:\n1. Findings — is the work documented well enough? What's missing?\n2. Failure coding — is the mode/cause sensible for this asset and symptom? Suggest the most likely mode & cause if missing or weak.\n3. Reliability — does this warrant an RCA (repeat or critical failure) or an FMEA/PM change?\n4. Verdict — is this OK to close, and the top fixes to make it a quality record.`;
@@ -2338,6 +2352,44 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
         <div className="flex flex-col gap-3 md:gap-4 animate-in fade-in duration-300">
             {/* ══ Closeout Quality (Gate 2) — advisory ══ */}
             <CloseoutReadinessStrip readiness={closeout} onReview={handleReviewCloseout} />
+
+            {/* ══ Asset Reliability context (Phase 4) — SMRP equipment-reliability KPIs ══ */}
+            {relMetrics && relMetrics.totalFailures > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white p-3 md:p-4">
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><AlertOctagon size={15} className="text-blue-600" /> Asset Reliability</h3>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wide">last 12 months · SMRP</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {([
+                            ['Failures (12mo)', String(relMetrics.failures12mo)],
+                            ['MTBF', relMetrics.mtbfDays != null ? `${relMetrics.mtbfDays}d` : '—'],
+                            ['MTTR', relMetrics.mttrHours != null ? `${relMetrics.mttrHours}h` : '—'],
+                            ['Last failure', relMetrics.lastFailureDate ? new Date(relMetrics.lastFailureDate).toLocaleDateString() : '—'],
+                        ] as [string, string][]).map(([label, value]) => (
+                            <div key={label} className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                                <div className="text-base font-extrabold text-slate-800">{value}</div>
+                                <div className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {relMetrics.recurringModes.length > 0 && (
+                        <div className="mt-2 flex items-center gap-1.5 flex-wrap text-[11px]">
+                            <span className="text-slate-500 font-semibold flex items-center gap-1"><Repeat size={11} /> Recurring modes:</span>
+                            {relMetrics.recurringModes.slice(0, 4).map(m => (
+                                <span key={m.mode} className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-semibold">{m.mode} ×{m.count}</span>
+                            ))}
+                        </div>
+                    )}
+                    {relMetrics.recommendRCA && (
+                        <div className="mt-2.5 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-800">
+                            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                            <div><span className="font-bold">RCA recommended.</span> {relMetrics.rcaReason} Use “Raise RCA” in the header to investigate.</div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Top Row: Failure Analysis (context-aware) + Follow-Up */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 {/* Failure Analysis Card */}
