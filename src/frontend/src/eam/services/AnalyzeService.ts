@@ -807,7 +807,11 @@ class AnalyzeService {
 
     async createRCAInvestigation(rca: Omit<RCAInvestigation, 'id' | 'created_at' | 'updated_at'>): Promise<RCAInvestigation | null> {
         try {
-            const { data, error } = await supabase.from('ers_rca_investigations').insert(rca).select().single();
+            // created_by is required on the row — without it the insert is rejected and
+            // the investigation silently never appears in the list.
+            const { data: { user } } = await supabase.auth.getUser();
+            const payload = { ...rca, created_by: (rca as any).created_by || user?.id || '00000000-0000-0000-0000-000000000000' };
+            const { data, error } = await supabase.from('ers_rca_investigations').insert(payload).select().single();
             if (error) { console.error('AnalyzeService.createRCAInvestigation:', error); throw error; }
             return data as RCAInvestigation;
         } catch (e) {

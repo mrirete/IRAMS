@@ -406,12 +406,16 @@ export function RCAInvestigationPage() {
                     event_what: draft.event_what || null,
                     event_how: draft.event_how || null,
                     event_how_much: draft.event_how_much as any,
-                    work_order_id: null, lead_investigator: null,
+                    work_order_id: (location.state as any)?.incomingWO?.wo_id || null, lead_investigator: null,
                     current_step: 1, closed_at: null,
                     effectiveness_due: null, effectiveness_status: 'pending',
                     previous_rca_id: null,
                 });
-                if (created) navigate(`/analyze/rca/${created.id}`, { replace: true });
+                if (created) {
+                    navigate(`/analyze/rca/${created.id}`, { replace: true });
+                } else {
+                    showToast('Could not save the investigation — please try again (check the console for details).', 'error');
+                }
             } else if (inv) {
                 await analyzeService.updateRCAInvestigation(inv.id, {
                     title: draft.title, problem_statement: draft.problem_statement,
