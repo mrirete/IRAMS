@@ -50,8 +50,19 @@ export const estimatedHours = (wo: WorkOrder): number => {
   return (wo.tasks || []).reduce((s, t) => s + (t.estHours || 0), 0);
 };
 
+// Placeholder step names that don't represent a real plan (empty / default-added).
+const PLACEHOLDER_TASK_NAMES = new Set(['', 'new task step', 'new task', 'untitled step', 'untitled']);
+
+// A job plan exists only if at least one task is actually *set*: either a real
+// (non-placeholder) step name OR a non-empty instruction. An empty "Untitled step"
+// with a blank instruction box does NOT count.
 export const hasJobPlan = (wo: WorkOrder): boolean =>
-  (wo.tasks || []).some(t => (t.instructions || []).length > 0);
+  (wo.tasks || []).some(t => {
+    const name = String(t.description || '').trim().toLowerCase();
+    const named = name.length > 0 && !PLACEHOLDER_TASK_NAMES.has(name);
+    const hasInstruction = (t.instructions || []).some(b => String((b as { label?: string }).label || '').trim().length > 0);
+    return named || hasInstruction;
+  });
 
 export const hasJSA = (wo: WorkOrder): boolean =>
   !!(wo.jsa && wo.jsa.hazards && wo.jsa.hazards.length > 0);
