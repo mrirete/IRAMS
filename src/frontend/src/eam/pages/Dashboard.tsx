@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { DatabaseService } from '../services/DatabaseService';
+import { classifyWork } from '../services/workReadiness';
 import ersApi, { BadActorEntry } from '../services/ERSApiClient';
 import { Button } from '../components/ui';
 
@@ -26,13 +27,14 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
   const now = new Date();
   const nowISO = now.toISOString();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
+  const ninetyDaysAgo = new Date(now.getTime() - 90 * 86400000).toISOString();
 
   // ── Optimized: 7 parallel queries instead of 12 ──
   // Single WO query provides: status counts, overdue, recent, trend
   const [
     woResult, srResult, assetResult, inventoryResult,
     myWorkResult, notificationsResult, pmWoResult, assetMtbfResult,
-    deTasksResult,
+    deTasksResult, governanceResult,
   ] = await Promise.all([
     // 1. ALL work orders (single query replaces 5 separate ones)
     supabase.from('work_orders')
@@ -75,6 +77,11 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     supabase.from('ers_defect_elimination_tasks')
       .select('id, status, priority, annual_cost, estimated_savings, implementation_cost, created_at')
       .order('created_at', { ascending: false }),
+    // 10. Governance — Planned vs Reactive over the last 90 days. Needs the
+    //     task/labour signals (joined) so the ratio matches the Work Orders list.
+    supabase.from('work_orders')
+      .select('id, type, status, est_duration, asset_id, job_tasks(description, instructions), work_order_labor(id)')
+      .gte('created_at', ninetyDaysAgo),
   ]);
 
   // ── Error diagnostics: log any silent Supabase failures ──
@@ -130,6 +137,25 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     return wos.filter((wo: any) => !wo.asset_id || scopedAssetTags!.has(wo.asset_id));
   };
 
+  // ── Work Governance: Planned vs Reactive (last 90 days) ──
+  // Map each record to the shape classifyWork expects, so the ratio is identical
+  // to the Work Orders list (preventive OR steps+estimate+labour = proactive).
+  const govRaw = filterWOs(governanceResult.data || []);
+  let govPro = 0, govRea = 0;
+  for (const r of govRaw as any[]) {
+    const woLike = {
+      type: r.type, status: r.status, estDuration: r.est_duration,
+      tasks: (r.job_tasks || []).map((t: any) => ({ description: t.description, instructions: t.instructions || [], estHours: 0 })),
+      labor: r.work_order_labor || [],
+    };
+    const c = classifyWork(woLike as any);
+    if (c === 'PROACTIVE') govPro++;
+    else if (c === 'REACTIVE') govRea++;
+  }
+  const govTotal = govPro + govRea;
+  const govProPct = govTotal ? Math.round((govPro / govTotal) * 100) : 0;
+  const governance = { proactive: govPro, reactive: govRea, total: govTotal, proPct: govProPct, reaPct: govTotal ? 100 - govProPct : 0 };
+
   return {
     wos: filterWOs(rawWos), srs: srResult.data || [],
     assets: rawAssets, inventory: inventoryResult.data || [],
@@ -140,6 +166,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
       ? (assetMtbfResult.data || []).filter((a: any) => scopedAssetIds!.has(a.id) || scopedAssetTags?.has(a.tag))
       : (assetMtbfResult.data || []),
     deTasks: deTasksResult.data || [],
+    governance,
   };
 };
 
@@ -273,7 +300,7 @@ export const Dashboard: React.FC = () => {
     return <div className="p-8 text-red-500">Error loading dashboard: {(error as Error).message}</div>;
   }
 
-  const { wos, srs, assets, inventory, overdue, recent, myWork, notifications, woTrend, pmWos, assetMtbf, deTasks } = data!;
+  const { wos, srs, assets, inventory, overdue, recent, myWork, notifications, woTrend, pmWos, assetMtbf, deTasks, governance } = data!;
 
   // ── Derived Metrics ──
   const statusMap: Record<string, number> = {};
@@ -473,6 +500,36 @@ export const Dashboard: React.FC = () => {
           </button>
         ))}
       </div>
+
+      {/* ── Work Governance: Planned vs Reactive (last 90 days) ── */}
+      {governance && governance.total > 0 && (
+        <button
+          onClick={() => navigate('/work-orders')}
+          className="w-full text-left bg-white rounded-card shadow-card border border-slate-200 p-4 sm:p-5 hover:border-slate-300 transition-all"
+        >
+          <div className="flex items-center justify-between mb-3 gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Gauge size={16} className="text-emerald-600" /> Work Governance
+              </h3>
+              <p className="text-[11px] text-slate-500">Planned vs Reactive · last 90 days · {governance.total} jobs</p>
+            </div>
+            <div className="text-right">
+              <div className={`text-2xl font-extrabold leading-none ${governance.proPct >= 80 ? 'text-emerald-600' : governance.proPct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{governance.proPct}%</div>
+              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Proactive</div>
+            </div>
+          </div>
+          <div className="flex h-3 rounded-full overflow-hidden bg-slate-100 border border-slate-200">
+            <div className="bg-emerald-500 h-full" style={{ width: `${governance.proPct}%` }} />
+            <div className="bg-red-500 h-full" style={{ width: `${governance.reaPct}%` }} />
+          </div>
+          <div className="flex items-center justify-between mt-2 text-[11px]">
+            <span className="font-semibold text-emerald-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {governance.proactive} proactive</span>
+            <span className="font-semibold text-red-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> {governance.reactive} reactive</span>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2">World-class benchmark ≥ 80% proactive. Tap to review reactive work →</p>
+        </button>
+      )}
 
       {/* ── Row 3: My Work & Activity  |  Notifications ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
