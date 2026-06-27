@@ -71,8 +71,12 @@ export const hasJSA = (wo: WorkOrder): boolean =>
  * Lightweight Planned-vs-Reactive classification — no item scoring. Use this for
  * list rows / KPI rollups where only the classification is needed.
  */
+export const hasLabour = (wo: WorkOrder): boolean => (wo.labor || []).length > 0;
+
 export function classifyWork(wo: WorkOrder): WorkClassification {
-  const isPlanned = hasJobPlan(wo) && estimatedHours(wo) > 0;
+  // A job is properly planned only with task steps + an effort estimate + labour
+  // resourced. (No tasks / no duration / no resources = not a plan.)
+  const isPlanned = hasJobPlan(wo) && estimatedHours(wo) > 0 && hasLabour(wo);
   if (isPreventiveWork(wo) || isPlanned) return 'PROACTIVE';
   if (EXECUTION_STATES.includes(String(wo.status))) return 'REACTIVE';
   return 'UNCLASSIFIED';
@@ -89,12 +93,19 @@ export function assessReadiness(wo: WorkOrder, opts: AssessOptions = {}): Readin
 
   const planned = hasJobPlan(wo);
   const est = estimatedHours(wo);
+  const labourSet = hasLabour(wo);
+  const partsSet = (wo.inventory || []).length > 0;
+  const preventive = isPreventiveWork(wo);
 
   const items: ReadinessItem[] = [
     { id: 'asset', label: 'Asset linked', met: !!wo.assetId, severity: 'required', hint: 'Link the work order to the asset it is performed on.' },
     { id: 'scope', label: 'Scope described', met: !!(wo.description && wo.description.trim()), severity: 'required', hint: 'State what is to be done and why.' },
-    { id: 'plan', label: 'Job plan', met: planned, severity: 'required', hint: 'Add at least one task step with instructions.' },
-    { id: 'estimate', label: 'Effort estimated', met: est > 0, severity: 'required', hint: 'Estimate duration (hrs) so the job can be scheduled.' },
+    { id: 'steps', label: 'Task steps', met: planned, severity: 'required', hint: 'Define the procedure — at least one real task step.' },
+    { id: 'estimate', label: 'Effort estimated', met: est > 0, severity: 'required', hint: 'Estimate labour hours — ideally on each step.' },
+    { id: 'labour', label: 'Labour', met: labourSet, severity: 'required', hint: 'Assign at least one labour craft/person to do the work.' },
+    // Parts are job-dependent — an inspection/PM legitimately needs none, so this
+    // is recommended (and auto-satisfied for preventive work) rather than required.
+    { id: 'parts', label: 'Parts', met: partsSet || preventive, severity: 'recommended', hint: 'Identify spare parts/materials to kit. Often none for inspections/PMs.' },
     { id: 'safety', label: 'Safety (JSA)', met: hasJSA(wo), severity: isHighCriticality ? 'required' : 'recommended', hint: isHighCriticality ? 'Criticality A/B work requires a hazard assessment.' : 'Assess hazards for this task.' },
   ];
 
