@@ -26,36 +26,45 @@ const TextObservationField: React.FC<{ value: string; onChange: (val: string) =>
         }
     }, [isOpen]);
 
+    // Remove ONLY the observation — the instruction block itself stays.
+    const removeObservation = () => { onChange(''); setIsOpen(false); };
+
     if (!isOpen) {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className="mt-2 w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-400 hover:text-blue-600 border border-dashed border-slate-200 hover:border-blue-300 rounded-lg bg-slate-50/50 hover:bg-blue-50/50 transition-all"
+                className="mt-2 w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-400 hover:text-amber-600 border border-dashed border-slate-200 hover:border-amber-300 rounded-lg bg-slate-50/50 hover:bg-amber-50/50 transition-all"
             >
                 <PenTool size={12} />
-                Add Observation...
+                Add observation / note…
             </button>
         );
     }
 
+    // Distinct, clearly-labelled secondary note so it's never confused with the
+    // instruction above it — and removable on its own.
     return (
-        <div className="mt-2">
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/40 p-2">
+            <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 flex items-center gap-1">
+                    <PenTool size={10} /> Observation
+                </span>
+                <button
+                    onClick={removeObservation}
+                    title="Remove this observation (keeps the instruction)"
+                    className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5"
+                >
+                    <X size={11} /> Remove
+                </button>
+            </div>
             <textarea
                 ref={textareaRef}
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
-                placeholder="Enter observation or comment..."
-                className="w-full min-h-[100px] border border-slate-200 rounded-lg bg-white text-slate-700 text-sm p-3 resize-y focus:ring-1 focus:ring-primary-500 focus:border-blue-500"
-                rows={4}
+                placeholder="Operator note / observation recorded during the job…"
+                className="w-full min-h-[80px] border border-amber-200 rounded-lg bg-white text-slate-700 text-sm p-3 resize-y focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
+                rows={3}
             />
-            {!value && (
-                <button
-                    onClick={() => setIsOpen(false)}
-                    className="text-[10px] text-slate-400 hover:text-slate-600 mt-1"
-                >
-                    Cancel
-                </button>
-            )}
         </div>
     );
 };

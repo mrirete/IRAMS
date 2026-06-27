@@ -165,7 +165,8 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
 
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={instructions.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                    <div className="space-y-3 pl-1 sm:pl-6">
+                    {/* Nested under the step: connector line + indent so it reads as a sub-folder */}
+                    <div className="space-y-3 pl-3 sm:pl-6 border-l-2 border-slate-100 ml-1 sm:ml-2">
                         {instructions.map((block) => (
                             <SortableItem key={block.id} id={block.id} mode={mode}>
                                 {mode === 'EDIT' ? (
