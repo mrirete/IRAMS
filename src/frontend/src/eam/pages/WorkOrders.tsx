@@ -57,7 +57,7 @@ import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // A
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
-import { assessReadiness, classifyWork, type ReadinessResult } from '../services/workReadiness';
+import { assessReadiness, assessCloseout, classifyWork, type ReadinessResult } from '../services/workReadiness';
 import { useRelantern } from '../contexts/RelanternContext';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
@@ -2310,8 +2310,34 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
         'SYSTEM': 'bg-slate-200 text-slate-600'
     };
 
+    // Gate 2: Closeout quality — advisory strip + Specialist review.
+    const { openRelantern } = useRelantern();
+    const closeout = assessCloseout(job, { isPreventive });
+    const handleReviewCloseout = () => {
+        const tasks = job.tasks || [];
+        const done = tasks.filter(t => String(t.status).toUpperCase() === 'COMPLETED').length;
+        const fd = job.failureData || {};
+        const missing = closeout.blockers.map(b => b.label).join(', ') || 'none';
+        const context = [
+            `WORK ORDER CLOSEOUT REVIEW`,
+            `WO ${job.woNumber || job.id} | Type: ${job.type} | Status: ${job.status}`,
+            `Asset: ${job.assetCode ? job.assetCode + ' - ' : ''}${job.assetName || 'UNLINKED'}`,
+            `Scope: ${(job.description || '').trim() || '(none)'}`,
+            `Tasks: ${done}/${tasks.length} step(s) completed.`,
+            `Findings/journal entries: ${(job.journals || []).length}.`,
+            `Failure coding (ISO 14224): mode=${fd.failureMode || 'none'}, cause=${fd.failureCause || 'none'}, remedy=${fd.remedyCode || 'none'}.`,
+            `Actuals: duration=${job.actualDuration || 0}h.`,
+            `Closeout quality: ${closeout.score}% | Missing required: ${missing}.`,
+            isPreventive ? `This is preventive/inspection work.` : `This is corrective work — failure coding expected.`,
+        ].filter(Boolean).join('\n');
+        const prompt = `As a reliability engineer, review this work order's CLOSE-OUT quality for a trustworthy ISO 14224 record. Be specific and concise. Provide:\n1. Findings — is the work documented well enough? What's missing?\n2. Failure coding — is the mode/cause sensible for this asset and symptom? Suggest the most likely mode & cause if missing or weak.\n3. Reliability — does this warrant an RCA (repeat or critical failure) or an FMEA/PM change?\n4. Verdict — is this OK to close, and the top fixes to make it a quality record.`;
+        openRelantern(context, 'workOrder', prompt);
+    };
+
     return (
         <div className="flex flex-col gap-3 md:gap-4 animate-in fade-in duration-300">
+            {/* ══ Closeout Quality (Gate 2) — advisory ══ */}
+            <CloseoutReadinessStrip readiness={closeout} onReview={handleReviewCloseout} />
             {/* Top Row: Failure Analysis (context-aware) + Follow-Up */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                 {/* Failure Analysis Card */}
@@ -2766,39 +2792,43 @@ const READINESS_CLASS_BADGE: Record<string, { label: string; cls: string }> = {
     REACTIVE: { label: 'Reactive', cls: 'bg-red-100 text-red-700 border-red-200' },
     UNCLASSIFIED: { label: 'Planning', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
 };
-const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () => void }> = ({ readiness, onReview }) => {
-    const { score, requiredMet, items, blockers, classification, isHighCriticality } = readiness;
+// Generic governance gate strip — shared by the Planning and Closeout gates.
+const GateStrip: React.FC<{
+    title: string;
+    readiness: ReadinessResult;
+    readyText: string;
+    incompleteText: (n: number) => string;
+    scoreTitle: string;
+    leftBadges?: React.ReactNode;
+    reviewLabel?: string;
+    onReview?: () => void;
+}> = ({ title, readiness, readyText, incompleteText, scoreTitle, leftBadges, reviewLabel = 'Review with Specialist', onReview }) => {
+    const { score, requiredMet, items, blockers } = readiness;
     const ring = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
-    const badge = READINESS_CLASS_BADGE[classification] || READINESS_CLASS_BADGE.UNCLASSIFIED;
     return (
         <div className={`rounded-xl border p-3 md:p-4 ${requiredMet ? 'bg-emerald-50/50 border-emerald-200' : 'bg-amber-50/50 border-amber-200'}`}>
             <div className="flex items-center gap-3 flex-wrap">
                 {/* Score ring */}
-                <div className="relative w-12 h-12 flex-shrink-0" title={`Planning readiness: ${score}%`}>
+                <div className="relative w-12 h-12 flex-shrink-0" title={scoreTitle}>
                     <div className="w-12 h-12 rounded-full" style={{ background: `conic-gradient(${ring} ${score * 3.6}deg, #e2e8f0 0deg)` }} />
                     <div className="absolute inset-[3px] rounded-full bg-white flex items-center justify-center text-xs font-extrabold text-slate-700">{score}</div>
                 </div>
                 {/* Title + status */}
                 <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-bold text-slate-800">Work Readiness</span>
-                        <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.label}</span>
-                        {isHighCriticality && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">Crit A/B</span>}
+                        <span className="text-sm font-bold text-slate-800">{title}</span>
+                        {leftBadges}
                         {onReview && (
                             <button
                                 onClick={onReview}
-                                title="Have the Reliability Specialist review and improve this job plan"
+                                title="Have the Reliability Specialist review this"
                                 className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 px-2 py-0.5 rounded-full shadow-sm transition-all"
                             >
-                                <Sparkles size={11} /> Review plan with Specialist
+                                <Sparkles size={11} /> {reviewLabel}
                             </button>
                         )}
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                        {requiredMet
-                            ? 'Planning essentials in place — ready to schedule.'
-                            : `${blockers.length} planning item${blockers.length === 1 ? '' : 's'} to complete before scheduling.`}
-                    </p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{requiredMet ? readyText : incompleteText(blockers.length)}</p>
                 </div>
                 {/* Criteria chips */}
                 <div className="flex items-center gap-1.5 flex-wrap md:ml-auto">
@@ -2823,6 +2853,38 @@ const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () =
         </div>
     );
 };
+
+const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () => void }> = ({ readiness, onReview }) => {
+    const badge = READINESS_CLASS_BADGE[readiness.classification] || READINESS_CLASS_BADGE.UNCLASSIFIED;
+    return (
+        <GateStrip
+            title="Work Readiness"
+            readiness={readiness}
+            readyText="Planning essentials in place — ready to schedule."
+            incompleteText={(n) => `${n} planning item${n === 1 ? '' : 's'} to complete before scheduling.`}
+            scoreTitle={`Planning readiness: ${readiness.score}%`}
+            leftBadges={<>
+                <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.label}</span>
+                {readiness.isHighCriticality && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">Crit A/B</span>}
+            </>}
+            reviewLabel="Review plan with Specialist"
+            onReview={onReview}
+        />
+    );
+};
+
+const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () => void }> = ({ readiness, onReview }) => (
+    <GateStrip
+        title="Closeout Quality"
+        readiness={readiness}
+        readyText="Closeout essentials captured — quality record."
+        incompleteText={(n) => `${n} closeout item${n === 1 ? '' : 's'} needed before closing.`}
+        scoreTitle={`Closeout quality: ${readiness.score}%`}
+        leftBadges={<span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${readiness.requiredMet ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>{readiness.requiredMet ? 'Ready to close' : 'Incomplete'}</span>}
+        reviewLabel="Review closeout with Specialist"
+        onReview={onReview}
+    />
+);
 
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
@@ -2864,11 +2926,12 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             (job.assetPath && job.assetPath.length) ? `Location: ${job.assetPath.join(' > ')} > ${job.assetName || ''}` : '',
             `Scope: ${(job.description || '').trim() || '(none provided)'}`,
             `Job plan: ${tasks.length} step(s), ${withInstr} with instructions. Estimated effort: ${estHrs}h.`,
-            `Resources: ${(job.labor || []).length} labour line(s), ${(job.inventory || []).length} part line(s).`,
+            `Labour: ${(job.labor || []).length > 0 ? `${job.labor!.length} craft/person line(s) assigned` : 'NONE assigned'}.`,
+            `Parts/kitting: ${(job.inventory || []).length > 0 ? `${job.inventory!.length} part line(s) identified` : 'none identified'}.`,
             `Safety: JSA with ${jsaHaz} hazard(s)${jsaHaz ? '' : ' — none assessed'}.`,
             `Readiness: ${readiness.score}% | Classification: ${readiness.classification} | Missing planning essentials: ${missing}.`,
         ].filter(Boolean).join('\n');
-        const prompt = `As a senior maintenance planner and reliability engineer, critically review this work order and make it proactive, well-planned work. Be specific and concise. Provide:\n1. Job plan — gaps and the key task steps to add, in sequence.\n2. Resources — recommended spare parts, labour crafts/skills, special tools and permits.\n3. Safety — likely hazards and whether the JSA is adequate.\n4. Reliability — should an RCA be raised (repeat or critical failure)? Any FMEA / PM implication for this asset?\n5. Verdict — a readiness call and the top 3 actions before this job is scheduled.`;
+        const prompt = `As a senior maintenance planner and reliability engineer, critically review this work order and make it proactive, well-planned work. Be specific and concise. Provide:\n1. Job plan — gaps and the key task steps to add, in sequence.\n2. Resources — explicitly call out if labour is unassigned or parts/kitting are missing, then recommend the crafts/skills, spare parts, special tools and permits this job needs.\n3. Safety — likely hazards and whether the JSA is adequate.\n4. Reliability — should an RCA be raised (repeat or critical failure)? Any FMEA / PM implication for this asset?\n5. Verdict — a readiness call and the top 3 actions before this job is scheduled.`;
         openRelantern(context, 'workOrder', prompt);
     };
 

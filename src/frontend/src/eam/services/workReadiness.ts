@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { WorkOrder, WorkOrderStatus } from '../types';
 
-export type ReadinessGate = 'PLAN';
+export type ReadinessGate = 'PLAN' | 'CLOSE';
 export type ReadinessSeverity = 'required' | 'recommended';
 export type WorkClassification = 'PROACTIVE' | 'REACTIVE' | 'UNCLASSIFIED';
 
@@ -123,4 +123,43 @@ export function assessReadiness(wo: WorkOrder, opts: AssessOptions = {}): Readin
   const classification = classifyWork(wo);
 
   return { gate: 'PLAN', score, requiredMet, items, blockers, classification, isHighCriticality };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gate 2: CLOSEOUT QUALITY — is the work being closed to a trustworthy record?
+// "Quality reporting / close-out" — work that skips it is reactive even if it was
+// well planned. ISO 14224 failure coding for corrective work; documented findings;
+// completed steps; actuals for future planning.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface CloseoutOptions {
+  /** Preventive/inspection work skips mandatory failure coding (code only if a defect was found). */
+  isPreventive?: boolean;
+}
+
+export function assessCloseout(wo: WorkOrder, opts: CloseoutOptions = {}): ReadinessResult {
+  const preventive = opts.isPreventive ?? isPreventiveWork(wo);
+  const tasks = wo.tasks || [];
+  // If there are no steps, that's a planning gap — don't double-penalise it here.
+  const tasksDone = tasks.length === 0 ? true : tasks.every(t => String(t.status).toUpperCase() === 'COMPLETED');
+  const documented = (wo.journals || []).length > 0;
+  const hasMode = !!wo.failureData?.failureMode;
+  const hasCause = !!wo.failureData?.failureCause;
+  const actuals = (!!wo.actualDuration && wo.actualDuration > 0) || (wo.labor || []).some(l => (l.actualDuration || 0) > 0);
+
+  const items: ReadinessItem[] = [
+    { id: 'tasks-done', label: 'Tasks completed', met: tasksDone, severity: 'required', hint: 'Mark every task step complete before closing.' },
+    { id: 'documented', label: 'Work documented', met: documented, severity: 'required', hint: 'Record what was found and what was done (findings/journal).' },
+    { id: 'failure-mode', label: 'Failure mode', met: preventive ? true : hasMode, severity: preventive ? 'recommended' : 'required', hint: preventive ? 'PM — only code a failure if a defect was found.' : 'ISO 14224: record the failure mode (damage code).' },
+    { id: 'failure-cause', label: 'Cause coded', met: preventive ? true : hasCause, severity: 'recommended', hint: 'ISO 14224: record the failure cause/mechanism so analytics can learn from it.' },
+    { id: 'actuals', label: 'Actuals recorded', met: actuals, severity: 'recommended', hint: 'Capture actual labour hours vs estimate to sharpen future planning.' },
+  ];
+
+  const weight = (it: ReadinessItem) => (it.severity === 'required' ? 2 : 1);
+  const totalW = items.reduce((s, it) => s + weight(it), 0);
+  const metW = items.reduce((s, it) => s + (it.met ? weight(it) : 0), 0);
+  const score = totalW === 0 ? 0 : Math.round((metW / totalW) * 100);
+  const blockers = items.filter(it => it.severity === 'required' && !it.met);
+  const requiredMet = blockers.length === 0;
+
+  return { gate: 'CLOSE', score, requiredMet, items, blockers, classification: 'UNCLASSIFIED', isHighCriticality: false };
 }
