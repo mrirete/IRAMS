@@ -30,6 +30,7 @@ const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
     '/finops': 'finops',
     '/reports': 'analytics',
     // ── Reliability Suite (dedicated permission key) ──
+    '/reliability-metrics': 'reliability',
     '/predict': 'reliability',
     '/reliability-modelling': 'reliability',
     '/analyze': 'reliability',

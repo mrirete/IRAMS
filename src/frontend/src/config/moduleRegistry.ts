@@ -125,12 +125,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         description: 'Predictive analytics, failure analysis, vision, knowledge graph',
         tier: 'reliability', icon: Shield, path: null,
         children: [
+            { id: 'reliability-metrics', label: 'Metrics', path: '/reliability-metrics' },
             { id: 'predict-dash', label: 'Predict', path: '/predict' },
             { id: 'reliability-modelling', label: 'Reliability Modelling', path: '/reliability-modelling' },
             { id: 'analyze-dash', label: 'Analyze', path: '/analyze' },
             { id: 'rcm-dash', label: 'RCM', path: '/rcm' },
         ],
-        routes: ['/predict', '/reliability-modelling', '/analyze', '/analyze/rca', '/rcm'],
+        routes: ['/reliability-metrics', '/predict', '/reliability-modelling', '/analyze', '/analyze/rca', '/rcm'],
         dependencies: ['core'], section: 'ers', launchReady: true,
     },
 

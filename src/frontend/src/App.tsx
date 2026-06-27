@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, ProtectedRoute } from './contexts/AuthContext';
 import { ToastProvider } from './eam/contexts/ToastContext';
+import { ConfirmProvider } from './eam/contexts/ConfirmContext';
 import { SettingsProvider } from './contexts/SettingsContext';
 import { LicenseProvider } from './contexts/LicenseContext';
 import { AssetProvider } from './contexts/AssetContext';
@@ -58,6 +59,7 @@ const EamReportDrillDown = lazy(() => import('./eam/pages/ReportDrillDown').then
 const PredictPage = lazy(() => import('./pages/PredictPage').then(m => ({ default: m.PredictPage })));
 const AnalyzePage = lazy(() => import('./pages/AnalyzePage').then(m => ({ default: m.AnalyzePage })));
 const ReliabilityModellingPage = lazy(() => import('./pages/ReliabilityModellingPage'));
+const ReliabilityMetricsPage = lazy(() => import('./pages/ReliabilityMetricsPage').then(m => ({ default: m.ReliabilityMetricsPage })));
 const RCAInvestigationPage = lazy(() => import('./pages/RCAInvestigationPage').then(m => ({ default: m.RCAInvestigationPage })));
 const RCAReport = lazy(() => import('./components/analyze/RCAReport'));
 const FMEAWorksheetDetail = lazy(() => import('./pages/FMEAWorksheetDetail'));
@@ -104,6 +106,7 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
+          <ConfirmProvider>
           <SettingsProvider>
             <LicenseProvider>
               <AssetProvider>
@@ -113,8 +116,6 @@ function App() {
                   <Routes>
                     {/* Public — Login (EAM Supabase auth) */}
                     <Route path="/login" element={<Suspense fallback={<Loading />}><EamLogin /></Suspense>} />
-
-                    {/* All protected routes under AppLayout */}
                     <Route
                       path="*"
                       element={
@@ -152,6 +153,7 @@ function App() {
                                 {/* ═══════════════════════════════════════════ */}
                                 {/* Reliability tier */}
                                 <Route path="/predict" element={<Gated moduleId="predict"><PredictPage /></Gated>} />
+                                <Route path="/reliability-metrics" element={<Gated moduleId="predict"><ReliabilityMetricsPage /></Gated>} />
                                 <Route path="/reliability-modelling" element={<Gated moduleId="predict"><ReliabilityModellingPage /></Gated>} />
                                 <Route path="/analyze" element={<Gated moduleId="predict"><AnalyzePage /></Gated>} />
                                 <Route path="/analyze/rca/:investigationId" element={<Gated moduleId="predict"><RCAInvestigationPage /></Gated>} />
@@ -207,6 +209,7 @@ function App() {
               </AssetProvider>
             </LicenseProvider>
           </SettingsProvider>
+          </ConfirmProvider>
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>
