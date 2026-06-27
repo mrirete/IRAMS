@@ -504,7 +504,7 @@ export const Dashboard: React.FC = () => {
       {/* ── Work Governance: Planned vs Reactive (last 90 days) ── */}
       {governance && governance.total > 0 && (
         <button
-          onClick={() => navigate('/work-orders')}
+          onClick={() => navigate('/reliability-metrics')}
           className="w-full text-left bg-white rounded-card shadow-card border border-slate-200 p-4 sm:p-5 hover:border-slate-300 transition-all"
         >
           <div className="flex items-center justify-between mb-3 gap-2">
@@ -527,7 +527,7 @@ export const Dashboard: React.FC = () => {
             <span className="font-semibold text-emerald-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {governance.proactive} proactive</span>
             <span className="font-semibold text-red-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> {governance.reactive} reactive</span>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">World-class benchmark ≥ 80% proactive. Tap to review reactive work →</p>
+          <p className="text-[10px] text-slate-400 mt-2">World-class benchmark ≥ 80% proactive. Tap for the full reliability metrics →</p>
         </button>
       )}
 

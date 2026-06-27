@@ -6,7 +6,8 @@
  * a bad-actor list, and one-click "Ask Specialist" advice grounded in the KPI results.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight } from 'lucide-react';
 import { supabase } from '../eam/lib/supabase';
 import { useRelantern } from '../eam/contexts/RelanternContext';
 import { classifyWork } from '../eam/services/workReadiness';
@@ -23,6 +24,7 @@ const NINETY_DAYS = 90 * 86400000;
 
 export const ReliabilityMetricsPage: React.FC = () => {
     const { openRelantern } = useRelantern();
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [wos, setWos] = useState<any[]>([]);
@@ -168,7 +170,14 @@ export const ReliabilityMetricsPage: React.FC = () => {
                         <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
                             <TrendingUp size={15} className="text-red-500" />
                             <h3 className="text-sm font-bold text-slate-800">Bad Actors</h3>
-                            <span className="text-[11px] text-slate-400">top failure-driving assets · last 12 months</span>
+                            <span className="text-[11px] text-slate-400">by failure count · last 12 months</span>
+                            <button
+                                onClick={() => navigate('/analyze')}
+                                className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700"
+                                title="Open the Analyze bad-actor Pareto for the cost & downtime lens and to start an RCA"
+                            >
+                                Cost &amp; downtime drill <ArrowRight size={12} />
+                            </button>
                         </div>
                         {badActors.length === 0 ? (
                             <div className="p-8 text-center text-slate-400 text-sm">No corrective failures recorded in the last 12 months.</div>

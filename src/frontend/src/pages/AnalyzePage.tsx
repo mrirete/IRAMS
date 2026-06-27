@@ -37,7 +37,6 @@ type AssessmentType = 'fmea' | 'rca' | 'criticality' | 'bad_actor';
 const DIVISIONS: { id: Division; label: string; mobileLabel: string; icon: React.ReactNode; description: string }[] = [
     { id: 'rca', label: 'Root Cause Analysis', mobileLabel: 'RCA', icon: <GitMerge size={16} />, description: 'Formal failure investigations — 5-Why, Fishbone, Fault Tree · problem type determines the tool' },
     { id: 'defect_elimination', label: 'Defect Elimination', mobileLabel: 'DE', icon: <Target size={16} />, description: 'Identify bad actors → detect patterns → eliminate chronic defects to prevent reoccurrence' },
-    { id: 'oee', label: 'OEE Analysis', mobileLabel: 'OEE', icon: <Gauge size={16} />, description: 'Overall Equipment Effectiveness — Availability, Performance, Quality, and equivalent capacity loss hours' },
 ];
 
 // ═════════════════════════════════════════════════════════════
@@ -597,17 +596,7 @@ export const AnalyzePage: React.FC = () => {
                     )}
 
                     {/* ═ OEE ANALYSIS ══════════════════════════════ */}
-                    {activeDivision === 'oee' && (
-                        <OEETab
-                            contextAsset={contextAsset}
-                            onRcaInitiate={(assetName, oeeScore) => {
-                                openNewAnalysis('rca', {
-                                    title: `RCA: ${assetName} Low OEE`,
-                                    description: `Initiated due to low Overall Equipment Effectiveness (OEE: ${(oeeScore * 100).toFixed(1)}%). Primary loss driver requires formal Root Cause Analysis.`,
-                                });
-                            }}
-                        />
-                    )}
+                    {/* OEE retired — its real metric (Availability) now lives in Reliability -> Metrics. */}
                 </div>
 
                 {/* Right: Reliability Specialist + Triggers (1/4) */}
