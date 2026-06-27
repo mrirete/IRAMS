@@ -3728,6 +3728,9 @@ const TasksTab: React.FC<{
     const tasks = job.tasks || [];
     const [expandedTaskId, setExpandedTaskId] = useState<string | null>(tasks.length === 1 ? tasks[0]?.id : null);
     const [editorTab, setEditorTab] = useState<'instructions' | 'resources'>('instructions');
+    // Plan (build the checklist) vs Do-the-work (technician executes: tick boxes,
+    // enter readings). Completed WOs are always execute + read-only.
+    const [execMode, setExecMode] = useState(false);
 
     const addTask = () => {
         const nextSeq = tasks.length > 0 ? Math.max(...tasks.map(t => t.sequence)) + 10 : 10;
@@ -3804,6 +3807,11 @@ const TasksTab: React.FC<{
                     )}
                 </div>
                 <div className="flex items-center gap-2">
+                    {/* Plan ↔ Do-the-work toggle */}
+                    <div className="flex bg-slate-100 p-0.5 rounded-lg text-[11px] font-bold flex-shrink-0">
+                        <button onClick={() => setExecMode(false)} className={`px-2 py-1 rounded-md transition-colors ${!execMode ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Plan</button>
+                        <button onClick={() => setExecMode(true)} className={`px-2 py-1 rounded-md transition-colors ${execMode ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Do work</button>
+                    </div>
                     {tasks.length > 0 && tasks.some(t => t.status !== 'COMPLETED') && (
                         <button
                             onClick={() => {
@@ -3954,6 +3962,7 @@ const TasksTab: React.FC<{
                                         dictionaries={dictionaries}
                                         editorTab={editorTab}
                                         onTabChange={setEditorTab}
+                                        execMode={execMode}
                                     />
                                 </div>
                             )}
@@ -3988,7 +3997,8 @@ const TaskEditor: React.FC<{
     dictionaries: DictionaryEntry[];
     editorTab: 'instructions' | 'resources';
     onTabChange: (tab: 'instructions' | 'resources') => void;
-}> = ({ task, onChange, onDelete, onUpdateJob, jobContext, availableOrgUnits, availableUsers, contacts, dictionaries, editorTab, onTabChange }) => {
+    execMode?: boolean;
+}> = ({ task, onChange, onDelete, onUpdateJob, jobContext, availableOrgUnits, availableUsers, contacts, dictionaries, editorTab, onTabChange, execMode = false }) => {
     const { showToast } = useToast();
     const { user } = useAuth();
 
@@ -4485,7 +4495,7 @@ const TaskEditor: React.FC<{
                             instructions={task.instructions || []}
                             onChange={(blocks) => onChange({ instructions: blocks })}
                             readOnly={(jobContext.status as string) === 'COMPLETED'}
-                            mode={(jobContext.status as string) === 'COMPLETED' ? 'EXECUTE' : 'EDIT'}
+                            mode={((jobContext.status as string) === 'COMPLETED' || execMode) ? 'EXECUTE' : 'EDIT'}
                         />
                     </div>
 
