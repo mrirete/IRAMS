@@ -57,6 +57,7 @@ import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // A
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
+import { assessReadiness, type ReadinessResult } from '../services/workReadiness';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { DensityToggle, type Density } from '../components/ui/DensityToggle';
@@ -2702,6 +2703,61 @@ const ParentWoPickerModal: React.FC<{
     );
 };
 
+// ─── Work Readiness strip (Gate 1: Planning) — advisory governance UI ───
+const READINESS_CLASS_BADGE: Record<string, { label: string; cls: string }> = {
+    PROACTIVE: { label: 'Proactive', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+    REACTIVE: { label: 'Reactive', cls: 'bg-red-100 text-red-700 border-red-200' },
+    UNCLASSIFIED: { label: 'Planning', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
+const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult }> = ({ readiness }) => {
+    const { score, requiredMet, items, blockers, classification, isHighCriticality } = readiness;
+    const ring = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
+    const badge = READINESS_CLASS_BADGE[classification] || READINESS_CLASS_BADGE.UNCLASSIFIED;
+    return (
+        <div className={`rounded-xl border p-3 md:p-4 ${requiredMet ? 'bg-emerald-50/50 border-emerald-200' : 'bg-amber-50/50 border-amber-200'}`}>
+            <div className="flex items-center gap-3 flex-wrap">
+                {/* Score ring */}
+                <div className="relative w-12 h-12 flex-shrink-0" title={`Planning readiness: ${score}%`}>
+                    <div className="w-12 h-12 rounded-full" style={{ background: `conic-gradient(${ring} ${score * 3.6}deg, #e2e8f0 0deg)` }} />
+                    <div className="absolute inset-[3px] rounded-full bg-white flex items-center justify-center text-xs font-extrabold text-slate-700">{score}</div>
+                </div>
+                {/* Title + status */}
+                <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-slate-800">Work Readiness</span>
+                        <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.label}</span>
+                        {isHighCriticality && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">Crit A/B</span>}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                        {requiredMet
+                            ? 'Planning essentials in place — ready to schedule.'
+                            : `${blockers.length} planning item${blockers.length === 1 ? '' : 's'} to complete before scheduling.`}
+                    </p>
+                </div>
+                {/* Criteria chips */}
+                <div className="flex items-center gap-1.5 flex-wrap md:ml-auto">
+                    {items.map(it => (
+                        <span
+                            key={it.id}
+                            title={it.hint}
+                            className={`text-[10px] font-semibold px-2 py-1 rounded-full border flex items-center gap-1 ${
+                                it.met
+                                    ? 'bg-white text-emerald-700 border-emerald-200'
+                                    : it.severity === 'required'
+                                        ? 'bg-white text-amber-700 border-amber-300'
+                                        : 'bg-white text-slate-400 border-slate-200'
+                            }`}
+                        >
+                            {it.met ? <CheckCircle size={11} /> : <AlertTriangle size={11} />}
+                            {it.label}
+                        </span>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
 const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
@@ -2721,6 +2777,10 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
         const w = pickWOs.find((x: any) => x.id === job.parentWoId);
         return w ? (w.woNumber || w.wo_number || job.parentWoId) : job.parentWoId;
     })();
+
+    // Work Readiness (Gate 1: Planning) — asset criticality drives mandatory items.
+    const assetCriticality = (pickAssets.find((a: any) => a.id === job.assetId) || {}).criticality;
+    const readiness = assessReadiness(job, { criticality: assetCriticality });
 
     const handleScheduleChange = (field: keyof WorkOrder, value: string) => {
         const updates: Partial<WorkOrder> = { [field]: value };
@@ -2784,6 +2844,10 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                 onClose={() => setShowParentPicker(false)}
                 onSelect={(wo) => onUpdate({ parentWoId: wo.id })}
             />
+            {/* ══ Work Readiness (Gate 1: Planning) — advisory ══ */}
+            <div className="lg:col-span-2">
+                <WorkReadinessStrip readiness={readiness} />
+            </div>
             {/* Core Info */}
             <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
