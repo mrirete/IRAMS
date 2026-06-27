@@ -50,11 +50,19 @@ if (CLEAN) {
   const { data: demo } = await sb.from('work_orders').select('id').like('wo_number', 'DEMO-%');
   const ids = (demo || []).map(d => d.id);
   if (ids.length) {
+    // Children first (in case FKs aren't ON DELETE CASCADE). Best-effort.
+    const { data: jsas } = await sb.from('jsa_assessments').select('id').in('wo_id', ids);
+    const jsaIds = (jsas || []).map(j => j.id);
+    if (jsaIds.length) await sb.from('jsa_hazards').delete().in('jsa_id', jsaIds);
+    await sb.from('jsa_assessments').delete().in('wo_id', ids);
+    await sb.from('work_order_labor').delete().in('wo_id', ids);
+    await sb.from('work_order_parts').delete().in('wo_id', ids);
+    await sb.from('job_tasks').delete().in('wo_id', ids);
     await sb.from('wo_failure_data').delete().in('wo_id', ids);
     const { error } = await sb.from('work_orders').delete().in('id', ids);
     if (error) die('Cleanup failed:', error);
   }
-  console.log(`✓ Removed ${ids.length} DEMO work order(s).`);
+  console.log(`✓ Removed ${ids.length} DEMO work order(s) and their child records.`);
   process.exit(0);
 }
 
@@ -129,6 +137,77 @@ if (pms?.length) {
   console.log(`✓ Seeded PM "${pm.description || pm.title}" + 2 follow-ups → PM & PdM Effectiveness 50% (1/2).`);
 } else {
   console.log('• No PM strategies found — skipped PM Effectiveness seed (create a PM first to see that one).');
+}
+
+// ── 3) A fully-planned LIVE work order (real labour + parts + JSA) ──
+// Lights up Work Readiness (steps + effort + labour + parts + JSA) and classifies
+// Proactive. Sits on the same asset, so its Analysis tab also shows the reliability
+// card seeded above.
+{
+  const { data: contacts } = await sb.from('contacts').select('*').limit(20);
+  const person = (contacts || [])[0];
+  const { data: items } = await sb.from('inventory_items').select('*').limit(5);
+  const part = (items || [])[0];
+
+  const liveId = await insertWO({
+    wo_number: 'DEMO-LIVE-001',
+    title: `DEMO — planned WO on ${asset.tag || 'asset'}`,
+    description: 'Planned corrective: replace leaking mechanical seal and verify coupling alignment.',
+    type: 'Corrective',
+    status: 'OPEN',
+    est_duration: 6,
+    actual_duration: 0,
+    created_at: new Date().toISOString(),
+    closed_at: null,
+  });
+
+  // Task steps (named + instruction) → "Task steps" green.
+  const steps = [
+    { sequence: 10, description: 'Isolate & LOTO; drain casing', label: 'Isolate the pump, apply LOTO, and drain the casing before disassembly.' },
+    { sequence: 20, description: 'Replace mechanical seal; align coupling', label: 'Fit new mechanical seal, torque to spec, and laser-align the coupling.' },
+  ];
+  let firstTaskId = null;
+  for (const s of steps) {
+    const { data: t, error } = await sb.from('job_tasks').insert({
+      wo_id: liveId, sequence: s.sequence, description: s.description, status: 'PENDING', est_hours: 3,
+      instructions: [{ id: crypto.randomUUID(), type: 'TEXT', sequence: 1, label: s.label, required: true }],
+      assigned_user_ids: [], assigned_org_unit_ids: [],
+    }).select('id').single();
+    if (error) { console.warn('• job_tasks insert failed (Task steps will show amber):', error.message); break; }
+    if (!firstTaskId) firstTaskId = t.id;
+  }
+
+  // Labour (real person) → "Labour" green.
+  if (person) {
+    const { error } = await sb.from('work_order_labor').insert({
+      wo_id: liveId, contact_id: person.id, contact_type_code: person.contact_type_code || null,
+      is_lead: true, headcount: 1, hours_worked: 6, rate_per_hour: 0,
+      date_worked: new Date().toISOString().split('T')[0], job_task_id: firstTaskId,
+    });
+    if (error) console.warn('• work_order_labor insert failed (Labour will show amber):', error.message);
+    else console.log(`  ↳ labour: ${person.first_name || person.name || person.id}`);
+  } else console.warn('• No contacts found — Labour will show amber.');
+
+  // Parts (real inventory item) → "Parts" green.
+  if (part) {
+    const { error } = await sb.from('work_order_parts').insert({
+      wo_id: liveId, item_id: part.id, notes: part.description || part.name || 'part', quantity: 1, unit_cost: 0, job_task_id: firstTaskId,
+    });
+    if (error) console.warn('• work_order_parts insert failed (Parts will show amber):', error.message);
+    else console.log(`  ↳ part: ${part.description || part.name || part.id}`);
+  } else console.warn('• No inventory items found — Parts will show amber.');
+
+  // JSA (one hazard) → "Safety (JSA)" green (required on Crit A/B).
+  try {
+    const jsaId = crypto.randomUUID();
+    const { error: jErr } = await sb.from('jsa_assessments').insert({ id: jsaId, wo_id: liveId, status: 'DRAFT', created_by: userId, permits: [], updated_at: new Date().toISOString() });
+    if (jErr) throw jErr;
+    const { error: hErr } = await sb.from('jsa_hazards').insert({ id: crypto.randomUUID(), jsa_id: jsaId, hazard: 'Stored energy / rotating equipment during seal replacement', risk_score: 'High', controls: 'LOTO, gas test, gloves, supervision' });
+    if (hErr) throw hErr;
+    console.log('  ↳ JSA with 1 hazard');
+  } catch (e) { console.warn('• JSA insert failed (Safety will show amber):', e.message); }
+
+  console.log('✓ Seeded a fully-planned LIVE work order (DEMO-LIVE-001) → Work Readiness green / Proactive.');
 }
 
 console.log('\n✅ Done. Open the asset’s Work Orders / a WO on it → Analysis tab for reliability; Work Orders → Strategies for PM effectiveness.');
