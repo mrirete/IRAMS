@@ -57,7 +57,7 @@ import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // A
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
-import { assessReadiness, type ReadinessResult } from '../services/workReadiness';
+import { assessReadiness, classifyWork, type ReadinessResult } from '../services/workReadiness';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { DensityToggle, type Density } from '../components/ui/DensityToggle';
@@ -480,9 +480,21 @@ export const WorkOrders: React.FC = () => {
 
 // --- 1. Job Listing Component ---
 
+// Shared Planned-vs-Reactive pill (used in the WO list column + mobile card).
+const WORK_CLASS_PILL: Record<string, { label: string; cls: string }> = {
+    PROACTIVE: { label: 'Proactive', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+    REACTIVE: { label: 'Reactive', cls: 'bg-red-100 text-red-700 border-red-200' },
+    UNCLASSIFIED: { label: 'Planning', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
+const WorkClassPill: React.FC<{ c: string }> = ({ c }) => {
+    const m = WORK_CLASS_PILL[c] || WORK_CLASS_PILL.UNCLASSIFIED;
+    return <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border ${m.cls}`}>{m.label}</span>;
+};
+
 const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => void, onCreate: () => void, dictionaries: DictionaryEntry[], assets?: any[], onBulkDelete?: (ids: string[]) => Promise<void>, initialSearch?: string, canCreate?: boolean, canDelete?: boolean }> = ({ jobs, onSelect, onCreate, dictionaries, assets = [], onBulkDelete, initialSearch = '', canCreate = true, canDelete = true }) => {
     const [density, setDensity] = useState<Density>('compact');
     const [statusFilter, setStatusFilter] = useState<WorkOrderStatus | 'ALL'>('ALL');
+    const [classFilter, setClassFilter] = useState<'ALL' | 'PROACTIVE' | 'REACTIVE'>('ALL');
     const [search, setSearch] = useState(initialSearch);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [bulkDeleting, setBulkDeleting] = useState(false);
@@ -517,11 +529,12 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     const filteredJobs = useMemo(() => {
         const filtered = jobs.filter(job => {
             const matchesStatus = statusFilter === 'ALL' || job.status === statusFilter;
+            const matchesClass = classFilter === 'ALL' || classifyWork(job) === classFilter;
             const matchesSearch = (job.title || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.id || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.woNumber || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.assetName || '').toLowerCase().includes(search.toLowerCase());
-            return matchesStatus && matchesSearch;
+            return matchesStatus && matchesClass && matchesSearch;
         });
 
         // Apply sort
@@ -543,7 +556,20 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
             }
             return sortAsc ? cmp : -cmp;
         });
-    }, [jobs, statusFilter, search, sortField, sortAsc]);
+    }, [jobs, statusFilter, classFilter, search, sortField, sortAsc]);
+
+    // Planned-vs-Reactive ratio (governance KPI) — over classified work only.
+    const classRatio = useMemo(() => {
+        let pro = 0, rea = 0;
+        for (const j of jobs) {
+            const c = classifyWork(j);
+            if (c === 'PROACTIVE') pro++;
+            else if (c === 'REACTIVE') rea++;
+        }
+        const total = pro + rea;
+        const proPct = total ? Math.round((pro / total) * 100) : 0;
+        return { pro, rea, total, proPct, reaPct: total ? 100 - proPct : 0 };
+    }, [jobs]);
 
     // ═══ GAP-02/09/10: Helpers for overdue, RPN, criticality ═══
     const isOverdue = (job: WorkOrder) => {
@@ -666,6 +692,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                 </div>
             ),
         },
+        { id: 'plan', header: 'Plan', hideBelow: 'lg', render: (job) => <WorkClassPill c={classifyWork(job)} /> },
         { id: 'priority', header: 'Priority', render: (job) => <PriorityPill priority={job.priority} /> },
         {
             id: 'due',
@@ -703,6 +730,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                 <div className="flex items-center justify-between gap-2 text-[11px]">
                     <span className="text-slate-500 truncate">{job.assetName || 'No Asset'}</span>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <WorkClassPill c={classifyWork(job)} />
                         {job.type && <Badge tone="neutral" pill={false}>{job.type}</Badge>}
                         {overdue ? (
                             <span className="overdue-badge overdue-pulse">{overdueDays}d overdue</span>
@@ -765,6 +793,34 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                                     }`}
                             >
                                 {status.description}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Planned vs Reactive — governance KPI + quick filter */}
+                <div className="flex items-center gap-x-4 gap-y-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Planned vs Reactive</span>
+                        <div className="flex h-2 w-24 rounded-full overflow-hidden bg-slate-100 border border-slate-200" title={`${classRatio.pro} proactive · ${classRatio.rea} reactive`}>
+                            <div className="bg-emerald-500 h-full" style={{ width: `${classRatio.proPct}%` }} />
+                            <div className="bg-red-500 h-full" style={{ width: `${classRatio.reaPct}%` }} />
+                        </div>
+                        <span className="text-[11px] font-bold text-emerald-600">{classRatio.proPct}%</span>
+                        <span className="text-[11px] text-slate-300">/</span>
+                        <span className="text-[11px] font-bold text-red-600">{classRatio.reaPct}%</span>
+                    </div>
+                    <div className="flex gap-1.5 sm:ml-auto">
+                        {([['ALL', 'All'], ['PROACTIVE', 'Proactive'], ['REACTIVE', 'Reactive']] as const).map(([val, label]) => (
+                            <button
+                                key={val}
+                                onClick={() => setClassFilter(val)}
+                                className={`whitespace-nowrap px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border transition-all ${classFilter === val
+                                    ? (val === 'REACTIVE' ? 'bg-red-600 text-white border-red-600' : val === 'PROACTIVE' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-primary-600 text-white border-primary-600')
+                                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                    }`}
+                            >
+                                {label}
                             </button>
                         ))}
                     </div>

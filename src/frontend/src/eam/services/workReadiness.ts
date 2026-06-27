@@ -56,6 +56,17 @@ export const hasJobPlan = (wo: WorkOrder): boolean =>
 export const hasJSA = (wo: WorkOrder): boolean =>
   !!(wo.jsa && wo.jsa.hazards && wo.jsa.hazards.length > 0);
 
+/**
+ * Lightweight Planned-vs-Reactive classification — no item scoring. Use this for
+ * list rows / KPI rollups where only the classification is needed.
+ */
+export function classifyWork(wo: WorkOrder): WorkClassification {
+  const isPlanned = hasJobPlan(wo) && estimatedHours(wo) > 0;
+  if (isPreventiveWork(wo) || isPlanned) return 'PROACTIVE';
+  if (EXECUTION_STATES.includes(String(wo.status))) return 'REACTIVE';
+  return 'UNCLASSIFIED';
+}
+
 export interface AssessOptions {
   /** Criticality of the linked asset (A/B = high), used to flag mandatory items. */
   criticality?: 'A' | 'B' | 'C' | 'D' | string | null;
@@ -87,12 +98,7 @@ export function assessReadiness(wo: WorkOrder, opts: AssessOptions = {}): Readin
   // Planned vs Reactive: preventive work and fully-planned corrective work are
   // proactive; corrective work that reached execution without a plan is reactive;
   // corrective work still being planned is unclassified (in flight).
-  const isPlanned = planned && est > 0;
-  const reachedExecution = EXECUTION_STATES.includes(String(wo.status));
-  let classification: WorkClassification;
-  if (isPreventiveWork(wo) || isPlanned) classification = 'PROACTIVE';
-  else if (reachedExecution) classification = 'REACTIVE';
-  else classification = 'UNCLASSIFIED';
+  const classification = classifyWork(wo);
 
   return { gate: 'PLAN', score, requiredMet, items, blockers, classification, isHighCriticality };
 }
