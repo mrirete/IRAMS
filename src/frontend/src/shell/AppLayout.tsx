@@ -25,7 +25,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     const [isPaletteOpen, setIsPaletteOpen] = useState(false);
     // Computed once at mount (lazy init) — avoids a setState-in-effect cascade.
     const [isMainFrame] = useState(() => typeof window === 'undefined' || window.top === window.self);
-    const { isOpen: isRelanternOpen, contextData, contextType, closeRelantern } = useRelantern();
+    const { isOpen: isRelanternOpen, contextData, contextType, initialPrompt, closeRelantern } = useRelantern();
 
     // Listen for custom sidebar toggle events from MobileBottomNav "More" button
     useEffect(() => {
@@ -85,6 +85,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                         onClose={closeRelantern}
                         contextData={contextData}
                         contextType={contextType}
+                        initialPrompt={initialPrompt}
                     />
                 </Suspense>
             )}

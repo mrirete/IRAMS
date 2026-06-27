@@ -12,7 +12,8 @@ interface RelanternContextType {
     isOpen: boolean;
     contextData?: string;
     contextType?: string;
-    openRelantern: (contextData: string, contextType?: string) => void;
+    initialPrompt?: string;
+    openRelantern: (contextData: string, contextType?: string, initialPrompt?: string) => void;
     closeRelantern: () => void;
 }
 
@@ -32,10 +33,12 @@ export const RelanternProvider: React.FC<RelanternProviderProps> = ({ children }
     const [isOpen, setIsOpen] = useState(false);
     const [contextData, setContextData] = useState<string>();
     const [contextType, setContextType] = useState<string>();
+    const [initialPrompt, setInitialPrompt] = useState<string>();
 
-    const openRelantern = useCallback((data: string, type?: string) => {
+    const openRelantern = useCallback((data: string, type?: string, prompt?: string) => {
         setContextData(data);
         setContextType(type);
+        setInitialPrompt(prompt);
         setIsOpen(true);
     }, []);
 
@@ -43,10 +46,11 @@ export const RelanternProvider: React.FC<RelanternProviderProps> = ({ children }
         setIsOpen(false);
         setContextData(undefined);
         setContextType(undefined);
+        setInitialPrompt(undefined);
     }, []);
 
     return (
-        <RelanternCtx.Provider value={{ isOpen, contextData, contextType, openRelantern, closeRelantern }}>
+        <RelanternCtx.Provider value={{ isOpen, contextData, contextType, initialPrompt, openRelantern, closeRelantern }}>
             {children}
         </RelanternCtx.Provider>
     );

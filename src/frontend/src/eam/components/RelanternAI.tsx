@@ -79,6 +79,8 @@ interface RelanternAIProps {
   onClose: () => void;
   contextData?: string;
   contextType?: string;
+  /** Optional question to auto-send once after the panel opens & context is primed. */
+  initialPrompt?: string;
 }
 
 // ─── HITL Badge ──────────────────────────────────────────────
@@ -126,7 +128,7 @@ const renderMarkdown = (text: string): React.ReactNode[] => {
   });
 };
 
-export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, contextData, contextType }) => {
+export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, contextData, contextType, initialPrompt }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -253,6 +255,19 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
     if (!prompt) return;
     handleSend(prompt);
   };
+
+  // Auto-send an initial question once after the panel opens (e.g. "Review this
+  // job plan" from the Work Order). Delayed so the context-priming effect above
+  // runs first (proxy: primedContextRef set synchronously; direct: chat primed).
+  const autoSentRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen) { autoSentRef.current = false; return; }
+    if (!initialPrompt || autoSentRef.current) return;
+    autoSentRef.current = true;
+    const t = setTimeout(() => handleSend(initialPrompt), useProxy ? 80 : 700);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialPrompt, useProxy]);
 
   const activeChips = QUICK_ACTIONS[contextType || 'general'] || QUICK_ACTIONS.general;
 

@@ -58,6 +58,7 @@ import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { assessReadiness, classifyWork, type ReadinessResult } from '../services/workReadiness';
+import { useRelantern } from '../contexts/RelanternContext';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { DensityToggle, type Density } from '../components/ui/DensityToggle';
@@ -2765,7 +2766,7 @@ const READINESS_CLASS_BADGE: Record<string, { label: string; cls: string }> = {
     REACTIVE: { label: 'Reactive', cls: 'bg-red-100 text-red-700 border-red-200' },
     UNCLASSIFIED: { label: 'Planning', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
 };
-const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult }> = ({ readiness }) => {
+const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () => void }> = ({ readiness, onReview }) => {
     const { score, requiredMet, items, blockers, classification, isHighCriticality } = readiness;
     const ring = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
     const badge = READINESS_CLASS_BADGE[classification] || READINESS_CLASS_BADGE.UNCLASSIFIED;
@@ -2783,6 +2784,15 @@ const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult }> = ({ readines
                         <span className="text-sm font-bold text-slate-800">Work Readiness</span>
                         <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${badge.cls}`}>{badge.label}</span>
                         {isHighCriticality && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">Crit A/B</span>}
+                        {onReview && (
+                            <button
+                                onClick={onReview}
+                                title="Have the Reliability Specialist review and improve this job plan"
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 px-2 py-0.5 rounded-full shadow-sm transition-all"
+                            >
+                                <Sparkles size={11} /> Review plan with Specialist
+                            </button>
+                        )}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                         {requiredMet
@@ -2837,6 +2847,30 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     // Work Readiness (Gate 1: Planning) — asset criticality drives mandatory items.
     const assetCriticality = (pickAssets.find((a: any) => a.id === job.assetId) || {}).criticality;
     const readiness = assessReadiness(job, { criticality: assetCriticality });
+
+    // "Review plan with Specialist" — hand the WO context to the Reliability AI and
+    // auto-run a structured plan/readiness/RCA review.
+    const { openRelantern } = useRelantern();
+    const handleReviewPlan = () => {
+        const tasks = job.tasks || [];
+        const withInstr = tasks.filter(t => (t.instructions || []).length > 0).length;
+        const estHrs = job.estDuration && job.estDuration > 0 ? job.estDuration : tasks.reduce((s, t) => s + (t.estHours || 0), 0);
+        const jsaHaz = job.jsa?.hazards?.length || 0;
+        const missing = readiness.blockers.map(b => b.label).join(', ') || 'none';
+        const context = [
+            `WORK ORDER PLAN REVIEW`,
+            `WO ${job.woNumber || job.id} | Type: ${job.type} | Status: ${job.status} | Priority: ${job.priority || '—'}`,
+            `Asset: ${job.assetCode ? job.assetCode + ' - ' : ''}${job.assetName || 'UNLINKED'}${assetCriticality ? ' | Criticality: ' + assetCriticality : ''}`,
+            (job.assetPath && job.assetPath.length) ? `Location: ${job.assetPath.join(' > ')} > ${job.assetName || ''}` : '',
+            `Scope: ${(job.description || '').trim() || '(none provided)'}`,
+            `Job plan: ${tasks.length} step(s), ${withInstr} with instructions. Estimated effort: ${estHrs}h.`,
+            `Resources: ${(job.labor || []).length} labour line(s), ${(job.inventory || []).length} part line(s).`,
+            `Safety: JSA with ${jsaHaz} hazard(s)${jsaHaz ? '' : ' — none assessed'}.`,
+            `Readiness: ${readiness.score}% | Classification: ${readiness.classification} | Missing planning essentials: ${missing}.`,
+        ].filter(Boolean).join('\n');
+        const prompt = `As a senior maintenance planner and reliability engineer, critically review this work order and make it proactive, well-planned work. Be specific and concise. Provide:\n1. Job plan — gaps and the key task steps to add, in sequence.\n2. Resources — recommended spare parts, labour crafts/skills, special tools and permits.\n3. Safety — likely hazards and whether the JSA is adequate.\n4. Reliability — should an RCA be raised (repeat or critical failure)? Any FMEA / PM implication for this asset?\n5. Verdict — a readiness call and the top 3 actions before this job is scheduled.`;
+        openRelantern(context, 'workOrder', prompt);
+    };
 
     const handleScheduleChange = (field: keyof WorkOrder, value: string) => {
         const updates: Partial<WorkOrder> = { [field]: value };
@@ -2902,7 +2936,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             />
             {/* ══ Work Readiness (Gate 1: Planning) — advisory ══ */}
             <div className="lg:col-span-2">
-                <WorkReadinessStrip readiness={readiness} />
+                <WorkReadinessStrip readiness={readiness} onReview={handleReviewPlan} />
             </div>
             {/* Core Info */}
             <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
