@@ -4,27 +4,20 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 
-// ── One-time service-worker teardown ────────────────────────────────────────
-// The app no longer uses a service worker. Earlier builds shipped a PWA SW set to
-// `selfDestroying` AND re-registered it on every load (useRegisterSW), so each
-// visit did: register → SW unregisters/clears caches/reloads → register again …
-// which is the root cause of the "must refresh twice before the page shows" bug.
-// Here we unregister ANY existing SW and purge its caches exactly once, then — only
-// if a SW was actually controlling this page load (i.e. it may have served a stale
-// shell) — reload a single time to pull a clean, network-served build. We never
-// register a service worker again (vite-plugin-pwa injectRegister is off).
+// ── Silent service-worker teardown (NO reload) ──────────────────────────────
+// The app no longer uses a service worker. We unregister ANY lingering SW (from an
+// earlier PWA build) and purge its caches, but we DO NOT force a reload here.
+// A forced reload races with Supabase's refresh-token rotation (and the old
+// self-destructing SW's own reload), which causes a spurious sign-out → login
+// loop — see the note in eam/lib/supabase.ts. The double-refresh bug is already
+// fixed by removing the re-registration (PwaReloadPrompt + injectRegister:false);
+// the lingering SW simply falls away on the next natural navigation. We never
+// register a service worker again.
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((regs) => {
     if (regs.length === 0) return;
-    const hadController = !!navigator.serviceWorker.controller;
     Promise.all(regs.map((r) => r.unregister()))
       .then(() => (typeof caches !== 'undefined' ? caches.keys().then((ks) => Promise.all(ks.map((k) => caches.delete(k)))) : null))
-      .then(() => {
-        if (hadController && !sessionStorage.getItem('ers_sw_purged')) {
-          sessionStorage.setItem('ers_sw_purged', '1');
-          window.location.reload();
-        }
-      })
       .catch(() => {});
   }).catch(() => {});
 }
