@@ -3840,11 +3840,11 @@ const TasksTab: React.FC<{
                                     className={`text-slate-400 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90 text-blue-500' : ''}`}
                                 />
 
-                                {/* Sequence badge */}
+                                {/* Step number badge — show the 1-based position (sequence 10/20/30 is kept internally for ordering) */}
                                 <span className={`font-mono text-xs font-bold px-2 py-0.5 rounded flex-shrink-0 ${
                                     isExpanded ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'
                                 }`}>
-                                    {task.sequence}
+                                    {index + 1}
                                 </span>
 
                                 {/* Task description — editable inline */}
