@@ -217,7 +217,7 @@ Dependencies: everything depends on **Phase 0**; F-003 source-consolidation can 
 
 | ID | Sev | Phase | Status | Commit | Retested | ISO clause |
 |---|---|---|---|---|---|---|
-| F-010 | CRIT | 0 | Foundation shipped *(object model + level engine)* | 25b7a30, 61613c1 | — | 14224 §6.3 T2/3 |
+| F-010 | CRIT | 0 | **Done** — object model + level engine + Admin Hierarchy Config (editable, hydrated at startup) | 25b7a30, 61613c1, f666538 | — | 14224 §6.3 T2/3 |
 | F-004 | CRIT | 1 | **Done** — trigger gated + 24 records reconciled (24→0) | ef0f700 (0157) | ✅ audit 0 | 14224 §6.3 T2 |
 | F-009 | CRIT | 1 | **Done** — FL/EQ ranges + blank-tag auto-fill | ef0f700, f5c5776 | — | 14224 §6.3; 55001 §8.1 |
 | F-003 | HIGH | 1 | **Done** — dedicated manufacturer master (table+API+form), consolidated source, asset refs by id | ce70bd8, cc0dfcc, ca03d5e | — | 14224 Annex C; 55001 §8.1 |
