@@ -217,10 +217,10 @@ Dependencies: everything depends on **Phase 0**; F-003 source-consolidation can 
 
 | ID | Sev | Phase | Status | Commit | Retested | ISO clause |
 |---|---|---|---|---|---|---|
-| F-010 | CRIT | 0 | Open | — | — | 14224 §6.3 T2/3 |
-| F-004 | CRIT | 1 | Open | — | — | 14224 §6.3 T2 |
-| F-009 | CRIT | 1 | Open | — | — | 14224 §6.3; 55001 §8.1 |
-| F-003 | HIGH | 1 | Open *(remedy revised)* | — | — | 14224 Annex C; 55001 §8.1 |
+| F-010 | CRIT | 0 | Foundation shipped *(object model + level engine)* | 25b7a30, 61613c1 | — | 14224 §6.3 T2/3 |
+| F-004 | CRIT | 1 | **Done** — trigger gated + 24 records reconciled (24→0) | ef0f700 (0157) | ✅ audit 0 | 14224 §6.3 T2 |
+| F-009 | CRIT | 1 | **Done** — FL/EQ ranges + blank-tag auto-fill | ef0f700, f5c5776 | — | 14224 §6.3; 55001 §8.1 |
+| F-003 | HIGH | 1 | Form fixed *(source-consolidation + by-ID FK pending)* | ce70bd8 | — | 14224 Annex C; 55001 §8.1 |
 | F-005 | HIGH | 2 | Open | — | — | 55000 §6.2.3 |
 | F-006 | HIGH | 2 | Open | — | — | 55000 |
 | F-008 | HIGH | 2 | Open | — | — | 55000 §6.4 |
