@@ -595,6 +595,19 @@ export class DatabaseService {
         if (error) { console.error('DatabaseService.deleteManufacturerModel:', error); throw error; }
     }
 
+    // ── Hierarchy configuration (UAT F-010) — the editable level model ──
+    public async getHierarchyConfig(): Promise<any[] | null> {
+        const { data, error } = await supabase.from('hierarchy_config').select('levels').eq('id', 1).maybeSingle();
+        if (error) { console.error('DatabaseService.getHierarchyConfig:', error); return null; }
+        return (data?.levels as any[]) || null;
+    }
+
+    public async saveHierarchyConfig(levels: any[]): Promise<void> {
+        const { error } = await supabase.from('hierarchy_config')
+            .upsert({ id: 1, levels, updated_at: new Date().toISOString() });
+        if (error) { console.error('DatabaseService.saveHierarchyConfig:', error); throw error; }
+    }
+
     // Qualifications
     public async getQualifications(contactId: string): Promise<any[]> {
         const { data } = await supabase.from('qualifications').select('*').eq('contact_id', contactId);

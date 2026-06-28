@@ -5,6 +5,8 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { useRelantern } from '../eam/contexts/RelanternContext';
 import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 import { GlobalErrorToaster } from '../eam/components/GlobalErrorToaster';
+import { DatabaseService } from '../eam/services/DatabaseService';
+import { setLevelModel } from '../eam/services/hierarchyModel';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
 // RelanternAI (Reliability Specialist) is the single AI chat panel — opened from
@@ -37,6 +39,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
 
     // Register offline-queue executors once + replay any writes queued in a prior offline session.
     useEffect(() => { initOfflineExecutors(); }, []);
+
+    // Hydrate the hierarchy level model from the Admin-configured override (UAT F-010).
+    // Falls back to DEFAULT_LEVELS if none saved or the fetch fails.
+    useEffect(() => {
+        DatabaseService.getInstance().getHierarchyConfig()
+            .then(levels => { if (levels && levels.length) setLevelModel(levels as any); })
+            .catch(() => { /* keep defaults */ });
+    }, []);
 
     // Listen for the operator "Report a Problem" event (MobileBottomNav center button)
     useEffect(() => {
