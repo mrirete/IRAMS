@@ -226,8 +226,8 @@ Dependencies: everything depends on **Phase 0**; F-003 source-consolidation can 
 | F-008 | HIGH | 2 | **Done** — FLOC terminology on tag label + MoC modal; MoC stays gated to saved records | 3bc579d | — | 55000 §6.4 |
 | F-011 | HIGH | 2 | **Already met** — OrgChart adds unlimited sibling units + renders peers; one-to-many model. *(UI-tweak area OrgUnitDetailsDrawer is in another session's drift — left untouched)* | — | ✅ verified | 55000 §6.2 |
 | F-001 | MED | 2 | **Done** — FLOC ID label, Parent-Level indicator, criticality N/A at root | 3bc579d | — | 14224 §6.3 |
-| F-002 | MED | 3 | Open | — | — | 14224 §6.3 |
-| F-007 | MED | 3 | Open | — | — | 14224 §7; IEC 60812 |
+| F-002 | MED | 3 | **Done** — equipment taxonomy + spec fields hidden on FLOCs (hierarchyModel) | (Phase 3) | — | 14224 §6.3 |
+| F-007 | MED | 3 | **Done (default rules)** — criticality N/A at root, required for equipment; per-level rules in hierarchyModel. Admin editability pending the config screen | 3bc579d | — | 14224 §7; IEC 60812 |
 
 **Open questions for the reviewer:**
 1. **§2 object model** — adopt Option A (separate Equipment + installation, recommended) or accept Option B as signed architectural debt?
