@@ -243,7 +243,8 @@ export interface Asset {
   image?: string;
 
   // Specifications
-  manufacturer?: string;
+  manufacturer?: string;     // display name (legacy / back-compat)
+  manufacturerId?: string;   // FK to the manufacturers master (UAT F-003 follow-up)
   model?: string;
   serialNumber?: string;
   typeCode?: string;
@@ -458,6 +459,7 @@ export interface InventoryItem {
 
   // Classification
   manufacturer?: string;
+  manufacturerId?: string;   // FK to the manufacturers master (UAT F-003 follow-up)
   model?: string; // Mapped from DB
   barcode?: string;
 

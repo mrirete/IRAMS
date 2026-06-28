@@ -29,7 +29,7 @@ import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import { exportAssetsToXLSX, exportAssetsToCSV } from '../services/assetTemplates';
 
-import { AddContactModal } from '../components/modals/AddContactModal';
+import { AddManufacturerModal } from '../components/modals/AddManufacturerModal';
 import { SearchableDropdown } from '../components/ui/SearchableDropdown';
 import { FinancialsTab } from '../components/FinancialsTab';
 import { FinOpsService } from '../services/FinOpsService';
@@ -1962,77 +1962,43 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
     const [changeReason, setChangeReason] = useState('');
     const [changingTag, setChangingTag] = useState(false);
 
-    // Derived: Manufacturers List
-    // Merge manufacturers from BOTH contacts (legacy) AND the vendors module
-    const manufacturers = useMemo(() => {
-        const fromContacts = contacts
-            .filter(c =>
-                c.types.includes('MANUFACTURER') ||
-                c.types.includes('VENDOR') ||
-                c.flags?.isVendor
-            )
-            .map(c => c.name);
+    // Manufacturers now come from the single manufacturer master (UAT F-003 follow-up),
+    // referenced by id — no more contact/vendor dual source or name-based lookups.
+    const [masterMfrs, setMasterMfrs] = useState<any[]>([]);
+    useEffect(() => {
+        DatabaseService.getInstance().getManufacturers().then(setMasterMfrs).catch(() => setMasterMfrs([]));
+    }, []);
+    const manufacturers = useMemo(
+        () => masterMfrs.map(m => ({ code: m.id, description: m.name })),
+        [masterMfrs]
+    );
 
-        const fromVendors = (vendors || [])
-            .filter(v => v.active && (v.type === 'MANUFACTURER' || v.type === 'SUPPLIER'))
-            .map(v => v.name);
-
-        // De-duplicate by name
-        const uniqueNames = [...new Set([...fromContacts, ...fromVendors])];
-        return uniqueNames.sort().map(name => ({ code: name, description: name }));
-    }, [contacts, vendors]);
-
-    // Derived: Current Manufacturer Contact
-    const mfrContact = useMemo(() => {
-        return contacts.find(c => c.name === asset.manufacturer);
-    }, [asset.manufacturer, contacts]);
-
-    // Effect: Load Models when Manufacturer ID changes
-    // We have to look up the ID from the name stored in asset.manufacturer
+    // Effect: load the selected manufacturer's models BY ID (the "easy filling").
     useEffect(() => {
         const loadModels = async () => {
-            if (!asset.manufacturer) {
-                setModels([]);
-                return;
-            }
-
+            if (!asset.manufacturerId) { setModels([]); return; }
             setParamsLoading(true);
             try {
-                // Try contact-based models first, then fallback to vendor-based
-                const mfrContact = contacts.find(c => c.name === asset.manufacturer);
-                let data: any[];
-                if (mfrContact) {
-                    data = await DatabaseService.getInstance().getContactModels(mfrContact.id);
-                } else {
-                    // Fallback: search vendors table by name
-                    data = await DatabaseService.getInstance().getModelsByManufacturerName(asset.manufacturer);
-                }
-                setModels(data.map((m: any) => ({
-                    code: m.code,
-                    description: `${m.code} - ${m.description || ''}`
-                })));
+                const data = await DatabaseService.getInstance().getManufacturerModels(asset.manufacturerId);
+                setModels(data.map((m: any) => ({ code: m.code, description: `${m.code} - ${m.description || ''}` })));
             } catch (e) {
-                console.error("Failed to load models", e);
+                console.error('Failed to load models', e);
             } finally {
                 setParamsLoading(false);
             }
         };
         loadModels();
-    }, [asset.manufacturer, contacts]);
+    }, [asset.manufacturerId]);
 
     // Helper to update a field
     const handleChange = (field: keyof Asset, value: any) => {
         onUpdate({ ...asset, [field]: value });
     };
 
-    const handleMfrCreated = async (newContact: Contact) => {
-        // Refresh contacts to pick up the new manufacturer
-        await onRefreshContacts();
-
-        // Optimistically update the asset's manufacturer to the new contact
-        handleChange('manufacturer', newContact.name);
-
-        // No longer need to alert user about refresh
+    const handleMfrCreated = async (newMfr: any) => {
+        // Add the new master manufacturer to the dropdown and select it (by id).
+        setMasterMfrs(prev => [...prev, newMfr].sort((a, b) => String(a.name).localeCompare(String(b.name))));
+        onUpdate({ ...asset, manufacturerId: newMfr.id, manufacturer: newMfr.name, model: '' });
         setIsAddMfrOpen(false);
     };
 
@@ -2049,21 +2015,18 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
             {/* Modals */}
             {isAddMfrOpen && (
-                <AddContactModal
+                <AddManufacturerModal
                     onClose={() => setIsAddMfrOpen(false)}
                     onSave={handleMfrCreated}
-                    contactTypes={dictionaries.filter(d => d.type === 'CONTACT_TYPE')}
-                    initialType="MANUFACTURER"
-                    costCenters={dictionaries.filter(d => d.type === 'COST_CENTRE')}
                 />
             )}
-            {isAddModelOpen && mfrContact && (
+            {isAddModelOpen && asset.manufacturerId && (
                 <SimpleAddModelModal
                     isOpen={isAddModelOpen}
                     onClose={() => setIsAddModelOpen(false)}
                     onSave={handleModelCreated}
-                    manufacturerName={mfrContact.name}
-                    contactId={mfrContact.id}
+                    manufacturerName={asset.manufacturer || 'manufacturer'}
+                    manufacturerId={asset.manufacturerId}
                 />
             )}
 
@@ -2330,11 +2293,13 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             <div className="flex-1">
                                 <SearchableDropdown
                                     options={manufacturers}
-                                    value={asset.manufacturer}
-                                    onChange={(val) => {
+                                    value={asset.manufacturerId || ''}
+                                    onChange={(id) => {
+                                        const m = masterMfrs.find(x => x.id === id);
                                         onUpdate({
                                             ...asset,
-                                            manufacturer: val,
+                                            manufacturerId: id,
+                                            manufacturer: m?.name || '',
                                             model: ''
                                         });
                                     }}
@@ -2352,19 +2317,19 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Model</label>
-                        <div className={`flex items-stretch ${!asset.manufacturer ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                        <div className={`flex items-stretch ${!asset.manufacturerId ? 'opacity-50 cursor-not-allowed' : ''}`}>
                             <div className="flex-1">
                                 <SearchableDropdown
                                     options={models}
                                     value={asset.model}
                                     onChange={(val) => handleChange('model', val)}
                                     placeholder={paramsLoading ? "Loading..." : "Select Model..."}
-                                    disabled={!asset.manufacturer || models.length === 0}
+                                    disabled={!asset.manufacturerId || models.length === 0}
                                 />
                             </div>
                             <button
                                 onClick={() => setIsAddModelOpen(true)}
-                                disabled={!mfrContact}
+                                disabled={!asset.manufacturerId}
                                 className="ml-2 px-3 border border-slate-300 rounded-md hover:bg-slate-50 text-blue-600 bg-white shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                                 title="Add New Model"
                             >
@@ -3783,10 +3748,10 @@ interface SimpleAddModelModalProps {
     onClose: () => void;
     onSave: (model: any) => void;
     manufacturerName: string;
-    contactId: string;
+    manufacturerId: string;
 }
 
-function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, contactId }: SimpleAddModelModalProps) {
+function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, manufacturerId }: SimpleAddModelModalProps) {
     const [modelCode, setModelCode] = useState('');
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
@@ -3800,7 +3765,7 @@ function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, contac
         try {
             const db = DatabaseService.getInstance();
             const newModel = { code: modelCode, description: description, active: true };
-            await db.addContactModel(contactId, newModel);
+            await db.addManufacturerModel(manufacturerId, newModel);
             onSave(newModel);
         } catch (err: any) {
             showToast("Error adding model: " + err.message, 'error');

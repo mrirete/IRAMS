@@ -1257,6 +1257,7 @@ export class DatabaseService {
             criticality: row.criticality,
             location: row.location_id ? 'Linked Loc' : '', // We need to join locations ideally. For now, empty string.
             manufacturer: row.manufacturer,
+            manufacturerId: row.manufacturer_id,
             model: row.model,
             serialNumber: row.serial_number,
             department: '', // Not in DB schema
@@ -1301,6 +1302,7 @@ export class DatabaseService {
             criticality: asset.criticality,
             status_code: asset.status || 'ACTIVE',
             manufacturer: asset.manufacturer,
+            manufacturer_id: asset.manufacturerId || null,
             model: asset.model || asset.category,
             image_url: asset.image,
             // IEN — when undefined the DB trigger auto-generates EQ-NNNNNN
@@ -1355,6 +1357,7 @@ export class DatabaseService {
             criticality: asset.criticality || null,
             serial_number: asset.serialNumber || null,
             manufacturer: asset.manufacturer,
+            manufacturer_id: asset.manufacturerId || null,
             model: asset.model,
             image_url: asset.image,
             // Classification fields
@@ -2449,6 +2452,7 @@ export class DatabaseService {
             type: row.type || 'PART',
             uom: row.uom || 'EA',
             manufacturer: row.manufacturer,
+            manufacturerId: row.manufacturer_id,
             model: row.model,
 
             // Financials
