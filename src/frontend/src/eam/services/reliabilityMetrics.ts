@@ -67,7 +67,7 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     .sort((a, b) => b.count - a.count);
 
   // MTTR — prefer the asset's stored value, else mean of actual repair durations.
-  const durs = failures.map(r => Number(r.actual_duration ?? r.actualDuration) || 0).filter(d => d > 0);
+  const durs = failures.map(r => Number(r.actual_downtime_hrs ?? r.actual_duration ?? r.actualDuration) || 0).filter(d => d > 0);
   const mttrHours = (opts.mttrHours ?? null) != null
     ? Number(opts.mttrHours)
     : (durs.length ? Math.round((durs.reduce((s, d) => s + d, 0) / durs.length) * 10) / 10 : undefined);
@@ -199,7 +199,6 @@ export function pmEffectivenessKpi(eff: PMEffectiveness): ReliabilityKpi {
   return {
     key: 'pm_pdm_effectiveness',
     label: 'PM & PdM Effectiveness',
-    smrpRef: 'SMRP 5.4.13',
     value: v,
     display: v == null ? 'N/A' : `${v}% (${eff.overall.necessary}/${eff.overall.written})`,
     unit: '%',

@@ -37,7 +37,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                 const since = new Date(Date.now() - ONE_YEAR).toISOString();
                 const [woRes, aRes] = await Promise.all([
                     supabase.from('work_orders')
-                        .select('id, type, status, est_duration, actual_duration, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data(failure_mode_code)')
+                        .select('id, type, status, est_duration, actual_downtime_hrs, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data(failure_mode_code)')
                         .gte('created_at', since),
                     supabase.from('assets').select('id, tag, name, criticality'),
                 ]);
@@ -100,7 +100,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
             { key: 'pct_proactive', label: '% Proactive', value: proPct, display: proPct == null ? 'N/A' : `${proPct}%`, unit: '%', direction: 'higher-better', benchmark: '>= 80%', definition: 'Preventive or fully-planned work vs reactive (last 90 days). World-class >= 80%.' },
             pmEffectivenessKpi(pmEff),
             { key: 'availability', label: 'Availability', value: fleetAvail, display: fleetAvail == null ? 'N/A' : `${fleetAvail}%`, unit: '%', direction: 'higher-better', benchmark: '>= 90%', definition: 'Inherent availability Ai = MTBF / (MTBF + MTTR). Driven by repair downtime (MTTR). World-class >= 90%.' },
-            { key: 'fleet_mtbf', label: 'Fleet MTBF', value: fleetMtbf, display: fleetMtbf == null ? 'N/A' : `${fleetMtbf}d`, unit: 'days', direction: 'higher-better', definition: 'Mean Time Between Failures, averaged across assets (SMRP equipment reliability).' },
+            { key: 'fleet_mtbf', label: 'Fleet MTBF', value: fleetMtbf, display: fleetMtbf == null ? 'N/A' : `${fleetMtbf}d`, unit: 'days', direction: 'higher-better', definition: 'Mean Time Between Failures, averaged across assets (equipment reliability).' },
             { key: 'fleet_mttr', label: 'Fleet MTTR', value: fleetMttr, display: fleetMttr == null ? 'N/A' : `${fleetMttr}h`, unit: 'hours', direction: 'lower-better', definition: 'Mean Time To Repair, averaged across assets.' },
             { key: 'failures_12mo', label: 'Failures (12mo)', value: totalFailures12, display: String(totalFailures12), direction: 'lower-better', definition: 'Total corrective failures across the fleet in the last 12 months.' },
         ];
@@ -117,11 +117,11 @@ export const ReliabilityMetricsPage: React.FC = () => {
 
     const askSpecialist = () => {
         const ctx = [
-            'RELIABILITY METRICS (SMRP)',
+            'RELIABILITY METRICS',
             kpisToAIContext(kpis),
             badActors.length ? `Top bad actors: ${badActors.slice(0, 6).map(a => `${assetName(a.id)} (${a.rel.failures12mo} failures/12mo${a.rel.mtbfDays != null ? `, MTBF ${a.rel.mtbfDays}d` : ''}${a.rel.recurringModes.length ? `, recurring: ${a.rel.recurringModes[0].mode}×${a.rel.recurringModes[0].count}` : ''})`).join('; ')}.` : '',
         ].filter(Boolean).join('\n');
-        const prompt = `As a reliability engineer, review these fleet reliability KPIs against SMRP best practice. Be specific:\n1. The 3 biggest risks or opportunities in these numbers.\n2. A prioritised action plan — which bad actors to take to RCA, which PMs to optimise, and how to lift the proactive ratio.\n3. Any KPI that looks unreliable due to thin data, and what to capture to fix it.`;
+        const prompt = `As a reliability engineer, review these fleet reliability KPIs against industry reliability best practice. Be specific:\n1. The 3 biggest risks or opportunities in these numbers.\n2. A prioritised action plan — which bad actors to take to RCA, which PMs to optimise, and how to lift the proactive ratio.\n3. Any KPI that looks unreliable due to thin data, and what to capture to fix it.`;
         openRelantern(ctx, 'reliability', prompt);
     };
 
@@ -133,7 +133,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     <h1 className="text-lg md:text-xl font-bold text-slate-900 flex items-center gap-2">
                         <Gauge size={20} className="text-primary-600" /> Reliability Metrics
                     </h1>
-                    <p className="text-xs text-slate-500">SMRP-aligned KPIs — one source of truth for people and the Specialist AI.</p>
+                    <p className="text-xs text-slate-500">Reliability-aligned KPIs — one source of truth for people and the Specialist AI.</p>
                 </div>
                 <button
                     onClick={askSpecialist}
@@ -215,7 +215,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
 
                     <p className="text-[11px] text-slate-400">
                         Metrics computed from the last 12 months of work orders via the shared reliability engine.
-                        Hover a KPI for its SMRP definition. New metrics (e.g. Availability) plug in here automatically.
+                        Hover a KPI for its definition. New metrics (e.g. Availability) plug in here automatically.
                     </p>
                 </>
             )}
