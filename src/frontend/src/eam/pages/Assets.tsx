@@ -23,7 +23,7 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { isFunctionalLocation } from '../services/hierarchyModel';
+import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel } from '../services/hierarchyModel';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
@@ -1440,13 +1440,18 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     compactLabel: true,
                                 },
                                 ...(canCreate ? [
-                                {
-                                    label: 'Add Child',
-                                    icon: <CornerDownRight size={14} />,
-                                    onClick: () => openAddModal('Asset'),
-                                    variant: 'secondary' as const,
-                                    compactLabel: true,
-                                },
+                                // F-005: child creation is level-aware — a FLOC offers "Add Location",
+                                // an Equipment-eligible level offers "Add Asset" (unknown level → both).
+                                ...((() => {
+                                    const selArg = { hierarchyLevel: (selectedAsset as any).hierarchyLevel, assetType: selectedAsset.assetType, category: selectedAsset.category };
+                                    const loc = canHaveChildLocation(selArg);
+                                    const eq = canHaveChildEquipment(selArg);
+                                    const unknown = !loc && !eq; // legacy/unmapped level → offer both
+                                    const acts: any[] = [];
+                                    if (loc || unknown) acts.push({ label: 'Add Location', icon: <CornerDownRight size={14} />, onClick: () => openAddModal('Location'), variant: 'secondary' as const, compactLabel: true });
+                                    if (eq || unknown) acts.push({ label: 'Add Asset', icon: <CornerDownRight size={14} />, onClick: () => openAddModal('Asset'), variant: 'secondary' as const, compactLabel: true });
+                                    return acts;
+                                })()),
                                 {
                                     label: 'Duplicate',
                                     icon: <Copy size={14} />,
@@ -1995,6 +2000,10 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
         onUpdate({ ...asset, [field]: value });
     };
 
+    // F-008/F-002: object class drives terminology (FLOC ID vs Asset Tag) and field visibility.
+    const isFloc = isFunctionalLocation({ hierarchyLevel: (asset as any).hierarchyLevel, assetType: asset.assetType, category: asset.category });
+    const idLabel = isFloc ? 'Functional Location ID' : 'Asset Tag';
+
     const handleMfrCreated = async (newMfr: any) => {
         // Add the new master manufacturer to the dropdown and select it (by id).
         setMasterMfrs(prev => [...prev, newMfr].sort((a, b) => String(a.name).localeCompare(String(b.name))));
@@ -2036,9 +2045,9 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                 <div className="mb-4">
                     <div className="flex items-center justify-between mb-1">
                         <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1.5">
-                            Asset Tag
+                            {idLabel}
                             {!tagEditable && (
-                                <span title="Asset tags are locked after creation"><Lock size={11} className="text-slate-400" /></span>
+                                <span title={`${idLabel} is locked after creation`}><Lock size={11} className="text-slate-400" /></span>
                             )}
                             {!tagEditable && onChangeTag && (
                                 <button
@@ -2127,7 +2136,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                                     <History size={20} className="text-amber-600" />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-bold text-slate-800">Change Asset Tag</h3>
+                                    <h3 className="text-lg font-bold text-slate-800">Change {idLabel}</h3>
                                     <p className="text-xs text-slate-500">This change will be recorded in the audit trail</p>
                                 </div>
                             </div>
@@ -3027,6 +3036,12 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
     };
 
     const isLocation = type === 'Location';
+    // F-001: position context. Criticality is N/A at Root Level (only meaningful
+    // from Level 2 down), so it's greyed out there.
+    const parentAsset = formData.parentId ? existingAssets.find(a => a.id === formData.parentId) : null;
+    const isRoot = !formData.parentId;
+    const parentLevelLabel = parentAsset ? resolveLevel({ hierarchyLevel: (parentAsset as any).hierarchyLevel, assetType: (parentAsset as any).assetType, category: (parentAsset as any).category })?.label : undefined;
+    const criticalityNA = isLocation && isRoot;
 
     const handleSubmit = () => {
         // Tag ID is optional — a blank tag auto-generates server-side (FL-/EQ-), UAT F-009.
@@ -3098,6 +3113,9 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Criticality {!isLocation && <span className="text-red-500">*</span>}</label>
+                            {criticalityNA ? (
+                                <div className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-400 italic">N/A at Root Level</div>
+                            ) : (
                             <select
                                 className={`w-full p-2 border rounded-lg text-sm bg-white ${!formData.criticality ? 'border-slate-300 text-slate-400' : 'border-slate-300 text-slate-800'}`}
                                 value={formData.criticality || ''}
@@ -3119,7 +3137,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                                     </>
                                 )}
                             </select>
-
+                            )}
                         </div>
 
                         <div>
@@ -3133,6 +3151,9 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                                 onChange={(val) => setFormData({ ...formData, parentId: val || undefined })}
                                 placeholder="Search parent asset..."
                             />
+                            <p className="text-[10px] text-slate-400 mt-1">
+                                {isRoot ? 'Position: Root Level' : `Under ${parentAsset?.tag || 'parent'}${parentLevelLabel ? ` · ${parentLevelLabel}` : ''}`}
+                            </p>
                         </div>
                     </div>
 
@@ -3146,7 +3167,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancel</button>
                     <button
                         onClick={handleSubmit}
-                        disabled={!formData.tag || !formData.name || (!isLocation && !formData.criticality)}
+                        disabled={!formData.name || (!isLocation && !criticalityNA && !formData.criticality)}
                         className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-md flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                         <CheckCircle size={16} /> Create {type}
