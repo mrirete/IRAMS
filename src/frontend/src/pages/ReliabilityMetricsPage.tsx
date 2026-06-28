@@ -19,7 +19,7 @@ import {
     kpisToAIContext, type ReliabilityKpi, type AssetReliability,
 } from '../eam/services/reliabilityMetrics';
 
-interface AssetRow { id: string; tag: string; name: string; criticality?: string }
+interface AssetRow { id: string; tag: string; name: string; criticality?: string; hierarchy_level?: string; asset_class?: string; manufacturer_id?: string; equipment_number?: string }
 interface BadActor { id: string; rel: AssetReliability }
 
 const ONE_YEAR = 365 * 86400000;
@@ -50,7 +50,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     supabase.from('work_orders')
                         .select('id, type, status, est_duration, actual_downtime_hrs, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data(failure_mode_code)')
                         .gte('created_at', since),
-                    supabase.from('assets').select('id, tag, name, criticality'),
+                    supabase.from('assets').select('id, tag, name, criticality, hierarchy_level, asset_class, manufacturer_id, equipment_number'),
                     db.getWorkOrders().catch(() => []),
                     db.getLaborAvailability(range).catch(() => ({ resources: [] })),
                 ]);
@@ -137,6 +137,22 @@ export const ReliabilityMetricsPage: React.FC = () => {
             ] as ReliabilityKpi[],
         };
     }, [schedJobs, resources]);
+
+    // Register data-quality health (ISO 14224 is fundamentally about data quality).
+    const health = useMemo(() => {
+        const EQUIP = new Set(['EQUIPMENT', 'COMPONENT']);
+        const total = assets.length;
+        const equip = assets.filter(a => EQUIP.has(String(a.hierarchy_level || '').toUpperCase()));
+        const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : null);
+        return {
+            total,
+            critPct: pct(assets.filter(a => a.criticality).length, total),
+            mfrPct: pct(equip.filter(a => a.manufacturer_id).length, equip.length),
+            classPct: pct(equip.filter(a => a.asset_class).length, equip.length),
+            eqNumPct: pct(equip.filter(a => a.equipment_number).length, equip.length),
+            equipCount: equip.length,
+        };
+    }, [assets]);
 
     const ragColor = (k: ReliabilityKpi): string => {
         if (k.value == null) return 'text-slate-400';
@@ -227,6 +243,32 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                                 ? (exec.backlog.weeklyCapacityHours > 0 ? `${exec.backlog.readyHours}h ÷ ${exec.backlog.weeklyCapacityHours}h/wk crew · benchmark 2–4 wks` : 'No crew capacity set')
                                                 : `${k.definition.replace(/\.$/, '')}`}
                                         </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Register Health — data quality (ISO 14224) */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+                            <Gauge size={15} className="text-primary-600" />
+                            <h3 className="text-sm font-bold text-slate-800">Register Health</h3>
+                            <span className="text-[11px] text-slate-400">data quality · {health.total} assets ({health.equipCount} equipment)</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-slate-100">
+                            {[
+                                { label: 'Criticality set', v: health.critPct, hint: 'all assets' },
+                                { label: 'Mfr linked', v: health.mfrPct, hint: 'equipment' },
+                                { label: 'Class coded', v: health.classPct, hint: 'equipment · ISO 14224' },
+                                { label: 'Equip # set', v: health.eqNumPct, hint: 'equipment' },
+                            ].map(m => {
+                                const color = m.v == null ? 'text-slate-400' : m.v >= 90 ? 'text-emerald-600' : m.v >= 70 ? 'text-amber-500' : 'text-red-500';
+                                return (
+                                    <div key={m.label} className="p-4">
+                                        <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{m.label}</div>
+                                        <div className={`text-2xl font-extrabold mt-1 ${color}`}>{m.v == null ? 'N/A' : `${m.v}%`}</div>
+                                        <div className="text-[10px] text-slate-400 mt-0.5">{m.hint}</div>
                                     </div>
                                 );
                             })}
