@@ -48,6 +48,15 @@ CREATE INDEX IF NOT EXISTS idx_equip_install_floc      ON equipment_installation
 COMMENT ON TABLE equipment_installations IS
   'Equipment install/dismantle/transfer history (UAT F-010 Option A). Open row (removed_at IS NULL) = current installation.';
 
+-- 4. Row Level Security — match the project convention (0150/0155): RLS ON with a
+--    permissive policy for authenticated users. (Enabling RLS WITHOUT a policy
+--    would deny-all and lock the table from the app.) Idempotent.
+ALTER TABLE equipment_installations ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "auth_all_equipment_installations" ON equipment_installations;
+CREATE POLICY "auth_all_equipment_installations"
+  ON equipment_installations FOR ALL TO authenticated
+  USING (true) WITH CHECK (true);
+
 -- Rollback (manual):
 --   DROP TABLE IF EXISTS equipment_installations;
 --   ALTER TABLE assets DROP COLUMN IF EXISTS functional_location_id;
