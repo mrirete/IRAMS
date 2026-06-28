@@ -6,7 +6,13 @@ import {
     AlertTriangle,
     Clock,
     Activity,
+    Layers,
 } from 'lucide-react';
+import {
+    computeScheduleCompliance,
+    computePMCompliance,
+    computeScheduleBacklog,
+} from '../../services/reliabilityMetrics';
 
 // ── Types ─────────────────────────────────────────────────────────────
 
@@ -14,6 +20,7 @@ interface ScheduleKPIsProps {
     jobs: any[]; // WorkOrder[]
     recurringJobs?: any[]; // RecurringJob[]
     materialStatusMap?: Record<string, 'AVAILABLE' | 'ON_ORDER' | 'SHORTAGE' | 'UNCHECKED'>;
+    resources?: any[]; // LaborResource[] — crew roster for backlog-in-weeks capacity
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -102,77 +109,26 @@ const daysSince = (dateStr: string | undefined): number => {
     }
 };
 
-/** Check if a date is in the current month */
-const isThisMonth = (dateStr: string | undefined): boolean => {
-    if (!dateStr) return false;
-    try {
-        const d = new Date(dateStr);
-        const now = new Date();
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    } catch {
-        return false;
-    }
-};
-
 // ── Component ─────────────────────────────────────────────────────────
 
 export const ScheduleKPIs: React.FC<ScheduleKPIsProps> = ({
     jobs,
     recurringJobs,
     materialStatusMap,
+    resources,
 }) => {
     // ── KPI Calculations ──────────────────────────────────────────────
 
     const metrics = useMemo(() => {
         const now = new Date();
 
-        // 1. Schedule Compliance %
-        const scheduledWOs = jobs.filter(
-            (j) => j.dateDueStart || j.dueDate
-        );
-        const completedOnTime = scheduledWOs.filter((j) => {
-            if (j.status !== 'CLOSED' && j.status !== 'TECO') return false;
-            const scheduled = new Date(j.dateDueStart || j.dueDate);
-            const completed = j.dateCompleted
-                ? new Date(j.dateCompleted)
-                : j.dateClosed
-                ? new Date(j.dateClosed)
-                : now; // If TECO/CLOSED but no completion date, use now
-            return completed <= scheduled;
-        });
-        const scheduleCompliance =
-            scheduledWOs.length > 0
-                ? (completedOnTime.length / scheduledWOs.length) * 100
-                : 100;
+        // 1 & 2. Schedule + PM Compliance — computed via the shared reliability
+        // spine so this cockpit and the Reliability Metrics page never diverge.
+        const sc = computeScheduleCompliance(jobs);
+        const pmc = computePMCompliance(jobs);
 
-        // 2. PM Compliance %
-        const pmJobs = jobs.filter(
-            (j) =>
-                j.type === 'PM' ||
-                j.type === 'PREVENTIVE' ||
-                j.type === 'INSPECTION' ||
-                j.type === 'CALIBRATION'
-        );
-        const pmsDueThisMonth = pmJobs.filter(
-            (j) =>
-                isThisMonth(j.dateDueStart || j.dueDate)
-        );
-        const pmsCompletedOnTime = pmsDueThisMonth.filter((j) => {
-            if (j.status !== 'CLOSED' && j.status !== 'TECO') return false;
-            const due = new Date(
-                j.dateDueStart || j.dueDate
-            );
-            const completed = j.dateCompleted
-                ? new Date(j.dateCompleted)
-                : j.dateClosed
-                ? new Date(j.dateClosed)
-                : now;
-            return completed <= due;
-        });
-        const pmCompliance =
-            pmsDueThisMonth.length > 0
-                ? (pmsCompletedOnTime.length / pmsDueThisMonth.length) * 100
-                : 100;
+        // Ready Backlog in crew-weeks (estimated hours ÷ weekly crew capacity).
+        const backlog = computeScheduleBacklog(jobs, resources || [], materialStatusMap as any);
 
         // 3. Ready Backlog
         const readyBacklog = jobs.filter(
@@ -209,23 +165,26 @@ export const ScheduleKPIs: React.FC<ScheduleKPIsProps> = ({
                 : 0;
 
         return {
-            scheduleCompliance: Math.round(scheduleCompliance * 10) / 10,
-            scheduledTotal: scheduledWOs.length,
-            completedOnTimeCount: completedOnTime.length,
-            pmCompliance: Math.round(pmCompliance * 10) / 10,
-            pmsDueCount: pmsDueThisMonth.length,
-            pmsCompletedCount: pmsCompletedOnTime.length,
+            scheduleCompliance: sc.pct ?? 100, // nothing scheduled ⇒ treat as 100% (On Track)
+            scheduledTotal: sc.denominator,
+            completedOnTimeCount: sc.numerator,
+            pmCompliance: pmc.pct ?? 100,
+            pmsDueCount: pmc.denominator,
+            pmsCompletedCount: pmc.numerator,
             readyBacklog: readyBacklog.length,
             overdue: overdue.length,
             avgBacklogAge: Math.round(avgBacklogAge),
+            backlogWeeks: backlog.backlogWeeks,
+            backlogReadyHours: backlog.readyHours,
+            weeklyCapacity: backlog.weeklyCapacityHours,
         };
-    }, [jobs, materialStatusMap]);
+    }, [jobs, materialStatusMap, resources]);
 
     const schedTier = getComplianceTier(metrics.scheduleCompliance);
     const pmTier = getComplianceTier(metrics.pmCompliance);
 
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {/* ── 1. Schedule Compliance ── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 group overflow-hidden relative">
                 {/* Top accent bar */}
@@ -348,6 +307,50 @@ export const ScheduleKPIs: React.FC<ScheduleKPIsProps> = ({
                     </div>
                 </div>
             </div>
+
+            {/* ── 3b. Ready Backlog (weeks) ── */}
+            {(() => {
+                const wks = metrics.backlogWeeks;
+                const hot = wks != null && wks > 6;       // over-resourced backlog
+                const cold = wks != null && wks < 2;      // risk of crew idling
+                const tone = hot ? 'amber' : cold ? 'slate' : 'emerald';
+                const accent = tone === 'amber' ? 'from-amber-500 to-amber-600'
+                    : tone === 'slate' ? 'from-slate-400 to-slate-500' : 'from-emerald-500 to-emerald-600';
+                const iconBg = tone === 'amber' ? 'bg-amber-50 group-hover:bg-amber-100'
+                    : tone === 'slate' ? 'bg-slate-50 group-hover:bg-slate-100' : 'bg-emerald-50 group-hover:bg-emerald-100';
+                const iconColor = tone === 'amber' ? 'text-amber-600' : tone === 'slate' ? 'text-slate-500' : 'text-emerald-600';
+                const valColor = tone === 'amber' ? 'text-amber-700' : 'text-slate-900';
+                return (
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 group overflow-hidden relative"
+                        title="Estimated labour-hours of ready (planned) backlog ÷ weekly crew capacity. Benchmark ~2–4 weeks.">
+                        <div className={`h-1 bg-gradient-to-r ${accent}`} />
+                        <div className="p-4">
+                            <div className="flex items-center gap-3">
+                                <div className={`flex-shrink-0 p-3 rounded-xl transition-colors duration-300 ${iconBg}`}>
+                                    <Layers size={20} className={`transition-transform duration-300 group-hover:scale-110 ${iconColor}`} />
+                                </div>
+                                <div className="min-w-0">
+                                    <div className={`text-2xl font-bold tabular-nums tracking-tight ${valColor}`}>
+                                        {wks == null ? '—' : wks}
+                                        <span className="text-sm font-semibold text-slate-400 ml-1">wks</span>
+                                    </div>
+                                    <div className="text-[11px] font-medium text-slate-500 leading-tight">
+                                        Backlog (weeks)
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center gap-1.5">
+                                <Activity size={10} className="text-slate-400" />
+                                <span className="text-[10px] text-slate-400">
+                                    {metrics.weeklyCapacity > 0
+                                        ? `${metrics.backlogReadyHours}h ÷ ${metrics.weeklyCapacity}h/wk crew`
+                                        : 'No crew capacity set'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* ── 4. Overdue ── */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 group overflow-hidden relative">

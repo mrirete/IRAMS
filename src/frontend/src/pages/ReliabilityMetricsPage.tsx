@@ -7,12 +7,15 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight } from 'lucide-react';
+import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock } from 'lucide-react';
 import { supabase } from '../eam/lib/supabase';
+import { DatabaseService } from '../eam/services/DatabaseService';
 import { useRelantern } from '../eam/contexts/RelanternContext';
 import { classifyWork } from '../eam/services/workReadiness';
 import {
     computePMEffectiveness, pmEffectivenessKpi, computeAssetReliability,
+    computeScheduleCompliance, computePMCompliance, computeScheduleBacklog,
+    backlogWeeksKpi, complianceKpi,
     kpisToAIContext, type ReliabilityKpi, type AssetReliability,
 } from '../eam/services/reliabilityMetrics';
 
@@ -29,22 +32,34 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [wos, setWos] = useState<any[]>([]);
     const [assets, setAssets] = useState<AssetRow[]>([]);
+    const [schedJobs, setSchedJobs] = useState<any[]>([]); // full WO set for execution metrics
+    const [resources, setResources] = useState<any[]>([]); // crew roster for backlog capacity
 
     useEffect(() => {
         let active = true;
         (async () => {
             try {
                 const since = new Date(Date.now() - ONE_YEAR).toISOString();
-                const [woRes, aRes] = await Promise.all([
+                const db = DatabaseService.getInstance();
+                // Current week range for crew-capacity lookup.
+                const ws = new Date(); ws.setDate(ws.getDate() - ws.getDay() + 1);
+                const we = new Date(ws); we.setDate(we.getDate() + 6);
+                const range = { start: ws.toISOString().split('T')[0], end: we.toISOString().split('T')[0] };
+
+                const [woRes, aRes, allWOs, labor] = await Promise.all([
                     supabase.from('work_orders')
                         .select('id, type, status, est_duration, actual_downtime_hrs, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data(failure_mode_code)')
                         .gte('created_at', since),
                     supabase.from('assets').select('id, tag, name, criticality'),
+                    db.getWorkOrders().catch(() => []),
+                    db.getLaborAvailability(range).catch(() => ({ resources: [] })),
                 ]);
                 if (!active) return;
                 if (woRes.error) throw woRes.error;
                 setWos(woRes.data || []);
                 setAssets((aRes.data as AssetRow[]) || []);
+                setSchedJobs(Array.isArray(allWOs) ? allWOs : []);
+                setResources((labor as any)?.resources || []);
             } catch (e: any) {
                 if (active) setError(e?.message || 'Failed to load reliability data.');
             } finally {
@@ -107,6 +122,22 @@ export const ReliabilityMetricsPage: React.FC = () => {
         return { kpis: list, badActors: bad as BadActor[] };
     }, [wos]);
 
+    // Work-execution metrics (shared spine, full WO set) — mirrored from the
+    // Schedule cockpit so the numbers match exactly.
+    const exec = useMemo(() => {
+        const sc = computeScheduleCompliance(schedJobs);
+        const pmc = computePMCompliance(schedJobs);
+        const backlog = computeScheduleBacklog(schedJobs, resources);
+        return {
+            sc, pmc, backlog,
+            kpis: [
+                backlogWeeksKpi(backlog),
+                complianceKpi('schedule_compliance', 'Schedule Compliance', sc),
+                complianceKpi('pm_compliance', 'PM Compliance', pmc),
+            ] as ReliabilityKpi[],
+        };
+    }, [schedJobs, resources]);
+
     const ragColor = (k: ReliabilityKpi): string => {
         if (k.value == null) return 'text-slate-400';
         if (k.key === 'pct_proactive') return k.value >= 80 ? 'text-emerald-600' : k.value >= 60 ? 'text-amber-500' : 'text-red-500';
@@ -118,7 +149,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const askSpecialist = () => {
         const ctx = [
             'RELIABILITY METRICS',
-            kpisToAIContext(kpis),
+            kpisToAIContext([...kpis, ...exec.kpis]),
             badActors.length ? `Top bad actors: ${badActors.slice(0, 6).map(a => `${assetName(a.id)} (${a.rel.failures12mo} failures/12mo${a.rel.mtbfDays != null ? `, MTBF ${a.rel.mtbfDays}d` : ''}${a.rel.recurringModes.length ? `, recurring: ${a.rel.recurringModes[0].mode}×${a.rel.recurringModes[0].count}` : ''})`).join('; ')}.` : '',
         ].filter(Boolean).join('\n');
         const prompt = `As a reliability engineer, review these fleet reliability KPIs against industry reliability best practice. Be specific:\n1. The 3 biggest risks or opportunities in these numbers.\n2. A prioritised action plan — which bad actors to take to RCA, which PMs to optimise, and how to lift the proactive ratio.\n3. Any KPI that looks unreliable due to thin data, and what to capture to fix it.`;
@@ -163,6 +194,43 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                 {k.benchmark && <div className="text-[10px] text-slate-400 mt-0.5">benchmark {k.benchmark}</div>}
                             </div>
                         ))}
+                    </div>
+
+                    {/* Work Execution — mirrored from Schedule (shared spine) */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+                            <CalendarClock size={15} className="text-primary-600" />
+                            <h3 className="text-sm font-bold text-slate-800">Work Execution</h3>
+                            <span className="text-[11px] text-slate-400">backlog &amp; compliance</span>
+                            <button
+                                onClick={() => navigate('/scheduling')}
+                                className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700"
+                                title="Open the Schedule cockpit to act on backlog and compliance"
+                            >
+                                View in Schedule <ArrowRight size={12} />
+                            </button>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+                            {exec.kpis.map(k => {
+                                const isBacklog = k.key === 'ready_backlog_weeks';
+                                const color = k.value == null ? 'text-slate-400'
+                                    : isBacklog ? (k.value > 6 ? 'text-amber-600' : 'text-slate-900')
+                                    : (k.value >= 90 ? 'text-emerald-600' : k.value >= 70 ? 'text-amber-500' : 'text-red-500');
+                                return (
+                                    <div key={k.key} className="p-4" title={k.definition}>
+                                        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                            {isBacklog ? <Layers size={11} /> : <CalendarClock size={11} />}{k.label}
+                                        </div>
+                                        <div className={`text-2xl md:text-3xl font-extrabold mt-1 ${color}`}>{k.display}</div>
+                                        <div className="text-[10px] text-slate-400 mt-0.5">
+                                            {isBacklog
+                                                ? (exec.backlog.weeklyCapacityHours > 0 ? `${exec.backlog.readyHours}h ÷ ${exec.backlog.weeklyCapacityHours}h/wk crew · benchmark 2–4 wks` : 'No crew capacity set')
+                                                : `${k.definition.replace(/\.$/, '')}`}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     </div>
 
                     {/* Bad actors */}

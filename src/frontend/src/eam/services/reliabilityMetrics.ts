@@ -193,6 +193,112 @@ export function computePMEffectiveness(workOrders: any[]): PMEffectiveness {
   return { overall: { necessary: nec, written: writ, pct: pct(nec, writ) }, byPM: byPMOut };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Work-execution metrics — Schedule Compliance, PM Compliance, Ready Backlog (in
+// crew-weeks). Shared by the Schedule cockpit (ScheduleKPIs) and the Reliability
+// Metrics page so both surfaces show identical numbers off one definition.
+//
+// Field-tolerant: accepts mapped WorkOrder objects (camelCase) OR raw DB rows
+// (snake_case), so callers can pass whichever they already have.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const _status = (j: any) => String(j.status || '').toUpperCase();
+const _type = (j: any) => String(j.type || '').toUpperCase();
+const _due = (j: any): string | undefined => j.dateDueStart || j.dueDate || j.date_due_start || j.due_date || undefined;
+const _isClosed = (j: any) => _status(j) === 'CLOSED' || _status(j) === 'TECO';
+const _completedTs = (j: any, now: number): number => {
+  const c = j.dateCompleted || j.dateClosed || j.date_completed || j.closed_at;
+  return c ? new Date(c).getTime() : now; // CLOSED/TECO without a date ⇒ treat as now
+};
+const _isThisMonth = (d?: string): boolean => {
+  if (!d) return false;
+  const x = new Date(d), n = new Date();
+  return x.getMonth() === n.getMonth() && x.getFullYear() === n.getFullYear();
+};
+const _estHours = (j: any): number => {
+  const e = Number(j.estDuration ?? j.est_duration);
+  if (e > 0) return e;
+  const tasks = j.tasks || j.job_tasks || [];
+  return Array.isArray(tasks) ? tasks.reduce((s: number, t: any) => s + (Number(t.estHours ?? t.est_hours) || 0), 0) : 0;
+};
+
+export interface ComplianceResult { pct: number | null; numerator: number; denominator: number; }
+
+/** Schedule Compliance — scheduled work completed on/before its scheduled date. */
+export function computeScheduleCompliance(jobs: any[]): ComplianceResult {
+  const now = Date.now();
+  const scheduled = (jobs || []).filter(j => _due(j));
+  const onTime = scheduled.filter(j => _isClosed(j) && _completedTs(j, now) <= new Date(_due(j) as string).getTime());
+  return { numerator: onTime.length, denominator: scheduled.length, pct: scheduled.length ? Math.round((onTime.length / scheduled.length) * 1000) / 10 : null };
+}
+
+const PM_TYPES = ['PM', 'PREVENTIVE', 'INSPECTION', 'CALIBRATION'];
+
+/** PM Compliance — PMs due this month completed on/before their due date. */
+export function computePMCompliance(jobs: any[]): ComplianceResult {
+  const now = Date.now();
+  const due = (jobs || []).filter(j => PM_TYPES.includes(_type(j)) && _isThisMonth(_due(j)));
+  const onTime = due.filter(j => _isClosed(j) && _completedTs(j, now) <= new Date(_due(j) as string).getTime());
+  return { numerator: onTime.length, denominator: due.length, pct: due.length ? Math.round((onTime.length / due.length) * 1000) / 10 : null };
+}
+
+export interface BacklogMetrics {
+  readyHours: number;          // estimated labour-hours of ready backlog
+  weeklyCapacityHours: number; // Σ dailyCapacityHours × workingDays across crew
+  backlogWeeks: number | null; // readyHours ÷ weeklyCapacity
+}
+
+const READY_STATES = ['OPEN', 'PLAN', 'PLANNED', 'READY'];
+
+/**
+ * Ready Backlog in crew-weeks = estimated labour-hours of ready (planned) work ÷
+ * weekly crew capacity. Capacity is derived from the resource roster
+ * (dailyCapacityHours × number of working days). Benchmark ~2–4 weeks: high =
+ * under-resourced or over-planning; very low = risk of crew idling.
+ */
+export function computeScheduleBacklog(
+  jobs: any[],
+  resources: any[],
+  materialStatusMap?: Record<string, string>,
+): BacklogMetrics {
+  const ready = (jobs || []).filter(j =>
+    READY_STATES.includes(_status(j)) && (!materialStatusMap || materialStatusMap[j.id] !== 'SHORTAGE'));
+  const readyHours = ready.reduce((s, j) => s + _estHours(j), 0);
+  const weeklyCapacityHours = (resources || []).reduce((s, r) => {
+    const daily = Number(r.dailyCapacityHours ?? r.daily_capacity_hours) || 0;
+    const days = Array.isArray(r.workingDays) ? r.workingDays.length
+      : Array.isArray(r.working_days) ? r.working_days.length : 5;
+    return s + daily * days;
+  }, 0);
+  const backlogWeeks = weeklyCapacityHours > 0 ? Math.round((readyHours / weeklyCapacityHours) * 10) / 10 : null;
+  return { readyHours: Math.round(readyHours), weeklyCapacityHours: Math.round(weeklyCapacityHours), backlogWeeks };
+}
+
+/** Emit Ready Backlog (weeks) as a harmonized KPI for the cockpit + AI advisor. */
+export function backlogWeeksKpi(b: BacklogMetrics): ReliabilityKpi {
+  const v = b.backlogWeeks;
+  return {
+    key: 'ready_backlog_weeks',
+    label: 'Ready Backlog',
+    value: v,
+    display: v == null ? 'N/A' : `${v} wks`,
+    unit: 'weeks',
+    direction: 'lower-better',
+    benchmark: '2–4 weeks',
+    definition: 'Estimated labour-hours of ready (planned) backlog ÷ weekly crew capacity. >6 weeks signals under-resourcing or over-planning; <2 risks the crew running out of ready work.',
+  };
+}
+
+/** Wrap a ComplianceResult as a harmonized KPI (Schedule / PM compliance). */
+export function complianceKpi(key: string, label: string, c: ComplianceResult, benchmark = '>= 90%'): ReliabilityKpi {
+  return {
+    key, label, value: c.pct,
+    display: c.pct == null ? 'N/A' : `${c.pct}%`,
+    unit: '%', direction: 'higher-better', benchmark,
+    definition: `${c.numerator} of ${c.denominator} completed on time.`,
+  };
+}
+
 /** Emit the overall PM & PdM Effectiveness as a harmonized KPI. */
 export function pmEffectivenessKpi(eff: PMEffectiveness): ReliabilityKpi {
   const v = eff.overall.pct;

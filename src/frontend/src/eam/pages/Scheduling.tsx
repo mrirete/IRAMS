@@ -890,7 +890,7 @@ export const Scheduling: React.FC = () => {
             </div>
 
             {/* ── Schedule KPIs Strip ── */}
-            <ScheduleKPIs jobs={jobs} recurringJobs={recurringJobs} materialStatusMap={materialStatusMap} />
+            <ScheduleKPIs jobs={jobs} recurringJobs={recurringJobs} materialStatusMap={materialStatusMap} resources={mrsResources} />
 
             {/* Content Area */}
             <div className="flex-1 bg-white rounded-card shadow-card border border-slate-200 overflow-hidden relative flex flex-col">
