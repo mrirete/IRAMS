@@ -660,7 +660,8 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
             setIsAddModalOpen(false);
             setSelectedAsset(created);
             setTagEditable(true); // Allow one-time tag edit for newly created assets
-            showToast(`${newAsset.tag} created successfully. You may rename the tag before saving.`, 'success');
+            // Use the persisted tag — it may have been auto-generated server-side (F-009).
+            showToast(`${created.tag || newAsset.tag} created successfully. You may rename the tag before saving.`, 'success');
         } catch (err: any) {
             showToast('Error creating asset: ' + err.message, 'error');
         }
@@ -3063,7 +3064,8 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
     const isLocation = type === 'Location';
 
     const handleSubmit = () => {
-        if (!formData.tag || !formData.name || (!isLocation && !formData.criticality)) {
+        // Tag ID is optional — a blank tag auto-generates server-side (FL-/EQ-), UAT F-009.
+        if (!formData.name || (!isLocation && !formData.criticality)) {
             return; // validation handled by required attribute
         }
 
@@ -3104,15 +3106,15 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     {/* Row 1: Tag + Name */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tag ID <span className="text-red-500">*</span></label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{isLocation ? 'Functional Location ID' : 'Tag ID'}</label>
                             <input
                                 type="text"
-                                required
                                 className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none"
-                                placeholder="e.g. P-101-A"
-                                value={formData.tag}
+                                placeholder={isLocation ? 'Blank → auto FL-…' : 'Blank → auto EQ-…'}
+                                value={formData.tag || ''}
                                 onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
                             />
+                            <p className="text-[10px] text-slate-400 mt-1">Leave blank to auto-generate.</p>
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Name <span className="text-red-500">*</span></label>

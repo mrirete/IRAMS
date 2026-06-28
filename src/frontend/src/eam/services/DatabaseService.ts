@@ -1284,7 +1284,9 @@ export class DatabaseService {
             if (finError) console.warn("Failed to create default financials for asset:", finError);
         }
 
-        return { ...asset, id: data.id };
+        // Return DB-generated identifiers (tag/equipment_number) so a blank Tag ID
+        // surfaces the auto-generated FL-/EQ- value to the UI (UAT F-009).
+        return { ...asset, id: data.id, tag: data.tag, equipmentNumber: data.equipment_number };
     }
 
     public async updateAsset(asset: any): Promise<void> {
