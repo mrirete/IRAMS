@@ -546,6 +546,55 @@ export class DatabaseService {
         return [];
     }
 
+    // ── Manufacturer master (UAT F-003 follow-up) — single source of truth ──
+    // A manufacturer is a business partner with its own master record; models and
+    // assets reference it by id. Replaces the contacts/vendors dual source.
+    public async getManufacturers(): Promise<any[]> {
+        const { data, error } = await supabase.from('manufacturers').select('*').eq('active', true).order('name');
+        if (error) { console.error('DatabaseService.getManufacturers:', error); return []; }
+        return data || [];
+    }
+
+    public async addManufacturer(m: { name: string; country?: string; website?: string; phone?: string; email?: string; notes?: string }): Promise<any> {
+        const { data, error } = await supabase.from('manufacturers').insert({
+            name: m.name.trim(),
+            country: m.country || null,
+            website: m.website || null,
+            phone: m.phone || null,
+            email: m.email || null,
+            notes: m.notes || null,
+            active: true,
+        }).select().single();
+        if (error) { console.error('DatabaseService.addManufacturer:', error); throw error; }
+        return data;
+    }
+
+    public async updateManufacturer(id: string, patch: Record<string, any>): Promise<void> {
+        const { error } = await supabase.from('manufacturers').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
+        if (error) { console.error('DatabaseService.updateManufacturer:', error); throw error; }
+    }
+
+    public async getManufacturerModels(manufacturerId: string): Promise<any[]> {
+        const { data } = await supabase.from('manufacturer_models').select('*').eq('manufacturer_id', manufacturerId);
+        return (data || []).map((r: any) => ({ id: r.id, code: r.model_code, description: r.description, active: r.active }));
+    }
+
+    public async addManufacturerModel(manufacturerId: string, model: { code: string; description?: string; active?: boolean }): Promise<any> {
+        const { data, error } = await supabase.from('manufacturer_models').insert({
+            manufacturer_id: manufacturerId,
+            model_code: model.code,
+            description: model.description || null,
+            active: model.active ?? true,
+        }).select().single();
+        if (error) { console.error('DatabaseService.addManufacturerModel:', error); throw error; }
+        return { ...model, id: data.id };
+    }
+
+    public async deleteManufacturerModel(modelId: string): Promise<void> {
+        const { error } = await supabase.from('manufacturer_models').delete().eq('id', modelId);
+        if (error) { console.error('DatabaseService.deleteManufacturerModel:', error); throw error; }
+    }
+
     // Qualifications
     public async getQualifications(contactId: string): Promise<any[]> {
         const { data } = await supabase.from('qualifications').select('*').eq('contact_id', contactId);
