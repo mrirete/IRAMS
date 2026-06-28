@@ -2003,6 +2003,8 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
     // F-008/F-002: object class drives terminology (FLOC ID vs Asset Tag) and field visibility.
     const isFloc = isFunctionalLocation({ hierarchyLevel: (asset as any).hierarchyLevel, assetType: asset.assetType, category: asset.category });
     const idLabel = isFloc ? 'Functional Location ID' : 'Asset Tag';
+    // F-002: equipment-taxonomy + spec fields are hidden on Functional Locations.
+    const showEquipFields = !isFloc;
 
     const handleMfrCreated = async (newMfr: any) => {
         // Add the new master manufacturer to the dropdown and select it (by id).
@@ -2228,6 +2230,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
 
                 <div className="grid grid-cols-2 gap-4">
 
+                    {showEquipFields && (<>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Asset Category</label>
                         <SearchableDropdown
@@ -2276,6 +2279,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             placeholder={asset.assetClass ? "Select Type..." : "Select Class first..."}
                         />
                     </div>
+                    </>)}
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Criticality</label>
@@ -2296,6 +2300,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
             <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
                 <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Specification & Location</h3>
                 <div className="grid grid-cols-2 gap-4">
+                    {showEquipFields && (<>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Manufacturer</label>
                         <div className="flex items-stretch">
@@ -2355,6 +2360,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
                         />
                     </div>
+                    </>)}
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Department</label>
                         <input
