@@ -16,8 +16,12 @@ interface AddContactModalProps {
 export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSave, contactTypes, costCenters, initialType, existingUser }) => {
     const [formData, setFormData] = useState({
         code: '', firstName: '', lastName: '', title: '', email: '', type: initialType || 'INTERNAL',
-        orgUnitId: '', costCenterId: ''
+        orgUnitId: '', costCenterId: '', country: '', phone: ''
     });
+    // Manufacturer mode (UAT F-003): a manufacturer is a business partner, NOT a
+    // person — render manufacturer fields, suppress username/password, and store it
+    // typed as MANUFACTURER (the old form hardcoded types:['INTERNAL']).
+    const isMfr = initialType === 'MANUFACTURER' || formData.type === 'MANUFACTURER' || formData.type === 'VENDOR';
     const [userCreds, setUserCreds] = useState({ username: '', password: '', confirmPassword: '' });
     const [createUser, setCreateUser] = useState(true);
     const [createLoading, setCreateLoading] = useState(false);
@@ -61,6 +65,34 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
         setCreateLoading(true);
 
         try {
+            // ── Manufacturer (business partner) — no user account, typed MANUFACTURER ──
+            if (isMfr) {
+                if (!formData.code.trim()) throw new Error('Manufacturer name is required.');
+                const mfrId = self.crypto.randomUUID();
+                const mfr = {
+                    id: mfrId,
+                    name: formData.code.trim(),
+                    firstName: '', lastName: '',
+                    title: 'Manufacturer',
+                    code: formData.code.trim(),
+                    email: formData.email || '',
+                    phone: formData.phone || '', mobile: '', active: true,
+                    types: ['MANUFACTURER'], defaultType: 'MANUFACTURER',
+                    organizationUnitId: null,
+                    costCenterId: undefined,
+                    hourlyRate: 0, currency: 'USD',
+                    address: { street: '', city: '', state: '', zip: '', country: formData.country || '' },
+                    flags: {
+                        canLogin: false, canSubmitRequests: false, canLogTime: false,
+                        isLabour: false, hasQualifications: false, isVendor: true,
+                    },
+                } as Contact;
+                await DatabaseService.getInstance().addContact(mfr);
+                onSave(mfr);
+                onClose();
+                return;
+            }
+
             if (createUser && (!formData.code || !userCreds.password)) {
                 throw new Error("Username and Password are required for System Access.");
             }
@@ -164,7 +196,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                    <h3 className="text-lg font-bold text-slate-900">Add New Person / Entity</h3>
+                    <h3 className="text-lg font-bold text-slate-900">{isMfr ? 'Add New Manufacturer' : 'Add New Person / Entity'}</h3>
                     <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={20} /></button>
                 </div>
 
@@ -175,6 +207,53 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         </div>
                     )}
 
+                    {isMfr ? (
+                    <>
+                        {/* ── Manufacturer (business partner) fields ── */}
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Manufacturer Name <span className="text-red-500">*</span></label>
+                            <input
+                                required
+                                className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500"
+                                value={formData.code || ''}
+                                onChange={e => setFormData({ ...formData, code: e.target.value })}
+                                placeholder="e.g. Siemens, GE, ABB"
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Country of Origin</label>
+                                <input
+                                    className="w-full text-sm border-slate-300 rounded-md p-2"
+                                    value={formData.country}
+                                    onChange={e => setFormData({ ...formData, country: e.target.value })}
+                                    placeholder="e.g. Germany"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Phone</label>
+                                <input
+                                    className="w-full text-sm border-slate-300 rounded-md p-2"
+                                    value={formData.phone}
+                                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                    placeholder="Contact number"
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Contact Email</label>
+                            <input
+                                type="email"
+                                className="w-full text-sm border-slate-300 rounded-md p-2"
+                                value={formData.email}
+                                onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                placeholder="sales@manufacturer.com"
+                            />
+                        </div>
+                        <p className="text-[11px] text-slate-400">Saved as a manufacturer business partner. More details (website, models, notes) can be added from its record.</p>
+                    </>
+                    ) : (
+                    <>
                     {/* Username / Code */}
                     <div>
                         <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Username <span className="text-red-500">*</span></label>
@@ -275,6 +354,8 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                             </div>
                         )
                     }
+                    </>
+                    )}
 
                     <div className="pt-4 flex justify-end gap-3">
                         <button
