@@ -4,6 +4,7 @@ import { TopBar } from './TopBar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useRelantern } from '../eam/contexts/RelanternContext';
 import { initOfflineExecutors } from '../eam/services/offlineExecutors';
+import { GlobalErrorToaster } from '../eam/components/GlobalErrorToaster';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
 // RelanternAI (Reliability Specialist) is the single AI chat panel — opened from
@@ -110,6 +111,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     <CommandPalette open onClose={() => setIsPaletteOpen(false)} />
                 </Suspense>
             )}
+
+            {/* Surfaces swallowed service errors as toasts (fail-loud) */}
+            <GlobalErrorToaster />
 
             {/* Mobile Bottom Tab Navigation — visible only on < 768px */}
             <MobileBottomNav />

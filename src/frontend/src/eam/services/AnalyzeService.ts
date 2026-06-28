@@ -6,6 +6,7 @@
  *         ers_drone_surveys, ers_carbon_metrics, ers_climate_risks
  */
 import { supabase } from '../lib/supabase';
+import { notifyError } from '../lib/notify';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -486,7 +487,7 @@ class AnalyzeService {
             if (assetId) query = query.eq('asset_id', assetId);
             if (analysisType) query = query.eq('analysis_type', analysisType);
             const { data, error } = await query;
-            if (error) { console.error('AnalyzeService.getReliabilityAnalyses:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getReliabilityAnalyses:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data ?? []) as ReliabilityAnalysis[];
         } catch (e) {
             console.error('Error fetching reliability analyses:', e);
@@ -506,7 +507,7 @@ class AnalyzeService {
                 .insert(row)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.saveReliabilityAnalysis:', error); throw error; }
+            if (error) { console.error('AnalyzeService.saveReliabilityAnalysis:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as ReliabilityAnalysis;
         } catch (e) {
             console.error('Error saving reliability analysis:', e);
@@ -530,7 +531,7 @@ class AnalyzeService {
                 .insert(row)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.saveReliabilityVersion:', error); throw error; }
+            if (error) { console.error('AnalyzeService.saveReliabilityVersion:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as ReliabilityAnalysis;
         } catch (e) {
             console.error('Error saving reliability version:', e);
@@ -549,7 +550,7 @@ class AnalyzeService {
                 .eq('id', id)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.updateReliabilityAnalysis:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateReliabilityAnalysis:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as ReliabilityAnalysis;
         } catch (e) {
             console.error('Error updating reliability analysis:', e);
@@ -563,7 +564,7 @@ class AnalyzeService {
                 .from('ers_reliability_analyses')
                 .delete()
                 .eq('id', id);
-            if (error) { console.error('AnalyzeService.deleteReliabilityAnalysis:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteReliabilityAnalysis:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting reliability analysis:', e);
@@ -580,7 +581,7 @@ class AnalyzeService {
                 .eq('id', analysisId)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.linkPMToAnalysis:', error); throw error; }
+            if (error) { console.error('AnalyzeService.linkPMToAnalysis:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as ReliabilityAnalysis;
         } catch (e) {
             console.error('Error linking PM to analysis:', e);
@@ -598,7 +599,7 @@ class AnalyzeService {
                 .from('ers_reliability_studies')
                 .select('*')
                 .order('updated_at', { ascending: false });
-            if (error) { console.error('AnalyzeService.getReliabilityStudies:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getReliabilityStudies:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data ?? []) as ReliabilityStudy[];
         } catch (e) {
             console.error('Error fetching reliability studies:', e);
@@ -615,7 +616,7 @@ class AnalyzeService {
                 .insert({ status: 'active', ...study })
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.createReliabilityStudy:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createReliabilityStudy:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as ReliabilityStudy;
         } catch (e) {
             console.error('Error creating reliability study:', e);
@@ -634,7 +635,7 @@ class AnalyzeService {
                 .eq('id', id)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.updateReliabilityStudy:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateReliabilityStudy:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as ReliabilityStudy;
         } catch (e) {
             console.error('Error updating reliability study:', e);
@@ -649,7 +650,7 @@ class AnalyzeService {
                 .from('ers_reliability_studies')
                 .delete()
                 .eq('id', id);
-            if (error) { console.error('AnalyzeService.deleteReliabilityStudy:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteReliabilityStudy:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting reliability study:', e);
@@ -666,7 +667,7 @@ class AnalyzeService {
             let query = supabase.from('ers_fmea_worksheets').select('*');
             if (assetId) query = query.eq('asset_id', assetId);
             const { data, error } = await query.order('created_at', { ascending: false });
-            if (error) { console.error('AnalyzeService.getFMEAWorksheets:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getFMEAWorksheets:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as FMEAWorksheet[];
         } catch (e) {
             console.error('Error fetching FMEA worksheets:', e);
@@ -681,7 +682,7 @@ class AnalyzeService {
                 .select('*')
                 .eq('worksheet_id', worksheetId)
                 .order('created_at');
-            if (error) { console.error('AnalyzeService.getFMEAItems:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getFMEAItems:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as FMEAItem[];
         } catch (e) {
             console.error('Error fetching FMEA items:', e);
@@ -692,7 +693,7 @@ class AnalyzeService {
     async createFMEAWorksheet(ws: Omit<FMEAWorksheet, 'id' | 'created_at' | 'updated_at'>): Promise<FMEAWorksheet | null> {
         try {
             const { data, error } = await supabase.from('ers_fmea_worksheets').insert(ws).select().single();
-            if (error) { console.error('AnalyzeService.createFMEAWorksheet:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createFMEAWorksheet:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as FMEAWorksheet;
         } catch (e) {
             console.error('Error creating FMEA worksheet:', e);
@@ -703,7 +704,7 @@ class AnalyzeService {
     async createFMEAItem(item: Omit<FMEAItem, 'id' | 'created_at' | 'rpn'>): Promise<FMEAItem | null> {
         try {
             const { data, error } = await supabase.from('ers_fmea_items').insert(item).select().single();
-            if (error) { console.error('AnalyzeService.createFMEAItem:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createFMEAItem:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as FMEAItem;
         } catch (e) {
             console.error('Error creating FMEA item:', e);
@@ -721,7 +722,7 @@ class AnalyzeService {
                 .eq('id', id)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.updateFMEAItem:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateFMEAItem:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as FMEAItem;
         } catch (e) {
             console.error('Error updating FMEA item:', e);
@@ -738,7 +739,7 @@ class AnalyzeService {
                 .eq('id', id)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.updateFMEAWorksheet:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateFMEAWorksheet:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as FMEAWorksheet;
         } catch (e) {
             console.error('Error updating FMEA worksheet:', e);
@@ -750,7 +751,7 @@ class AnalyzeService {
     async deleteFMEAItem(id: string): Promise<boolean> {
         try {
             const { error } = await supabase.from('ers_fmea_items').delete().eq('id', id);
-            if (error) { console.error('AnalyzeService.deleteFMEAItem:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteFMEAItem:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting FMEA item:', e);
@@ -764,7 +765,7 @@ class AnalyzeService {
             // Delete child items first
             await supabase.from('ers_fmea_items').delete().eq('worksheet_id', id);
             const { error } = await supabase.from('ers_fmea_worksheets').delete().eq('id', id);
-            if (error) { console.error('AnalyzeService.deleteFMEAWorksheet:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteFMEAWorksheet:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting FMEA worksheet:', e);
@@ -781,7 +782,7 @@ class AnalyzeService {
             let query = supabase.from('ers_rca_investigations').select('*');
             if (assetId) query = query.eq('asset_id', assetId);
             const { data, error } = await query.order('created_at', { ascending: false });
-            if (error) { console.error('AnalyzeService.getRCAInvestigations:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRCAInvestigations:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCAInvestigation[];
         } catch (e) {
             console.error('Error fetching RCA investigations:', e);
@@ -797,7 +798,7 @@ class AnalyzeService {
                 .eq('investigation_id', investigationId)
                 .order('depth')
                 .order('created_at');
-            if (error) { console.error('AnalyzeService.getRCANodes:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRCANodes:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCANode[];
         } catch (e) {
             console.error('Error fetching RCA nodes:', e);
@@ -812,7 +813,7 @@ class AnalyzeService {
             const { data: { user } } = await supabase.auth.getUser();
             const payload = { ...rca, created_by: (rca as any).created_by || user?.id || '00000000-0000-0000-0000-000000000000' };
             const { data, error } = await supabase.from('ers_rca_investigations').insert(payload).select().single();
-            if (error) { console.error('AnalyzeService.createRCAInvestigation:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createRCAInvestigation:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCAInvestigation;
         } catch (e) {
             console.error('Error creating RCA investigation:', e);
@@ -823,7 +824,7 @@ class AnalyzeService {
     async createRCANode(node: Omit<RCANode, 'id' | 'created_at'>): Promise<RCANode | null> {
         try {
             const { data, error } = await supabase.from('ers_rca_nodes').insert(node).select().single();
-            if (error) { console.error('AnalyzeService.createRCANode:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createRCANode:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCANode;
         } catch (e) {
             console.error('Error creating RCA node:', e);
@@ -839,7 +840,7 @@ class AnalyzeService {
                 .eq('id', id)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.updateRCAInvestigation:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateRCAInvestigation:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCAInvestigation;
         } catch (e) {
             console.error('Error updating RCA investigation:', e);
@@ -855,7 +856,7 @@ class AnalyzeService {
                 .eq('id', nodeId)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.updateRCANode:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateRCANode:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCANode;
         } catch (e) {
             console.error('Error updating RCA node:', e);
@@ -866,7 +867,7 @@ class AnalyzeService {
     async deleteRCANode(nodeId: string): Promise<boolean> {
         try {
             const { error } = await supabase.from('ers_rca_nodes').delete().eq('id', nodeId);
-            if (error) { console.error('AnalyzeService.deleteRCANode:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteRCANode:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting RCA node:', e);
@@ -882,7 +883,7 @@ class AnalyzeService {
             await supabase.from('ers_rca_nodes').delete().eq('investigation_id', id);
             await supabase.from('ers_rca_team_members').delete().eq('investigation_id', id);
             const { error } = await supabase.from('ers_rca_investigations').delete().eq('id', id);
-            if (error) { console.error('AnalyzeService.deleteRCAInvestigation:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteRCAInvestigation:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting RCA investigation:', e);
@@ -900,7 +901,7 @@ class AnalyzeService {
                 .eq('investigation_id', investigationId)
                 .order('event_timestamp', { ascending: true, nullsFirst: false })
                 .order('created_at', { ascending: true });
-            if (error) { console.error('AnalyzeService.getRCAEvidence:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRCAEvidence:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCAEvidence[];
         } catch (e) {
             console.error('Error fetching RCA evidence:', e);
@@ -911,7 +912,7 @@ class AnalyzeService {
     async addRCAEvidence(evidence: Omit<RCAEvidence, 'id' | 'created_at'>): Promise<RCAEvidence | null> {
         try {
             const { data, error } = await supabase.from('ers_rca_evidence').insert(evidence).select().single();
-            if (error) { console.error('AnalyzeService.addRCAEvidence:', error); throw error; }
+            if (error) { console.error('AnalyzeService.addRCAEvidence:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCAEvidence;
         } catch (e) {
             console.error('Error adding RCA evidence:', e);
@@ -922,7 +923,7 @@ class AnalyzeService {
     async deleteRCAEvidence(evidenceId: string): Promise<boolean> {
         try {
             const { error } = await supabase.from('ers_rca_evidence').delete().eq('id', evidenceId);
-            if (error) { console.error('AnalyzeService.deleteRCAEvidence:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteRCAEvidence:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting RCA evidence:', e);
@@ -939,7 +940,7 @@ class AnalyzeService {
                 .select('*')
                 .eq('investigation_id', investigationId)
                 .order('created_at');
-            if (error) { console.error('AnalyzeService.getRCACorrectiveActions:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRCACorrectiveActions:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCACorrectiveAction[];
         } catch (e) {
             console.error('Error fetching RCA corrective actions:', e);
@@ -950,7 +951,7 @@ class AnalyzeService {
     async addRCACorrectiveAction(action: Omit<RCACorrectiveAction, 'id' | 'created_at'>): Promise<RCACorrectiveAction | null> {
         try {
             const { data, error } = await supabase.from('ers_rca_corrective_actions').insert(action).select().single();
-            if (error) { console.error('AnalyzeService.addRCACorrectiveAction:', error); throw error; }
+            if (error) { console.error('AnalyzeService.addRCACorrectiveAction:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCACorrectiveAction;
         } catch (e) {
             console.error('Error adding RCA corrective action:', e);
@@ -966,7 +967,7 @@ class AnalyzeService {
                 .eq('id', id)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.updateRCACorrectiveAction:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateRCACorrectiveAction:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCACorrectiveAction;
         } catch (e) {
             console.error('Error updating RCA corrective action:', e);
@@ -977,7 +978,7 @@ class AnalyzeService {
     async deleteRCACorrectiveAction(id: string): Promise<boolean> {
         try {
             const { error } = await supabase.from('ers_rca_corrective_actions').delete().eq('id', id);
-            if (error) { console.error('AnalyzeService.deleteRCACorrectiveAction:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteRCACorrectiveAction:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting RCA corrective action:', e);
@@ -994,7 +995,7 @@ class AnalyzeService {
                 .select('*')
                 .eq('investigation_id', investigationId)
                 .order('created_at');
-            if (error) { console.error('AnalyzeService.getRCABarriers:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRCABarriers:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCABarrier[];
         } catch (e) {
             console.error('Error fetching RCA barriers:', e);
@@ -1005,7 +1006,7 @@ class AnalyzeService {
     async addRCABarrier(barrier: Omit<RCABarrier, 'id' | 'created_at'>): Promise<RCABarrier | null> {
         try {
             const { data, error } = await supabase.from('ers_rca_barriers').insert(barrier).select().single();
-            if (error) { console.error('AnalyzeService.addRCABarrier:', error); throw error; }
+            if (error) { console.error('AnalyzeService.addRCABarrier:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCABarrier;
         } catch (e) {
             console.error('Error adding RCA barrier:', e);
@@ -1021,7 +1022,7 @@ class AnalyzeService {
                 .eq('id', id)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.updateRCABarrier:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateRCABarrier:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCABarrier;
         } catch (e) {
             console.error('Error updating RCA barrier:', e);
@@ -1038,7 +1039,7 @@ class AnalyzeService {
                 .select('*')
                 .eq('investigation_id', investigationId)
                 .order('added_at');
-            if (error) { console.error('AnalyzeService.getRCATeamMembers:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRCATeamMembers:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCATeamMember[];
         } catch (e) {
             console.error('Error fetching RCA team members:', e);
@@ -1049,7 +1050,7 @@ class AnalyzeService {
     async addRCATeamMember(member: Omit<RCATeamMember, 'id' | 'added_at'>): Promise<RCATeamMember | null> {
         try {
             const { data, error } = await supabase.from('ers_rca_team_members').insert(member).select().single();
-            if (error) { console.error('AnalyzeService.addRCATeamMember:', error); throw error; }
+            if (error) { console.error('AnalyzeService.addRCATeamMember:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RCATeamMember;
         } catch (e) {
             console.error('Error adding RCA team member:', e);
@@ -1060,7 +1061,7 @@ class AnalyzeService {
     async removeRCATeamMember(memberId: string): Promise<boolean> {
         try {
             const { error } = await supabase.from('ers_rca_team_members').delete().eq('id', memberId);
-            if (error) { console.error('AnalyzeService.removeRCATeamMember:', error); throw error; }
+            if (error) { console.error('AnalyzeService.removeRCATeamMember:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error removing RCA team member:', e);
@@ -1077,7 +1078,7 @@ class AnalyzeService {
                 .select('*')
                 .eq('investigation_id', investigationId)
                 .order('created_at', { ascending: false });
-            if (error) { console.error('AnalyzeService.getRCAAuditLog:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRCAAuditLog:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCAAuditLog[];
         } catch (e) {
             console.error('Error fetching RCA audit log:', e);
@@ -1101,7 +1102,7 @@ class AnalyzeService {
                 .from('ers_rca_cause_taxonomy')
                 .select('*')
                 .order('code');
-            if (error) { console.error('AnalyzeService.getCauseTaxonomy:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getCauseTaxonomy:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCACauseTaxonomy[];
         } catch (e) {
             console.error('Error fetching cause taxonomy:', e);
@@ -1136,7 +1137,7 @@ class AnalyzeService {
                 .select('*')
                 .eq('asset_id', assetId)
                 .order('created_at', { ascending: false });
-            if (error) { console.error('AnalyzeService.getRelatedRCAs:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRelatedRCAs:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as RCAInvestigation[];
         } catch (e) {
             console.error('Error fetching related RCAs:', e);
@@ -1154,7 +1155,7 @@ class AnalyzeService {
             if (criteria) query = query.eq('criteria', criteria);
             if (period) query = query.eq('report_period', period);
             const { data, error } = await query.order('generated_at', { ascending: false });
-            if (error) { console.error('AnalyzeService.getBadActorSnapshots:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getBadActorSnapshots:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as BadActorSnapshot[];
         } catch (e) {
             console.error('Error fetching bad actor snapshots:', e);
@@ -1171,7 +1172,7 @@ class AnalyzeService {
                 .order('generated_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
-            if (error) { console.error('AnalyzeService.getLatestBadActors:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getLatestBadActors:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as BadActorSnapshot | null;
         } catch (e) {
             console.error('Error fetching latest bad actors:', e);
@@ -1182,7 +1183,7 @@ class AnalyzeService {
     async createBadActorSnapshot(snapshot: Omit<BadActorSnapshot, 'id' | 'generated_at'>): Promise<BadActorSnapshot | null> {
         try {
             const { data, error } = await supabase.from('ers_bad_actor_snapshots').insert(snapshot).select().single();
-            if (error) { console.error('AnalyzeService.createBadActorSnapshot:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createBadActorSnapshot:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as BadActorSnapshot;
         } catch (e) {
             console.error('Error creating bad actor snapshot:', e);
@@ -1253,7 +1254,7 @@ class AnalyzeService {
                 .eq('asset_id', assetId)
                 .order('created_at', { ascending: false })
                 .limit(100);
-            if (error) { console.error('AnalyzeService.getAssetWorkOrders:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getAssetWorkOrders:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []).map((wo: any) => {
                 const fd = wo.wo_failure_data?.[0] || wo.wo_failure_data || null;
                 return {
@@ -1364,7 +1365,7 @@ class AnalyzeService {
             let query = supabase.from('ers_vision_results').select('*');
             if (assetId) query = query.eq('asset_id', assetId);
             const { data, error } = await query.order('timestamp', { ascending: false });
-            if (error) { console.error('AnalyzeService.getVisionResults:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getVisionResults:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as VisionResult[];
         } catch (e) {
             console.error('Error fetching vision results:', e);
@@ -1375,7 +1376,7 @@ class AnalyzeService {
     async createVisionResult(result: Omit<VisionResult, 'id' | 'created_at'>): Promise<VisionResult | null> {
         try {
             const { data, error } = await supabase.from('ers_vision_results').insert(result).select().single();
-            if (error) { console.error('AnalyzeService.createVisionResult:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createVisionResult:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as VisionResult;
         } catch (e) {
             console.error('Error creating vision result:', e);
@@ -1389,7 +1390,7 @@ class AnalyzeService {
                 .from('ers_vision_results')
                 .update({ reviewed: true, reviewed_by: userId })
                 .eq('id', id);
-            if (error) { console.error('AnalyzeService.reviewVisionResult:', error); throw error; }
+            if (error) { console.error('AnalyzeService.reviewVisionResult:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error reviewing vision result:', e);
@@ -1403,7 +1404,7 @@ class AnalyzeService {
                 .from('ers_drone_surveys')
                 .select('*')
                 .order('date', { ascending: false });
-            if (error) { console.error('AnalyzeService.getDroneSurveys:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getDroneSurveys:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as DroneSurvey[];
         } catch (e) {
             console.error('Error fetching drone surveys:', e);
@@ -1420,7 +1421,7 @@ class AnalyzeService {
             let query = supabase.from('ers_carbon_metrics').select('*');
             if (assetId) query = query.eq('asset_id', assetId);
             const { data, error } = await query.order('reporting_period', { ascending: false });
-            if (error) { console.error('AnalyzeService.getCarbonMetrics:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getCarbonMetrics:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as CarbonMetric[];
         } catch (e) {
             console.error('Error fetching carbon metrics:', e);
@@ -1437,7 +1438,7 @@ class AnalyzeService {
                 .upsert(safeMetric)
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.upsertCarbonMetric:', error); throw error; }
+            if (error) { console.error('AnalyzeService.upsertCarbonMetric:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as CarbonMetric;
         } catch (e) {
             console.error('Error upserting carbon metric:', e);
@@ -1450,7 +1451,7 @@ class AnalyzeService {
             let query = supabase.from('ers_climate_risks').select('*');
             if (assetId) query = query.eq('asset_id', assetId);
             const { data, error } = await query.order('vulnerability_score', { ascending: false });
-            if (error) { console.error('AnalyzeService.getClimateRisks:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getClimateRisks:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data || []) as ClimateRisk[];
         } catch (e) {
             console.error('Error fetching climate risks:', e);
@@ -1465,7 +1466,7 @@ class AnalyzeService {
                 .upsert({ ...risk, updated_at: new Date().toISOString() })
                 .select()
                 .single();
-            if (error) { console.error('AnalyzeService.upsertClimateRisk:', error); throw error; }
+            if (error) { console.error('AnalyzeService.upsertClimateRisk:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as ClimateRisk;
         } catch (e) {
             console.error('Error upserting climate risk:', e);
@@ -1482,7 +1483,7 @@ class AnalyzeService {
             let query = supabase.from('ers_defect_elimination_tasks').select('*').order('created_at', { ascending: false });
             if (assetId) query = query.eq('asset_id', assetId);
             const { data, error } = await query;
-            if (error) { console.error('AnalyzeService.getDETasks:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getDETasks:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data ?? []) as DETask[];
         } catch (e) {
             console.error('Error fetching DE tasks:', e);
@@ -1493,7 +1494,7 @@ class AnalyzeService {
     async createDETask(task: Omit<DETask, 'id' | 'created_at' | 'updated_at'>): Promise<DETask | null> {
         try {
             const { data, error } = await supabase.from('ers_defect_elimination_tasks').insert(task).select().single();
-            if (error) { console.error('AnalyzeService.createDETask:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createDETask:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as DETask;
         } catch (e) {
             console.error('Error creating DE task:', e);
@@ -1504,7 +1505,7 @@ class AnalyzeService {
     async updateDETask(id: string, updates: Partial<DETask>): Promise<DETask | null> {
         try {
             const { data, error } = await supabase.from('ers_defect_elimination_tasks').update(updates).eq('id', id).select().single();
-            if (error) { console.error('AnalyzeService.updateDETask:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateDETask:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as DETask;
         } catch (e) {
             console.error('Error updating DE task:', e);
@@ -1515,7 +1516,7 @@ class AnalyzeService {
     async deleteDETask(id: string): Promise<boolean> {
         try {
             const { error } = await supabase.from('ers_defect_elimination_tasks').delete().eq('id', id);
-            if (error) { console.error('AnalyzeService.deleteDETask:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteDETask:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting DE task:', e);
@@ -1554,7 +1555,7 @@ class AnalyzeService {
                 })
                 .select('id, wo_number')
                 .single();
-            if (error) { console.error('AnalyzeService.generateWOFromDE:', error); throw error; }
+            if (error) { console.error('AnalyzeService.generateWOFromDE:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return { wo_id: data.id, wo_number: data.wo_number };
         } catch (e) {
             console.error('Error generating WO from DE task:', e);
@@ -1570,7 +1571,7 @@ class AnalyzeService {
                 .select('id, wo_number, title, status, type, priority_code, created_at')
                 .contains('properties', { de_task_id: deTaskId })
                 .order('created_at', { ascending: false });
-            if (error) { console.error('AnalyzeService.getLinkedWOs:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getLinkedWOs:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data ?? [];
         } catch (e) {
             console.error('Error fetching linked WOs:', e);
@@ -1586,7 +1587,7 @@ class AnalyzeService {
                 .select('*')
                 .eq('asset_id', assetId)
                 .order('created_at', { ascending: false });
-            if (error) { console.error('AnalyzeService.getDETasksForAsset:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getDETasksForAsset:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data ?? []) as DETask[];
         } catch (e) {
             console.error('Error fetching DE tasks for asset:', e);
@@ -1688,7 +1689,7 @@ class AnalyzeService {
                 })
                 .select('id')
                 .single();
-            if (error) { console.error('AnalyzeService.createPMFromDE:', error); throw error; }
+            if (error) { console.error('AnalyzeService.createPMFromDE:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return { pm_id: data.id };
         } catch (e) {
             console.error('Error creating PM from DE task:', e);
@@ -1705,7 +1706,7 @@ class AnalyzeService {
             let query = supabase.from('ers_rbd_models').select('*').order('updated_at', { ascending: false });
             if (assetId) query = query.eq('asset_id', assetId);
             const { data, error } = await query;
-            if (error) { console.error('AnalyzeService.getRBDModels:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getRBDModels:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data ?? []) as RBDModel[];
         } catch (e) {
             console.error('Error fetching RBD models:', e);
@@ -1716,7 +1717,7 @@ class AnalyzeService {
     async saveRBDModel(model: Omit<RBDModel, 'id' | 'created_at' | 'updated_at'>): Promise<RBDModel | null> {
         try {
             const { data, error } = await supabase.from('ers_rbd_models').insert(model).select().single();
-            if (error) { console.error('AnalyzeService.saveRBDModel:', error); throw error; }
+            if (error) { console.error('AnalyzeService.saveRBDModel:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RBDModel;
         } catch (e) {
             console.error('Error saving RBD model:', e);
@@ -1727,7 +1728,7 @@ class AnalyzeService {
     async updateRBDModel(id: string, updates: Partial<RBDModel>): Promise<RBDModel | null> {
         try {
             const { data, error } = await supabase.from('ers_rbd_models').update(updates).eq('id', id).select().single();
-            if (error) { console.error('AnalyzeService.updateRBDModel:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updateRBDModel:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as RBDModel;
         } catch (e) {
             console.error('Error updating RBD model:', e);
@@ -1738,7 +1739,7 @@ class AnalyzeService {
     async deleteRBDModel(id: string): Promise<boolean> {
         try {
             const { error } = await supabase.from('ers_rbd_models').delete().eq('id', id);
-            if (error) { console.error('AnalyzeService.deleteRBDModel:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deleteRBDModel:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting RBD model:', e);
@@ -1755,7 +1756,7 @@ class AnalyzeService {
             let query = supabase.from('ers_pid_configurations').select('*').order('updated_at', { ascending: false });
             if (assetId) query = query.eq('asset_id', assetId);
             const { data, error } = await query;
-            if (error) { console.error('AnalyzeService.getPIDConfigs:', error); throw error; }
+            if (error) { console.error('AnalyzeService.getPIDConfigs:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return (data ?? []) as PIDConfig[];
         } catch (e) {
             console.error('Error fetching PID configs:', e);
@@ -1766,7 +1767,7 @@ class AnalyzeService {
     async savePIDConfig(config: Omit<PIDConfig, 'id' | 'created_at' | 'updated_at'>): Promise<PIDConfig | null> {
         try {
             const { data, error } = await supabase.from('ers_pid_configurations').insert(config).select().single();
-            if (error) { console.error('AnalyzeService.savePIDConfig:', error); throw error; }
+            if (error) { console.error('AnalyzeService.savePIDConfig:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as PIDConfig;
         } catch (e) {
             console.error('Error saving PID config:', e);
@@ -1777,7 +1778,7 @@ class AnalyzeService {
     async updatePIDConfig(id: string, updates: Partial<PIDConfig>): Promise<PIDConfig | null> {
         try {
             const { data, error } = await supabase.from('ers_pid_configurations').update(updates).eq('id', id).select().single();
-            if (error) { console.error('AnalyzeService.updatePIDConfig:', error); throw error; }
+            if (error) { console.error('AnalyzeService.updatePIDConfig:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as PIDConfig;
         } catch (e) {
             console.error('Error updating PID config:', e);
@@ -1788,7 +1789,7 @@ class AnalyzeService {
     async deletePIDConfig(id: string): Promise<boolean> {
         try {
             const { error } = await supabase.from('ers_pid_configurations').delete().eq('id', id);
-            if (error) { console.error('AnalyzeService.deletePIDConfig:', error); throw error; }
+            if (error) { console.error('AnalyzeService.deletePIDConfig:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return true;
         } catch (e) {
             console.error('Error deleting PID config:', e);
@@ -2061,7 +2062,7 @@ class AnalyzeService {
                 .insert(row)
                 .select()
                 .single();
-            if (error) { console.error('saveAnalysisDataSource:', error); throw error; }
+            if (error) { console.error('saveAnalysisDataSource:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as AnalysisDataSourceRecord;
         } catch (e) {
             console.error('Error saving analysis data source:', e);
@@ -2079,7 +2080,7 @@ class AnalyzeService {
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
-            if (error) { console.error('getAnalysisDataSource:', error); throw error; }
+            if (error) { console.error('getAnalysisDataSource:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
             return data as AnalysisDataSourceRecord | null;
         } catch (e) {
             console.error('Error fetching analysis data source:', e);
