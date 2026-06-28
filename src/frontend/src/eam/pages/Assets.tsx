@@ -23,6 +23,7 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
+import { isFunctionalLocation } from '../services/hierarchyModel';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
@@ -665,10 +666,11 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
         }
     };
 
-    const isLocation = (asset: Asset) => {
-        const type = asset.assetType || asset.category || '';
-        return ['SITE', 'AREA', 'UNIT', 'SYSTEM', 'Site', 'Area', 'Unit', 'System'].includes(type);
-    };
+    // Functional Location vs Equipment is now resolved by the single hierarchyModel
+    // (UAT F-010) — no more scattered string lists. Authoritative on hierarchyLevel,
+    // with assetType/category as legacy fallbacks.
+    const isLocation = (asset: Asset) =>
+        isFunctionalLocation({ hierarchyLevel: (asset as any).hierarchyLevel, assetType: asset.assetType, category: asset.category });
 
     // Helper to build hierarchy path
     const getAssetPath = (current: Asset): Asset[] => {
