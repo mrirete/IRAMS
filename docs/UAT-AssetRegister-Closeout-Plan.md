@@ -221,11 +221,11 @@ Dependencies: everything depends on **Phase 0**; F-003 source-consolidation can 
 | F-004 | CRIT | 1 | **Done** — trigger gated + 24 records reconciled (24→0) | ef0f700 (0157) | ✅ audit 0 | 14224 §6.3 T2 |
 | F-009 | CRIT | 1 | **Done** — FL/EQ ranges + blank-tag auto-fill | ef0f700, f5c5776 | — | 14224 §6.3; 55001 §8.1 |
 | F-003 | HIGH | 1 | **Done** — dedicated manufacturer master (table+API+form), consolidated source, asset refs by id | ce70bd8, cc0dfcc, ca03d5e | — | 14224 Annex C; 55001 §8.1 |
-| F-005 | HIGH | 2 | Open | — | — | 55000 §6.2.3 |
-| F-006 | HIGH | 2 | Open | — | — | 55000 |
-| F-008 | HIGH | 2 | Open | — | — | 55000 §6.4 |
-| F-011 | HIGH | 2 | Open | — | — | 55000 §6.2 |
-| F-001 | MED | 2 | Open | — | — | 14224 §6.3 |
+| F-005 | HIGH | 2 | **Done** — level-gated Add Location / Add Asset | 3bc579d | — | 55000 §6.2.3 |
+| F-006 | HIGH | 2 | **Already met** — panel is a collapsible indented tree (`treeData`); residual: optional scope-to-selected-site | — | ✅ verified | 55000 |
+| F-008 | HIGH | 2 | **Done** — FLOC terminology on tag label + MoC modal; MoC stays gated to saved records | 3bc579d | — | 55000 §6.4 |
+| F-011 | HIGH | 2 | **Already met** — OrgChart adds unlimited sibling units + renders peers; one-to-many model. *(UI-tweak area OrgUnitDetailsDrawer is in another session's drift — left untouched)* | — | ✅ verified | 55000 §6.2 |
+| F-001 | MED | 2 | **Done** — FLOC ID label, Parent-Level indicator, criticality N/A at root | 3bc579d | — | 14224 §6.3 |
 | F-002 | MED | 3 | Open | — | — | 14224 §6.3 |
 | F-007 | MED | 3 | Open | — | — | 14224 §7; IEC 60812 |
 
