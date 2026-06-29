@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { OrganizationUnit, WorkOrder, Contact } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
+import { useConfirm } from '../contexts/ConfirmContext';
+import { useToast } from '../contexts/ToastContext';
 import {
     X, MapPin, Mail, Phone, Building, Briefcase,
     FileText, TrendingUp, DollarSign, Award, Grid,
@@ -18,6 +20,8 @@ interface OrgUnitDetailsDrawerProps {
 type TabType = 'DETAILS' | 'PERFORMANCE' | 'WORK' | 'ASSETS' | 'COMPETENCY' | 'FINANCIALS' | 'FILES';
 
 export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOpen, onClose, unit, onUpdate }) => {
+    const confirm = useConfirm();
+    const { showToast } = useToast();
     const [activeTab, setActiveTab] = useState<TabType>('DETAILS');
     const [isLoading, setIsLoading] = useState(false);
 
@@ -71,7 +75,7 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                 ...formData as OrganizationUnit
             });
             onUpdate({ ...unit, ...formData as OrganizationUnit });
-            alert("Saved successfully!");
+            showToast("Saved successfully!", "success");
         } catch (e: any) {
             console.warn("Full update failed, trying fallback...", e);
             // 2. Fallback: Save only KNOWN existing columns
@@ -82,29 +86,12 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
                     name: formData.name || unit.name,
                     code: formData.code || unit.code,
                     type: formData.type || unit.type,
-                    manager_id: formData.managerId || unit.managerId || null, // Note: DB field is manager_id, but service expects camelCase? check Service
-                    // We need to call a method that doesn't send extra fields, or manually craft the update
-                    // Since updateOrgUnit sends everything, we might need to rely on the service to handle it
-                    // OR, we can just alert the user for now if we can't easily strip fields without modifying Service.
-                    // Actually, let's just assume the service passes what we give it to Supabase.
-                    // If we give it a trimmed object, Supabase update might still complain if we are missing required fields?
-                    // No, update only updates passed fields.
+                    manager_id: formData.managerId || unit.managerId || null,
                 };
-
-                // We need to call the underlying update with specific fields.
-                // But DatabaseService.updateOrgUnit likely takes the whole object.
-                // Let's modify DatabaseService.updateOrgUnit to be more flexible or just try basic fields here if possible?
-                // Wait, db.updateOrgUnit implementation takes 'unit: OrganizationUnit'.
-                // If I pass a casted object with ONLY core fields, it might work?
-                // Let's rely on the user knowing about the migration for new fields for now 
-                // but at least give them a Partial Success message if core fields worked?
-                // Actually, if the first try failed, it's likely because we sent 'description' etc.
-                // So if we try again WITHOUT 'description', it should work for core fields.
 
                 const coreUpdate = {
                     ...unit,
                     name: formData.name || unit.name,
-                    // Exclude description/location/email
                 };
                 delete (coreUpdate as any).description;
                 delete (coreUpdate as any).location;
@@ -114,11 +101,11 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
 
                 await db.updateOrgUnit(coreUpdate);
                 onUpdate(coreUpdate);
-                alert("Saved basic details! (New fields like Location could not be saved pending database update)");
+                showToast("Saved basic details! New fields could not be saved pending DB update.", "warning");
 
             } catch (fallbackError) {
                 console.error(fallbackError);
-                alert("Failed to save changes. Please ensure the database migration (0022) is applied.");
+                showToast("Failed to save changes. Please ensure DB migration 0022 is applied.", "error");
             }
         }
     };
@@ -205,44 +192,51 @@ export const OrgUnitDetailsDrawer: React.FC<OrgUnitDetailsDrawerProps> = ({ isOp
 
     const handleDuplicate = async () => {
         if (!unit) return;
-        const confirmDup = window.confirm(`Are you sure you want to duplicate ${unit.name}?`);
-        if (!confirmDup) return;
+        const ok = await confirm({
+            title: 'Duplicate Unit',
+            message: `Create a copy of "${unit.name}"? The duplicate will be created with a new ID.`,
+            variant: 'info',
+            confirmLabel: 'Duplicate',
+        });
+        if (!ok) return;
 
         try {
             const db = DatabaseService.getInstance();
             const newUnit: OrganizationUnit = {
                 ...unit,
-                id: crypto.randomUUID(), // New ID
+                id: crypto.randomUUID(),
                 name: `${unit.name} (Copy)`,
                 code: `${unit.code}-COPY`,
-                // Reset manager to null for copy usually? or keep? Let's keep for now but maybe user wants reset.
             };
-            // Remove DB specific fields if any (like created_at usually handled by DB, but here we might send full object)
-            // Ideally addOrgUnit handles this.
             await db.addOrgUnit(newUnit);
-            alert("Unit duplicated successfully!");
-            onClose(); // Close to refresh parent
-            window.location.reload(); // Brute force refresh for now or trigger parent update
+            showToast('Unit duplicated successfully', 'success');
+            onClose();
+            window.location.reload();
         } catch (e) {
             console.error(e);
-            alert("Failed to duplicate unit.");
+            showToast('Failed to duplicate unit', 'error');
         }
     };
 
     const handleDelete = async () => {
         if (!unit) return;
-        const confirmDelete = window.confirm(`Are you sure you want to DELETE ${unit.name}? This action cannot be undone.`);
-        if (!confirmDelete) return;
+        const ok = await confirm({
+            title: 'Delete Unit',
+            message: `"${unit.name}" will be permanently deleted. This action cannot be undone.`,
+            variant: 'danger',
+            confirmLabel: 'Delete',
+        });
+        if (!ok) return;
 
         try {
             const db = DatabaseService.getInstance();
             await db.deleteOrgUnit(unit.id);
-            alert("Unit deleted successfully!");
+            showToast('Unit deleted successfully', 'success');
             onClose();
-            window.location.reload(); // Brute force refresh
+            window.location.reload();
         } catch (e) {
             console.error(e);
-            alert("Failed to delete unit.");
+            showToast('Failed to delete unit', 'error');
         }
     };
 

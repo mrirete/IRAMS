@@ -595,6 +595,15 @@ export class DatabaseService {
         if (error) { console.error('DatabaseService.deleteManufacturerModel:', error); throw error; }
     }
 
+    public async updateManufacturerModel(modelId: string, updates: { code: string; description?: string; active?: boolean }): Promise<void> {
+        const { error } = await supabase.from('manufacturer_models').update({
+            model_code: updates.code,
+            description: updates.description || null,
+            active: updates.active ?? true,
+        }).eq('id', modelId);
+        if (error) { console.error('DatabaseService.updateManufacturerModel:', error); throw error; }
+    }
+
     // ── Hierarchy configuration (UAT F-010) — the editable level model ──
     public async getHierarchyConfig(): Promise<any[] | null> {
         const { data, error } = await supabase.from('hierarchy_config').select('levels').eq('id', 1).maybeSingle();
@@ -1312,7 +1321,7 @@ export class DatabaseService {
             name: asset.name,
             parent_id: asset.parentId || null,
             hierarchy_level: level,
-            criticality: asset.criticality,
+            criticality: asset.criticality || null,
             status_code: asset.status || 'ACTIVE',
             manufacturer: asset.manufacturer,
             manufacturer_id: asset.manufacturerId || null,

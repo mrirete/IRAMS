@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -17,6 +18,8 @@ interface ProcedureBuilderProps {
     readOnly?: boolean;
     mode: 'EDIT' | 'EXECUTE';
 }
+
+// ── Main Component ──────────────────────────────────────────────────────────
 
 // Sortable Wrapper Component
 const SortableItem: React.FC<{ id: string, children: React.ReactNode, mode: 'EDIT' | 'EXECUTE' }> = ({ id, children, mode }) => {
@@ -66,6 +69,7 @@ const CATEGORIES = ['Structure', 'Input', 'Inspection', 'Evidence', 'Safety'];
 
 export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions, onChange, readOnly, mode }) => {
 
+    const confirm = useConfirm();
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [activeCategory, setActiveCategory] = useState('Input');
 
@@ -108,8 +112,14 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
         onChange(instructions.map(b => b.id === id ? { ...b, ...updates } : b));
     };
 
-    const deleteBlock = (id: string) => {
-        if (window.confirm('Delete this instruction?')) {
+    const deleteBlock = async (id: string) => {
+        const ok = await confirm({
+            title: 'Delete Instruction',
+            message: 'This instruction block will be permanently removed from the procedure.',
+            variant: 'danger',
+            confirmLabel: 'Delete',
+        });
+        if (ok) {
             onChange(instructions.filter(b => b.id !== id));
         }
     };

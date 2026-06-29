@@ -3,12 +3,12 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-    Search, Filter, Plus, ChevronRight, Activity, Zap, FileText,
+    Search, Filter, Plus, Minus, ChevronRight, Activity, Zap, FileText,
     Package, DollarSign, Wrench, History, Box, Camera, AlertCircle, X,
     TrendingUp, TrendingDown, Clock, Link, CheckCircle, BarChart2,
     MapPin, Building, Factory, Save, Trash2, Copy, FolderPlus, Network,
     LineChart as LineChartIcon, CornerDownRight, ArrowUpRight, Upload, ChevronDown, Repeat,
-    Download, FileSpreadsheet, QrCode, Lock, Shapes, XCircle, Hash, Layers, Cpu, FolderInput, Unlink, AlertTriangle
+    Download, FileSpreadsheet, QrCode, Lock, Shapes, XCircle, Hash, Layers, Cpu, FolderInput, Unlink, AlertTriangle, Edit2
 } from 'lucide-react';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
@@ -23,7 +23,7 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel } from '../services/hierarchyModel';
+import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, getLevelConfig } from '../services/hierarchyModel';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
@@ -36,6 +36,7 @@ import { FinOpsService } from '../services/FinOpsService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { aiContextService } from '../services/AIContextService';
 import { AssetQRCode } from '../components/AssetQRCode';
@@ -224,6 +225,31 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
     const [expandedBOMIds, setExpandedBOMIds] = useState<Set<string>>(new Set());
+
+    // --- Right-click context menu ---
+    const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; asset: Asset } | null>(null);
+    const ctxMenuRef = useRef<HTMLDivElement>(null);
+
+    // Close context menu on outside click or scroll
+    useEffect(() => {
+        if (!ctxMenu) return;
+        const close = () => setCtxMenu(null);
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+        window.addEventListener('click', close);
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('keydown', onKey);
+        return () => {
+            window.removeEventListener('click', close);
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('keydown', onKey);
+        };
+    }, [ctxMenu]);
+
+    const handleTreeContextMenu = useCallback((e: React.MouseEvent, asset: Asset) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setCtxMenu({ x: e.clientX, y: e.clientY, asset });
+    }, []);
 
     const toggleSelection = (id: string) => {
         const next = new Set(selectedIds);
@@ -750,17 +776,6 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 <Network size={14} className="text-slate-400" />
                                 Asset Hierarchy
                             </h2>
-                            <div className="flex items-center gap-1">
-                                {canCreate && (
-                                    <button
-                                        onClick={() => openAddModal('Asset')}
-                                        className="p-1.5 bg-primary-600 text-white rounded-md hover:bg-primary-500 transition"
-                                        title="New Asset"
-                                    >
-                                        <Plus size={14} />
-                                    </button>
-                                )}
-                            </div>
                         </div>
 
                         {/* Compact Search */}
@@ -790,6 +805,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     <div
                                         key={asset.id}
                                         onClick={() => handleRowClick(asset)}
+                                        onContextMenu={(e) => handleTreeContextMenu(e, asset)}
                                         className={`cursor-pointer transition-all duration-150 border-b border-slate-50 group
                                             ${isSelected 
                                                 ? (isLoc ? 'bg-emerald-50 border-l-3 border-l-emerald-500' : 'bg-blue-50 border-l-3 border-l-blue-500') 
@@ -801,14 +817,19 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                             className="flex items-start gap-2 px-3 py-2.5"
                                             style={{ paddingLeft: `${12 + asset.depth * 20}px` }}
                                         >
-                                            {/* Expand/Collapse or spacer */}
+                                            {/* Expand/Collapse +/- or spacer */}
                                             <div className="flex-shrink-0 mt-0.5">
                                                 {hasChildren ? (
                                                     <button
                                                         onClick={(e) => toggleExpansion(asset.id, e)}
-                                                        className={`w-5 h-5 flex items-center justify-center rounded transition text-slate-400 hover:text-slate-700 hover:bg-slate-200 ${isExpanded ? 'bg-slate-100' : ''}`}
+                                                        className={`w-5 h-5 flex items-center justify-center rounded border transition-all duration-150 ${
+                                                            isExpanded
+                                                                ? 'bg-slate-100 border-slate-300 text-slate-600'
+                                                                : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50 hover:border-slate-400'
+                                                        }`}
+                                                        title={isExpanded ? 'Collapse' : 'Expand'}
                                                     >
-                                                        <ChevronRight size={14} className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
+                                                        {isExpanded ? <Minus size={11} strokeWidth={2.5} /> : <Plus size={11} strokeWidth={2.5} />}
                                                     </button>
                                                 ) : (
                                                     <span className="w-5 h-5 flex items-center justify-center">
@@ -936,13 +957,6 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         </div>
 
                         {canCreate && (
-                            <>
-                                <button
-                                    onClick={() => openAddModal('Location')}
-                                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition shadow-sm"
-                                >
-                                    <MapPin size={16} /> New Location
-                                </button>
                                 <Button
                                     onClick={() => openAddModal('Asset')}
                                     size="sm"
@@ -951,7 +965,6 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 >
                                     New Asset
                                 </Button>
-                            </>
                         )}
                     </div>
                 </div>
@@ -1172,6 +1185,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     `}
                                     style={{ marginLeft: `calc(8px + ${asset.depth} * var(--tree-indent) + ${asset.depth > 0 ? 'var(--tree-branch-width) + 4px' : '0px'})` }}
                                     onClick={() => handleRowClick(asset)}
+                                    onContextMenu={(e) => handleTreeContextMenu(e, asset)}
                                 >
                                     {/* Checkbox */}
                                     <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
@@ -1188,13 +1202,14 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                         {hasChildren ? (
                                             <button
                                                 onClick={(e) => toggleExpansion(asset.id, e)}
-                                                className={`w-5 h-5 flex items-center justify-center rounded transition-all duration-200
+                                                className={`w-5 h-5 flex items-center justify-center rounded border transition-all duration-150
                                                     ${isExpanded
-                                                        ? 'bg-emerald-100 text-emerald-700 shadow-sm'
-                                                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700'
+                                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm'
+                                                        : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50 hover:border-slate-400'
                                                     }`}
+                                                title={isExpanded ? 'Collapse' : 'Expand'}
                                             >
-                                                <ChevronRight size={14} className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
+                                                {isExpanded ? <Minus size={11} strokeWidth={2.5} /> : <Plus size={11} strokeWidth={2.5} />}
                                             </button>
                                         ) : (
                                             <span className="w-5 h-5 flex items-center justify-center">
@@ -1440,18 +1455,15 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     compactLabel: true,
                                 },
                                 ...(canCreate ? [
-                                // F-005: child creation is level-aware — a FLOC offers "Add Location",
-                                // an Equipment-eligible level offers "Add Asset" (unknown level → both).
-                                ...((() => {
-                                    const selArg = { hierarchyLevel: (selectedAsset as any).hierarchyLevel, assetType: selectedAsset.assetType, category: selectedAsset.category };
-                                    const loc = canHaveChildLocation(selArg);
-                                    const eq = canHaveChildEquipment(selArg);
-                                    const unknown = !loc && !eq; // legacy/unmapped level → offer both
-                                    const acts: any[] = [];
-                                    if (loc || unknown) acts.push({ label: 'Add Location', icon: <CornerDownRight size={14} />, onClick: () => openAddModal('Location'), variant: 'secondary' as const, compactLabel: true });
-                                    if (eq || unknown) acts.push({ label: 'Add Asset', icon: <CornerDownRight size={14} />, onClick: () => openAddModal('Asset'), variant: 'secondary' as const, compactLabel: true });
-                                    return acts;
-                                })()),
+                                // Asset-level module: only "Add Asset" child creation.
+                                // Hierarchy level determines the child's level automatically.
+                                {
+                                    label: 'Add Asset',
+                                    icon: <CornerDownRight size={14} />,
+                                    onClick: () => openAddModal('Asset'),
+                                    variant: 'secondary' as const,
+                                    compactLabel: true,
+                                },
                                 {
                                     label: 'Duplicate',
                                     icon: <Copy size={14} />,
@@ -1947,6 +1959,97 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
             {canCreate && (
                 <FloatingActionButton onClick={() => openAddModal('Asset')} label="New Asset" />
             )}
+
+            {/* ── Right-click context menu (portal) ── */}
+            {ctxMenu && createPortal(
+                <div
+                    ref={ctxMenuRef}
+                    className="fixed z-[9999] min-w-[200px] bg-white rounded-xl shadow-2xl border border-slate-200 py-1.5 animate-in fade-in zoom-in-95 duration-100"
+                    style={{
+                        left: Math.min(ctxMenu.x, window.innerWidth - 220),
+                        top: Math.min(ctxMenu.y, window.innerHeight - 260),
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    {/* Header */}
+                    <div className="px-3 py-1.5 border-b border-slate-100 mb-1">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            {ctxMenu.asset.tag}
+                        </p>
+                        <p className="text-xs text-slate-600 truncate">{ctxMenu.asset.name}</p>
+                    </div>
+
+                    {/* Add child options — level-aware */}
+                    {canCreate && (() => {
+                        const selArg = {
+                            hierarchyLevel: (ctxMenu.asset as any).hierarchyLevel,
+                            assetType: ctxMenu.asset.assetType,
+                            category: ctxMenu.asset.category,
+                        };
+                        const loc = canHaveChildLocation(selArg);
+                        const eq = canHaveChildEquipment(selArg);
+                        const unknown = !loc && !eq; // legacy/unmapped → offer both
+                        return (
+                            <>
+                                {(eq || unknown) && (
+                                    <button
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-blue-50 flex items-center gap-2.5 text-slate-700 hover:text-blue-700 transition-colors"
+                                        onClick={() => {
+                                            setSelectedAsset(ctxMenu.asset);
+                                            openAddModal('Asset');
+                                            setCtxMenu(null);
+                                        }}
+                                    >
+                                        <Package size={14} className="text-blue-500" />
+                                        Add Child Asset
+                                    </button>
+                                )}
+                                {(loc || unknown) && (
+                                    <button
+                                        className="w-full px-3 py-2 text-left text-sm hover:bg-emerald-50 flex items-center gap-2.5 text-slate-700 hover:text-emerald-700 transition-colors"
+                                        onClick={() => {
+                                            setSelectedAsset(ctxMenu.asset);
+                                            openAddModal('Location');
+                                            setCtxMenu(null);
+                                        }}
+                                    >
+                                        <MapPin size={14} className="text-emerald-500" />
+                                        Add Child Location
+                                    </button>
+                                )}
+                            </>
+                        );
+                    })()}
+
+                    <div className="border-t border-slate-100 my-1" />
+
+                    {/* Quick actions */}
+                    <button
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50 flex items-center gap-2.5 text-slate-600 transition-colors"
+                        onClick={() => {
+                            setSelectedAsset(ctxMenu.asset);
+                            setCtxMenu(null);
+                        }}
+                    >
+                        <Zap size={14} className="text-slate-400" />
+                        View Details
+                    </button>
+                    {canDelete && (
+                        <button
+                            className="w-full px-3 py-2 text-left text-sm hover:bg-red-50 flex items-center gap-2.5 text-red-600 transition-colors"
+                            onClick={() => {
+                                setSelectedAsset(ctxMenu.asset);
+                                setDeleteModal({ isOpen: true, assetId: ctxMenu.asset.id, assetTag: ctxMenu.asset.tag });
+                                setCtxMenu(null);
+                            }}
+                        >
+                            <Trash2 size={14} />
+                            Delete
+                        </button>
+                    )}
+                </div>,
+                document.body
+            )}
         </div >
     );
 };
@@ -1978,22 +2081,23 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
         [masterMfrs]
     );
 
+    const loadModels = useCallback(async () => {
+        if (!asset.manufacturerId) { setModels([]); return; }
+        setParamsLoading(true);
+        try {
+            const data = await DatabaseService.getInstance().getManufacturerModels(asset.manufacturerId);
+            setModels(data.map((m: any) => ({ code: m.code, description: `${m.code} - ${m.description || ''}` })));
+        } catch (e) {
+            console.error('Failed to load models', e);
+        } finally {
+            setParamsLoading(false);
+        }
+    }, [asset.manufacturerId]);
+
     // Effect: load the selected manufacturer's models BY ID (the "easy filling").
     useEffect(() => {
-        const loadModels = async () => {
-            if (!asset.manufacturerId) { setModels([]); return; }
-            setParamsLoading(true);
-            try {
-                const data = await DatabaseService.getInstance().getManufacturerModels(asset.manufacturerId);
-                setModels(data.map((m: any) => ({ code: m.code, description: `${m.code} - ${m.description || ''}` })));
-            } catch (e) {
-                console.error('Failed to load models', e);
-            } finally {
-                setParamsLoading(false);
-            }
-        };
         loadModels();
-    }, [asset.manufacturerId]);
+    }, [loadModels]);
 
     // Helper to update a field
     const handleChange = (field: keyof Asset, value: any) => {
@@ -2038,6 +2142,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     onSave={handleModelCreated}
                     manufacturerName={asset.manufacturer || 'manufacturer'}
                     manufacturerId={asset.manufacturerId}
+                    onRefresh={loadModels}
                 />
             )}
 
@@ -3027,7 +3132,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
     const [formData, setFormData] = useState<Partial<Asset>>({
         tag: '',
         name: '',
-        assetType: type === 'Asset' ? '' : 'AREA',
+        assetType: '',
         status: AssetStatus.ACTIVE,
         criticality: '' as any,
         location: '',
@@ -3041,17 +3146,26 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
         setFormData({ ...formData, criticality: crit as Asset['criticality'] });
     };
 
-    const isLocation = type === 'Location';
-    // F-001: position context. Criticality is N/A at Root Level (only meaningful
-    // from Level 2 down), so it's greyed out there.
+    // Determine parent context for child-level inference
     const parentAsset = formData.parentId ? existingAssets.find(a => a.id === formData.parentId) : null;
     const isRoot = !formData.parentId;
     const parentLevelLabel = parentAsset ? resolveLevel({ hierarchyLevel: (parentAsset as any).hierarchyLevel, assetType: (parentAsset as any).assetType, category: (parentAsset as any).category })?.label : undefined;
-    const criticalityNA = isLocation && isRoot;
+
+    // Criticality is only mandatory from Level 4+ (SUBSYSTEM, EQUIPMENT, COMPONENT).
+    // Levels 1–3 (SITE, AREA, UNIT, SYSTEM) are organisational containers — criticality is optional.
+    // At root level (no parent), criticality is always optional (user creates top-level FLOC).
+    const inferredChildLevel = parentAsset
+        ? resolveLevel({ hierarchyLevel: (parentAsset as any).hierarchyLevel, assetType: (parentAsset as any).assetType, category: (parentAsset as any).category })
+        : undefined;
+    // If parent's allowed children are all FLOC-type (isoLevel ≤ 3), criticality is optional
+    const childLevelConfigs = inferredChildLevel ? inferredChildLevel.allowedChildCodes.map(c => getLevelConfig(c)).filter(Boolean) : [];
+    const allChildrenUpperLevel = childLevelConfigs.length > 0 && childLevelConfigs.every(c => c && c.criticality === 'optional');
+    const criticalityOptional = isRoot || allChildrenUpperLevel;
 
     const handleSubmit = () => {
         // Tag ID is optional — a blank tag auto-generates server-side (FL-/EQ-), UAT F-009.
-        if (!formData.name || (!isLocation && !formData.criticality)) {
+        // Criticality is only required for lower hierarchy levels (Equipment/Component).
+        if (!formData.name || (!criticalityOptional && !formData.criticality)) {
             return; // validation handled by required attribute
         }
 
@@ -3062,7 +3176,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
             assetType: formData.assetType,
             category: formData.assetType, // Fallback/Sync
             status: formData.status as AssetStatus,
-            criticality: formData.criticality,
+            criticality: formData.criticality || undefined, // Send undefined (→ null in DB) when not set
             location: formData.location || '',
             healthScore: 100,
             priority: formData.priority || 'MEDIUM',
@@ -3070,7 +3184,8 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
             costCenter: formData.costCenter, // Use ID
             // Defaults
             trackingLog: [{ eventType: 'Create', description: 'Asset Created', timestamp: new Date().toISOString().split('T')[0], actor: 'User' }],
-            ...formData
+            ...formData,
+            criticality: formData.criticality || undefined, // Ensure override after spread
         } as Asset;
 
         onSave(newAsset);
@@ -3083,7 +3198,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
             <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-visible animate-in zoom-in-95 duration-200">
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                        <Plus size={18} className="text-blue-600" /> Add New {type}
+                        <Plus size={18} className="text-blue-600" /> Add New Asset
                     </h3>
                     <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                 </div>
@@ -3092,11 +3207,11 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     {/* Row 1: Tag + Name */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{isLocation ? 'Functional Location ID' : 'Tag ID'}</label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tag ID</label>
                             <input
                                 type="text"
                                 className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none"
-                                placeholder={isLocation ? 'Blank → auto FL-…' : 'Blank → auto EQ-…'}
+                                placeholder='Blank → auto-generate'
                                 value={formData.tag || ''}
                                 onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
                             />
@@ -3118,16 +3233,13 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     {/* Row 2: Criticality + Parent Asset */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Criticality {!isLocation && <span className="text-red-500">*</span>}</label>
-                            {criticalityNA ? (
-                                <div className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-400 italic">N/A at Root Level</div>
-                            ) : (
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Criticality {!criticalityOptional && <span className="text-red-500">*</span>}</label>
                             <select
                                 className={`w-full p-2 border rounded-lg text-sm bg-white ${!formData.criticality ? 'border-slate-300 text-slate-400' : 'border-slate-300 text-slate-800'}`}
                                 value={formData.criticality || ''}
                                 onChange={(e) => handleCriticalityChange(e.target.value)}
                             >
-                                <option value="" disabled>Select Criticality...</option>
+                                <option value="">{criticalityOptional ? 'Optional at this level' : 'Select Criticality...'}</option>
                                 {dictionaries.filter(d => d.type === 'CRITICALITY' && d.active)
                                     .sort((a, b) => (a.sequence || 99) - (b.sequence || 99))
                                     .map(d => (
@@ -3143,7 +3255,6 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                                     </>
                                 )}
                             </select>
-                            )}
                         </div>
 
                         <div>
@@ -3173,10 +3284,10 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     <button onClick={onClose} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancel</button>
                     <button
                         onClick={handleSubmit}
-                        disabled={!formData.name || (!isLocation && !criticalityNA && !formData.criticality)}
+                        disabled={!formData.name || (!criticalityOptional && !formData.criticality)}
                         className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-md flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                        <CheckCircle size={16} /> Create {type}
+                        <CheckCircle size={16} /> Create Asset
                     </button>
                 </div>
             </div>
@@ -3776,72 +3887,205 @@ interface SimpleAddModelModalProps {
     onSave: (model: any) => void;
     manufacturerName: string;
     manufacturerId: string;
+    onRefresh: () => void;
 }
 
-function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, manufacturerId }: SimpleAddModelModalProps) {
+function SimpleAddModelModal({ isOpen, onClose, onSave, manufacturerName, manufacturerId, onRefresh }: SimpleAddModelModalProps) {
     const [modelCode, setModelCode] = useState('');
     const [description, setDescription] = useState('');
     const [loading, setLoading] = useState(false);
+    const [existingModels, setExistingModels] = useState<{ id: string; code: string; description: string; active?: boolean }[]>([]);
+    const [listLoading, setListLoading] = useState(false);
+    const [editingModel, setEditingModel] = useState<{ id: string; code: string; description: string } | null>(null);
+
     const { showToast } = useToast();
+    const confirm = useConfirm();
+
+    const loadExistingModels = useCallback(async () => {
+        if (!manufacturerId) return;
+        setListLoading(true);
+        try {
+            const db = DatabaseService.getInstance();
+            const data = await db.getManufacturerModels(manufacturerId);
+            setExistingModels(data.map((m: any) => ({
+                id: m.id,
+                code: m.code,
+                description: m.description || ''
+            })));
+        } catch (err: any) {
+            console.error('Failed to load existing models:', err);
+        } finally {
+            setListLoading(false);
+        }
+    }, [manufacturerId]);
+
+    useEffect(() => {
+        if (isOpen) {
+            loadExistingModels();
+        }
+    }, [isOpen, loadExistingModels]);
 
     if (!isOpen) return null;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!modelCode.trim()) return;
         setLoading(true);
         try {
             const db = DatabaseService.getInstance();
-            const newModel = { code: modelCode, description: description, active: true };
-            await db.addManufacturerModel(manufacturerId, newModel);
-            onSave(newModel);
+            if (editingModel) {
+                await db.updateManufacturerModel(editingModel.id, {
+                    code: modelCode.trim(),
+                    description: description.trim(),
+                    active: true
+                });
+                showToast("Model updated successfully", 'success');
+                setEditingModel(null);
+            } else {
+                const newModel = { code: modelCode.trim(), description: description.trim(), active: true };
+                await db.addManufacturerModel(manufacturerId, newModel);
+                showToast("Model added successfully", 'success');
+                onSave(newModel);
+            }
+            setModelCode('');
+            setDescription('');
+            loadExistingModels();
+            onRefresh();
         } catch (err: any) {
-            showToast("Error adding model: " + err.message, 'error');
+            showToast("Error saving model: " + err.message, 'error');
         } finally {
             setLoading(false);
         }
     };
 
+    const handleEdit = (model: any) => {
+        setEditingModel(model);
+        setModelCode(model.code);
+        setDescription(model.description);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingModel(null);
+        setModelCode('');
+        setDescription('');
+    };
+
+    const handleDelete = async (id: string, code: string) => {
+        const ok = await confirm({
+            title: "Delete Model Number",
+            message: `Are you sure you want to delete model "${code}"? This action cannot be undone.`,
+            variant: "danger",
+            confirmLabel: "Delete"
+        });
+        if (!ok) return;
+
+        try {
+            const db = DatabaseService.getInstance();
+            await db.deleteManufacturerModel(id);
+            showToast("Model deleted successfully", 'success');
+            loadExistingModels();
+            onRefresh();
+        } catch (err: any) {
+            showToast("Error deleting model: " + err.message, 'error');
+        }
+    };
+
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
-                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+                {/* Header */}
+                <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
                     <div>
-                        <h3 className="font-bold text-slate-900">Add Model Number</h3>
+                        <h3 className="font-bold text-slate-900 text-sm">Manage Model Numbers</h3>
                         <p className="text-xs text-slate-500">For {manufacturerName}</p>
                     </div>
-                    <button onClick={onClose}><X size={18} className="text-slate-400 hover:text-slate-600" /></button>
+                    <button type="button" onClick={onClose} className="p-1 rounded-full hover:bg-slate-200 transition-colors text-slate-400 hover:text-slate-600">
+                        <X size={18} />
+                    </button>
                 </div>
-                <form onSubmit={handleSubmit} className="p-4 space-y-4">
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Model Code <span className="text-red-500">*</span></label>
-                        <input
-                            required
-                            className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500"
-                            value={modelCode}
-                            onChange={e => setModelCode(e.target.value)}
-                            placeholder="e.g. 3500-XL"
-                        />
+
+                <div className="p-4 space-y-4 overflow-y-auto flex-1">
+                    {/* Add/Edit Form */}
+                    <form onSubmit={handleSubmit} className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3 shrink-0">
+                        <h4 className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                            {editingModel ? 'Edit Model' : 'Add New Model'}
+                        </h4>
+                        <div className="space-y-2">
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Model Code <span className="text-red-500">*</span></label>
+                                <input
+                                    required
+                                    className="w-full text-xs border border-slate-300 rounded-md p-2 bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition"
+                                    value={modelCode}
+                                    onChange={e => setModelCode(e.target.value)}
+                                    placeholder="e.g. 3500-XL"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Description</label>
+                                <input
+                                    className="w-full text-xs border border-slate-300 rounded-md p-2 bg-white focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition"
+                                    value={description}
+                                    onChange={e => setDescription(e.target.value)}
+                                    placeholder="e.g. High Pressure Probe"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-1">
+                            {editingModel && (
+                                <button type="button" onClick={handleCancelEdit} className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-200 rounded transition-colors">
+                                    Cancel
+                                </button>
+                            )}
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="px-2.5 py-1.5 bg-primary-600 text-white rounded text-xs font-medium hover:bg-primary-500 disabled:opacity-50 transition-colors"
+                            >
+                                {loading ? 'Saving...' : editingModel ? 'Update Model' : 'Add Model'}
+                            </button>
+                        </div>
+                    </form>
+
+                    {/* Existing Models List */}
+                    <div className="flex flex-col min-h-0">
+                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Existing Models</h4>
+                        <div className="border border-slate-200 rounded-lg overflow-y-auto bg-white divide-y divide-slate-100 max-h-56">
+                            {listLoading ? (
+                                <div className="p-4 text-center text-xs text-slate-400">Loading models...</div>
+                            ) : existingModels.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-slate-400 italic">No models registered.</div>
+                            ) : (
+                                existingModels.map(m => (
+                                    <div key={m.id} className="p-2.5 flex items-center justify-between hover:bg-slate-50/50">
+                                        <div className="min-w-0 pr-4">
+                                            <span className="text-xs font-bold text-slate-700 font-mono block">{m.code}</span>
+                                            {m.description && <span className="text-[10px] text-slate-500 block truncate">{m.description}</span>}
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleEdit(m)}
+                                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition"
+                                                title="Edit Model"
+                                            >
+                                                <Edit2 size={13} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDelete(m.id, m.code)}
+                                                className="p-1 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 transition"
+                                                title="Delete Model"
+                                            >
+                                                <Trash2 size={13} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
-                        <input
-                            className="w-full text-sm border-slate-300 rounded-md p-2"
-                            value={description}
-                            onChange={e => setDescription(e.target.value)}
-                            placeholder="e.g. High Pressure Probe"
-                        />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button type="button" onClick={onClose} className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100 rounded">Cancel</button>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="px-3 py-1.5 bg-primary-600 text-white rounded text-xs font-medium hover:bg-primary-500 disabled:opacity-50"
-                        >
-                            {loading ? 'Saving...' : 'Add Model'}
-                        </button>
-                    </div>
-                </form>
+                </div>
             </div>
         </div>
     );

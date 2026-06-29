@@ -40,6 +40,7 @@ import { FinOpsService, type CostAllocation, type AssetFinancial, type WarrantyC
 import { MOCK_WORK_ORDERS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_RECURRING_JOBS } from '../constants';
 import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 
 import { DatabaseService } from '../services/DatabaseService';
@@ -2368,7 +2369,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                 <div className="rounded-xl border border-slate-200 bg-white p-3 md:p-4">
                     <div className="flex items-center justify-between mb-2">
                         <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><AlertOctagon size={15} className="text-blue-600" /> Asset Reliability</h3>
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wide">last 12 months · SMRP</span>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wide">last 12 months</span>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {([
@@ -3725,6 +3726,7 @@ const TasksTab: React.FC<{
     onUpdateJob: (u: Partial<WorkOrder>) => void;
     dictionaries: DictionaryEntry[];
 }> = ({ job, onUpdate, availableOrgUnits, availableUsers, contacts, onUpdateJob, dictionaries }) => {
+    const confirm = useConfirm();
     const tasks = job.tasks || [];
     const [expandedTaskId, setExpandedTaskId] = useState<string | null>(tasks.length === 1 ? tasks[0]?.id : null);
     const [editorTab, setEditorTab] = useState<'instructions' | 'resources'>('instructions');
@@ -3759,10 +3761,16 @@ const TasksTab: React.FC<{
         onUpdate(newTasks);
     };
 
-    const deleteTask = (id: string) => {
+    const deleteTask = async (id: string) => {
         const taskToDelete = tasks.find(t => t.id === id);
         if (!taskToDelete) return;
-        if (!window.confirm(`Delete task #${taskToDelete.sequence} "${taskToDelete.description}"?`)) return;
+        const ok = await confirm({
+            title: 'Delete Task',
+            message: `Task #${taskToDelete.sequence} "${taskToDelete.description}" will be permanently removed.`,
+            variant: 'danger',
+            confirmLabel: 'Delete',
+        });
+        if (!ok) return;
         const filtered = tasks.filter(t => t.id !== id);
         onUpdate(filtered);
         if (expandedTaskId === id) setExpandedTaskId(filtered.length > 0 ? filtered[0].id : null);
@@ -3814,8 +3822,14 @@ const TasksTab: React.FC<{
                     </div>
                     {tasks.length > 0 && tasks.some(t => t.status !== 'COMPLETED') && (
                         <button
-                            onClick={() => {
-                                if (window.confirm(`Mark all ${tasks.length} tasks as COMPLETED?`)) {
+                            onClick={async () => {
+                                const ok = await confirm({
+                                    title: 'Complete All Tasks',
+                                    message: `Mark all ${tasks.length} tasks as COMPLETED? This cannot be easily undone.`,
+                                    variant: 'info',
+                                    confirmLabel: 'Complete All',
+                                });
+                                if (ok) {
                                     onUpdate(tasks.map(t => ({ ...t, status: 'COMPLETED' as const })));
                                 }
                             }}
@@ -5038,6 +5052,7 @@ const TaskEditor: React.FC<{
 const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void; dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
     const { user } = useAuth();
     const { showToast } = useToast();
+    const confirm = useConfirm();
     const [permits, setPermits] = useState<any[]>([]);
     const [showCreatePermit, setShowCreatePermit] = useState(false);
     const [expandedPermit, setExpandedPermit] = useState<string | null>(null);
@@ -5273,8 +5288,14 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
         updateHazard(id, 'controlHierarchy' as keyof JobHazard, next);
     };
 
-    const deleteHazard = (id: string) => {
-        if (window.confirm('Remove this hazard entry?')) {
+    const deleteHazard = async (id: string) => {
+        const ok = await confirm({
+            title: 'Remove Hazard',
+            message: 'This hazard entry and its risk assessment will be removed from the JSA.',
+            variant: 'danger',
+            confirmLabel: 'Remove',
+        });
+        if (ok) {
             onUpdate({ jsa: { ...job.jsa!, hazards: (job.jsa!.hazards || []).filter(h => h.id !== id) } });
         }
     };
@@ -6673,6 +6694,7 @@ const ResourcesTab: React.FC<{
 const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: any[], onCreate: () => void, onRefresh?: () => void, canCreate?: boolean, canDelete?: boolean, workOrders?: WorkOrder[] }> = ({ pms, dictionaries, assets, onCreate, onRefresh, canCreate = true, canDelete = true, workOrders = [] }) => {
     const navigate = useNavigate();
     const { showToast } = useToast();
+    const confirm = useConfirm();
     const { openRelantern } = useRelantern();
     const [generating, setGenerating] = useState<string | null>(null);
 
@@ -6709,7 +6731,13 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
 
     const handleGenerate = async (pmId: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (window.confirm('Generate a Work Order from this strategy now?')) {
+        const ok = await confirm({
+            title: 'Generate Work Order',
+            message: 'A new Work Order will be generated from this maintenance strategy.',
+            variant: 'info',
+            confirmLabel: 'Generate',
+        });
+        if (ok) {
             setGenerating(pmId);
             try {
                 await DatabaseService.getInstance().generateWOFromPM(pmId);
@@ -6732,7 +6760,13 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
             showToast('Access Denied: You do not have permission to delete strategies.', 'error');
             return;
         }
-        if (window.confirm('Are you sure you want to delete this strategy?')) {
+        const ok = await confirm({
+            title: 'Delete Strategy',
+            message: 'This maintenance strategy will be permanently deleted. This action cannot be undone.',
+            variant: 'danger',
+            confirmLabel: 'Delete',
+        });
+        if (ok) {
             try {
                 await DatabaseService.getInstance().deletePM(pmId);
                 showToast('Strategy deleted', 'success');
@@ -6760,7 +6794,7 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
                         <h2 className="font-bold text-slate-800">Recurring Maintenance Strategies</h2>
                         {pmEff.overall.written > 0 && (
                             <span
-                                title="SMRP 5.4.13 — PM & PdM Effectiveness = necessary ÷ written PM/PdM corrective work orders. Higher = PM/PdM is catching real defects."
+                                title="PM & PdM Effectiveness = necessary ÷ written PM/PdM corrective work orders. Higher = PM/PdM is catching real defects."
                                 className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${(pmEff.overall.pct ?? 0) >= 70 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : (pmEff.overall.pct ?? 0) >= 40 ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-red-100 text-red-700 border-red-200'}`}
                             >
                                 PM/PdM Effectiveness {pmEff.overall.pct}% ({pmEff.overall.necessary}/{pmEff.overall.written})
@@ -6791,7 +6825,7 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Frequency</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Next Due</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider" title="SMRP 5.4.13 — PM & PdM Effectiveness">Effectiveness</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider" title="PM & PdM Effectiveness — necessary ÷ written PM/PdM corrective work orders">Effectiveness</th>
                             <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>

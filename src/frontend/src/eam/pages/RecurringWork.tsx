@@ -21,6 +21,7 @@ import { NotificationService } from '../services/NotificationService';
 import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { SearchableDropdown } from '../components/ui/SearchableDropdown';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import type { ImportType } from '../services/assetTemplates';
 
 type TabId = 'details' | 'assets' | 'tasks' | 'jsa' | 'labor' | 'inventory' | 'files' | 'history';
@@ -1866,6 +1867,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
 };
 
 const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob>) => void }> = ({ job, onUpdate }) => {
+    const confirm = useConfirm();
     const [tasks, setTasks] = useState<JobTask[]>(job.tasks || []);
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
@@ -1906,8 +1908,14 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
         updateTasks(newTasks);
     };
 
-    const deleteTask = (id: string) => {
-        if (window.confirm('Delete this task step?')) {
+    const deleteTask = async (id: string) => {
+        const ok = await confirm({
+            title: 'Delete Task Step',
+            message: 'This task step will be permanently removed from the procedure.',
+            variant: 'danger',
+            confirmLabel: 'Delete',
+        });
+        if (ok) {
             const newTasks = tasks.filter(t => t.id !== id);
             updateTasks(newTasks);
             if (editingTaskId === id) setEditingTaskId(null);
@@ -2175,6 +2183,7 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
 };
 
 const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>) => void }> = ({ job, onUpdate }) => {
+    const confirm = useConfirm();
     const jsa = job.jsa || { id: `jsa-${Date.now()}`, status: 'DRAFT', hazards: [], permits: [], signoffs: [] };
 
     const CONSEQUENCE_LABELS = ['Insignificant', 'Minor', 'Moderate', 'Major', 'Catastrophic'];
@@ -2222,8 +2231,14 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
         updateHazard(id, 'controlHierarchy', next);
     };
 
-    const deleteHazard = (id: string) => {
-        if (window.confirm('Remove this hazard?')) {
+    const deleteHazard = async (id: string) => {
+        const ok = await confirm({
+            title: 'Remove Hazard',
+            message: 'This hazard entry and its risk assessment will be removed from the JSA.',
+            variant: 'danger',
+            confirmLabel: 'Remove',
+        });
+        if (ok) {
             onUpdate({ jsa: { ...jsa, hazards: (jsa.hazards || []).filter(h => h.id !== id) } });
         }
     };

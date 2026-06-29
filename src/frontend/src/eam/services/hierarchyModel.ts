@@ -38,7 +38,7 @@ export const DEFAULT_LEVELS: LevelConfig[] = [
   { code: 'SITE',      isoLevel: 1, label: 'Site',             objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['AREA', 'UNIT'] },
   { code: 'AREA',      isoLevel: 2, label: 'Area / Plant',     objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['UNIT', 'SYSTEM'] },
   { code: 'UNIT',      isoLevel: 2, label: 'Plant / Unit',     objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['SYSTEM'] },
-  { code: 'SYSTEM',    isoLevel: 3, label: 'System / Process', objectClass: 'FLOC',      numbering: 'FL', criticality: 'mandatory', showEquipmentFields: false, allowedChildCodes: ['SUBSYSTEM', 'EQUIPMENT'] },
+  { code: 'SYSTEM',    isoLevel: 3, label: 'System / Process', objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['SUBSYSTEM', 'EQUIPMENT'] },
   { code: 'SUBSYSTEM', isoLevel: 4, label: 'Sub-system',       objectClass: 'FLOC',      numbering: 'FL', criticality: 'mandatory', showEquipmentFields: false, allowedChildCodes: ['EQUIPMENT'] },
   { code: 'EQUIPMENT', isoLevel: 5, label: 'Equipment',        objectClass: 'EQUIPMENT', numbering: 'EQ', criticality: 'mandatory', showEquipmentFields: true,  allowedChildCodes: ['COMPONENT'] },
   { code: 'COMPONENT', isoLevel: 6, label: 'Component',        objectClass: 'EQUIPMENT', numbering: 'EQ', criticality: 'mandatory', showEquipmentFields: true,  allowedChildCodes: [] },

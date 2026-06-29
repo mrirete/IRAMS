@@ -29,3 +29,5 @@ export { UnifiedFilterBar } from './UnifiedFilterBar';
 export type { UnifiedFilterBarProps, FilterPill, FilterBarAction } from './UnifiedFilterBar';
 export { ScrollTabStrip } from './ScrollTabStrip';
 export type { ScrollTabStripProps } from './ScrollTabStrip';
+export { ConfirmDialog } from './ConfirmDialog';
+export type { ConfirmDialogProps, ConfirmVariant } from './ConfirmDialog';

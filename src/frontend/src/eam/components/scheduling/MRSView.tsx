@@ -5,6 +5,7 @@ import {
     Loader2, Inbox, X, UserCircle
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -598,6 +599,7 @@ export const MRSView: React.FC<MRSViewProps> = ({
     const [myScheduleMode, setMyScheduleMode] = useState(false);
     const gridRef = useRef<HTMLDivElement>(null);
     const { permissions } = useAuth();
+    const confirm = useConfirm();
 
     // Responsive: detect small screen
     const [isSmallScreen, setIsSmallScreen] = useState(false);
@@ -680,7 +682,7 @@ export const MRSView: React.FC<MRSViewProps> = ({
     }, [onDateChange]);
 
     // GAP-J: Handle drop with skill/qualification blocking
-    const handleDrop = useCallback((woId: string, contactId: string, dateKey: string) => {
+    const handleDrop = useCallback(async (woId: string, contactId: string, dateKey: string) => {
         const resource = resources.find(r => r.contactId === contactId);
         const wo = jobs.find((j: any) => j.id === woId);
 
@@ -697,12 +699,12 @@ export const MRSView: React.FC<MRSViewProps> = ({
             const requiredCraft = craftMap[woType];
 
             if (requiredCraft && !resource.craftTypes.some(ct => ct.toUpperCase() === requiredCraft)) {
-                const proceed = window.confirm(
-                    `⚠ SKILL MISMATCH\n\n` +
-                    `Work order ${(wo as any).woNumber || woId} requires ${requiredCraft} craft,\n` +
-                    `but ${resource.name} is qualified as: ${resource.craftTypes.join(', ')}.\n\n` +
-                    `Do you still want to assign this job?`
-                );
+                const proceed = await confirm({
+                    title: 'Skill Mismatch',
+                    message: `Work order ${(wo as any).woNumber || woId} requires ${requiredCraft} craft, but ${resource.name} is qualified as: ${resource.craftTypes.join(', ')}. Do you still want to assign this job?`,
+                    variant: 'warning',
+                    confirmLabel: 'Assign Anyway',
+                });
                 if (!proceed) return;
             }
 
@@ -715,18 +717,18 @@ export const MRSView: React.FC<MRSViewProps> = ({
                 return false;
             });
             if (expiredQuals.length > 0) {
-                const proceed = window.confirm(
-                    `⚠ QUALIFICATION ALERT\n\n` +
-                    `${resource.name} has ${expiredQuals.length} expired qualification(s):\n` +
-                    `${expiredQuals.map(q => `• ${q.name} (expired ${q.expires})`).join('\n')}\n\n` +
-                    `Do you still want to assign this job?`
-                );
+                const proceed = await confirm({
+                    title: 'Qualification Alert',
+                    message: `${resource.name} has ${expiredQuals.length} expired qualification(s): ${expiredQuals.map(q => `${q.name} (expired ${q.expires})`).join(', ')}. Do you still want to assign this job?`,
+                    variant: 'warning',
+                    confirmLabel: 'Assign Anyway',
+                });
                 if (!proceed) return;
             }
         }
 
         onAssignJob(woId, contactId, dateKey);
-    }, [onAssignJob, resources, jobs]);
+    }, [onAssignJob, resources, jobs, confirm]);
 
     // Week label
     const weekLabel = useMemo(() => {

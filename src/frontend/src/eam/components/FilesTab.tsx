@@ -2,6 +2,7 @@ import React, { useState, useRef, useMemo } from 'react';
 import { Paperclip, Plus, Trash2, Download, Loader2, X, Edit3, Filter, Tag, Link2 } from 'lucide-react';
 import { WorkOrder, JobFile, JobTask, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/DatabaseService';
 import { ImageGallery } from './ui/ImageGallery';
@@ -110,6 +111,7 @@ const UploadModal: React.FC<{
 export const FilesTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void; tasks: JobTask[] }> = ({ job, onUpdate, tasks }) => {
     const { profile } = useAuth();
     const { showToast } = useToast();
+    const confirm = useConfirm();
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState('');
     const [isDragOver, setIsDragOver] = useState(false);
@@ -225,7 +227,13 @@ export const FilesTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrde
 
     const removeFile = async (fileToRemove: JobFile) => {
         if (isReadonly) return;
-        if (!window.confirm(`Delete "${fileToRemove.name}"?`)) return;
+        const ok = await confirm({
+            title: 'Delete Document',
+            message: `"${fileToRemove.name}" will be permanently deleted. This action cannot be undone.`,
+            variant: 'danger',
+            confirmLabel: 'Delete',
+        });
+        if (!ok) return;
         try { await db.deleteImage('work-order-docs', fileToRemove.url); } catch { }
         try {
             await db.addJournalEntry(job.id, 'WORK_ORDER', {

@@ -22,6 +22,7 @@ import { assessmentService } from '../../eam/services/AssessmentService';
 import { useAuth } from '../../eam/contexts/AuthContext';
 
 import { AuditIntake } from './AuditIntake';
+import { AuditIntakeAnalysis } from './AuditIntakeAnalysis';
 import { AuditDocReadiness } from './AuditDocReadiness';
 import { AuditSixMChecklist } from './AuditSixMChecklist';
 import { AuditScoredFindings } from './AuditScoredFindings';
@@ -75,6 +76,8 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
     const [state, setState] = useState<AuditAssessmentState>(existingState || { ...EMPTY_STATE });
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     const [inviteOpen, setInviteOpen] = useState(false);
+    // Interstitial: instant directional snapshot shown after intake, before Step 2.
+    const [showAnalysis, setShowAnalysis] = useState(false);
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const recordIdRef = useRef<string | undefined>(state.id);
     const stateRef = useRef<AuditAssessmentState>(state);
@@ -175,9 +178,24 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
     // ─── Step Handlers ──────────────────────────────────────
 
     const handleIntakeComplete = (data: AuditIntakeData) => {
-        const next = { ...state, intake: data, currentStep: 2 };
+        // Stay on Step 1 and surface the instant directional snapshot.
+        // Persisting here captures the lead (auto-save) before they go deeper.
+        const next = { ...state, intake: data, currentStep: 1 };
         setState(next);
         scheduleSave(next);
+        setShowAnalysis(true);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleAnalysisContinue = () => {
+        setShowAnalysis(false);
+        goToStep(2);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const handleAnalysisRefine = () => {
+        setShowAnalysis(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleDocReadinessComplete = (data: any[]) => {
@@ -296,10 +314,17 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
 
             {/* ─── Step Content ────────────────────────────────── */}
             <div className="flex-1 overflow-y-auto">
-                {currentStep === 1 && (
+                {currentStep === 1 && !showAnalysis && (
                     <AuditIntake
                         initialData={state.intake}
                         onComplete={handleIntakeComplete}
+                    />
+                )}
+                {currentStep === 1 && showAnalysis && (
+                    <AuditIntakeAnalysis
+                        intake={state.intake}
+                        onContinue={handleAnalysisContinue}
+                        onRefine={handleAnalysisRefine}
                     />
                 )}
                 {currentStep === 2 && (
