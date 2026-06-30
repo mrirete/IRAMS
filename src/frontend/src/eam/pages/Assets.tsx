@@ -23,7 +23,7 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, getLevelConfig } from '../services/hierarchyModel';
+import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, getLevelConfig, allowedChildren } from '../services/hierarchyModel';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
@@ -216,6 +216,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
     const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [showMassChange, setShowMassChange] = useState(false);
+    const [showFabMenu, setShowFabMenu] = useState(false);
 
     // Asset Tag editability: SAP PM best practice — tag is immutable after first save.
     // Only editable for freshly created or duplicated assets (one-time setup).
@@ -957,6 +958,13 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                         </div>
 
                         {canCreate && (
+                            <>
+                                <button
+                                    onClick={() => openAddModal('Location')}
+                                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 transition shadow-sm"
+                                >
+                                    <MapPin size={16} /> New Location
+                                </button>
                                 <Button
                                     onClick={() => openAddModal('Asset')}
                                     size="sm"
@@ -965,6 +973,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                 >
                                     New Asset
                                 </Button>
+                            </>
                         )}
                     </div>
                 </div>
@@ -1455,15 +1464,18 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     compactLabel: true,
                                 },
                                 ...(canCreate ? [
-                                // Asset-level module: only "Add Asset" child creation.
-                                // Hierarchy level determines the child's level automatically.
-                                {
-                                    label: 'Add Asset',
-                                    icon: <CornerDownRight size={14} />,
-                                    onClick: () => openAddModal('Asset'),
-                                    variant: 'secondary' as const,
-                                    compactLabel: true,
-                                },
+                                // F-005: child creation is level-aware — a FLOC offers "Add Location",
+                                // an Equipment-eligible level offers "Add Asset" (unknown level → both).
+                                ...((() => {
+                                    const selArg = { hierarchyLevel: (selectedAsset as any).hierarchyLevel, assetType: selectedAsset.assetType, category: selectedAsset.category };
+                                    const loc = canHaveChildLocation(selArg);
+                                    const eq = canHaveChildEquipment(selArg);
+                                    const unknown = !loc && !eq; // legacy/unmapped level → offer both
+                                    const acts: any[] = [];
+                                    if (loc || unknown) acts.push({ label: 'Add Location', icon: <CornerDownRight size={14} />, onClick: () => openAddModal('Location'), variant: 'secondary' as const, compactLabel: true });
+                                    if (eq || unknown) acts.push({ label: 'Add Asset', icon: <CornerDownRight size={14} />, onClick: () => openAddModal('Asset'), variant: 'secondary' as const, compactLabel: true });
+                                    return acts;
+                                })()),
                                 {
                                     label: 'Duplicate',
                                     icon: <Copy size={14} />,
@@ -1955,9 +1967,55 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                 }}
             />
 
-            {/* FAB for mobile — one-hand asset creation (visible < 768px only) */}
+            {/* FAB for mobile — one-hand creation menu (visible < 768px only) */}
             {canCreate && (
-                <FloatingActionButton onClick={() => openAddModal('Asset')} label="New Asset" />
+                <div className="sm:hidden fixed bottom-20 right-5 z-[999] flex flex-col items-end gap-3">
+                    {showFabMenu && (
+                        <>
+                            {/* Backdrop to close the menu */}
+                            <div className="fixed inset-0 bg-slate-900/30 backdrop-blur-xs z-[-1]" onClick={() => setShowFabMenu(false)} />
+                            
+                            {/* Option 1: New Location */}
+                            <button
+                                onClick={() => {
+                                    openAddModal('Location');
+                                    setShowFabMenu(false);
+                                }}
+                                className="flex items-center gap-2 px-3 py-2 bg-green-600 active:bg-green-700 text-white rounded-full shadow-lg animate-in slide-in-from-bottom-5 duration-200"
+                            >
+                                <span className="text-xs font-bold px-1 select-none">New Location</span>
+                                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                                    <MapPin size={15} />
+                                </div>
+                            </button>
+                            
+                            {/* Option 2: New Asset */}
+                            <button
+                                onClick={() => {
+                                    openAddModal('Asset');
+                                    setShowFabMenu(false);
+                                }}
+                                className="flex items-center gap-2 px-3 py-2 bg-blue-600 active:bg-blue-700 text-white rounded-full shadow-lg animate-in slide-in-from-bottom-3 duration-150"
+                            >
+                                <span className="text-xs font-bold px-1 select-none">New Asset</span>
+                                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                                    <Plus size={15} />
+                                </div>
+                            </button>
+                        </>
+                    )}
+                    
+                    {/* Main FAB Toggle */}
+                    <button
+                        onClick={() => setShowFabMenu(prev => !prev)}
+                        className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center text-white transition-all duration-300 ${
+                            showFabMenu ? 'bg-slate-600 rotate-45 scale-95 shadow-lg' : 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/30'
+                        }`}
+                        title="Add menu"
+                    >
+                        <Plus size={24} className="transition-transform" />
+                    </button>
+                </div>
             )}
 
             {/* ── Right-click context menu (portal) ── */}
@@ -3142,6 +3200,31 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
         costCenter: ''
     });
 
+    const isLocation = type === 'Location';
+
+    // Auto-resolve allowed child level/type based on mode and parent
+    useEffect(() => {
+        const parent = formData.parentId ? existingAssets.find(a => a.id === formData.parentId) : null;
+        let defaultType = '';
+        if (parent) {
+            const allowed = allowedChildren({
+                hierarchyLevel: (parent as any).hierarchyLevel,
+                assetType: parent.assetType,
+                category: parent.category
+            });
+            const targetClass = isLocation ? 'FLOC' : 'EQUIPMENT';
+            const matched = allowed.find(c => c.objectClass === targetClass);
+            if (matched) {
+                defaultType = matched.code;
+            } else {
+                defaultType = allowed[0]?.code || '';
+            }
+        } else {
+            defaultType = isLocation ? 'SITE' : 'EQUIPMENT';
+        }
+        setFormData(prev => ({ ...prev, assetType: defaultType }));
+    }, [formData.parentId, type, existingAssets]);
+
     const handleCriticalityChange = (crit: string) => {
         setFormData({ ...formData, criticality: crit as Asset['criticality'] });
     };
@@ -3176,7 +3259,6 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
             assetType: formData.assetType,
             category: formData.assetType, // Fallback/Sync
             status: formData.status as AssetStatus,
-            criticality: formData.criticality || undefined, // Send undefined (→ null in DB) when not set
             location: formData.location || '',
             healthScore: 100,
             priority: formData.priority || 'MEDIUM',
@@ -3198,7 +3280,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
             <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-visible animate-in zoom-in-95 duration-200">
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                        <Plus size={18} className="text-blue-600" /> Add New Asset
+                        <Plus size={18} className="text-blue-600" /> Add New {isLocation ? 'Location' : 'Asset'}
                     </h3>
                     <button onClick={onClose}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                 </div>
@@ -3207,11 +3289,11 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     {/* Row 1: Tag + Name */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tag ID</label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{isLocation ? 'Functional Location ID' : 'Tag ID'}</label>
                             <input
                                 type="text"
                                 className="w-full p-2 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-primary-500 outline-none"
-                                placeholder='Blank → auto-generate'
+                                placeholder={isLocation ? 'Blank → auto FL-…' : 'Blank → auto EQ-…'}
                                 value={formData.tag || ''}
                                 onChange={(e) => setFormData({ ...formData, tag: e.target.value })}
                             />
@@ -3258,7 +3340,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                         </div>
 
                         <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Parent Asset</label>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">{isLocation ? 'Parent Location' : 'Parent Asset'}</label>
                             <SearchableDropdown
                                 options={[
                                     { code: '', description: '(None) — Root Level' },
@@ -3266,7 +3348,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                                 ]}
                                 value={formData.parentId || ''}
                                 onChange={(val) => setFormData({ ...formData, parentId: val || undefined })}
-                                placeholder="Search parent asset..."
+                                placeholder={isLocation ? 'Search parent location...' : 'Search parent asset...'}
                             />
                             <p className="text-[10px] text-slate-400 mt-1">
                                 {isRoot ? 'Position: Root Level' : `Under ${parentAsset?.tag || 'parent'}${parentLevelLabel ? ` · ${parentLevelLabel}` : ''}`}
@@ -3287,7 +3369,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                         disabled={!formData.name || (!criticalityOptional && !formData.criticality)}
                         className="px-6 py-2 bg-primary-600 text-white font-bold rounded-lg hover:bg-primary-500 shadow-md flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                        <CheckCircle size={16} /> Create Asset
+                        <CheckCircle size={16} /> Create {isLocation ? 'Location' : 'Asset'}
                     </button>
                 </div>
             </div>

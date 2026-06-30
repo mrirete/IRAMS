@@ -944,6 +944,20 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const [localJob, setLocalJob] = useState<WorkOrder>(job);
     const [activeTab, setActiveTab] = useState<TabId>('details');
     const [showCompleteModal, setShowCompleteModal] = useState(false);
+    const [modalFailureMode, setModalFailureMode] = useState('');
+    const [modalFailureCause, setModalFailureCause] = useState('');
+    const [modalRemedy, setModalRemedy] = useState('');
+    const [modalJournalNote, setModalJournalNote] = useState('');
+
+    useEffect(() => {
+        if (!showCompleteModal) {
+            setModalFailureMode('');
+            setModalFailureCause('');
+            setModalRemedy('');
+            setModalJournalNote('');
+        }
+    }, [showCompleteModal]);
+
     const [showNotificationModal, setShowNotificationModal] = useState(false);
     const [pendingStatus, setPendingStatus] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -1015,6 +1029,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const hasRemedyCode = !!localJob.failureData?.remedyCode;
     const hasJournals = (localJob.journals && localJob.journals.length > 0);
 
+    const allFailureModes = dictionaries.filter(d => d.type === 'FAILURE_MODE' && d.active);
+    const allFailureCauses = dictionaries.filter(d => d.type === 'FAILURE_CAUSE' && d.active);
+
     const woType = (localJob.type || '').toString().toUpperCase();
     const isPreventiveType = ['PM', 'PREVENTIVE', 'PREVENTATIVE', 'SCHEDULED', 'INSPECTION', 'PREDICTIVE'].includes(woType);
     const isCriticalityA = assetCriticality === 'A';
@@ -1024,6 +1041,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     // Failure Cause (Cause Code) is optional. Remedy is NOT a standard SAP catalog field.
     const failureCodingMet = !requiresFailureCoding || hasFailureMode;
     const canComplete = failureCodingMet && hasJournals;
+    // Modal completion gating (depends on requiresFailureCoding above).
+    const modalFailureModeMet = hasFailureMode || !!modalFailureMode || !requiresFailureCoding;
+    const modalJournalsMet = hasJournals || !!modalJournalNote.trim();
+    const modalCanComplete = modalFailureModeMet && modalJournalsMet;
     const [defectFound, setDefectFound] = useState(false);
 
     const tabs: { id: TabId; label: string; icon: any }[] = [
@@ -1275,7 +1296,34 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     };
 
     const handleConfirmCompletion = async (followUp: boolean) => {
-        if (!canComplete) return;
+        const finalJournals = !hasJournals && modalJournalNote.trim()
+            ? [{
+                id: `inst-${Date.now()}`,
+                type: 'Note',
+                author: (user as any)?.username || 'unknown',
+                date: new Date().toISOString(),
+                comments: modalJournalNote.trim()
+              }, ...(localJob.journals || [])]
+            : (localJob.journals || []);
+
+        const finalFailureData = requiresFailureCoding && !hasFailureMode && modalFailureMode
+            ? {
+                ...(localJob.failureData || {}),
+                failureMode: modalFailureMode,
+                failureCause: modalFailureCause || localJob.failureData?.failureCause,
+                remedyCode: modalRemedy || localJob.failureData?.remedyCode
+              }
+            : localJob.failureData;
+
+        const finalHasFailureMode = !!finalFailureData?.failureMode;
+        const finalFailureCodingMet = !requiresFailureCoding || finalHasFailureMode;
+        const finalHasJournals = finalJournals.length > 0;
+        const finalCanComplete = finalFailureCodingMet && finalHasJournals;
+
+        if (!finalCanComplete) {
+            showToast('Completion requirements not met. Please fill failure mode and journal note.', 'warning');
+            return;
+        }
 
         const updatedStatus = WorkOrderStatus.TECO;
         let message = `Work Order ${localJob.woNumber || localJob.id} is now Technically Complete.`;
@@ -1291,13 +1339,17 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             // so that wo_failure_data is written BEFORE TECO validation
             await DatabaseService.getInstance().updateWorkOrder(localJob.id, {
                 status: updatedStatus,
-                failureData: localJob.failureData,
+                failureData: finalFailureData,
                 properties: {
                     ...((localJob as any).properties || {}),
-                    journals: localJob.journals || [],
+                    journals: finalJournals,
                 },
             } as any, user?.id || 'unknown');
-            updateJob({ status: updatedStatus });
+            updateJob({
+                status: updatedStatus,
+                failureData: finalFailureData,
+                journals: finalJournals as any
+            });
 
             // Enhancement 3: Lock any library templates referenced by this WO's tasks (MoC compliance)
             try {
@@ -1566,82 +1618,128 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             <button onClick={() => setShowCompleteModal(false)}><X size={20} className="text-slate-400 hover:text-slate-600" /></button>
                         </div>
 
-                        <div className="p-6">
-                            {!canComplete ? (
-                                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                                    <h4 className="text-red-800 font-bold text-sm mb-2 flex items-center gap-2">
-                                        <AlertTriangle size={16} /> Completion Requirements Not Met
-                                    </h4>
-                                    <ul className="text-sm text-red-700 space-y-1 list-disc pl-5">
-                                        {requiresFailureCoding && !hasFailureMode && <li>Failure Mode must be selected (See Analysis Tab).</li>}
-                                        {!hasJournals && <li>At least one Journal Entry/Note is required (See Analysis Tab).</li>}
-                                    </ul>
-                                    <div className="mt-4">
-                                        <button
-                                            onClick={() => { setShowCompleteModal(false); setActiveTab('analysis'); }}
-                                            className="text-sm font-medium text-red-800 hover:underline flex items-center gap-1"
-                                        >
-                                            Go to Analysis Tab <ArrowRight size={14} />
-                                        </button>
+                        <div className="p-6 overflow-y-auto max-h-[60vh] space-y-4">
+                            {(!canComplete && !modalCanComplete) && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-xs text-amber-850 flex gap-2">
+                                    <AlertTriangle size={16} className="flex-shrink-0 mt-0.5 text-amber-600" />
+                                    <div>
+                                        <span className="font-bold text-amber-900 block mb-0.5">Missing Completion Details</span>
+                                        <p>Please enter the required failure coding or journal notes below to complete this work order.</p>
                                     </div>
                                 </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    <p className="text-slate-600 text-sm">
-                                        You are about to mark work order <strong>{localJob.woNumber || localJob.id}</strong> as <strong>Technically Complete (TECO)</strong>.
-                                        The work is physically complete. Costs can still be posted until Financial Close.
-                                    </p>
-                                    {isPreventiveType ? (
-                                        <>
-                                            <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800 space-y-1">
-                                                <div className="flex items-center gap-1.5 font-bold">
-                                                    <CheckCircle size={14} className="text-blue-500" /> Preventive Maintenance — Failure Coding Skipped
-                                                </div>
-                                                <p>Failure Mode, Cause, and Remedy are not required for {localJob.type} work orders because no failure occurred. Journal entry verified.</p>
-                                            </div>
-
-                                            {/* Defect Found Toggle — SAP PM best practice */}
-                                            <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${defectFound
-                                                    ? 'bg-amber-50 border-amber-300 shadow-sm'
-                                                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                                                }`}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={defectFound}
-                                                    onChange={(e) => setDefectFound(e.target.checked)}
-                                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                                                />
-                                                <div className="flex-1">
-                                                    <span className="text-sm font-bold text-slate-800">Defect Found During Inspection</span>
-                                                    <p className="text-xs text-slate-500 mt-0.5">
-                                                        Check this if a defect or abnormal condition was discovered. A follow-up corrective work order will be created with full failure coding requirements.
-                                                    </p>
-                                                </div>
-                                            </label>
-
-                                            {defectFound && (
-                                                <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800 flex items-start gap-2">
-                                                    <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
-                                                    <div>
-                                                        <span className="font-bold">Follow-up Required:</span> A corrective work order will be created for
-                                                        {isCriticalityA && <span className="font-bold text-red-700"> Criticality-A</span>} asset <strong>{localJob.assetCode || localJob.assetName || 'this asset'}</strong>.
-                                                        The follow-up WO will require Failure Mode, Cause, and Remedy coding per ISO 14224.
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <div className="bg-green-50 border border-green-200 rounded p-3 text-xs text-green-800">
-                                            <span className="font-bold">Validation Passed:</span> Failure coding and journal entry verified.
-                                        </div>
-                                    )}
-                                </div>
                             )}
+
+                            <div className="space-y-4">
+                                {/* Inline Failure Coding for Modal */}
+                                {requiresFailureCoding && !hasFailureMode && (
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                                        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Required Failure Coding (ISO 14224)</span>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Failure Mode *</label>
+                                            <select
+                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                value={modalFailureMode}
+                                                onChange={e => setModalFailureMode(e.target.value)}
+                                            >
+                                                <option value="">-- Select Failure Mode --</option>
+                                                {allFailureModes.map(fm => (
+                                                    <option key={fm.id} value={fm.code}>{fm.description} ({fm.code})</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Failure Cause (Optional)</label>
+                                            <select
+                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                value={modalFailureCause}
+                                                onChange={e => setModalFailureCause(e.target.value)}
+                                            >
+                                                <option value="">-- Select Failure Cause --</option>
+                                                {allFailureCauses.map(fc => (
+                                                    <option key={fc.id} value={fc.code}>{fc.description} ({fc.code})</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Remedy / Action Taken (Optional)</label>
+                                            <input
+                                                type="text"
+                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                placeholder="Describe action taken..."
+                                                value={modalRemedy}
+                                                onChange={e => setModalRemedy(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Inline Journal Note for Modal */}
+                                {!hasJournals && (
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                                        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Required Completion Journal Note</span>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Activity Log Note *</label>
+                                            <textarea
+                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2 h-20 resize-none"
+                                                placeholder="Write work performed, findings, or technician notes..."
+                                                value={modalJournalNote}
+                                                onChange={e => setModalJournalNote(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <p className="text-slate-600 text-sm">
+                                    You are about to mark work order <strong>{localJob.woNumber || localJob.id}</strong> as <strong>Technically Complete (TECO)</strong>.
+                                    The work is physically complete. Costs can still be posted until Financial Close.
+                                </p>
+
+                                {isPreventiveType && (
+                                    <>
+                                        <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800 space-y-1">
+                                            <div className="flex items-center gap-1.5 font-bold">
+                                                <CheckCircle size={14} className="text-blue-500" /> Preventive Maintenance — Failure Coding Skipped
+                                            </div>
+                                            <p>Failure Mode, Cause, and Remedy are not required for {localJob.type} work orders because no failure occurred. Journal entry verified.</p>
+                                        </div>
+
+                                        {/* Defect Found Toggle — SAP PM best practice */}
+                                        <label className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-all ${defectFound
+                                                ? 'bg-amber-50 border-amber-300 shadow-sm'
+                                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                                            }`}>
+                                            <input
+                                                type="checkbox"
+                                                checked={defectFound}
+                                                onChange={(e) => setDefectFound(e.target.checked)}
+                                                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                            />
+                                            <div className="flex-1">
+                                                <span className="text-sm font-bold text-slate-800">Defect Found During Inspection</span>
+                                                <p className="text-xs text-slate-500 mt-0.5">
+                                                    Check this if a defect or abnormal condition was discovered. A follow-up corrective work order will be created with full failure coding requirements.
+                                                </p>
+                                            </div>
+                                        </label>
+
+                                        {defectFound && (
+                                            <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800 flex items-start gap-2">
+                                                <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                                                <div>
+                                                    <span className="font-bold">Follow-up Required:</span> A corrective work order will be created for
+                                                    {isCriticalityA && <span className="font-bold text-red-700"> Criticality-A</span>} asset <strong>{localJob.assetCode || localJob.assetName || 'this asset'}</strong>.
+                                                    The follow-up WO will require Failure Mode, Cause, and Remedy coding per ISO 14224.
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                )}
+                            </div>
                         </div>
 
                         <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
                             <button onClick={() => setShowCompleteModal(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancel</button>
-                            {canComplete && (
+                            {modalCanComplete && (
                                 <>
                                     {/* For PMs with defect: prominently show follow-up button */}
                                     {isPreventiveType && defectFound ? (
@@ -2952,6 +3050,11 @@ const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: 
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
 const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
+    const [isFieldsExpanded, setIsFieldsExpanded] = useState(false);
+    const tasks = job.tasks || [];
+    const completedTasksCount = tasks.filter(t => t.status === 'COMPLETED').length;
+    const totalTasksCount = tasks.length;
+    const workCompletionPct = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
 
     // ── Asset / Parent-WO pickers (SAP/MaintainX best practice: editable, locked once TECO/CLOSED) ──
     const isRefLocked = job.status === WorkOrderStatus.CLOSED || job.status === WorkOrderStatus.TECO;
@@ -3064,8 +3167,61 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             <div className="lg:col-span-2">
                 <WorkReadinessStrip readiness={readiness} onReview={handleReviewPlan} />
             </div>
+
+            {/* Mobile Header Card — shows status and progress by default */}
+            <div className="lg:hidden lg:col-span-2 animate-in slide-in-from-top-2 duration-300">
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-4">
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Status</span>
+                            <div className="flex items-center gap-1.5">
+                                <span className={`w-2.5 h-2.5 rounded-full ${
+                                    (job.status as string) === 'COMPLETED' || job.status === 'CLOSED' ? 'bg-green-500' :
+                                    (job.status as string) === 'IN_PROGRESS' || job.status === 'WIP' ? 'bg-blue-500 animate-pulse' : 'bg-slate-400'
+                                }`} />
+                                <select
+                                    className="text-sm font-bold text-slate-800 bg-transparent border-none p-0 focus:ring-0 focus:outline-none cursor-pointer"
+                                    value={job.status}
+                                    onChange={(e) => onUpdate({ status: e.target.value as any })}
+                                >
+                                    {dictionaries.filter(d => d.type === 'STATUS_CODE' && d.active).map(s => (
+                                        <option key={s.id} value={s.code}>{s.description}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Progress</span>
+                            <span className={`text-sm font-extrabold ${workCompletionPct === 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                {workCompletionPct}% Done
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                        <div
+                            className={`h-1.5 rounded-full transition-all duration-500 ${workCompletionPct === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                            style={{ width: `${workCompletionPct}%` }}
+                        />
+                    </div>
+                    
+                    <div className="flex justify-between items-center text-xs text-slate-500 pt-2 border-t border-slate-100">
+                        <span>{completedTasksCount} of {totalTasksCount} steps completed</span>
+                        <button
+                            type="button"
+                            onClick={() => setIsFieldsExpanded(!isFieldsExpanded)}
+                            className="text-blue-600 font-bold flex items-center gap-1 hover:text-blue-700 transition-colors"
+                        >
+                            {isFieldsExpanded ? 'Hide Details' : 'Show Details'}
+                            <ChevronDown size={14} className={`transform transition-transform duration-200 ${isFieldsExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             {/* Core Info */}
-            <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className={`bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 ${isFieldsExpanded ? 'block' : 'hidden lg:block'}`}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Asset</label>
@@ -3295,7 +3451,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             </div>
 
             {/* Scheduling & Progress */}
-            <div className="bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
+            <div className={`bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 ${isFieldsExpanded ? 'block' : 'hidden lg:block'}`}>
                 {job.scope === 'PROJECT' && (
                     <div className="flex justify-end">
                         <span className="text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">

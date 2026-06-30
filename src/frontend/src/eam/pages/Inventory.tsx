@@ -787,57 +787,79 @@ function DetailsTab({ item, dictionaries, contacts, vendors, onUpdate }: { item:
         onUpdate({ ...item, [field]: value });
     };
 
+    const inputClasses = "w-full text-sm border border-slate-200 rounded-lg p-2.5 bg-white hover:border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 outline-none transition-all duration-200";
+
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
-                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Identification & Classification</h3>
-                <div className="grid grid-cols-2 gap-4">
+            {/* Left Card: Identification & Classification */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-5">
+                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
+                    <Package size={16} className="text-blue-600" /> Identification & Classification
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Inventory Code</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Inventory Code</label>
                         <input
                             type="text"
                             value={item.code}
                             onChange={e => handleChange('code', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-slate-50 p-2"
+                            className={`${inputClasses} bg-slate-50/50 font-mono font-medium`}
+                            disabled
                         />
                     </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Status</label>
-                        <div className="flex items-center gap-2 mt-2">
-                            <label className="flex items-center gap-2 cursor-pointer">
+
+                    <div className="col-span-1 sm:col-span-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Item Status & Criticality</label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
+                                item.isActive
+                                    ? 'bg-blue-50/60 border-blue-200 text-blue-900 shadow-2xs'
+                                    : 'bg-slate-50 border-slate-200 text-slate-500'
+                            }`}>
+                                <div className="flex flex-col">
+                                     <span className="text-sm font-semibold">Active Status</span>
+                                     <span className="text-[10px] text-slate-400">Available for work orders</span>
+                                </div>
                                 <input
                                     type="checkbox"
                                     checked={item.isActive}
                                     onChange={e => handleChange('isActive', e.target.checked)}
-                                    className="rounded text-blue-600 focus:ring-primary-500"
+                                    className="w-4.5 h-4.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
                                 />
-                                <span className="text-sm">Active</span>
                             </label>
-                            <label className="flex items-center gap-2 cursor-pointer ml-4">
+                            <label className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${
+                                item.isCritical
+                                    ? 'bg-red-50/60 border-red-200 text-red-900 shadow-2xs'
+                                    : 'bg-slate-50 border-slate-200 text-slate-500'
+                            }`}>
+                                <div className="flex flex-col">
+                                     <span className="text-sm font-semibold text-red-700">Critical Spare Part</span>
+                                     <span className="text-[10px] text-slate-400">Triggers alert on low stock</span>
+                                </div>
                                 <input
                                     type="checkbox"
                                     checked={item.isCritical}
                                     onChange={e => handleChange('isCritical', e.target.checked)}
-                                    className="rounded text-red-600 focus:ring-red-500"
+                                    className="w-4.5 h-4.5 rounded text-red-600 focus:ring-red-500 border-slate-300 cursor-pointer"
                                 />
-                                <span className="text-sm text-red-600 font-medium">Critical Item</span>
                             </label>
                         </div>
                     </div>
-                    <div className="col-span-2">
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
+
+                    <div className="col-span-1 sm:col-span-2">
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Description</label>
                         <textarea
                             value={item.description}
                             onChange={e => handleChange('description', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2 h-20 resize-none hover:border-blue-400 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 transition-colors"
+                            className={`${inputClasses} h-20 resize-none`}
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Inventory Type</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Inventory Type</label>
                         <select
                             value={item.type}
                             onChange={e => handleChange('type', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2"
+                            className={inputClasses}
                         >
                             {dictionaries.filter(d => d.type === 'INVENTORY_TYPE').map(d => (
                                 <option key={d.id} value={d.code}>{d.description}</option>
@@ -845,11 +867,11 @@ function DetailsTab({ item, dictionaries, contacts, vendors, onUpdate }: { item:
                         </select>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Unit of Measure</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Unit of Measure</label>
                         <select
                             value={item.uom}
                             onChange={e => handleChange('uom', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2"
+                            className={inputClasses}
                         >
                             {dictionaries.filter(d => d.type === 'UOM').map(d => (
                                 <option key={d.id} value={d.code}>{d.description}</option>
@@ -857,11 +879,11 @@ function DetailsTab({ item, dictionaries, contacts, vendors, onUpdate }: { item:
                         </select>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Manufacturer</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Manufacturer</label>
                         <select
                             value={item.manufacturer || ''}
                             onChange={e => handleChange('manufacturer', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2"
+                            className={inputClasses}
                         >
                             <option value="">Select Manufacturer...</option>
                             {(() => {
@@ -878,99 +900,86 @@ function DetailsTab({ item, dictionaries, contacts, vendors, onUpdate }: { item:
                             })()}
                         </select>
                     </div>
-                    {/* Generic "Cost Center" removed to favor Inbound/Outbound specificity */}
-                    {/* <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Center</label>
-                        <select
-                            value={item.costCenterId || ''}
-                            onChange={e => handleChange('costCenterId', e.target.value)}
-                            className="w-full text-sm border-slate-300 rounded-lg bg-white p-2"
-                        >
-                            <option value="">(None)</option>
-                            {dictionaries.filter(d => d.type === 'COST_CENTRE').map(d => (
-                                <option key={d.id} value={d.id}>{d.description} ({d.code})</option>
-                            ))}
-                        </select>
-                    </div> */}
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Barcode</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Barcode</label>
                         <div className="relative">
                             <input
                                 type="text"
                                 value={item.barcode || ''}
                                 onChange={e => handleChange('barcode', e.target.value)}
-                                className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2 pl-8"
+                                className={`${inputClasses} pl-9`}
                             />
-                            <Barcode size={16} className="absolute left-2 top-2.5 text-slate-400" />
+                            <Barcode size={16} className="absolute left-3 top-3.5 text-slate-400" />
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
-                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
+            {/* Right Card: Financials & Purchasing */}
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-5">
+                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
                     <DollarSign size={16} className="text-green-600" /> Financials & Purchasing
                 </h3>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Item Cost (Avg)</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Item Cost (Avg)</label>
                         <div className="relative">
-                            <span className="absolute left-2 top-2 text-slate-400">$</span>
+                            <span className="absolute left-3 top-3 text-slate-400 text-sm">$</span>
                             <input
                                 type="number"
                                 value={item.itemCost}
                                 onChange={e => handleChange('itemCost', Number(e.target.value))}
-                                className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2 pl-6"
+                                className={`${inputClasses} pl-7`}
                             />
                         </div>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Markup %</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Markup %</label>
                         <div className="relative">
                             <input
                                 type="number"
                                 value={item.markupPercentage || 0}
                                 onChange={e => handleChange('markupPercentage', Number(e.target.value))}
-                                className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2 pr-6"
+                                className={`${inputClasses} pr-7`}
                             />
-                            <span className="absolute right-3 top-2 text-slate-400">%</span>
+                            <span className="absolute right-3 top-3 text-slate-400 text-sm">%</span>
                         </div>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Centre (Inbound)</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Cost Centre (Inbound)</label>
                         <select
                             value={item.costCenterInbound || ''}
                             onChange={e => handleChange('costCenterInbound', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2"
+                            className={inputClasses}
                         >
                             <option value="">(Select Account)</option>
                             {dictionaries.filter(d => d.type === 'COST_CENTRE').map(d => (
                                 <option key={d.id} value={d.id}>{d.description} ({d.code})</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-slate-400 mt-1">Asset Account (Balance Sheet)</p>
+                        <p className="text-[10px] text-slate-400 mt-1.5">Asset Account (Balance Sheet)</p>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Centre (Outbound)</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Cost Centre (Outbound)</label>
                         <select
                             value={item.costCenterOutbound || ''}
                             onChange={e => handleChange('costCenterOutbound', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2"
+                            className={inputClasses}
                         >
                             <option value="">(Select Account)</option>
                             {dictionaries.filter(d => d.type === 'COST_CENTRE').map(d => (
                                 <option key={d.id} value={d.id}>{d.description} ({d.code})</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-slate-400 mt-1">Default Expense Account (Usage)</p>
+                        <p className="text-[10px] text-slate-400 mt-1.5">Default Expense Account (Usage)</p>
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tax Code</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Tax Code</label>
                         <input
                             type="text"
                             value={item.taxCode || ''}
                             onChange={e => handleChange('taxCode', e.target.value)}
-                            className="w-full text-sm border border-slate-300 rounded-lg bg-white p-2"
+                            className={inputClasses}
                         />
                     </div>
                     <PreferredSupplierPicker
@@ -978,13 +987,13 @@ function DetailsTab({ item, dictionaries, contacts, vendors, onUpdate }: { item:
                         onChange={(val) => handleChange('preferredSupplierId', val)}
                     />
                 </div>
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-800 flex justify-between items-center">
+                <div className="mt-4 p-3 bg-blue-50/60 border border-blue-100 rounded-xl text-xs text-blue-800 flex justify-between items-center shadow-2xs">
                     <span><strong>Inventory Totals:</strong> {item.totalQtyOnHand} On Hand | {item.totalQtyOnOrder} On Order</span>
                 </div>
             </div>
         </div>
     );
-};
+}
 
 // --- Preferred Supplier Picker (Live from vendors table) ---
 function PreferredSupplierPicker({ value, onChange }: { value: string; onChange: (val: string) => void }) {

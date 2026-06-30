@@ -1250,6 +1250,7 @@ export class DatabaseService {
             tag: row.tag,
             name: row.name,
             parentId: row.parent_id,
+            hierarchyLevel: row.hierarchy_level,
             category: row.hierarchy_level === 'SITE' ? 'Site' :
                 row.hierarchy_level === 'UNIT' ? 'Unit' :
                     row.hierarchy_level === 'SYSTEM' ? 'System' :
@@ -1313,7 +1314,7 @@ export class DatabaseService {
         const cat = (asset.category || '').toUpperCase();
         if (['SITE', 'AREA'].includes(cat)) level = 'SITE';
         if (cat === 'UNIT') level = 'UNIT';
-        if (cat === 'SYSTEM') level = 'SYSTEM';
+        if (['SYSTEM', 'SUBSYSTEM'].includes(cat)) level = 'SYSTEM';
 
         const row = {
             id: asset.id && asset.id.startsWith('new-') ? undefined : asset.id, // Let DB gen UUID if new-
@@ -1368,7 +1369,7 @@ export class DatabaseService {
         const cat = (asset.assetType || asset.category || '').toUpperCase();
         if (['SITE', 'AREA'].includes(cat)) hierarchy_level = 'SITE';
         else if (cat === 'UNIT') hierarchy_level = 'UNIT';
-        else if (cat === 'SYSTEM') hierarchy_level = 'SYSTEM';
+        else if (['SYSTEM', 'SUBSYSTEM'].includes(cat)) hierarchy_level = 'SYSTEM';
         else if (cat) hierarchy_level = 'EQUIPMENT';
 
         const row: Record<string, any> = {

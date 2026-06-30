@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Wrench, Package, Plus, MoreHorizontal } from 'lucide-react';
+import { LayoutDashboard, Wrench, Package, Plus, Boxes } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 /**
@@ -26,7 +26,8 @@ const LEFT_ITEMS: NavItem[] = [
     { id: 'work', label: 'My Work', icon: Wrench,          path: '/work-orders' },
 ];
 const RIGHT_ITEMS: NavItem[] = [
-    { id: 'assets', label: 'Assets', icon: Package, path: '/assets' },
+    { id: 'assets',    label: 'Assets',    icon: Package, path: '/assets' },
+    { id: 'inventory', label: 'Inventory', icon: Boxes,   path: '/inventory' },
 ];
 
 export const MobileBottomNav: React.FC = () => {
@@ -76,17 +77,6 @@ export const MobileBottomNav: React.FC = () => {
             </button>
 
             {RIGHT_ITEMS.map(renderItem)}
-
-            {/* "More" overflow — opens sidebar on tap */}
-            <button
-                onClick={() => window.dispatchEvent(new CustomEvent('toggle-sidebar'))}
-                className="mobile-bottom-nav-item"
-            >
-                <span className="nav-icon">
-                    <MoreHorizontal size={22} strokeWidth={1.6} />
-                </span>
-                <span className="text-[10px] leading-none font-medium">More</span>
-            </button>
         </nav>
     );
 };

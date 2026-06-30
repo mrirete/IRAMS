@@ -259,25 +259,24 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
         }
     };
 
-    // Is this a heading block? Use larger label styling
     const isHeading = block.type === 'HEADING';
 
     return (
-        <div className={`bg-white border rounded-lg shadow-sm hover:shadow-md transition-shadow group relative ${isHeading ? 'border-blue-200 bg-blue-50/30 p-2' : 'border-slate-200 p-3'}`}>
+        <div className={`bg-white border rounded-xl shadow-xs hover:shadow-sm transition-all group relative ${isHeading ? 'border-blue-200 bg-blue-50/20 p-2.5' : 'border-slate-200 p-3 sm:p-4'}`}>
 
             {/* ── HEADER: Label + Type + Required + Actions ── */}
-            <div className="flex flex-col gap-2 mb-2">
+            <div className="flex flex-col gap-3 mb-2">
                 {/* Row 1: Icon + Label input */}
-                <div className="flex items-start gap-2">
-                    <div className="mt-2 text-slate-400 flex-shrink-0">
+                <div className="flex items-start gap-2.5">
+                    <div className="mt-2.5 text-slate-400 flex-shrink-0">
                         {getIcon()}
                     </div>
 
                     <div className="flex-1 min-w-0">
                         <textarea
-                            className={`w-full bg-transparent placeholder:text-slate-300 resize-none ${isHeading
-                                ? 'text-base font-bold text-slate-800 border-none p-0 focus:ring-0'
-                                : 'text-sm font-medium text-slate-700 border border-slate-200 rounded-md px-2.5 py-2 focus:ring-1 focus:ring-primary-500 focus:border-blue-500 hover:border-slate-300 transition-colors'}`}
+                            className={`w-full bg-white placeholder:text-slate-300 resize-none ${isHeading
+                                ? 'text-base font-bold text-slate-800 border-none p-0 focus:ring-0 bg-transparent'
+                                : 'text-sm font-medium text-slate-700 border border-slate-200 rounded-lg px-3 py-2.5 focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 hover:border-slate-300 transition-all duration-200 outline-none'}`}
                             placeholder={isHeading ? 'Section heading...' : 'Enter instruction...'}
                             value={block.label}
                             onChange={(e) => onChange({ label: e.target.value })}
@@ -287,22 +286,22 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                 </div>
 
                 {/* Row 2: Type badge + Actions (always visible, mobile-friendly) */}
-                <div className="flex items-center gap-2 pl-6 flex-wrap">
-                    <span className="text-[10px] text-slate-400 uppercase font-bold">
+                <div className="flex items-center gap-2 pl-0 sm:pl-8 flex-wrap">
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
                         {getTypeLabel(block.type)}
                     </span>
 
                     <div className="flex-1" />
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                         {block.type !== 'HEADING' && block.type !== 'SECTION' && (
-                            <label className="flex items-center gap-1.5 cursor-pointer bg-slate-50 px-2 py-1.5 rounded border border-slate-100 hover:bg-slate-100 transition-colors">
+                            <label className="flex items-center gap-1.5 cursor-pointer bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 hover:bg-slate-100 transition-colors">
                                 <input
                                     type="checkbox"
-                                    className="rounded-sm border-slate-300 text-blue-600 focus:ring-primary-500 w-3.5 h-3.5"
+                                    className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
                                     checked={block.required}
                                     onChange={(e) => onChange({ required: e.target.checked })}
-                                />
+                                  />
                                 <span className="text-[10px] uppercase font-bold text-slate-500">Req</span>
                             </label>
                         )}
@@ -310,7 +309,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                         {onAddSibling && (
                             <button
                                 onClick={onAddSibling}
-                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
                                 title="Add item below"
                             >
                                 <Plus size={16} />
@@ -319,7 +318,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
 
                         <button
                             onClick={onDelete}
-                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
                             title="Delete Block"
                         >
                             <Trash2 size={16} />
@@ -328,7 +327,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                         <div className="relative">
                             <button
                                 onClick={() => setShowMenu(!showMenu)}
-                                className="p-1.5 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors border border-transparent hover:border-slate-100"
                             >
                                 <MoreVertical size={16} />
                             </button>
@@ -360,7 +359,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
             </div>
 
             {/* ── BODY: Configuration & Preview ── */}
-            <div className="pl-7 space-y-3">
+            <div className="pl-0 sm:pl-8 space-y-3">
 
                 {/* Control Preview */}
                 {renderControlPreview()}
