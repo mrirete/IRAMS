@@ -6,8 +6,9 @@
  * criticality rule. Saves to hierarchy_config and applies live via setLevelModel.
  */
 import React, { useEffect, useState } from 'react';
-import { Layers, Save, Loader2, RotateCcw, CheckCircle, Info } from 'lucide-react';
+import { Layers, Save, Loader2, RotateCcw, CheckCircle, Info, Hash } from 'lucide-react';
 import { DatabaseService } from '../eam/services/DatabaseService';
+import { useToast } from '../eam/contexts/ToastContext';
 import { getLevels, DEFAULT_LEVELS, setLevelModel, type LevelConfig } from '../eam/services/hierarchyModel';
 
 export const HierarchyConfigPage: React.FC = () => {
@@ -141,6 +142,87 @@ export const HierarchyConfigPage: React.FC = () => {
             <p className="text-[11px] text-slate-400">
                 Changes apply immediately on save (and on next load for everyone). Structural rules (allowed children) are seeded from the ISO 14224 model and shown read-only here.
             </p>
+
+            <NumberRangesCard />
+        </div>
+    );
+};
+
+// ── Number ranges (SAP NRIV) ─────────────────────────────────────────────────
+const NumberRangesCard: React.FC = () => {
+    const { showToast } = useToast();
+    const [cfg, setCfg] = useState<any | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        DatabaseService.getInstance().getNumberingConfig()
+            .then(c => setCfg(c || { floc_prefix: 'FL-', floc_pad: 6, floc_next: 1, equip_prefix: 'EQ-', equip_pad: 6, equip_next: 1, auto_number_untagged: true }))
+            .finally(() => setLoading(false));
+    }, []);
+
+    const set = (k: string, v: any) => setCfg((p: any) => ({ ...p, [k]: v }));
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            await DatabaseService.getInstance().saveNumberingConfig({
+                floc_prefix: cfg.floc_prefix, floc_pad: Number(cfg.floc_pad) || 0, floc_next: Number(cfg.floc_next) || 1,
+                equip_prefix: cfg.equip_prefix, equip_pad: Number(cfg.equip_pad) || 0, equip_next: Number(cfg.equip_next) || 1,
+                auto_number_untagged: !!cfg.auto_number_untagged,
+            });
+            showToast('Number ranges saved.', 'success');
+        } catch (e: any) {
+            showToast('Save failed: ' + (e?.message || 'unknown'), 'error');
+        } finally { setSaving(false); }
+    };
+
+    const preview = (prefix: string, pad: number, next: number) => `${prefix || ''}${String(next || 1).padStart(Number(pad) || 0, '0')}`;
+
+    const rangeEditor = (title: string, color: string, pk: string, padk: string, nextk: string) => (
+        <div className="flex-1 min-w-[220px] rounded-lg border border-slate-200 p-4">
+            <h4 className={`text-xs font-bold uppercase tracking-wide mb-3 ${color}`}>{title}</h4>
+            <div className="grid grid-cols-3 gap-2">
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Prefix</label>
+                    <input value={cfg[pk] ?? ''} onChange={e => set(pk, e.target.value)} className="w-full text-sm border border-slate-300 rounded-md p-1.5 font-mono" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Digits</label>
+                    <input type="number" min={0} max={12} value={cfg[padk] ?? 6} onChange={e => set(padk, e.target.value)} className="w-full text-sm border border-slate-300 rounded-md p-1.5" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-slate-400 mb-1">Start at</label>
+                    <input type="number" min={1} value={cfg[nextk] ?? 1} onChange={e => set(nextk, e.target.value)} className="w-full text-sm border border-slate-300 rounded-md p-1.5" />
+                </div>
+            </div>
+            <div className="mt-2 text-[11px] text-slate-400">Next: <span className="font-mono font-bold text-slate-600">{preview(cfg[pk], cfg[padk], cfg[nextk])}</span></div>
+        </div>
+    );
+
+    return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-1">
+                <h2 className="text-base font-bold text-slate-800 flex items-center gap-2"><Hash size={17} className="text-primary-600" /> Number Ranges</h2>
+                <button onClick={save} disabled={saving || !cfg} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-white bg-primary-600 hover:bg-primary-500 disabled:opacity-50">
+                    {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save ranges
+                </button>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">Auto-generated identifiers (SAP NRIV parity). "Start at" sets the next number issued — set it above your existing numbers to begin a new range.</p>
+            {loading || !cfg ? (
+                <div className="flex justify-center py-8 text-slate-400"><Loader2 size={20} className="animate-spin" /></div>
+            ) : (
+                <>
+                    <div className="flex flex-wrap gap-4">
+                        {rangeEditor('Functional Location', 'text-emerald-600', 'floc_prefix', 'floc_pad', 'floc_next')}
+                        {rangeEditor('Equipment', 'text-blue-600', 'equip_prefix', 'equip_pad', 'equip_next')}
+                    </div>
+                    <label className="flex items-center gap-2 mt-4 cursor-pointer">
+                        <input type="checkbox" checked={!!cfg.auto_number_untagged} onChange={e => set('auto_number_untagged', e.target.checked)} className="rounded text-primary-600" />
+                        <span className="text-sm text-slate-700">Auto-generate a number for records left without a tag</span>
+                    </label>
+                </>
+            )}
         </div>
     );
 };

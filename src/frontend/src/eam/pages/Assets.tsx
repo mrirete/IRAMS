@@ -860,7 +860,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                                 <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">
                                                     {asset.name}
                                                 </p>
-                                                {asset.equipmentNumber && (
+                                                {!isLocation(asset) && asset.equipmentNumber && (
                                                     <span className="text-[9px] font-mono text-blue-500 flex items-center gap-0.5 mt-0.5">
                                                         <Hash size={8} className="flex-shrink-0" />
                                                         {asset.equipmentNumber}
@@ -1432,7 +1432,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                             <Activity size={10} /> {selectedAsset.healthScore}%
                                         </span>
                                     )}
-                                    {selectedAsset.equipmentNumber && (
+                                    {!isLocation(selectedAsset) && selectedAsset.equipmentNumber && (
                                         <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border bg-blue-50 text-blue-700 border-blue-200 flex items-center gap-1" title={`Internal Equipment Number (Gen ${selectedAsset.equipmentGeneration || 1})`}>
                                             <Hash size={9} /> {selectedAsset.equipmentNumber}
                                         </span>
@@ -2278,8 +2278,8 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     </div>
                 </div>
 
-                {/* ── Internal Equipment Number (SAP PM parity) ── */}
-                {asset.equipmentNumber && (
+                {/* ── Internal Equipment Number (SAP PM parity) — equipment only, never FLOCs ── */}
+                {showEquipFields && asset.equipmentNumber && (
                     <div className="flex items-center gap-3 px-3 py-2 bg-blue-50/60 border border-blue-100 rounded-lg">
                         <div className="flex items-center gap-1.5">
                             <Hash size={13} className="text-blue-500" />

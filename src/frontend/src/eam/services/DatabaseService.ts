@@ -617,6 +617,19 @@ export class DatabaseService {
         if (error) { console.error('DatabaseService.saveHierarchyConfig:', error); throw error; }
     }
 
+    // ── Numbering configuration (SAP NRIV-style ranges) ──
+    public async getNumberingConfig(): Promise<any | null> {
+        const { data, error } = await supabase.from('numbering_config').select('*').eq('id', 1).maybeSingle();
+        if (error) { console.error('DatabaseService.getNumberingConfig:', error); return null; }
+        return data;
+    }
+
+    public async saveNumberingConfig(cfg: Record<string, any>): Promise<void> {
+        const { error } = await supabase.from('numbering_config')
+            .upsert({ id: 1, ...cfg, updated_at: new Date().toISOString() });
+        if (error) { console.error('DatabaseService.saveNumberingConfig:', error); throw error; }
+    }
+
     // Qualifications
     public async getQualifications(contactId: string): Promise<any[]> {
         const { data } = await supabase.from('qualifications').select('*').eq('contact_id', contactId);
