@@ -23,7 +23,7 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, getLevelConfig, allowedChildren, getLevels } from '../services/hierarchyModel';
+import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, isValidChild } from '../services/hierarchyModel';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
@@ -438,6 +438,18 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
             // Circular reference
             if (wouldCreateCycle(id, targetId)) {
                 return { valid: false, reason: `Moving would create a circular reference` };
+            }
+            // Hierarchy integrity (UAT F-010): the moved record's level must be an
+            // allowed child of the target's level. Skipped when either level is
+            // unmapped, so legacy/out-of-model data is never blocked retroactively.
+            const src = assets.find(a => a.id === id);
+            if (src) {
+                const srcLevel = resolveLevelCode(src);
+                if (srcLevel && !isValidChild(target, srcLevel)) {
+                    const sLabel = resolveLevel(src)?.label || srcLevel;
+                    const tLabel = resolveLevel(target)?.label || 'this level';
+                    return { valid: false, reason: `A ${sLabel} can't be placed under a ${tLabel} (hierarchy rules).` };
+                }
             }
         }
         return { valid: true };
@@ -2443,6 +2455,21 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                         />
                     </div>
                     </>)}
+
+                    {/* Level — re-classify this record (UAT F-010). Drives numbering, fields & criticality. */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Level</label>
+                        <select
+                            value={resolveLevelCode(asset) || ''}
+                            onChange={(e) => onUpdate({ ...asset, hierarchyLevel: e.target.value })}
+                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
+                        >
+                            {getLevels().map(l => (
+                                <option key={l.code} value={l.code}>L{l.isoLevel} · {l.label} ({l.objectClass === 'FLOC' ? 'Location' : 'Equipment'})</option>
+                            ))}
+                        </select>
+                        <p className="text-[10px] text-slate-400 mt-1">Re-classify the hierarchy level. Updates numbering, fields & criticality on save.</p>
+                    </div>
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Criticality</label>

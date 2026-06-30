@@ -1381,13 +1381,16 @@ export class DatabaseService {
     }
 
     public async updateAsset(asset: any): Promise<void> {
-        // Determine hierarchy level from category/type
-        let hierarchy_level: string | undefined;
-        const cat = (asset.assetType || asset.category || '').toUpperCase();
-        if (['SITE', 'AREA'].includes(cat)) hierarchy_level = 'SITE';
-        else if (cat === 'UNIT') hierarchy_level = 'UNIT';
-        else if (['SYSTEM', 'SUBSYSTEM'].includes(cat)) hierarchy_level = 'SYSTEM';
-        else if (cat) hierarchy_level = 'EQUIPMENT';
+        // Hierarchy level — prefer the explicit level (Details-tab re-classification),
+        // else fall back to the legacy category/type mapping.
+        let hierarchy_level: string | undefined = (asset.hierarchyLevel || '').toString().toUpperCase() || undefined;
+        if (!hierarchy_level) {
+            const cat = (asset.assetType || asset.category || '').toUpperCase();
+            if (['SITE', 'AREA'].includes(cat)) hierarchy_level = 'SITE';
+            else if (cat === 'UNIT') hierarchy_level = 'UNIT';
+            else if (['SYSTEM', 'SUBSYSTEM'].includes(cat)) hierarchy_level = 'SYSTEM';
+            else if (cat) hierarchy_level = 'EQUIPMENT';
+        }
 
         const row: Record<string, any> = {
             tag: asset.tag,
