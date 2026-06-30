@@ -23,7 +23,7 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, getLevelConfig, allowedChildren } from '../services/hierarchyModel';
+import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, getLevelConfig, allowedChildren, getLevels } from '../services/hierarchyModel';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
@@ -3232,6 +3232,20 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
     // Determine parent context for child-level inference
     const parentAsset = formData.parentId ? existingAssets.find(a => a.id === formData.parentId) : null;
     const isRoot = !formData.parentId;
+
+    // Selectable levels (UAT F-010): the parent's allowed children of this object
+    // class, else every configured level of this class. Lets users target any
+    // configured level — including custom ones added in Admin → Hierarchy Config.
+    const availableLevels = useMemo(() => {
+        const wantClass = isLocation ? 'FLOC' : 'EQUIPMENT';
+        if (parentAsset) {
+            const kids = allowedChildren({ hierarchyLevel: (parentAsset as any).hierarchyLevel, assetType: parentAsset.assetType, category: parentAsset.category }).filter(c => c.objectClass === wantClass);
+            if (kids.length) return kids;
+        }
+        const all = getLevels().filter(l => l.objectClass === wantClass);
+        return all.length ? all : getLevels();
+    }, [formData.parentId, type, existingAssets]);
+    const selLevel = getLevelConfig(formData.assetType);
     const parentLevelLabel = parentAsset ? resolveLevel({ hierarchyLevel: (parentAsset as any).hierarchyLevel, assetType: (parentAsset as any).assetType, category: (parentAsset as any).category })?.label : undefined;
 
     // Criticality is only mandatory from Level 4+ (SUBSYSTEM, EQUIPMENT, COMPONENT).
@@ -3268,6 +3282,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
             trackingLog: [{ eventType: 'Create', description: 'Asset Created', timestamp: new Date().toISOString().split('T')[0], actor: 'User' }],
             ...formData,
             criticality: formData.criticality || undefined, // Ensure override after spread
+            hierarchyLevel: formData.assetType, // explicit chosen level → addAsset stores it
         } as Asset;
 
         onSave(newAsset);
@@ -3310,6 +3325,23 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                             />
                         </div>
+                    </div>
+
+                    {/* Level selector — drives object class, numbering & field visibility (F-010) */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Level <span className="text-red-500">*</span></label>
+                        <select
+                            className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white"
+                            value={formData.assetType || ''}
+                            onChange={(e) => setFormData({ ...formData, assetType: e.target.value })}
+                        >
+                            {availableLevels.map(l => (
+                                <option key={l.code} value={l.code}>L{l.isoLevel} · {l.label}</option>
+                            ))}
+                        </select>
+                        <p className="text-[10px] text-slate-400 mt-1">
+                            {selLevel ? `${selLevel.objectClass === 'FLOC' ? 'Functional Location' : 'Equipment'} · ${selLevel.numbering}- numbering` : ''}
+                        </p>
                     </div>
 
                     {/* Row 2: Criticality + Parent Asset */}

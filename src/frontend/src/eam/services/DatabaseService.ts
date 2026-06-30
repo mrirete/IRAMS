@@ -1322,12 +1322,16 @@ export class DatabaseService {
 
     public async addAsset(asset: any): Promise<any> {
         // Map UI -> DB
-        // Determine Hierarchy Level from Category
-        let level = 'EQUIPMENT';
+        // Hierarchy Level — prefer the explicitly-chosen level (from the create
+        // modal's Level dropdown), else fall back to the legacy category mapping.
+        let level = (asset.hierarchyLevel || '').toString().toUpperCase();
         const cat = (asset.category || '').toUpperCase();
-        if (['SITE', 'AREA'].includes(cat)) level = 'SITE';
-        if (cat === 'UNIT') level = 'UNIT';
-        if (['SYSTEM', 'SUBSYSTEM'].includes(cat)) level = 'SYSTEM';
+        if (!level) {
+            level = 'EQUIPMENT';
+            if (['SITE', 'AREA'].includes(cat)) level = 'SITE';
+            if (cat === 'UNIT') level = 'UNIT';
+            if (['SYSTEM', 'SUBSYSTEM'].includes(cat)) level = 'SYSTEM';
+        }
 
         const row = {
             id: asset.id && asset.id.startsWith('new-') ? undefined : asset.id, // Let DB gen UUID if new-
