@@ -6,25 +6,49 @@
  * criticality rule. Saves to hierarchy_config and applies live via setLevelModel.
  */
 import React, { useEffect, useState } from 'react';
-import { Layers, Save, Loader2, RotateCcw, CheckCircle, Info, Hash } from 'lucide-react';
+import { Layers, Save, Loader2, RotateCcw, CheckCircle, Info, Hash, Plus, Trash2 } from 'lucide-react';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { useToast } from '../eam/contexts/ToastContext';
 import { getLevels, DEFAULT_LEVELS, setLevelModel, type LevelConfig } from '../eam/services/hierarchyModel';
 
 export const HierarchyConfigPage: React.FC = () => {
+    const { showToast } = useToast();
     const [levels, setLevels] = useState<LevelConfig[]>(() => getLevels().map(l => ({ ...l })));
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    // Codes that already exist (in the DB/config) — their code is locked to avoid
+    // orphaning assets; newly added levels have an editable code.
+    const [originalCodes, setOriginalCodes] = useState<Set<string>>(() => new Set(getLevels().map(l => l.code)));
 
     useEffect(() => {
         DatabaseService.getInstance().getHierarchyConfig()
-            .then(cfg => { if (cfg && cfg.length) setLevels(cfg as LevelConfig[]); })
+            .then(cfg => { if (cfg && cfg.length) { setLevels(cfg as LevelConfig[]); setOriginalCodes(new Set((cfg as LevelConfig[]).map(l => l.code))); } })
             .finally(() => setLoading(false));
     }, []);
 
     const update = (idx: number, patch: Partial<LevelConfig>) => {
         setLevels(prev => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+        setSaved(false);
+    };
+
+    const addLevel = () => {
+        const maxIso = levels.reduce((m, l) => Math.max(m, l.isoLevel || 0), 0);
+        setLevels(prev => [...prev, { code: '', isoLevel: maxIso + 1, label: '', objectClass: 'FLOC', numbering: 'FL', criticality: 'optional', showEquipmentFields: false, allowedChildCodes: [] }]);
+        setSaved(false);
+    };
+
+    const removeLevel = (idx: number) => {
+        setLevels(prev => prev.filter((_, i) => i !== idx));
+        setSaved(false);
+    };
+
+    const toggleChild = (idx: number, childCode: string) => {
+        setLevels(prev => prev.map((l, i) => {
+            if (i !== idx) return l;
+            const has = l.allowedChildCodes.includes(childCode);
+            return { ...l, allowedChildCodes: has ? l.allowedChildCodes.filter(c => c !== childCode) : [...l.allowedChildCodes, childCode] };
+        }));
         setSaved(false);
     };
 
@@ -36,19 +60,29 @@ export const HierarchyConfigPage: React.FC = () => {
     });
 
     const handleSave = async () => {
+        const codes = levels.map(l => (l.code || '').trim().toUpperCase());
+        if (codes.some(c => !c)) { showToast('Every level needs a code.', 'error'); return; }
+        if (new Set(codes).size !== codes.length) { showToast('Level codes must be unique.', 'error'); return; }
         setSaving(true);
         try {
-            const normalized = levels.map(normalize);
+            const normalized = levels.map((l, i) => normalize({
+                ...l,
+                code: codes[i],
+                allowedChildCodes: (l.allowedChildCodes || []).map(c => c.toUpperCase()),
+            }));
             await DatabaseService.getInstance().saveHierarchyConfig(normalized);
             setLevelModel(normalized);
             setLevels(normalized);
+            setOriginalCodes(new Set(codes));
             setSaved(true);
+        } catch (e: any) {
+            showToast('Save failed: ' + (e?.message || 'unknown'), 'error');
         } finally {
             setSaving(false);
         }
     };
 
-    const handleReset = () => { setLevels(DEFAULT_LEVELS.map(l => ({ ...l }))); setSaved(false); };
+    const handleReset = () => { setLevels(DEFAULT_LEVELS.map(l => ({ ...l }))); setOriginalCodes(new Set(DEFAULT_LEVELS.map(l => l.code))); setSaved(false); };
 
     return (
         <div className="space-y-5 max-w-5xl mx-auto">
@@ -82,65 +116,83 @@ export const HierarchyConfigPage: React.FC = () => {
                     <table className="min-w-full text-sm">
                         <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400">
                             <tr>
-                                <th className="text-left font-bold px-4 py-2.5">Level</th>
-                                <th className="text-left font-bold px-4 py-2.5">Label</th>
-                                <th className="text-left font-bold px-4 py-2.5">Object class</th>
-                                <th className="text-left font-bold px-4 py-2.5">Numbering</th>
-                                <th className="text-left font-bold px-4 py-2.5">Criticality</th>
-                                <th className="text-left font-bold px-4 py-2.5">Allowed children</th>
+                                <th className="text-left font-bold px-3 py-2.5 w-24">Level / Code</th>
+                                <th className="text-left font-bold px-3 py-2.5">Label</th>
+                                <th className="text-left font-bold px-3 py-2.5">Object class</th>
+                                <th className="text-left font-bold px-3 py-2.5">Num</th>
+                                <th className="text-left font-bold px-3 py-2.5">Criticality</th>
+                                <th className="text-left font-bold px-3 py-2.5">Allowed children</th>
+                                <th className="px-3 py-2.5 w-8"></th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {levels.map((l, idx) => (
-                                <tr key={l.code} className="hover:bg-slate-50">
-                                    <td className="px-4 py-2.5 whitespace-nowrap">
-                                        <span className="font-mono text-[11px] font-bold text-slate-700">L{l.isoLevel}</span>
-                                        <span className="ml-1.5 text-[10px] text-slate-400">{l.code}</span>
+                            {levels.map((l, idx) => {
+                                const isNew = !originalCodes.has(l.code);
+                                const childOptions = levels.filter(c => c.code && c.code !== l.code);
+                                return (
+                                <tr key={idx} className="hover:bg-slate-50 align-top">
+                                    <td className="px-3 py-2.5 whitespace-nowrap">
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[10px] text-slate-400">L</span>
+                                            <input type="number" min={1} value={l.isoLevel} onChange={e => update(idx, { isoLevel: Number(e.target.value) || 1 })} className="w-11 text-[11px] border border-slate-300 rounded p-1" />
+                                        </div>
+                                        {isNew ? (
+                                            <input value={l.code} onChange={e => update(idx, { code: e.target.value.toUpperCase().replace(/\s/g, '_') })} placeholder="CODE" className="mt-1 w-20 text-[11px] font-mono border border-amber-300 bg-amber-50 rounded p-1 uppercase" />
+                                        ) : (
+                                            <span className="block mt-1 text-[10px] font-mono font-bold text-slate-500">{l.code}</span>
+                                        )}
                                     </td>
-                                    <td className="px-4 py-2.5">
-                                        <input
-                                            value={l.label}
-                                            onChange={e => update(idx, { label: e.target.value })}
-                                            className="w-40 text-sm border border-slate-300 rounded-md p-1.5 focus:ring-1 focus:ring-primary-500 outline-none"
-                                        />
+                                    <td className="px-3 py-2.5">
+                                        <input value={l.label} onChange={e => update(idx, { label: e.target.value })} placeholder="Level name" className="w-36 text-sm border border-slate-300 rounded-md p-1.5 focus:ring-1 focus:ring-primary-500 outline-none" />
                                     </td>
-                                    <td className="px-4 py-2.5">
-                                        <select
-                                            value={l.objectClass}
-                                            onChange={e => update(idx, { objectClass: e.target.value as LevelConfig['objectClass'] })}
-                                            className="text-sm border border-slate-300 rounded-md p-1.5 bg-white"
-                                        >
+                                    <td className="px-3 py-2.5">
+                                        <select value={l.objectClass} onChange={e => update(idx, { objectClass: e.target.value as LevelConfig['objectClass'] })} className="text-sm border border-slate-300 rounded-md p-1.5 bg-white">
                                             <option value="FLOC">Functional Location</option>
                                             <option value="EQUIPMENT">Equipment</option>
                                         </select>
                                     </td>
-                                    <td className="px-4 py-2.5">
+                                    <td className="px-3 py-2.5">
                                         <span className={`text-[11px] font-mono font-bold px-1.5 py-0.5 rounded ${l.objectClass === 'EQUIPMENT' ? 'bg-blue-50 text-blue-700' : 'bg-emerald-50 text-emerald-700'}`}>
                                             {l.objectClass === 'EQUIPMENT' ? 'EQ-' : 'FL-'}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-2.5">
-                                        <select
-                                            value={l.criticality}
-                                            onChange={e => update(idx, { criticality: e.target.value as LevelConfig['criticality'] })}
-                                            className="text-sm border border-slate-300 rounded-md p-1.5 bg-white"
-                                        >
+                                    <td className="px-3 py-2.5">
+                                        <select value={l.criticality} onChange={e => update(idx, { criticality: e.target.value as LevelConfig['criticality'] })} className="text-sm border border-slate-300 rounded-md p-1.5 bg-white">
                                             <option value="optional">Optional</option>
                                             <option value="mandatory">Mandatory</option>
                                         </select>
                                     </td>
-                                    <td className="px-4 py-2.5 text-[11px] text-slate-400">
-                                        {l.allowedChildCodes.length ? l.allowedChildCodes.join(', ') : '—'}
+                                    <td className="px-3 py-2.5">
+                                        <div className="flex flex-wrap gap-1 max-w-[230px]">
+                                            {childOptions.length === 0 && <span className="text-[10px] text-slate-300">—</span>}
+                                            {childOptions.map(c => {
+                                                const on = l.allowedChildCodes.includes(c.code);
+                                                return (
+                                                    <button key={c.code} type="button" onClick={() => toggleChild(idx, c.code)} className={`text-[10px] font-mono px-1.5 py-0.5 rounded border transition ${on ? 'bg-primary-100 border-primary-300 text-primary-700' : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300'}`}>
+                                                        {c.code}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </td>
+                                    <td className="px-3 py-2.5">
+                                        <button type="button" onClick={() => removeLevel(idx)} className="text-slate-300 hover:text-red-500 transition" title="Remove level"><Trash2 size={14} /></button>
                                     </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
+                    <div className="p-3 border-t border-slate-100">
+                        <button onClick={addLevel} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold text-primary-600 border border-dashed border-primary-300 hover:bg-primary-50">
+                            <Plus size={15} /> Add Level
+                        </button>
+                    </div>
                 </div>
             )}
 
             <p className="text-[11px] text-slate-400">
-                Changes apply immediately on save (and on next load for everyone). Structural rules (allowed children) are seeded from the ISO 14224 model and shown read-only here.
+                Changes apply on save (and on next load for everyone). Toggle the chips to set which child levels each level may contain. New level codes are stored as the asset hierarchy level — keep them short and uppercase.
             </p>
 
             <NumberRangesCard />
