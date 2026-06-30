@@ -63,6 +63,7 @@ const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
     '/admin/connectors/new': 'admin',
     '/admin/settings': 'admin',
     '/admin/hierarchy': 'admin',
+    '/admin/manufacturers': 'admin',
     '/admin/error-logs': 'admin',
     '/admin/activity-log': 'activityLog',
     '/system-health': 'admin',
@@ -388,6 +389,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 </NavLink>
                                 <NavLink to="/admin/hierarchy" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Hierarchy Config
+                                </NavLink>
+                                <NavLink to="/admin/manufacturers" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                                    Manufacturers
                                 </NavLink>
                                 <NavLink to="/admin/error-logs" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Error Logs
