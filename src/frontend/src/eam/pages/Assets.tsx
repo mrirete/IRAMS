@@ -3833,6 +3833,34 @@ function JobsTab({ asset }: { asset: Asset }) {
 function TrackingTab({ asset }: { asset: Asset }) {
     const [trackingSubTab, setTrackingSubTab] = useState<'audit' | 'install' | 'downtime'>('audit');
 
+    // F-009: the Audit Trail reads the persisted audit_logs (written by the DB trigger
+    // on every create/update/tag-change), not the in-memory create-only trackingLog.
+    const [auditEntries, setAuditEntries] = useState<any[]>([]);
+    const [auditLoading, setAuditLoading] = useState(true);
+    useEffect(() => {
+        let active = true;
+        setAuditLoading(true);
+        DatabaseService.getInstance().getAuditLog('assets', asset.id)
+            .then(rows => { if (active) setAuditEntries(rows); })
+            .finally(() => { if (active) setAuditLoading(false); });
+        return () => { active = false; };
+    }, [asset.id]);
+
+    const describeAudit = (e: any): string => {
+        let c: any = e.changes;
+        if (typeof c === 'string') { try { c = JSON.parse(c); } catch { c = {}; } }
+        c = c || {};
+        if (c.change_type === 'ASSET_TAG_CHANGE') return `Functional Location ID changed: ${c.old} → ${c.new}${c.reason ? ` — ${c.reason}` : ''}`;
+        if (c.field) return `${c.field}: ${c.old ?? '—'} → ${c.new ?? '—'}`;
+        if (e.action === 'INSERT') return 'Record created';
+        if (e.action === 'DELETE') return 'Record deleted';
+        if (c.old && c.new && typeof c.new === 'object') {
+            const changed = Object.keys(c.new).filter(k => JSON.stringify(c.old?.[k]) !== JSON.stringify(c.new[k]));
+            return changed.length ? `Updated: ${changed.slice(0, 6).join(', ')}` : 'Record updated';
+        }
+        return e.action === 'UPDATE' ? 'Record updated' : String(e.action || 'Change');
+    };
+
     const totalDowntimeHours = (asset.downtimeEvents || []).reduce((sum, d) => sum + (d.durationHours || 0), 0);
     const subTabs = [
         { id: 'audit' as const, label: 'Audit Trail', icon: History },
@@ -3861,33 +3889,36 @@ function TrackingTab({ asset }: { asset: Asset }) {
             {trackingSubTab === 'audit' && (
                 <div className="flow-root">
                     <ul role="list" className="-mb-8">
-                        {asset.trackingLog?.map((event, eventIdx) => (
-                            <li key={eventIdx}>
+                        {auditEntries.map((e, idx) => (
+                            <li key={e.id || idx}>
                                 <div className="relative pb-8">
-                                    {eventIdx !== asset.trackingLog!.length - 1 ? (
+                                    {idx !== auditEntries.length - 1 ? (
                                         <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-slate-200" aria-hidden="true" />
                                     ) : null}
                                     <div className="relative flex space-x-3">
                                         <div>
-                                            <span className="h-8 w-8 rounded-full bg-blue-500 flex items-center justify-center ring-8 ring-white">
+                                            <span className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white ${e.action === 'INSERT' ? 'bg-emerald-500' : e.action === 'DELETE' ? 'bg-red-500' : 'bg-blue-500'}`}>
                                                 <History className="h-4 w-4 text-white" aria-hidden="true" />
                                             </span>
                                         </div>
                                         <div className="flex min-w-0 flex-1 justify-between space-x-4 pt-1.5">
                                             <div>
-                                                <p className="text-sm text-slate-500">
-                                                    {event.description} <span className="font-medium text-slate-900">({event.eventType})</span>
+                                                <p className="text-sm text-slate-600">
+                                                    {describeAudit(e)} <span className="text-[10px] font-semibold uppercase text-slate-400">({e.action})</span>
                                                 </p>
                                             </div>
                                             <div className="whitespace-nowrap text-right text-sm text-slate-500">
-                                                <time dateTime={event.timestamp}>{event.timestamp}</time>
+                                                <time>{e.timestamp ? new Date(e.timestamp).toLocaleString() : ''}</time>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </li>
                         ))}
-                        {!asset.trackingLog?.length && (
+                        {auditLoading && (
+                            <li className="text-center py-4 text-slate-400 italic">Loading history…</li>
+                        )}
+                        {!auditLoading && auditEntries.length === 0 && (
                             <li className="text-center py-4 text-slate-400 italic">No tracking history found.</li>
                         )}
                     </ul>

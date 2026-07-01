@@ -625,6 +625,18 @@ export class DatabaseService {
         return data;
     }
 
+    /** Read the change history (audit_logs) for a record — powers the Tracking > Audit Trail tab (UAT F-009). */
+    public async getAuditLog(tableName: string, recordId: string): Promise<any[]> {
+        const { data, error } = await supabase.from('audit_logs')
+            .select('*')
+            .eq('table_name', tableName)
+            .eq('record_id', recordId)
+            .order('timestamp', { ascending: false })
+            .limit(200);
+        if (error) { console.error('DatabaseService.getAuditLog:', error); return []; }
+        return data || [];
+    }
+
     public async saveNumberingConfig(cfg: Record<string, any>): Promise<void> {
         const { error } = await supabase.from('numbering_config')
             .upsert({ id: 1, ...cfg, updated_at: new Date().toISOString() });
