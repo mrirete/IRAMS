@@ -618,6 +618,8 @@ export const DICTIONARY_TYPES = [
     { key: 'UOM', label: 'Units of Measure' },
     { key: 'REMEDY_CODE', label: 'Remedy Codes' }, // Removed as per USER request
     { key: 'FAILURE_CAUSE', label: 'Failure Causes' }, // New RCM Type
+    { key: 'OBJECT_PART', label: 'Object Parts (ISO 14224 / SAP Catalog B)' }, // WM-1: maintainable-item catalog
+    { key: 'ACTIVITY_CODE', label: 'Maintenance Activities (ISO 14224 / SAP Catalog A)' }, // WM-1: activity catalog
     { key: 'COST_CENTER_TYPE', label: 'Cost Center Types' },
     { key: 'PERMIT_TYPE', label: 'Permit Types' },
     { key: 'PTW_STATUS', label: 'PTW Status Codes' },
@@ -1064,6 +1066,38 @@ export const MOCK_DICTIONARIES: DictionaryEntry[] = [
     // UNKNOWN / PENDING
     { id: 'fc-u01', type: 'FAILURE_CAUSE', code: 'UNK', description: 'Unknown / Under Investigation', active: true },
     { id: 'fc-u02', type: 'FAILURE_CAUSE', code: 'OTH', description: 'Other (Specify in Comments)', active: true },
+
+    // ── Object Parts — ISO 14224 maintainable items / SAP Catalog B (WM-1) ──
+    { id: 'op-01', type: 'OBJECT_PART', code: 'BRG', description: 'Bearing', active: true },
+    { id: 'op-02', type: 'OBJECT_PART', code: 'SEAL', description: 'Seal / Gasket', active: true },
+    { id: 'op-03', type: 'OBJECT_PART', code: 'SHAFT', description: 'Shaft', active: true },
+    { id: 'op-04', type: 'OBJECT_PART', code: 'IMPL', description: 'Impeller / Rotor', active: true },
+    { id: 'op-05', type: 'OBJECT_PART', code: 'CPLG', description: 'Coupling', active: true },
+    { id: 'op-06', type: 'OBJECT_PART', code: 'WIND', description: 'Motor Winding / Stator', active: true },
+    { id: 'op-07', type: 'OBJECT_PART', code: 'HOUS', description: 'Housing / Casing', active: true },
+    { id: 'op-08', type: 'OBJECT_PART', code: 'VLVS', description: 'Valve / Valve Seat', active: true },
+    { id: 'op-09', type: 'OBJECT_PART', code: 'PIPE', description: 'Piping / Tubing', active: true },
+    { id: 'op-10', type: 'OBJECT_PART', code: 'INST', description: 'Instrument / Sensor', active: true },
+    { id: 'op-11', type: 'OBJECT_PART', code: 'ELEC', description: 'Electrical / Wiring', active: true },
+    { id: 'op-12', type: 'OBJECT_PART', code: 'CTRL', description: 'Control / PLC Card', active: true },
+    { id: 'op-13', type: 'OBJECT_PART', code: 'LUBE', description: 'Lubrication System', active: true },
+    { id: 'op-14', type: 'OBJECT_PART', code: 'FILT', description: 'Filter / Strainer', active: true },
+    { id: 'op-15', type: 'OBJECT_PART', code: 'STRC', description: 'Structure / Support', active: true },
+    { id: 'op-99', type: 'OBJECT_PART', code: 'OTH', description: 'Other (Specify in Comments)', active: true },
+
+    // ── Maintenance Activities — ISO 14224 activity types / SAP Catalog A (WM-1) ──
+    { id: 'ac-01', type: 'ACTIVITY_CODE', code: 'REPL', description: 'Replace', active: true },
+    { id: 'ac-02', type: 'ACTIVITY_CODE', code: 'REPR', description: 'Repair', active: true },
+    { id: 'ac-03', type: 'ACTIVITY_CODE', code: 'MODI', description: 'Modify', active: true },
+    { id: 'ac-04', type: 'ACTIVITY_CODE', code: 'ADJ', description: 'Adjust / Align', active: true },
+    { id: 'ac-05', type: 'ACTIVITY_CODE', code: 'REFT', description: 'Refit', active: true },
+    { id: 'ac-06', type: 'ACTIVITY_CODE', code: 'INSP', description: 'Inspect / Check', active: true },
+    { id: 'ac-07', type: 'ACTIVITY_CODE', code: 'TEST', description: 'Test / Function Check', active: true },
+    { id: 'ac-08', type: 'ACTIVITY_CODE', code: 'SERV', description: 'Service (Clean / Lubricate)', active: true },
+    { id: 'ac-09', type: 'ACTIVITY_CODE', code: 'OVHL', description: 'Overhaul', active: true },
+    { id: 'ac-10', type: 'ACTIVITY_CODE', code: 'CALI', description: 'Calibrate', active: true },
+    { id: 'ac-11', type: 'ACTIVITY_CODE', code: 'COMB', description: 'Combination (Multiple Activities)', active: true },
+    { id: 'ac-99', type: 'ACTIVITY_CODE', code: 'OTH', description: 'Other (Specify in Comments)', active: true },
 
     // Remedy Codes - REMOVED
     // { id: 'rc1', type: 'REMEDY_CODE', code: 'REPLACE', description: 'Replace Component', active: true },
