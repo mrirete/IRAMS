@@ -20,6 +20,8 @@ import {
     Asset,
     JobTask,
     WorkCenter,
+    OperationActual,
+    OrderActuals,
     ServiceRequest,
     OrganizationUnit,
     Contact,
@@ -3644,6 +3646,154 @@ export class DatabaseService {
             if (toDelete.length > 0) {
                 await supabase.from('work_order_parts').delete().in('id', toDelete);
             }
+        }
+    }
+
+    // ── WM-2c — OPERATION CONFIRMATIONS & COST ROLL-UP (the FI-1 settlement handoff) ──
+    //
+    // Actual labour cost per operation = Σ(confirmed hours × resolved rate), where the
+    // rate resolves job_tasks.planned_rate ?? work_centers.activity_rate ??
+    // work_order_labor.rate_per_hour. The default settlement receiver is the operation's
+    // work-center cost_center_id. These read-side helpers give FI-1 a stable roll-up so
+    // it never has to re-derive actuals from raw labour rows.
+
+    /**
+     * Per-operation actual roll-up for a work order. Returns one entry per operation
+     * (job_task), including operations with zero confirmed hours (so the caller sees
+     * the full operation list and each one's settlement receiver).
+     */
+    public async getOperationActuals(woId: string): Promise<OperationActual[]> {
+        const [tasksRes, laborRes] = await Promise.all([
+            supabase.from('job_tasks')
+                .select('id, operation_no, work_center_id, planned_rate, work_centers(activity_rate, cost_center_id)')
+                .eq('wo_id', woId)
+                .order('sequence', { ascending: true }),
+            supabase.from('work_order_labor')
+                .select('job_task_id, hours_worked, rate_per_hour')
+                .eq('wo_id', woId),
+        ]);
+
+        if (tasksRes.error) { console.error('getOperationActuals(tasks):', tasksRes.error); return []; }
+
+        const labour = laborRes.error ? [] : (laborRes.data || []);
+        const byOp = new Map<string, { hours: number; cost: number }>();
+
+        for (const task of (tasksRes.data || []) as any[]) {
+            const wc = Array.isArray(task.work_centers) ? task.work_centers[0] : task.work_centers;
+            const plannedRate = task.planned_rate != null ? Number(task.planned_rate) : undefined;
+            const wcRate = wc?.activity_rate != null ? Number(wc.activity_rate) : undefined;
+
+            let hours = 0, cost = 0;
+            for (const l of labour.filter((x: any) => x.job_task_id === task.id)) {
+                const h = Number(l.hours_worked) || 0;
+                // Rate precedence: operation planned rate → work-center rate → the confirmation's own rate.
+                const rate = plannedRate ?? wcRate ?? (Number(l.rate_per_hour) || 0);
+                hours += h;
+                cost += h * rate;
+            }
+            byOp.set(task.id, { hours, cost });
+        }
+
+        return ((tasksRes.data || []) as any[]).map(task => {
+            const wc = Array.isArray(task.work_centers) ? task.work_centers[0] : task.work_centers;
+            const agg = byOp.get(task.id) || { hours: 0, cost: 0 };
+            return {
+                operationId: task.id,
+                operationNo: task.operation_no || undefined,
+                workCenterId: task.work_center_id || undefined,
+                costCenterId: wc?.cost_center_id || undefined,
+                actualHours: Number(agg.hours.toFixed(2)),
+                actualLabourCost: Number(agg.cost.toFixed(2)),
+            };
+        });
+    }
+
+    /**
+     * Order-level actual roll-up (the settlement basis handed to FI-1): total actual
+     * labour cost (operation-linked confirmations + any order-level labour not tied to
+     * an operation) plus actual parts cost.
+     */
+    public async getOrderActuals(woId: string): Promise<OrderActuals> {
+        const operations = await this.getOperationActuals(woId);
+        const operationLabour = operations.reduce((s, o) => s + o.actualLabourCost, 0);
+
+        // Order-level labour: confirmations/lines with no operation link, valued at their own rate.
+        const { data: unlinked } = await supabase.from('work_order_labor')
+            .select('hours_worked, rate_per_hour')
+            .eq('wo_id', woId)
+            .is('job_task_id', null);
+        const orderLevelLabour = (unlinked || []).reduce(
+            (s: number, l: any) => s + (Number(l.hours_worked) || 0) * (Number(l.rate_per_hour) || 0), 0);
+
+        const { data: parts } = await supabase.from('work_order_parts')
+            .select('quantity, unit_cost')
+            .eq('wo_id', woId);
+        const partsCost = (parts || []).reduce(
+            (s: number, p: any) => s + (Number(p.quantity) || 0) * (Number(p.unit_cost) || 0), 0);
+
+        const labourCost = Number((operationLabour + orderLevelLabour).toFixed(2));
+        const partsTotal = Number(partsCost.toFixed(2));
+        return {
+            labourCost,
+            partsCost: partsTotal,
+            total: Number((labourCost + partsTotal).toFixed(2)),
+            operations,
+        };
+    }
+
+    /**
+     * Post a time confirmation against an operation (SAP IW41/CO11). Assigns the next
+     * confirmation number for that operation; a final confirmation rolls the summed
+     * confirmed hours into the operation's actual_hours and closes it (status COMPLETED).
+     */
+    public async postConfirmation(params: {
+        woId: string;
+        operationId: string;      // job_tasks.id
+        hours: number;
+        contactId?: string;
+        contactType?: string;
+        ratePerHour?: number;     // fallback rate when the operation/work-center has none
+        dateWorked?: string;      // ISO date; defaults to today
+        isFinal?: boolean;
+        remainingHours?: number;
+        notes?: string;
+    }): Promise<void> {
+        const { woId, operationId, hours } = params;
+
+        // Next confirmation number for this operation.
+        const { count } = await supabase.from('work_order_labor')
+            .select('id', { count: 'exact', head: true })
+            .eq('job_task_id', operationId);
+        const confirmationNo = (count || 0) + 1;
+
+        const { error: insErr } = await supabase.from('work_order_labor').insert({
+            wo_id: woId,
+            job_task_id: operationId,
+            contact_id: params.contactId || null,
+            contact_type_code: params.contactType || 'INTERNAL',
+            hours_worked: Number(hours) || 0,
+            rate_per_hour: params.ratePerHour != null ? params.ratePerHour : 0,
+            date_worked: params.dateWorked || new Date().toISOString().split('T')[0],
+            is_final: !!params.isFinal,
+            confirmation_no: confirmationNo,
+            remaining_hours: params.remainingHours != null ? params.remainingHours : null,
+            notes: params.notes || null,
+        });
+        if (insErr) { console.error('postConfirmation(insert):', insErr); throw insErr; }
+
+        // Final confirmation closes the operation and rolls up its confirmed hours.
+        if (params.isFinal) {
+            const { data: confs } = await supabase.from('work_order_labor')
+                .select('hours_worked')
+                .eq('job_task_id', operationId);
+            const totalHours = (confs || []).reduce((s: number, c: any) => s + (Number(c.hours_worked) || 0), 0);
+            const { error: updErr } = await supabase.from('job_tasks').update({
+                actual_hours: Number(totalHours.toFixed(2)),
+                status: 'COMPLETED',
+                actual_finish_date: (params.dateWorked || new Date().toISOString().split('T')[0]),
+                updated_at: new Date().toISOString(),
+            }).eq('id', operationId);
+            if (updErr) { console.error('postConfirmation(roll-up):', updErr); throw updErr; }
         }
     }
 

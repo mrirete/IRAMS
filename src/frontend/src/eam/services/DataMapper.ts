@@ -116,6 +116,10 @@ export class DataMapper {
             actualStartTime: record.actual_start_time,
             actualFinishTime: record.actual_finish_time,
             instructions: record.instructions || [],
+            operationNo: record.operation_no || undefined,
+            workCenterId: record.work_center_id || undefined,
+            controlKey: record.control_key || undefined,
+            plannedRate: record.planned_rate != null ? Number(record.planned_rate) : undefined,
             predecessorTaskId: record.predecessor_task_id || undefined,
             assignedUserIds: record.assigned_user_ids || [],
             assignedOrgUnitIds: record.assigned_org_unit_ids || []
@@ -139,6 +143,11 @@ export class DataMapper {
             actual_start_time: ui.actualStartTime || null,
             actual_finish_time: ui.actualFinishTime || null,
             instructions: ui.instructions || [],
+            // WM-2b: operation number defaults to sequence*10, zero-padded, if unset.
+            operation_no: ui.operationNo || String(Math.max(ui.sequence || 0, 0) * 10).padStart(4, '0'),
+            work_center_id: ui.workCenterId || null,
+            control_key: ui.controlKey || 'PM01',
+            planned_rate: ui.plannedRate != null ? ui.plannedRate : null,
             predecessor_task_id: ui.predecessorTaskId || null,
             assigned_user_ids: ui.assignedUserIds || [],
             assigned_org_unit_ids: ui.assignedOrgUnitIds || []
@@ -165,7 +174,10 @@ export class DataMapper {
             actualDuration: Number(record.hours_worked) || 0,
             costCenter: undefined,
             dateWorkPerformed: record.date_worked,
-            jobTaskId: record.job_task_id
+            jobTaskId: record.job_task_id,
+            isFinal: record.is_final || false,
+            confirmationNo: record.confirmation_no != null ? Number(record.confirmation_no) : undefined,
+            remainingHours: record.remaining_hours != null ? Number(record.remaining_hours) : undefined
         };
     }
 
@@ -181,7 +193,10 @@ export class DataMapper {
             hours_worked: Number(duration) || 0,
             rate_per_hour: Number(ui.estRate) || 0,
             date_worked: ui.dateWorkPerformed || new Date().toISOString().split('T')[0],
-            job_task_id: (ui.jobTaskId && !ui.jobTaskId.startsWith('new-')) ? ui.jobTaskId : null
+            job_task_id: (ui.jobTaskId && !ui.jobTaskId.startsWith('new-')) ? ui.jobTaskId : null,
+            is_final: ui.isFinal || false,
+            confirmation_no: ui.confirmationNo != null ? ui.confirmationNo : null,
+            remaining_hours: ui.remainingHours != null ? ui.remainingHours : null
         };
     }
 

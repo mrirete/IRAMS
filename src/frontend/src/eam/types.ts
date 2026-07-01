@@ -728,6 +728,12 @@ export interface JobTask {
   completedBy?: string;
   completedDate?: string;
 
+  // WM-2b — operation on a costed work center (SAP PM operation)
+  operationNo?: string;    // '0010','0020'… — display default = sequence*10
+  workCenterId?: string;   // -> WorkCenter (costed/capacity resource)
+  controlKey?: string;     // 'PM01' internal labour, 'PM02' external/service
+  plannedRate?: number;    // per-operation cost/hour override of work-center activityRate
+
   // Dependencies (PROJECT scope only)
   predecessorTaskId?: string; // ID of the task that must complete before this one
 
@@ -944,7 +950,30 @@ export interface JobLabor {
   actualRate?: number;
 
   dateWorkPerformed?: string;
-  jobTaskId?: string; // Linked Task
+  jobTaskId?: string; // Linked Task / operation (SAP operation link)
+
+  // WM-2c — confirmation semantics (SAP IW41/CO11)
+  isFinal?: boolean;        // Final confirmation closes the operation
+  confirmationNo?: number;  // 1,2,3… per operation
+  remainingHours?: number;  // Optional forecast-to-complete
+}
+
+/** WM-2c — per-operation actual roll-up; the stable contract FI-1 settlement consumes. */
+export interface OperationActual {
+  operationId: string;       // job_tasks.id
+  operationNo?: string;
+  workCenterId?: string;
+  costCenterId?: string;     // default settlement receiver (from the work center)
+  actualHours: number;       // Σ confirmed hours
+  actualLabourCost: number;  // Σ(hours × resolved rate)
+}
+
+/** WM-2c — order-level actual roll-up (the settlement basis handed to FI-1). */
+export interface OrderActuals {
+  labourCost: number;
+  partsCost: number;
+  total: number;
+  operations: OperationActual[];
 }
 
 export interface JobInventory {
