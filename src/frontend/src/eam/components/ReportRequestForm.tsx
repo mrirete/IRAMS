@@ -10,6 +10,7 @@ import { ScanAssetModal } from './modals/ScanAssetModal';
 import { FunctionalFailureSelector } from './FunctionalFailureSelector';
 import { DatabaseService } from '../services/DatabaseService';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useCreateServiceRequest } from '../hooks/useCreateServiceRequest';
 import { computeRequestPriority } from '../lib/serviceRequest';
 import type { Asset, JobFile } from '../types';
@@ -64,6 +65,7 @@ export const ReportRequestForm: React.FC<{
     onCreated?: () => void;
 }> = ({ open, onClose, onCreated }) => {
     const { showToast } = useToast();
+    const { dataScope } = useAuth();
     const { create, submitting } = useCreateServiceRequest(() => {
         reset();
         onCreated?.();
@@ -82,6 +84,7 @@ export const ReportRequestForm: React.FC<{
     const [selectedLocationId, setSelectedLocationId] = useState<string>('');
     const [showAssetPicker, setShowAssetPicker] = useState(false);
     const [assetSearch, setAssetSearch] = useState('');
+    const [showAllSites, setShowAllSites] = useState(false); // F-012: cross-site override
     const [showScanner, setShowScanner] = useState(false);
     const [isLoadingAssets, setIsLoadingAssets] = useState(false);
 
@@ -267,12 +270,20 @@ export const ReportRequestForm: React.FC<{
 
     if (!open) return null;
 
-    const selectedLocation = locations.find(l => l.id === selectedLocationId);
+    // F-012: scope the pickers to the user's assigned site(s). Global scope (['*']) or
+    // the "All sites" override shows everything; a scoped user sees only their site's tree.
+    const isGlobalScope = !dataScope || !dataScope.siteIds || dataScope.siteIds.length === 0 || dataScope.siteIds.includes('*');
+    const scopedAssets = (isGlobalScope || showAllSites)
+        ? allAssets
+        : DatabaseService.filterAssetsBySiteScope(allAssets, dataScope?.siteIds);
+    const scopedLocations = scopedAssets.filter(isLocationType);
+
+    const selectedLocation = scopedLocations.find(l => l.id === selectedLocationId);
     const searchTerm = assetSearch.toLowerCase();
-    const filteredEquipment = allAssets
+    const filteredEquipment = scopedAssets
         .filter(a => !isLocationType(a) && (a.tag.toLowerCase().includes(searchTerm) || a.name.toLowerCase().includes(searchTerm)))
         .slice(0, 8);
-    const filteredLocations = locations
+    const filteredLocations = scopedLocations
         .filter(l => l.tag.toLowerCase().includes(searchTerm) || l.name.toLowerCase().includes(searchTerm))
         .slice(0, 6);
 
@@ -429,6 +440,12 @@ export const ReportRequestForm: React.FC<{
                                             autoFocus
                                         />
                                     </div>
+                                    {!isGlobalScope && (
+                                        <label className="flex items-center gap-1.5 mt-2 text-[11px] text-slate-500 cursor-pointer">
+                                            <input type="checkbox" checked={showAllSites} onChange={e => setShowAllSites(e.target.checked)} className="rounded" />
+                                            Show all sites <span className="text-slate-400">(default: your assigned site only)</span>
+                                        </label>
+                                    )}
                                 </div>
                                 <div className="overflow-y-auto max-h-[260px]">
                                     {filteredEquipment.length === 0 && filteredLocations.length === 0 ? (

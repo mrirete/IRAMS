@@ -462,7 +462,6 @@ const RequestDetail: React.FC<{
     };
 
     // Filter for Service Request statuses only
-    const requestStatuses = dictionaries.filter(d => d.type === 'STATUS_CODE' && ['NEW', 'REVIEW', 'AUTHORIZED', 'APPROVED', 'REJECTED', 'CONVERTED'].includes(d.code));
 
     // Permission checks from Admin Effective Permission Matrix
     const canEdit = permissions?.requests?.edit === true;
@@ -578,20 +577,14 @@ const RequestDetail: React.FC<{
                             disabled={!isEditable}
                             className={`text-xs border-slate-300 rounded-md bg-white px-2 py-1 ${!isEditable ? 'opacity-60 cursor-not-allowed' : ''}`}
                         >
-                            {requestStatuses.length > 0 ? (
-                                requestStatuses.map(s => (
-                                    <option key={s.code} value={s.code}>{s.description}</option>
-                                ))
-                            ) : (
-                                <>
-                                    <option value="NEW">New / Draft</option>
-                                    <option value="REVIEW">Under Review</option>
-                                    <option value="AUTHORIZED">Authorized (Budget)</option>
-                                    <option value="APPROVED">Approved (Technical)</option>
-                                    <option value="REJECTED">Rejected</option>
-                                    <option value="CONVERTED">Converted to Work Order</option>
-                                </>
-                            )}
+                            {/* Canonical workflow labels — authoritative, so a misconfigured
+                                STATUS_CODE dictionary can't mislabel a NEW request as "Rejected" (UAT F-015). */}
+                            <option value="NEW">New / Draft</option>
+                            <option value="REVIEW">Under Review</option>
+                            <option value="AUTHORIZED">Authorized (Budget)</option>
+                            <option value="APPROVED">Approved (Technical)</option>
+                            <option value="REJECTED">Rejected</option>
+                            <option value="CONVERTED">Converted to Work Order</option>
                         </select>
                     </div>
                 }
