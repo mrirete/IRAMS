@@ -85,17 +85,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     },
     {
         id: 'work', label: 'Work Management',
-        description: 'Work Orders, Maintenance Requests, Recurring Work, Scheduling, Task Library, MoC',
+        description: 'Maintenance Requests, Work Orders, Recurring Work, Scheduling, Task Library, MoC',
         tier: 'core', icon: Wrench, path: null,
         children: [
-            { id: 'work-orders', label: 'Work Orders', path: '/work-orders' },
             { id: 'requests', label: 'Maintenance Requests', path: '/requests' },
+            { id: 'work-orders', label: 'Work Orders', path: '/work-orders' },
             { id: 'recurring-work', label: 'Recurring Work / PM', path: '/recurring-work' },
             { id: 'scheduling', label: 'Scheduling', path: '/scheduling' },
             { id: 'task-library', label: 'Task Library', path: '/task-library' },
             { id: 'moc', label: 'Management of Change', path: '/management-of-change' },
         ],
-        routes: ['/work-orders', '/requests', '/recurring-work', '/scheduling', '/task-library', '/management-of-change'],
+        routes: ['/requests', '/work-orders', '/recurring-work', '/scheduling', '/task-library', '/management-of-change'],
         dependencies: ['core'], section: 'eam',
     },
     {
