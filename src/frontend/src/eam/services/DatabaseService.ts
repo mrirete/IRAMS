@@ -1044,41 +1044,24 @@ export class DatabaseService {
         const assetMap = new Map<string, any>();
         assets.forEach(a => assetMap.set(a.id, a));
 
-        // Cache: asset.id → root SITE id (or null if orphan)
-        const siteAncestorCache = new Map<string, string | null>();
-
-        const findRootSite = (assetId: string, visited = new Set<string>()): string | null => {
-            if (siteAncestorCache.has(assetId)) return siteAncestorCache.get(assetId)!;
-            if (visited.has(assetId)) return null; // Circular reference guard
+        // An asset is in scope if it — or ANY ancestor — is one of the allowed site ids.
+        // Level-agnostic (SITE / AREA / custom): matches by asset id along the parent
+        // chain, not a hardcoded category string, so AREA-typed or custom-level sites
+        // scope correctly. (Previously keyed on category === 'site'/'area', which the
+        // read-mapper only sets for SITE — AREA/custom fell through and broke scoping.)
+        const inScopeCache = new Map<string, boolean>();
+        const inScope = (assetId: string, visited = new Set<string>()): boolean => {
+            if (inScopeCache.has(assetId)) return inScopeCache.get(assetId)!;
+            if (visited.has(assetId)) return false; // circular guard
             visited.add(assetId);
-
-            const asset = assetMap.get(assetId);
-            if (!asset) return null;
-
-            // This IS a site-level asset
-            const cat = (asset.category || '').toLowerCase();
-            if (cat === 'site' || cat === 'area') {
-                siteAncestorCache.set(assetId, asset.id);
-                return asset.id;
-            }
-
-            // Walk up to parent
-            if (asset.parentId) {
-                const parentSite = findRootSite(asset.parentId, visited);
-                siteAncestorCache.set(assetId, parentSite);
-                return parentSite;
-            }
-
-            // No parent and not a site → orphan (include by default to avoid data loss)
-            siteAncestorCache.set(assetId, null);
-            return null;
+            if (allowedSet.has(assetId)) { inScopeCache.set(assetId, true); return true; }
+            const parentId = assetMap.get(assetId)?.parentId;
+            const result = parentId ? inScope(parentId, visited) : false;
+            inScopeCache.set(assetId, result);
+            return result;
         };
 
-        return assets.filter(asset => {
-            const rootSite = findRootSite(asset.id);
-            // Include: belongs to allowed site, OR is an orphan (no site ancestry — fail-open for visibility)
-            return rootSite === null || allowedSet.has(rootSite);
-        });
+        return assets.filter(a => inScope(a.id));
     }
 
     /**
