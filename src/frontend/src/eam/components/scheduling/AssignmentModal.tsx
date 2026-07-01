@@ -10,6 +10,36 @@ interface AssignmentModalProps {
     woTitle: string;
     woNumber: string;
     selectedIds: Set<string>;
+    /**
+     * PO-1 competency gating — qualification names this work order requires.
+     * When present, technicians missing a required cert (or holding an expired one)
+     * are blocked from assignment unless the supervisor explicitly overrides.
+     */
+    requiredQualifications?: string[];
+}
+
+/** PO-1: evaluate a technician's required-competency status for this WO. */
+function evalCompetency(contact: Contact, required: string[]) {
+    const today = new Date().toISOString().slice(0, 10);
+    const isExpired = (q: { status?: string; dateExpires?: string }) =>
+        q.status === 'Expired' || (!!q.dateExpires && q.dateExpires < today);
+
+    const held = contact.qualifications ?? [];
+    const anyExpired = held.some(isExpired);
+
+    const missingRequired: string[] = [];
+    const expiredRequired: string[] = [];
+    for (const req of required) {
+        const match = held.find((q) => (q.name || '').toLowerCase() === req.toLowerCase());
+        if (!match) missingRequired.push(req);
+        else if (isExpired(match)) expiredRequired.push(req);
+    }
+    return {
+        anyExpired,
+        missingRequired,
+        expiredRequired,
+        blocked: missingRequired.length > 0 || expiredRequired.length > 0,
+    };
 }
 
 export const AssignmentModal: React.FC<AssignmentModalProps> = ({
@@ -20,9 +50,11 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
     woTitle,
     woNumber,
     selectedIds,
+    requiredQualifications = [],
 }) => {
     const [filter, setFilter] = useState('');
     const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+    const [override, setOverride] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
 
     // Reset state when modal opens/closes
@@ -30,9 +62,12 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
         if (isOpen) {
             setFilter('');
             setSelectedContactId(null);
+            setOverride(false);
             setTimeout(() => searchInputRef.current?.focus(), 100);
         }
     }, [isOpen]);
+
+    const gatingOn = requiredQualifications.length > 0;
 
     const filteredContacts = useMemo(() => {
         if (!filter) return contacts;
@@ -50,6 +85,12 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
         [contacts, selectedContactId]
     );
 
+    const selectedComp = useMemo(
+        () => (selectedContact ? evalCompetency(selectedContact, requiredQualifications) : null),
+        [selectedContact, requiredQualifications]
+    );
+    const selectionBlocked = !!(gatingOn && selectedComp?.blocked && !override);
+
     const isBulk = selectedIds.size > 1;
     const headerLabel = isBulk
         ? `Assign ${selectedIds.size} Work Orders`
@@ -58,7 +99,7 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
     if (!isOpen) return null;
 
     const handleConfirm = () => {
-        if (!selectedContact) return;
+        if (!selectedContact || selectionBlocked) return;
         onAssign(selectedContact.id, selectedContact.name);
         onClose();
     };
@@ -121,6 +162,7 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                         filteredContacts.map((contact) => {
                             const isSelected = contact.id === selectedContactId;
                             const qualCount = contact.qualifications?.length ?? 0;
+                            const comp = evalCompetency(contact, requiredQualifications);
                             const craftTypes = contact.types.filter(
                                 (t) => t !== 'INTERNAL' && t !== 'LABOUR'
                             );
@@ -128,7 +170,7 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                             return (
                                 <div
                                     key={contact.id}
-                                    onClick={() => setSelectedContactId(contact.id)}
+                                    onClick={() => { setSelectedContactId(contact.id); setOverride(false); }}
                                     className={`
                                         px-6 py-3 cursor-pointer flex items-center gap-3 transition-colors border-b border-slate-50 last:border-0
                                         ${isSelected ? 'bg-blue-50 ring-inset ring-1 ring-blue-200' : 'hover:bg-slate-50'}
@@ -183,6 +225,30 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
 
                                     {/* Right badges */}
                                     <div className="flex items-center gap-2 shrink-0">
+                                        {gatingOn && comp.missingRequired.length > 0 && (
+                                            <span
+                                                className="text-[10px] font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded"
+                                                title={`Missing required: ${comp.missingRequired.join(', ')}`}
+                                            >
+                                                Missing cert
+                                            </span>
+                                        )}
+                                        {gatingOn && comp.missingRequired.length === 0 && comp.expiredRequired.length > 0 && (
+                                            <span
+                                                className="text-[10px] font-semibold text-red-700 bg-red-50 px-1.5 py-0.5 rounded"
+                                                title={`Expired required: ${comp.expiredRequired.join(', ')}`}
+                                            >
+                                                Cert expired
+                                            </span>
+                                        )}
+                                        {!gatingOn && comp.anyExpired && (
+                                            <span
+                                                className="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded"
+                                                title="Has one or more expired qualifications"
+                                            >
+                                                Expired quals
+                                            </span>
+                                        )}
                                         {qualCount > 0 && (
                                             <span
                                                 className="flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded"
@@ -216,6 +282,30 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                     )}
                 </div>
 
+                {/* ── Competency gate (PO-1) ── */}
+                {gatingOn && selectedContact && selectedComp?.blocked && (
+                    <div className="px-6 py-3 bg-red-50 border-t border-red-100">
+                        <p className="text-xs font-semibold text-red-800">
+                            {selectedContact.name.split(' ')[0]} does not meet this order's required competency
+                        </p>
+                        <p className="text-[11px] text-red-700 mt-0.5">
+                            {selectedComp.missingRequired.length > 0 &&
+                                `Missing: ${selectedComp.missingRequired.join(', ')}. `}
+                            {selectedComp.expiredRequired.length > 0 &&
+                                `Expired: ${selectedComp.expiredRequired.join(', ')}.`}
+                        </p>
+                        <label className="mt-2 flex items-center gap-2 text-[11px] font-medium text-red-800 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={override}
+                                onChange={(e) => setOverride(e.target.checked)}
+                                className="rounded border-red-300 text-red-600 focus:ring-red-400"
+                            />
+                            Assign anyway — supervisor override (competency not met)
+                        </label>
+                    </div>
+                )}
+
                 {/* ── Footer ── */}
                 <div className="bg-slate-50 px-6 py-4 flex items-center justify-between border-t border-slate-100">
                     <div className="text-xs text-slate-400 truncate max-w-[200px]">
@@ -232,9 +322,9 @@ export const AssignmentModal: React.FC<AssignmentModalProps> = ({
                         </button>
                         <button
                             onClick={handleConfirm}
-                            disabled={!selectedContact}
+                            disabled={!selectedContact || selectionBlocked}
                             className={`px-4 py-2 rounded-lg text-sm font-medium shadow-sm transition-colors flex items-center gap-2 ${
-                                selectedContact
+                                selectedContact && !selectionBlocked
                                     ? 'bg-primary-600 hover:bg-primary-500 text-white'
                                     : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}

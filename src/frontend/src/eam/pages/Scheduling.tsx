@@ -1078,6 +1078,15 @@ export const Scheduling: React.FC = () => {
                 woTitle={assignWoTitle}
                 woNumber={assignWoNumber}
                 selectedIds={assignTargetIds}
+                requiredQualifications={
+                    // PO-1: union of required competencies across the target WO(s).
+                    // Activates competency gating automatically once WOs carry required certs.
+                    Array.from(new Set(
+                        jobs
+                            .filter(j => assignTargetIds.has(j.id))
+                            .flatMap(j => ((j as any).requiredQualifications as string[]) ?? [])
+                    ))
+                }
             />
 
             {/* ── Frozen Zone Modal ── */}
