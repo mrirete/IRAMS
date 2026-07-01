@@ -33,12 +33,12 @@ import {
     ShieldCheck,
     Printer, Copy, ChevronLeft, Download, GitPullRequest,
     BarChart3, Shield, Box, Paperclip, AlertOctagon, Book, Package, Info, Bell, Send, Layers, Eye, Repeat,
-    DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2, Check
+    DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2, Check, Factory
 } from 'lucide-react';
 import { InventoryPicker } from '../components/pickers/InventoryPicker';
 import { FinOpsService, type CostAllocation, type AssetFinancial, type WarrantyCheckResult, type CostAnomalyResult } from '../services/FinOpsService';
 import { MOCK_WORK_ORDERS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_RECURRING_JOBS } from '../constants';
-import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
+import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -3861,6 +3861,11 @@ const TasksTab: React.FC<{
     const tasks = job.tasks || [];
     const [expandedTaskId, setExpandedTaskId] = useState<string | null>(tasks.length === 1 ? tasks[0]?.id : null);
     const [editorTab, setEditorTab] = useState<'instructions' | 'resources'>('instructions');
+    // WM-2b: active work centers for the per-operation picker (loaded once).
+    const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
+    useEffect(() => {
+        DatabaseService.getInstance().getWorkCenters(true).then(setWorkCenters).catch(() => setWorkCenters([]));
+    }, []);
     // Plan (build the checklist) vs Do-the-work (technician executes: tick boxes,
     // enter readings). Completed WOs are always execute + read-only.
     const [execMode, setExecMode] = useState(false);
@@ -4105,6 +4110,7 @@ const TasksTab: React.FC<{
                                         availableUsers={availableUsers}
                                         contacts={contacts}
                                         dictionaries={dictionaries}
+                                        workCenters={workCenters}
                                         editorTab={editorTab}
                                         onTabChange={setEditorTab}
                                         execMode={execMode}
@@ -4140,10 +4146,11 @@ const TaskEditor: React.FC<{
     availableUsers: User[];
     contacts: any[];
     dictionaries: DictionaryEntry[];
+    workCenters: WorkCenter[];
     editorTab: 'instructions' | 'resources';
     onTabChange: (tab: 'instructions' | 'resources') => void;
     execMode?: boolean;
-}> = ({ task, onChange, onDelete, onUpdateJob, jobContext, availableOrgUnits, availableUsers, contacts, dictionaries, editorTab, onTabChange, execMode = false }) => {
+}> = ({ task, onChange, onDelete, onUpdateJob, jobContext, availableOrgUnits, availableUsers, contacts, dictionaries, workCenters, editorTab, onTabChange, execMode = false }) => {
     const { showToast } = useToast();
     const { user } = useAuth();
 
@@ -4523,6 +4530,18 @@ const TaskEditor: React.FC<{
                         />
                         <span className="text-slate-400">hrs</span>
                     </div>
+                    {/* WM-2b: work center picker (mobile) */}
+                    <select
+                        value={task.workCenterId || ''}
+                        onChange={(e) => onChange({ workCenterId: e.target.value || undefined })}
+                        className="flex-1 min-w-0 px-1.5 py-1 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-primary-500 text-slate-600"
+                        title="Work center"
+                    >
+                        <option value="">Work center…</option>
+                        {workCenters.map(wc => (
+                            <option key={wc.id} value={wc.id}>{wc.code}</option>
+                        ))}
+                    </select>
                     <select
                         value={task.status}
                         onChange={(e) => onChange({ status: e.target.value as any })}
@@ -4536,6 +4555,20 @@ const TaskEditor: React.FC<{
                 {/* Desktop inline toolbar — hidden on mobile */}
                 <div className="hidden sm:flex items-center gap-2 -mt-1">
                     <div className="flex-1" /> {/* spacer */}
+                    {/* WM-2b: work center — the costed resource this operation runs at */}
+                    <div className="flex items-center gap-1 text-xs" title="Work center — costed resource this operation is performed at">
+                        <Factory size={12} className="text-slate-400" />
+                        <select
+                            value={task.workCenterId || ''}
+                            onChange={(e) => onChange({ workCenterId: e.target.value || undefined })}
+                            className="px-1.5 py-0.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-primary-500 max-w-[150px] text-slate-600"
+                        >
+                            <option value="">Work center…</option>
+                            {workCenters.map(wc => (
+                                <option key={wc.id} value={wc.id}>{wc.code} · {wc.name}</option>
+                            ))}
+                        </select>
+                    </div>
                     <div className="flex items-center gap-1 text-xs">
                         <Clock size={12} className="text-slate-400" />
                         <input
