@@ -363,15 +363,16 @@ export class DatabaseService {
             throw new Error('Invalid contact ID format. All records must be synced to Supabase.');
         }
 
-        // 1. Unlink any Users (set contact_id = null)
-        const { error: unlinkError } = await supabase.from('users')
-            .update({ contact_id: null })
-            .eq('contact_id', contactId);
-
-        if (unlinkError) {
-            console.error("Error unlinking users:", unlinkError);
-            // Non-fatal, proceed to try delete
+        // 1. Remove any linked login accounts (auth + profile) so deleting a person
+        //    also removes their sign-in — not just unlinks it (fixes "deleted but still logs in").
+        const { data: linkedUsers } = await supabase.from('users').select('id').eq('contact_id', contactId);
+        for (const u of (linkedUsers || [])) {
+            const { error: authErr } = await supabase.rpc('delete_auth_user', { p_user_id: u.id });
+            if (authErr) console.warn('delete_auth_user failed for linked user', u.id, authErr.message);
         }
+        // Clean up any profile rows the auth cascade didn't remove.
+        const { error: profErr } = await supabase.from('users').delete().eq('contact_id', contactId);
+        if (profErr) console.warn('Error removing linked user profiles:', profErr.message);
 
         const { error } = await supabase.from('contacts').delete().eq('id', contactId);
         if (error) throw new Error(error.message);
@@ -1227,9 +1228,21 @@ export class DatabaseService {
             return;
         }
 
+        // Remove the login (auth.users) too — the browser can't delete auth rows, so
+        // use the SECURITY DEFINER RPC. This is what stops a deleted user still signing in.
+        const { error: authErr } = await supabase.rpc('delete_auth_user', { p_user_id: userId });
+        if (authErr) console.warn('delete_auth_user RPC failed (login may persist):', authErr.message);
+
         const { error } = await supabase.from('users').delete().eq('id', userId);
         if (error) throw new Error(error.message);
+    }
 
+    /** Enable/disable a login without deleting it (bans/unbans the auth user). */
+    public async setUserLoginActive(userId: string, active: boolean): Promise<void> {
+        const { error } = await supabase.rpc('set_user_login_active', { p_user_id: userId, p_active: active });
+        if (error) { console.error('DatabaseService.setUserLoginActive:', error); throw new Error(error.message); }
+        // Reflect it in the app profile status too.
+        await supabase.from('users').update({ status: active ? 'active' : 'inactive' }).eq('id', userId);
     }
 
 

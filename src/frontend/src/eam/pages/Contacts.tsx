@@ -7,7 +7,7 @@ import {
     Trash2, Plus, Edit2, Search, Filter, MoreHorizontal, Mail, Phone, MapPin, User as UserIcon, Building2,
     Briefcase, FileText, Calendar, DollarSign, CheckSquare, Settings, Truck, Box, Users, X,
     Award, Clock, Save, Shield, Key, Factory, List, Network, Paperclip, Book, ShoppingCart, Sliders,
-    UserPlus, Upload
+    UserPlus, Upload, Lock, Unlock
 } from 'lucide-react';
 import { MOCK_USERS, MOCK_WORK_ORDERS } from '../constants';
 import { Contact, Qualification, CustomField, WorkOrder, DictionaryEntry, User } from '../types';
@@ -146,7 +146,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             if (selectedContact?.id === id) {
                 setSelectedContact(null);
             }
-            showModal('Success', isRealContact ? 'Contact deleted successfully.' : 'System User account deleted.', 'success');
+            showModal('Success', isRealContact ? 'Contact and any linked login removed.' : 'System user and login removed.', 'success');
         } catch (e: any) {
             showModal('Delete Failed', e.message, 'danger');
         } finally {
@@ -158,6 +158,41 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     // Old function kept for reference or direct calls if needed, but UI uses new flow
     const handleDeleteContact = async (id: string) => {
         // ... Logic moved to handleConfirmDelete
+    };
+
+    // Resolve a directory entry to its login (auth) user, and whether that login is active.
+    const loginInfo = (c: Contact) => {
+        const u: any = c.flags?.isVirtual
+            ? (users as any[]).find(x => x.id === c.id)
+            : (users as any[]).find(x => x.contactId === c.id || x.contact_id === c.id);
+        return { userId: u?.id as string | undefined, active: u ? (u.status !== 'inactive') : true, hasLogin: !!u };
+    };
+
+    const handleToggleLogin = async (userId: string, active: boolean) => {
+        setLoading(true);
+        try {
+            await DatabaseService.getInstance().setUserLoginActive(userId, active);
+            await loadData();
+            showModal('Success', active
+                ? 'Login enabled — this user can sign in again.'
+                : 'Login disabled — this user can no longer sign in (profile kept).', 'success');
+        } catch (e: any) {
+            showModal('Update Failed', e.message, 'danger');
+        } finally { setLoading(false); }
+    };
+
+    // Enable/Disable Login action (0 or 1 items) for entries that have a login.
+    const loginToggleAction = () => {
+        if (!selectedContact) return [] as any[];
+        const li = loginInfo(selectedContact);
+        if (!li.hasLogin || !li.userId) return [] as any[];
+        return [{
+            label: li.active ? 'Disable Login' : 'Enable Login',
+            icon: li.active ? <Lock size={14} /> : <Unlock size={14} />,
+            onClick: () => handleToggleLogin(li.userId!, !li.active),
+            variant: 'ghost' as const,
+            disabled: !canEdit,
+        }];
     };
 
     const handleDuplicateContact = async (original: Contact) => {
@@ -672,9 +707,11 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                 actions={
                                     selectedContact.flags?.isVirtual ? [
                                         { label: 'Create Profile', icon: <UserPlus size={14} />, onClick: () => setIsAddModalOpen(true), variant: 'primary' as const, disabled: !canCreate },
+                                        ...loginToggleAction(),
                                     ] : [
                                         { label: 'New', icon: <Plus size={14} />, onClick: () => setIsAddModalOpen(true), variant: 'ghost' as const, disabled: !canCreate },
                                         { label: 'Duplicate', icon: <Edit2 size={14} />, onClick: handleDuplicate, variant: 'ghost' as const, disabled: !canCreate },
+                                        ...loginToggleAction(),
                                         { label: 'Delete', icon: <Trash2 size={14} />, onClick: () => handleDeleteClick(selectedContact), variant: 'danger' as const, disabled: !canDelete },
                                         {
                                             label: 'Save',
