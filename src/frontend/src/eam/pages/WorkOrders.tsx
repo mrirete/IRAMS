@@ -2963,7 +2963,9 @@ const GateStrip: React.FC<{
     leftBadges?: React.ReactNode;
     reviewLabel?: string;
     onReview?: () => void;
-}> = ({ title, readiness, readyText, incompleteText, scoreTitle, leftBadges, reviewLabel = 'Review with Specialist', onReview }) => {
+    isExpanded?: boolean;
+    onToggleExpand?: () => void;
+}> = ({ title, readiness, readyText, incompleteText, scoreTitle, leftBadges, reviewLabel = 'Review with Specialist', onReview, isExpanded, onToggleExpand }) => {
     const { score, requiredMet, items, blockers } = readiness;
     const ring = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
     return (
@@ -2975,7 +2977,7 @@ const GateStrip: React.FC<{
                     <div className="absolute inset-[3px] rounded-full bg-white flex items-center justify-center text-xs font-extrabold text-slate-700">{score}</div>
                 </div>
                 {/* Title + status */}
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-bold text-slate-800">{title}</span>
                         {leftBadges}
@@ -2992,7 +2994,7 @@ const GateStrip: React.FC<{
                     <p className="text-[11px] text-slate-500 mt-0.5">{requiredMet ? readyText : incompleteText(blockers.length)}</p>
                 </div>
                 {/* Criteria chips */}
-                <div className="flex items-center gap-1.5 flex-wrap md:ml-auto">
+                <div className={`items-center gap-1.5 flex-wrap md:ml-auto w-full md:w-auto ${onToggleExpand ? (isExpanded ? 'flex' : 'hidden md:flex') : 'flex'}`}>
                     {items.map(it => (
                         <span
                             key={it.id}
@@ -3010,12 +3012,30 @@ const GateStrip: React.FC<{
                         </span>
                     ))}
                 </div>
+
+                {onToggleExpand && (
+                    <div className="w-full md:hidden flex justify-end pt-2 border-t border-slate-100/50 mt-1">
+                        <button
+                            type="button"
+                            onClick={onToggleExpand}
+                            className="text-xs font-bold text-blue-650 hover:text-blue-800 flex items-center gap-1 transition-colors"
+                        >
+                            {isExpanded ? 'Hide Details' : 'Show Details'}
+                            <ChevronDown size={14} className={`transform transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
 };
 
-const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () => void }> = ({ readiness, onReview }) => {
+const WorkReadinessStrip: React.FC<{
+    readiness: ReadinessResult;
+    onReview?: () => void;
+    isExpanded?: boolean;
+    onToggleExpand?: () => void;
+}> = ({ readiness, onReview, isExpanded, onToggleExpand }) => {
     const badge = READINESS_CLASS_BADGE[readiness.classification] || READINESS_CLASS_BADGE.UNCLASSIFIED;
     return (
         <GateStrip
@@ -3030,6 +3050,8 @@ const WorkReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () =
             </>}
             reviewLabel="Review plan with Specialist"
             onReview={onReview}
+            isExpanded={isExpanded}
+            onToggleExpand={onToggleExpand}
         />
     );
 };
@@ -3165,59 +3187,12 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             />
             {/* ══ Work Readiness (Gate 1: Planning) — advisory ══ */}
             <div className="lg:col-span-2">
-                <WorkReadinessStrip readiness={readiness} onReview={handleReviewPlan} />
-            </div>
-
-            {/* Mobile Header Card — shows status and progress by default */}
-            <div className="lg:hidden lg:col-span-2 animate-in slide-in-from-top-2 duration-300">
-                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-4">
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Status</span>
-                            <div className="flex items-center gap-1.5">
-                                <span className={`w-2.5 h-2.5 rounded-full ${
-                                    (job.status as string) === 'COMPLETED' || job.status === 'CLOSED' ? 'bg-green-500' :
-                                    (job.status as string) === 'IN_PROGRESS' || job.status === 'WIP' ? 'bg-blue-500 animate-pulse' : 'bg-slate-400'
-                                }`} />
-                                <select
-                                    className="text-sm font-bold text-slate-800 bg-transparent border-none p-0 focus:ring-0 focus:outline-none cursor-pointer"
-                                    value={job.status}
-                                    onChange={(e) => onUpdate({ status: e.target.value as any })}
-                                >
-                                    {dictionaries.filter(d => d.type === 'STATUS_CODE' && d.active).map(s => (
-                                        <option key={s.id} value={s.code}>{s.description}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-                        <div className="text-right">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Progress</span>
-                            <span className={`text-sm font-extrabold ${workCompletionPct === 100 ? 'text-green-600' : 'text-blue-600'}`}>
-                                {workCompletionPct}% Done
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                        <div
-                            className={`h-1.5 rounded-full transition-all duration-500 ${workCompletionPct === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
-                            style={{ width: `${workCompletionPct}%` }}
-                        />
-                    </div>
-                    
-                    <div className="flex justify-between items-center text-xs text-slate-500 pt-2 border-t border-slate-100">
-                        <span>{completedTasksCount} of {totalTasksCount} steps completed</span>
-                        <button
-                            type="button"
-                            onClick={() => setIsFieldsExpanded(!isFieldsExpanded)}
-                            className="text-blue-600 font-bold flex items-center gap-1 hover:text-blue-700 transition-colors"
-                        >
-                            {isFieldsExpanded ? 'Hide Details' : 'Show Details'}
-                            <ChevronDown size={14} className={`transform transition-transform duration-200 ${isFieldsExpanded ? 'rotate-180' : ''}`} />
-                        </button>
-                    </div>
-                </div>
+                <WorkReadinessStrip
+                    readiness={readiness}
+                    onReview={handleReviewPlan}
+                    isExpanded={isFieldsExpanded}
+                    onToggleExpand={() => setIsFieldsExpanded(!isFieldsExpanded)}
+                />
             </div>
 
             {/* Core Info */}
