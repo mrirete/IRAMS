@@ -19,6 +19,8 @@ export interface MaterialCheckItem {
     requiredQty: number;
     onHandQty: number;
     onOrderQty: number;
+    reservedQty?: number;
+    availableQty?: number;
     status: 'AVAILABLE' | 'ON_ORDER' | 'SHORTAGE';
     earliestAvailDate?: string;
 }
@@ -227,6 +229,9 @@ export const MaterialCheckModal: React.FC<MaterialCheckModalProps> = ({
                                         On Hand
                                     </th>
                                     <th className="text-center px-2 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                                        Reserved
+                                    </th>
+                                    <th className="text-center px-2 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                                         On Order
                                     </th>
                                     <th className="text-center px-3 py-2.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
@@ -274,12 +279,24 @@ export const MaterialCheckModal: React.FC<MaterialCheckModalProps> = ({
                                             <td className="px-2 py-2.5 text-center">
                                                 <span
                                                     className={`text-xs font-medium ${
-                                                        item.onHandQty >= item.requiredQty
+                                                        (item.availableQty ?? item.onHandQty) >= item.requiredQty
                                                             ? 'text-emerald-600'
                                                             : 'text-red-600'
                                                     }`}
                                                 >
                                                     {item.onHandQty}
+                                                </span>
+                                            </td>
+
+                                            {/* Reserved (ATP netting — other open WOs) */}
+                                            <td className="px-2 py-2.5 text-center">
+                                                <span
+                                                    className={`text-xs ${
+                                                        (item.reservedQty || 0) > 0 ? 'text-amber-600 font-medium' : 'text-slate-400'
+                                                    }`}
+                                                    title="Committed to other open work orders"
+                                                >
+                                                    {item.reservedQty ? `−${item.reservedQty}` : '0'}
                                                 </span>
                                             </td>
 

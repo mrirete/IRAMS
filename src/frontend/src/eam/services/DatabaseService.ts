@@ -2932,6 +2932,8 @@ export class DatabaseService {
             requiredQty: number;
             onHandQty: number;
             onOrderQty: number;
+            reservedQty: number;
+            availableQty: number;
             status: 'AVAILABLE' | 'ON_ORDER' | 'SHORTAGE';
             earliestAvailDate?: string;
         }[];
@@ -2979,7 +2981,22 @@ export class DatabaseService {
 
                 const requiredQty = parseFloat(part.quantity) || 0;
                 const minLevel = parseFloat(invItem.min_level) || 0;
-                const effectiveAvailable = Math.max(0, totalOnHand - minLevel); // Don't breach safety stock
+
+                // IN-1 (ATP netting): subtract quantities already reserved by OTHER open WOs,
+                // so two orders can't both count the same stock as available.
+                let reservedByOthers = 0;
+                try {
+                    const { data: otherParts } = await supabase
+                        .from('work_order_parts')
+                        .select('quantity, work_orders!inner(status)')
+                        .eq('item_id', part.item_id)
+                        .neq('wo_id', woId);
+                    reservedByOthers = (otherParts || [])
+                        .filter((p: any) => !['CLOSED', 'CANC', 'CANCELLED', 'TECO'].includes(p.work_orders?.status))
+                        .reduce((s: number, p: any) => s + (parseFloat(p.quantity) || 0), 0);
+                } catch { /* no FK embed → no netting (fail-open) */ }
+
+                const effectiveAvailable = Math.max(0, totalOnHand - minLevel - reservedByOthers); // safety stock + other reservations
 
                 let status: 'AVAILABLE' | 'ON_ORDER' | 'SHORTAGE';
                 let earliestAvailDate: string | undefined;
@@ -3012,6 +3029,8 @@ export class DatabaseService {
                     requiredQty,
                     onHandQty: totalOnHand,
                     onOrderQty: totalOnOrder,
+                    reservedQty: reservedByOthers,
+                    availableQty: effectiveAvailable,
                     status,
                     earliestAvailDate,
                 });
