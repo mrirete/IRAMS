@@ -173,13 +173,15 @@ Shared catalogs stay global so sub-companies benchmark consistently (same failur
 
 ---
 
-## 12. Open decisions (need sign-off before T-0)
+## 12. Decisions (signed off)
 
-1. **Company Code tier now or later?** Full SAP fidelity = `tenant → company → site`. Minimum viable = `tenant → site` (treat each site as its own entity). Recommend **include `company_id`** now (cheap as a column; expensive to retrofit).
-2. **`sites` table vs SITE-level assets as the plant.** Recommend a thin `sites` table (avoids tree-walking to derive ownership).
-3. **Scope delivery to Postgres:** JWT custom claims (fast, needs a GoTrue hook) vs a `user_site_scope` lookup table (simpler, one extra read). Recommend the **lookup table** first.
-4. **Denormalize `company_id`/`tenant_id`** on hot tables for policy speed, or always derive from `site_id`? Recommend denormalize on `assets`/`work_orders`.
-5. **Which tables are truly shared** (§9) — confirm the catalog list.
+1. **Company Code tier — INCLUDED now.** Full SAP fidelity `tenant → company → site`. Added as a column from the start (cheap now, expensive to retrofit).
+2. **Dedicated `sites` table — YES.** A thin `sites` table (SAP Plant); the SITE-level asset references it. Ownership is an explicit key, not inferred by tree-walking.
+3. **Scope delivery — `user_site_scope` lookup table** (keyed by `auth.uid()`), read by RLS helpers. Simpler than JWT claims; revisit claims only if policy latency demands it.
+4. **Denormalize `company_id`/`site_id`** on hot tables (`assets`, `work_orders`, …) for fast policies; org tables remain the source of truth.
+5. **Shared vs scoped** — per the §9 catalog (shared: manufacturer/vendor/dictionaries/ISO 14224 classes/metric definitions; scoped: assets/WOs/inventory/PMs/readings/RCA/FMEA/audits/files/financials).
+
+*All signed off — the design is ready to drive T-0. The org-key on the two config tables (§13) is shipped ahead of T-0 as the low-regret step (migration `0165`).*
 
 ---
 
