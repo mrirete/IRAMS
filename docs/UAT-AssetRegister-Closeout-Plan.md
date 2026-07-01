@@ -283,10 +283,20 @@ Apply in order (Supabase SQL editor); all additive/reversible:
 | 0164 | User-admin RPCs (delete/disable login) |
 | 0165 | Config org-key (multi-tenancy groundwork) |
 | **0166** | **Org-unit type flex (F-011)** |
+| **0167** | **Numbering-trigger self-heal (collision guard)** |
 
-### 10.4 Known residuals (non-blocking)
-- **F-012** — the WO "Select Asset" picker is the one remaining picker; it's inside in-progress Work Orders work (2-line change using the same `filterAssetsBySiteScope` pattern).
-- **F-006 / F-011** optional refinements (scope asset tree to selected site; org-chart view polish).
+### 10.4 Post-sign-off testing pass — gaps found & fixed
+A verification pass over the shipped work surfaced and closed several real gaps:
+- **F-012 scope detection** was silently broken for **AREA-typed / custom-level sites** (keyed on a `category` string the read-mapper only sets for SITE). Rewritten level-agnostic (ancestor-id match); also hardened WO scoping (shared helper). *(19596ad)*
+- **F-009 actor** — the manual tag-change write put a username into the UUID `changed_by` column (insert failed); now writes the user UUID and the Audit Trail shows **"by \<name\>"** (resolves `changed_by`→username). *(04d2c61)*
+- **Numbering collision guard** — the trigger self-heals if `numbering_config` is missing, preventing `equipment_number` collisions that would block creation. *(0167)*
+- **F-002 default** — switching a level to Equipment now defaults its equip-fields flag on.
+
+### 10.5 Known residuals (non-blocking)
+- **F-012** — the **Assets** module (list, parent-asset picker, move picker) is already site-scoped at load; **Report-a-Problem** and **Inventory** pickers are scoped. Remaining: the **WO "Select Asset" picker** (2-line change, inside in-progress Work Orders work) and PM/scheduling asset-assignment pickers.
+- **Manufacturer** — `AddContactModal`'s manufacturer-mode is now **dead code** (superseded by the dedicated master + `AddManufacturerModal`); unreachable and harmless, flagged for a low-risk cleanup pass (it sits in the user-creation critical path, so not reverted amid active drift).
+- **F-015** — optional debug-label removal + workflow-button tooltips (in in-progress ServiceRequests work).
+- **`0164` RPCs** are granted to any authenticated user — **role-harden in the RLS/permissions phase**.
 - Enterprise multi-site **data isolation (RLS)** is designed separately — see *Multi-Tenancy & Enterprise Structure Design*; F-012's picker filter is its UX (T-4) layer, not the full RLS boundary.
 
 ### 10.5 Sign-off (Rev 2)
