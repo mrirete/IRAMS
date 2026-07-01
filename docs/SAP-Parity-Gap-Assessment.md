@@ -91,11 +91,11 @@ Beyond the four-module gaps, these SAP-EAM capabilities would materially raise t
 
 ## 6. Prioritized roadmap
 
-**Wave 1 — quick, high-visibility (close before the reviewer's next cycle):**
-- **IN-1** Reservation netting / ATP (`qtyReserved` → available). **M**
-- **FI-2** RAV cost KPIs on the metrics cockpit. **S**
-- **PO-1** Verify & enforce competency-gated assignment. **S–M**
-- **WM-1** Catalog code-groups (Object Part + Activity + coding profile). **M**
+**Wave 1 — quick, high-visibility (close before the reviewer's next cycle):** ✅ **DELIVERED**
+- ✅ **IN-1** Reservation netting / ATP — `checkMaterialAvailability` now nets stock reserved by other open WOs; material check shows Reserved / net Available (`1634a1d`). *Follow-up: Available column on the inventory master list.*
+- ✅ **FI-2** RAV cost KPIs — Maintenance-cost-%-of-RAV card on the reliability metrics cockpit (`02e4c6f`).
+- ✅ **PO-1** Competency-gated assignment — AssignmentModal blocks techs with missing/expired required certs (supervisor override) + always-on expired-cert advisory (`2f31fc9`). *Follow-up: WO required-competency source field so the gate is data-driven, not latent.*
+- ✅ **WM-1** Catalog code-groups — Object Part (B) + Activity (A) code-groups added, admin-manageable + seeded (`4b34a29`). *Follow-up: object-part/activity coding fields on the WO/notification (files under concurrent edit).*
 
 **Wave 2 — the order-to-cost spine (the strategic core):**
 - **WM-2** Operations + work centers + confirmations. **L**
