@@ -1,11 +1,11 @@
 # IRAMS EAM — Asset Register UAT Closeout Plan
 
-**Responds to:** AgileAsset Reliability Solutions — *IRAMS EAM UAT Defect & Feedback Report v1.0* (28 Jun 2026)
-**Scope:** Asset Register (Functional Location hierarchy, asset creation, numbering, hierarchy panel) + People & Org
-**Findings:** 11 (3 CRITICAL · 4 HIGH · 3 MEDIUM · 1 LOW)
+**Responds to:** AgileAsset Reliability Solutions — *UAT Report v1.0* (28 Jun 2026) **and** *UAT Follow-Up Report Rev 2* (1 Jul 2026)
+**Scope:** Asset Register (FLOC hierarchy, creation, numbering, hierarchy panel) + People & Org + Work Management (Requests)
+**Findings:** 15 total (F-001…F-015) — 4 CRITICAL · 4 HIGH · 4 MEDIUM · 1 LOW
 **Standards in scope:** ISO 14224:2016, ISO 55000/55001:2014, IEC 60812, PAS 55
 **Reviewer context:** SAP PM background — uses SAP parity terms (FLOC/`TPLNR`, Equipment/`EQUNR`, Business Partner/Vendor `LFA1`, number ranges/`NRIV`, ABC indicator, change documents `CDHDR`/`CDPOS`).
-**Version:** 1.1 — adds the FLOC↔Equipment object-model decision (§2), revised F-003 (partner-role over a separate master), cross-cutting AM requirements (§5), additive migration posture (§6), and delivery governance (§8).
+**Version:** 2.0 — adds the **Rev 2 closeout register (§10)** covering all 15 findings with commit/migration traceability, the tester-permission caveats, and sign-off. (§1–§9 record the original Rev 1 plan; §2 object-model decision, revised F-003, AM requirements §5, migration posture §6, governance §8 stand.)
 
 ---
 
@@ -224,7 +224,7 @@ Dependencies: everything depends on **Phase 0**; F-003 source-consolidation can 
 | F-005 | HIGH | 2 | **Done** — level-gated Add Location / Add Asset | 3bc579d | — | 55000 §6.2.3 |
 | F-006 | HIGH | 2 | **Already met** — panel is a collapsible indented tree (`treeData`); residual: optional scope-to-selected-site | — | ✅ verified | 55000 |
 | F-008 | HIGH | 2 | **Done** — FLOC terminology on tag label + MoC modal; MoC stays gated to saved records | 3bc579d | — | 55000 §6.4 |
-| F-011 | HIGH | 2 | **Already met** — OrgChart adds unlimited sibling units + renders peers; one-to-many model. *(UI-tweak area OrgUnitDetailsDrawer is in another session's drift — left untouched)* | — | ✅ verified | 55000 §6.2 |
+| F-011 | HIGH | 2 | **Corrected in Rev 2** — the "already met" desk call was wrong; real root cause was a DB CHECK constraint. See §10. | 0166 | — | 55000 §6.2 |
 | F-001 | MED | 2 | **Done** — FLOC ID label, Parent-Level indicator, criticality N/A at root | 3bc579d | — | 14224 §6.3 |
 | F-002 | MED | 3 | **Done** — equipment taxonomy + spec fields hidden on FLOCs (hierarchyModel) | (Phase 3) | — | 14224 §6.3 |
 | F-007 | MED | 3 | **Done (default rules)** — criticality N/A at root, required for equipment; per-level rules in hierarchyModel. Admin editability pending the config screen | 3bc579d | — | 14224 §7; IEC 60812 |
@@ -234,3 +234,65 @@ Dependencies: everything depends on **Phase 0**; F-003 source-consolidation can 
 2. Confirm the **LOW finding** (§4) so the severity count reconciles.
 3. Confirm level **labels/count** (default ISO six-level seed) and the level at which **EQ numbering begins** (default L5).
 4. Endorse the **revised F-003** approach (partner-role over a separate manufacturer master).
+
+---
+
+## 10. Revision 2 Closeout Register (responds to UAT Follow-Up Report, 1 Jul 2026)
+
+Rev 2 confirmed **8 of 11** original findings CLOSED, carried **3** (F-002, F-009, F-011), and raised **4** new (F-012–F-015). **All 15 are now addressed.** "Rev 2 status" = the reviewer's assessment; "Resolution" = what shipped.
+
+| ID | Sev | Rev 2 status (reviewer) | Resolution shipped | Commit / Migration |
+|---|---|---|---|---|
+| F-001 | MED | CLOSED | FLOC ID label, parent-level, criticality N/A at root | 3bc579d |
+| F-002 | MED | Open (partial) | Field visibility now **configurable per level** (Admin → Hierarchy Config "Equip fields"); DetailsTab driven by `showsEquipmentFields` | f42a59a (+ 00dcf6c) |
+| F-003 | HIGH | CLOSED | Manufacturer master (table+API+form), consolidated, by-id | ce70bd8, cc0dfcc, ca03d5e / **0158** |
+| F-004 | CRIT | CLOSED | EQ trigger level-gated; 24 FLOC records reconciled (24→0) | ef0f700 / **0157** |
+| F-005 | HIGH | CLOSED | Level-gated Add Location / Add Asset | 3bc579d |
+| F-006 | HIGH | CLOSED | Collapsible indented tree (verified) | — |
+| F-007 | MED | CLOSED | Per-level criticality rule + Admin config | 3bc579d, f666538 |
+| F-008 | HIGH | CLOSED | FLOC terminology; MoC gated to saved records | 3bc579d |
+| **F-009** | CRIT | Open → **resolved** | *Re-scoped by reviewer to Audit Trail.* Tab now reads persisted `audit_logs` (DB trigger already wrote them); was reading in-memory `trackingLog` | e548fa6 |
+| F-010 | CRIT | CLOSED | Object model + level engine + Admin Hierarchy Config | 25b7a30, 61613c1, f666538 / **0156, 0159, 0163** |
+| **F-011** | HIGH | Open (2 cycles) → **resolved** | Root cause = `organization_units.type` CHECK IN ('DIVISION','GROUP','TEAM') rejected DEPARTMENT etc. Dropped the fixed CHECK; type governed by the configurable org model | 3478123 / **0166** |
+| **F-012** | HIGH | NEW → **resolved** | Site-scoped asset pickers (Report-a-Problem + Inventory) via `filterAssetsBySiteScope` + "Show all sites" override. *WO Select-Asset picker: last spot, in the in-progress WO work* | c3eb89c, d3060b9 |
+| **F-013** | MED | NEW → **resolved** | Create modal defaults Level to **parent+1** (not a same-level sibling) + "New record will be created at: L[N]" label | f42a59a |
+| **F-014** | LOW | NEW → **resolved** | Work Management menu reordered (Maintenance Requests before Work Orders) | client (menu config) |
+| **F-015** | CRIT | NEW → **reclassified** | Not auto-rejection: requests are created `NEW` (code); the "Rejected" was a **status-badge display bug** (dictionary-driven) — now uses canonical labels. Disabled Reject/Authorize = correct permission + workflow-state gating | c3eb89c |
+
+### 10.1 Tester-permission caveats (material to sign-off)
+The Rev 2 cycle was performed under **J.test1 (System Administrator)**, which distorts two findings:
+- **F-012** cannot be validated by an admin — a System Administrator has **global data scope (`['*']`)** and *by design* sees all sites. Scoping must be retested with a **site-scoped user** (e.g. K.Syrus scoped to one site via Admin → Data Scope & Site Access).
+- **F-015** (claimed CRITICAL "all requests auto-rejected") is **overstated**: the create default is `RequestStatus.NEW` in code, the toolbar showed `NEW`, and the header "Rejected" was a display-badge bug (now fixed). The greyed Reject/Authorize buttons are **correct** permission (`requests.authorize`) + workflow-state gating (Authorize only after Review) — retest with a role that carries `requests.authorize`.
+
+### 10.2 Report reconciliation note
+The Rev 2 **Priority Action Plan** lists *"F-004 & F-010 — carried over, no progress observed,"* but the Rev 2 **status register marks both CLOSED**. Both were resolved in the Rev 1 cycle (see rows above); the priority-plan mention appears to be a carry-over error. Recommend reconciling at sign-off so closed items aren't re-opened.
+
+### 10.3 Migrations to apply for sign-off
+Apply in order (Supabase SQL editor); all additive/reversible:
+
+| # | Purpose |
+|---|---|
+| 0156 | FLOC/Equipment object model (F-010) |
+| 0157 | Numbering fix + reconcile (F-004) |
+| 0158 | Manufacturer master (F-003) |
+| 0159 | Hierarchy config table (F-010) |
+| 0160 | Manufacturer_models parent constraint |
+| 0161 | Criticality nullable (upper FLOCs) |
+| 0162 | Configurable numbering ranges |
+| 0163 | hierarchy_level → TEXT (custom levels) |
+| 0164 | User-admin RPCs (delete/disable login) |
+| 0165 | Config org-key (multi-tenancy groundwork) |
+| **0166** | **Org-unit type flex (F-011)** |
+
+### 10.4 Known residuals (non-blocking)
+- **F-012** — the WO "Select Asset" picker is the one remaining picker; it's inside in-progress Work Orders work (2-line change using the same `filterAssetsBySiteScope` pattern).
+- **F-006 / F-011** optional refinements (scope asset tree to selected site; org-chart view polish).
+- Enterprise multi-site **data isolation (RLS)** is designed separately — see *Multi-Tenancy & Enterprise Structure Design*; F-012's picker filter is its UX (T-4) layer, not the full RLS boundary.
+
+### 10.5 Sign-off (Rev 2)
+| Role | Name | Signature | Date |
+|---|---|---|---|
+| Test Lead / Author | Agile Asset Reliability Solutions | | |
+| Client Reviewer | | | |
+| Development Lead (Relantern) | | | |
+| Project Manager | | | |
