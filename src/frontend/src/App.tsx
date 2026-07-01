@@ -21,6 +21,7 @@ const GlobalSettingsPage = lazy(() => import('./pages/admin/GlobalSettingsPage')
 const ErrorLogsPage = lazy(() => import('./pages/admin/ErrorLogsPage').then(m => ({ default: m.ErrorLogsPage })));
 const HierarchyConfigPage = lazy(() => import('./pages/HierarchyConfigPage').then(m => ({ default: m.HierarchyConfigPage })));
 const ManufacturersPage = lazy(() => import('./pages/ManufacturersPage').then(m => ({ default: m.ManufacturersPage })));
+const WorkCentersPage = lazy(() => import('./pages/WorkCentersPage').then(m => ({ default: m.WorkCentersPage })));
 const AdminActivityPage = lazy(() => import('./pages/admin/AdminActivityPage').then(m => ({ default: m.AdminActivityPage })));
 
 // ── React Query Client ──────────────────────────────────
@@ -199,6 +200,7 @@ function App() {
                                 <Route path="/admin/settings" element={<PermissionGate module="admin"><GlobalSettingsPage /></PermissionGate>} />
                                 <Route path="/admin/hierarchy" element={<PermissionGate module="admin"><HierarchyConfigPage /></PermissionGate>} />
                                 <Route path="/admin/manufacturers" element={<PermissionGate module="admin"><ManufacturersPage /></PermissionGate>} />
+                                <Route path="/admin/work-centers" element={<PermissionGate module="admin"><WorkCentersPage /></PermissionGate>} />
                                 <Route path="/admin/error-logs" element={<PermissionGate module="admin"><ErrorLogsPage /></PermissionGate>} />
                                 <Route path="/admin/activity-log" element={<PermissionGate module="activityLog"><AdminActivityPage /></PermissionGate>} />
                               </Routes>

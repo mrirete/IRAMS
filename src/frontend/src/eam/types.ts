@@ -38,6 +38,19 @@ export interface DataScope {
   ownWorkOnly: boolean; // "My Assignments Only"
 }
 
+/** WM-2 (SAP CR) — capacity-bearing, costed resource an operation is performed at. */
+export interface WorkCenter {
+  id: string;
+  code: string;              // MECH-01, ELEC-01, …
+  name: string;
+  siteId?: string;           // -> organization_units
+  costCenterId?: string;     // -> cost_centers (default settlement receiver)
+  activityRate: number;      // planned cost / hour
+  capacityHoursPerDay: number;
+  category?: string;
+  active: boolean;
+}
+
 export interface DictionaryEntry {
   id: string;
   type: DictionaryType;

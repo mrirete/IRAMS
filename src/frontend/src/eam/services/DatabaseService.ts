@@ -19,6 +19,7 @@ import {
     WorkOrder,
     Asset,
     JobTask,
+    WorkCenter,
     ServiceRequest,
     OrganizationUnit,
     Contact,
@@ -616,6 +617,49 @@ export class DatabaseService {
         const { error } = await supabase.from('hierarchy_config')
             .upsert({ id: 1, levels, updated_at: new Date().toISOString() });
         if (error) { console.error('DatabaseService.saveHierarchyConfig:', error); throw error; }
+    }
+
+    // ── Work Center master (WM-2a, SAP CR) ──
+    public async getWorkCenters(activeOnly = false): Promise<WorkCenter[]> {
+        let q = supabase.from('work_centers').select('*').order('code');
+        if (activeOnly) q = q.eq('active', true);
+        const { data, error } = await q;
+        if (error) { console.error('DatabaseService.getWorkCenters:', error); return []; }
+        return (data || []).map((r: any) => ({
+            id: r.id,
+            code: r.code,
+            name: r.name,
+            siteId: r.site_id || undefined,
+            costCenterId: r.cost_center_id || undefined,
+            activityRate: Number(r.activity_rate) || 0,
+            capacityHoursPerDay: Number(r.capacity_hours_per_day) || 0,
+            category: r.category || undefined,
+            active: r.active !== false,
+        }));
+    }
+
+    public async saveWorkCenter(wc: Partial<WorkCenter> & { code: string; name: string }): Promise<void> {
+        const row: any = {
+            code: wc.code.trim(),
+            name: wc.name.trim(),
+            site_id: wc.siteId || null,
+            cost_center_id: wc.costCenterId || null,
+            activity_rate: wc.activityRate ?? 0,
+            capacity_hours_per_day: wc.capacityHoursPerDay ?? 8,
+            category: wc.category || null,
+            active: wc.active !== false,
+            updated_at: new Date().toISOString(),
+        };
+        if (wc.id) row.id = wc.id;
+        const { error } = await supabase.from('work_centers').upsert(row, { onConflict: 'id' });
+        if (error) { console.error('DatabaseService.saveWorkCenter:', error); throw error; }
+    }
+
+    public async deleteWorkCenter(id: string): Promise<void> {
+        // Soft-delete: keep referential history for operations/confirmations.
+        const { error } = await supabase.from('work_centers')
+            .update({ active: false, updated_at: new Date().toISOString() }).eq('id', id);
+        if (error) { console.error('DatabaseService.deleteWorkCenter:', error); throw error; }
     }
 
     // ── Numbering configuration (SAP NRIV-style ranges) ──
