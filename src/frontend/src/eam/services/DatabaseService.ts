@@ -634,7 +634,20 @@ export class DatabaseService {
             .order('timestamp', { ascending: false })
             .limit(200);
         if (error) { console.error('DatabaseService.getAuditLog:', error); return []; }
-        return data || [];
+        const rows = data || [];
+        // Resolve actor (changed_by = user UUID) -> username for display.
+        const ids = [...new Set(rows.map(r => r.changed_by).filter(Boolean))];
+        const nameById = new Map<string, string>();
+        if (ids.length) {
+            const { data: us } = await supabase.from('users').select('id, username').in('id', ids);
+            (us || []).forEach((u: any) => nameById.set(u.id, u.username));
+        }
+        rows.forEach((r: any) => {
+            let changesActor: string | undefined;
+            try { const c = typeof r.changes === 'string' ? JSON.parse(r.changes) : r.changes; changesActor = c?.actor; } catch { /* ignore */ }
+            r.actorName = (r.changed_by && nameById.get(r.changed_by)) || changesActor || 'System';
+        });
+        return rows;
     }
 
     public async saveNumberingConfig(cfg: Record<string, any>): Promise<void> {

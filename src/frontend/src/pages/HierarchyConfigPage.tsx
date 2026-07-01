@@ -149,7 +149,7 @@ export const HierarchyConfigPage: React.FC = () => {
                                         <input value={l.label} onChange={e => update(idx, { label: e.target.value })} placeholder="Level name" className="w-36 text-sm border border-slate-300 rounded-md p-1.5 focus:ring-1 focus:ring-primary-500 outline-none" />
                                     </td>
                                     <td className="px-3 py-2.5">
-                                        <select value={l.objectClass} onChange={e => update(idx, { objectClass: e.target.value as LevelConfig['objectClass'] })} className="text-sm border border-slate-300 rounded-md p-1.5 bg-white">
+                                        <select value={l.objectClass} onChange={e => { const oc = e.target.value as LevelConfig['objectClass']; update(idx, { objectClass: oc, showEquipmentFields: oc === 'EQUIPMENT' }); }} className="text-sm border border-slate-300 rounded-md p-1.5 bg-white">
                                             <option value="FLOC">Functional Location</option>
                                             <option value="EQUIPMENT">Equipment</option>
                                         </select>

@@ -640,13 +640,14 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                 table_name: 'assets',
                 record_id: selectedAsset.id,
                 action: 'UPDATE',
-                changed_by: actor,
+                changed_by: (profile as any)?.id || null, // UUID column — a username string would reject the insert (F-009)
                 timestamp: new Date().toISOString(),
                 changes: JSON.stringify({
                     field: 'tag',
                     old: oldTag,
                     new: newTag.trim(),
                     reason: reason.trim(),
+                    actor,
                     change_type: 'ASSET_TAG_CHANGE'
                 })
             };
@@ -3913,6 +3914,7 @@ function TrackingTab({ asset }: { asset: Asset }) {
                                             </div>
                                             <div className="whitespace-nowrap text-right text-sm text-slate-500">
                                                 <time>{e.timestamp ? new Date(e.timestamp).toLocaleString() : ''}</time>
+                                                <div className="text-[10px] text-slate-400">by {e.actorName || 'System'}</div>
                                             </div>
                                         </div>
                                     </div>
