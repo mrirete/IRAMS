@@ -114,4 +114,4 @@ Start **Wave 1** — it's ~1 week total, all high-credibility with the SAP revie
 1. **IN-1** and **FI-2** first (contained, visible), then **PO-1** (safety), then **WM-1** (the catalog structure he'll expect).
 Then commit to **Wave 2** as a deliberate phase — it's the SAP order-to-cost backbone and the highest structural value, but it's a multi-week build touching WM + Inventory + FinOps together (mirror the multi-tenancy design's phased, RLS-style cutover discipline).
 
-**Open decisions for sign-off:** (a) confirm Wave-1 scope; (b) is settlement to **cost center**, **asset**, or both (SAP allows a settlement rule with multiple receivers)?; (c) catalog depth — full B/C/D/A/T code groups or start with Object Part + Activity?
+**Decisions (signed off):** (a) **Wave-1 scope confirmed.** (b) Settlement to **both cost center and asset** (SAP multi-receiver settlement rule). (c) Catalogs — **start with Object Part + Activity** (B/A), extend to full D/C/T later.

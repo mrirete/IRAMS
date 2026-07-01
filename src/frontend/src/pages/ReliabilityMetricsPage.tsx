@@ -34,6 +34,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const [assets, setAssets] = useState<AssetRow[]>([]);
     const [schedJobs, setSchedJobs] = useState<any[]>([]); // full WO set for execution metrics
     const [resources, setResources] = useState<any[]>([]); // crew roster for backlog capacity
+    const [finRows, setFinRows] = useState<any[]>([]); // asset_financials.replacement_value for RAV
 
     useEffect(() => {
         let active = true;
@@ -46,13 +47,14 @@ export const ReliabilityMetricsPage: React.FC = () => {
                 const we = new Date(ws); we.setDate(we.getDate() + 6);
                 const range = { start: ws.toISOString().split('T')[0], end: we.toISOString().split('T')[0] };
 
-                const [woRes, aRes, allWOs, labor] = await Promise.all([
+                const [woRes, aRes, allWOs, labor, finRes] = await Promise.all([
                     supabase.from('work_orders')
-                        .select('id, type, status, est_duration, actual_downtime_hrs, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data(failure_mode_code)')
+                        .select('id, type, status, est_duration, actual_downtime_hrs, total_actual_cost, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data(failure_mode_code)')
                         .gte('created_at', since),
                     supabase.from('assets').select('id, tag, name, criticality, hierarchy_level, asset_class, manufacturer_id, equipment_number'),
                     db.getWorkOrders().catch(() => []),
                     db.getLaborAvailability(range).catch(() => ({ resources: [] })),
+                    supabase.from('asset_financials').select('replacement_value'),
                 ]);
                 if (!active) return;
                 if (woRes.error) throw woRes.error;
@@ -60,6 +62,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                 setAssets((aRes.data as AssetRow[]) || []);
                 setSchedJobs(Array.isArray(allWOs) ? allWOs : []);
                 setResources((labor as any)?.resources || []);
+                setFinRows(((finRes as any)?.data as any[]) || []);
             } catch (e: any) {
                 if (active) setError(e?.message || 'Failed to load reliability data.');
             } finally {
@@ -154,6 +157,14 @@ export const ReliabilityMetricsPage: React.FC = () => {
         };
     }, [assets]);
 
+    // FI-2: RAV-based maintenance cost health (SAP FI-CO / SMRP financial metrics).
+    const cost = useMemo(() => {
+        const rav = finRows.reduce((s, r) => s + (Number(r.replacement_value) || 0), 0);
+        const maint12 = wos.reduce((s, w) => s + (Number(w.total_actual_cost) || 0), 0);
+        const pctRav = rav > 0 ? Math.round((maint12 / rav) * 1000) / 10 : null;
+        return { rav, maint12, pctRav };
+    }, [finRows, wos]);
+
     const ragColor = (k: ReliabilityKpi): string => {
         if (k.value == null) return 'text-slate-400';
         if (k.key === 'pct_proactive') return k.value >= 80 ? 'text-emerald-600' : k.value >= 60 ? 'text-amber-500' : 'text-red-500';
@@ -246,6 +257,41 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                     </div>
                                 );
                             })}
+                        </div>
+                    </div>
+
+                    {/* Maintenance Cost vs RAV — SAP FI-CO / SMRP financial metrics (FI-2) */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+                            <Gauge size={15} className="text-emerald-600" />
+                            <h3 className="text-sm font-bold text-slate-800">Maintenance Cost vs Asset Value</h3>
+                            <span className="text-[11px] text-slate-400">reliability-aligned cost KPIs</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 divide-x divide-y sm:divide-y-0 divide-slate-100">
+                            {(() => {
+                                const fmt = (n: number) => n >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `$${(n / 1e3).toFixed(0)}k` : `$${Math.round(n)}`;
+                                const pct = cost.pctRav;
+                                const pctColor = pct == null ? 'text-slate-400' : pct <= 3 ? 'text-emerald-600' : pct <= 5 ? 'text-amber-500' : 'text-red-500';
+                                return (
+                                    <>
+                                        <div className="p-4">
+                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Maint. cost % of RAV</div>
+                                            <div className={`text-2xl font-extrabold mt-1 ${pctColor}`}>{pct == null ? 'N/A' : `${pct}%`}</div>
+                                            <div className="text-[10px] text-slate-400 mt-0.5">target ≤ 2–3% (12 mo)</div>
+                                        </div>
+                                        <div className="p-4">
+                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Maintenance cost (12 mo)</div>
+                                            <div className="text-2xl font-extrabold mt-1 text-slate-800">{cost.maint12 > 0 ? fmt(cost.maint12) : 'N/A'}</div>
+                                            <div className="text-[10px] text-slate-400 mt-0.5">actual WO cost</div>
+                                        </div>
+                                        <div className="p-4">
+                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Replacement Asset Value</div>
+                                            <div className="text-2xl font-extrabold mt-1 text-slate-800">{cost.rav > 0 ? fmt(cost.rav) : 'N/A'}</div>
+                                            <div className="text-[10px] text-slate-400 mt-0.5">RAV — insured/replacement</div>
+                                        </div>
+                                    </>
+                                );
+                            })()}
                         </div>
                     </div>
 
