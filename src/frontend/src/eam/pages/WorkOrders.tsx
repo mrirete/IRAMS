@@ -1282,6 +1282,18 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         }, DEBOUNCE_MS);
     };
 
+    // WM-2c: after a time confirmation is posted (a direct DB write + roll-up in
+    // postConfirmation), refetch this WO's labour + operations so localJob reflects
+    // it — and so the normal labour save flow won't clobber the posted confirmation.
+    const reloadOperations = async () => {
+        if (!localJob.id) return;
+        const raw = await DatabaseService.getInstance().getWorkOrder(localJob.id);
+        if (!raw) return;
+        const mappedLabor = ((raw as any).work_order_labor || []).map((l: any) => DataMapper.toUIJobLabor(l));
+        const mappedTasks = ((raw as any).job_tasks || []).map((t: any) => DataMapper.toUIJobTask(t)).sort((a: any, b: any) => a.sequence - b.sequence);
+        setLocalJob(prev => ({ ...prev, labor: mappedLabor, tasks: mappedTasks.length ? mappedTasks : prev.tasks }));
+    };
+
     // ── Immediate save (for manual Save button) — flushes any pending debounce ──
     const handleSave = () => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
@@ -1556,6 +1568,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             availableUsers={users}
                             contacts={contacts}
                             onUpdateJob={updateJob}
+                            onOperationConfirmed={reloadOperations}
                             dictionaries={dictionaries}
                         />
                     )}
@@ -3855,8 +3868,9 @@ const TasksTab: React.FC<{
     availableUsers: User[];
     contacts: any[];
     onUpdateJob: (u: Partial<WorkOrder>) => void;
+    onOperationConfirmed?: () => Promise<void> | void;
     dictionaries: DictionaryEntry[];
-}> = ({ job, onUpdate, availableOrgUnits, availableUsers, contacts, onUpdateJob, dictionaries }) => {
+}> = ({ job, onUpdate, availableOrgUnits, availableUsers, contacts, onUpdateJob, onOperationConfirmed, dictionaries }) => {
     const confirm = useConfirm();
     const tasks = job.tasks || [];
     const [expandedTaskId, setExpandedTaskId] = useState<string | null>(tasks.length === 1 ? tasks[0]?.id : null);
@@ -4026,15 +4040,22 @@ const TasksTab: React.FC<{
                                         className="w-full font-medium text-sm text-slate-900 bg-transparent border-none p-0 focus:ring-0 focus:outline-none placeholder:text-slate-300 truncate"
                                         placeholder="Enter task step name..."
                                     />
-                                    {/* Dependency indicator */}
-                                    {task.predecessorTaskId && (() => {
-                                        const pred = tasks.find(t => t.id === task.predecessorTaskId);
-                                        return pred ? (
-                                            <span className="text-[10px] text-blue-500 font-medium flex items-center gap-0.5 mt-0.5">
-                                                <ArrowRight size={9} className="rotate-180" /> After #{pred.sequence}
+                                    {/* Operation number (SAP) + dependency indicator */}
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        {task.operationNo && (
+                                            <span className="text-[10px] text-slate-400 font-mono" title="SAP operation number">
+                                                Op {task.operationNo}
                                             </span>
-                                        ) : null;
-                                    })()}
+                                        )}
+                                        {task.predecessorTaskId && (() => {
+                                            const pred = tasks.find(t => t.id === task.predecessorTaskId);
+                                            return pred ? (
+                                                <span className="text-[10px] text-blue-500 font-medium flex items-center gap-0.5">
+                                                    <ArrowRight size={9} className="rotate-180" /> After #{pred.sequence}
+                                                </span>
+                                            ) : null;
+                                        })()}
+                                    </div>
                                 </div>
 
                                 {/* Delete task button — always visible */}
@@ -4111,6 +4132,7 @@ const TasksTab: React.FC<{
                                         contacts={contacts}
                                         dictionaries={dictionaries}
                                         workCenters={workCenters}
+                                        onConfirmed={onOperationConfirmed}
                                         editorTab={editorTab}
                                         onTabChange={setEditorTab}
                                         execMode={execMode}
@@ -4147,11 +4169,42 @@ const TaskEditor: React.FC<{
     contacts: any[];
     dictionaries: DictionaryEntry[];
     workCenters: WorkCenter[];
+    onConfirmed?: () => Promise<void> | void;
     editorTab: 'instructions' | 'resources';
     onTabChange: (tab: 'instructions' | 'resources') => void;
     execMode?: boolean;
-}> = ({ task, onChange, onDelete, onUpdateJob, jobContext, availableOrgUnits, availableUsers, contacts, dictionaries, workCenters, editorTab, onTabChange, execMode = false }) => {
+}> = ({ task, onChange, onDelete, onUpdateJob, jobContext, availableOrgUnits, availableUsers, contacts, dictionaries, workCenters, onConfirmed, editorTab, onTabChange, execMode = false }) => {
     const { showToast } = useToast();
+    // WM-2b: resolved costing rate for this operation = per-op override ?? work-center rate.
+    const selectedWorkCenter = workCenters.find(w => w.id === task.workCenterId);
+    const effectiveRate = task.plannedRate ?? selectedWorkCenter?.activityRate;
+
+    // WM-2c: time confirmation posting (IW41/CO11). Posts immediately, then refetches.
+    const [confHours, setConfHours] = useState('');
+    const [confFinal, setConfFinal] = useState(false);
+    const [posting, setPosting] = useState(false);
+    const postTimeConfirmation = async () => {
+        const hrs = parseFloat(confHours);
+        if (!hrs || hrs <= 0) { showToast('Enter the hours worked.', 'warning'); return; }
+        if (task.id.startsWith('new-')) { showToast('Save the work order before confirming time.', 'warning'); return; }
+        setPosting(true);
+        try {
+            await DatabaseService.getInstance().postConfirmation({
+                woId: jobContext.id,
+                operationId: task.id,
+                hours: hrs,
+                ratePerHour: effectiveRate,
+                isFinal: confFinal,
+            });
+            showToast(confFinal ? 'Final confirmation posted — operation completed.' : 'Time confirmation posted.', 'success');
+            setConfHours(''); setConfFinal(false);
+            await onConfirmed?.();
+        } catch (e: any) {
+            showToast('Confirmation failed: ' + (e?.message || 'unknown'), 'error');
+        } finally {
+            setPosting(false);
+        }
+    };
     const { user } = useAuth();
 
     // State for Picker
@@ -4568,6 +4621,11 @@ const TaskEditor: React.FC<{
                                 <option key={wc.id} value={wc.id}>{wc.code} · {wc.name}</option>
                             ))}
                         </select>
+                        {effectiveRate != null && (
+                            <span className="text-slate-400 whitespace-nowrap" title={task.plannedRate != null ? 'Per-operation planned rate' : 'Work-center activity rate'}>
+                                @ {effectiveRate}/hr
+                            </span>
+                        )}
                     </div>
                     <div className="flex items-center gap-1 text-xs">
                         <Clock size={12} className="text-slate-400" />
@@ -4592,6 +4650,41 @@ const TaskEditor: React.FC<{
                     <button onClick={onDelete} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>
                 </div>
             </div>
+
+            {/* WM-2c: time confirmation (shown in Do-work mode) */}
+            {execMode && !task.id.startsWith('new-') && (
+                <div className="px-3 sm:px-4 py-2 border-b border-slate-200 bg-blue-50/40 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1">
+                        <Clock size={12} /> Confirm time
+                    </span>
+                    <input
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        value={confHours}
+                        onChange={(e) => setConfHours(e.target.value)}
+                        placeholder="Hours"
+                        className="w-20 px-2 py-1 text-xs text-right border border-slate-200 rounded focus:ring-1 focus:ring-blue-500"
+                    />
+                    {effectiveRate != null && parseFloat(confHours) > 0 && (
+                        <span className="text-[11px] text-slate-500">≈ {(parseFloat(confHours) * effectiveRate).toFixed(2)} labour cost</span>
+                    )}
+                    <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer">
+                        <input type="checkbox" checked={confFinal} onChange={(e) => setConfFinal(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-400" />
+                        Final (close operation)
+                    </label>
+                    <button
+                        onClick={postTimeConfirmation}
+                        disabled={posting}
+                        className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded hover:bg-blue-700 disabled:opacity-60 flex items-center gap-1 font-medium"
+                    >
+                        {posting ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Post
+                    </button>
+                    {task.actualHours ? (
+                        <span className="text-[11px] text-slate-400 ml-auto">Confirmed to date: {task.actualHours}h</span>
+                    ) : null}
+                </div>
+            )}
 
             {/* Tab Bar: Instructions | Resources */}
             <div className="px-2 sm:px-4 py-0 border-b border-slate-200 bg-slate-50/50 flex items-center gap-0">
