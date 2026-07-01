@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { OrganizationUnit, OrgUnitType } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
+import { useToast } from '../contexts/ToastContext';
 import { AlertTriangle } from 'lucide-react';
 
 interface OrgUnitModalProps {
@@ -12,6 +13,7 @@ interface OrgUnitModalProps {
 }
 
 export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onSave, unit, parentUnit }) => {
+    const { showToast } = useToast();
     const [name, setName] = useState('');
     const [code, setCode] = useState('');
     const [type, setType] = useState<OrgUnitType>('DIVISION');
@@ -194,7 +196,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
             onClose();
         } catch (error: any) {
             console.error(error);
-            alert(`Failed to save Organization Unit: ${error?.message || 'Unknown error'}`);
+            showToast(`Failed to save org unit: ${error?.message || 'Unknown error'}`, 'error');
         } finally {
             setLoading(false);
         }

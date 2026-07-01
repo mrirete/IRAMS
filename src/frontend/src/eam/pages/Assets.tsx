@@ -23,7 +23,7 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, isValidChild } from '../services/hierarchyModel';
+import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, isValidChild, showsEquipmentFields } from '../services/hierarchyModel';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
@@ -2177,8 +2177,9 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
     // F-008/F-002: object class drives terminology (FLOC ID vs Asset Tag) and field visibility.
     const isFloc = isFunctionalLocation({ hierarchyLevel: (asset as any).hierarchyLevel, assetType: asset.assetType, category: asset.category });
     const idLabel = isFloc ? 'Functional Location ID' : 'Asset Tag';
-    // F-002: equipment-taxonomy + spec fields are hidden on Functional Locations.
-    const showEquipFields = !isFloc;
+    // F-002: equipment-taxonomy + spec field visibility is configurable per level
+    // (Admin → Hierarchy Config → "Equip fields"), driven by the level's showEquipmentFields flag.
+    const showEquipFields = showsEquipmentFields({ hierarchyLevel: (asset as any).hierarchyLevel, assetType: asset.assetType, category: asset.category });
 
     const handleMfrCreated = async (newMfr: any) => {
         // Add the new master manufacturer to the dropdown and select it (by id).
@@ -3234,18 +3235,16 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
         const parent = formData.parentId ? existingAssets.find(a => a.id === formData.parentId) : null;
         let defaultType = '';
         if (parent) {
+            const parentIso = resolveLevel({ hierarchyLevel: (parent as any).hierarchyLevel, assetType: parent.assetType, category: parent.category })?.isoLevel ?? 0;
+            const targetClass = isLocation ? 'FLOC' : 'EQUIPMENT';
             const allowed = allowedChildren({
                 hierarchyLevel: (parent as any).hierarchyLevel,
                 assetType: parent.assetType,
                 category: parent.category
-            });
-            const targetClass = isLocation ? 'FLOC' : 'EQUIPMENT';
-            const matched = allowed.find(c => c.objectClass === targetClass);
-            if (matched) {
-                defaultType = matched.code;
-            } else {
-                defaultType = allowed[0]?.code || '';
-            }
+            }).filter(c => c.objectClass === targetClass);
+            // F-013: default to the genuinely-deeper level (parent + 1), not a same-level sibling.
+            const deeper = allowed.filter(c => c.isoLevel > parentIso).sort((a, b) => a.isoLevel - b.isoLevel);
+            defaultType = (deeper[0] || allowed[0])?.code || '';
         } else {
             defaultType = isLocation ? 'SITE' : 'EQUIPMENT';
         }
@@ -3366,8 +3365,13 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                                 <option key={l.code} value={l.code}>L{l.isoLevel} · {l.label}</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-slate-400 mt-1">
-                            {selLevel ? `${selLevel.objectClass === 'FLOC' ? 'Functional Location' : 'Equipment'} · ${selLevel.numbering}- numbering` : ''}
+                        <p className="text-[10px] mt-1">
+                            {selLevel ? (
+                                <>
+                                    <span className="font-semibold text-slate-600">New record will be created at: L{selLevel.isoLevel} · {selLevel.label}</span>
+                                    <span className="text-slate-400"> — {selLevel.objectClass === 'FLOC' ? 'Functional Location' : 'Equipment'}, {selLevel.numbering}- numbering</span>
+                                </>
+                            ) : ''}
                         </p>
                     </div>
 

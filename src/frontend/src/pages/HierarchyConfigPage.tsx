@@ -56,7 +56,9 @@ export const HierarchyConfigPage: React.FC = () => {
     const normalize = (l: LevelConfig): LevelConfig => ({
         ...l,
         numbering: l.objectClass === 'EQUIPMENT' ? 'EQ' : 'FL',
-        showEquipmentFields: l.objectClass === 'EQUIPMENT',
+        // F-002: field visibility is independently configurable per level; default to
+        // the object class only when unset.
+        showEquipmentFields: typeof l.showEquipmentFields === 'boolean' ? l.showEquipmentFields : l.objectClass === 'EQUIPMENT',
     });
 
     const handleSave = async () => {
@@ -121,6 +123,7 @@ export const HierarchyConfigPage: React.FC = () => {
                                 <th className="text-left font-bold px-3 py-2.5">Object class</th>
                                 <th className="text-left font-bold px-3 py-2.5">Num</th>
                                 <th className="text-left font-bold px-3 py-2.5">Criticality</th>
+                                <th className="text-left font-bold px-3 py-2.5" title="Show equipment taxonomy + spec fields (Category/Class/Manufacturer/Serial) at this level">Equip fields</th>
                                 <th className="text-left font-bold px-3 py-2.5">Allowed children</th>
                                 <th className="px-3 py-2.5 w-8"></th>
                             </tr>
@@ -161,6 +164,15 @@ export const HierarchyConfigPage: React.FC = () => {
                                             <option value="optional">Optional</option>
                                             <option value="mandatory">Mandatory</option>
                                         </select>
+                                    </td>
+                                    <td className="px-3 py-2.5">
+                                        <input
+                                            type="checkbox"
+                                            checked={!!l.showEquipmentFields}
+                                            onChange={e => update(idx, { showEquipmentFields: e.target.checked })}
+                                            className="rounded text-primary-600"
+                                            title="Show Category/Class/Manufacturer/Serial fields at this level"
+                                        />
                                     </td>
                                     <td className="px-3 py-2.5">
                                         <div className="flex flex-wrap gap-1 max-w-[230px]">
