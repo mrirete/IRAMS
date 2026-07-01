@@ -1483,6 +1483,7 @@ function BOMTab({ item }: { item: InventoryItem }) {
     const [assets, setAssets] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const { showToast } = useToast();
+    const { dataScope } = useAuth(); // F-012: scope the asset picker to the user's site(s)
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; assetId: string | null }>({
         isOpen: false,
@@ -1633,7 +1634,7 @@ function BOMTab({ item }: { item: InventoryItem }) {
                     isOpen={isAddModalOpen}
                     onClose={() => setIsAddModalOpen(false)}
                     onSave={handleLinkToAsset}
-                    assets={assets} // Pass all loaded assets for selection
+                    assets={DatabaseService.filterAssetsBySiteScope(assets, dataScope?.siteIds)} // F-012: site-scoped selection (all sites for global scope)
                     itemCode={item.code}
                 />
             )}
