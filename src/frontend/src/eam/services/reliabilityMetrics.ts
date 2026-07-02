@@ -118,6 +118,33 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
   };
 }
 
+// ── Shared failure-derived series ────────────────────────────────────────────
+// One definition of "a failure" (isFailure) and one basis for the repair-time
+// and inter-arrival series, so the Metrics scoreboard, the RAM dashboard, and the
+// Weibull tab all model the SAME events. This retires the calculators' ad-hoc,
+// slightly-different WO extraction (M1 — engine unification).
+
+/** Per-failure repair/downtime hours (same basis as MTTR) — for maintainability charts. */
+export function failureRepairHours(records: any[]): number[] {
+  return (records || []).filter(isFailure)
+    .map(r => Number(r.actual_downtime_hrs ?? r.actual_duration ?? r.actualDuration) || 0)
+    .filter(d => d > 0);
+}
+
+/** Inter-arrival times between consecutive failures, in hours — for Weibull life data. */
+export function failureIntervalsHours(records: any[]): number[] {
+  const times = (records || []).filter(isFailure)
+    .map(eventDate).filter(Boolean)
+    .map(d => new Date(d as string).getTime())
+    .sort((a, b) => a - b);
+  const out: number[] = [];
+  for (let i = 1; i < times.length; i++) {
+    const h = (times[i] - times[i - 1]) / 3600000;
+    if (h > 0) out.push(Math.round(h));
+  }
+  return out;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Harmonization scaffold — every reliability KPI (now and future) is expressed as
 // a uniform ReliabilityKpi so the UI renders them the same way and the Reliability

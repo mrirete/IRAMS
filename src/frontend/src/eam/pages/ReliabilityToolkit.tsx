@@ -11,6 +11,7 @@ import {
     Dices, Play, RotateCcw, Upload, Cpu
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { computeAssetReliability, failureRepairHours, failureIntervalsHours } from '../services/reliabilityMetrics';
 // @ts-ignore
 import * as jStat from 'jstat';
 import { MonteCarloSimTab } from '../components/MonteCarloSimTab';
@@ -927,20 +928,15 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
         if (!asset) return;
         setLoading(true);
         (async () => {
-            // Pull failure intervals from WOs
+            // Inter-arrival failure intervals via the shared engine (M1) — same
+            // failure definition (corrective OR coded failure mode) as Metrics/RAM.
+            // All-time (life data wants every failure), all types; the engine filters.
             const { data: wos } = await supabase.from('work_orders')
-                .select('created_at')
+                .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
                 .eq('asset_id', asset.id)
-                .in('type', CORRECTIVE_WO_TYPES)
                 .order('created_at');
-            if (wos && wos.length >= 2) {
-                const times: number[] = [];
-                for (let i = 1; i < wos.length; i++) {
-                    const diff = (new Date(wos[i].created_at).getTime() - new Date(wos[i - 1].created_at).getTime()) / 3600000;
-                    if (diff > 0) times.push(Math.round(diff));
-                }
-                if (times.length > 0) setDataStr(times.join(', '));
-            }
+            const times = failureIntervalsHours(wos || []);
+            if (times.length > 0) setDataStr(times.join(', '));
             setLoading(false);
         })();
     }, [asset]);
@@ -1467,37 +1463,38 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
         if (inputs.targetAo) setTargetAo(String(inputs.targetAo));
     }, [loadedData]);
 
-    // ─── Auto-populate from WO data ───────────────────────────
+    // ─── Auto-populate from WO data (M1: via the shared reliability engine) ───
+    // Fetches the asset's WOs and derives failures / MTBF basis / repair times from
+    // computeAssetReliability — the SAME engine the Metrics scoreboard uses — so the
+    // per-asset RAM numbers reconcile with the fleet numbers instead of diverging.
     useEffect(() => {
         if (!asset) return;
         setLoading(true);
         (async () => {
             const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
-            // Corrective WOs for MTBF
+            // All WO types in-window; the shared engine decides what counts as a failure
+            // (corrective OR a coded failure mode), matching the Metrics definition.
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, created_at, actual_hours, status')
+                .select('id, type, status, created_at, closed_at, actual_hours, actual_downtime_hrs, actual_duration, wo_failure_data(failure_mode_code)')
                 .eq('asset_id', asset.id)
-                .in('type', CORRECTIVE_WO_TYPES)
                 .gte('created_at', yearAgo)
                 .order('created_at');
 
             if (wos && wos.length > 0) {
-                setFailures(String(wos.length));
-                setTotalHours('8760');
-                const repairs = wos.map(w => parseFloat(w.actual_hours) || 0).filter(h => h > 0);
+                const rel = computeAssetReliability(wos);
+                const n = rel.failures12mo || rel.totalFailures;
+                if (n > 0) {
+                    setFailures(String(n));
+                    // Operating time chosen so RAM MTBF (= totalHours/failures) equals the
+                    // shared engine's inter-arrival MTBF; the χ² CI then forms around it.
+                    // Falls back to a calendar year when MTBF can't be derived (<2 failures).
+                    setTotalHours(rel.mtbfDays != null ? String(Math.round(rel.mtbfDays * 24 * n)) : '8760');
+                }
+                // Repair times = same failure set + downtime basis as the engine's MTTR.
+                const repairs = failureRepairHours(wos);
                 if (repairs.length > 0) {
                     setRepairTimesStr(repairs.map(r => r.toFixed(1)).join(', '));
                 }
-            }
-
-            // Also pull all actual repair hours for maintainability (not just corrective)
-            const { data: allWos } = await supabase.from('work_orders')
-                .select('actual_hours')
-                .eq('asset_id', asset.id)
-                .not('actual_hours', 'is', null)
-                .gt('actual_hours', 0);
-            if (allWos && allWos.length > 0) {
-                setRepairTimesStr(allWos.map(w => parseFloat(w.actual_hours).toFixed(1)).join(', '));
             }
 
             setLoading(false);
