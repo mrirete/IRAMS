@@ -15,7 +15,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
     Activity, TrendingUp, Package, Cpu, Dices,
     Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
-    AlertCircle, Check, X, Wrench, ChevronRight,
+    AlertCircle, Check, X, Wrench,
 } from 'lucide-react';
 import { Button } from '../../eam/components/ui';
 import { CreatePMFromWeibullModal, type WeibullPMData } from './CreatePMFromWeibullModal';
@@ -252,68 +252,77 @@ function SavedAnalysesPanel({ analyses, activeId, onLoad, onEdit, onDelete, load
     );
 }
 
-// ─── Workflow Spine ───────────────────────────────────────────
-// Makes the reliability differentiator path explicit & one-click:
-//   Model & Measure → Fit Weibull → Simulate (Monte Carlo) → Create PM
+// ─── Outcome launcher ─────────────────────────────────────────
+// Outcome-first, NOT a numbered sequence: the lab is organised around two GOALS
+// — "Build a PM program" (life data → maintenance) and "Model & analyze a system"
+// (RBD / RAM / Monte Carlo / Spares). Tools open in any order; the only real gate
+// is that Create PM needs a Weibull fit.
 function WorkflowSpine({ activeCalc, weibullFit, onGoto, onCreatePM }: {
     activeCalc: CalcTab;
     weibullFit: { beta: number; eta: number; r2: number } | null;
     onGoto: (tab: CalcTab) => void;
     onCreatePM: () => void;
 }) {
-    const activeStage = activeCalc === 'rbd' || activeCalc === 'ram' ? 0 : activeCalc === 'weibull' ? 1 : activeCalc === 'montecarlo' ? 2 : -1;
     const hasFit = !!weibullFit;
-
-    const stages = [
-        { i: 0, label: 'Model & Measure', sub: 'RBD · RAM', tab: 'ram' as CalcTab, done: hasFit },
-        { i: 1, label: 'Fit Weibull', sub: hasFit ? `β=${weibullFit!.beta} · η=${weibullFit!.eta.toLocaleString()}h` : 'β, η from failures', tab: 'weibull' as CalcTab, done: hasFit },
-        { i: 2, label: 'Simulate', sub: 'Monte Carlo · P10/P50/P90', tab: 'montecarlo' as CalcTab, done: false },
+    const analyzeTools: { tab: CalcTab; label: string }[] = [
+        { tab: 'rbd', label: 'Block Diagrams' },
+        { tab: 'ram', label: 'RAM Dashboard' },
+        { tab: 'montecarlo', label: 'Monte Carlo' },
+        { tab: 'spares', label: 'Spares Demand' },
     ];
+    const chip = (active: boolean) =>
+        `px-2.5 py-1 rounded-control text-xs font-semibold border transition-colors ${active ? 'bg-primary-50 border-primary-200 text-primary-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`;
 
     return (
-        <div className="flex flex-wrap items-center bg-white border border-slate-200 rounded-card shadow-card p-2 gap-2">
-            {/* Steps: hidden on mobile (redundant with the calc tabs) — the bar then
-                shows just the Create-PM action. Full stepper returns at ≥sm. */}
-            <div className="hidden sm:flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
-                {stages.map((s, idx) => {
-                    const isActive = activeStage === s.i;
-                    const state = isActive ? 'active' : s.done ? 'done' : 'idle';
-                    return (
-                        <React.Fragment key={s.i}>
-                            <button
-                                onClick={() => onGoto(s.tab)}
-                                className={`flex items-center gap-2.5 px-3 py-2 rounded-control text-left transition-colors shrink-0 ${isActive ? 'bg-primary-50 ring-1 ring-primary-200' : 'hover:bg-slate-50'}`}
-                            >
-                                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${state === 'active' ? 'bg-primary-600 text-white' : state === 'done' ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                                    {state === 'done' ? <Check size={13} /> : s.i + 1}
-                                </span>
-                                {/* On mobile only the ACTIVE step shows its label (others = just the
-                                    numbered circle) so the 3-step bar + PM button never overflows/clips. */}
-                                <span className={`min-w-0 ${isActive ? 'block' : 'hidden sm:block'}`}>
-                                    <span className={`block text-[13px] font-semibold leading-tight ${isActive ? 'text-primary-700' : 'text-slate-700'}`}>{s.label}</span>
-                                    <span className="hidden sm:block text-[10px] text-slate-400 leading-tight truncate max-w-[150px]">{s.sub}</span>
-                                </span>
-                            </button>
-                            {idx < stages.length - 1 && <ChevronRight size={16} className="text-slate-300 self-center shrink-0" />}
-                        </React.Fragment>
-                    );
-                })}
+        <div className="grid gap-2 sm:grid-cols-2">
+            {/* Outcome 1 — Build a PM program (life data → maintenance strategy) */}
+            <div className="bg-white border border-slate-200 rounded-card shadow-card p-3 flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${hasFit ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                    <Wrench size={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold text-slate-800 leading-tight">Build a PM program</p>
+                    <p className="text-[11px] text-slate-400 leading-tight truncate">
+                        {hasFit ? `Weibull fitted — β=${weibullFit!.beta} · η=${weibullFit!.eta.toLocaleString()}h` : 'Fit life data to derive the interval'}
+                    </p>
+                </div>
+                {hasFit ? (
+                    <Button
+                        size="sm"
+                        variant="cta"
+                        onClick={onCreatePM}
+                        leftIcon={<Wrench size={14} />}
+                        title="Create a PM program from the Weibull fit"
+                    >
+                        <span className="hidden sm:inline">Create PM</span>
+                        <span className="sm:hidden">PM</span>
+                    </Button>
+                ) : (
+                    <button
+                        onClick={() => onGoto('weibull')}
+                        className={chip(activeCalc === 'weibull')}
+                        title="Fit a Weibull model from failure data, then create a PM"
+                    >
+                        Fit Weibull →
+                    </button>
+                )}
             </div>
 
-            {/* Act — Create PM: always visible (alone on mobile; divider when inline ≥sm) */}
-            <div className="flex items-center shrink-0 gap-1 ml-auto sm:border-l border-slate-100 sm:pl-2">
-                <ChevronRight size={16} className="text-slate-300 shrink-0 hidden sm:block" />
-                <Button
-                    size="sm"
-                    variant={hasFit ? 'cta' : 'secondary'}
-                    disabled={!hasFit}
-                    onClick={onCreatePM}
-                    leftIcon={<Wrench size={14} />}
-                    title={hasFit ? 'Create a PM program from the Weibull fit' : 'Fit a Weibull model first'}
-                >
-                    <span className="hidden sm:inline">Create PM</span>
-                    <span className="sm:hidden">PM</span>
-                </Button>
+            {/* Outcome 2 — Model & analyze a system (open any tool, any order) */}
+            <div className="bg-white border border-slate-200 rounded-card shadow-card p-3 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-primary-50 text-primary-600">
+                    <Cpu size={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-semibold text-slate-800 leading-tight">Model &amp; analyze a system</p>
+                    <div className="flex flex-wrap items-center gap-1 mt-1">
+                        {analyzeTools.map(t => (
+                            <button key={t.tab} onClick={() => onGoto(t.tab)} className={chip(activeCalc === t.tab)}>
+                                {t.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
             </div>
         </div>
     );
