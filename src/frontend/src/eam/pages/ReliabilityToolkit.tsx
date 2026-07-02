@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
     BarChart, Bar, AreaChart, Area, ScatterChart, Scatter, Cell, ReferenceLine
@@ -43,6 +43,8 @@ export interface TabProps {
     loadedData?: { inputs: Record<string, any>; results: Record<string, any> } | null;
     /** P2.2: Bridge from RAM → Spares Demand — push MTBF to spares calculator */
     onSendToSpares?: (mtbf: number) => void;
+    /** Seed the tab's asset once (e.g. from a Metrics bad-actor drill-through). */
+    initialAsset?: AssetOption | null;
 }
 
 type TabId = 'mtbf' | 'availability' | 'weibull' | 'spares' | 'maintainability' | 'montecarlo';
@@ -899,12 +901,21 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
 // ═══════════════════════════════════════════════════════════════
 //  TAB 3: Weibull Analysis
 // ═══════════════════════════════════════════════════════════════
-export function WeibullTab({ onStateChange, loadedData }: TabProps = {}) {
+export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps = {}) {
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [dataStr, setDataStr] = useState('20, 42, 55, 73, 95, 101, 118, 139');
     const [loading, setLoading] = useState(false);
     const [showRtFt, setShowRtFt] = useState(false);
     const [showPMModal, setShowPMModal] = useState(false);
+
+    // Seed the asset once from a drill-through (Metrics bad actor → Fit Weibull).
+    // The asset-change effect below then auto-pulls WO failures and fits.
+    const seededRef = useRef(false);
+    useEffect(() => {
+        if (seededRef.current || !initialAsset) return;
+        seededRef.current = true;
+        setAsset(initialAsset);
+    }, [initialAsset]);
 
     // Load saved analysis data
     useEffect(() => {

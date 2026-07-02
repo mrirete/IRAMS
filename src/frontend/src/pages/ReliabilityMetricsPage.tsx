@@ -173,6 +173,20 @@ export const ReliabilityMetricsPage: React.FC = () => {
         return 'text-slate-800';
     };
 
+    // Drill-through: seed the Modelling lab's Weibull tab with this bad actor's
+    // asset — it auto-pulls the WO failure history, fits, and offers Create-PM.
+    const fitWeibull = (assetId: string) => {
+        const a = assets.find(x => x.id === assetId);
+        navigate('/reliability-modelling', {
+            state: { seed: { asset: a ? { id: a.id, name: a.name, tag: a.tag, criticality: a.criticality || '' } : null, tab: 'weibull' } },
+        });
+    };
+
+    // Drill-through: open the Analyze RCA workflow scoped to this asset.
+    const startRCA = (assetId: string) => {
+        navigate(`/analyze?asset=${encodeURIComponent(assetId)}&tab=rca&from=reliability-metrics`);
+    };
+
     const askSpecialist = () => {
         const ctx = [
             'RELIABILITY METRICS',
@@ -347,6 +361,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                             <th className="text-right font-bold px-4 py-2">MTBF</th>
                                             <th className="text-right font-bold px-4 py-2">MTTR</th>
                                             <th className="text-left font-bold px-4 py-2">Recurring mode</th>
+                                            <th className="text-right font-bold px-4 py-2">Analyze</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -360,6 +375,24 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                                     {a.rel.recurringModes.length > 0
                                                         ? <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"><Repeat size={10} /> {a.rel.recurringModes[0].mode} ×{a.rel.recurringModes[0].count}</span>
                                                         : <span className="text-slate-300">—</span>}
+                                                </td>
+                                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                                    <div className="inline-flex items-center gap-1.5">
+                                                        <button
+                                                            onClick={() => fitWeibull(a.id)}
+                                                            title="Fit a Weibull model from this asset's failure history, then create a PM"
+                                                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-primary-200 text-primary-700 hover:bg-primary-50 transition-colors"
+                                                        >
+                                                            <TrendingUp size={12} /> Fit Weibull
+                                                        </button>
+                                                        <button
+                                                            onClick={() => startRCA(a.id)}
+                                                            title={a.rel.rcaReason || 'Investigate in RCA'}
+                                                            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border transition-colors ${a.rel.recommendRCA ? 'border-red-200 text-red-700 hover:bg-red-50' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                                                        >
+                                                            <AlertTriangle size={12} /> RCA
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}

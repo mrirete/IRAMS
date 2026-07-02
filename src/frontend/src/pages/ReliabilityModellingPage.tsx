@@ -12,9 +12,15 @@
  * enabling direct RCA/Defect Elimination workflow initialization.
  */
 import React, { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Cpu, ArrowRight, Search } from 'lucide-react';
 import ReliabilityModellingDivision from '../components/analyze/ReliabilityModellingDivision';
+
+/** Drill-through seed passed via navigation state (e.g. Metrics bad actor → Fit Weibull). */
+interface ModellingSeed {
+    asset: { id: string; name: string; tag: string; criticality: string } | null;
+    tab?: 'ram' | 'weibull' | 'spares' | 'rbd' | 'montecarlo';
+}
 
 interface ModellingContext {
     asset: { id: string; tag: string; name: string } | null;
@@ -24,6 +30,8 @@ interface ModellingContext {
 
 const ReliabilityModellingPage: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
+    const seed = (location.state as { seed?: ModellingSeed } | null)?.seed ?? null;
     const [context, setContext] = useState<ModellingContext | null>(null);
 
     const handleContextChange = useCallback((ctx: ModellingContext) => {
@@ -88,7 +96,7 @@ const ReliabilityModellingPage: React.FC = () => {
             </div>
 
             {/* ── Division Content ────────────────────────────── */}
-            <ReliabilityModellingDivision onContextChange={handleContextChange} />
+            <ReliabilityModellingDivision onContextChange={handleContextChange} seed={seed} />
         </div>
     );
 };

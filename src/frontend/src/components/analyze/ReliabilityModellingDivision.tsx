@@ -11,7 +11,7 @@
  *
  * Features: Asset-WO data integration, save/edit/delete for all calculators.
  */
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Activity, TrendingUp, Package, Cpu, Dices,
     Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
@@ -328,14 +328,25 @@ interface DivisionProps {
         results: Record<string, any>;
         activeTab: CalcTab;
     }) => void;
+    /** Drill-through seed (e.g. Metrics bad actor → Fit Weibull): opens a tab with an asset pre-selected. */
+    seed?: { asset: { id: string; name: string; tag: string; criticality: string } | null; tab?: CalcTab } | null;
 }
 
-export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange }) => {
+export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange, seed }) => {
     const { profile, user } = useAuth();
     // Human-readable author stamped on saved studies (falls back gracefully).
     const currentAuthor = profile?.username || profile?.fullName || user?.email || null;
 
     const [activeCalc, setActiveCalc] = useState<CalcTab>('ram');
+
+    // Apply a drill-through seed once: open the requested tab (default Weibull).
+    // The seeded asset is passed to the tab, which auto-pulls WO failures and fits.
+    const seedAppliedRef = useRef(false);
+    useEffect(() => {
+        if (seedAppliedRef.current || !seed) return;
+        seedAppliedRef.current = true;
+        setActiveCalc(seed.tab || 'weibull');
+    }, [seed]);
 
 
     // Saved analyses state
@@ -707,7 +718,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
             {/* Content */}
             {activeCalc === 'ram' && <RAMDashboardTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} onSendToSpares={handleSendToSpares} />}
-            {activeCalc === 'weibull' && <WeibullTab onStateChange={handleWeibullStateChange} loadedData={effectiveLoadedData} />}
+            {activeCalc === 'weibull' && <WeibullTab onStateChange={handleWeibullStateChange} loadedData={effectiveLoadedData} initialAsset={seed?.asset} />}
             {activeCalc === 'spares' && <SparesTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} />}
             {activeCalc === 'rbd' && <ReliabilityModelingTab onStateChange={handleStateChange} onSendToRAM={handleSendToRAM} />}
             {activeCalc === 'montecarlo' && <MonteCarloSimTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} bridgeData={mcBridgeData} onSendToRAM={handleMCToRAM} />}
