@@ -11,6 +11,7 @@ import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight
 import { supabase } from '../eam/lib/supabase';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { useRelantern } from '../eam/contexts/RelanternContext';
+import analyzeService from '../eam/services/AnalyzeService';
 import { classifyWork } from '../eam/services/workReadiness';
 import {
     computePMEffectiveness, pmEffectivenessKpi, computeAssetReliability,
@@ -32,6 +33,35 @@ const WINDOW_OPTIONS: { days: number; label: string }[] = [
 ];
 const MAX_WINDOW_DAYS = 730;
 
+// Fleet-level reliability scalars for a WO set — used for the current window AND
+// the prior equal window (M5 trend), so the two are computed identically.
+function fleetScalars(rows: any[], windowDays: number) {
+    const mapClassify = (r: any) => ({
+        type: r.type, status: r.status, estDuration: r.est_duration,
+        tasks: (r.job_tasks || []).map((t: any) => ({ description: t.description, instructions: t.instructions || [], estHours: 0 })),
+        labor: r.work_order_labor || [],
+    });
+    const mapPM = (r: any) => ({
+        id: r.id, type: r.type, status: r.status, parentWoId: r.parent_wo_id, recurringWorkId: r.recurring_work_id,
+        failureData: { failureMode: (Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data)?.failure_mode_code },
+    });
+    let pro = 0, rea = 0;
+    for (const r of rows) { const c = classifyWork(mapClassify(r) as any); if (c === 'PROACTIVE') pro++; else if (c === 'REACTIVE') rea++; }
+    const proPct = pro + rea ? Math.round((pro / (pro + rea)) * 100) : null;
+    const pmEffKpi = pmEffectivenessKpi(computePMEffectiveness(rows.map(mapPM)));
+    const byAsset: Record<string, any[]> = {};
+    for (const r of rows) { if (r.asset_id) (byAsset[r.asset_id] = byAsset[r.asset_id] || []).push(r); }
+    const assetRel = Object.entries(byAsset).map(([id, recs]) => ({ id, rel: computeAssetReliability(recs, { windowDays }) }));
+    const totalFailures = assetRel.reduce((s, a) => s + a.rel.failures12mo, 0);
+    const mtbfs = assetRel.map(a => a.rel.mtbfDays).filter((v): v is number => v != null);
+    const fleetMtbf = mtbfs.length ? Math.round(mtbfs.reduce((s, v) => s + v, 0) / mtbfs.length) : null;
+    const mttrs = assetRel.map(a => a.rel.mttrHours).filter((v): v is number => v != null);
+    const fleetMttr = mttrs.length ? Math.round((mttrs.reduce((s, v) => s + v, 0) / mttrs.length) * 10) / 10 : null;
+    const fleetAvail = (fleetMtbf != null && fleetMttr != null && (fleetMtbf + fleetMttr / 24) > 0)
+        ? Math.round((fleetMtbf / (fleetMtbf + fleetMttr / 24)) * 1000) / 10 : null;
+    return { proPct, pmEffKpi, fleetMtbf, fleetMttr, fleetAvail, totalFailures, assetRel };
+}
+
 export const ReliabilityMetricsPage: React.FC = () => {
     const { openRelantern } = useRelantern();
     const navigate = useNavigate();
@@ -48,6 +78,23 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const [critFilter, setCritFilter] = useState('ALL');   // ALL | A | B | C
     const [classFilter, setClassFilter] = useState('ALL'); // ALL | <asset_class>
     const windowLabel = WINDOW_OPTIONS.find(w => w.days === windowDays)?.label || `${windowDays} days`;
+
+    // M5 — reliability studies + created PMs per asset, to surface on the bad-actor list.
+    const [studyByAsset, setStudyByAsset] = useState<Record<string, { count: number; pm?: string }>>({});
+    useEffect(() => {
+        analyzeService.getReliabilityAnalyses().then(analyses => {
+            const acc: Record<string, { lineages: Set<string>; pm?: string }> = {};
+            for (const a of analyses) {
+                if (!a.asset_id) continue;
+                const m = acc[a.asset_id] || (acc[a.asset_id] = { lineages: new Set() });
+                m.lineages.add(a.root_id || a.id);
+                if (a.linked_pm_id && !m.pm) m.pm = a.linked_pm_title || 'PM';
+            }
+            const out: Record<string, { count: number; pm?: string }> = {};
+            for (const [id, m] of Object.entries(acc)) out[id] = { count: m.lineages.size, pm: m.pm };
+            setStudyByAsset(out);
+        }).catch(() => { /* studies are advisory; ignore load errors */ });
+    }, []);
 
     useEffect(() => {
         let active = true;
@@ -109,51 +156,41 @@ export const ReliabilityMetricsPage: React.FC = () => {
         );
     }, [wos, windowDays, assetFilterActive, filteredAssetIds]);
 
-    const { kpis, badActors } = useMemo(() => {
-        const mapClassify = (r: any) => ({
-            type: r.type, status: r.status, estDuration: r.est_duration,
-            tasks: (r.job_tasks || []).map((t: any) => ({ description: t.description, instructions: t.instructions || [], estHours: 0 })),
-            labor: r.work_order_labor || [],
+    const { kpis, badActors, deltas } = useMemo(() => {
+        const cur = fleetScalars(filteredWos, windowDays);
+
+        // M5 trend: same fleet scalars over the PRIOR equal-length window (same filters).
+        const now = Date.now();
+        const priorStart = now - 2 * windowDays * 86400000;
+        const priorEnd = now - windowDays * 86400000;
+        const priorWos = wos.filter(w => {
+            const t = new Date(w.created_at).getTime();
+            return t >= priorStart && t < priorEnd && (!assetFilterActive || (w.asset_id && filteredAssetIds.has(w.asset_id)));
         });
-        const mapPM = (r: any) => ({
-            id: r.id, type: r.type, status: r.status, parentWoId: r.parent_wo_id, recurringWorkId: r.recurring_work_id,
-            failureData: { failureMode: (Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data)?.failure_mode_code },
-        });
+        const prev = fleetScalars(priorWos, windowDays);
 
-        // % Proactive (over the selected window)
-        let pro = 0, rea = 0;
-        for (const r of filteredWos) {
-            const c = classifyWork(mapClassify(r) as any);
-            if (c === 'PROACTIVE') pro++; else if (c === 'REACTIVE') rea++;
-        }
-        const proPct = pro + rea ? Math.round((pro / (pro + rea)) * 100) : null;
-
-        // PM & PdM Effectiveness
-        const pmEff = computePMEffectiveness(filteredWos.map(mapPM));
-
-        // Per-asset reliability → fleet rollups + bad actors
-        const byAsset: Record<string, any[]> = {};
-        for (const r of filteredWos) { if (r.asset_id) (byAsset[r.asset_id] = byAsset[r.asset_id] || []).push(r); }
-        const assetRel = Object.entries(byAsset).map(([id, recs]) => ({ id, rel: computeAssetReliability(recs, { windowDays }) }));
-        const totalFailures12 = assetRel.reduce((s, a) => s + a.rel.failures12mo, 0);
-        const mtbfs = assetRel.map(a => a.rel.mtbfDays).filter((v): v is number => v != null);
-        const fleetMtbf = mtbfs.length ? Math.round(mtbfs.reduce((s, v) => s + v, 0) / mtbfs.length) : null;
-        const mttrs = assetRel.map(a => a.rel.mttrHours).filter((v): v is number => v != null);
-        const fleetMttr = mttrs.length ? Math.round((mttrs.reduce((s, v) => s + v, 0) / mttrs.length) * 10) / 10 : null;
-        const fleetAvail = (fleetMtbf != null && fleetMttr != null && (fleetMtbf + fleetMttr / 24) > 0)
-            ? Math.round((fleetMtbf / (fleetMtbf + fleetMttr / 24)) * 1000) / 10 : null;
-        const bad = assetRel.filter(a => a.rel.failures12mo > 0).sort((a, b) => b.rel.failures12mo - a.rel.failures12mo).slice(0, 8);
+        const bad = cur.assetRel.filter(a => a.rel.failures12mo > 0).sort((a, b) => b.rel.failures12mo - a.rel.failures12mo).slice(0, 8);
 
         const list: ReliabilityKpi[] = [
-            { key: 'pct_proactive', label: '% Proactive', value: proPct, display: proPct == null ? 'N/A' : `${proPct}%`, unit: '%', direction: 'higher-better', benchmark: '>= 80%', definition: `Preventive or fully-planned work vs reactive (${windowLabel}). World-class >= 80%.` },
-            pmEffectivenessKpi(pmEff),
-            { key: 'availability', label: 'Availability', value: fleetAvail, display: fleetAvail == null ? 'N/A' : `${fleetAvail}%`, unit: '%', direction: 'higher-better', benchmark: '>= 90%', definition: 'Inherent availability Ai = MTBF / (MTBF + MTTR). Driven by repair downtime (MTTR). World-class >= 90%.' },
-            { key: 'fleet_mtbf', label: 'Fleet MTBF', value: fleetMtbf, display: fleetMtbf == null ? 'N/A' : `${fleetMtbf}d`, unit: 'days', direction: 'higher-better', definition: 'Mean Time Between Failures, averaged across assets (equipment reliability).' },
-            { key: 'fleet_mttr', label: 'Fleet MTTR', value: fleetMttr, display: fleetMttr == null ? 'N/A' : `${fleetMttr}h`, unit: 'hours', direction: 'lower-better', definition: 'Mean Time To Repair, averaged across assets.' },
-            { key: 'failures_win', label: `Failures (${windowLabel})`, value: totalFailures12, display: String(totalFailures12), direction: 'lower-better', definition: `Total corrective failures across the fleet in the ${windowLabel} window.` },
+            { key: 'pct_proactive', label: '% Proactive', value: cur.proPct, display: cur.proPct == null ? 'N/A' : `${cur.proPct}%`, unit: '%', direction: 'higher-better', benchmark: '>= 80%', definition: `Preventive or fully-planned work vs reactive (${windowLabel}). World-class >= 80%.` },
+            cur.pmEffKpi,
+            { key: 'availability', label: 'Availability', value: cur.fleetAvail, display: cur.fleetAvail == null ? 'N/A' : `${cur.fleetAvail}%`, unit: '%', direction: 'higher-better', benchmark: '>= 90%', definition: 'Inherent availability Ai = MTBF / (MTBF + MTTR). Driven by repair downtime (MTTR). World-class >= 90%.' },
+            { key: 'fleet_mtbf', label: 'Fleet MTBF', value: cur.fleetMtbf, display: cur.fleetMtbf == null ? 'N/A' : `${cur.fleetMtbf}d`, unit: 'days', direction: 'higher-better', definition: 'Mean Time Between Failures, averaged across assets (equipment reliability).' },
+            { key: 'fleet_mttr', label: 'Fleet MTTR', value: cur.fleetMttr, display: cur.fleetMttr == null ? 'N/A' : `${cur.fleetMttr}h`, unit: 'hours', direction: 'lower-better', definition: 'Mean Time To Repair, averaged across assets.' },
+            { key: 'failures_win', label: `Failures (${windowLabel})`, value: cur.totalFailures, display: String(cur.totalFailures), direction: 'lower-better', definition: `Total corrective failures across the fleet in the ${windowLabel} window.` },
         ];
-        return { kpis: list, badActors: bad as BadActor[] };
-    }, [filteredWos, windowDays, windowLabel]);
+
+        const d = (c: number | null, p: number | null) => (c != null && p != null ? Math.round((c - p) * 10) / 10 : null);
+        const deltas: Record<string, number | null> = {
+            pct_proactive: d(cur.proPct, prev.proPct),
+            pm_pdm_effectiveness: d(cur.pmEffKpi.value, prev.pmEffKpi.value),
+            availability: d(cur.fleetAvail, prev.fleetAvail),
+            fleet_mtbf: d(cur.fleetMtbf, prev.fleetMtbf),
+            fleet_mttr: d(cur.fleetMttr, prev.fleetMttr),
+            failures_win: d(cur.totalFailures, prev.totalFailures),
+        };
+        return { kpis: list, badActors: bad as BadActor[], deltas };
+    }, [filteredWos, wos, windowDays, windowLabel, assetFilterActive, filteredAssetIds]);
 
     // Work-execution metrics (shared spine, full WO set) — mirrored from the
     // Schedule cockpit so the numbers match exactly.
@@ -301,6 +338,17 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                     {k.label}{k.smrpRef && <span className="text-slate-300">·{k.smrpRef.replace('SMRP ', '')}</span>}
                                 </div>
                                 <div className={`text-2xl md:text-3xl font-extrabold mt-1 ${ragColor(k)}`}>{k.display}</div>
+                                {(() => {
+                                    const dv = deltas[k.key];
+                                    if (dv == null || dv === 0) return null;
+                                    const better = k.direction === 'higher-better' ? dv > 0 : dv < 0;
+                                    const suffix = k.unit === '%' ? 'pp' : '';
+                                    return (
+                                        <div className={`text-[10px] font-semibold mt-0.5 ${better ? 'text-emerald-600' : 'text-red-500'}`} title={`vs previous ${windowLabel}`}>
+                                            {dv > 0 ? '▲' : '▼'} {Math.abs(dv)}{suffix} vs prev
+                                        </div>
+                                    );
+                                })()}
                                 {k.benchmark && <div className="text-[10px] text-slate-400 mt-0.5">benchmark {k.benchmark}</div>}
                             </div>
                         ))}
@@ -426,10 +474,11 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                     <thead className="bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400">
                                         <tr>
                                             <th className="text-left font-bold px-4 py-2">Asset</th>
-                                            <th className="text-right font-bold px-4 py-2">Failures (12mo)</th>
+                                            <th className="text-right font-bold px-4 py-2">Failures</th>
                                             <th className="text-right font-bold px-4 py-2">MTBF</th>
                                             <th className="text-right font-bold px-4 py-2">MTTR</th>
                                             <th className="text-left font-bold px-4 py-2">Recurring mode</th>
+                                            <th className="text-left font-bold px-4 py-2">Studies</th>
                                             <th className="text-right font-bold px-4 py-2">Analyze</th>
                                         </tr>
                                     </thead>
@@ -444,6 +493,22 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                                     {a.rel.recurringModes.length > 0
                                                         ? <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"><Repeat size={10} /> {a.rel.recurringModes[0].mode} ×{a.rel.recurringModes[0].count}</span>
                                                         : <span className="text-slate-300">—</span>}
+                                                </td>
+                                                <td className="px-4 py-2.5 whitespace-nowrap">
+                                                    {(() => {
+                                                        const s = studyByAsset[a.id];
+                                                        if (!s) return <span className="text-[11px] text-slate-300">No study yet</span>;
+                                                        return (
+                                                            <span className="inline-flex items-center gap-1.5">
+                                                                <span className="text-[11px] text-slate-600">{s.count} stud{s.count === 1 ? 'y' : 'ies'}</span>
+                                                                {s.pm && (
+                                                                    <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200" title={`PM created: ${s.pm}`}>
+                                                                        ✓ PM
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </td>
                                                 <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                                     <div className="inline-flex items-center gap-1.5">
