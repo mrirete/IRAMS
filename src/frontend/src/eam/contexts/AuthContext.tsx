@@ -291,6 +291,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         const merged: Record<string, ModulePermissions> = { ...d.properties.permissions };
                         Object.keys(userOverrides).forEach(mk => { merged[mk] = { ...(merged[mk] || {}), ...userOverrides[mk] }; });
                         setPermissions(merged);
+                        // Persist the AUTHORITATIVE merged perms so the next warm load grants
+                        // correctly. Without this the cache only held the base template, so a
+                        // custom-role module (e.g. Admin) appeared only after this background
+                        // fetch each load — i.e. "not until I log out and back in".
+                        writeProfileCache({ userId: currentUser.id, profile: resolvedProfile, permissions: merged, role: roleCode, dataScope: resolvedScope });
                     });
             }
 
