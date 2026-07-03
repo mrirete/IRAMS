@@ -41,12 +41,14 @@ import { StudyRecordsPanel } from './ReliabilityStudyRecords';
 
 type CalcTab = 'ram' | 'weibull' | 'spares' | 'rbd' | 'montecarlo';
 
-const CALC_TABS: { id: CalcTab; label: string; icon: React.ReactNode; phase: string; desc: string; analysisType?: ReliabilityAnalysisType }[] = [
-    { id: 'rbd', label: 'Block Diagrams', icon: <Cpu size={14} />, phase: 'Model', desc: 'Reliability Block Diagrams & P&ID system modelling' },
-    { id: 'ram', label: 'RAM Dashboard', icon: <Activity size={14} />, phase: 'Measure', desc: 'Reliability, Availability & Maintainability — unified MTBF/MTTR/Ao analysis', analysisType: 'mtbf' },
-    { id: 'weibull', label: 'Weibull', icon: <TrendingUp size={14} />, phase: 'Predict', desc: 'Life data analysis — B-life values, failure pattern characterization', analysisType: 'weibull' },
-    { id: 'montecarlo', label: 'Monte Carlo', icon: <Dices size={14} />, phase: 'Simulate', desc: 'Probabilistic lifecycle simulation — Weibull failures, PM optimization, P10/P50/P90 forecasting', analysisType: 'montecarlo' },
-    { id: 'spares', label: 'Spares Demand', icon: <Package size={14} />, phase: 'Predict', desc: 'Poisson-based spare parts stocking recommendation', analysisType: 'spares' },
+// Each tool is labelled by the QUESTION it answers (purpose), not a lifecycle
+// phase — so the strip reads as a parallel palette, not a Model→…→Simulate pipeline.
+const CALC_TABS: { id: CalcTab; label: string; icon: React.ReactNode; purpose: string; desc: string; analysisType?: ReliabilityAnalysisType }[] = [
+    { id: 'rbd', label: 'Block Diagrams', icon: <Cpu size={14} />, purpose: 'System model', desc: 'Reliability Block Diagrams & P&ID system modelling' },
+    { id: 'ram', label: 'RAM Dashboard', icon: <Activity size={14} />, purpose: 'Reliability & availability', desc: 'Reliability, Availability & Maintainability — unified MTBF/MTTR/Ao analysis', analysisType: 'mtbf' },
+    { id: 'weibull', label: 'Weibull', icon: <TrendingUp size={14} />, purpose: 'Failure pattern & life', desc: 'Life data analysis — B-life values, failure pattern characterization', analysisType: 'weibull' },
+    { id: 'montecarlo', label: 'Monte Carlo', icon: <Dices size={14} />, purpose: 'Risk forecast', desc: 'Probabilistic lifecycle simulation — Weibull failures, PM optimization, P10/P50/P90 forecasting', analysisType: 'montecarlo' },
+    { id: 'spares', label: 'Spares Demand', icon: <Package size={14} />, purpose: 'Spares to stock', desc: 'Poisson-based spare parts stocking recommendation', analysisType: 'spares' },
 ];
 
 // ─── Save Analysis Modal ──────────────────────────────────────
@@ -671,23 +673,26 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 }}
             />
 
-            {/* Calculator sub-tabs — WRAP on mobile so every tab is visible (no horizontal
-                scroll/clipping); they sit in a single row once there's room. */}
+            {/* Calculator tools — a palette, not a pipeline. Each tool is labelled by the
+                question it answers; open any, in any order. Wraps on mobile. */}
             <div className="flex flex-wrap items-start gap-2">
+                <div className="w-full text-[10px] font-semibold uppercase tracking-wide text-slate-400 ml-1">Tools · pick by what you need</div>
                 <div className="flex flex-wrap items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm flex-1 min-w-0">
                     {CALC_TABS.map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => handleTabSwitch(tab.id)}
-                            title={`${tab.phase}: ${tab.desc}`}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-[13px] font-medium transition-all whitespace-nowrap ${activeCalc === tab.id
+                            title={tab.desc}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-[13px] font-medium transition-all ${activeCalc === tab.id
                                 ? 'bg-gradient-to-r from-primary-500 to-primary-500 text-white shadow-md shadow-primary-500/20'
                                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                                 }`}
                         >
                             <span className={`transition-colors ${activeCalc === tab.id ? 'text-white/90' : 'text-slate-400'}`}>{tab.icon}</span>
-                            <span>{tab.label}</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold hidden sm:inline ${activeCalc === tab.id ? 'bg-white/20 text-white/80' : 'bg-slate-100 text-slate-400'}`}>{tab.phase}</span>
+                            <span className="flex flex-col items-start leading-tight text-left">
+                                <span className="font-semibold whitespace-nowrap">{tab.label}</span>
+                                <span className={`text-[10px] hidden sm:block whitespace-nowrap ${activeCalc === tab.id ? 'text-white/80' : 'text-slate-400'}`}>{tab.purpose}</span>
+                            </span>
                         </button>
                     ))}
                 </div>
