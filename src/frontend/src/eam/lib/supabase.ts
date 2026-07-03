@@ -26,16 +26,31 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY_
 const fetchWithRetry: typeof fetch = async (input, init) => {
     const method = (init?.method || (typeof input !== 'string' && 'method' in (input as Request) ? (input as Request).method : 'GET') || 'GET').toUpperCase();
     const retryable = method === 'GET' || method === 'HEAD';
-    const MAX_ATTEMPTS = 3;
+    const MAX_ATTEMPTS = retryable ? 4 : 1;
+    const PER_ATTEMPT_TIMEOUT_MS = 10_000; // a dropped connection can HANG (pending), not just reject
+    const callerSignal = init?.signal ?? undefined;
     let lastErr: unknown;
+
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        if (callerSignal?.aborted) throw (callerSignal as any).reason ?? new DOMException('Aborted', 'AbortError');
+        // Per-attempt AbortController: abort a hung request so the loop can retry
+        // on a fresh connection instead of spinning forever. Chained to the caller's
+        // own signal so caller cancellation still propagates.
+        const ctrl = new AbortController();
+        const onCallerAbort = () => ctrl.abort((callerSignal as any)?.reason);
+        callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
+        const timer = setTimeout(() => ctrl.abort(new DOMException('Request timed out', 'TimeoutError')), PER_ATTEMPT_TIMEOUT_MS);
         try {
-            return await fetch(input, init);
+            return await fetch(input, { ...init, signal: ctrl.signal });
         } catch (err: any) {
             lastErr = err;
-            // Never retry a caller-aborted request or a non-idempotent one.
-            if (!retryable || err?.name === 'AbortError' || init?.signal?.aborted) throw err;
-            if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, 250 * attempt)); // 250ms, 500ms
+            // Caller genuinely aborted (not our per-attempt timeout) → don't retry.
+            if (callerSignal?.aborted) throw err;
+            if (!retryable || attempt >= MAX_ATTEMPTS) throw err;
+            await new Promise(r => setTimeout(r, 300 * attempt)); // 300ms, 600ms, 900ms
+        } finally {
+            clearTimeout(timer);
+            callerSignal?.removeEventListener('abort', onCallerAbort);
         }
     }
     throw lastErr;
