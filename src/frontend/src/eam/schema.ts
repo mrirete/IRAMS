@@ -292,6 +292,19 @@ export interface RecurringWorkRecord {
     priority_code?: string;
     job_type_code?: string;
     active: boolean;
+    // Canonical recurring_work columns (the DB requires schedule_type/frequency_interval/
+    // frequency_unit/job_type NOT NULL). frequency_type/interval/job_type_code above are
+    // legacy aliases readers still tolerate via `|| frequency_unit`; writers MUST set these.
+    code?: string;
+    status?: string;
+    schedule_type?: string; // 'TIME' | 'READING'
+    frequency_interval?: number;
+    frequency_unit?: string;
+    lead_time_days?: number;
+    job_type?: string;
+    est_duration?: number;
+    est_downtime?: number;
+    created_by?: string;
     // Multi-asset ("route" / class) PM — one program applied across several assets.
     assigned_assets?: { assetId: string; lastCompletedDate?: string; lastReadingValue?: number }[];
     templates?: {
