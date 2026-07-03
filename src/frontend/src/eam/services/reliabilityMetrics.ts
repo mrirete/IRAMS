@@ -44,11 +44,13 @@ export interface ReliabilityOptions {
   /** Authoritative MTBF/MTTR from the asset record, if available (preferred). */
   mtbfDays?: number | null;
   mttrHours?: number | null;
+  /** Recency window (days) for the "recent failures" count & recurring modes. Default 365. */
+  windowDays?: number;
 }
 
 /** Compute asset reliability KPIs from its work-order history (raw DB records). */
 export function computeAssetReliability(records: any[], opts: ReliabilityOptions = {}): AssetReliability {
-  const yearAgo = Date.now() - 365 * 86400000;
+  const yearAgo = Date.now() - (opts.windowDays ?? 365) * 86400000;
   const failures = (records || []).filter(isFailure);
   const failures12 = failures.filter(r => {
     const d = eventDate(r);
@@ -98,10 +100,10 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
   let rcaReason: string | undefined;
   if (recurringModes.length > 0) {
     recommendRCA = true;
-    rcaReason = `Failure mode "${recurringModes[0].mode}" recurred ${recurringModes[0].count}× in 12 months.`;
+    rcaReason = `Failure mode "${recurringModes[0].mode}" recurred ${recurringModes[0].count}× in the analysis window.`;
   } else if (failures12.length >= 3) {
     recommendRCA = true;
-    rcaReason = `${failures12.length} failures on this asset in the last 12 months.`;
+    rcaReason = `${failures12.length} failures on this asset in the analysis window.`;
   }
 
   return {

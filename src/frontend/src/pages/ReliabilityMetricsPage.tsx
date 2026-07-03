@@ -22,8 +22,15 @@ import {
 interface AssetRow { id: string; tag: string; name: string; criticality?: string; hierarchy_level?: string; asset_class?: string; manufacturer_id?: string; equipment_number?: string }
 interface BadActor { id: string; rel: AssetReliability }
 
-const ONE_YEAR = 365 * 86400000;
-const NINETY_DAYS = 90 * 86400000;
+// Selectable analysis window (M4). Data is fetched once at the widest window and
+// filtered client-side, so switching windows is instant (no refetch).
+const WINDOW_OPTIONS: { days: number; label: string }[] = [
+    { days: 90, label: '90 days' },
+    { days: 182, label: '6 months' },
+    { days: 365, label: '12 months' },
+    { days: 730, label: '24 months' },
+];
+const MAX_WINDOW_DAYS = 730;
 
 export const ReliabilityMetricsPage: React.FC = () => {
     const { openRelantern } = useRelantern();
@@ -36,11 +43,17 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const [resources, setResources] = useState<any[]>([]); // crew roster for backlog capacity
     const [finRows, setFinRows] = useState<any[]>([]); // asset_financials.replacement_value for RAV
 
+    // M4 — interactive controls: analysis window + asset filters.
+    const [windowDays, setWindowDays] = useState(365);
+    const [critFilter, setCritFilter] = useState('ALL');   // ALL | A | B | C
+    const [classFilter, setClassFilter] = useState('ALL'); // ALL | <asset_class>
+    const windowLabel = WINDOW_OPTIONS.find(w => w.days === windowDays)?.label || `${windowDays} days`;
+
     useEffect(() => {
         let active = true;
         (async () => {
             try {
-                const since = new Date(Date.now() - ONE_YEAR).toISOString();
+                const since = new Date(Date.now() - MAX_WINDOW_DAYS * 86400000).toISOString();
                 const db = DatabaseService.getInstance();
                 // Current week range for crew-capacity lookup.
                 const ws = new Date(); ws.setDate(ws.getDate() - ws.getDay() + 1);
@@ -54,7 +67,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     supabase.from('assets').select('id, tag, name, criticality, hierarchy_level, asset_class, manufacturer_id, equipment_number'),
                     db.getWorkOrders().catch(() => []),
                     db.getLaborAvailability(range).catch(() => ({ resources: [] })),
-                    supabase.from('asset_financials').select('replacement_value'),
+                    supabase.from('asset_financials').select('asset_id, replacement_value'),
                 ]);
                 if (!active) return;
                 if (woRes.error) throw woRes.error;
@@ -77,6 +90,25 @@ export const ReliabilityMetricsPage: React.FC = () => {
         return a ? `${a.tag || ''}${a.name ? ` — ${a.name}` : ''}`.trim() || id.slice(0, 8) : id.slice(0, 8);
     };
 
+    // ── M4: apply the window + filters, then everything downstream recomputes ──
+    const assetClasses = useMemo(
+        () => Array.from(new Set(assets.map(a => (a.asset_class || '').trim()).filter(Boolean))).sort(),
+        [assets],
+    );
+    const filteredAssets = useMemo(() => assets.filter(a =>
+        (critFilter === 'ALL' || (a.criticality || '') === critFilter) &&
+        (classFilter === 'ALL' || (a.asset_class || '') === classFilter)
+    ), [assets, critFilter, classFilter]);
+    const filteredAssetIds = useMemo(() => new Set(filteredAssets.map(a => a.id)), [filteredAssets]);
+    const assetFilterActive = critFilter !== 'ALL' || classFilter !== 'ALL';
+    const filteredWos = useMemo(() => {
+        const cutoff = Date.now() - windowDays * 86400000;
+        return wos.filter(w =>
+            new Date(w.created_at).getTime() >= cutoff &&
+            (!assetFilterActive || (w.asset_id && filteredAssetIds.has(w.asset_id)))
+        );
+    }, [wos, windowDays, assetFilterActive, filteredAssetIds]);
+
     const { kpis, badActors } = useMemo(() => {
         const mapClassify = (r: any) => ({
             type: r.type, status: r.status, estDuration: r.est_duration,
@@ -88,23 +120,21 @@ export const ReliabilityMetricsPage: React.FC = () => {
             failureData: { failureMode: (Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data)?.failure_mode_code },
         });
 
-        // % Proactive (last 90 days)
-        const cutoff = Date.now() - NINETY_DAYS;
+        // % Proactive (over the selected window)
         let pro = 0, rea = 0;
-        for (const r of wos) {
-            if (new Date(r.created_at).getTime() < cutoff) continue;
+        for (const r of filteredWos) {
             const c = classifyWork(mapClassify(r) as any);
             if (c === 'PROACTIVE') pro++; else if (c === 'REACTIVE') rea++;
         }
         const proPct = pro + rea ? Math.round((pro / (pro + rea)) * 100) : null;
 
         // PM & PdM Effectiveness
-        const pmEff = computePMEffectiveness(wos.map(mapPM));
+        const pmEff = computePMEffectiveness(filteredWos.map(mapPM));
 
         // Per-asset reliability → fleet rollups + bad actors
         const byAsset: Record<string, any[]> = {};
-        for (const r of wos) { if (r.asset_id) (byAsset[r.asset_id] = byAsset[r.asset_id] || []).push(r); }
-        const assetRel = Object.entries(byAsset).map(([id, recs]) => ({ id, rel: computeAssetReliability(recs) }));
+        for (const r of filteredWos) { if (r.asset_id) (byAsset[r.asset_id] = byAsset[r.asset_id] || []).push(r); }
+        const assetRel = Object.entries(byAsset).map(([id, recs]) => ({ id, rel: computeAssetReliability(recs, { windowDays }) }));
         const totalFailures12 = assetRel.reduce((s, a) => s + a.rel.failures12mo, 0);
         const mtbfs = assetRel.map(a => a.rel.mtbfDays).filter((v): v is number => v != null);
         const fleetMtbf = mtbfs.length ? Math.round(mtbfs.reduce((s, v) => s + v, 0) / mtbfs.length) : null;
@@ -115,15 +145,15 @@ export const ReliabilityMetricsPage: React.FC = () => {
         const bad = assetRel.filter(a => a.rel.failures12mo > 0).sort((a, b) => b.rel.failures12mo - a.rel.failures12mo).slice(0, 8);
 
         const list: ReliabilityKpi[] = [
-            { key: 'pct_proactive', label: '% Proactive', value: proPct, display: proPct == null ? 'N/A' : `${proPct}%`, unit: '%', direction: 'higher-better', benchmark: '>= 80%', definition: 'Preventive or fully-planned work vs reactive (last 90 days). World-class >= 80%.' },
+            { key: 'pct_proactive', label: '% Proactive', value: proPct, display: proPct == null ? 'N/A' : `${proPct}%`, unit: '%', direction: 'higher-better', benchmark: '>= 80%', definition: `Preventive or fully-planned work vs reactive (${windowLabel}). World-class >= 80%.` },
             pmEffectivenessKpi(pmEff),
             { key: 'availability', label: 'Availability', value: fleetAvail, display: fleetAvail == null ? 'N/A' : `${fleetAvail}%`, unit: '%', direction: 'higher-better', benchmark: '>= 90%', definition: 'Inherent availability Ai = MTBF / (MTBF + MTTR). Driven by repair downtime (MTTR). World-class >= 90%.' },
             { key: 'fleet_mtbf', label: 'Fleet MTBF', value: fleetMtbf, display: fleetMtbf == null ? 'N/A' : `${fleetMtbf}d`, unit: 'days', direction: 'higher-better', definition: 'Mean Time Between Failures, averaged across assets (equipment reliability).' },
             { key: 'fleet_mttr', label: 'Fleet MTTR', value: fleetMttr, display: fleetMttr == null ? 'N/A' : `${fleetMttr}h`, unit: 'hours', direction: 'lower-better', definition: 'Mean Time To Repair, averaged across assets.' },
-            { key: 'failures_12mo', label: 'Failures (12mo)', value: totalFailures12, display: String(totalFailures12), direction: 'lower-better', definition: 'Total corrective failures across the fleet in the last 12 months.' },
+            { key: 'failures_win', label: `Failures (${windowLabel})`, value: totalFailures12, display: String(totalFailures12), direction: 'lower-better', definition: `Total corrective failures across the fleet in the ${windowLabel} window.` },
         ];
         return { kpis: list, badActors: bad as BadActor[] };
-    }, [wos]);
+    }, [filteredWos, windowDays, windowLabel]);
 
     // Work-execution metrics (shared spine, full WO set) — mirrored from the
     // Schedule cockpit so the numbers match exactly.
@@ -144,26 +174,28 @@ export const ReliabilityMetricsPage: React.FC = () => {
     // Register data-quality health (ISO 14224 is fundamentally about data quality).
     const health = useMemo(() => {
         const EQUIP = new Set(['EQUIPMENT', 'COMPONENT']);
-        const total = assets.length;
-        const equip = assets.filter(a => EQUIP.has(String(a.hierarchy_level || '').toUpperCase()));
+        const total = filteredAssets.length;
+        const equip = filteredAssets.filter(a => EQUIP.has(String(a.hierarchy_level || '').toUpperCase()));
         const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : null);
         return {
             total,
-            critPct: pct(assets.filter(a => a.criticality).length, total),
+            critPct: pct(filteredAssets.filter(a => a.criticality).length, total),
             mfrPct: pct(equip.filter(a => a.manufacturer_id).length, equip.length),
             classPct: pct(equip.filter(a => a.asset_class).length, equip.length),
             eqNumPct: pct(equip.filter(a => a.equipment_number).length, equip.length),
             equipCount: equip.length,
         };
-    }, [assets]);
+    }, [filteredAssets]);
 
     // FI-2: RAV-based maintenance cost health (SAP FI-CO / SMRP financial metrics).
     const cost = useMemo(() => {
-        const rav = finRows.reduce((s, r) => s + (Number(r.replacement_value) || 0), 0);
-        const maint12 = wos.reduce((s, w) => s + (Number(w.total_actual_cost) || 0), 0);
-        const pctRav = rav > 0 ? Math.round((maint12 / rav) * 1000) / 10 : null;
-        return { rav, maint12, pctRav };
-    }, [finRows, wos]);
+        const rav = finRows
+            .filter(r => !assetFilterActive || (r.asset_id && filteredAssetIds.has(r.asset_id)))
+            .reduce((s, r) => s + (Number(r.replacement_value) || 0), 0);
+        const maintWin = filteredWos.reduce((s, w) => s + (Number(w.total_actual_cost) || 0), 0);
+        const pctRav = rav > 0 ? Math.round((maintWin / rav) * 1000) / 10 : null;
+        return { rav, maint12: maintWin, pctRav };
+    }, [finRows, filteredWos, assetFilterActive, filteredAssetIds]);
 
     const ragColor = (k: ReliabilityKpi): string => {
         if (k.value == null) return 'text-slate-400';
@@ -190,6 +222,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const askSpecialist = () => {
         const ctx = [
             'RELIABILITY METRICS',
+            `Scope: ${windowLabel} window${critFilter !== 'ALL' ? `, Criticality ${critFilter}` : ''}${classFilter !== 'ALL' ? `, Class ${classFilter}` : ''} (${filteredAssets.length} assets).`,
             kpisToAIContext([...kpis, ...exec.kpis]),
             badActors.length ? `Top bad actors: ${badActors.slice(0, 6).map(a => `${assetName(a.id)} (${a.rel.failures12mo} failures/12mo${a.rel.mtbfDays != null ? `, MTBF ${a.rel.mtbfDays}d` : ''}${a.rel.recurringModes.length ? `, recurring: ${a.rel.recurringModes[0].mode}×${a.rel.recurringModes[0].count}` : ''})`).join('; ')}.` : '',
         ].filter(Boolean).join('\n');
@@ -224,6 +257,42 @@ export const ReliabilityMetricsPage: React.FC = () => {
                 </div>
             ) : (
                 <>
+                    {/* M4 — analysis window + asset filters; everything below recomputes live */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs bg-white rounded-xl border border-slate-200 shadow-sm px-3 py-2.5">
+                        <span className="font-semibold text-slate-500">Window</span>
+                        <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+                            {WINDOW_OPTIONS.map(w => (
+                                <button key={w.days} onClick={() => setWindowDays(w.days)}
+                                    className={`px-2.5 py-1.5 font-semibold transition-colors ${windowDays === w.days ? 'bg-primary-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                                    {w.label}
+                                </button>
+                            ))}
+                        </div>
+                        <span className="font-semibold text-slate-500 ml-1">Criticality</span>
+                        <select value={critFilter} onChange={e => setCritFilter(e.target.value)}
+                            className="px-2 py-1.5 border border-slate-200 rounded-lg bg-white text-slate-600 focus:ring-2 focus:ring-primary-200 outline-none">
+                            <option value="ALL">All</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                        </select>
+                        {assetClasses.length > 0 && (
+                            <>
+                                <span className="font-semibold text-slate-500 ml-1">Class</span>
+                                <select value={classFilter} onChange={e => setClassFilter(e.target.value)}
+                                    className="px-2 py-1.5 border border-slate-200 rounded-lg bg-white text-slate-600 max-w-[160px] focus:ring-2 focus:ring-primary-200 outline-none">
+                                    <option value="ALL">All</option>
+                                    {assetClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </>
+                        )}
+                        {assetFilterActive && (
+                            <button onClick={() => { setCritFilter('ALL'); setClassFilter('ALL'); }}
+                                className="text-primary-600 font-semibold hover:underline ml-1">Clear</button>
+                        )}
+                        <span className="text-slate-400 ml-auto">{filteredAssets.length} assets · {filteredWos.length} WOs</span>
+                    </div>
+
                     {/* KPI cards */}
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                         {kpis.map(k => (
@@ -291,10 +360,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                         <div className="p-4">
                                             <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Maint. cost % of RAV</div>
                                             <div className={`text-2xl font-extrabold mt-1 ${pctColor}`}>{pct == null ? 'N/A' : `${pct}%`}</div>
-                                            <div className="text-[10px] text-slate-400 mt-0.5">target ≤ 2–3% (12 mo)</div>
+                                            <div className="text-[10px] text-slate-400 mt-0.5">target ≤ 2–3% ({windowLabel})</div>
                                         </div>
                                         <div className="p-4">
-                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Maintenance cost (12 mo)</div>
+                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Maintenance cost ({windowLabel})</div>
                                             <div className="text-2xl font-extrabold mt-1 text-slate-800">{cost.maint12 > 0 ? fmt(cost.maint12) : 'N/A'}</div>
                                             <div className="text-[10px] text-slate-400 mt-0.5">actual WO cost</div>
                                         </div>
@@ -340,7 +409,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                         <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
                             <TrendingUp size={15} className="text-red-500" />
                             <h3 className="text-sm font-bold text-slate-800">Bad Actors</h3>
-                            <span className="text-[11px] text-slate-400">by failure count · last 12 months</span>
+                            <span className="text-[11px] text-slate-400">by failure count · {windowLabel}</span>
                             <button
                                 onClick={() => navigate('/analyze')}
                                 className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700"
@@ -350,7 +419,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             </button>
                         </div>
                         {badActors.length === 0 ? (
-                            <div className="p-8 text-center text-slate-400 text-sm">No corrective failures recorded in the last 12 months.</div>
+                            <div className="p-8 text-center text-slate-400 text-sm">No corrective failures recorded in the {windowLabel} window{assetFilterActive ? ' for this filter' : ''}.</div>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="min-w-full text-sm">
@@ -403,8 +472,8 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     </div>
 
                     <p className="text-[11px] text-slate-400">
-                        Metrics computed from the last 12 months of work orders via the shared reliability engine.
-                        Hover a KPI for its definition. New metrics (e.g. Availability) plug in here automatically.
+                        Metrics computed over the {windowLabel} window via the shared reliability engine.
+                        Adjust the window or filters above to re-analyze. Hover a KPI for its definition.
                     </p>
                 </>
             )}
