@@ -24,6 +24,10 @@ export interface WeibullPMData {
     b10: number;          // hours
     pmInterval: number;   // hours (recommended)
     dataPoints: number;   // number of failure intervals used
+    // Population (asset-class) mode — when set, the PM applies to the whole class,
+    // and the fit was pooled across every asset in it. `asset` is the representative.
+    className?: string;
+    classAssets?: { id: string; tag: string; name: string }[];
 }
 
 interface CreatePMFromWeibullModalProps {
@@ -77,7 +81,10 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
         const pct = data.beta > 3 ? 70 : data.beta > 2 ? 75 : 80;
         const pmHrs = data.pmInterval || Math.round(data.eta * (pct / 100));
 
-        setTitle(`PM — ${data.asset.tag} — Weibull-based replacement (β=${data.beta})`);
+        const isClass = !!(data.classAssets && data.classAssets.length);
+        setTitle(isClass
+            ? `PM — ${data.className} class (${data.classAssets!.length} assets) — Weibull-based (β=${data.beta})`
+            : `PM — ${data.asset.tag} — Weibull-based replacement (β=${data.beta})`);
         setDescription(
             `Time-directed Preventive Maintenance based on Weibull life data analysis.\n\n` +
             `Analysis Parameters:\n` +
@@ -116,10 +123,13 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
         if (!title.trim()) return;
         setSubmitting(true);
         try {
+            const cls = data.classAssets && data.classAssets.length ? data.classAssets : null;
             const createdPM = await DatabaseService.getInstance().createPM({
                 title,
                 description,
-                asset_id: data.asset.id,
+                // Class PM: representative asset + assigned_assets across the whole class.
+                asset_id: cls ? cls[0].id : data.asset.id,
+                assigned_assets: cls ? cls.map(a => ({ assetId: a.id, lastCompletedDate: '', lastReadingValue: 0 })) : undefined,
                 frequency_type: frequencyType,
                 interval: intervalValue,
                 next_due_date: nextDueDate,
@@ -224,6 +234,17 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
 
                         {/* ── Editable Form ────────────────────────── */}
                         <div className="px-6 py-5 space-y-4">
+                            {/* Class scope banner — one PM applied across the whole class */}
+                            {data.classAssets && data.classAssets.length > 0 && (
+                                <div className="flex items-start gap-2 p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-800">
+                                    <Wrench size={14} className="mt-0.5 shrink-0 text-indigo-500" />
+                                    <span>
+                                        <strong>Population PM.</strong> Fitted on pooled failures across the{' '}
+                                        <strong>{data.className}</strong> class and applied to all{' '}
+                                        <strong>{data.classAssets.length} assets</strong> in it (one program, multi-asset route).
+                                    </span>
+                                </div>
+                            )}
                             {/* Title */}
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">

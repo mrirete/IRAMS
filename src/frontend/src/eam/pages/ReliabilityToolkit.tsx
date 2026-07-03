@@ -909,6 +909,22 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
     const [showRtFt, setShowRtFt] = useState(false);
     const [showPMModal, setShowPMModal] = useState(false);
 
+    // Population (asset-class) mode — pool failures across every asset in a class
+    // and fit ONE life curve, then create a single PM applied to the whole class.
+    const [mode, setMode] = useState<'asset' | 'class'>('asset');
+    const [assetClass, setAssetClass] = useState('');
+    const [classes, setClasses] = useState<string[]>([]);
+    const [classAssets, setClassAssets] = useState<{ id: string; tag: string; name: string }[]>([]);
+
+    // Available asset classes (for the class picker).
+    useEffect(() => {
+        supabase.from('assets').select('asset_class')
+            .then(({ data }) => {
+                const set = Array.from(new Set((data || []).map((a: any) => (a.asset_class || '').trim()).filter(Boolean))).sort();
+                setClasses(set as string[]);
+            });
+    }, []);
+
     // Seed the asset once from a drill-through (Metrics bad actor → Fit Weibull).
     // The asset-change effect below then auto-pulls WO failures and fits.
     const seededRef = useRef(false);
@@ -941,8 +957,40 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
         })();
     }, [asset]);
 
+    // Class mode: pool inter-arrival intervals across every asset in the class.
+    // Intervals are computed per-asset then concatenated (never across assets), so
+    // the pooled series is a valid population life-data sample.
+    useEffect(() => {
+        if (mode !== 'class' || !assetClass) return;
+        setLoading(true);
+        (async () => {
+            const { data: assetsInClass } = await supabase.from('assets')
+                .select('id, tag, name').eq('asset_class', assetClass);
+            const members = (assetsInClass || []) as { id: string; tag: string; name: string }[];
+            setClassAssets(members);
+            const ids = members.map(a => a.id);
+            if (ids.length === 0) { setDataStr(''); setLoading(false); return; }
+            const { data: wos } = await supabase.from('work_orders')
+                .select('id, type, asset_id, created_at, closed_at, wo_failure_data(failure_mode_code)')
+                .in('asset_id', ids)
+                .order('created_at');
+            const byAsset: Record<string, any[]> = {};
+            for (const w of (wos || [])) { const k = (w as any).asset_id; (byAsset[k] = byAsset[k] || []).push(w); }
+            const pooled: number[] = [];
+            for (const recs of Object.values(byAsset)) pooled.push(...failureIntervalsHours(recs));
+            setDataStr(pooled.length > 0 ? pooled.join(', ') : '');
+            setLoading(false);
+        })();
+    }, [mode, assetClass]);
+
     const failureTimes = dataStr.split(/[,\s]+/).map(Number).filter(n => !isNaN(n) && n > 0);
     const fit = failureTimes.length >= 2 ? weibullFit(failureTimes) : null;
+
+    // Effective target for Create PM: the class (representative + all members) or the single asset.
+    const classActive = mode === 'class' && classAssets.length > 0;
+    const pmAsset = classActive
+        ? { id: classAssets[0].id, tag: classAssets[0].tag, name: classAssets[0].name }
+        : (asset ? { id: asset.id, tag: asset.tag, name: asset.name } : null);
 
     // Report state changes to parent (bridge to Monte Carlo)
     useEffect(() => {
@@ -958,14 +1006,46 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
 
     return (
         <div className="space-y-4">
-            <div className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center gap-3">
-                <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 shrink-0">
-                    <Search size={14} className="text-blue-500" /> Asset
+            <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-3">
+                {/* Scope toggle: fit one asset, or pool a whole class (population Weibull) */}
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+                        <button onClick={() => setMode('asset')}
+                            className={`px-3 py-1.5 transition-colors ${mode === 'asset' ? 'bg-primary-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                            Single asset
+                        </button>
+                        <button onClick={() => setMode('class')}
+                            className={`px-3 py-1.5 transition-colors ${mode === 'class' ? 'bg-primary-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                            Asset class
+                        </button>
+                    </div>
+                    <span className="text-[11px] text-slate-400">
+                        {mode === 'class' ? 'Pool failures across a class → one PM for all its assets' : 'Fit a single asset’s failure history'}
+                    </span>
+                    {loading && <p className="text-xs text-blue-500 flex items-center gap-1 ml-auto shrink-0"><Loader2 size={12} className="animate-spin" /> Loading…</p>}
                 </div>
-                <div className="flex-1 min-w-0">
-                    <AssetSelector selected={asset} onSelect={setAsset} />
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 shrink-0">
+                        <Search size={14} className="text-blue-500" /> {mode === 'class' ? 'Class' : 'Asset'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        {mode === 'asset' ? (
+                            <AssetSelector selected={asset} onSelect={setAsset} />
+                        ) : (
+                            <select value={assetClass} onChange={e => setAssetClass(e.target.value)}
+                                className={CONTROL_CLS}>
+                                <option value="">Select an asset class…</option>
+                                {classes.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        )}
+                    </div>
+                    {mode === 'class' && assetClass && (
+                        <span className="text-[11px] text-slate-500 shrink-0">
+                            {classAssets.length} assets · {failureTimes.length} pooled failures
+                        </span>
+                    )}
                 </div>
-                {loading && <p className="text-xs text-blue-500 flex items-center gap-1 shrink-0"><Loader2 size={12} className="animate-spin" /> Loading...</p>}
             </div>
 
             <div>
@@ -1089,23 +1169,25 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
                         beta={fit.beta}
                         eta={fit.eta}
                         r2={fit.r2}
-                        assetTag={asset?.tag}
-                        onCreatePM={asset ? () => setShowPMModal(true) : undefined}
+                        assetTag={classActive ? `${assetClass} class` : asset?.tag}
+                        onCreatePM={pmAsset ? () => setShowPMModal(true) : undefined}
                     />
 
                     {/* ── PM Creation Modal ─────────────────── */}
-                    {asset && (
+                    {pmAsset && (
                         <CreatePMFromWeibullModal
                             isOpen={showPMModal}
                             onClose={() => setShowPMModal(false)}
                             data={{
-                                asset: { id: asset.id, tag: asset.tag, name: asset.name },
+                                asset: pmAsset,
                                 beta: fit.beta,
                                 eta: fit.eta,
                                 r2: fit.r2,
                                 b10: Math.round(weibullBLife(fit.beta, fit.eta, 10)),
                                 pmInterval: Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8)),
                                 dataPoints: failureTimes.length,
+                                className: classActive ? assetClass : undefined,
+                                classAssets: classActive ? classAssets : undefined,
                             }}
                         />
                     )}

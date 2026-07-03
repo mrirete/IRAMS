@@ -292,6 +292,8 @@ export interface RecurringWorkRecord {
     priority_code?: string;
     job_type_code?: string;
     active: boolean;
+    // Multi-asset ("route" / class) PM — one program applied across several assets.
+    assigned_assets?: { assetId: string; lastCompletedDate?: string; lastReadingValue?: number }[];
     templates?: {
         tasks: any[];
         jsa: any;

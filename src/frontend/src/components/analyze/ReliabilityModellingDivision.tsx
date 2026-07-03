@@ -673,28 +673,33 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 }}
             />
 
-            {/* Calculator tools — a palette, not a pipeline. Each tool is labelled by the
-                question it answers; open any, in any order. Wraps on mobile. */}
-            <div className="flex flex-wrap items-start gap-2">
-                <div className="w-full text-[10px] font-semibold uppercase tracking-wide text-slate-400 ml-1">Tools · pick by what you need</div>
-                <div className="flex flex-wrap items-center gap-1 bg-white/80 backdrop-blur-sm p-1 rounded-xl border border-slate-200/60 shadow-sm flex-1 min-w-0">
-                    {CALC_TABS.map(tab => (
-                        <button
-                            key={tab.id}
-                            onClick={() => handleTabSwitch(tab.id)}
-                            title={tab.desc}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-[13px] font-medium transition-all ${activeCalc === tab.id
-                                ? 'bg-gradient-to-r from-primary-500 to-primary-500 text-white shadow-md shadow-primary-500/20'
-                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                                }`}
-                        >
-                            <span className={`transition-colors ${activeCalc === tab.id ? 'text-white/90' : 'text-slate-400'}`}>{tab.icon}</span>
-                            <span className="flex flex-col items-start leading-tight text-left">
-                                <span className="font-semibold whitespace-nowrap">{tab.label}</span>
-                                <span className={`text-[10px] hidden sm:block whitespace-nowrap ${activeCalc === tab.id ? 'text-white/80' : 'text-slate-400'}`}>{tab.purpose}</span>
-                            </span>
-                        </button>
-                    ))}
+            {/* Calculator tools — a palette, not a pipeline. Each tool is a card
+                labelled by the question it answers; open any, in any order. */}
+            <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                    {CALC_TABS.map(tab => {
+                        const active = activeCalc === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                onClick={() => handleTabSwitch(tab.id)}
+                                title={tab.desc}
+                                aria-pressed={active}
+                                className={`group flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all ${active
+                                    ? 'bg-primary-600 border-primary-600 text-white shadow-md shadow-primary-500/25'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300 hover:bg-primary-50/40 hover:shadow-sm'
+                                    }`}
+                            >
+                                <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-primary-600'}`}>
+                                    {tab.icon}
+                                </span>
+                                <span className="flex flex-col leading-tight">
+                                    <span className="font-semibold text-[13px] whitespace-nowrap">{tab.label}</span>
+                                    <span className={`text-[10px] whitespace-nowrap ${active ? 'text-white/85' : 'text-slate-400'}`}>{tab.purpose}</span>
+                                </span>
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {/* Save button — always visible, pinned outside scroll horizon */}
