@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 import { User, ModulePermissions, DataScope } from '../types';
@@ -66,54 +66,64 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [role, setRole] = useState<string | null>(null);
     const [dataScope, setDataScope] = useState<DataScope | null>(null);
     const [loading, setLoading] = useState(true);
+    // Which user id we've already initiated a profile fetch for (dedupes the
+    // getSession + INITIAL_SESSION double-signal without a stale closure).
+    const fetchedForUserRef = useRef<string | null>(null);
 
     useEffect(() => {
-        // 1. Check active session
+        let mounted = true;
+
+        // Fetch a user's profile exactly once. The two init signals (getSession and
+        // onAuthStateChange's INITIAL_SESSION) both land here for the same user; the
+        // ref dedupes them so we never double-fetch — and, critically, never reset an
+        // already-painted session back into the loading gate (the old stale-closure
+        // guard captured `profile` at mount, so it never skipped → the app would load,
+        // then blank on INITIAL_SESSION, needing a second refresh).
+        const initProfile = (u: SupabaseUser) => {
+            if (fetchedForUserRef.current === u.id) return;
+            fetchedForUserRef.current = u.id;
+            // Optimistic warm-load paint from cache, then revalidate.
+            const cached = readProfileCache(u.id);
+            if (cached) {
+                setProfile(cached.profile);
+                setPermissions(cached.permissions);
+                setRole(cached.role);
+                setDataScope(cached.dataScope);
+                setLoading(false);
+            }
+            fetchProfile(u);
+        };
+
+        // 1. Restore any active session.
         supabase.auth.getSession().then(({ data: { session } }) => {
+            if (!mounted) return;
             setUser(session?.user ?? null);
             if (session?.user) {
-                // Optimistic: paint the last-known profile instantly on warm loads
-                // (clears the gate with a valid non-null profile), then revalidate.
-                const cached = readProfileCache(session.user.id);
-                if (cached) {
-                    setProfile(cached.profile);
-                    setPermissions(cached.permissions);
-                    setRole(cached.role);
-                    setDataScope(cached.dataScope);
-                    setLoading(false);
-                }
-                fetchProfile(session.user);
+                initProfile(session.user);
             } else {
-                // No Supabase session — user must log in
                 clearProfileCache();
                 console.log('[AuthContext] No Supabase session — redirecting to login.');
                 setLoading(false);
             }
         }).catch(err => {
             console.error("Auth initialization error:", err);
-            setLoading(false);
+            if (mounted) setLoading(false);
         });
 
-        // 2. Listen for auth changes (sign-in, sign-out, token refresh)
+        // 2. React to auth changes. Profile work is DEFERRED out of this callback:
+        //    running awaited Supabase queries directly inside onAuthStateChange can
+        //    contend with GoTrue's auth lock (a documented deadlock) and hang the
+        //    first load — the classic "have to refresh twice" symptom.
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (!mounted) return;
             setUser(session?.user ?? null);
             if (session?.user) {
-                // Only re-fetch profile on actual sign-in events, NOT on token refreshes.
-                // TOKEN_REFRESHED fires periodically and should NOT clear existing state —
-                // doing so causes a loading flicker (the "Authenticating…" loop).
                 if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-                    // Skip if we already have a profile for this same user (prevents
-                    // double-fetch from getSession + onAuthStateChange race)
-                    if (profile && profile.id === session.user.id) return;
-                    setProfile(null);
-                    setPermissions(null);
-                    setRole(null);
-                    setDataScope(null);
-                    setLoading(true);
-                    fetchProfile(session.user);
+                    setTimeout(() => { if (mounted) initProfile(session.user); }, 0);
                 }
-                // TOKEN_REFRESHED: user object updated, but profile stays intact
+                // TOKEN_REFRESHED / USER_UPDATED: user object updated, profile stays intact.
             } else {
+                fetchedForUserRef.current = null;
                 clearProfileCache();
                 setProfile(null);
                 setPermissions(null);
@@ -123,7 +133,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
         });
 
-        return () => subscription.unsubscribe();
+        return () => { mounted = false; subscription.unsubscribe(); };
     }, []);
 
     const fetchProfile = async (currentUser: SupabaseUser) => {
@@ -311,6 +321,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const signOut = async () => {
         await supabase.auth.signOut();
         localStorage.removeItem('ers_access_token');
+        fetchedForUserRef.current = null;
         clearProfileCache();
         setProfile(null);
         setPermissions(null);
