@@ -16,6 +16,7 @@ import { ROLE_PERMISSION_TEMPLATES } from '../constants/rolePermissions';
 import { DatabaseService } from '../services/DatabaseService';
 import { FinOpsService, CostCenter } from '../services/FinOpsService';
 import { NotificationConfig } from '../components/NotificationConfig';
+import { ModuleLicensingPanel } from '../../components/admin/ModuleLicensingPanel';
 import { db } from '../firebaseConfig';
 import { supabase } from '../lib/supabase';
 import { onSnapshot, collection } from 'firebase/firestore';
@@ -27,7 +28,7 @@ import { OrgTreePicker } from '../components/OrgTreePicker';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 
 // --- Types for Local Component State ---
-type AdminTab = 'dictionaries' | 'users' | 'permissions' | 'notifications' | 'settings' | 'libraries';
+type AdminTab = 'dictionaries' | 'users' | 'permissions' | 'licensing' | 'notifications' | 'settings' | 'libraries';
 
 // --- Components ---
 
@@ -2011,6 +2012,12 @@ export const Admin: React.FC = () => {
                         <Shield size={16} /> User Access
                     </button>
                     <button
+                        onClick={() => setActiveTab('licensing')}
+                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'licensing' ? 'text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                    >
+                        <Layers size={16} /> Module Licensing
+                    </button>
+                    <button
                         onClick={() => setActiveTab('notifications')}
                         className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'notifications' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
@@ -2034,6 +2041,22 @@ export const Admin: React.FC = () => {
                 <div className="flex-1 overflow-hidden relative bg-slate-50/50">
                     {activeTab === 'dictionaries' && <DictionaryManager />}
                     {activeTab === 'permissions' && <UserPermissionManager />}
+                    {activeTab === 'licensing' && (
+                        <div className="p-4 sm:p-6 overflow-y-auto h-full">
+                            <div className="max-w-3xl mx-auto">
+                                <div className="flex items-start gap-2 p-3 mb-4 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
+                                    <Layers size={14} className="mt-0.5 shrink-0 text-blue-500" />
+                                    <span>
+                                        <strong>Two layers of access control.</strong> This is the org-wide licensing layer —
+                                        which modules are active for everyone. For which <em>roles/users</em> may use an active
+                                        module, use the <strong>User Access</strong> tab (Module Access). A module disabled here
+                                        is hidden for all users regardless of role.
+                                    </span>
+                                </div>
+                                <ModuleLicensingPanel />
+                            </div>
+                        </div>
+                    )}
                     {activeTab === 'notifications' && <NotificationConfig />}
                     {activeTab === 'libraries' && <TaskLibraryManager />}
                     {activeTab === 'settings' && (
