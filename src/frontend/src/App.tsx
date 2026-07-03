@@ -1,4 +1,5 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense } from 'react';
+import { lazyWithReload } from './lib/lazyWithReload';
 import { Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, ProtectedRoute } from './contexts/AuthContext';
@@ -14,15 +15,15 @@ import { ModuleGate } from './components/ModuleGate';
 import { UpdateBanner } from './components/UpdateBanner';
 import { PermissionGate } from './eam/components/PermissionGate';
 // Admin pages — lazy loaded (admin-only, no need in main bundle)
-const ConnectorHub = lazy(() => import('./pages/admin/ConnectorHub').then(m => ({ default: m.ConnectorHub })));
-const ConnectorWizard = lazy(() => import('./pages/admin/ConnectorWizard').then(m => ({ default: m.ConnectorWizard })));
-const ConnectorDetail = lazy(() => import('./pages/admin/ConnectorDetail').then(m => ({ default: m.ConnectorDetail })));
-const GlobalSettingsPage = lazy(() => import('./pages/admin/GlobalSettingsPage').then(m => ({ default: m.GlobalSettingsPage })));
-const ErrorLogsPage = lazy(() => import('./pages/admin/ErrorLogsPage').then(m => ({ default: m.ErrorLogsPage })));
-const HierarchyConfigPage = lazy(() => import('./pages/HierarchyConfigPage').then(m => ({ default: m.HierarchyConfigPage })));
-const ManufacturersPage = lazy(() => import('./pages/ManufacturersPage').then(m => ({ default: m.ManufacturersPage })));
-const WorkCentersPage = lazy(() => import('./pages/WorkCentersPage').then(m => ({ default: m.WorkCentersPage })));
-const AdminActivityPage = lazy(() => import('./pages/admin/AdminActivityPage').then(m => ({ default: m.AdminActivityPage })));
+const ConnectorHub = lazyWithReload(() => import('./pages/admin/ConnectorHub').then(m => ({ default: m.ConnectorHub })));
+const ConnectorWizard = lazyWithReload(() => import('./pages/admin/ConnectorWizard').then(m => ({ default: m.ConnectorWizard })));
+const ConnectorDetail = lazyWithReload(() => import('./pages/admin/ConnectorDetail').then(m => ({ default: m.ConnectorDetail })));
+const GlobalSettingsPage = lazyWithReload(() => import('./pages/admin/GlobalSettingsPage').then(m => ({ default: m.GlobalSettingsPage })));
+const ErrorLogsPage = lazyWithReload(() => import('./pages/admin/ErrorLogsPage').then(m => ({ default: m.ErrorLogsPage })));
+const HierarchyConfigPage = lazyWithReload(() => import('./pages/HierarchyConfigPage').then(m => ({ default: m.HierarchyConfigPage })));
+const ManufacturersPage = lazyWithReload(() => import('./pages/ManufacturersPage').then(m => ({ default: m.ManufacturersPage })));
+const WorkCentersPage = lazyWithReload(() => import('./pages/WorkCentersPage').then(m => ({ default: m.WorkCentersPage })));
+const AdminActivityPage = lazyWithReload(() => import('./pages/admin/AdminActivityPage').then(m => ({ default: m.AdminActivityPage })));
 
 // ── React Query Client ──────────────────────────────────
 const queryClient = new QueryClient({
@@ -35,60 +36,60 @@ const queryClient = new QueryClient({
 });
 
 // ── EAM pages (Supabase-backed, replace ERS mock pages) ─
-const EamLogin = lazy(() => import('./eam/pages/Login').then(m => ({ default: m.Login })));
-const EamDashboard = lazy(() => import('./eam/pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const EamAssets = lazy(() => import('./eam/pages/Assets').then(m => ({ default: m.Assets })));
-const EamWorkOrders = lazy(() => import('./eam/pages/WorkOrders').then(m => ({ default: m.WorkOrders })));
-const EamInventory = lazy(() => import('./eam/pages/Inventory').then(m => ({ default: m.Inventory })));
-const EamContacts = lazy(() => import('./eam/pages/Contacts').then(m => ({ default: m.Contacts })));
-const EamAdmin = lazy(() => import('./eam/pages/Admin').then(m => ({ default: m.Admin })));
-const EamServiceRequests = lazy(() => import('./eam/pages/ServiceRequests').then(m => ({ default: m.ServiceRequests })));
-const EamRecurringWork = lazy(() => import('./eam/pages/RecurringWork').then(m => ({ default: m.RecurringWork })));
-const EamScheduling = lazy(() => import('./eam/pages/Scheduling').then(m => ({ default: m.Scheduling })));
-const EamPurchaseOrders = lazy(() => import('./eam/pages/PurchaseOrders').then(m => ({ default: m.PurchaseOrders })));
-const EamReadings = lazy(() => import('./eam/pages/Readings').then(m => ({ default: m.Readings })));
-const EamNotifications = lazy(() => import('./eam/pages/Notifications').then(m => ({ default: m.Notifications })));
-const EamVendors = lazy(() => import('./eam/pages/Vendors').then(m => ({ default: m.Vendors })));
-const EamFinOps = lazy(() => import('./eam/pages/FinOps').then(m => ({ default: m.FinOps })));
-const EamManagementOfChange = lazy(() => import('./eam/pages/ManagementOfChange').then(m => ({ default: m.ManagementOfChange })));
-const EamReliabilityToolkit = lazy(() => import('./eam/pages/ReliabilityToolkit').then(m => ({ default: m.ReliabilityToolkit })));
+const EamLogin = lazyWithReload(() => import('./eam/pages/Login').then(m => ({ default: m.Login })));
+const EamDashboard = lazyWithReload(() => import('./eam/pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const EamAssets = lazyWithReload(() => import('./eam/pages/Assets').then(m => ({ default: m.Assets })));
+const EamWorkOrders = lazyWithReload(() => import('./eam/pages/WorkOrders').then(m => ({ default: m.WorkOrders })));
+const EamInventory = lazyWithReload(() => import('./eam/pages/Inventory').then(m => ({ default: m.Inventory })));
+const EamContacts = lazyWithReload(() => import('./eam/pages/Contacts').then(m => ({ default: m.Contacts })));
+const EamAdmin = lazyWithReload(() => import('./eam/pages/Admin').then(m => ({ default: m.Admin })));
+const EamServiceRequests = lazyWithReload(() => import('./eam/pages/ServiceRequests').then(m => ({ default: m.ServiceRequests })));
+const EamRecurringWork = lazyWithReload(() => import('./eam/pages/RecurringWork').then(m => ({ default: m.RecurringWork })));
+const EamScheduling = lazyWithReload(() => import('./eam/pages/Scheduling').then(m => ({ default: m.Scheduling })));
+const EamPurchaseOrders = lazyWithReload(() => import('./eam/pages/PurchaseOrders').then(m => ({ default: m.PurchaseOrders })));
+const EamReadings = lazyWithReload(() => import('./eam/pages/Readings').then(m => ({ default: m.Readings })));
+const EamNotifications = lazyWithReload(() => import('./eam/pages/Notifications').then(m => ({ default: m.Notifications })));
+const EamVendors = lazyWithReload(() => import('./eam/pages/Vendors').then(m => ({ default: m.Vendors })));
+const EamFinOps = lazyWithReload(() => import('./eam/pages/FinOps').then(m => ({ default: m.FinOps })));
+const EamManagementOfChange = lazyWithReload(() => import('./eam/pages/ManagementOfChange').then(m => ({ default: m.ManagementOfChange })));
+const EamReliabilityToolkit = lazyWithReload(() => import('./eam/pages/ReliabilityToolkit').then(m => ({ default: m.ReliabilityToolkit })));
 // EAM Analytics removed — ERS Analyze module covers this
-const EamTaskLibrary = lazy(() => import('./eam/pages/admin/TaskLibrary').then(m => ({ default: m.TaskLibraryManager })));
-const EamSystemHealth = lazy(() => import('./eam/pages/SystemHealth').then(m => ({ default: m.SystemHealth })));
-const EamReports = lazy(() => import('./eam/pages/Reports').then(m => ({ default: m.Reports })));
-const EamReportDrillDown = lazy(() => import('./eam/pages/ReportDrillDown').then(m => ({ default: m.ReportDrillDown })));
+const EamTaskLibrary = lazyWithReload(() => import('./eam/pages/admin/TaskLibrary').then(m => ({ default: m.TaskLibraryManager })));
+const EamSystemHealth = lazyWithReload(() => import('./eam/pages/SystemHealth').then(m => ({ default: m.SystemHealth })));
+const EamReports = lazyWithReload(() => import('./eam/pages/Reports').then(m => ({ default: m.Reports })));
+const EamReportDrillDown = lazyWithReload(() => import('./eam/pages/ReportDrillDown').then(m => ({ default: m.ReportDrillDown })));
 
 // ── ERS-unique pages (preserved, no EAM equivalent) ─────
-const PredictPage = lazy(() => import('./pages/PredictPage').then(m => ({ default: m.PredictPage })));
-const AnalyzePage = lazy(() => import('./pages/AnalyzePage').then(m => ({ default: m.AnalyzePage })));
-const ReliabilityModellingPage = lazy(() => import('./pages/ReliabilityModellingPage'));
-const ReliabilityMetricsPage = lazy(() => import('./pages/ReliabilityMetricsPage').then(m => ({ default: m.ReliabilityMetricsPage })));
-const RCAInvestigationPage = lazy(() => import('./pages/RCAInvestigationPage').then(m => ({ default: m.RCAInvestigationPage })));
-const RCAReport = lazy(() => import('./components/analyze/RCAReport'));
-const FMEAWorksheetDetail = lazy(() => import('./pages/FMEAWorksheetDetail'));
-const VisionPage = lazy(() => import('./pages/VisionPage').then(m => ({ default: m.VisionPage })));
-const SustainPage = lazy(() => import('./pages/SustainPage').then(m => ({ default: m.SustainPage })));
-const DataQualityPage = lazy(() => import('./pages/DataQualityPage').then(m => ({ default: m.DataQualityPage })));
-const KnowledgeGraphPage = lazy(() => import('./pages/KnowledgeGraphPage').then(m => ({ default: m.KnowledgeGraphPage })));
-const RCMPage = lazy(() => import('./pages/RCMPage').then(m => ({ default: m.RCMPage })));
+const PredictPage = lazyWithReload(() => import('./pages/PredictPage').then(m => ({ default: m.PredictPage })));
+const AnalyzePage = lazyWithReload(() => import('./pages/AnalyzePage').then(m => ({ default: m.AnalyzePage })));
+const ReliabilityModellingPage = lazyWithReload(() => import('./pages/ReliabilityModellingPage'));
+const ReliabilityMetricsPage = lazyWithReload(() => import('./pages/ReliabilityMetricsPage').then(m => ({ default: m.ReliabilityMetricsPage })));
+const RCAInvestigationPage = lazyWithReload(() => import('./pages/RCAInvestigationPage').then(m => ({ default: m.RCAInvestigationPage })));
+const RCAReport = lazyWithReload(() => import('./components/analyze/RCAReport'));
+const FMEAWorksheetDetail = lazyWithReload(() => import('./pages/FMEAWorksheetDetail'));
+const VisionPage = lazyWithReload(() => import('./pages/VisionPage').then(m => ({ default: m.VisionPage })));
+const SustainPage = lazyWithReload(() => import('./pages/SustainPage').then(m => ({ default: m.SustainPage })));
+const DataQualityPage = lazyWithReload(() => import('./pages/DataQualityPage').then(m => ({ default: m.DataQualityPage })));
+const KnowledgeGraphPage = lazyWithReload(() => import('./pages/KnowledgeGraphPage').then(m => ({ default: m.KnowledgeGraphPage })));
+const RCMPage = lazyWithReload(() => import('./pages/RCMPage').then(m => ({ default: m.RCMPage })));
 
 // Comply pages (ERS-unique)
-const LotoPage = lazy(() => import('./pages/LotoPage').then(m => ({ default: m.LotoPage })));
-const PsmPage = lazy(() => import('./pages/PsmPage').then(m => ({ default: m.PsmPage })));
-const RbiPage = lazy(() => import('./pages/RbiPage').then(m => ({ default: m.RbiPage })));
-const RegulatoryPage = lazy(() => import('./pages/RegulatoryPage').then(m => ({ default: m.RegulatoryPage })));
-const InspectionSchedulePage = lazy(() => import('./pages/InspectionSchedulePage').then(m => ({ default: m.InspectionSchedulePage })));
-const ThicknessDataPage = lazy(() => import('./pages/ThicknessDataPage').then(m => ({ default: m.ThicknessDataPage })));
-const CorrosionRatesPage = lazy(() => import('./pages/CorrosionRatesPage').then(m => ({ default: m.CorrosionRatesPage })));
-const DamageMechanismsPage = lazy(() => import('./pages/DamageMechanismsPage').then(m => ({ default: m.DamageMechanismsPage })));
-const FfsPage = lazy(() => import('./pages/FfsPage').then(m => ({ default: m.FfsPage })));
-const IowDashboardPage = lazy(() => import('./pages/IowDashboardPage').then(m => ({ default: m.IowDashboardPage })));
-const AuditsPage = lazy(() => import('./pages/AuditsPage').then(m => ({ default: m.AuditsPage })));
-const AuditTemplatesPage = lazy(() => import('./pages/AuditTemplatesPage').then(m => ({ default: m.AuditTemplatesPage })));
-const AuditSchedulePage = lazy(() => import('./pages/AuditSchedulePage').then(m => ({ default: m.AuditSchedulePage })));
-const AuditCorrectiveActionsPage = lazy(() => import('./pages/AuditCorrectiveActionsPage').then(m => ({ default: m.AuditCorrectiveActionsPage })));
-const RegulatoryPreparednessPage = lazy(() => import('./pages/RegulatoryPreparednessPage').then(m => ({ default: m.RegulatoryPreparednessPage })));
-const InspectionDetailPage = lazy(() => import('./pages/InspectionDetailPage'));
+const LotoPage = lazyWithReload(() => import('./pages/LotoPage').then(m => ({ default: m.LotoPage })));
+const PsmPage = lazyWithReload(() => import('./pages/PsmPage').then(m => ({ default: m.PsmPage })));
+const RbiPage = lazyWithReload(() => import('./pages/RbiPage').then(m => ({ default: m.RbiPage })));
+const RegulatoryPage = lazyWithReload(() => import('./pages/RegulatoryPage').then(m => ({ default: m.RegulatoryPage })));
+const InspectionSchedulePage = lazyWithReload(() => import('./pages/InspectionSchedulePage').then(m => ({ default: m.InspectionSchedulePage })));
+const ThicknessDataPage = lazyWithReload(() => import('./pages/ThicknessDataPage').then(m => ({ default: m.ThicknessDataPage })));
+const CorrosionRatesPage = lazyWithReload(() => import('./pages/CorrosionRatesPage').then(m => ({ default: m.CorrosionRatesPage })));
+const DamageMechanismsPage = lazyWithReload(() => import('./pages/DamageMechanismsPage').then(m => ({ default: m.DamageMechanismsPage })));
+const FfsPage = lazyWithReload(() => import('./pages/FfsPage').then(m => ({ default: m.FfsPage })));
+const IowDashboardPage = lazyWithReload(() => import('./pages/IowDashboardPage').then(m => ({ default: m.IowDashboardPage })));
+const AuditsPage = lazyWithReload(() => import('./pages/AuditsPage').then(m => ({ default: m.AuditsPage })));
+const AuditTemplatesPage = lazyWithReload(() => import('./pages/AuditTemplatesPage').then(m => ({ default: m.AuditTemplatesPage })));
+const AuditSchedulePage = lazyWithReload(() => import('./pages/AuditSchedulePage').then(m => ({ default: m.AuditSchedulePage })));
+const AuditCorrectiveActionsPage = lazyWithReload(() => import('./pages/AuditCorrectiveActionsPage').then(m => ({ default: m.AuditCorrectiveActionsPage })));
+const RegulatoryPreparednessPage = lazyWithReload(() => import('./pages/RegulatoryPreparednessPage').then(m => ({ default: m.RegulatoryPreparednessPage })));
+const InspectionDetailPage = lazyWithReload(() => import('./pages/InspectionDetailPage'));
 
 // ── Loading Fallback ────────────────────────────────────
 const Loading = () => (
