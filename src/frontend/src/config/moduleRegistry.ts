@@ -122,16 +122,17 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     },
     {
         id: 'predict', label: 'Reliability Tier',
-        description: 'Predictive analytics, failure analysis, vision, knowledge graph',
+        description: 'Reliability loop — Measure → Diagnose → Model → Decide (+ Forecast preview)',
         tier: 'reliability', icon: Shield, path: null,
+        // Ordered as the reliability loop so the tier reads as one workflow, not 5 flat tools.
         children: [
-            { id: 'reliability-metrics', label: 'Metrics', path: '/reliability-metrics' },
-            { id: 'predict-dash', label: 'Predict', path: '/predict' },
-            { id: 'reliability-modelling', label: 'Reliability Modelling', path: '/reliability-modelling' },
-            { id: 'analyze-dash', label: 'Analyze', path: '/analyze' },
-            { id: 'rcm-dash', label: 'RCM', path: '/rcm' },
+            { id: 'reliability-metrics', label: 'Measure · Metrics', path: '/reliability-metrics' },
+            { id: 'analyze-dash', label: 'Diagnose · Analyze', path: '/analyze' },
+            { id: 'reliability-modelling', label: 'Model · Reliability Modelling', path: '/reliability-modelling' },
+            { id: 'rcm-dash', label: 'Decide · RCM', path: '/rcm' },
+            { id: 'predict-dash', label: 'Forecast · Predict (preview)', path: '/predict' },
         ],
-        routes: ['/reliability-metrics', '/predict', '/reliability-modelling', '/analyze', '/analyze/rca', '/rcm'],
+        routes: ['/reliability-metrics', '/analyze', '/analyze/rca', '/reliability-modelling', '/rcm', '/predict'],
         dependencies: ['core'], section: 'ers', launchReady: true,
     },
 
