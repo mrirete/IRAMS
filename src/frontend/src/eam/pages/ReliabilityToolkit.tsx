@@ -22,6 +22,12 @@ import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/a
 // ─── Corrective WO type codes (dictionary-aligned) ──────────
 const CORRECTIVE_WO_TYPES = ['CM', 'EM'];
 
+// Asset-register hierarchy levels (SITE > UNIT > SYSTEM > EQUIPMENT > COMPONENT).
+// Locations are the upper nodes; equipment/components are the maintainable units.
+type TreeAsset = { id: string; tag: string; name: string; hierarchy_level: string; parent_id: string | null; asset_class: string | null };
+const LOC_LEVELS = ['SITE', 'UNIT', 'SYSTEM'];
+const EQUIP_LEVELS = ['EQUIPMENT', 'COMPONENT'];
+
 /**
  * Shared form-control style for the Toolkit calculators — matches the
  * design-system Field control (primary focus ring, 40px touch target on
@@ -909,21 +915,47 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
     const [showRtFt, setShowRtFt] = useState(false);
     const [showPMModal, setShowPMModal] = useState(false);
 
-    // Population (asset-class) mode — pool failures across every asset in a class
-    // and fit ONE life curve, then create a single PM applied to the whole class.
+    // Population mode — pool failures across a group of assets (scoped by functional
+    // location and/or class) and fit ONE life curve, then create a single PM for them.
     const [mode, setMode] = useState<'asset' | 'class'>('asset');
     const [assetClass, setAssetClass] = useState('');
-    const [classes, setClasses] = useState<string[]>([]);
-    const [classAssets, setClassAssets] = useState<{ id: string; tag: string; name: string }[]>([]);
+    const [locationId, setLocationId] = useState(''); // functional location node ('' = whole plant)
+    const [allAssets, setAllAssets] = useState<TreeAsset[]>([]);
 
-    // Available asset classes (for the class picker).
+    // The register is a recursive parent_id tree (SITE > UNIT > SYSTEM > EQUIPMENT
+    // > COMPONENT); load it once to resolve locations + their descendant equipment.
     useEffect(() => {
-        supabase.from('assets').select('asset_class')
-            .then(({ data }) => {
-                const set = Array.from(new Set((data || []).map((a: any) => (a.asset_class || '').trim()).filter(Boolean))).sort();
-                setClasses(set as string[]);
-            });
+        supabase.from('assets').select('id, tag, name, hierarchy_level, parent_id, asset_class')
+            .then(({ data }) => setAllAssets((data || []) as TreeAsset[]));
     }, []);
+
+    const childrenMap = useMemo(() => {
+        const m: Record<string, TreeAsset[]> = {};
+        for (const a of allAssets) { const p = a.parent_id || ''; (m[p] = m[p] || []).push(a); }
+        return m;
+    }, [allAssets]);
+    const descendantIds = useCallback((rootId: string): string[] => {
+        const out: string[] = [];
+        const stack = [...(childrenMap[rootId] || [])];
+        while (stack.length) { const n = stack.pop()!; out.push(n.id); const kids = childrenMap[n.id]; if (kids) stack.push(...kids); }
+        return out;
+    }, [childrenMap]);
+    const locationNodes = useMemo(() =>
+        allAssets.filter(a => LOC_LEVELS.includes(a.hierarchy_level))
+            .sort((a, b) => LOC_LEVELS.indexOf(a.hierarchy_level) - LOC_LEVELS.indexOf(b.hierarchy_level) || (a.tag || '').localeCompare(b.tag || '')),
+        [allAssets]);
+    const scopedEquip = useMemo(() => {
+        const inLoc = locationId ? new Set(descendantIds(locationId)) : null;
+        return allAssets.filter(a => EQUIP_LEVELS.includes(a.hierarchy_level) && (!inLoc || inLoc.has(a.id)));
+    }, [allAssets, locationId, descendantIds]);
+    const classesInScope = useMemo(() =>
+        Array.from(new Set(scopedEquip.map(a => (a.asset_class || '').trim()).filter(Boolean))).sort(),
+        [scopedEquip]);
+    // The population members: scoped equipment, optionally narrowed to one class.
+    const poolMembers = useMemo(() =>
+        scopedEquip.filter(a => !assetClass || (a.asset_class || '') === assetClass),
+        [scopedEquip, assetClass]);
+    const classAssets = poolMembers.map(a => ({ id: a.id, tag: a.tag, name: a.name }));
 
     // Seed the asset once from a drill-through (Metrics bad actor → Fit Weibull).
     // The asset-change effect below then auto-pulls WO failures and fits.
@@ -957,19 +989,16 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
         })();
     }, [asset]);
 
-    // Class mode: pool inter-arrival intervals across every asset in the class.
-    // Intervals are computed per-asset then concatenated (never across assets), so
-    // the pooled series is a valid population life-data sample.
+    // Class mode: pool inter-arrival intervals across the scoped population (a
+    // location branch and/or a class). Intervals are computed per-asset then
+    // concatenated (never across assets), so it's a valid population life sample.
+    // Requires a class or a location to be chosen (avoids pooling the whole plant).
     useEffect(() => {
-        if (mode !== 'class' || !assetClass) return;
+        if (mode !== 'class') return;
+        if ((!assetClass && !locationId) || poolMembers.length === 0) { setDataStr(''); return; }
         setLoading(true);
         (async () => {
-            const { data: assetsInClass } = await supabase.from('assets')
-                .select('id, tag, name').eq('asset_class', assetClass);
-            const members = (assetsInClass || []) as { id: string; tag: string; name: string }[];
-            setClassAssets(members);
-            const ids = members.map(a => a.id);
-            if (ids.length === 0) { setDataStr(''); setLoading(false); return; }
+            const ids = poolMembers.map(a => a.id);
             const { data: wos } = await supabase.from('work_orders')
                 .select('id, type, asset_id, created_at, closed_at, wo_failure_data(failure_mode_code)')
                 .in('asset_id', ids)
@@ -981,16 +1010,20 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
             setDataStr(pooled.length > 0 ? pooled.join(', ') : '');
             setLoading(false);
         })();
-    }, [mode, assetClass]);
+    }, [mode, assetClass, locationId, poolMembers]);
 
     const failureTimes = dataStr.split(/[,\s]+/).map(Number).filter(n => !isNaN(n) && n > 0);
     const fit = failureTimes.length >= 2 ? weibullFit(failureTimes) : null;
 
-    // Effective target for Create PM: the class (representative + all members) or the single asset.
-    const classActive = mode === 'class' && classAssets.length > 0;
+    // Effective target for Create PM: the scoped population, or the single asset.
+    const classActive = mode === 'class' && !!(assetClass || locationId) && classAssets.length > 0;
     const pmAsset = classActive
         ? { id: classAssets[0].id, tag: classAssets[0].tag, name: classAssets[0].name }
         : (asset ? { id: asset.id, tag: asset.tag, name: asset.name } : null);
+    const locNode = locationNodes.find(n => n.id === locationId);
+    const scopeLabel = assetClass
+        ? (locNode ? `${assetClass} @ ${locNode.tag}` : assetClass)
+        : (locNode ? `${locNode.tag} equipment` : 'Equipment');
 
     // Report state changes to parent (bridge to Monte Carlo)
     useEffect(() => {
@@ -1027,20 +1060,27 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
 
                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 shrink-0">
-                        <Search size={14} className="text-blue-500" /> {mode === 'class' ? 'Class' : 'Asset'}
+                        <Search size={14} className="text-blue-500" /> {mode === 'class' ? 'Scope' : 'Asset'}
                     </div>
                     <div className="flex-1 min-w-0">
                         {mode === 'asset' ? (
                             <AssetSelector selected={asset} onSelect={setAsset} />
                         ) : (
-                            <select value={assetClass} onChange={e => setAssetClass(e.target.value)}
-                                className={CONTROL_CLS}>
-                                <option value="">Select an asset class…</option>
-                                {classes.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                {/* Functional location — scope to a branch of the register (or whole plant) */}
+                                <select value={locationId} onChange={e => setLocationId(e.target.value)} className={CONTROL_CLS} title="Functional location">
+                                    <option value="">All locations (whole plant)</option>
+                                    {locationNodes.map(n => <option key={n.id} value={n.id}>{n.hierarchy_level} · {n.tag} — {n.name}</option>)}
+                                </select>
+                                {/* Asset class within that location */}
+                                <select value={assetClass} onChange={e => setAssetClass(e.target.value)} className={CONTROL_CLS} title="Asset class">
+                                    <option value="">All classes</option>
+                                    {classesInScope.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                            </div>
                         )}
                     </div>
-                    {mode === 'class' && assetClass && (
+                    {mode === 'class' && (assetClass || locationId) && (
                         <span className="text-[11px] text-slate-500 shrink-0">
                             {classAssets.length} assets · {failureTimes.length} pooled failures
                         </span>
@@ -1169,7 +1209,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
                         beta={fit.beta}
                         eta={fit.eta}
                         r2={fit.r2}
-                        assetTag={classActive ? `${assetClass} class` : asset?.tag}
+                        assetTag={classActive ? scopeLabel : asset?.tag}
                         onCreatePM={pmAsset ? () => setShowPMModal(true) : undefined}
                     />
 
@@ -1186,7 +1226,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
                                 b10: Math.round(weibullBLife(fit.beta, fit.eta, 10)),
                                 pmInterval: Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8)),
                                 dataPoints: failureTimes.length,
-                                className: classActive ? assetClass : undefined,
+                                className: classActive ? scopeLabel : undefined,
                                 classAssets: classActive ? classAssets : undefined,
                             }}
                         />
