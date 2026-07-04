@@ -1,5 +1,5 @@
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, processLock } from '@supabase/supabase-js';
 
 // ── Supabase Configuration ──────────────────────────────────────────
 // The anon key is a PUBLIC/publishable key — safe to include in client code.
@@ -66,6 +66,14 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
+        // Use the in-memory processLock instead of the default navigatorLock.
+        // navigator.locks can DEADLOCK (a held lock is never released — happens
+        // after tab backgrounding / token-refresh timing), so getSession() and
+        // every query that needs the session HANG until a fresh sign-in resets
+        // the client. That is exactly the "must log out to open pages" bug,
+        // consistent across all browser profiles with a healthy network.
+        // processLock serialises refresh within the tab without navigator.locks.
+        lock: processLock,
     },
     global: { fetch: fetchWithRetry },
 });
