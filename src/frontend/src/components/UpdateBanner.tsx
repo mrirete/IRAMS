@@ -25,7 +25,9 @@ export const UpdateBanner: React.FC = () => {
         const check = async () => {
             if (stopped) return;
             try {
-                const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store' });
+                // AbortSignal.timeout: a stalled connection can leave this pending
+                // forever (observed in the wild) — abort and try again next tick.
+                const res = await fetch(`/version.json?t=${Date.now()}`, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
                 if (!res.ok) return;
                 const data = await res.json();
                 const latest: string | undefined = data?.sha;

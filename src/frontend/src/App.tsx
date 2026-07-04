@@ -1,5 +1,5 @@
 import React, { Suspense } from 'react';
-import { lazyWithReload } from './lib/lazyWithReload';
+import { lazyWithReload, prefetchRegisteredRoutes } from './lib/lazyWithReload';
 import { Routes, Route } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, ProtectedRoute } from './contexts/AuthContext';
@@ -117,6 +117,15 @@ const Gated = ({ moduleId, children }: { moduleId: string; children: React.React
 );
 
 function App() {
+  // Warm every route chunk over the boot connection shortly after first paint.
+  // Chunk fetches issued later (at navigation time) can hit a stalled
+  // connection and hang forever — prefetching while the network is provably
+  // healthy means navigation normally never waits on a fetch at all.
+  React.useEffect(() => {
+    const t = window.setTimeout(prefetchRegisteredRoutes, 3000);
+    return () => window.clearTimeout(t);
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>

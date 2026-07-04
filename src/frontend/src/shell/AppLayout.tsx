@@ -7,15 +7,25 @@ import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 import { GlobalErrorToaster } from '../eam/components/GlobalErrorToaster';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { setLevelModel } from '../eam/services/hierarchyModel';
+import { registerRoutePrefetch } from '../lib/lazyWithReload';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
 // RelanternAI (Reliability Specialist) is the single AI chat panel — opened from
 // the TopBar button and the per-page "Ask Specialist" buttons. geminiService
 // dynamically imports @google/genai on first AI use, off the critical path.
-const RelanternAI = lazy(() => import('../eam/components/RelanternAI').then(m => ({ default: m.RelanternAI })));
+// Registered for boot-time prefetch so opening them never waits on (or hangs
+// on) a chunk fetch — their Suspense fallbacks are null, so a hung fetch here
+// would fail silently.
+const importRelanternAI = () => import('../eam/components/RelanternAI');
+const importReportRequestForm = () => import('../eam/components/ReportRequestForm');
+const importCommandPalette = () => import('./CommandPalette');
+registerRoutePrefetch(importRelanternAI);
+registerRoutePrefetch(importReportRequestForm);
+registerRoutePrefetch(importCommandPalette);
+const RelanternAI = lazy(() => importRelanternAI().then(m => ({ default: m.RelanternAI })));
 const DevicePreviewer = lazy(() => import('../components/dev/DevicePreviewer').then(m => ({ default: m.DevicePreviewer })));
-const ReportRequestForm = lazy(() => import('../eam/components/ReportRequestForm').then(m => ({ default: m.ReportRequestForm })));
-const CommandPalette = lazy(() => import('./CommandPalette').then(m => ({ default: m.CommandPalette })));
+const ReportRequestForm = lazy(() => importReportRequestForm().then(m => ({ default: m.ReportRequestForm })));
+const CommandPalette = lazy(() => importCommandPalette().then(m => ({ default: m.CommandPalette })));
 
 interface AppLayoutProps {
     children: React.ReactNode;
