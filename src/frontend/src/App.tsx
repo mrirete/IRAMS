@@ -14,6 +14,7 @@ import { AppLayout } from './shell/AppLayout';
 import { ModuleGate } from './components/ModuleGate';
 import { UpdateBanner } from './components/UpdateBanner';
 import { PermissionGate } from './eam/components/PermissionGate';
+import { ErrorBoundary } from './eam/components/ErrorBoundary';
 // Admin pages — lazy loaded (admin-only, no need in main bundle)
 const ConnectorHub = lazyWithReload(() => import('./pages/admin/ConnectorHub').then(m => ({ default: m.ConnectorHub })));
 const ConnectorWizard = lazyWithReload(() => import('./pages/admin/ConnectorWizard').then(m => ({ default: m.ConnectorWizard })));
@@ -135,6 +136,7 @@ function App() {
                       element={
                         <ProtectedRoute>
                           <AppLayout>
+                            <ErrorBoundary>
                             <Suspense fallback={<Loading />}>
                               <Routes>
                                 {/* ═══════════════════════════════════════════ */}
@@ -216,6 +218,7 @@ function App() {
                                 <Route path="/admin/activity-log" element={<PermissionGate module="activityLog"><AdminActivityPage /></PermissionGate>} />
                               </Routes>
                             </Suspense>
+                            </ErrorBoundary>
                           </AppLayout>
                         </ProtectedRoute>
                       }

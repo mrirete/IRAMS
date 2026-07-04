@@ -33,12 +33,20 @@ export function lazyWithReload<T extends ComponentType<any>>(
             new Promise<never>((_, reject) =>
                 setTimeout(() => reject(new Error('chunk-load-timeout')), TIMEOUT_MS),
             ),
-        ]).catch((): Promise<{ default: T }> => {
-            // Hang or failure → recover by reloading once. The returned promise
-            // never resolves; the page reload takes over (or, if guard-blocked,
-            // Suspense keeps its fallback rather than crashing).
-            reloadOnceForStaleChunk();
-            return new Promise<{ default: T }>(() => { /* superseded by reload */ });
+        ]).catch((err): Promise<{ default: T }> => {
+            const msg = String(err?.message || err);
+            const isChunkLoad = /timeout|dynamically imported|Importing a module script failed|Failed to fetch|ChunkLoadError|error loading/i.test(msg);
+            if (isChunkLoad) {
+                // The chunk FILE didn't load (stale hash after deploy, network). Reload
+                // once to pull it fresh — the reload supersedes this promise.
+                console.warn('[lazyWithReload] chunk file failed to load — reloading:', msg);
+                reloadOnceForStaleChunk();
+                return new Promise<{ default: T }>(() => { /* superseded by reload */ });
+            }
+            // The chunk file DID load but the module threw while EVALUATING (a real
+            // code error). Reloading won't help and would hide it forever — surface it.
+            console.error('[lazyWithReload] route module threw during evaluation:', err);
+            throw err;
         }),
     );
 }
