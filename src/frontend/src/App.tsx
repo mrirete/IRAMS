@@ -92,11 +92,21 @@ const RegulatoryPreparednessPage = lazyWithReload(() => import('./pages/Regulato
 const InspectionDetailPage = lazyWithReload(() => import('./pages/InspectionDetailPage'));
 
 // ── Loading Fallback ────────────────────────────────────
-const Loading = () => (
-  <div className="flex items-center justify-center h-64">
-    <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
-  </div>
-);
+// TEMP DIAGNOSTIC: log while the Suspense fallback (a lazy route chunk) is shown,
+// so a stuck spinner is identifiable in the console (mount without a matching
+// unmount == the chunk never finished loading).
+const Loading = () => {
+  React.useEffect(() => {
+    const t0 = Date.now();
+    console.log('[Suspense] route chunk loading… (spinner shown)');
+    return () => console.log(`[Suspense] route chunk resolved after ${Date.now() - t0}ms`);
+  }, []);
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+};
 
 // ── Gated Route Helper ──────────────────────────────────
 const Gated = ({ moduleId, children }: { moduleId: string; children: React.ReactNode }) => (
