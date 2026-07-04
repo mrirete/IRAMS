@@ -1,0 +1,47 @@
+# Post-deploy production smoke — drives the LIVE app in headless Chromium
+# after every push to main (Vercel auto-deploys main; this waits for the
+# deploy, then cold-loads the core routes with a real session).
+#
+# Born from the 2026-07 stuck-spinner incident: every logged-in page hung
+# while build/types/unit tests stayed green. Only a browser can catch that.
+#
+# Requires repository secrets for the authenticated sweep (otherwise only the
+# public /login check runs):
+#   SMOKE_EMAIL / SMOKE_PASSWORD — a dedicated low-privilege smoke login.
+name: Production Smoke
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: prod-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Playwright
+        working-directory: src/frontend
+        run: |
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
+
+      - name: Run smoke against production
+        working-directory: src/frontend
+        env:
+          BASE: https://irams.vercel.app
+          EXPECT_SHA: ${{ github.sha }}
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: node tests/e2e/smoke.mjs
