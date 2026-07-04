@@ -1,8 +1,8 @@
 import React, { Suspense } from 'react';
 import { lazyWithReload, prefetchRegisteredRoutes } from './lib/lazyWithReload';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AuthProvider, ProtectedRoute } from './contexts/AuthContext';
+import { AuthProvider, ProtectedRoute, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './eam/contexts/ToastContext';
 import { ConfirmProvider } from './eam/contexts/ConfirmContext';
 import { SettingsProvider } from './contexts/SettingsContext';
@@ -39,6 +39,7 @@ const queryClient = new QueryClient({
 // ── EAM pages (Supabase-backed, replace ERS mock pages) ─
 const EamLogin = lazyWithReload(() => import('./eam/pages/Login').then(m => ({ default: m.Login })));
 const EamDashboard = lazyWithReload(() => import('./eam/pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const EamMyWork = lazyWithReload(() => import('./eam/pages/MyWork').then(m => ({ default: m.MyWork })));
 const EamAssets = lazyWithReload(() => import('./eam/pages/Assets').then(m => ({ default: m.Assets })));
 const EamWorkOrders = lazyWithReload(() => import('./eam/pages/WorkOrders').then(m => ({ default: m.WorkOrders })));
 const EamInventory = lazyWithReload(() => import('./eam/pages/Inventory').then(m => ({ default: m.Inventory })));
@@ -106,6 +107,16 @@ const Gated = ({ moduleId, children }: { moduleId: string; children: React.React
   </ModuleGate>
 );
 
+// ── Role-based landing ──────────────────────────────────
+// Field roles open on "My Work" (their jobs, one tap to execute) instead of the
+// analytics dashboard. Everyone else keeps the dashboard.
+const FIELD_ROLES = new Set(['TECHNICIAN']);
+const RoleLanding = () => {
+  const { role } = useAuth();
+  if (role && FIELD_ROLES.has(role.toUpperCase())) return <Navigate to="/my-work" replace />;
+  return <PermissionGate module="dashboard"><EamDashboard /></PermissionGate>;
+};
+
 function App() {
   // Warm every route chunk over the boot connection shortly after first paint.
   // Chunk fetches issued later (at navigation time) can hit a stalled
@@ -141,7 +152,8 @@ function App() {
                                 {/* ═══════════════════════════════════════════ */}
                                 {/* EAM PAGES — Permission-Gated (RBAC)       */}
                                 {/* ═══════════════════════════════════════════ */}
-                                <Route path="/" element={<PermissionGate module="dashboard"><EamDashboard /></PermissionGate>} />
+                                <Route path="/" element={<RoleLanding />} />
+                                <Route path="/my-work" element={<PermissionGate module="workOrders"><EamMyWork /></PermissionGate>} />
                                 <Route path="/assets" element={<PermissionGate module="assets"><EamAssets /></PermissionGate>} />
                                 <Route path="/work-orders" element={<PermissionGate module="workOrders"><EamWorkOrders /></PermissionGate>} />
                                 <Route path="/work-orders/:jobId" element={<PermissionGate module="workOrders"><EamWorkOrders /></PermissionGate>} />

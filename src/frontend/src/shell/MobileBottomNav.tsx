@@ -23,7 +23,7 @@ interface NavItem {
 // Two items either side of the raised center "Report" action.
 const LEFT_ITEMS: NavItem[] = [
     { id: 'home', label: 'Home',    icon: LayoutDashboard, path: '/dashboard' },
-    { id: 'work', label: 'My Work', icon: Wrench,          path: '/work-orders' },
+    { id: 'work', label: 'My Work', icon: Wrench,          path: '/my-work' },
 ];
 const RIGHT_ITEMS: NavItem[] = [
     { id: 'assets',    label: 'Assets',    icon: Package, path: '/assets' },

@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Search, Grid, LogOut, ChevronDown, Shield, Sparkles, User as UserIcon, Menu, Monitor } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { MODULE_REGISTRY } from '../config/moduleRegistry';
 import { NotificationCenter } from '../components/shell/NotificationCenter';
 import { ReliabilityPresenceWidget } from '../components/shell/ReliabilityPresenceWidget';
 import { useRelantern } from '../eam/contexts/RelanternContext';
@@ -23,10 +24,37 @@ interface TopBarProps {
     onTogglePreview?: () => void;
 }
 
+/**
+ * Breadcrumb derived from the current route via the module registry
+ * (longest-prefix match over module paths, children, and owned routes).
+ */
+function breadcrumbFor(pathname: string): { section: string; page: string } {
+    if (pathname === '/' || pathname.startsWith('/dashboard')) return { section: 'Home', page: 'Dashboard' };
+    let best: { section: string; page: string; len: number } | null = null;
+    for (const m of MODULE_REGISTRY) {
+        const candidates: { path: string; page: string }[] = [];
+        if (m.path) candidates.push({ path: m.path, page: m.label });
+        m.children?.forEach(c => candidates.push({ path: c.path, page: c.label }));
+        m.routes?.forEach(r => candidates.push({ path: r, page: m.label }));
+        for (const c of candidates) {
+            if (c.path && c.path !== '/' && pathname.startsWith(c.path) && c.path.length > (best?.len ?? 0)) {
+                best = { section: m.label, page: c.page, len: c.path.length };
+            }
+        }
+    }
+    if (best) return { section: best.section, page: best.page };
+    // Fallback: humanize the first path segment
+    const seg = pathname.split('/').filter(Boolean)[0] || '';
+    const page = seg.replace(/-/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
+    return { section: 'IRAMS', page: page || 'Home' };
+}
+
 export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview }) => {
     const { user, logout } = useAuth();
     const { openRelantern } = useRelantern();
     const navigate = useNavigate();
+    const location = useLocation();
+    const crumb = breadcrumbFor(location.pathname);
     const [menuOpen, setMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
@@ -77,9 +105,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                 </button>
                 {/* Mobile: compact brand */}
                 <span className="sm:hidden text-sm font-bold text-slate-800 tracking-wide truncate">IRAMS</span>
-                {/* Desktop: breadcrumb */}
+                {/* Desktop: breadcrumb (derived from the current route) */}
                 <h2 className="hidden sm:block text-sm md:text-lg font-medium tracking-wide text-slate-800 truncate">
-                    Dashboard <span className="text-slate-300 mx-1">/</span> <span className="text-slate-500">Overview</span>
+                    {crumb.section === crumb.page ? crumb.page : (
+                        <>{crumb.section} <span className="text-slate-300 mx-1">/</span> <span className="text-slate-500">{crumb.page}</span></>
+                    )}
                 </h2>
             </div>
 

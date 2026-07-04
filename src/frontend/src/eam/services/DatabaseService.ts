@@ -2120,6 +2120,21 @@ export class DatabaseService {
     }
 
     /**
+     * Active work orders assigned to one technician (contact), with the asset
+     * name embedded — powers the "My Work" home. Excludes finished/cancelled.
+     */
+    public async getMyWorkOrders(contactId: string): Promise<(WorkOrderRecord & { assets?: { name?: string } | null })[]> {
+        const { data, error } = await supabase
+            .from('work_orders')
+            .select('*, assets(name)')
+            .eq('assigned_to', contactId)
+            .not('status', 'in', '(TECO,CLOSED,CANC,CANCELLED)')
+            .order('due_date', { ascending: true, nullsFirst: false });
+        if (error) throw error;
+        return data || [];
+    }
+
+    /**
      * Get all work orders linked to a specific asset.
      * Used by the Asset Jobs tab to show associated work.
      */
