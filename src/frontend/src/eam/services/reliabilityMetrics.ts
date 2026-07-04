@@ -23,7 +23,10 @@ export interface AssetReliability {
   rcaReason?: string;          // why an RCA is recommended
 }
 
-const CORRECTIVE_RE = /CORRECT|BREAK|EMERG|REPAIR|\bCM\b/;
+// \bEM\b: emergency work orders are stored with the bare type code 'EM' in
+// several flows — 'EMERG' alone missed them, so EM breakdowns without a coded
+// failure mode silently dropped out of MTBF/bad-actor math.
+const CORRECTIVE_RE = /CORRECT|BREAK|EMERG|REPAIR|\bCM\b|\bEM\b/;
 
 const failureMode = (r: any): string | undefined => {
   const fd = Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data;
@@ -32,13 +35,49 @@ const failureMode = (r: any): string | undefined => {
 
 const eventDate = (r: any): string | undefined => r.closed_at || r.created_at || r.createdAt;
 
-// A work order counts as a "failure" if it's corrective/breakdown work OR carries
-// a coded failure mode (ISO 14224). Preventive/inspection work is not a failure.
-const isFailure = (r: any): boolean => {
+/**
+ * THE canonical failure predicate (M1 — engine unification). A work order
+ * counts as a "failure" if it's corrective/breakdown work OR carries a coded
+ * failure mode (ISO 14224). Preventive/inspection work is not a failure.
+ * Every surface that counts, ranks, or models failures (Metrics scoreboard,
+ * Modelling calculators, bad-actor rankings, agents) must use this — never a
+ * local WO-type list. Server-side rankings (rpc_pareto_analysis, the Python
+ * bad-actor analyzer) mirror this definition; change them together.
+ */
+export const isFailure = (r: any): boolean => {
   const t = String(r.type || '').toUpperCase();
   if (/PREVENT|PREDICT|INSPECT|SCHEDUL|\bPM\b|\bPDM\b/.test(t)) return false;
   return CORRECTIVE_RE.test(t) || !!failureMode(r);
 };
+
+/** Column list a query must select for the engine to classify records. */
+export const FAILURE_QUERY_COLUMNS =
+  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration, actual_hours, wo_failure_data(failure_mode_code)';
+
+/**
+ * One derivation of the numbers the Modelling calculators auto-populate from an
+ * asset's WO history — failures, MTBF (hours) and the repair-time series — so
+ * RAM / Availability / Spares / pooled views all reconcile with the Metrics
+ * scoreboard by construction.
+ */
+export interface FailureBasis {
+  failures: number;          // failures in the fetched window
+  mtbfHours?: number;        // inter-arrival MTBF × 24; undefined when < 2 failures
+  totalHours: number;        // operating-time basis st. totalHours/failures === MTBF (8760 fallback)
+  repairHours: number[];     // per-failure downtime series (same basis as engine MTTR)
+}
+
+export function assetFailureBasis(records: any[]): FailureBasis {
+  const rel = computeAssetReliability(records || []);
+  const failures = rel.failures12mo || rel.totalFailures;
+  const mtbfHours = rel.mtbfDays != null ? rel.mtbfDays * 24 : undefined;
+  return {
+    failures,
+    mtbfHours,
+    totalHours: mtbfHours != null && failures > 0 ? Math.round(mtbfHours * failures) : 8760,
+    repairHours: failureRepairHours(records || []),
+  };
+}
 
 export interface ReliabilityOptions {
   /** Authoritative MTBF/MTTR from the asset record, if available (preferred). */
@@ -69,7 +108,7 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     .sort((a, b) => b.count - a.count);
 
   // MTTR — prefer the asset's stored value, else mean of actual repair durations.
-  const durs = failures.map(r => Number(r.actual_downtime_hrs ?? r.actual_duration ?? r.actualDuration) || 0).filter(d => d > 0);
+  const durs = failures.map(repairHoursOf).filter(d => d > 0);
   const mttrHours = (opts.mttrHours ?? null) != null
     ? Number(opts.mttrHours)
     : (durs.length ? Math.round((durs.reduce((s, d) => s + d, 0) / durs.length) * 10) / 10 : undefined);
@@ -126,11 +165,16 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
 // Weibull tab all model the SAME events. This retires the calculators' ad-hoc,
 // slightly-different WO extraction (M1 — engine unification).
 
+// Repair-duration basis, in preference order: recorded downtime, elapsed
+// duration, then labour hours as a last-resort proxy (plants that don't
+// capture downtime at closeout would otherwise produce no MTTR at all).
+// This ONE chain feeds both the engine MTTR and every calculator series.
+const repairHoursOf = (r: any): number =>
+  Number(r.actual_downtime_hrs ?? r.actual_duration ?? r.actualDuration ?? r.actual_hours) || 0;
+
 /** Per-failure repair/downtime hours (same basis as MTTR) — for maintainability charts. */
 export function failureRepairHours(records: any[]): number[] {
-  return (records || []).filter(isFailure)
-    .map(r => Number(r.actual_downtime_hrs ?? r.actual_duration ?? r.actualDuration) || 0)
-    .filter(d => d > 0);
+  return (records || []).filter(isFailure).map(repairHoursOf).filter(d => d > 0);
 }
 
 /** Inter-arrival times between consecutive failures, in hours — for Weibull life data. */

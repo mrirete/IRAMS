@@ -1207,7 +1207,10 @@ class AnalyzeService {
                 p_criteria: params.criteria || 'cost',
                 p_date_from: params.dateFrom || yearAgo.toISOString(),
                 p_date_to: params.dateTo || now.toISOString(),
-                p_wo_types: params.woTypes || ['CM', 'PM'],
+                // Default matches the reliability engine's failure lens (corrective
+                // only) so unparameterized callers reconcile with the Metrics
+                // scoreboard; pass woTypes explicitly to include PM cost.
+                p_wo_types: params.woTypes || ['CM', 'EM'],
                 p_limit: params.limit || 20,
             });
 

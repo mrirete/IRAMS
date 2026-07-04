@@ -3,6 +3,14 @@ Bad Actor Analyzer — Pareto Analysis + Trend Tracking
 ══════════════════════════════════════════════════════════
 Monthly automated Top 5 ranking by cost, downtime, or WO frequency.
 Auto-drafts Defect Elimination campaigns for top actors.
+
+M1 — ONE reliability engine: this analyzer consumes pre-aggregated asset_data;
+whoever aggregates it must select failure events with the CANONICAL predicate
+(corrective/breakdown type — CM/EM/CORRECT/BREAK/EMERG/REPAIR — OR a coded
+ISO 14224 failure mode; preventive/inspection work is never a failure), defined
+in src/frontend/src/eam/services/reliabilityMetrics.ts (isFailure) and mirrored
+by rpc_pareto_analysis. Change the definition in all places together, or fleet
+rankings will disagree across surfaces.
 """
 
 from __future__ import annotations

@@ -11,7 +11,10 @@ import {
     Dices, Play, RotateCcw, Upload, Cpu
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { computeAssetReliability, failureRepairHours, failureIntervalsHours } from '../services/reliabilityMetrics';
+import {
+    computeAssetReliability, failureRepairHours, failureIntervalsHours,
+    isFailure, assetFailureBasis, FAILURE_QUERY_COLUMNS,
+} from '../services/reliabilityMetrics';
 // @ts-ignore
 import * as jStat from 'jstat';
 import { MonteCarloSimTab } from '../components/MonteCarloSimTab';
@@ -19,8 +22,9 @@ import { ScrollTabStrip } from '../components/ui';
 import LifecycleAnalysis from '../../components/reliability/LifecycleAnalysis';
 import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/analyze/CreatePMFromWeibullModal';
 
-// ─── Corrective WO type codes (dictionary-aligned) ──────────
-const CORRECTIVE_WO_TYPES = ['CM', 'EM'];
+// M1 (one reliability engine): failure classification is the shared engine's
+// isFailure — never a local WO-type list. Queries fetch ALL types in-window
+// (FAILURE_QUERY_COLUMNS) and let the engine decide what counts.
 
 // Asset-register hierarchy levels (SITE > UNIT > SYSTEM > EQUIPMENT > COMPONENT).
 // Locations are the upper nodes; equipment/components are the maintainable units.
@@ -256,16 +260,22 @@ function CriticalAssetsPanel({ onSelectAsset }: { onSelectAsset: (asset: AssetOp
                 const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
                 const results: CriticalAsset[] = [];
 
-                for (const asset of critAssets) {
-                    const { count, data: wos } = await supabase.from('work_orders')
-                        .select('created_at', { count: 'exact', head: false })
-                        .eq('asset_id', asset.id)
-                        .in('type', CORRECTIVE_WO_TYPES)
-                        .gte('created_at', yearAgo)
-                        .order('created_at', { ascending: false })
-                        .limit(1);
+                // ONE batched query for all candidate assets (was an N+1 loop of
+                // up to 100 count queries), counted with the shared engine's
+                // isFailure so the picker badge equals the calculators' failure
+                // count for the same asset.
+                const { data: allWos } = await supabase.from('work_orders')
+                    .select(`asset_id, ${FAILURE_QUERY_COLUMNS}`)
+                    .in('asset_id', critAssets.map(a => a.id))
+                    .gte('created_at', yearAgo)
+                    .order('created_at', { ascending: false });
 
-                    if ((count || 0) > 0) {
+                const byAsset: Record<string, any[]> = {};
+                (allWos || []).forEach(w => { (byAsset[w.asset_id] ||= []).push(w); });
+
+                for (const asset of critAssets) {
+                    const failures = (byAsset[asset.id] || []).filter(isFailure);
+                    if (failures.length > 0) {
                         const parent = asset.parent as any;
                         results.push({
                             id: asset.id,
@@ -274,8 +284,8 @@ function CriticalAssetsPanel({ onSelectAsset }: { onSelectAsset: (asset: AssetOp
                             criticality: asset.criticality || 'B',
                             hierarchyLevel: asset.hierarchy_level || 'EQUIPMENT',
                             parentName: parent?.name || parent?.tag || '—',
-                            failureCount: count || 0,
-                            lastFailure: wos?.[0]?.created_at || null,
+                            failureCount: failures.length,
+                            lastFailure: failures[0]?.created_at || null,
                         });
                     }
                 }
@@ -624,25 +634,23 @@ export function MTBFTab({ onStateChange, loadedData }: TabProps = {}) {
         if (inputs.confidence) setConfidence(inputs.confidence);
     }, [loadedData]);
 
-    // Auto-populate from WO data
+    // Auto-populate from WO data (M1: via the shared reliability engine)
     useEffect(() => {
         if (!asset) return;
         setLoading(true);
         (async () => {
             const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
-            // Get corrective WOs
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, created_at, actual_hours, status')
+                .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id)
-                .in('type', CORRECTIVE_WO_TYPES)
                 .gte('created_at', yearAgo)
                 .order('created_at');
 
-            if (wos && wos.length > 0) {
-                setFailures(String(wos.length));
-                setTotalHours('8760'); // 1 year
-                const repairs = wos.map(w => parseFloat(w.actual_hours) || 0).filter(h => h > 0);
-                if (repairs.length > 0) setRepairTimesStr(repairs.join(', '));
+            const basis = assetFailureBasis(wos || []);
+            if (basis.failures > 0) {
+                setFailures(String(basis.failures));
+                setTotalHours(String(basis.totalHours));
+                if (basis.repairHours.length > 0) setRepairTimesStr(basis.repairHours.map(r => r.toFixed(1)).join(', '));
             }
             setLoading(false);
         })();
@@ -776,24 +784,22 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
         if (inputs.targetAo) setTargetAo(String(inputs.targetAo));
     }, [loadedData]);
 
-    // Auto-populate from WO data
+    // Auto-populate from WO data (M1: via the shared reliability engine)
     useEffect(() => {
         if (!asset) return;
         setLoading(true);
         (async () => {
             const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, created_at, actual_hours, status')
+                .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id)
-                .in('type', CORRECTIVE_WO_TYPES)
                 .gte('created_at', yearAgo)
                 .order('created_at');
-            if (wos && wos.length > 0) {
-                const calcMtbf = 8760 / wos.length;
-                setMtbf(calcMtbf.toFixed(0));
-                const repairs = wos.map(w => parseFloat(w.actual_hours) || 0).filter(h => h > 0);
-                if (repairs.length > 0) {
-                    const calcMttr = repairs.reduce((s, v) => s + v, 0) / repairs.length;
+            const basis = assetFailureBasis(wos || []);
+            if (basis.failures > 0) {
+                setMtbf(String(Math.round(basis.totalHours / basis.failures)));
+                if (basis.repairHours.length > 0) {
+                    const calcMttr = basis.repairHours.reduce((s, v) => s + v, 0) / basis.repairHours.length;
                     setMttr(calcMttr.toFixed(1));
                 }
             }
@@ -1270,15 +1276,15 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
         if (!asset) return;
         setLoadingSp(true);
         (async () => {
+            // M1: same engine basis as RAM/Metrics so the spares MTBF reconciles.
             const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
             const { data: wos } = await supabase.from('work_orders')
-                .select('id')
+                .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id)
-                .in('type', CORRECTIVE_WO_TYPES)
                 .gte('created_at', yearAgo);
-            if (wos && wos.length > 0) {
-                const calcMtbf = 8760 / wos.length;
-                setMtbfVal(calcMtbf.toFixed(0));
+            const basis = assetFailureBasis(wos || []);
+            if (basis.failures > 0) {
+                setMtbfVal(String(Math.round(basis.totalHours / basis.failures)));
             }
             setLoadingSp(false);
         })();

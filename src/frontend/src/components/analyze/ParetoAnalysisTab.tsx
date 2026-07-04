@@ -66,7 +66,11 @@ export const ParetoAnalysisTab: React.FC<ParetoAnalysisTabProps> = ({
     const [paretoCriteria, setParetoCriteria] = useState<ParetoCriteria>('cost');
     const [hierarchyLevel, setHierarchyLevel] = useState<HierarchyLevel>('EQUIPMENT');
     const [datePreset, setDatePreset] = useState<DatePreset>('12m');
-    const [woTypeFilter, setWoTypeFilter] = useState<string[]>(['CM', 'PM']);
+    // Default lens = corrective work only, matching the Metrics scoreboard's
+    // failure definition — a "bad actor" ranking that counted PM visits as
+    // events contradicted the fleet bad-actor list. Including PM cost is an
+    // explicit, labeled opt-in via the WO Types toggle.
+    const [woTypeFilter, setWoTypeFilter] = useState<string[]>(['CM', 'EM']);
     const [thresholdInput, setThresholdInput] = useState('');
     const [threshold, setThreshold] = useState<number | null>(null);
 
@@ -203,8 +207,8 @@ export const ParetoAnalysisTab: React.FC<ParetoAnalysisTabProps> = ({
                         <label className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mb-1 block">WO Types</label>
                         <div className="flex rounded-lg overflow-hidden border border-slate-300">
                             {[
-                                { val: ['CM', 'PM'], label: 'All' },
-                                { val: ['CM'], label: 'CM Only' },
+                                { val: ['CM', 'EM'], label: 'Corrective' },
+                                { val: ['CM', 'EM', 'PM'], label: '+ PM cost' },
                             ].map(opt => (
                                 <button
                                     key={opt.label}
