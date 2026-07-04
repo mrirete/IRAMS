@@ -23,9 +23,6 @@ export const PermissionGate: React.FC<PermissionGateProps> = ({ module, children
     const { permissions, loading, role } = useAuth();
     const navigate = useNavigate();
 
-    // TEMP DIAGNOSTIC: surface the gate decision so a stuck spinner is explained.
-    console.log(`[PermissionGate] module=${module} loading=${loading} permsLoaded=${permissions !== null} view=${(permissions?.[module] as any)?.view}`);
-
     // Still loading auth state — show spinner
     if (loading || permissions === null) {
         return (

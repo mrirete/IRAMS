@@ -16,9 +16,14 @@ export { useAuth as useEamAuthHook } from '../eam/contexts/AuthContext';
 export { AuthProvider } from '../eam/contexts/AuthContext';
 
 // Bridge type for ERS components that expect { isAuthenticated, isLoading }
+// MEMOIZED: this must return referentially-stable objects between renders.
+// It previously built a fresh `user` (and `departments` array) on every call,
+// which silently broke any consumer that put those in an effect dependency
+// array — see useReliabilityPresence, where that caused an infinite
+// setState/effect loop that starved Suspense retries app-wide.
 export const useAuth = () => {
     const eam = useEamAuth();
-    return {
+    return React.useMemo(() => ({
         user: eam.profile ? {
             ...eam.profile,
             // Map EAM profile fields to ERS TopBar expected shape
@@ -35,7 +40,7 @@ export const useAuth = () => {
         // EAM-specific fields
         permissions: eam.permissions,
         role: eam.role,
-    };
+    }), [eam.profile, eam.user, eam.loading, eam.permissions, eam.role, eam.signOut]);
 };
 
 // ── Protected Route Wrapper (Supabase Session) ───────────────

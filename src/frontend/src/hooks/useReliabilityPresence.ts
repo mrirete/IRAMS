@@ -64,10 +64,20 @@ export function useReliabilityPresence() {
     const isReliabilityRoute = RELIABILITY_ROUTES.some(route => currentPath.startsWith(route));
     const activeActivity = getActivityLabel(currentPath);
 
+    // NOTE: primitives only in the effect deps below. `user.departments` is a
+    // fresh array on every useAuth() call, so depending on it re-ran this
+    // effect on EVERY render — and the unconditional setOnlineUsers([]) then
+    // scheduled another render with a fresh array: a silent infinite
+    // setState/effect loop whenever a user was logged in. That endless update
+    // stream starved React's Suspense retry lane, so lazy route chunks
+    // resolved but their routes never rendered — the app-wide "stuck spinner
+    // until logout" bug.
+    const department = user?.departments?.[0] ?? '';
+
     useEffect(() => {
         // Only run presence if user is authenticated and on a reliability suite page
         if (!isAuthenticated || !user || !isReliabilityRoute) {
-            setOnlineUsers([]);
+            setOnlineUsers(prev => (prev.length === 0 ? prev : []));
             if (channelRef.current) {
                 console.log('[Presence] Unsubscribing due to page exit:', currentPath);
                 channelRef.current.unsubscribe();
@@ -137,7 +147,7 @@ export function useReliabilityPresence() {
                         username: user.username,
                         fullName: user.full_name || user.username,
                         role: user.role || 'Engineer',
-                        department: user.departments?.[0] || 'Reliability Dept',
+                        department: department || 'Reliability Dept',
                         activePage: activeActivity,
                         onlineAt: new Date().toISOString(),
                     });
@@ -154,7 +164,7 @@ export function useReliabilityPresence() {
                 channelRef.current = null;
             }
         };
-    }, [isAuthenticated, user?.id, user?.username, user?.full_name, user?.role, user?.departments, isReliabilityRoute, currentPath, activeActivity]);
+    }, [isAuthenticated, user?.id, user?.username, user?.full_name, user?.role, department, isReliabilityRoute, currentPath, activeActivity]);
 
     return {
         onlineUsers,
