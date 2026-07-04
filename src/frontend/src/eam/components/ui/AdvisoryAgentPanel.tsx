@@ -13,7 +13,7 @@ import type { AgentRunResponse } from '../../services/agentRunClient';
 type Accent = 'teal' | 'violet' | 'indigo' | 'amber' | 'blue' | 'emerald';
 
 const ACCENT: Record<Accent, { head: string; icon: string; btn: string; bar: string; ring: string }> = {
-    teal:    { head: 'from-teal-50',    icon: 'bg-teal-100 text-teal-600',       btn: 'from-teal-500 to-teal-600',       bar: 'border-teal-200',    ring: 'focus:ring-teal-300 focus:border-teal-400' },
+    teal:    { head: 'from-primary-50',    icon: 'bg-primary-100 text-primary-600',       btn: 'from-primary-500 to-primary-600',       bar: 'border-primary-200',    ring: 'focus:ring-primary-300 focus:border-primary-400' },
     violet:  { head: 'from-violet-50',  icon: 'bg-violet-100 text-violet-600',   btn: 'from-violet-500 to-violet-600',   bar: 'border-violet-200',  ring: 'focus:ring-violet-300 focus:border-violet-400' },
     indigo:  { head: 'from-indigo-50',  icon: 'bg-indigo-100 text-indigo-600',   btn: 'from-indigo-500 to-indigo-600',   bar: 'border-indigo-200',  ring: 'focus:ring-indigo-300 focus:border-indigo-400' },
     amber:   { head: 'from-amber-50',   icon: 'bg-amber-100 text-amber-600',     btn: 'from-amber-500 to-amber-600',     bar: 'border-amber-200',   ring: 'focus:ring-amber-300 focus:border-amber-400' },

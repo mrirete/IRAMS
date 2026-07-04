@@ -44,7 +44,7 @@ export const VisionCorrosionPanel: React.FC<VisionCorrosionPanelProps> = ({
     if (loading) {
         return (
             <div className="flex items-center gap-2 text-xs text-slate-400 py-4">
-                <div className="w-4 h-4 border-2 border-cyan-300 border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-primary-300 border-t-transparent rounded-full animate-spin" />
                 Loading vision corrosion data...
             </div>
         );
@@ -63,9 +63,9 @@ export const VisionCorrosionPanel: React.FC<VisionCorrosionPanelProps> = ({
     return (
         <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-                <Eye size={16} className="text-cyan-600" />
+                <Eye size={16} className="text-primary-600" />
                 <h4 className="text-sm font-semibold text-slate-800">Vision — Corrosion Findings</h4>
-                <span className="ml-auto text-[10px] bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full font-medium border border-cyan-200">
+                <span className="ml-auto text-[10px] bg-primary-50 text-primary-700 px-2 py-0.5 rounded-full font-medium border border-primary-200">
                     {findings.length} finding{findings.length !== 1 ? 's' : ''}
                 </span>
             </div>
@@ -98,7 +98,7 @@ export const VisionCorrosionPanel: React.FC<VisionCorrosionPanelProps> = ({
                             {onLinkToCML && (
                                 <button
                                     onClick={() => onLinkToCML(f)}
-                                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-cyan-700 bg-cyan-50 border border-cyan-200 rounded hover:bg-cyan-100 transition-colors shrink-0"
+                                    className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-primary-700 bg-primary-50 border border-primary-200 rounded hover:bg-primary-100 transition-colors shrink-0"
                                     title="Link this finding to a Corrosion Monitoring Location"
                                 >
                                     <MapPin size={10} />

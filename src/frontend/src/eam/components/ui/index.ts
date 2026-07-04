@@ -21,6 +21,8 @@ export type { TabDefinition, TabsProps } from './Tabs';
 export { EmptyState } from './EmptyState';
 export type { EmptyStateProps } from './EmptyState';
 export { Skeleton, SkeletonRows } from './Skeleton';
+export { LoadingState } from './LoadingState';
+export type { LoadingStateProps } from './LoadingState';
 export { DataList } from './DataList';
 export type { DataListProps, DataColumn } from './DataList';
 export { DensityToggle } from './DensityToggle';

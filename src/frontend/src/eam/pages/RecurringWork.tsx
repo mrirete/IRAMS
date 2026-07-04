@@ -2165,7 +2165,7 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                                 <span className="flex items-center gap-1"><Clock size={11} /> {libTask.estimatedDuration}h</span>
                                                 <span className="flex items-center gap-1"><CheckSquare size={11} /> {libTask.instructions?.length || 0} steps</span>
                                                 {(libTask.assetClassCodes || []).length > 0 && (
-                                                    <span className="flex items-center gap-1 text-teal-600">
+                                                    <span className="flex items-center gap-1 text-primary-600">
                                                         <Layers size={11} /> {libTask.assetClassCodes!.join(', ')}
                                                     </span>
                                                 )}
@@ -2367,7 +2367,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                                 const active = (h.controlHierarchy || []).includes(ctrl);
                                                 const colors = [
                                                     'bg-green-100 text-green-800 border-green-300',
-                                                    'bg-teal-100 text-teal-800 border-teal-300',
+                                                    'bg-primary-100 text-primary-800 border-primary-300',
                                                     'bg-blue-100 text-blue-800 border-blue-300',
                                                     'bg-blue-100 text-blue-800 border-blue-300',
                                                     'bg-orange-100 text-orange-800 border-orange-300',

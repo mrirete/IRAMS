@@ -11,7 +11,7 @@ const TYPE_COLORS: Record<InspectionType, { bg: string; text: string }> = {
     VT: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
     MT: { bg: 'bg-blue-50 border-blue-200', text: 'text-blue-700' },
     PT: { bg: 'bg-rose-50 border-rose-200', text: 'text-rose-700' },
-    MFL: { bg: 'bg-cyan-50 border-cyan-200', text: 'text-cyan-700' },
+    MFL: { bg: 'bg-primary-50 border-primary-200', text: 'text-primary-700' },
 };
 
 const STATUS_CONFIG: Record<InspectionEventStatus, { label: string; icon: React.ReactNode; bg: string; text: string }> = {
@@ -74,7 +74,7 @@ export const InspectionAssetTab: React.FC<InspectionAssetTabProps> = ({ assetId 
                 <select
                     value={methodFilter}
                     onChange={e => setMethodFilter(e.target.value as InspectionType | 'all')}
-                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                    className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                 >
                     <option value="all">All NDE Methods</option>
                     {ALL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -103,7 +103,7 @@ export const InspectionAssetTab: React.FC<InspectionAssetTabProps> = ({ assetId 
                             <button
                                 key={insp.id}
                                 onClick={() => navigate(`/comply/inspections/${insp.id}`)}
-                                className="w-full bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 text-left shadow-sm hover:shadow-md hover:border-cyan-200 transition-all duration-200 group"
+                                className="w-full bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 text-left shadow-sm hover:shadow-md hover:border-primary-200 transition-all duration-200 group"
                             >
                                 {/* Date Column */}
                                 <div className="shrink-0 text-center w-14">
@@ -136,7 +136,7 @@ export const InspectionAssetTab: React.FC<InspectionAssetTabProps> = ({ assetId 
                                 </div>
 
                                 {/* Arrow */}
-                                <ChevronRight size={16} className="text-slate-300 group-hover:text-cyan-500 transition-colors shrink-0" />
+                                <ChevronRight size={16} className="text-slate-300 group-hover:text-primary-500 transition-colors shrink-0" />
                             </button>
                         );
                     })}

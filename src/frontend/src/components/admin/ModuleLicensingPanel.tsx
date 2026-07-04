@@ -22,9 +22,9 @@ export const ModuleLicensingPanel: React.FC = () => {
         <div>
             <div className="flex items-center justify-between mb-1">
                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Layers size={18} className="text-cyan-600" /> Module Licensing
+                    <Layers size={18} className="text-primary-600" /> Module Licensing
                 </h3>
-                <button onClick={resetToFull} className="text-xs text-slate-500 hover:text-cyan-600 transition-colors font-semibold">
+                <button onClick={resetToFull} className="text-xs text-slate-500 hover:text-primary-600 transition-colors font-semibold">
                     Reset to Full License
                 </button>
             </div>

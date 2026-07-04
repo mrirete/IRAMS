@@ -89,7 +89,7 @@ export const ConnectorDetail: React.FC = () => {
         return (
             <div className="flex flex-col items-center justify-center h-64">
                 <p className="text-slate-500 font-medium">Loading or connector not found.</p>
-                <button onClick={() => navigate('/admin/connectors')} className="mt-4 text-cyan-600 hover:text-cyan-700 font-semibold transition-colors">
+                <button onClick={() => navigate('/admin/connectors')} className="mt-4 text-primary-600 hover:text-primary-700 font-semibold transition-colors">
                     Return to Connector Hub
                 </button>
             </div>
@@ -186,7 +186,7 @@ export const ConnectorDetail: React.FC = () => {
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
                             className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${activeTab === tab.id
-                                ? 'border-accent-cyan text-cyan-700'
+                                ? 'border-accent-cyan text-primary-700'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
                                 }`}
                         >

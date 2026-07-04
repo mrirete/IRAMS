@@ -97,7 +97,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                         )}
                         {/* CML */}
                         {finding.cml_number && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md bg-cyan-50 text-cyan-700 border border-cyan-200">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md bg-primary-50 text-primary-700 border border-primary-200">
                                 <MapPin size={9} /> {finding.cml_number}
                             </span>
                         )}
@@ -133,7 +133,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                             <textarea
                                 value={finding.description}
                                 onChange={e => onUpdate(finding.id, { description: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 resize-none transition-all"
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400 resize-none transition-all"
                                 rows={3}
                             />
                         )}
@@ -157,7 +157,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                                             damage_mechanism_name: dm?.mechanism_name,
                                         });
                                     }}
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                                 >
                                     <option value="">— None —</option>
                                     {damageMechanisms.map(dm => (
@@ -182,7 +182,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                                             cml_number: cml?.cml_number,
                                         });
                                     }}
-                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                                 >
                                     <option value="">— None —</option>
                                     {cmls.map(c => (
@@ -209,7 +209,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                                             value={finding.measurement_value ?? ''}
                                             onChange={e => onUpdate(finding.id, { measurement_value: parseFloat(e.target.value) || undefined })}
                                             placeholder="0.00"
-                                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                                         />
                                         <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-2 rounded-lg border border-slate-200">
                                             {finding.measurement_unit || 'mm'}
@@ -223,7 +223,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                                     <select
                                         value={finding.measurement_unit || 'mm'}
                                         onChange={e => onUpdate(finding.id, { measurement_unit: e.target.value })}
-                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                                     >
                                         <option value="mm">mm</option>
                                         <option value="mils">mils</option>
@@ -246,7 +246,7 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                                 value={finding.recommendation || ''}
                                 onChange={e => onUpdate(finding.id, { recommendation: e.target.value })}
                                 placeholder="Technical recommendation for remediation..."
-                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-300 resize-none transition-all"
+                                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-300 resize-none transition-all"
                                 rows={2}
                             />
                         )}

@@ -93,13 +93,13 @@ const AssetSearchPicker: React.FC<{
         type="button"
         onClick={() => { setOpen(!open); setTimeout(() => inputRef.current?.focus(), 50); }}
         className={`w-full flex items-center gap-2 bg-slate-800/80 border rounded-lg px-3 py-2.5 text-left transition
-          ${open ? 'border-cyan-500 ring-2 ring-cyan-500/30' : 'border-slate-600 hover:border-slate-500'}
+          ${open ? 'border-primary-500 ring-2 ring-primary-500/30' : 'border-slate-600 hover:border-slate-500'}
           ${!value ? 'text-slate-500' : 'text-white'}`}
       >
         <Search size={14} className="text-slate-400 shrink-0" />
         {selected ? (
           <span className="text-sm truncate">
-            <span className="text-cyan-300 font-semibold">{selected.tag}</span>
+            <span className="text-primary-300 font-semibold">{selected.tag}</span>
             <span className="text-slate-400 mx-1.5">|</span>
             <span className="text-white">{selected.name}</span>
           </span>
@@ -126,7 +126,7 @@ const AssetSearchPicker: React.FC<{
                 ref={inputRef}
                 type="text"
                 className="w-full bg-slate-900 border border-slate-600 rounded-md pl-8 pr-3 py-2 text-sm text-white
-                  placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500"
+                  placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500"
                 placeholder="Filter by tag, name, or type..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
@@ -145,12 +145,12 @@ const AssetSearchPicker: React.FC<{
                   type="button"
                   onClick={() => { onChange(a.id); setOpen(false); setSearch(''); }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition hover:bg-slate-700/60
-                    ${a.id === value ? 'bg-cyan-900/30 border-l-2 border-cyan-400' : 'border-l-2 border-transparent'}`}
+                    ${a.id === value ? 'bg-primary-900/30 border-l-2 border-primary-400' : 'border-l-2 border-transparent'}`}
                 >
                   <Tag size={13} className="text-slate-500 shrink-0" />
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-cyan-300">{a.tag}</span>
+                      <span className="text-sm font-semibold text-primary-300">{a.tag}</span>
                       {a.hierarchy_level && (
                         <span className="text-[10px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded">
                           {a.hierarchy_level}
@@ -329,13 +329,13 @@ export const ProductionLogEntry: React.FC<{
     return 'text-red-400';
   };
 
-  const inputBase = 'w-full bg-slate-800/80 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white text-center focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500 transition';
+  const inputBase = 'w-full bg-slate-800/80 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white text-center focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500 transition';
 
   return (
     <div className="bg-slate-900/80 border border-slate-700/60 rounded-xl overflow-hidden backdrop-blur">
       {/* Header */}
-      <div className="px-5 py-3.5 bg-gradient-to-r from-blue-600/25 to-cyan-600/20 border-b border-slate-700/50 flex items-center gap-2.5">
-        <Factory size={18} className="text-cyan-400" />
+      <div className="px-5 py-3.5 bg-gradient-to-r from-blue-600/25 to-primary-600/20 border-b border-slate-700/50 flex items-center gap-2.5">
+        <Factory size={18} className="text-primary-400" />
         <h3 className="text-sm font-bold text-white tracking-wide">Production Log Entry</h3>
         {assetConfig && (
           <span className="ml-auto text-xs bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full font-medium">
@@ -481,7 +481,7 @@ export const ProductionLogEntry: React.FC<{
               <FieldLabel icon={<MessageSquare size={13} />}>Notes</FieldLabel>
               <textarea
                 className="w-full bg-slate-800/80 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white resize-none
-                  placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500"
+                  placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500"
                 rows={2}
                 placeholder="Shift notes, observations, issues..."
                 value={form.notes}
@@ -538,9 +538,9 @@ export const ProductionLogEntry: React.FC<{
           <button
             onClick={() => saveMutation.mutate(form)}
             disabled={!canSubmit || saveMutation.isPending}
-            className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-lg text-sm text-white font-bold
-              hover:from-cyan-500 hover:to-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition
-              flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/20"
+            className="flex-1 px-4 py-3 bg-gradient-to-r from-primary-600 to-blue-600 rounded-lg text-sm text-white font-bold
+              hover:from-primary-500 hover:to-blue-500 disabled:opacity-40 disabled:cursor-not-allowed transition
+              flex items-center justify-center gap-2 shadow-lg shadow-primary-600/20"
           >
             {saveMutation.isPending ? (
               <><Loader2 size={14} className="animate-spin" /> Saving...</>

@@ -214,7 +214,7 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
                             {(task.assetClassCodes || []).length > 0 && (
                                 <div className="flex flex-wrap gap-1 mb-3">
                                     {task.assetClassCodes!.map(code => (
-                                        <span key={code} className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200 flex items-center gap-0.5">
+                                        <span key={code} className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary-50 text-primary-700 border border-primary-200 flex items-center gap-0.5">
                                             <Tag size={9} /> {code}
                                         </span>
                                     ))}
@@ -389,7 +389,7 @@ const TaskEditorModal: React.FC<{
                             </label>
                             <div className="flex flex-wrap gap-1.5 p-2 border rounded bg-white min-h-[38px]">
                                 {(formData.assetClassCodes || []).map(code => (
-                                    <span key={code} className="px-2 py-0.5 bg-teal-50 text-teal-700 border border-teal-200 rounded text-xs font-medium flex items-center gap-1">
+                                    <span key={code} className="px-2 py-0.5 bg-primary-50 text-primary-700 border border-primary-200 rounded text-xs font-medium flex items-center gap-1">
                                         {code}
                                         {!formData.isLocked && (
                                             <button
@@ -397,7 +397,7 @@ const TaskEditorModal: React.FC<{
                                                     ...formData,
                                                     assetClassCodes: (formData.assetClassCodes || []).filter(c => c !== code)
                                                 })}
-                                                className="text-teal-400 hover:text-red-500 ml-0.5"
+                                                className="text-primary-400 hover:text-red-500 ml-0.5"
                                             >
                                                 <X size={10} />
                                             </button>

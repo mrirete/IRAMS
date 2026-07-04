@@ -38,7 +38,7 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
         <button
           onClick={onGeneratePM}
           disabled={aiLoading === 'pm'}
-          className="flex items-center gap-2 px-5 py-2.5 bg-accent-cyan hover:bg-cyan-400 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] disabled:opacity-50"
+          className="flex items-center gap-2 px-5 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] disabled:opacity-50"
         >
           {aiLoading === 'pm' ? <RefreshCw size={14} className="animate-spin" /> : <Wrench size={14} />}
           Generate PM Schedule

@@ -2013,7 +2013,7 @@ export const Admin: React.FC = () => {
                     </button>
                     <button
                         onClick={() => setActiveTab('licensing')}
-                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'licensing' ? 'text-cyan-600 border-b-2 border-cyan-600 bg-cyan-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'licensing' ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
                         <Layers size={16} /> Module Licensing
                     </button>

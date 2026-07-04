@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ShieldOff, ArrowLeft, Lock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { ModuleName } from '../types';
+import { LoadingState } from './ui';
 
 interface PermissionGateProps {
     module: ModuleName;
@@ -25,11 +26,7 @@ export const PermissionGate: React.FC<PermissionGateProps> = ({ module, children
 
     // Still loading auth state — show spinner
     if (loading || permissions === null) {
-        return (
-            <div className="flex items-center justify-center h-64">
-                <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-        );
+        return <LoadingState label="Checking access…" />;
     }
 
     // Check module view permission

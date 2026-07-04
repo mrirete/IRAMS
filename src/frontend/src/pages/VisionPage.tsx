@@ -82,7 +82,7 @@ export const VisionPage: React.FC = () => {
 
             {/* ── KPI Cards ───────────────────────────────── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-                <KpiCard label="Total Results" value={visionResults.length} icon={Scan} gradient="from-blue-500 to-cyan-500" />
+                <KpiCard label="Total Results" value={visionResults.length} icon={Scan} gradient="from-blue-500 to-primary-500" />
                 <KpiCard label="Unreviewed" value={unreviewed} icon={AlertTriangle} gradient="from-amber-500 to-orange-500" />
                 <KpiCard label="Critical Detections" value={visionResults.filter(v => v.max_severity === 'critical').length} icon={AlertTriangle} gradient="from-red-500 to-rose-500" />
                 <KpiCard label="Drone Surveys" value={droneSurveys.length} icon={Image} gradient="from-blue-500 to-blue-500" />
@@ -189,7 +189,7 @@ export const VisionPage: React.FC = () => {
             {/* ── Drone Surveys ────────────────────────────── */}
             <div>
                 <div className="flex items-center gap-2 mb-3">
-                    <div className="w-1 h-4 rounded-full bg-gradient-to-b from-blue-400 to-cyan-400" />
+                    <div className="w-1 h-4 rounded-full bg-gradient-to-b from-blue-400 to-primary-400" />
                     <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">Drone Surveys</h3>
                     <span className="ml-auto text-xs text-slate-400">{droneSurveys.length} total</span>
                 </div>

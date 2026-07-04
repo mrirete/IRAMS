@@ -423,7 +423,7 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-teal-50 rounded-t-2xl">
+                <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-primary-50 rounded-t-2xl">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
                             <Receipt size={20} className="text-emerald-600" />
@@ -850,11 +850,11 @@ export const FinOps: React.FC = () => {
                 <div className="px-6 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-primary-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                                 <DollarSign size={24} className="text-white" />
                             </div>
                             <div>
-                                <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
+                                <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-primary-600 bg-clip-text text-transparent">
                                     FinOps Core
                                 </h1>
                                 <p className="text-sm text-slate-500">Financial Operations & Asset Lifecycle</p>
@@ -962,7 +962,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) =>
         { label: 'Depreciation MTD', value: `$${metrics.depreciationMTD.toLocaleString()}`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-100', sub: ' posted' },
         { label: 'Active Warranties', value: metrics.activeWarranties.toString(), icon: ShieldCheck, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'Assets Covered' },
         { label: 'Pending Claims', value: metrics.pendingClaims.toString(), icon: FileText, color: 'text-amber-600', bg: 'bg-amber-100', sub: 'Review Needed' },
-        { label: 'Invoice Variance', value: `${metrics.invoiceVariance}%`, icon: Banknote, color: 'text-teal-600', bg: 'bg-teal-100', sub: 'Avg Variance' },
+        { label: 'Invoice Variance', value: `${metrics.invoiceVariance}%`, icon: Banknote, color: 'text-primary-600', bg: 'bg-primary-100', sub: 'Avg Variance' },
         { label: 'Insurance Coverage', value: `$${(metrics.insuranceCoverage / 1000000).toFixed(1)}M`, icon: Shield, color: 'text-blue-600', bg: 'bg-blue-100', sub: 'Total Value' },
     ];
 
@@ -2314,11 +2314,11 @@ const ClaimsTab: React.FC<ClaimsTabProps> = ({ claims, onRefresh }) => {
                                     <div className="flex items-center gap-4">
                                         <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
                                             claim.claimType === 'REPLACEMENT' ? 'bg-blue-100' :
-                                            claim.claimType === 'CREDIT' ? 'bg-teal-100' : 'bg-blue-100'
+                                            claim.claimType === 'CREDIT' ? 'bg-primary-100' : 'bg-blue-100'
                                         }`}>
                                             <Shield size={18} className={
                                                 claim.claimType === 'REPLACEMENT' ? 'text-blue-600' :
-                                                claim.claimType === 'CREDIT' ? 'text-teal-600' : 'text-blue-600'
+                                                claim.claimType === 'CREDIT' ? 'text-primary-600' : 'text-blue-600'
                                             } />
                                         </div>
                                         <div>
@@ -2752,10 +2752,10 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
             <div className="bg-white rounded-xl shadow-sm border border-slate-100">
                 <div className="flex items-center justify-between p-4 border-b border-slate-100">
                     <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-                        <Scale size={18} className="text-teal-600" />
+                        <Scale size={18} className="text-primary-600" />
                         Three-Way Match Queue
                     </h3>
-                    <button className="flex items-center gap-2 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors">
+                    <button className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
                         <Zap size={14} />
                         Auto-Reconcile
                     </button>

@@ -192,7 +192,7 @@ export const ReportDataTable: React.FC<ReportDataTableProps> = ({
                     </span>
                     <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden min-w-[60px]">
                       <div
-                        className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all"
+                        className="h-full bg-gradient-to-r from-blue-500 to-primary-400 rounded-full transition-all"
                         style={{ width: `${barWidth}%` }}
                       />
                     </div>

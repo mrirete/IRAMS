@@ -79,7 +79,7 @@ const LinkedRBDStudies: React.FC<{ assetId: string; navigate: ReturnType<typeof 
         return (
             <div className="mt-4 p-4 bg-brand-800/50 border border-slate-700/30 rounded-lg">
                 <div className="flex items-center gap-2">
-                    <Loader2 size={14} className="animate-spin text-cyan-500" />
+                    <Loader2 size={14} className="animate-spin text-primary-500" />
                     <span className="text-xs text-slate-400">Loading linked RBD studies…</span>
                 </div>
             </div>
@@ -90,10 +90,10 @@ const LinkedRBDStudies: React.FC<{ assetId: string; navigate: ReturnType<typeof 
         <div className="mt-4">
             <div className="flex items-center justify-between mb-2">
                 <h4 className="text-[11px] font-bold text-brand-200 uppercase tracking-wider flex items-center gap-1.5">
-                    <LayoutGrid size={12} className="text-cyan-500" /> RBD Studies
+                    <LayoutGrid size={12} className="text-primary-500" /> RBD Studies
                 </h4>
                 <button onClick={() => navigate('/analyze?tab=reliability')}
-                    className="text-[10px] text-cyan-500 hover:text-cyan-400 font-medium flex items-center gap-1">
+                    className="text-[10px] text-primary-500 hover:text-primary-400 font-medium flex items-center gap-1">
                     View All <ExternalLink size={9} />
                 </button>
             </div>
@@ -102,7 +102,7 @@ const LinkedRBDStudies: React.FC<{ assetId: string; navigate: ReturnType<typeof 
                     <Cpu size={20} className="mx-auto text-slate-600 mb-1" />
                     <p className="text-[11px] text-slate-500">No RBD studies reference this asset</p>
                     <button onClick={() => navigate('/analyze?tab=reliability')}
-                        className="mt-2 text-[10px] text-cyan-500 hover:text-cyan-400 font-medium">
+                        className="mt-2 text-[10px] text-primary-500 hover:text-primary-400 font-medium">
                         Create Study →
                     </button>
                 </div>
@@ -115,12 +115,12 @@ const LinkedRBDStudies: React.FC<{ assetId: string; navigate: ReturnType<typeof 
                             : 0;
                         return (
                             <div key={study.id} onClick={() => navigate('/analyze?tab=reliability')}
-                                className="flex items-center gap-3 p-3 bg-brand-800/50 border border-slate-700/30 rounded-lg cursor-pointer hover:border-cyan-500/40 hover:bg-brand-800/80 transition-all group">
-                                <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center shrink-0">
-                                    <Cpu size={14} className="text-cyan-500" />
+                                className="flex items-center gap-3 p-3 bg-brand-800/50 border border-slate-700/30 rounded-lg cursor-pointer hover:border-primary-500/40 hover:bg-brand-800/80 transition-all group">
+                                <div className="w-8 h-8 rounded-lg bg-primary-500/10 flex items-center justify-center shrink-0">
+                                    <Cpu size={14} className="text-primary-500" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-cyan-400 transition-colors">{study.title}</p>
+                                    <p className="text-xs font-semibold text-slate-200 truncate group-hover:text-primary-400 transition-colors">{study.title}</p>
                                     <div className="flex items-center gap-2 mt-0.5">
                                         <span className="text-[9px] text-slate-500 font-mono">{blocks.length} blocks</span>
                                         {ao > 0 && (
@@ -130,7 +130,7 @@ const LinkedRBDStudies: React.FC<{ assetId: string; navigate: ReturnType<typeof 
                                         )}
                                     </div>
                                 </div>
-                                <ExternalLink size={12} className="text-slate-600 group-hover:text-cyan-500 transition-colors shrink-0" />
+                                <ExternalLink size={12} className="text-slate-600 group-hover:text-primary-500 transition-colors shrink-0" />
                             </div>
                         );
                     })}
@@ -397,7 +397,7 @@ export const AssetsPage: React.FC = () => {
                     </button>
                     <button
                         onClick={() => setShowRegister(true)}
-                        className="flex items-center gap-2 px-4 py-1.5 bg-accent-cyan hover:bg-cyan-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+                        className="flex items-center gap-2 px-4 py-1.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]"
                     >
                         <Plus size={16} /> Register Asset
                     </button>
@@ -532,7 +532,7 @@ export const AssetsPage: React.FC = () => {
                         </div>
                         {activeFilters > 0 && (
                             <div className="col-span-full">
-                                <button onClick={resetFilters} className="text-xs text-accent-cyan hover:text-cyan-300 transition-colors">Clear all filters</button>
+                                <button onClick={resetFilters} className="text-xs text-accent-cyan hover:text-primary-300 transition-colors">Clear all filters</button>
                             </div>
                         )}
                     </div>
@@ -1470,7 +1470,7 @@ export const AssetsPage: React.FC = () => {
                                     <button
                                         onClick={handleRegister}
                                         disabled={!registerForm.tag || !registerForm.name || !registerForm.site || !registerForm.unit}
-                                        className="px-6 py-2 bg-accent-cyan hover:bg-cyan-400 disabled:opacity-40 disabled:cursor-not-allowed text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2"
+                                        className="px-6 py-2 bg-accent-cyan hover:bg-primary-400 disabled:opacity-40 disabled:cursor-not-allowed text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2"
                                     >
                                         <Plus size={16} /> Register Asset
                                     </button>

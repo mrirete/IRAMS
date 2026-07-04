@@ -498,7 +498,7 @@ const FMEAWorksheetDetail: React.FC = () => {
                     </button>
                     {nextStatus && (
                         <button onClick={() => changeStatus(nextStatus)} disabled={saving}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-accent-cyan text-brand-900 rounded-lg text-xs font-bold hover:bg-cyan-400 transition-colors disabled:opacity-50"
+                            className="flex items-center gap-1.5 px-4 py-2 bg-accent-cyan text-brand-900 rounded-lg text-xs font-bold hover:bg-primary-400 transition-colors disabled:opacity-50"
                         >
                             {saving ? <Loader2 className="animate-spin" size={14} /> : <FileText size={14} />}
                             Advance to {nextStatus}
@@ -631,7 +631,7 @@ const FMEAWorksheetDetail: React.FC = () => {
                                     </td>
                                     <td className="px-2 py-2 text-center">
                                         <button onClick={addItem} disabled={saving || !newItem.component || !newItem.failure_mode}
-                                            className="p-1.5 bg-accent-cyan text-brand-900 rounded hover:bg-cyan-400 disabled:opacity-50 transition-colors"
+                                            className="p-1.5 bg-accent-cyan text-brand-900 rounded hover:bg-primary-400 disabled:opacity-50 transition-colors"
                                         ><Save size={14} /></button>
                                     </td>
                                 </tr>
@@ -643,7 +643,7 @@ const FMEAWorksheetDetail: React.FC = () => {
                                     <td colSpan={13} className="py-16 text-center">
                                         <AlertTriangle className="mx-auto mb-3 text-slate-400 opacity-40" size={32} />
                                         <p className="text-slate-400 text-sm mb-3">No failure modes added yet.</p>
-                                        <button onClick={() => setShowAddRow(true)} className="inline-flex items-center gap-1.5 px-4 py-2 bg-accent-cyan text-brand-900 rounded-lg text-xs font-bold hover:bg-cyan-400 transition-colors">
+                                        <button onClick={() => setShowAddRow(true)} className="inline-flex items-center gap-1.5 px-4 py-2 bg-accent-cyan text-brand-900 rounded-lg text-xs font-bold hover:bg-primary-400 transition-colors">
                                             <Plus size={14} /> Add First Item
                                         </button>
                                     </td>
@@ -698,7 +698,7 @@ const FMEAWorksheetDetail: React.FC = () => {
                                                 </td>
                                                 <td className="px-2 py-2">
                                                     <div className="flex items-center gap-1 justify-center">
-                                                        <button onClick={saveEdit} disabled={saving} className="p-1 bg-accent-cyan text-brand-900 rounded hover:bg-cyan-400 disabled:opacity-50"><Save size={12} /></button>
+                                                        <button onClick={saveEdit} disabled={saving} className="p-1 bg-accent-cyan text-brand-900 rounded hover:bg-primary-400 disabled:opacity-50"><Save size={12} /></button>
                                                         <button onClick={cancelEdit} className="p-1 bg-slate-100 text-slate-500 rounded hover:bg-brand-600 text-xs">✕</button>
                                                     </div>
                                                 </td>

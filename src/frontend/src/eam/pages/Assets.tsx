@@ -364,7 +364,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
         if (type === 'SITE') return <Building size={18} className="text-blue-600" />;
         if (type === 'AREA') return <Factory size={18} className="text-blue-600" />;
         if (type === 'UNIT') return <Network size={18} className="text-blue-600" />;
-        if (type === 'SYSTEM') return <FolderPlus size={18} className="text-teal-600" />;
+        if (type === 'SYSTEM') return <FolderPlus size={18} className="text-primary-600" />;
         if (type === 'PUMP' || type === 'MOTOR' || type === 'COMPRESSOR') return <Activity size={18} className="text-slate-500" />;
         return <Package size={18} className="text-slate-400" />;
     };
@@ -2613,7 +2613,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                                     cf.type === 'NUMBER' ? 'bg-blue-50 text-blue-600 border-blue-200' :
                                     cf.type === 'DATE' ? 'bg-blue-50 text-blue-600 border-blue-200' :
                                     cf.type === 'BOOLEAN' ? 'bg-amber-50 text-amber-600 border-amber-200' :
-                                    cf.type === 'DROPDOWN' ? 'bg-teal-50 text-teal-600 border-teal-200' :
+                                    cf.type === 'DROPDOWN' ? 'bg-primary-50 text-primary-600 border-primary-200' :
                                     'bg-slate-50 text-slate-600 border-slate-200'
                                 }`}>{cf.type}</span>
                                 <span className="text-sm font-medium text-slate-700 truncate">{cf.key}</span>
@@ -2653,8 +2653,8 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
     const ISO_LEVELS: { label: string; tag: string; color: string }[] = [
         { label: 'Enterprise', tag: 'L1', color: 'bg-blue-100 text-blue-700 border-blue-200' },
         { label: 'Site', tag: 'L2', color: 'bg-sky-100 text-sky-700 border-sky-200' },
-        { label: 'Plant', tag: 'L3', color: 'bg-cyan-100 text-cyan-700 border-cyan-200' },
-        { label: 'Unit', tag: 'L4', color: 'bg-teal-100 text-teal-700 border-teal-200' },
+        { label: 'Plant', tag: 'L3', color: 'bg-primary-100 text-primary-700 border-primary-200' },
+        { label: 'Unit', tag: 'L4', color: 'bg-primary-100 text-primary-700 border-primary-200' },
         { label: 'System', tag: 'L5', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
         { label: 'Equipment', tag: 'L6', color: 'bg-amber-100 text-amber-700 border-amber-200' },
         { label: 'Subunit', tag: 'L7', color: 'bg-orange-100 text-orange-700 border-orange-200' },
@@ -3672,7 +3672,7 @@ function JobsTab({ asset }: { asset: Asset }) {
 
     const RCM_LABELS: Record<string, { label: string; color: string }> = {
         TIME_DIRECTED: { label: 'Time-Directed', color: 'bg-blue-100 text-blue-700' },
-        CONDITION_DIRECTED: { label: 'Condition-Based', color: 'bg-teal-100 text-teal-700' },
+        CONDITION_DIRECTED: { label: 'Condition-Based', color: 'bg-primary-100 text-primary-700' },
         FAILURE_FINDING: { label: 'Failure-Finding', color: 'bg-blue-100 text-blue-700' },
         RUN_TO_FAILURE: { label: 'Run-to-Failure', color: 'bg-slate-100 text-slate-600' },
     };

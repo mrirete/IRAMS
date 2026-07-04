@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { LoadingState } from '../../eam/components/ui';
 import {
     Shield, Search, RefreshCw, Filter, Clock, User, Database,
     ChevronDown, ChevronUp, AlertTriangle, Activity, Eye,
@@ -288,9 +289,7 @@ export const AdminActivityPage: React.FC = () => {
             {/* ── Audit Log List ──────────────────────────────── */}
             <div className="flex-1 overflow-y-auto">
                 {loading ? (
-                    <div className="flex items-center justify-center h-48">
-                        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                    </div>
+                    <LoadingState label="Loading activity log…" className="h-48" />
                 ) : entries.length === 0 ? (
                     <div className="flex flex-col items-center justify-center mt-16 space-y-3">
                         <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center border border-slate-200">
@@ -425,7 +424,7 @@ function ChangesDiff({ changes, action }: { changes: Record<string, any>; action
                     {Object.entries(changes).map(([key, val]) => (
                         <div key={key}>
                             <span className="text-slate-500">+ </span>
-                            <span className="text-cyan-400">{key}</span>
+                            <span className="text-primary-400">{key}</span>
                             <span className="text-slate-500">: </span>
                             <span className="text-emerald-300">{formatValue(val)}</span>
                         </div>
@@ -443,7 +442,7 @@ function ChangesDiff({ changes, action }: { changes: Record<string, any>; action
                     {Object.entries(changes).map(([key, val]) => (
                         <div key={key}>
                             <span className="text-slate-500">- </span>
-                            <span className="text-cyan-400">{key}</span>
+                            <span className="text-primary-400">{key}</span>
                             <span className="text-slate-500">: </span>
                             <span className="text-red-300">{formatValue(val)}</span>
                         </div>
@@ -462,7 +461,7 @@ function ChangesDiff({ changes, action }: { changes: Record<string, any>; action
                     if (val && typeof val === 'object' && 'old' in val && 'new' in val) {
                         return (
                             <div key={key} className="mb-1">
-                                <span className="text-cyan-400">{key}</span>
+                                <span className="text-primary-400">{key}</span>
                                 <span className="text-slate-500">:</span>
                                 {'\n'}
                                 <span className="text-red-400">  - {formatValue(val.old)}</span>
@@ -475,7 +474,7 @@ function ChangesDiff({ changes, action }: { changes: Record<string, any>; action
                     return (
                         <div key={key}>
                             <span className="text-amber-400">~ </span>
-                            <span className="text-cyan-400">{key}</span>
+                            <span className="text-primary-400">{key}</span>
                             <span className="text-slate-500">: </span>
                             <span className="text-amber-300">{formatValue(val)}</span>
                         </div>

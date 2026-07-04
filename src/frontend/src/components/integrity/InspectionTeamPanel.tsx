@@ -57,7 +57,7 @@ export const InspectionTeamPanel: React.FC<InspectionTeamPanelProps> = ({
 
     const getInitials = (name: string) => name.split(' ').map(n => n[0]).join('').toUpperCase();
 
-    const INITIALS_COLORS = ['bg-blue-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-cyan-500', 'bg-blue-500'];
+    const INITIALS_COLORS = ['bg-blue-500', 'bg-blue-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-primary-500', 'bg-blue-500'];
 
     return (
         <div className="space-y-3">

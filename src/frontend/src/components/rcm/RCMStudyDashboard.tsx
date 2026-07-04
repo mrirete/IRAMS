@@ -127,7 +127,7 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
         </div>
       ) : filteredStudies.length === 0 ? (
         /* Empty State */
-        <div className="bg-gradient-to-br from-white via-slate-50 to-cyan-50/30 border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
+        <div className="bg-gradient-to-br from-white via-slate-50 to-primary-50/30 border border-slate-200 rounded-2xl p-12 text-center shadow-sm">
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-accent-cyan/10 flex items-center justify-center">
             <Shield size={32} className="text-accent-cyan" />
           </div>
@@ -137,7 +137,7 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
           </p>
           <button
             onClick={onCreateStudy}
-            className="mt-6 px-6 py-3 bg-accent-cyan hover:bg-cyan-400 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]"
+            className="mt-6 px-6 py-3 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]"
           >
             <Plus size={16} className="inline mr-2" /> Create RCM Study
           </button>

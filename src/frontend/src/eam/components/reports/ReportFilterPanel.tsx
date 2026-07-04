@@ -25,7 +25,7 @@ export const EMPTY_FILTERS: ReportFilters = {
 const LEVEL_STYLE: Record<string, { color: string; bg: string; border: string; icon: string }> = {
   SITE:      { color: 'text-blue-600',   bg: 'bg-blue-50',    border: 'border-blue-400',   icon: '📍' },
   UNIT:      { color: 'text-blue-600', bg: 'bg-blue-50',  border: 'border-blue-400', icon: '🏭' },
-  SYSTEM:    { color: 'text-teal-600',   bg: 'bg-teal-50',    border: 'border-teal-400',   icon: '⚙️' },
+  SYSTEM:    { color: 'text-primary-600',   bg: 'bg-primary-50',    border: 'border-primary-400',   icon: '⚙️' },
   EQUIPMENT: { color: 'text-amber-600',  bg: 'bg-amber-50',   border: 'border-amber-400',  icon: '🔧' },
   COMPONENT: { color: 'text-slate-500',  bg: 'bg-slate-50',   border: 'border-slate-300',  icon: '🔩' },
 };

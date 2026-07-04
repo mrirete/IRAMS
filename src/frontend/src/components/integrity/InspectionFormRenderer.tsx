@@ -104,7 +104,7 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
                         value={(value as string) ?? ''}
                         onChange={e => onResponseChange(field.id, e.target.value)}
                         placeholder={field.placeholder}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 transition-all"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400 transition-all"
                     />
                 )}
 
@@ -115,7 +115,7 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
                         onChange={e => onResponseChange(field.id, parseFloat(e.target.value) || 0)}
                         min={field.min_value}
                         max={field.max_value}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                     />
                 )}
 
@@ -128,7 +128,7 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
                             onChange={e => onResponseChange(field.id, parseFloat(e.target.value) || 0)}
                             min={field.min_value}
                             placeholder="0.00"
-                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                         />
                         <span className="text-xs font-bold text-slate-500 bg-slate-100 px-3 py-2 rounded-lg border border-slate-200 shrink-0">
                             {field.unit || 'mm'}
@@ -140,7 +140,7 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
                     <select
                         value={(value as string) ?? ''}
                         onChange={e => onResponseChange(field.id, e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                     >
                         <option value="">— Select —</option>
                         {field.options?.map(opt => (
@@ -158,7 +158,7 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
                                 onChange={e => onResponseChange(field.id, e.target.checked)}
                                 className="sr-only peer"
                             />
-                            <div className="w-10 h-5 bg-slate-200 rounded-full peer-checked:bg-cyan-500 transition-colors" />
+                            <div className="w-10 h-5 bg-slate-200 rounded-full peer-checked:bg-primary-500 transition-colors" />
                             <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm peer-checked:translate-x-5 transition-transform" />
                         </div>
                         <span className="text-xs text-slate-600 group-hover/toggle:text-slate-800 transition-colors">
@@ -173,7 +173,7 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
                         onChange={e => onResponseChange(field.id, e.target.value)}
                         placeholder={field.placeholder}
                         rows={3}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-300 resize-none transition-all"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-300 resize-none transition-all"
                     />
                 )}
 
@@ -182,12 +182,12 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
                         type="date"
                         value={(value as string) ?? ''}
                         onChange={e => onResponseChange(field.id, e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-300 transition-all"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-300 transition-all"
                     />
                 )}
 
                 {field.field_type === 'photo' && (
-                    <div className="w-20 h-20 bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-cyan-400 hover:bg-cyan-50/30 transition-all">
+                    <div className="w-20 h-20 bg-slate-100 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-primary-400 hover:bg-primary-50/30 transition-all">
                         <Camera size={20} className="text-slate-300" />
                         <span className="text-[9px] text-slate-400 mt-1">Add Photo</span>
                     </div>
@@ -206,7 +206,7 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
                 </div>
                 <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                     <div
-                        className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-cyan-400 to-blue-500'}`}
+                        className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? 'bg-gradient-to-r from-emerald-400 to-emerald-500' : 'bg-gradient-to-r from-primary-400 to-blue-500'}`}
                         style={{ width: `${pct}%` }}
                     />
                 </div>
@@ -214,7 +214,7 @@ export const InspectionFormRenderer: React.FC<InspectionFormRendererProps> = ({
 
             {/* Template Info */}
             <div className="flex items-center gap-2 px-1">
-                <span className="text-[10px] font-bold text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-md border border-cyan-200">{template.governing_code}</span>
+                <span className="text-[10px] font-bold text-primary-600 bg-primary-50 px-2 py-0.5 rounded-md border border-primary-200">{template.governing_code}</span>
                 <span className="text-xs text-slate-500 font-medium">{template.name}</span>
                 <span className="text-[10px] text-slate-400 ml-auto">v{template.version}</span>
             </div>

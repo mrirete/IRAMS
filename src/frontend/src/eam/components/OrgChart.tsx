@@ -38,7 +38,7 @@ const LEVEL_COLORS: Record<string, { bg: string; text: string; border: string; b
     purple: { bg: 'bg-blue-50 dark:bg-blue-900/20', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', badge: 'bg-blue-100 text-blue-700', accent: 'text-blue-600', hover: 'hover:bg-blue-100/60' },
     amber: { bg: 'bg-amber-50 dark:bg-amber-900/20', text: 'text-amber-700 dark:text-amber-300', border: 'border-amber-200 dark:border-amber-800', badge: 'bg-amber-100 text-amber-700', accent: 'text-amber-600', hover: 'hover:bg-amber-100/60' },
     rose: { bg: 'bg-rose-50 dark:bg-rose-900/20', text: 'text-rose-700 dark:text-rose-300', border: 'border-rose-200 dark:border-rose-800', badge: 'bg-rose-100 text-rose-700', accent: 'text-rose-600', hover: 'hover:bg-rose-100/60' },
-    teal: { bg: 'bg-teal-50 dark:bg-teal-900/20', text: 'text-teal-700 dark:text-teal-300', border: 'border-teal-200 dark:border-teal-800', badge: 'bg-teal-100 text-teal-700', accent: 'text-teal-600', hover: 'hover:bg-teal-100/60' },
+    teal: { bg: 'bg-primary-50 dark:bg-primary-900/20', text: 'text-primary-700 dark:text-primary-300', border: 'border-primary-200 dark:border-primary-800', badge: 'bg-primary-100 text-primary-700', accent: 'text-primary-600', hover: 'hover:bg-primary-100/60' },
     gray: { bg: 'bg-gray-50 dark:bg-gray-900/20', text: 'text-gray-700 dark:text-gray-300', border: 'border-gray-200 dark:border-gray-800', badge: 'bg-gray-100 text-gray-700', accent: 'text-gray-600', hover: 'hover:bg-gray-100/60' },
 };
 

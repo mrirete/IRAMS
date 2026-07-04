@@ -76,7 +76,7 @@ export const VisionHistoryPanel: React.FC<VisionHistoryPanelProps> = ({
     if (loading) {
         return (
             <div className="flex items-center gap-2 text-xs text-slate-400 py-6 justify-center">
-                <div className="w-4 h-4 border-2 border-cyan-300 border-t-transparent rounded-full animate-spin" />
+                <div className="w-4 h-4 border-2 border-primary-300 border-t-transparent rounded-full animate-spin" />
                 Loading vision history...
             </div>
         );
@@ -100,9 +100,9 @@ export const VisionHistoryPanel: React.FC<VisionHistoryPanelProps> = ({
             {results.length > 0 && (
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                     <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
-                        <Camera size={16} className="text-cyan-600" />
+                        <Camera size={16} className="text-primary-600" />
                         <h4 className="text-sm font-semibold text-slate-800">Inspection Results</h4>
-                        <span className="ml-auto text-[10px] bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full font-medium border border-cyan-200">
+                        <span className="ml-auto text-[10px] bg-primary-50 text-primary-700 px-2 py-0.5 rounded-full font-medium border border-primary-200">
                             {results.length}
                         </span>
                     </div>
@@ -187,7 +187,7 @@ export const VisionHistoryPanel: React.FC<VisionHistoryPanelProps> = ({
                                         <span>{new Date(d.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                                         <span>{d.area_covered_sqm.toLocaleString()} m²</span>
                                         <span>{d.anomalies_found} anomalies</span>
-                                        {d.site && <span className="text-cyan-500">📍 {d.site}</span>}
+                                        {d.site && <span className="text-primary-500">📍 {d.site}</span>}
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1">

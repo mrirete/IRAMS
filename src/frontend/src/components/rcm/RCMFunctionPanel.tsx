@@ -599,8 +599,8 @@ export const RCMFunctionPanel: React.FC<RCMFunctionPanelProps> = ({
 
                   {/* ── Q2 Node: Functional Failure ── */}
                   <TreeNode level={1} isLast={fnFMs.length === 0} color="#06b6d4">
-                    <div className="bg-white border border-cyan-300 border-l-4 border-l-cyan-500 rounded-xl overflow-hidden shadow-sm mb-2">
-                      <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-cyan-50 via-cyan-50/15 to-white border-b border-cyan-300/40">
+                    <div className="bg-white border border-primary-300 border-l-4 border-l-primary-500 rounded-xl overflow-hidden shadow-sm mb-2">
+                      <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-primary-50 via-primary-50/15 to-white border-b border-primary-300/40">
                         <StepBadge label={fn.function_number ? fn.function_number.replace(/^F/i, 'FF') : 'FF'} color="#0891b2" done={!!fn.functional_failure} />
                         <span className="text-[9px] text-slate-400 italic">Functional Failure — How can this function fail?</span>
                         <RCMContextualHelp
@@ -614,7 +614,7 @@ export const RCMFunctionPanel: React.FC<RCMFunctionPanelProps> = ({
                           defaultValue={fn.functional_failure || ''}
                           onChange={e => debouncedFnUpdate(fn.id, 'functional_failure', e.target.value)}
                           placeholder="e.g. Unable to separate crude oil into specified fractions"
-                          className="w-full text-xs text-slate-700 bg-cyan-50/30 border border-cyan-300/70 rounded-lg px-3 py-2 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500/20 transition-colors placeholder:text-slate-300"
+                          className="w-full text-xs text-slate-700 bg-primary-50/30 border border-primary-300/70 rounded-lg px-3 py-2 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 transition-colors placeholder:text-slate-300"
                         />
                       </div>
                     </div>
@@ -646,7 +646,7 @@ export const RCMFunctionPanel: React.FC<RCMFunctionPanelProps> = ({
                   <div style={{ paddingLeft: '48px' }} className="mt-2">
                     <button
                       onClick={() => onAddFailureMode(fn.id)}
-                      className="text-xs text-accent-cyan hover:text-cyan-400 font-semibold flex items-center gap-1.5 px-3 py-2 bg-accent-cyan/5 rounded-lg hover:bg-accent-cyan/10 transition-colors border border-dashed border-accent-cyan/30"
+                      className="text-xs text-accent-cyan hover:text-primary-400 font-semibold flex items-center gap-1.5 px-3 py-2 bg-accent-cyan/5 rounded-lg hover:bg-accent-cyan/10 transition-colors border border-dashed border-accent-cyan/30"
                     >
                       <Plus size={12} /> Add Failure Mode
                     </button>

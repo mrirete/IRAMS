@@ -5,7 +5,7 @@ import { Shield, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
 
 const ROLE_COLORS: Record<string, string> = {
     admin: 'bg-blue-50 text-blue-600 border-blue-200',
-    engineer: 'bg-cyan-50 text-cyan-600 border-cyan-200',
+    engineer: 'bg-primary-50 text-primary-600 border-primary-200',
     planner: 'bg-sky-50 text-sky-600 border-sky-200',
     technician: 'bg-emerald-50 text-emerald-600 border-emerald-200',
     supervisor: 'bg-relantern-50 text-relantern-700 border-relantern-200',

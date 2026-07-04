@@ -103,7 +103,7 @@ export const ConnectorHub: React.FC = () => {
             {/* High-Level System Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 flex items-center space-x-3">
-                    <div className="p-2.5 bg-cyan-50 rounded-lg text-cyan-600">
+                    <div className="p-2.5 bg-primary-50 rounded-lg text-primary-600">
                         <Database size={20} />
                     </div>
                     <div>
@@ -169,7 +169,7 @@ export const ConnectorHub: React.FC = () => {
                             key={f.value}
                             onClick={() => setStatusFilter(f.value)}
                             className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${statusFilter === f.value
-                                ? 'bg-cyan-50 text-cyan-700 border border-cyan-300'
+                                ? 'bg-primary-50 text-primary-700 border border-primary-300'
                                 : 'bg-slate-50 text-slate-600 border border-slate-200 hover:text-slate-800 hover:border-slate-300'
                                 }`}
                         >
@@ -196,14 +196,14 @@ export const ConnectorHub: React.FC = () => {
                     <div className="flex border border-slate-200 rounded-lg overflow-hidden">
                         <button
                             onClick={() => setViewMode('grid')}
-                            className={`p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-cyan-50 text-cyan-700' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
+                            className={`p-1.5 transition-colors ${viewMode === 'grid' ? 'bg-primary-50 text-primary-700' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
                             title="Grid view"
                         >
                             <LayoutGrid size={14} />
                         </button>
                         <button
                             onClick={() => setViewMode('list')}
-                            className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-cyan-50 text-cyan-700' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
+                            className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-primary-50 text-primary-700' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
                             title="List view"
                         >
                             <List size={14} />
@@ -242,15 +242,15 @@ export const ConnectorHub: React.FC = () => {
                                 <p className="text-slate-500 mt-2 max-w-md font-medium">Connect your existing CMMS, Historian, or Databases to start ingesting data into ERS.</p>
                                 <div className="mt-6 grid grid-cols-3 gap-4 text-xs text-slate-600 max-w-sm font-semibold">
                                     <div className="flex flex-col items-center gap-1">
-                                        <div className="w-8 h-8 rounded-full bg-cyan-50 flex items-center justify-center text-cyan-700 font-bold">1</div>
+                                        <div className="w-8 h-8 rounded-full bg-primary-50 flex items-center justify-center text-primary-700 font-bold">1</div>
                                         <span>Choose source</span>
                                     </div>
                                     <div className="flex flex-col items-center gap-1">
-                                        <div className="w-8 h-8 rounded-full bg-cyan-50 flex items-center justify-center text-cyan-700 font-bold">2</div>
+                                        <div className="w-8 h-8 rounded-full bg-primary-50 flex items-center justify-center text-primary-700 font-bold">2</div>
                                         <span>Map schema</span>
                                     </div>
                                     <div className="flex flex-col items-center gap-1">
-                                        <div className="w-8 h-8 rounded-full bg-cyan-50 flex items-center justify-center text-cyan-700 font-bold">3</div>
+                                        <div className="w-8 h-8 rounded-full bg-primary-50 flex items-center justify-center text-primary-700 font-bold">3</div>
                                         <span>Start syncing</span>
                                     </div>
                                 </div>
@@ -267,7 +267,7 @@ export const ConnectorHub: React.FC = () => {
                                 <p className="text-slate-500 mt-2 font-medium">Try adjusting your search or filter criteria.</p>
                                 <button
                                     onClick={() => { setSearchQuery(''); setStatusFilter('all'); }}
-                                    className="mt-4 text-sm text-cyan-600 hover:text-cyan-700 transition-colors font-semibold"
+                                    className="mt-4 text-sm text-primary-600 hover:text-primary-700 transition-colors font-semibold"
                                 >
                                     Clear all filters
                                 </button>

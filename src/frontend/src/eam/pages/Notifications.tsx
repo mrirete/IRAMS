@@ -97,7 +97,7 @@ export const Notifications: React.FC = () => {
             case 'SCHEDULE_ALERT': return <Clock size={14} className="text-blue-500" />;
             case 'SLA_BREACH': return <Zap size={14} className="text-red-500" />;
             case 'COST_THRESHOLD': return <BarChart3 size={14} className="text-emerald-500" />;
-            case 'AI_RECOMMENDATION': return <Zap size={14} className="text-cyan-500" />;
+            case 'AI_RECOMMENDATION': return <Zap size={14} className="text-primary-500" />;
             default: return <FileText size={14} className="text-slate-400" />;
         }
     };

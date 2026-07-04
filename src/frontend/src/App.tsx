@@ -15,6 +15,7 @@ import { ModuleGate } from './components/ModuleGate';
 import { UpdateBanner } from './components/UpdateBanner';
 import { PermissionGate } from './eam/components/PermissionGate';
 import { ErrorBoundary } from './eam/components/ErrorBoundary';
+import { LoadingState } from './eam/components/ui';
 // Admin pages — lazy loaded (admin-only, no need in main bundle)
 const ConnectorHub = lazyWithReload(() => import('./pages/admin/ConnectorHub').then(m => ({ default: m.ConnectorHub })));
 const ConnectorWizard = lazyWithReload(() => import('./pages/admin/ConnectorWizard').then(m => ({ default: m.ConnectorWizard })));
@@ -93,12 +94,8 @@ const AuditCorrectiveActionsPage = lazyWithReload(() => import('./pages/AuditCor
 const RegulatoryPreparednessPage = lazyWithReload(() => import('./pages/RegulatoryPreparednessPage').then(m => ({ default: m.RegulatoryPreparednessPage })));
 const InspectionDetailPage = lazyWithReload(() => import('./pages/InspectionDetailPage'));
 
-// ── Loading Fallback ────────────────────────────────────
-const Loading = () => (
-  <div className="flex items-center justify-center h-64">
-    <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
-  </div>
-);
+// ── Loading Fallback (route chunks) ─────────────────────
+const Loading = () => <LoadingState label="Loading page…" />;
 
 // ── Gated Route Helper ──────────────────────────────────
 const Gated = ({ moduleId, children }: { moduleId: string; children: React.ReactNode }) => (

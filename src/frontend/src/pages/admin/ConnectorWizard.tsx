@@ -12,7 +12,7 @@ const STEPS = ['Select Type', 'Configure', 'Test Connection', 'Field Mapping', '
 const getTypeIcon = (type: ConnectorType | null) => {
     switch (type) {
         case 'rest_api': return <Globe size={18} className="text-blue-600" />;
-        case 'database': return <Database size={18} className="text-cyan-600" />;
+        case 'database': return <Database size={18} className="text-primary-600" />;
         case 'csv': return <FileText size={18} className="text-slate-600" />;
         case 'mqtt': return <Radio size={18} className="text-amber-600" />;
         case 'opc_ua': return <Server size={18} className="text-blue-600" />;
@@ -322,13 +322,13 @@ export const ConnectorWizard: React.FC = () => {
                             const isCurrent = idx === currentStep;
                             return (
                                 <div key={step} className="flex flex-col items-center">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-white transition-all duration-300 ${isCompleted ? 'border-2 border-accent-cyan text-cyan-600' :
-                                        isCurrent ? 'border-2 border-accent-cyan bg-cyan-50 text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.3)]' :
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-white transition-all duration-300 ${isCompleted ? 'border-2 border-accent-cyan text-primary-600' :
+                                        isCurrent ? 'border-2 border-accent-cyan bg-primary-50 text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.3)]' :
                                             'border-2 border-slate-300 text-slate-400'
                                         }`}>
                                         {isCompleted ? <CheckCircle2 size={20} /> : (idx + 1)}
                                     </div>
-                                    <span className={`mt-2 text-xs font-semibold hidden sm:block ${isCurrent ? 'text-slate-900' : isCompleted ? 'text-cyan-600' : 'text-slate-400'}`}>
+                                    <span className={`mt-2 text-xs font-semibold hidden sm:block ${isCurrent ? 'text-slate-900' : isCompleted ? 'text-primary-600' : 'text-slate-400'}`}>
                                         {step}
                                     </span>
                                 </div>
@@ -377,7 +377,7 @@ export const ConnectorWizard: React.FC = () => {
 
                         <div className="space-y-4">
                             <div className="flex items-center space-x-3">
-                                <div className={`p-2 rounded-lg ${selectedType ? 'bg-cyan-50' : 'bg-slate-100'} border border-slate-200`}>
+                                <div className={`p-2 rounded-lg ${selectedType ? 'bg-primary-50' : 'bg-slate-100'} border border-slate-200`}>
                                     {getTypeIcon(selectedType)}
                                 </div>
                                 <div>

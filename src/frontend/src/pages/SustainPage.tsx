@@ -30,7 +30,7 @@ export const SustainPage: React.FC = () => {
         return 'text-emerald-600 bg-emerald-50 border-emerald-200';
     };
 
-    const wasteColor: Record<string, string> = { recycled: 'bg-emerald-500', reused: 'bg-cyan-500', landfill: 'bg-slate-400', incinerated: 'bg-orange-500', hazardous: 'bg-red-500' };
+    const wasteColor: Record<string, string> = { recycled: 'bg-emerald-500', reused: 'bg-primary-500', landfill: 'bg-slate-400', incinerated: 'bg-orange-500', hazardous: 'bg-red-500' };
 
     return (
         <div className="space-y-6 pb-20">
@@ -39,7 +39,7 @@ export const SustainPage: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Kpi label="Total CO₂ (Scope 1+2)" value={`${(totalCO2 / 1000).toFixed(1)}k tCO₂`} icon={Leaf} color="text-emerald-600" bg="bg-emerald-50" />
                 <Kpi label="Energy Intensity" value="2.4 GJ/t" icon={Zap} color="text-amber-500" bg="bg-amber-50" />
-                <Kpi label="Circularity Index" value={`${diversionRate}%`} icon={Recycle} color="text-cyan-600" bg="bg-cyan-50" />
+                <Kpi label="Circularity Index" value={`${diversionRate}%`} icon={Recycle} color="text-primary-600" bg="bg-primary-50" />
                 <Kpi label="High Climate Risk" value={climateRisks.filter(c => c.risk_level === 'high' || c.risk_level === 'extreme').length} icon={CloudRain} color="text-orange-500" bg="bg-orange-50" />
             </div>
 
@@ -96,7 +96,7 @@ export const SustainPage: React.FC = () => {
                     <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-widest">Waste Stream Breakdown</h3>
                     <div className="flex items-center space-x-6">
                         <div className="text-center">
-                            <span className="text-4xl font-bold text-cyan-600 font-mono">{diversionRate}%</span>
+                            <span className="text-4xl font-bold text-primary-600 font-mono">{diversionRate}%</span>
                             <p className="text-slate-500 text-xs mt-1">Diversion Rate</p>
                         </div>
                         <div className="flex-1 h-8 flex rounded-full overflow-hidden shadow-inner bg-slate-100">
@@ -124,8 +124,8 @@ export const SustainPage: React.FC = () => {
                                 {/* Vision Drone Anomaly Badge */}
                                 {droneAnomalyCounts[c.asset_id] > 0 && (
                                     <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-2">
-                                        <Plane size={12} className="text-cyan-500" />
-                                        <span className="text-[10px] text-cyan-700 font-medium">
+                                        <Plane size={12} className="text-primary-500" />
+                                        <span className="text-[10px] text-primary-700 font-medium">
                                             {droneAnomalyCounts[c.asset_id]} drone anomal{droneAnomalyCounts[c.asset_id] === 1 ? 'y' : 'ies'} detected
                                         </span>
                                     </div>

@@ -7,6 +7,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { LoadingState } from '../../eam/components/ui';
 import {
     AlertTriangle, Bug, Filter, Search, RefreshCw, CheckCircle2,
     XCircle, Info, AlertOctagon, Clock, ChevronDown, ChevronUp,
@@ -188,9 +189,7 @@ export const ErrorLogsPage: React.FC = () => {
             {/* ── Error List ─────────────────────────────────── */}
             <div className="flex-1 overflow-y-auto">
                 {loading ? (
-                    <div className="flex items-center justify-center h-48">
-                        <div className="w-8 h-8 border-2 border-accent-cyan border-t-transparent rounded-full animate-spin" />
-                    </div>
+                    <LoadingState label="Loading error log…" className="h-48" />
                 ) : errors.length === 0 ? (
                     <div className="flex flex-col items-center justify-center mt-16 space-y-3">
                         <div className="w-14 h-14 rounded-full bg-emerald-50 flex items-center justify-center border border-emerald-200">
@@ -256,7 +255,7 @@ export const ErrorLogsPage: React.FC = () => {
                                             {err.inputSnapshot && Object.keys(err.inputSnapshot).length > 0 && (
                                                 <div>
                                                     <p className="text-xs font-bold uppercase text-slate-500 mb-1.5 tracking-wide">Input Snapshot</p>
-                                                    <pre className="text-xs bg-slate-900 text-cyan-300 rounded-lg p-4 overflow-x-auto max-h-36 font-mono border border-slate-200 leading-relaxed">
+                                                    <pre className="text-xs bg-slate-900 text-primary-300 rounded-lg p-4 overflow-x-auto max-h-36 font-mono border border-slate-200 leading-relaxed">
                                                         {JSON.stringify(err.inputSnapshot, null, 2)}
                                                     </pre>
                                                 </div>

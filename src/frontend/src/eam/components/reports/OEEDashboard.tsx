@@ -179,7 +179,7 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="animate-spin text-cyan-400" size={32} />
+        <Loader2 className="animate-spin text-primary-400" size={32} />
         <span className="ml-3 text-slate-400 text-sm">Loading OEE data...</span>
       </div>
     );
@@ -190,9 +190,9 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
   return (
     <div className="space-y-6">
       {/* OEE Dashboard Header */}
-      <div className="bg-slate-800 border border-slate-600 border-l-4 border-l-cyan-400 rounded-xl px-5 py-4 flex items-center justify-between">
+      <div className="bg-slate-800 border border-slate-600 border-l-4 border-l-primary-400 rounded-xl px-5 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-cyan-500 rounded-lg flex items-center justify-center shadow-md">
+          <div className="w-10 h-10 bg-primary-500 rounded-lg flex items-center justify-center shadow-md">
             <Gauge size={22} className="text-white" />
           </div>
           <div>
@@ -228,7 +228,7 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
           </p>
           <button
             onClick={() => setShowLogEntry(true)}
-            className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm text-white font-semibold transition"
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-500 rounded-lg text-sm text-white font-semibold transition"
           >
             <Plus size={14} className="inline mr-1" />
             Create First Production Log

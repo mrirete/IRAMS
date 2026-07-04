@@ -93,7 +93,7 @@ export const ConnectorCard: React.FC<ConnectorCardProps> = ({ health, onSync, co
         return (
             <Link
                 to={`/admin/connectors/${health.connector_id}`}
-                className="bg-white border border-slate-200 rounded-lg p-4 flex items-center gap-4 hover:border-cyan-400 hover:bg-slate-50 transition-all group"
+                className="bg-white border border-slate-200 rounded-lg p-4 flex items-center gap-4 hover:border-primary-400 hover:bg-slate-50 transition-all group"
             >
                 <div className="p-2 bg-slate-50 rounded-md border border-slate-200">
                     {getTypeIcon(health.type)}
@@ -140,7 +140,7 @@ export const ConnectorCard: React.FC<ConnectorCardProps> = ({ health, onSync, co
     return (
         <Link
             to={`/admin/connectors/${health.connector_id}`}
-            className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 flex flex-col h-full hover:border-cyan-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden group cursor-pointer"
+            className="bg-white border border-slate-200 rounded-xl shadow-sm p-5 flex flex-col h-full hover:border-primary-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 relative overflow-hidden group cursor-pointer"
         >
             {/* Ambient glow */}
             <div className={`absolute top-0 right-0 w-32 h-32 rounded-full blur-3xl opacity-5 pointer-events-none ${status.bg}`} />

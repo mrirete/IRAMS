@@ -79,8 +79,8 @@ const TAXONOMY_BADGES: Record<string, { label: string; color: string; bg: string
     site:      { label: 'SITE',    color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
     unit:      { label: 'UNIT',    color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
     system:    { label: 'SYSTEM',  color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
-    equipment: { label: 'EQUIP',   color: 'text-cyan-700', bg: 'bg-cyan-50', border: 'border-cyan-200' },
-    subunit:   { label: 'SUBUNIT', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200' },
+    equipment: { label: 'EQUIP',   color: 'text-primary-700', bg: 'bg-primary-50', border: 'border-primary-200' },
+    subunit:   { label: 'SUBUNIT', color: 'text-primary-700', bg: 'bg-primary-50', border: 'border-primary-200' },
     component: { label: 'COMP',    color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
     location:  { label: 'LOC',     color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
 };
@@ -1391,7 +1391,7 @@ export function RCAInvestigationPage() {
                                                     {n.cause_category}
                                                 </span>
                                             )}
-                                            {n.cause_code && <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-cyan-200 bg-cyan-50 text-cyan-700 tracking-wide uppercase">{n.cause_code}</span>}
+                                            {n.cause_code && <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-primary-200 bg-primary-50 text-primary-700 tracking-wide uppercase">{n.cause_code}</span>}
                                         </div>
                                         <span className="text-sm font-bold text-slate-800 flex-1">{n.description}</span>
                                         <button 

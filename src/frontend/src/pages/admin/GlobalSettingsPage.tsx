@@ -50,7 +50,7 @@ export const GlobalSettingsPage: React.FC = () => {
                     <button onClick={resetSettings} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-lg text-sm font-semibold transition-all shadow-sm">
                         <RotateCcw size={14} /> Reset Defaults
                     </button>
-                    <button onClick={handleSave} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm ${saved ? 'bg-emerald-500 text-white' : 'bg-accent-cyan hover:bg-cyan-400 text-brand-900 shadow-[0_0_15px_rgba(6,182,212,0.25)]'}`}>
+                    <button onClick={handleSave} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm ${saved ? 'bg-emerald-500 text-white' : 'bg-accent-cyan hover:bg-primary-400 text-brand-900 shadow-[0_0_15px_rgba(6,182,212,0.25)]'}`}>
                         {saved ? <><Check size={14} /> Saved</> : <><Save size={14} /> Save Changes</>}
                     </button>
                 </div>
@@ -65,7 +65,7 @@ export const GlobalSettingsPage: React.FC = () => {
                             key={t.key}
                             onClick={() => setTab(t.key)}
                             className={`w-full flex items-center gap-2.5 px-4 py-3 rounded-lg text-sm font-semibold transition-all text-left ${tab === t.key
-                                ? 'bg-accent-cyan/10 text-cyan-700 border border-accent-cyan/30 shadow-sm'
+                                ? 'bg-accent-cyan/10 text-primary-700 border border-accent-cyan/30 shadow-sm'
                                 : 'text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-transparent'
                                 }`}
                         >
@@ -109,7 +109,7 @@ const GeneralTab: React.FC = () => {
     const { settings, updateSettings } = useSettings();
     return (
         <div>
-            <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><Globe size={18} className="text-cyan-600" /> General Configuration</h3>
+            <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><Globe size={18} className="text-primary-600" /> General Configuration</h3>
             <p className="text-sm text-slate-500 mb-4">Core platform settings for locale, timezone, and identity.</p>
             <Field label="Site Name" hint="The name displayed in the top bar and reports">
                 <input value={settings.siteName} onChange={e => updateSettings({ siteName: e.target.value })} className={inputClass} />
@@ -234,7 +234,7 @@ const AboutTab: React.FC = () => (
         <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><Info size={18} className="text-blue-500" /> About ERS</h3>
         <p className="text-sm text-slate-500 mb-5">Platform version, standards compliance, and technical stack.</p>
         <div className="space-y-4">
-            <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-cyan-50 to-blue-50 rounded-xl border border-cyan-200/60">
+            <div className="flex items-center gap-4 p-5 bg-gradient-to-r from-primary-50 to-blue-50 rounded-xl border border-primary-200/60">
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-accent-cyan to-blue-500 flex items-center justify-center text-2xl font-black text-white shadow-lg">E</div>
                 <div>
                     <p className="text-slate-900 font-black text-lg">Enterprise Reliability System</p>

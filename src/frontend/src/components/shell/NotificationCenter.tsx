@@ -38,7 +38,7 @@ function getTypeIcon(type: string): React.ReactNode {
         case 'INVENTORY_ALERT': return <Package size={14} className="text-amber-500" />;
         case 'SLA_BREACH': return <Zap size={14} className="text-red-500" />;
         case 'COST_THRESHOLD': return <BarChart3 size={14} className="text-emerald-500" />;
-        case 'AI_RECOMMENDATION': return <Zap size={14} className="text-cyan-500" />;
+        case 'AI_RECOMMENDATION': return <Zap size={14} className="text-primary-500" />;
         case 'EMERGENCY': return <ShieldAlert size={14} className="text-red-600" />;
         case 'COMPLIANCE_ALERT': return <Shield size={14} className="text-orange-500" />;
         default: return <FileText size={14} className="text-slate-400" />;
@@ -154,7 +154,7 @@ export const NotificationCenter: React.FC = () => {
                     <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
                         <h3 className="text-sm font-semibold text-slate-800">Notifications</h3>
                         {unreadCount > 0 && (
-                            <button onClick={markAllRead} className="flex items-center gap-1 text-[10px] text-accent-cyan hover:text-cyan-300 font-medium transition-colors">
+                            <button onClick={markAllRead} className="flex items-center gap-1 text-[10px] text-accent-cyan hover:text-primary-300 font-medium transition-colors">
                                 <CheckCheck size={12} /> Mark all read
                             </button>
                         )}
