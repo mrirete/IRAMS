@@ -21,6 +21,7 @@ import { MonteCarloSimTab } from '../components/MonteCarloSimTab';
 import { ScrollTabStrip } from '../components/ui';
 import LifecycleAnalysis from '../../components/reliability/LifecycleAnalysis';
 import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/analyze/CreatePMFromWeibullModal';
+import { fitWeibull, weibullBLife } from '../utils/weibull';
 
 // M1 (one reliability engine): failure classification is the shared engine's
 // isFailure — never a local WO-type list. Queries fetch ALL types in-window
@@ -120,46 +121,9 @@ function factorial(n: number): number {
     return result;
 }
 
-// Weibull MRR (Median Rank Regression)
-function weibullFit(failureTimes: number[]) {
-    const n = failureTimes.length;
-    if (n < 2) return { beta: 1, eta: 1, r2: 0, plotData: [] };
-    const sorted = [...failureTimes].sort((a, b) => a - b);
-
-    // Bernard's median rank: (i - 0.3) / (n + 0.4)
-    const ranks = sorted.map((t, i) => {
-        const F = (i + 1 - 0.3) / (n + 0.4);
-        return { t, F, x: Math.log(t), y: Math.log(Math.log(1 / (1 - F))) };
-    });
-
-    // Linear regression: y = beta*x - beta*ln(eta)
-    const xMean = ranks.reduce((s, r) => s + r.x, 0) / n;
-    const yMean = ranks.reduce((s, r) => s + r.y, 0) / n;
-    const sxy = ranks.reduce((s, r) => s + (r.x - xMean) * (r.y - yMean), 0);
-    const sxx = ranks.reduce((s, r) => s + (r.x - xMean) ** 2, 0);
-    const beta = sxy / sxx;
-    const intercept = yMean - beta * xMean;
-    const eta = Math.exp(-intercept / beta);
-
-    // R² goodness of fit
-    const ssRes = ranks.reduce((s, r) => s + (r.y - (beta * r.x + intercept)) ** 2, 0);
-    const ssTot = ranks.reduce((s, r) => s + (r.y - yMean) ** 2, 0);
-    const r2 = 1 - ssRes / ssTot;
-
-    // Generate plot data (CDF)
-    const plotData: { t: number; reliability: number; failure: number }[] = [];
-    const maxT = sorted[n - 1] * 1.5;
-    for (let t = 1; t <= maxT; t += maxT / 100) {
-        const F = 1 - Math.exp(-Math.pow(t / eta, beta));
-        plotData.push({ t: Math.round(t), reliability: Math.round((1 - F) * 10000) / 100, failure: Math.round(F * 10000) / 100 });
-    }
-
-    return { beta: Math.round(beta * 100) / 100, eta: Math.round(eta), r2: Math.round(r2 * 1000) / 1000, plotData, ranks };
-}
-
-function weibullBLife(beta: number, eta: number, pct: number) {
-    return eta * Math.pow(-Math.log(1 - pct / 100), 1 / beta);
-}
+// R-1: Weibull fitting lives in the SHARED censored-capable fitter
+// (eam/utils/weibull.ts — Johnson adjusted ranks + confidence bounds).
+// No local Weibull math in this file.
 
 // ─── Asset Selector Component ────────────────────────────────
 function AssetSelector({ selected, onSelect }: { selected: AssetOption | null; onSelect: (a: AssetOption | null) => void }) {
@@ -917,6 +881,9 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
 export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps = {}) {
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [dataStr, setDataStr] = useState('20, 42, 55, 73, 95, 101, 118, 139');
+    // Right-censored units (suspensions): ages of units removed/still running
+    // unfailed. Auto-populated with the running time since the last failure.
+    const [suspStr, setSuspStr] = useState('');
     const [loading, setLoading] = useState(false);
     const [showRtFt, setShowRtFt] = useState(false);
     const [showPMModal, setShowPMModal] = useState(false);
@@ -976,7 +943,18 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
     useEffect(() => {
         if (!loadedData?.inputs) return;
         if (loadedData.inputs.dataStr) setDataStr(loadedData.inputs.dataStr);
+        if (loadedData.inputs.suspStr != null) setSuspStr(loadedData.inputs.suspStr);
     }, [loadedData]);
+
+    // Running (right-censored) interval: hours survived since the last failure.
+    const runningSuspensionHours = (recs: any[]): number | null => {
+        const lastFail = (recs || []).filter(isFailure)
+            .map(w => new Date(w.closed_at || w.created_at).getTime())
+            .sort((a, b) => b - a)[0];
+        if (!lastFail) return null;
+        const h = Math.floor((Date.now() - lastFail) / 3600000);
+        return h > 0 ? h : null;
+    };
 
     useEffect(() => {
         if (!asset) return;
@@ -991,6 +969,10 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
                 .order('created_at');
             const times = failureIntervalsHours(wos || []);
             if (times.length > 0) setDataStr(times.join(', '));
+            // The time survived since the last failure is a suspension — leaving
+            // it out is what biased the old failures-only fit pessimistic (R-1).
+            const run = runningSuspensionHours(wos || []);
+            setSuspStr(run != null ? String(run) : '');
             setLoading(false);
         })();
     }, [asset]);
@@ -1012,14 +994,23 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
             const byAsset: Record<string, any[]> = {};
             for (const w of (wos || [])) { const k = (w as any).asset_id; (byAsset[k] = byAsset[k] || []).push(w); }
             const pooled: number[] = [];
-            for (const recs of Object.values(byAsset)) pooled.push(...failureIntervalsHours(recs));
+            const pooledSusp: number[] = [];
+            for (const recs of Object.values(byAsset)) {
+                pooled.push(...failureIntervalsHours(recs));
+                // Each pool member's running time since ITS last failure is a
+                // right-censored unit of the population sample.
+                const run = runningSuspensionHours(recs);
+                if (run != null) pooledSusp.push(run);
+            }
             setDataStr(pooled.length > 0 ? pooled.join(', ') : '');
+            setSuspStr(pooledSusp.length > 0 ? pooledSusp.join(', ') : '');
             setLoading(false);
         })();
     }, [mode, assetClass, locationId, poolMembers]);
 
     const failureTimes = dataStr.split(/[,\s]+/).map(Number).filter(n => !isNaN(n) && n > 0);
-    const fit = failureTimes.length >= 2 ? weibullFit(failureTimes) : null;
+    const suspensionTimes = suspStr.split(/[,\s]+/).map(Number).filter(n => !isNaN(n) && n > 0);
+    const fit = failureTimes.length >= 2 ? fitWeibull(failureTimes, suspensionTimes) : null;
 
     // Effective target for Create PM: the scoped population, or the single asset.
     const classActive = mode === 'class' && !!(assetClass || locationId) && classAssets.length > 0;
@@ -1034,11 +1025,11 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
     // Report state changes to parent (bridge to Monte Carlo)
     useEffect(() => {
         onStateChange?.(
-            { dataStr },
+            { dataStr, suspStr },
             fit ? { beta: fit.beta, eta: fit.eta, r2: fit.r2, b10: Math.round(weibullBLife(fit.beta, fit.eta, 10)) } : {},
             asset ? { id: asset.id, tag: asset.tag, name: asset.name } : null
         );
-    }, [dataStr, asset, fit?.beta, fit?.eta, onStateChange]);
+    }, [dataStr, suspStr, asset, fit?.beta, fit?.eta, onStateChange]);
 
 
 
@@ -1094,21 +1085,41 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
                 </div>
             </div>
 
-            <div>
-                <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                    Time-to-Failure Data (hrs, comma-sep)
-                </label>
-                <textarea value={dataStr} onChange={e => setDataStr(e.target.value)} placeholder="20, 42, 55, 73, 95..."
-                    className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono h-12 md:h-16 resize-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                        Time-to-Failure Data (hrs, comma-sep)
+                    </label>
+                    <textarea value={dataStr} onChange={e => setDataStr(e.target.value)} placeholder="20, 42, 55, 73, 95..."
+                        className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono h-12 md:h-16 resize-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500" />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                        Suspensions — censored, unfailed (hrs, optional)
+                    </label>
+                    <textarea value={suspStr} onChange={e => setSuspStr(e.target.value)} placeholder="e.g. running time since last failure, units renewed unfailed…"
+                        className="w-full p-2 border border-slate-200 rounded-lg text-xs font-mono h-12 md:h-16 resize-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500" />
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                        Units still running (or removed unfailed) at these ages. Ignoring them biases β/η pessimistic — auto-filled with the time survived since the last failure.
+                    </p>
+                </div>
             </div>
 
             {fit && (
                 <>
+                    {/* Fit basis */}
+                    <p className="text-[11px] text-slate-500 -mt-1">
+                        Fit basis: <strong>{fit.nFailures} failures</strong>
+                        {fit.nSuspensions > 0 && <> + <strong>{fit.nSuspensions} suspensions</strong> (Johnson adjusted ranks)</>}
+                        {fit.confidence && <> · bounds at {Math.round(fit.confidence.level * 100)}% confidence (regression approx.)</>}
+                    </p>
+
                     {/* Parameters */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                         <ResultCard label="Shape (β)" value={fit.beta} color="blue"
-                            sub={fit.beta < 1 ? 'Infant mortality' : fit.beta <= 1.5 ? 'Random failures' : 'Wear-out'} />
-                        <ResultCard label="Scale (η)" value={fit.eta} unit="hrs" color="purple" sub="Life at 63.2% failed" />
+                            sub={`${fit.beta < 1 ? 'Infant mortality' : fit.beta <= 1.5 ? 'Random failures' : 'Wear-out'}${fit.confidence ? ` · ${Math.round(fit.confidence.level * 100)}%: ${fit.confidence.betaLower.toFixed(2)}–${fit.confidence.betaUpper.toFixed(2)}` : ''}`} />
+                        <ResultCard label="Scale (η)" value={fit.eta} unit="hrs" color="purple"
+                            sub={`Life at 63.2% failed${fit.confidence ? ` · ${Math.round(fit.confidence.level * 100)}%: ${Math.round(fit.confidence.etaLower).toLocaleString()}–${Math.round(fit.confidence.etaUpper).toLocaleString()}h` : ''}`} />
                         <ResultCard label="R²" value={fit.r2} color={fit.r2 >= 0.9 ? 'green' : 'amber'}
                             sub={fit.r2 >= 0.9 ? 'Fit quality — excellent' : 'Fit quality — weak, use caution'} />
                         <ResultCard label="B10 Life" value={Math.round(weibullBLife(fit.beta, fit.eta, 10))} unit="hrs" color="green" sub="10% fail / 90% survive" />

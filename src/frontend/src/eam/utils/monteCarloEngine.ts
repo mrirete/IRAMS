@@ -3,6 +3,7 @@
  * Weibull TTF + Lognormal TTR + optional PM strategy
  * ISO 14224 / OREDA compliant
  */
+import { fitWeibull } from './weibull';
 
 // ─── Types ───────────────────────────────────────────────────
 export interface MCInputs {
@@ -233,25 +234,11 @@ export function runMonteCarloSimulation(inputs: MCInputs): MCOutput {
 }
 
 // ─── Weibull MRR fit for auto-populate ──────────────────────
-export function fitWeibullFromTTFs(times: number[]): { beta: number; eta: number; r2: number } | null {
-  const n = times.length;
-  if (n < 2) return null;
-  const sorted = [...times].sort((a, b) => a - b);
-  const ranks = sorted.map((t, i) => {
-    const F = (i + 1 - 0.3) / (n + 0.4);
-    return { x: Math.log(t), y: Math.log(Math.log(1 / (1 - F))) };
-  });
-  const xMean = ranks.reduce((s, r) => s + r.x, 0) / n;
-  const yMean = ranks.reduce((s, r) => s + r.y, 0) / n;
-  const sxy = ranks.reduce((s, r) => s + (r.x - xMean) * (r.y - yMean), 0);
-  const sxx = ranks.reduce((s, r) => s + (r.x - xMean) ** 2, 0);
-  if (sxx === 0) return null;
-  const beta = Math.round((sxy / sxx) * 100) / 100;
-  const eta = Math.round(Math.exp(-((yMean - beta * xMean) / beta)));
-  const ssRes = ranks.reduce((s, r) => s + (r.y - (beta * r.x + (yMean - beta * xMean))) ** 2, 0);
-  const ssTot = ranks.reduce((s, r) => s + (r.y - yMean) ** 2, 0);
-  const r2 = Math.round((1 - ssRes / ssTot) * 1000) / 1000;
-  return { beta: Math.max(0.1, beta), eta: Math.max(1, eta), r2 };
+// R-1: delegates to the shared censored-capable fitter (utils/weibull.ts) so
+// every Weibull surface uses ONE implementation. Pass suspensions when known.
+export function fitWeibullFromTTFs(times: number[], suspensions: number[] = []): { beta: number; eta: number; r2: number } | null {
+  const fit = fitWeibull(times, suspensions);
+  return fit ? { beta: Math.max(0.1, fit.beta), eta: Math.max(1, fit.eta), r2: fit.r2 } : null;
 }
 
 // ─── Lognormal fit for repair times ─────────────────────────
