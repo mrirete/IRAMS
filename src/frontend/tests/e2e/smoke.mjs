@@ -17,6 +17,7 @@
  *      SMOKE_PASSWORD, SMOKE_BROWSER_CHANNEL (e.g. "chrome" for local runs).
  */
 import { chromium } from 'playwright';
+import fs from 'node:fs';
 
 const BASE = process.env.BASE || 'https://irams.vercel.app';
 const EXPECT_SHA = (process.env.EXPECT_SHA || '').slice(0, 7);
@@ -35,6 +36,12 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const failures = [];
 const note = (ok, label, detail = '') =>
   console.log(`${ok ? '  ✓' : '  ✗ FAIL'} ${label}${detail ? ` — ${detail}` : ''}`);
+
+// Write a line to the GitHub Actions run summary (visible in the UI without
+// opening logs) so it's clear at a glance whether the authenticated sweep ran.
+const summary = (md) => {
+  try { if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n'); } catch { /* ignore */ }
+};
 
 // ── 1. Wait for the expected deploy ─────────────────────────────────────────
 if (EXPECT_SHA) {
@@ -99,6 +106,7 @@ if (!EMAIL || !PASSWORD) {
       console.warn(`⚠ smoke sign-in rejected (${res.status}: ${bodyText.slice(0, 120)}).`);
       console.warn('  Auth endpoint is healthy — this is a SMOKE_EMAIL/SMOKE_PASSWORD misconfig, not a prod issue.');
       console.warn('  Fix the secrets to restore the authenticated route sweep. Skipping it for now.');
+      summary(`### Production Smoke\n- ✅ Deploy live + \`/login\` renders\n- ⚠️ **Authenticated sweep SKIPPED** — SMOKE_EMAIL/SMOKE_PASSWORD rejected (\`${res.status}\`). Fix the secrets to cover logged-in routes.`);
       await browser.close();
       process.exit(failures.length ? 1 : 0);
     }
@@ -148,6 +156,8 @@ if (!EMAIL || !PASSWORD) {
     }
   }
   await ctx.close();
+  const swept = ROUTES.filter(r => failures.includes(r));
+  summary(`### Production Smoke\n- ✅ Deploy live + \`/login\` renders\n- ${swept.length ? '❌' : '✅'} **Authenticated sweep ran: ${ROUTES.length - swept.length}/${ROUTES.length} routes**${swept.length ? ' — failed: ' + swept.join(', ') : ' — all rendered'}`);
 }
 
 await browser.close();
