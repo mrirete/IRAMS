@@ -681,17 +681,41 @@ export class DatabaseService {
             .limit(200);
         if (error) { console.error('DatabaseService.getAuditLog:', error); return []; }
         const rows = data || [];
-        // Resolve actor (changed_by = user UUID) -> username for display.
-        const ids = [...new Set(rows.map(r => r.changed_by).filter(Boolean))];
+
+        // Parse the changes JSON once per row.
+        const parsed = rows.map((r: any) => {
+            let c: any = {};
+            try { c = typeof r.changes === 'string' ? JSON.parse(r.changes) : (r.changes || {}); } catch { /* ignore */ }
+            return c;
+        });
+
+        // Actor resolution, in priority order:
+        //   1. changes.actor          — app-stamped display name (e.g. tag-change docs)
+        //   2. changes.actor_email    — JWT email captured by the audit trigger (0172);
+        //                               mapped email → username, else the email's local part
+        //   3. changed_by → users.id  — legacy path (rarely matches: changed_by holds the
+        //                               AUTH uid, not the app users.id)
+        //   4. 'System'               — a write with no captured identity
+        const emails = [...new Set(parsed.map(c => c?.actor_email).filter(Boolean).map((e: string) => e.toLowerCase()))];
+        const ids = [...new Set(rows.map((r: any) => r.changed_by).filter(Boolean))];
+        const nameByEmail = new Map<string, string>();
         const nameById = new Map<string, string>();
+        if (emails.length) {
+            const { data: us } = await supabase.from('users').select('username, email').in('email', emails);
+            (us || []).forEach((u: any) => { if (u.email) nameByEmail.set(String(u.email).toLowerCase(), u.username); });
+        }
         if (ids.length) {
             const { data: us } = await supabase.from('users').select('id, username').in('id', ids);
             (us || []).forEach((u: any) => nameById.set(u.id, u.username));
         }
-        rows.forEach((r: any) => {
-            let changesActor: string | undefined;
-            try { const c = typeof r.changes === 'string' ? JSON.parse(r.changes) : r.changes; changesActor = c?.actor; } catch { /* ignore */ }
-            r.actorName = (r.changed_by && nameById.get(r.changed_by)) || changesActor || 'System';
+        const fromEmail = (email?: string): string | undefined => {
+            if (!email) return undefined;
+            return nameByEmail.get(email.toLowerCase()) || email.split('@')[0];
+        };
+
+        rows.forEach((r: any, i: number) => {
+            const c = parsed[i];
+            r.actorName = c?.actor || fromEmail(c?.actor_email) || (r.changed_by && nameById.get(r.changed_by)) || 'System';
         });
         return rows;
     }
