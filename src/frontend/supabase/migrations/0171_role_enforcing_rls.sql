@@ -25,6 +25,14 @@
 -- If that returns no rows, DO NOT APPLY — you would lock admin writes out.
 -- ═══════════════════════════════════════════════════════════════════════
 
+-- ATOMIC: run the whole migration in one transaction. An earlier partial
+-- apply (statement-by-statement, one CREATE POLICY erroring midway) is exactly
+-- what left the tables in a mixed state where a leftover permissive
+-- auth_*/USING(true) policy coexisted with the new admin_* ones — and RLS
+-- combines permissive policies with OR, so writes stayed wide open. All-or-
+-- nothing prevents that: on any error, NOTHING changes and you retry cleanly.
+BEGIN;
+
 
 -- ── 1. The admin predicate ──────────────────────────────────────────────
 -- Mirrors AuthContext.fetchProfile's user matching: JWT email equals the
@@ -109,8 +117,18 @@ DROP POLICY IF EXISTS "auth_update_audit_logs" ON audit_logs;
 DROP POLICY IF EXISTS "auth_delete_audit_logs" ON audit_logs;
 
 
+COMMIT;
+
+
 -- ═══════════════════════════════════════════════════════════════════════
 -- POST-APPLY VERIFICATION
+--   0) Confirm NO permissive leftover survives (the cause of the first
+--      partial apply staying open). This must show only admin_*/auth_select
+--      for the four tables, and NO auth_update/auth_insert/auth_delete:
+--        SELECT tablename, policyname, cmd FROM pg_policies
+--        WHERE tablename IN
+--          ('users','reference_codes','hierarchy_config','numbering_config','audit_logs')
+--        ORDER BY tablename, cmd, policyname;
 --   1) In the app as your admin: Admin → edit a dictionary entry → saves OK.
 --   2) In the app as a TECHNICIAN: create an asset (numbering still works),
 --      create/save a work order — all OK.
