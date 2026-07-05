@@ -169,6 +169,7 @@ export const Scheduling: React.FC = () => {
     // Frozen zone modal state
     const [frozenModalOpen, setFrozenModalOpen] = useState(false);
     const [frozenPendingAction, setFrozenPendingAction] = useState<{ itemId: string; newDate: string; source: 'WO' | 'PM'; originalDate: string; woNumber: string; woTitle: string; criticality?: string } | null>(null);
+    const [assetCritMap, setAssetCritMap] = useState<Record<string, string>>({}); // R-3: asset id → criticality
 
     // Material check modal state
     const [materialModalOpen, setMaterialModalOpen] = useState(false);
@@ -263,13 +264,17 @@ export const Scheduling: React.FC = () => {
                 const rawWOs = await db.getWorkOrders();
 
                 if (rawWOs.length > 0) {
-                    // Fetch assets for name resolution
+                    // Fetch assets for name + criticality resolution (R-3: scheduling
+                    // consumes the criticality the assessment engine writes to assets).
                     let assetMap: Record<string, string> = {};
+                    const critMap: Record<string, string> = {};
                     try {
                         const assets = await db.getAssets();
                         assets.forEach((a: any) => {
                             assetMap[a.id] = a.tag || a.name || 'Unknown';
+                            if (a.criticality) critMap[a.id] = a.criticality;
                         });
+                        setAssetCritMap(critMap);
                     } catch { /* use empty map */ }
 
                     const mappedWOs: WorkOrder[] = rawWOs.map((raw: any) => ({
@@ -530,7 +535,7 @@ export const Scheduling: React.FC = () => {
                     originalDate: wo?.dateDueStart || '',
                     woNumber: wo?.woNumber || itemId,
                     woTitle: wo?.title || '',
-                    criticality: undefined, // TODO: resolve from asset
+                    criticality: wo?.assetId ? assetCritMap[wo.assetId] : undefined, // R-3: resolved from asset
                 });
                 setFrozenModalOpen(true);
                 return;
