@@ -174,11 +174,16 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
         }
     }, [searchParams, assets, selectedAsset, setSearchParams]);
 
-    // Auto-open Add Asset modal when navigated with ?action=create (from Dashboard quick actions)
+    // Auto-open a modal when deep-linked (?action=create from quick actions,
+    // ?action=import from the onboarding checklist "Import assets" step).
     React.useEffect(() => {
-        if (searchParams.get('action') === 'create') {
+        const action = searchParams.get('action');
+        if (action === 'create') {
             setIsAddModalOpen(true);
-            setSearchParams({}, { replace: true }); // Clean URL to prevent re-trigger on refresh
+            setSearchParams({}, { replace: true });
+        } else if (action === 'import') {
+            setIsBulkImportOpen(true);
+            setSearchParams({}, { replace: true });
         }
     }, [searchParams, setSearchParams]);
 

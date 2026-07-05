@@ -2144,6 +2144,21 @@ export class DatabaseService {
     }
 
     /**
+     * Lightweight head-count of the entities the getting-started checklist tracks,
+     * so onboarding steps auto-complete from real data (no full-list fetches).
+     */
+    public async getOnboardingCounts(): Promise<{ assets: number; pms: number; workOrders: number; people: number }> {
+        const head = async (table: string) => {
+            const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
+            return error ? 0 : (count || 0);
+        };
+        const [assets, pms, workOrders, people] = await Promise.all([
+            head('assets'), head('recurring_work'), head('work_orders'), head('contacts'),
+        ]);
+        return { assets, pms, workOrders, people };
+    }
+
+    /**
      * Active work orders assigned to one technician (contact), with the asset
      * name embedded — powers the "My Work" home. Excludes finished/cancelled.
      */

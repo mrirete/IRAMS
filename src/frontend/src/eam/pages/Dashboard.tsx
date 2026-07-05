@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AskRelanternButton } from '../components/AskRelanternButton';
+import { GettingStarted } from '../components/GettingStarted';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useQuery } from '@tanstack/react-query';
@@ -449,6 +450,9 @@ export const Dashboard: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* ── Getting-started checklist (self-hides once the org is up and running or dismissed) ── */}
+      <GettingStarted />
 
       {/* ── Quick Actions ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
