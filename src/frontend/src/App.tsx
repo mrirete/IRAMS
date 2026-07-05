@@ -150,6 +150,7 @@ function App() {
                                 {/* EAM PAGES — Permission-Gated (RBAC)       */}
                                 {/* ═══════════════════════════════════════════ */}
                                 <Route path="/" element={<RoleLanding />} />
+                                <Route path="/dashboard" element={<PermissionGate module="dashboard"><EamDashboard /></PermissionGate>} />
                                 <Route path="/my-work" element={<PermissionGate module="workOrders"><EamMyWork /></PermissionGate>} />
                                 <Route path="/assets" element={<PermissionGate module="assets"><EamAssets /></PermissionGate>} />
                                 <Route path="/work-orders" element={<PermissionGate module="workOrders"><EamWorkOrders /></PermissionGate>} />
