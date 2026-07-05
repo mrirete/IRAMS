@@ -20,6 +20,10 @@ import { useToast } from '../contexts/ToastContext';
 import { Button } from '../components/ui';
 import { offlineQueue } from '../services/offlineQueue';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
+import { useNavigate } from 'react-router-dom';
+import { evaluateReading, type AlarmLevel } from '../../lib/readingAlarm';
+
+interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
 
 export const Readings: React.FC = () => {
     const { profile, permissions, dataScope } = useAuth();
@@ -35,9 +39,13 @@ export const Readings: React.FC = () => {
     const [readingTypes, setReadingTypes] = useState<DictionaryRecord[]>([]);
 
     // UI State
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<TabId>('entry');
     const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
     const [filterText, setFilterText] = useState('');
+    // R-4: condition-alarm → one-tap WO
+    const [alarmBreaches, setAlarmBreaches] = useState<BreachInfo[]>([]);
+    const [raisingWO, setRaisingWO] = useState(false);
     // Confirm modal state
     const [meterChangeDefId, setMeterChangeDefId] = useState<string | null>(null);
     const [deleteDefId, setDeleteDefId] = useState<string | null>(null);
@@ -154,6 +162,7 @@ export const Readings: React.FC = () => {
         const updatedLogs = [...logs];
         const updatedDefs = [...definitions];
         let queuedAny = false;
+        const breaches: BreachInfo[] = [];
 
         for (const reading of newReadings) {
             if (reading.value === undefined || !reading.definitionId) continue;
@@ -185,6 +194,9 @@ export const Readings: React.FC = () => {
                 }
             }
 
+            // R-4: classify against alarm bands (warning + critical, min + max).
+            const alarm = evaluateReading(reading.value, def);
+
             // Create Log Entry
             // Map UI -> DB keys
             const dbLog = {
@@ -198,7 +210,7 @@ export const Readings: React.FC = () => {
                 delta: def.category === 'METER' ? delta : undefined,
                 entered_by: profile?.username || profile?.fullName || 'Unknown User',
                 is_active: true,
-                is_alarm: (def.maxCritical && reading.value > def.maxCritical) || (def.minCritical && reading.value < def.minCritical) ? true : false,
+                is_alarm: alarm.level !== 'OK',
                 comments: reading.comments
             };
 
@@ -242,16 +254,26 @@ export const Readings: React.FC = () => {
                     // Ideally we iterate and save child logs too.
                 }
 
-                // Notification hook-in: Reading Alarm
-                if (dbLog.is_alarm) {
-                    NotificationService.checkRules('readings', 'READING_ALARM', {
-                        ...newLog,
-                        assetId: def.assetId,
-                        definitionName: def.name,
-                        readingValue: reading.value,
-                        maxCritical: def.maxCritical,
-                        minCritical: def.minCritical
-                    }, { currentUserId: profile?.id || 'SYSTEM' });
+                // R-4: on a band breach, raise a notification pre-coded with the
+                // asset + reading (deep-links via U-5) and collect it so we can
+                // offer a one-tap work order once the batch is saved.
+                if (alarm.level !== 'OK') {
+                    const assetName = assets.find(a => a.id === def.assetId)?.name || 'asset';
+                    DatabaseService.getInstance().createNotification({
+                        recipientId: profile?.id || 'SYSTEM',
+                        title: `${alarm.level === 'CRITICAL' ? '🔴 Critical' : '🟠 Warning'} alarm — ${def.name}`,
+                        message: `${assetName}: ${def.name} = ${reading.value}${def.unit ? ' ' + def.unit : ''} (${alarm.detail}). Consider raising corrective work.`,
+                        severity: alarm.level === 'CRITICAL' ? 'CRITICAL' : 'WARNING',
+                        notificationType: 'CONDITION_ALARM',
+                        module: 'readings',
+                        entityId: def.assetId,
+                        entityType: 'ASSET',
+                        entityNumber: def.name,
+                        actionRequired: true,
+                    }).catch(e => console.warn('[R-4] alarm notification failed:', e));
+                    // Keep the CBM rules engine in the loop too (escalation, etc.).
+                    NotificationService.checkRules('readings', 'READING_ALARM', { ...newLog, assetId: def.assetId, definitionName: def.name, readingValue: reading.value }, { currentUserId: profile?.id || 'SYSTEM' });
+                    breaches.push({ assetId: def.assetId, assetName, defName: def.name, unit: def.unit, value: reading.value as number, level: alarm.level, detail: alarm.detail });
                 }
             } catch (e: any) {
                 console.error("Failed to save reading", e);
@@ -267,6 +289,29 @@ export const Readings: React.FC = () => {
                 : 'Readings saved successfully.',
             queuedAny ? 'info' : 'success',
         );
+        // R-4: surface any band breaches with a one-tap "Raise Work Order".
+        if (breaches.length > 0) setAlarmBreaches(breaches);
+    };
+
+    // R-4: one-tap corrective work order from a condition alarm.
+    const raiseWOFromAlarm = async (b: BreachInfo) => {
+        setRaisingWO(true);
+        try {
+            const wo = await DatabaseService.getInstance().createWorkOrder({
+                title: `Investigate ${b.defName} ${b.level.toLowerCase()} alarm on ${b.assetName}`,
+                description: `Condition alarm: ${b.defName} = ${b.value}${b.unit ? ' ' + b.unit : ''} (${b.detail}). Auto-raised from readings.`,
+                asset_id: b.assetId,
+                type: 'CM',
+                status: 'OPEN',
+                priority_code: b.level === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
+            }, profile?.username || profile?.fullName || 'user');
+            showToast('Work order raised from alarm.', 'success');
+            setAlarmBreaches([]);
+            const id = (wo as any)?.id;
+            if (id) navigate(`/work-orders/${id}`);
+        } catch (e: any) {
+            showToast('Failed to raise work order: ' + (e?.message || 'unknown'), 'error');
+        } finally { setRaisingWO(false); }
     };
 
     // Meter Change logic
@@ -508,6 +553,39 @@ export const Readings: React.FC = () => {
                 type="danger"
                 confirmText="Delete Point"
             />
+
+            {/* R-4: condition-alarm banner → one-tap corrective WO */}
+            {alarmBreaches.length > 0 && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+                        <div className={`px-5 py-3 flex items-center gap-2 ${alarmBreaches.some(b => b.level === 'CRITICAL') ? 'bg-red-600' : 'bg-amber-500'} text-white`}>
+                            <AlertTriangle size={18} />
+                            <h3 className="font-bold text-sm">Condition alarm{alarmBreaches.length > 1 ? `s (${alarmBreaches.length})` : ''}</h3>
+                            <button onClick={() => setAlarmBreaches([])} className="ml-auto text-white/80 hover:text-white"><X size={18} /></button>
+                        </div>
+                        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+                            <p className="text-xs text-slate-500">A reading breached its alarm band. A notification has been raised — you can also create corrective work now.</p>
+                            {alarmBreaches.map((b, i) => (
+                                <div key={i} className="border border-slate-200 rounded-lg p-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-semibold text-slate-800 truncate">{b.assetName}</div>
+                                            <div className="text-xs text-slate-500">{b.defName}: <span className="font-mono font-bold">{b.value}{b.unit ? ' ' + b.unit : ''}</span> — {b.detail}</div>
+                                        </div>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${b.level === 'CRITICAL' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{b.level}</span>
+                                    </div>
+                                    <Button variant="primary" size="sm" fullWidth className="mt-2" loading={raisingWO} leftIcon={<Plus size={14} />} onClick={() => raiseWOFromAlarm(b)}>
+                                        Raise Work Order
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="px-5 py-3 border-t border-slate-100 flex justify-end">
+                            <Button variant="secondary" size="sm" onClick={() => setAlarmBreaches([])}>Dismiss</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
