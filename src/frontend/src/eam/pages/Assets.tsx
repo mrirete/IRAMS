@@ -1496,13 +1496,15 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     variant: 'secondary' as const,
                                     compactLabel: true,
                                 }] : []),
-                                ...(canDelete ? [{
+                                {
                                     label: 'Delete',
                                     icon: <Trash2 size={14} />,
                                     onClick: handleDeleteClick,
                                     variant: 'danger' as const,
                                     compactLabel: true,
-                                }] : []),
+                                    disabled: !canDelete,
+                                    tooltip: canDelete ? 'Delete Asset' : 'Insufficient permissions to delete',
+                                },
                             ]}
                         />
 

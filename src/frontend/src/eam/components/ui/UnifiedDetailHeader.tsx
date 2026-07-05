@@ -7,6 +7,8 @@ export interface HeaderAction {
     onClick: () => void;
     variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
     disabled?: boolean;
+    /** Tooltip text — shown on hover (e.g. permission reason for disabled state) */
+    tooltip?: string;
     hidden?: boolean;
     /** Hide label on small screens, show only icon */
     compactLabel?: boolean;
@@ -115,7 +117,7 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                                     className={`p-2 rounded-lg transition-colors ${
                                         action.disabled ? 'opacity-50 cursor-not-allowed' : ''
                                     } ${variantStyles[action.variant || 'secondary']}`}
-                                    title={action.label}
+                                    title={action.tooltip || action.label}
                                 >
                                     {action.icon}
                                 </button>
@@ -212,7 +214,7 @@ export const UnifiedDetailHeader: React.FC<UnifiedDetailHeaderProps> = ({
                                         className={`px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors ${
                                             action.disabled ? 'opacity-50 cursor-not-allowed' : ''
                                         } ${variantStyles[action.variant || 'secondary']}`}
-                                        title={action.label}
+                                        title={action.tooltip || action.label}
                                     >
                                         {action.icon}
                                         <span className="hidden sm:inline">{action.label}</span>
