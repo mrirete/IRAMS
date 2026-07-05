@@ -7,7 +7,7 @@
  * Standards: SAE JA1011/JA1012, IEC 60300-3-11
  */
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Shield, Plus, Search, ArrowLeft, LayoutList, Layers, GitBranch, Wrench,
   Users, Edit3, Trash2, Save, X, RefreshCw, CheckCircle, AlertTriangle,
@@ -44,6 +44,11 @@ const RCM_TABS: { id: RCMTab; label: string; icon: React.ReactNode; desc: string
 export const RCMPage: React.FC = () => {
   const { studyId } = useParams<{ studyId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Drill-through seed (e.g. Metrics bad actor → RCM): open the New Study form
+  // pre-filled with the flagged asset. Applied once, then cleared from history.
+  const rcmSeed = (location.state as { seed?: { asset?: { id: string; name?: string; tag?: string } } } | null)?.seed ?? null;
+  const rcmSeedAppliedRef = useRef(false);
 
   // ── Auth & Asset Lookup ────────────────────────────────
   const { permissions } = useAuth();
@@ -149,6 +154,20 @@ export const RCMPage: React.FC = () => {
 
   useEffect(() => { loadStudies(); }, [loadStudies]);
   useEffect(() => { if (studyId) loadStudyDetail(studyId); }, [studyId, loadStudyDetail]);
+
+  // Apply a Metrics → RCM drill-through seed once: open New Study pre-filled.
+  useEffect(() => {
+    if (rcmSeedAppliedRef.current || !rcmSeed?.asset?.id) return;
+    rcmSeedAppliedRef.current = true;
+    const a = rcmSeed.asset;
+    const label = a.name || a.tag || 'Asset';
+    setActiveTab('dashboard');
+    if (hasAssetAccess) setAssetInputMode('search');
+    setNewStudyForm({ title: `RCM — ${label}`, asset_id: a.id, operating_context: '', study_type: 'classical' });
+    setShowNewStudy(true);
+    // Clear the seed from history so a refresh/back doesn't re-open the form.
+    navigate('/rcm', { replace: true });
+  }, [rcmSeed, hasAssetAccess, navigate]);
 
   // ── Toast ──────────────────────────────────────────────
   const showToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {

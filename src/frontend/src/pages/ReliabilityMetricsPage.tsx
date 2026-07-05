@@ -7,7 +7,7 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock } from 'lucide-react';
+import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench } from 'lucide-react';
 import { supabase } from '../eam/lib/supabase';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { useRelantern } from '../eam/contexts/RelanternContext';
@@ -254,6 +254,12 @@ export const ReliabilityMetricsPage: React.FC = () => {
     // Drill-through: open the Analyze RCA workflow scoped to this asset.
     const startRCA = (assetId: string) => {
         navigate(`/analyze?asset=${encodeURIComponent(assetId)}&tab=rca&from=reliability-metrics`);
+    };
+
+    // Drill-through: start an RCM study seeded with this asset (New Study pre-filled).
+    const startRCM = (assetId: string) => {
+        const a = assets.find(x => x.id === assetId);
+        navigate('/rcm', { state: { seed: { asset: a ? { id: a.id, name: a.name, tag: a.tag } : { id: assetId } } } });
     };
 
     const askSpecialist = () => {
@@ -525,6 +531,13 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                                             className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border transition-colors ${a.rel.recommendRCA ? 'border-red-200 text-red-700 hover:bg-red-50' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
                                                         >
                                                             <AlertTriangle size={12} /> RCA
+                                                        </button>
+                                                        <button
+                                                            onClick={() => startRCM(a.id)}
+                                                            title="Start an RCM study for this asset (define functions, failures & maintenance strategy)"
+                                                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                                                        >
+                                                            <Wrench size={12} /> RCM
                                                         </button>
                                                     </div>
                                                 </td>
