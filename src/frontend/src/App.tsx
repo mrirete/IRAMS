@@ -49,6 +49,7 @@ const EamContacts = lazyWithReload(() => import('./eam/pages/Contacts').then(m =
 const EamAdmin = lazyWithReload(() => import('./eam/pages/Admin').then(m => ({ default: m.Admin })));
 const EamServiceRequests = lazyWithReload(() => import('./eam/pages/ServiceRequests').then(m => ({ default: m.ServiceRequests })));
 const EamRecurringWork = lazyWithReload(() => import('./eam/pages/RecurringWork').then(m => ({ default: m.RecurringWork })));
+const MaintenanceStrategiesPage = lazyWithReload(() => import('./pages/MaintenanceStrategiesPage').then(m => ({ default: m.MaintenanceStrategiesPage })));
 const EamScheduling = lazyWithReload(() => import('./eam/pages/Scheduling').then(m => ({ default: m.Scheduling })));
 const EamPurchaseOrders = lazyWithReload(() => import('./eam/pages/PurchaseOrders').then(m => ({ default: m.PurchaseOrders })));
 const EamReadings = lazyWithReload(() => import('./eam/pages/Readings').then(m => ({ default: m.Readings })));
@@ -161,6 +162,7 @@ function App() {
                                 <Route path="/vendors" element={<PermissionGate module="vendors"><EamVendors /></PermissionGate>} />
                                 <Route path="/requests" element={<PermissionGate module="requests"><EamServiceRequests /></PermissionGate>} />
                                 <Route path="/recurring-work" element={<PermissionGate module="pm"><EamRecurringWork /></PermissionGate>} />
+                                <Route path="/maintenance-strategies" element={<PermissionGate module="pm"><MaintenanceStrategiesPage /></PermissionGate>} />
                                 <Route path="/scheduling" element={<PermissionGate module="scheduling"><EamScheduling /></PermissionGate>} />
                                 <Route path="/purchase-orders" element={<PermissionGate module="purchasing"><EamPurchaseOrders /></PermissionGate>} />
                                 <Route path="/readings" element={<PermissionGate module="readings"><EamReadings /></PermissionGate>} />

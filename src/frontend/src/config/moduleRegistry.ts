@@ -92,11 +92,12 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'requests', label: 'Maintenance Requests', path: '/requests' },
             { id: 'work-orders', label: 'Work Orders', path: '/work-orders' },
             { id: 'recurring-work', label: 'Recurring Work / PM', path: '/recurring-work' },
+            { id: 'maintenance-strategies', label: 'Maintenance Strategies', path: '/maintenance-strategies' },
             { id: 'scheduling', label: 'Scheduling', path: '/scheduling' },
             { id: 'task-library', label: 'Task Library', path: '/task-library' },
             { id: 'moc', label: 'Management of Change', path: '/management-of-change' },
         ],
-        routes: ['/my-work', '/requests', '/work-orders', '/recurring-work', '/scheduling', '/task-library', '/management-of-change'],
+        routes: ['/my-work', '/requests', '/work-orders', '/recurring-work', '/maintenance-strategies', '/scheduling', '/task-library', '/management-of-change'],
         dependencies: ['core'], section: 'eam',
     },
     {

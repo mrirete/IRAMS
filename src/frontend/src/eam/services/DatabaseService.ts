@@ -22,6 +22,9 @@ import {
     WorkCenter,
     Company,
     NumberingOverride,
+} from '../types';
+import type { MaintenanceStrategy, StrategyPackage } from '../../lib/maintenanceStrategy';
+import {
     OperationActual,
     OrderActuals,
     ServiceRequest,
@@ -721,7 +724,9 @@ export class DatabaseService {
     // an asset would send a company_id the assets table doesn't have yet and the
     // insert would fail. True only once 0174's overrides table exists.
     public async orgNumberingReady(): Promise<boolean> {
-        const { error } = await supabase.from('numbering_config_overrides').select('company_id', { head: true, count: 'exact' });
+        // GET (limit 1), not head:true — see strategiesReady note (missing-table
+        // PGRST205 is only parseable from a response body, which HEAD lacks).
+        const { error } = await supabase.from('numbering_config_overrides').select('company_id').limit(1);
         return !(error && DatabaseService.isMissingTable(error));
     }
 
@@ -754,6 +759,57 @@ export class DatabaseService {
         const { error } = await supabase.from('numbering_config_overrides')
             .delete().eq('company_id', companyId).eq('object_class', objectClass);
         if (error) { console.error('DatabaseService.deleteNumberingOverride:', error); throw error; }
+    }
+
+    // ── Maintenance strategies & packages (R-5, SAP strategy plans) ──
+    // Graceful before migration 0175: a missing table yields [] / not-ready.
+    public async strategiesReady(): Promise<boolean> {
+        // NOTE: use a GET (limit 1), not head:true — a HEAD to a missing table
+        // returns no body, so the PGRST205 code can't be read and the miss is
+        // undetectable. A GET returns the parseable error.
+        const { error } = await supabase.from('maintenance_strategies').select('id').limit(1);
+        return !(error && DatabaseService.isMissingTable(error));
+    }
+
+    public async getStrategies(): Promise<MaintenanceStrategy[]> {
+        const { data, error } = await supabase
+            .from('maintenance_strategies')
+            .select('id, name, description, active, strategy_packages(id, label, interval_days, task_count, sort_order)')
+            .order('name');
+        if (error) {
+            if (DatabaseService.isMissingTable(error)) return [];
+            console.error('DatabaseService.getStrategies:', error);
+            return [];
+        }
+        return (data || []).map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            packages: ((r.strategy_packages || []) as any[])
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.interval_days - b.interval_days)
+                .map(p => ({ id: p.id, label: p.label, intervalDays: p.interval_days, taskCount: p.task_count ?? 0 })),
+        }));
+    }
+
+    /** Upsert a strategy and REPLACE its packages (simplest consistent write). */
+    public async saveStrategy(s: { id?: string; name: string; description?: string; packages: StrategyPackage[] }): Promise<string> {
+        const stratRow: any = { name: s.name.trim(), description: s.description?.trim() || null, updated_at: new Date().toISOString() };
+        if (s.id) stratRow.id = s.id;
+        const { data, error } = await supabase.from('maintenance_strategies').upsert(stratRow, { onConflict: 'id' }).select('id').single();
+        if (error) { console.error('DatabaseService.saveStrategy:', error); throw error; }
+        const strategyId = data.id as string;
+        // Replace packages.
+        await supabase.from('strategy_packages').delete().eq('strategy_id', strategyId);
+        if (s.packages.length) {
+            const rows = s.packages.map((p, i) => ({ strategy_id: strategyId, label: p.label.trim(), interval_days: Math.max(1, Math.round(p.intervalDays)), task_count: p.taskCount ?? 0, sort_order: i }));
+            const { error: pErr } = await supabase.from('strategy_packages').insert(rows);
+            if (pErr) { console.error('DatabaseService.saveStrategy(packages):', pErr); throw pErr; }
+        }
+        return strategyId;
+    }
+
+    public async deleteStrategy(id: string): Promise<void> {
+        const { error } = await supabase.from('maintenance_strategies').delete().eq('id', id);
+        if (error) { console.error('DatabaseService.deleteStrategy:', error); throw error; }
     }
 
     // ── Numbering configuration (SAP NRIV-style ranges) ──
