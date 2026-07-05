@@ -38,7 +38,8 @@ import {
 import { InventoryPicker } from '../components/pickers/InventoryPicker';
 import { FinOpsService, type CostAllocation, type AssetFinancial, type WarrantyCheckResult, type CostAnomalyResult } from '../services/FinOpsService';
 import { MOCK_WORK_ORDERS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_RECURRING_JOBS } from '../constants';
-import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
+import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, OrderActuals, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
+import { LoadingState } from '../components/ui';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -69,7 +70,7 @@ import { supabase } from '../lib/supabase';
 import ersApi from '../services/ERSApiClient';
 
 type ViewMode = 'LIST' | 'DETAIL' | 'PM_LIST' | 'MY_WORK';
-type TabId = 'details' | 'tasks' | 'jsa' | 'resources' | 'files' | 'analysis';
+type TabId = 'details' | 'tasks' | 'jsa' | 'resources' | 'cost' | 'files' | 'analysis';
 
 // ...
 
@@ -943,6 +944,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     // Local state to manage edits during the session (e.g. adding failure data before completion)
     const [localJob, setLocalJob] = useState<WorkOrder>(job);
     const [activeTab, setActiveTab] = useState<TabId>('details');
+    const [costRefreshKey, setCostRefreshKey] = useState(0); // bumped after a time confirmation to re-roll the Cost tab
     const [showCompleteModal, setShowCompleteModal] = useState(false);
     const [modalFailureMode, setModalFailureMode] = useState('');
     const [modalFailureCause, setModalFailureCause] = useState('');
@@ -1052,6 +1054,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         { id: 'tasks', label: 'Tasks', icon: ClipboardList },
         { id: 'jsa', label: 'Safety (JSA)', icon: Shield },
         { id: 'resources', label: 'Resources', icon: Layers },
+        { id: 'cost', label: 'Cost', icon: DollarSign },
         { id: 'files', label: 'Files', icon: Paperclip },
         { id: 'analysis', label: 'Analysis & History', icon: AlertOctagon }, // Merged Tab
     ];
@@ -1292,6 +1295,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         const mappedLabor = ((raw as any).work_order_labor || []).map((l: any) => DataMapper.toUIJobLabor(l));
         const mappedTasks = ((raw as any).job_tasks || []).map((t: any) => DataMapper.toUIJobTask(t)).sort((a: any, b: any) => a.sequence - b.sequence);
         setLocalJob(prev => ({ ...prev, labor: mappedLabor, tasks: mappedTasks.length ? mappedTasks : prev.tasks }));
+        setCostRefreshKey(k => k + 1); // re-roll the Cost tab's actuals after a confirmation
     };
 
     // ── Immediate save (for manual Save button) — flushes any pending debounce ──
@@ -1574,6 +1578,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     )}
                     {activeTab === 'jsa' && <JSATab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
                     {activeTab === 'resources' && <ResourcesTab job={localJob} users={users} contacts={contacts} onNavigateToTask={(taskId) => { setActiveTab('tasks'); }} dictionaries={dictionaries} />}
+                    {activeTab === 'cost' && <CostTab job={localJob} refreshKey={costRefreshKey} />}
                     {activeTab === 'files' && <FilesTab job={localJob} onUpdate={updateJob} tasks={localJob.tasks || []} />}
                     {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} />}
                     {/* Placeholders */}
@@ -3858,6 +3863,162 @@ const MetricsTab: React.FC<{ job: WorkOrder, users: any[], contacts: any[] }> = 
         </div>
     );
 }
+
+// --- COST TAB (WM-2 → FI-1): planned vs actual labour, per operation, with the
+//     settlement receiver each rolls up to. The visible payoff of the
+//     order-to-cost spine — confirm time on an operation, watch its actual
+//     cost appear here against plan, and see which cost center it settles to. ---
+
+const money = (n: number) => n.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+
+const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refreshKey }) => {
+    const [actuals, setActuals] = useState<OrderActuals | null>(null);
+    const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
+    const [costCenters, setCostCenters] = useState<{ id: string; code: string; name: string }[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        DatabaseService.getInstance().getWorkCenters(false).then(setWorkCenters).catch(() => setWorkCenters([]));
+        FinOpsService.getCostCenters().then(setCostCenters).catch(() => setCostCenters([]));
+    }, []);
+
+    useEffect(() => {
+        let active = true;
+        if (!job.id || job.id.startsWith('new-')) { setLoading(false); return; }
+        setLoading(true);
+        DatabaseService.getInstance().getOrderActuals(job.id)
+            .then(a => { if (active) setActuals(a); })
+            .finally(() => { if (active) setLoading(false); });
+        return () => { active = false; };
+    }, [job.id, refreshKey]);
+
+    const wcById = useMemo(() => new Map(workCenters.map(w => [w.id, w])), [workCenters]);
+    const ccById = useMemo(() => new Map(costCenters.map(c => [c.id, c])), [costCenters]);
+
+    // Per-operation planned cost = estHours × (per-op rate ?? work-center rate).
+    const rows = useMemo(() => (job.tasks || []).map(t => {
+        const wc = t.workCenterId ? wcById.get(t.workCenterId) : undefined;
+        const rate = t.plannedRate ?? wc?.activityRate ?? 0;
+        const plannedHours = t.estHours || 0;
+        const plannedCost = plannedHours * rate;
+        const act = actuals?.operations.find(o => o.operationId === t.id);
+        const actualHours = act?.actualHours ?? 0;
+        const actualCost = act?.actualLabourCost ?? 0;
+        const cc = act?.costCenterId ? ccById.get(act.costCenterId) : (wc?.costCenterId ? ccById.get(wc.costCenterId) : undefined);
+        return {
+            id: t.id, opNo: t.operationNo || String((t.sequence ?? 0) * 10).padStart(4, '0'),
+            desc: t.description || 'Operation',
+            wcLabel: wc ? `${wc.code}` : '—', rate,
+            plannedHours, plannedCost, actualHours, actualCost,
+            varianceCost: actualCost - plannedCost,
+            settlesTo: cc ? `${cc.code} · ${cc.name}` : (t.workCenterId ? 'Work center has no cost center' : '—'),
+        };
+    }), [job.tasks, wcById, ccById, actuals]);
+
+    const plannedLabour = rows.reduce((s, r) => s + r.plannedCost, 0);
+    const actualLabour = actuals?.labourCost ?? rows.reduce((s, r) => s + r.actualCost, 0);
+    const partsCost = actuals?.partsCost ?? 0;
+    const anyWorkCenters = rows.some(r => r.wcLabel !== '—');
+
+    const SummaryCard = ({ label, planned, actual }: { label: string; planned: number; actual: number }) => {
+        const variance = actual - planned;
+        const over = variance > 0.5;
+        return (
+            <div className="bg-white border border-slate-200 rounded-card p-4">
+                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">{label}</div>
+                <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-slate-800 tabular-nums">{money(actual)}</span>
+                    <span className="text-xs text-slate-400">actual</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between text-xs">
+                    <span className="text-slate-500 tabular-nums">Plan {money(planned)}</span>
+                    {planned > 0 && (
+                        <span className={`font-semibold tabular-nums ${over ? 'text-red-600' : 'text-emerald-600'}`}>
+                            {variance >= 0 ? '+' : ''}{money(variance)} ({planned ? Math.round((variance / planned) * 100) : 0}%)
+                        </span>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
+    return (
+        <div className="p-3 sm:p-4 space-y-4">
+            <div className="flex items-center gap-2">
+                <DollarSign size={16} className="text-slate-400" />
+                <h3 className="text-sm font-bold text-slate-700">Operation Cost &amp; Settlement</h3>
+                <span className="text-[11px] text-slate-400">planned vs confirmed-actual labour · SAP order-to-cost</span>
+            </div>
+
+            {loading ? (
+                <LoadingState label="Loading cost roll-up…" className="h-40" />
+            ) : rows.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 bg-white border border-slate-200 rounded-card">
+                    <ClipboardList size={32} className="mx-auto mb-2 opacity-20" />
+                    <p className="text-sm">No operations yet. Add tasks on the <strong>Tasks</strong> tab and assign each a work center to cost it.</p>
+                </div>
+            ) : (
+                <>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <SummaryCard label="Labour" planned={plannedLabour} actual={actualLabour} />
+                        <div className="bg-white border border-slate-200 rounded-card p-4">
+                            <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Parts</div>
+                            <div className="mt-1 text-2xl font-bold text-slate-800 tabular-nums">{money(partsCost)}</div>
+                            <div className="mt-1 text-xs text-slate-400">issued to this order</div>
+                        </div>
+                        <div className="bg-primary-50 border border-primary-200 rounded-card p-4">
+                            <div className="text-[11px] uppercase font-semibold tracking-wide text-primary-700">Total actual</div>
+                            <div className="mt-1 text-2xl font-bold text-primary-700 tabular-nums">{money(actualLabour + partsCost)}</div>
+                            <div className="mt-1 text-xs text-primary-600/70">labour + parts · settlement basis</div>
+                        </div>
+                    </div>
+
+                    {!anyWorkCenters && (
+                        <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
+                            No operations have a work center assigned yet — assign one on the Tasks tab so labour is costed at the work-center rate and settles to its cost center.
+                        </div>
+                    )}
+
+                    <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm min-w-[720px]">
+                                <thead>
+                                    <tr className="text-[10px] uppercase tracking-wide text-slate-500 border-b border-slate-200 bg-slate-50">
+                                        <th className="text-left font-semibold px-3 py-2">Op</th>
+                                        <th className="text-left font-semibold px-3 py-2">Operation</th>
+                                        <th className="text-left font-semibold px-3 py-2">Work Center</th>
+                                        <th className="text-right font-semibold px-3 py-2">Plan (h · cost)</th>
+                                        <th className="text-right font-semibold px-3 py-2">Actual (h · cost)</th>
+                                        <th className="text-right font-semibold px-3 py-2">Var</th>
+                                        <th className="text-left font-semibold px-3 py-2">Settles to</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {rows.map(r => (
+                                        <tr key={r.id} className="border-b border-slate-100 last:border-0">
+                                            <td className="px-3 py-2 font-mono text-xs text-slate-500">{r.opNo}</td>
+                                            <td className="px-3 py-2 text-slate-700 max-w-[200px] truncate" title={r.desc}>{r.desc}</td>
+                                            <td className="px-3 py-2 text-slate-600">{r.wcLabel}{r.rate ? <span className="text-slate-400"> @{r.rate}/h</span> : null}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-slate-500">{r.plannedHours || 0}h · {money(r.plannedCost)}</td>
+                                            <td className="px-3 py-2 text-right tabular-nums text-slate-800 font-medium">{r.actualHours || 0}h · {money(r.actualCost)}</td>
+                                            <td className={`px-3 py-2 text-right tabular-nums font-semibold ${r.varianceCost > 0.5 ? 'text-red-600' : r.varianceCost < -0.5 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                                                {r.actualCost > 0 ? `${r.varianceCost >= 0 ? '+' : ''}${money(r.varianceCost)}` : '—'}
+                                            </td>
+                                            <td className="px-3 py-2 text-xs text-slate-500 max-w-[180px] truncate" title={r.settlesTo}>{r.settlesTo}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                        Actuals roll up from time confirmations posted on the Tasks tab (Do-work mode). Rate precedence: per-operation planned rate → work-center activity rate → the confirmation's own rate.
+                    </p>
+                </>
+            )}
+        </div>
+    );
+};
 
 // --- TASKS TAB: Fully Reworked ---
 
