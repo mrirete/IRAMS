@@ -514,6 +514,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     });
 
     const handleSortChange = (field: SortField) => {
+        setActiveViewId('');
         if (sortField === field) {
             const newAsc = !sortAsc;
             setSortAsc(newAsc);
@@ -526,19 +527,63 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
         }
     };
 
+    // ═══ U-4: Saved Views (filter + sort presets) + W-4 Backlog cockpit preset ═══
+    // Backlog = open work only (excludes finished statuses); the "Backlog" preset
+    // sorts oldest-first so the aging tail surfaces — a planner's backlog cockpit.
+    const [backlogOnly, setBacklogOnly] = useState(false);
+    type WOView = { id: string; name: string; builtin?: boolean; statusFilter: WorkOrderStatus | 'ALL'; classFilter: 'ALL' | 'PROACTIVE' | 'REACTIVE'; backlogOnly?: boolean; sortField: SortField; sortAsc: boolean };
+    const BUILTIN_VIEWS: WOView[] = [
+        { id: 'all', name: 'All Work Orders', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: false, sortField: 'priority', sortAsc: false },
+        { id: 'backlog', name: 'Backlog · oldest first', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: true, sortField: 'created', sortAsc: true },
+        { id: 'reactive-backlog', name: 'Reactive backlog', builtin: true, statusFilter: 'ALL', classFilter: 'REACTIVE', backlogOnly: true, sortField: 'priority', sortAsc: false },
+    ];
+    const VIEWS_KEY = 'irams_wo_saved_views';
+    const [userViews, setUserViews] = useState<WOView[]>(() => { try { return JSON.parse(localStorage.getItem(VIEWS_KEY) || '[]'); } catch { return []; } });
+    const [activeViewId, setActiveViewId] = useState<string>('all');
+    const [viewsOpen, setViewsOpen] = useState(false);
+    const viewsRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const h = (e: MouseEvent) => { if (viewsRef.current && !viewsRef.current.contains(e.target as Node)) setViewsOpen(false); };
+        document.addEventListener('mousedown', h);
+        return () => document.removeEventListener('mousedown', h);
+    }, []);
+
+    const applyView = (v: WOView) => {
+        setStatusFilter(v.statusFilter); setClassFilter(v.classFilter); setBacklogOnly(!!v.backlogOnly);
+        setSortField(v.sortField); setSortAsc(v.sortAsc); setActiveViewId(v.id); setViewsOpen(false);
+        localStorage.setItem('irams_wo_sort_field', v.sortField);
+        localStorage.setItem('irams_wo_sort_asc', String(v.sortAsc));
+    };
+    const saveCurrentView = () => {
+        const name = window.prompt('Save this filter + sort as a view named:');
+        if (!name || !name.trim()) return;
+        const v: WOView = { id: 'u-' + Date.now(), name: name.trim(), statusFilter, classFilter, backlogOnly, sortField, sortAsc };
+        const next = [...userViews, v];
+        setUserViews(next); localStorage.setItem(VIEWS_KEY, JSON.stringify(next));
+        setActiveViewId(v.id); setViewsOpen(false);
+    };
+    const deleteView = (id: string) => {
+        const next = userViews.filter(v => v.id !== id);
+        setUserViews(next); localStorage.setItem(VIEWS_KEY, JSON.stringify(next));
+        if (activeViewId === id) applyView(BUILTIN_VIEWS[0]);
+    };
+    const activeViewName = [...BUILTIN_VIEWS, ...userViews].find(v => v.id === activeViewId)?.name || 'Custom view';
+
     // Priority rank for sorting (higher number = higher priority)
     const PRIORITY_RANK: Record<string, number> = { EMERGENCY: 5, HIGH: 4, MEDIUM: 3, LOW: 2, ROUTINE: 1 };
     const STATUS_RANK: Record<string, number> = { WIP: 5, SCHED: 4, OPEN: 3, TECO: 2, CLOSED: 1, CANC: 0, CANCELLED: 0 };
 
+    const BACKLOG_FINISHED = useMemo(() => new Set(['TECO', 'CLOSED', 'CANC', 'CANCELLED', 'COMPLETED']), []);
     const filteredJobs = useMemo(() => {
         const filtered = jobs.filter(job => {
             const matchesStatus = statusFilter === 'ALL' || job.status === statusFilter;
             const matchesClass = classFilter === 'ALL' || classifyWork(job) === classFilter;
+            const matchesBacklog = !backlogOnly || !BACKLOG_FINISHED.has((job.status || '').toUpperCase());
             const matchesSearch = (job.title || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.id || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.woNumber || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.assetName || '').toLowerCase().includes(search.toLowerCase());
-            return matchesStatus && matchesClass && matchesSearch;
+            return matchesStatus && matchesClass && matchesBacklog && matchesSearch;
         });
 
         // Apply sort
@@ -560,7 +605,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
             }
             return sortAsc ? cmp : -cmp;
         });
-    }, [jobs, statusFilter, classFilter, search, sortField, sortAsc]);
+    }, [jobs, statusFilter, classFilter, backlogOnly, search, sortField, sortAsc, BACKLOG_FINISHED]);
 
     // Planned-vs-Reactive ratio (governance KPI) — over classified work only.
     const classRatio = useMemo(() => {
@@ -758,6 +803,41 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         <p className="text-[11px] md:text-xs text-slate-500">Manage maintenance tasks, schedules, and resources.</p>
                     </div>
                     <div className="flex items-center gap-2">
+                        {/* U-4: Saved Views selector */}
+                        <div className="relative" ref={viewsRef}>
+                            <button
+                                onClick={() => setViewsOpen(o => !o)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 max-w-[190px]"
+                                title="Saved views — filter + sort presets"
+                            >
+                                <Layers size={13} className="flex-shrink-0 text-slate-400" />
+                                <span className="truncate">{activeViewId ? activeViewName : 'Custom view'}</span>
+                                <ChevronDown size={13} className="flex-shrink-0 text-slate-400" />
+                            </button>
+                            {viewsOpen && (
+                                <div className="absolute right-0 mt-1 w-64 bg-white border border-slate-200 rounded-xl shadow-xl z-30 py-1 text-sm">
+                                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">Presets</div>
+                                    {BUILTIN_VIEWS.map(v => (
+                                        <button key={v.id} onClick={() => applyView(v)}
+                                            className={`w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center justify-between ${activeViewId === v.id ? 'text-primary-700 font-semibold' : 'text-slate-700'}`}>
+                                            {v.name}{activeViewId === v.id && <Check size={13} />}
+                                        </button>
+                                    ))}
+                                    {userViews.length > 0 && <div className="px-3 py-1 mt-1 text-[10px] font-bold uppercase tracking-wide text-slate-400 border-t border-slate-100">My views</div>}
+                                    {userViews.map(v => (
+                                        <div key={v.id} className={`group flex items-center justify-between px-3 py-1.5 hover:bg-slate-50 ${activeViewId === v.id ? 'text-primary-700 font-semibold' : 'text-slate-700'}`}>
+                                            <button onClick={() => applyView(v)} className="flex-1 text-left truncate">{v.name}</button>
+                                            <button onClick={() => deleteView(v.id)} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 ml-2" title="Delete view"><Trash2 size={12} /></button>
+                                        </div>
+                                    ))}
+                                    <div className="border-t border-slate-100 mt-1 pt-1">
+                                        <button onClick={saveCurrentView} className="w-full text-left px-3 py-1.5 hover:bg-slate-50 text-primary-600 font-semibold flex items-center gap-1.5">
+                                            <Plus size={13} /> Save current view…
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                         {/* Density toggle — desktop only */}
                         <div className="hidden md:block">
                             <DensityToggle value={density} onChange={setDensity} />
@@ -790,7 +870,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         {[{ code: 'ALL', description: 'All' }, ...dictionaries.filter(d => d.type === 'STATUS_CODE' && d.active)].map((status) => (
                             <button
                                 key={status.code}
-                                onClick={() => setStatusFilter(status.code as any)}
+                                onClick={() => { setStatusFilter(status.code as any); setActiveViewId(''); }}
                                 className={`whitespace-nowrap px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border transition-all ${statusFilter === status.code
                                     ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
@@ -818,7 +898,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         {([['ALL', 'All'], ['PROACTIVE', 'Proactive'], ['REACTIVE', 'Reactive']] as const).map(([val, label]) => (
                             <button
                                 key={val}
-                                onClick={() => setClassFilter(val)}
+                                onClick={() => { setClassFilter(val); setActiveViewId(''); }}
                                 className={`whitespace-nowrap px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border transition-all ${classFilter === val
                                     ? (val === 'REACTIVE' ? 'bg-red-600 text-white border-red-600' : val === 'PROACTIVE' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-primary-600 text-white border-primary-600')
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
