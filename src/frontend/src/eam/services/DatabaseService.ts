@@ -20,6 +20,7 @@ import {
     Asset,
     JobTask,
     WorkCenter,
+    Company,
     OperationActual,
     OrderActuals,
     ServiceRequest,
@@ -662,6 +663,52 @@ export class DatabaseService {
         const { error } = await supabase.from('work_centers')
             .update({ active: false, updated_at: new Date().toISOString() }).eq('id', id);
         if (error) { console.error('DatabaseService.deleteWorkCenter:', error); throw error; }
+    }
+
+    // ── Companies (SAP Company Code tier — enterprise structure T-0) ──
+    // Gracefully degrade before migration 0173 is applied: a missing table
+    // (PGRST205 / 42P01) yields an empty list rather than a thrown error, so
+    // the Admin page shows an "apply the migration" empty state, not a crash.
+    private static isMissingTable(error: any): boolean {
+        return error?.code === 'PGRST205' || error?.code === '42P01'
+            || /could not find the table|does not exist/i.test(error?.message || '');
+    }
+
+    public async getCompanies(activeOnly = false): Promise<Company[]> {
+        let q = supabase.from('companies').select('*').order('code');
+        if (activeOnly) q = q.eq('active', true);
+        const { data, error } = await q;
+        if (error) {
+            if (DatabaseService.isMissingTable(error)) return [];
+            console.error('DatabaseService.getCompanies:', error);
+            return [];
+        }
+        return (data || []).map((r: any) => ({
+            id: r.id, code: r.code, name: r.name, description: r.description || undefined,
+            country: r.country || undefined, currency: r.currency || undefined, active: r.active !== false,
+        }));
+    }
+
+    public async saveCompany(c: Partial<Company> & { code: string; name: string }): Promise<void> {
+        const row: any = {
+            code: c.code.trim(),
+            name: c.name.trim(),
+            description: c.description?.trim() || null,
+            country: c.country?.trim() || null,
+            currency: c.currency?.trim() || null,
+            active: c.active !== false,
+            updated_at: new Date().toISOString(),
+        };
+        if (c.id) row.id = c.id;
+        const { error } = await supabase.from('companies').upsert(row, { onConflict: 'id' });
+        if (error) { console.error('DatabaseService.saveCompany:', error); throw error; }
+    }
+
+    public async deleteCompany(id: string): Promise<void> {
+        // Soft-delete: org units may still reference it; deactivate rather than orphan.
+        const { error } = await supabase.from('companies')
+            .update({ active: false, updated_at: new Date().toISOString() }).eq('id', id);
+        if (error) { console.error('DatabaseService.deleteCompany:', error); throw error; }
     }
 
     // ── Numbering configuration (SAP NRIV-style ranges) ──

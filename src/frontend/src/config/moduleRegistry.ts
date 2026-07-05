@@ -80,7 +80,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     {
         id: 'core', label: 'Core Platform', description: 'Dashboard, Assets, Admin & Settings',
         tier: 'core', icon: Home, path: '/',
-        routes: ['/', '/assets', '/admin', '/admin/connectors/new', '/admin/connectors/:id', '/admin/settings', '/admin/error-logs', '/admin/activity-log', '/data-quality', '/login', '/eam-admin', '/system-health', '/readings', '/notifications'],
+        routes: ['/', '/assets', '/admin', '/admin/companies', '/admin/connectors/new', '/admin/connectors/:id', '/admin/settings', '/admin/error-logs', '/admin/activity-log', '/data-quality', '/login', '/eam-admin', '/system-health', '/readings', '/notifications'],
         dependencies: [], section: 'eam',
     },
     {

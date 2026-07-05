@@ -39,6 +39,17 @@ export interface DataScope {
 }
 
 /** WM-2 (SAP CR) — capacity-bearing, costed resource an operation is performed at. */
+/** SAP Company Code (BUKRS) — sub-company / legal entity (enterprise-structure T-0). */
+export interface Company {
+  id: string;
+  code: string;              // '1000', 'CAIN-NG', …
+  name: string;
+  description?: string;
+  country?: string;
+  currency?: string;
+  active: boolean;
+}
+
 export interface WorkCenter {
   id: string;
   code: string;              // MECH-01, ELEC-01, …

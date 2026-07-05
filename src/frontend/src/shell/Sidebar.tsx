@@ -388,6 +388,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                 <NavLink to="/admin/settings" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Global Settings
                                 </NavLink>
+                                <NavLink to="/admin/companies" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                                    Companies
+                                </NavLink>
                                 <NavLink to="/admin/hierarchy" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Hierarchy Config
                                 </NavLink>
