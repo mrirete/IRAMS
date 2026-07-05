@@ -8,6 +8,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench } from 'lucide-react';
+import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 import { supabase } from '../eam/lib/supabase';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { useRelantern } from '../eam/contexts/RelanternContext';
@@ -260,6 +261,13 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const startRCM = (assetId: string) => {
         const a = assets.find(x => x.id === assetId);
         navigate('/rcm', { state: { seed: { asset: a ? { id: a.id, name: a.name, tag: a.tag } : { id: assetId } } } });
+    };
+
+    // R-6: flagship agent — one-click cited PM proposal for this bad actor.
+    const [advisorAsset, setAdvisorAsset] = useState<{ id: string; tag: string; name: string } | null>(null);
+    const openAdvisor = (assetId: string) => {
+        const a = assets.find(x => x.id === assetId);
+        setAdvisorAsset({ id: assetId, tag: a?.tag || '', name: a?.name || assetName(assetId) });
     };
 
     const askSpecialist = () => {
@@ -519,6 +527,13 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                                 <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                                     <div className="inline-flex items-center gap-1.5">
                                                         <button
+                                                            onClick={() => openAdvisor(a.id)}
+                                                            title="Reliability Advisor — auto-propose a cost-justified PM from this asset's failure history"
+                                                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+                                                        >
+                                                            <Sparkles size={12} /> Advisor
+                                                        </button>
+                                                        <button
                                                             onClick={() => fitWeibull(a.id)}
                                                             title="Fit a Weibull model from this asset's failure history, then create a PM"
                                                             className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg border border-primary-200 text-primary-700 hover:bg-primary-50 transition-colors"
@@ -554,6 +569,13 @@ export const ReliabilityMetricsPage: React.FC = () => {
                         Adjust the window or filters above to re-analyze. Hover a KPI for its definition.
                     </p>
                 </>
+            )}
+
+            {advisorAsset && (
+                <ReliabilityAdvisorModal
+                    asset={advisorAsset}
+                    onClose={() => setAdvisorAsset(null)}
+                />
             )}
         </div>
     );
