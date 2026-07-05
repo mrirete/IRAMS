@@ -907,6 +907,7 @@ export class DatabaseService {
             type: row.type,
             parentId: row.parent_id,
             managerId: row.manager_id,
+            companyId: row.company_id ?? null,
             description: row.description,
             location: row.location,
             email: row.email,
@@ -923,6 +924,7 @@ export class DatabaseService {
             parent_id: unit.parentId,
             manager_id: unit.managerId,
         };
+        if (unit.companyId !== undefined) row.company_id = unit.companyId || null;
         // Only include optional fields if they have values (defensive against missing columns)
         if (unit.description) row.description = unit.description;
         if (unit.location) row.location = unit.location;
@@ -942,6 +944,7 @@ export class DatabaseService {
             manager_id: unit.managerId,
             updated_at: new Date().toISOString()
         };
+        if (unit.companyId !== undefined) row.company_id = unit.companyId || null;
         // Only include optional fields if they have values
         if (unit.description) row.description = unit.description;
         if (unit.location) row.location = unit.location;

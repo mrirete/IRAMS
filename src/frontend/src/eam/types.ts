@@ -1376,6 +1376,7 @@ export interface OrganizationUnit {
   type: OrgUnitType;
   parentId: string | null;
   managerId: string | null;
+  companyId?: string | null;   // -> companies (SAP Company Code the unit belongs to)
   description?: string;
   location?: string;
   email?: string;

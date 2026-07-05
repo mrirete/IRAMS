@@ -24,12 +24,17 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
     const [potentialManagers, setPotentialManagers] = useState<any[]>([]);
     const [orgLevels, setOrgLevels] = useState<any[]>([]);
     const [allUnits, setAllUnits] = useState<OrganizationUnit[]>([]);
+    const [companyId, setCompanyId] = useState<string>('');
+    const [companies, setCompanies] = useState<{ id: string; code: string; name: string }[]>([]);
 
     useEffect(() => {
         if (isOpen) {
             loadManagers();
             loadOrgLevels();
             loadAllUnits();
+            DatabaseService.getInstance().getCompanies(true)
+                .then(cs => setCompanies(cs.map(c => ({ id: c.id, code: c.code, name: c.name }))))
+                .catch(() => setCompanies([]));
         }
     }, [isOpen]);
 
@@ -43,12 +48,16 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                 setManagerId(unit.managerId || '');
                 setDescription(unit.description || '');
                 setSelectedParentId(unit.parentId || '');
+                setCompanyId(unit.companyId || '');
             } else {
                 // ── CREATING NEW ──
                 setName('');
                 setManagerId('');
                 setDescription('');
                 setSelectedParentId(parentUnit?.id || '');
+                // Inherit the parent's company by default (sub-units belong to the
+                // same legal entity unless explicitly reassigned).
+                setCompanyId((parentUnit as any)?.companyId || '');
 
                 if (parentUnit) {
                     const parentLevel = orgLevels.find(l => l.code === parentUnit.type);
@@ -174,6 +183,7 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                 type,
                 parentId: resolvedParentId,
                 managerId: managerId || null,
+                companyId: companyId || null,
                 description: description || undefined
             };
 
@@ -273,6 +283,26 @@ export const OrgUnitModal: React.FC<OrgUnitModalProps> = ({ isOpen, onClose, onS
                             </select>
                         </div>
                     </div>
+
+                    {/* ══ COMPANY (SAP Company Code) — the legal entity this unit belongs to ══ */}
+                    {companies.length > 0 && (
+                        <div>
+                            <label className="block text-sm font-medium mb-1 dark:text-gray-300">
+                                Company
+                                <span className="text-xs text-gray-400 ml-1 font-normal">(legal entity / sub-company)</span>
+                            </label>
+                            <select
+                                value={companyId}
+                                onChange={(e) => setCompanyId(e.target.value)}
+                                className="w-full p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none"
+                            >
+                                <option value="">── Unassigned ──</option>
+                                {companies.map(c => (
+                                    <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
 
                     {/* ══ PARENT REASSIGNMENT ══ */}
                     <div>
