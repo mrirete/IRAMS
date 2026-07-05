@@ -9,8 +9,10 @@ import { AskRelanternButton } from '../components/AskRelanternButton';
 import { aiContextService } from '../services/AIContextService';
 import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/DatabaseService';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui';
+import { useToast } from '../contexts/ToastContext';
+import { notificationRoute, isApprovableRequest } from '../../lib/notificationNav';
 
 type SeverityFilter = 'ALL' | 'CRITICAL' | 'WARNING' | 'INFO' | 'SUCCESS';
 type TypeFilter = 'ALL' | 'APPROVAL_REQUIRED' | 'ASSIGNMENT' | 'STATUS_CHANGE' | 'SLA_BREACH' | 'INVENTORY_ALERT' | 'SCHEDULE_ALERT' | 'SAFETY_ALERT' | 'COST_THRESHOLD' | 'AI_RECOMMENDATION' | 'SYSTEM';
@@ -48,6 +50,39 @@ export const Notifications: React.FC = () => {
         const db = DatabaseService.getInstance();
         await db.markNotificationRead(id);
         setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n));
+    };
+
+    const navigate = useNavigate();
+    const { showToast } = useToast();
+    const [acting, setActing] = useState<string | null>(null);
+    const actorName = (profile as any)?.username || (profile as any)?.fullName || 'user';
+
+    const openDetails = (n: any) => {
+        if (!n.isRead) handleMarkRead(n.id);
+        const route = notificationRoute(n);
+        if (route) navigate(route);
+    };
+    const approveReq = async (n: any) => {
+        if (!window.confirm('Approve this request and convert it to a work order?')) return;
+        setActing(n.id);
+        try {
+            await DatabaseService.getInstance().approveRequestAndConvert(n.entityId, actorName);
+            await DatabaseService.getInstance().acknowledgeNotification(n.id, actorName);
+            setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true, isAcknowledged: true } : x));
+            showToast('Request approved — work order created.', 'success');
+        } catch (e: any) { showToast('Approve failed: ' + (e?.message || 'unknown'), 'error'); }
+        finally { setActing(null); }
+    };
+    const rejectReq = async (n: any) => {
+        if (!window.confirm('Reject this request?')) return;
+        setActing(n.id);
+        try {
+            await DatabaseService.getInstance().updateRequest(n.entityId, { status: 'REJECTED' } as any, actorName);
+            await DatabaseService.getInstance().acknowledgeNotification(n.id, actorName);
+            setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true, isAcknowledged: true } : x));
+            showToast('Request rejected.', 'success');
+        } catch (e: any) { showToast('Reject failed: ' + (e?.message || 'unknown'), 'error'); }
+        finally { setActing(null); }
     };
 
     const handleAcknowledge = async (id: string) => {
@@ -296,15 +331,27 @@ export const Notifications: React.FC = () => {
                                                 Escalated (L{n.escalationLevel})
                                             </span>
                                         )}
-                                        {n.actionLink && (
-                                            <Link
-                                                to={n.actionLink}
+                                        {notificationRoute(n) && (
+                                            <button
+                                                onClick={() => openDetails(n)}
                                                 className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
                                             >
                                                 View Details <ExternalLink size={12} />
-                                            </Link>
+                                            </button>
                                         )}
                                     </div>
+
+                                    {/* U-5: inline approve/reject for approval-required requests */}
+                                    {isApprovableRequest(n) && (
+                                        <div className="flex items-center gap-2 mt-3">
+                                            <Button variant="primary" size="sm" onClick={() => approveReq(n)} loading={acting === n.id} leftIcon={<CheckCircle size={14} />}>
+                                                Approve &amp; convert
+                                            </Button>
+                                            <Button variant="secondary" size="sm" onClick={() => rejectReq(n)} disabled={acting === n.id}>
+                                                Reject
+                                            </Button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Actions */}

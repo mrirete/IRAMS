@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Bell, Wrench, Zap, ShieldAlert, Clock, Check, CheckCheck, ExternalLink, Package, BarChart3, FileText, Shield, CheckSquare } from 'lucide-react';
+import { Bell, Wrench, Zap, ShieldAlert, Clock, Check, CheckCheck, ExternalLink, Package, BarChart3, FileText, Shield, CheckSquare, X, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { DatabaseService } from '../../eam/services/DatabaseService';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useToast } from '../../eam/contexts/ToastContext';
+import { notificationRoute, isApprovableRequest } from '../../lib/notificationNav';
 
 // ─────────────────────────────────────────────────────────
 //  Helpers
@@ -128,6 +130,50 @@ export const NotificationCenter: React.FC = () => {
         setUnreadCount(0);
     };
 
+    // ── U-5: deep-link + inline approve/reject ───────────────
+    const navigate = useNavigate();
+    const { showToast } = useToast();
+    const [acting, setActing] = useState<string | null>(null);
+
+    const openNotification = (n: any) => {
+        if (!n.isRead) markRead(n.id);
+        const route = notificationRoute(n);
+        setOpen(false);
+        if (route) navigate(route);
+    };
+
+    const actorName = (user as any)?.username || (user as any)?.full_name || 'user';
+
+    const approveRequest = async (n: any, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!window.confirm('Approve this request and convert it to a work order?')) return;
+        setActing(n.id);
+        try {
+            await DatabaseService.getInstance().approveRequestAndConvert(n.entityId, actorName);
+            if (userId) await DatabaseService.getInstance().acknowledgeNotification(n.id, actorName);
+            setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true, isAcknowledged: true } : x));
+            setUnreadCount(c => Math.max(0, c - (n.isRead ? 0 : 1)));
+            showToast('Request approved — work order created.', 'success');
+        } catch (err: any) {
+            showToast('Approve failed: ' + (err?.message || 'unknown'), 'error');
+        } finally { setActing(null); }
+    };
+
+    const rejectRequest = async (n: any, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!window.confirm('Reject this request?')) return;
+        setActing(n.id);
+        try {
+            await DatabaseService.getInstance().updateRequest(n.entityId, { status: 'REJECTED' } as any, actorName);
+            if (userId) await DatabaseService.getInstance().acknowledgeNotification(n.id, actorName);
+            setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true, isAcknowledged: true } : x));
+            setUnreadCount(c => Math.max(0, c - (n.isRead ? 0 : 1)));
+            showToast('Request rejected.', 'success');
+        } catch (err: any) {
+            showToast('Reject failed: ' + (err?.message || 'unknown'), 'error');
+        } finally { setActing(null); }
+    };
+
     // ── Filter ───────────────────────────────────────────
     const filtered = notifications.filter(n => {
         if (tab === 'unread') return !n.isRead;
@@ -196,7 +242,7 @@ export const NotificationCenter: React.FC = () => {
                                 <div
                                     key={n.id}
                                     className={`px-4 py-3 hover:bg-slate-50 transition-colors cursor-pointer ${!n.isRead ? 'bg-blue-50/40' : ''}`}
-                                    onClick={() => !n.isRead && markRead(n.id)}
+                                    onClick={() => openNotification(n)}
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="mt-0.5">{getTypeIcon(n.notificationType)}</div>
@@ -220,6 +266,25 @@ export const NotificationCenter: React.FC = () => {
                                                     <Clock size={9} />{relativeTime(n.createdAt)}
                                                 </span>
                                             </div>
+                                            {/* U-5: inline approve/reject for approval-required requests */}
+                                            {isApprovableRequest(n) && (
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <button
+                                                        onClick={e => approveRequest(n, e)}
+                                                        disabled={acting === n.id}
+                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 px-2.5 py-1 rounded-md"
+                                                    >
+                                                        {acting === n.id ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Approve
+                                                    </button>
+                                                    <button
+                                                        onClick={e => rejectRequest(n, e)}
+                                                        disabled={acting === n.id}
+                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-60 px-2.5 py-1 rounded-md"
+                                                    >
+                                                        <X size={11} /> Reject
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
                                         {!n.isRead && (
                                             <button
