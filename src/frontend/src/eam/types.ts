@@ -50,6 +50,15 @@ export interface Company {
   active: boolean;
 }
 
+/** Per-company number-range override (SAP NRIV per Company Code) — W-2 T-2. */
+export interface NumberingOverride {
+  companyId: string;
+  objectClass: 'EQUIPMENT' | 'FLOC';
+  prefix: string;
+  pad: number;
+  nextNumber: number;
+}
+
 export interface WorkCenter {
   id: string;
   code: string;              // MECH-01, ELEC-01, …
@@ -260,6 +269,7 @@ export interface Asset {
   equipmentGeneration?: number;   // Replacement counter (1 = original install, 2+ = replacement)
 
   parentId?: string | null;
+  companyId?: string | null;   // W-2: owning Company Code (drives per-company numbering)
 
   // Hierarchy (ISO 14224)
   hierarchyLevel?: string;  // e.g. 'ENTERPRISE','SITE','UNIT','SYSTEM','EQUIPMENT','SUBUNIT','COMPONENT'

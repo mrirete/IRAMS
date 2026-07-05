@@ -208,6 +208,136 @@ export const HierarchyConfigPage: React.FC = () => {
             </p>
 
             <NumberRangesCard />
+            <PerCompanyNumberingCard />
+        </div>
+    );
+};
+
+// ── Per-company number-range overrides (W-2 T-2) ─────────────────────────────
+// A sub-company can issue its own equipment / FLOC numbers (Company 1000 →
+// EQ-10xxxx). Blank = uses the client default above. Degrades gracefully
+// before migration 0174 (no companies / overrides table absent → hint).
+const PerCompanyNumberingCard: React.FC = () => {
+    const { showToast } = useToast();
+    const [companies, setCompanies] = useState<{ id: string; code: string; name: string }[]>([]);
+    const [companyId, setCompanyId] = useState('');
+    const [eq, setEq] = useState<{ prefix: string; pad: number; next: number } | null>(null);
+    const [fl, setFl] = useState<{ prefix: string; pad: number; next: number } | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [ready, setReady] = useState(true); // 0174 applied?
+
+    const loadOverrides = async (cid: string) => {
+        const all = await DatabaseService.getInstance().getNumberingOverrides();
+        const e = all.find(o => o.companyId === cid && o.objectClass === 'EQUIPMENT');
+        const f = all.find(o => o.companyId === cid && o.objectClass === 'FLOC');
+        setEq(e ? { prefix: e.prefix, pad: e.pad, next: e.nextNumber } : null);
+        setFl(f ? { prefix: f.prefix, pad: f.pad, next: f.nextNumber } : null);
+    };
+
+    useEffect(() => {
+        const db = DatabaseService.getInstance();
+        Promise.all([db.getCompanies(true), db.orgNumberingReady()])
+            .then(async ([cs, isReady]) => {
+                setReady(isReady);
+                const list = cs.map(c => ({ id: c.id, code: c.code, name: c.name }));
+                setCompanies(list);
+                if (isReady && list.length) { setCompanyId(list[0].id); await loadOverrides(list[0].id); }
+            })
+            .finally(() => setLoading(false));
+    }, []);
+
+    const onPickCompany = async (cid: string) => { setCompanyId(cid); await loadOverrides(cid); };
+
+    const saveOne = async (objectClass: 'EQUIPMENT' | 'FLOC', v: { prefix: string; pad: number; next: number } | null) => {
+        if (!companyId || !v || !v.prefix.trim()) { showToast('Enter a prefix to set an override.', 'warning'); return; }
+        setSaving(true);
+        try {
+            await DatabaseService.getInstance().saveNumberingOverride({
+                companyId, objectClass, prefix: v.prefix.trim(), pad: Number(v.pad) || 6, nextNumber: Number(v.next) || 1,
+            });
+            showToast(`${objectClass === 'EQUIPMENT' ? 'Equipment' : 'Functional Location'} range set for this company.`, 'success');
+        } catch (e: any) { showToast('Save failed: ' + (e?.message || 'unknown'), 'error'); }
+        finally { setSaving(false); }
+    };
+
+    const clearOne = async (objectClass: 'EQUIPMENT' | 'FLOC') => {
+        setSaving(true);
+        try {
+            await DatabaseService.getInstance().deleteNumberingOverride(companyId, objectClass);
+            if (objectClass === 'EQUIPMENT') setEq(null); else setFl(null);
+            showToast('Reverted to the client default.', 'success');
+        } catch (e: any) { showToast('Clear failed: ' + (e?.message || 'unknown'), 'error'); }
+        finally { setSaving(false); }
+    };
+
+    const editor = (
+        label: string, color: string,
+        v: { prefix: string; pad: number; next: number } | null,
+        setV: (x: { prefix: string; pad: number; next: number } | null) => void,
+        objectClass: 'EQUIPMENT' | 'FLOC',
+        defaultPrefix: string,
+    ) => {
+        const val = v || { prefix: '', pad: 6, next: 1 };
+        const on = !!v;
+        return (
+            <div className="flex-1 min-w-[240px] rounded-lg border border-slate-200 p-4">
+                <div className="flex items-center justify-between mb-3">
+                    <h4 className={`text-xs font-bold uppercase tracking-wide ${color}`}>{label}</h4>
+                    <span className="text-[10px] text-slate-400">{on ? 'override' : `default (${defaultPrefix})`}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">Prefix</label>
+                        <input value={val.prefix} onChange={e => setV({ ...val, prefix: e.target.value })} placeholder={defaultPrefix} className="w-full text-sm border border-slate-300 rounded-md p-1.5 font-mono" />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">Digits</label>
+                        <input type="number" min={1} max={12} value={val.pad} onChange={e => setV({ ...val, pad: Number(e.target.value) })} className="w-full text-sm border border-slate-300 rounded-md p-1.5" />
+                    </div>
+                    <div>
+                        <label className="block text-[10px] font-bold text-slate-400 mb-1">Start at</label>
+                        <input type="number" min={1} value={val.next} onChange={e => setV({ ...val, next: Number(e.target.value) })} className="w-full text-sm border border-slate-300 rounded-md p-1.5" />
+                    </div>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-400">Next: <span className="font-mono font-bold text-slate-600">{(val.prefix || defaultPrefix)}{String(val.next || 1).padStart(Number(val.pad) || 0, '0')}</span></span>
+                    <div className="flex gap-1.5">
+                        {on && <button onClick={() => clearOne(objectClass)} disabled={saving} className="text-[11px] font-semibold text-slate-500 hover:text-red-600 px-2 py-1">Clear</button>}
+                        <button onClick={() => saveOne(objectClass, val)} disabled={saving} className="text-[11px] font-semibold text-white bg-primary-600 hover:bg-primary-500 disabled:opacity-50 px-2.5 py-1 rounded-md">Set</button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    if (loading) return null;
+    if (!ready || companies.length === 0) {
+        return (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+                <h2 className="text-base font-bold text-slate-800 flex items-center gap-2"><Hash size={17} className="text-primary-600" /> Per-company Number Ranges</h2>
+                <p className="text-xs text-slate-500 mt-1">
+                    {!ready
+                        ? <>Apply migration <code className="font-mono bg-slate-100 px-1 rounded">0174_org_keyed_numbering.sql</code> to enable per-company number ranges (SAP NRIV per Company Code).</>
+                        : <>Define a company under <strong>Admin → Companies</strong> to give each sub-company its own numbering framework.</>}
+                </p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                <h2 className="text-base font-bold text-slate-800 flex items-center gap-2"><Hash size={17} className="text-primary-600" /> Per-company Number Ranges</h2>
+                <select value={companyId} onChange={e => onPickCompany(e.target.value)} className="text-sm border border-slate-300 rounded-md p-1.5 max-w-[240px]">
+                    {companies.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
+                </select>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">Override the client default for a sub-company (SAP number range per Company Code). Leave blank to use the default above. Applies to assets assigned to this company.</p>
+            <div className="flex flex-wrap gap-4">
+                {editor('Functional Location', 'text-emerald-600', fl, setFl, 'FLOC', 'FL-')}
+                {editor('Equipment', 'text-blue-600', eq, setEq, 'EQUIPMENT', 'EQ-')}
+            </div>
         </div>
     );
 };

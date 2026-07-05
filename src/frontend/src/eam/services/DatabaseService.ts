@@ -21,6 +21,7 @@ import {
     JobTask,
     WorkCenter,
     Company,
+    NumberingOverride,
     OperationActual,
     OrderActuals,
     ServiceRequest,
@@ -709,6 +710,50 @@ export class DatabaseService {
         const { error } = await supabase.from('companies')
             .update({ active: false, updated_at: new Date().toISOString() }).eq('id', id);
         if (error) { console.error('DatabaseService.deleteCompany:', error); throw error; }
+    }
+
+    // ── Per-company number-range overrides (W-2 T-2, SAP NRIV) ──
+    // Graceful before migration 0174: a missing table yields [] / no-op.
+    //
+    // Readiness gate: 0173 (companies) can be applied while 0174 (assets.
+    // company_id + overrides table) is not. The T-2 UI (asset company selector,
+    // override editor) MUST be gated on this — otherwise assigning a company to
+    // an asset would send a company_id the assets table doesn't have yet and the
+    // insert would fail. True only once 0174's overrides table exists.
+    public async orgNumberingReady(): Promise<boolean> {
+        const { error } = await supabase.from('numbering_config_overrides').select('company_id', { head: true, count: 'exact' });
+        return !(error && DatabaseService.isMissingTable(error));
+    }
+
+    public async getNumberingOverrides(): Promise<NumberingOverride[]> {
+        const { data, error } = await supabase.from('numbering_config_overrides').select('*');
+        if (error) {
+            if (DatabaseService.isMissingTable(error)) return [];
+            console.error('DatabaseService.getNumberingOverrides:', error);
+            return [];
+        }
+        return (data || []).map((r: any) => ({
+            companyId: r.company_id, objectClass: r.object_class,
+            prefix: r.prefix, pad: r.pad, nextNumber: Number(r.next_number),
+        }));
+    }
+
+    public async saveNumberingOverride(o: NumberingOverride): Promise<void> {
+        const { error } = await supabase.from('numbering_config_overrides').upsert({
+            company_id: o.companyId,
+            object_class: o.objectClass,
+            prefix: o.prefix.trim(),
+            pad: Math.max(1, Math.min(12, Number(o.pad) || 6)),
+            next_number: Math.max(1, Number(o.nextNumber) || 1),
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'company_id,object_class' });
+        if (error) { console.error('DatabaseService.saveNumberingOverride:', error); throw error; }
+    }
+
+    public async deleteNumberingOverride(companyId: string, objectClass: 'EQUIPMENT' | 'FLOC'): Promise<void> {
+        const { error } = await supabase.from('numbering_config_overrides')
+            .delete().eq('company_id', companyId).eq('object_class', objectClass);
+        if (error) { console.error('DatabaseService.deleteNumberingOverride:', error); throw error; }
     }
 
     // ── Numbering configuration (SAP NRIV-style ranges) ──
@@ -1404,6 +1449,7 @@ export class DatabaseService {
             tag: row.tag,
             name: row.name,
             parentId: row.parent_id,
+            companyId: row.company_id ?? null,   // W-2: owning Company Code (null until assigned)
             hierarchyLevel: row.hierarchy_level,
             category: row.hierarchy_level === 'SITE' ? 'Site' :
                 row.hierarchy_level === 'UNIT' ? 'Unit' :
@@ -1488,6 +1534,9 @@ export class DatabaseService {
             image_url: asset.image,
             // IEN — when undefined the DB trigger auto-generates EQ-NNNNNN
             equipment_number: asset.equipmentNumber || null,
+            // W-2: owning Company Code (drives per-company numbering). Only sent
+            // when set, so inserts still work before migration 0174 adds the column.
+            ...(asset.companyId ? { company_id: asset.companyId } : {}),
             // ISO 14224 Classification
             asset_category: asset.assetCategory || null,
             asset_type_code: asset.assetType || null,
@@ -1554,6 +1603,11 @@ export class DatabaseService {
         };
         // Only include hierarchy_level if we determined one
         if (hierarchy_level) row.hierarchy_level = hierarchy_level;
+        // W-2: persist the owning Company Code only when set (truthy). Before
+        // migration 0174 the column doesn't exist and companyId is null, so
+        // asset saves must NOT send it (PostgREST rejects unknown columns).
+        // (Clearing an assignment back to null is a later refinement.)
+        if (asset.companyId) row.company_id = asset.companyId;
 
         console.log('[updateAsset] Saving row:', { id: asset.id, ...row });
         const { error } = await supabase.from('assets').update(row).eq('id', asset.id);

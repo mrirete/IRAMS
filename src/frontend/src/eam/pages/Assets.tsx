@@ -3236,6 +3236,18 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
         costCenter: ''
     });
 
+    // W-2: companies for the assignment selector (drives per-company numbering).
+    // Gated on orgNumberingReady() so we never send company_id before migration
+    // 0174 adds the assets.company_id column (which would break the insert).
+    const [companies, setCompanies] = useState<{ id: string; code: string; name: string }[]>([]);
+    const [numberingReady, setNumberingReady] = useState(false);
+    useEffect(() => {
+        const db = DatabaseService.getInstance();
+        Promise.all([db.getCompanies(true), db.orgNumberingReady()])
+            .then(([cs, ready]) => { setCompanies(cs.map(c => ({ id: c.id, code: c.code, name: c.name }))); setNumberingReady(ready); })
+            .catch(() => { setCompanies([]); setNumberingReady(false); });
+    }, []);
+
     const isLocation = type === 'Location';
 
     // Auto-resolve allowed child level/type based on mode and parent
@@ -3256,7 +3268,10 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
         } else {
             defaultType = isLocation ? 'SITE' : 'EQUIPMENT';
         }
-        setFormData(prev => ({ ...prev, assetType: defaultType }));
+        // Inherit the parent's company by default (a sub-asset belongs to the
+        // same company as its location unless explicitly changed).
+        const parentCompany = parent ? (parent as any).companyId : undefined;
+        setFormData(prev => ({ ...prev, assetType: defaultType, companyId: prev.companyId ?? parentCompany ?? undefined }));
     }, [formData.parentId, type, existingAssets]);
 
     const handleCriticalityChange = (crit: string) => {
@@ -3426,6 +3441,23 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                             </p>
                         </div>
                     </div>
+
+                    {/* W-2: Company (legal entity) — drives per-company numbering. Gated on
+                        0174 readiness so company_id is never sent before the column exists. */}
+                    {numberingReady && companies.length > 0 && (
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Company</label>
+                            <select
+                                value={formData.companyId || ''}
+                                onChange={(e) => setFormData({ ...formData, companyId: e.target.value || undefined })}
+                                className="w-full p-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 outline-none"
+                            >
+                                <option value="">── Default / inherit from parent ──</option>
+                                {companies.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
+                            </select>
+                            <p className="text-[10px] text-slate-400 mt-1">Sub-company this asset belongs to. Determines its number range if the company has one configured.</p>
+                        </div>
+                    )}
 
                     {/* Helper text */}
                     <p className="text-[11px] text-slate-400 italic">
