@@ -78,6 +78,8 @@ DROP POLICY IF EXISTS "auth_delete_users" ON users;
 DROP POLICY IF EXISTS "admin_insert_users" ON users;
 DROP POLICY IF EXISTS "admin_update_users" ON users;
 DROP POLICY IF EXISTS "admin_delete_users" ON users;
+DROP POLICY IF EXISTS "authenticated_access" ON users;
+DROP POLICY IF EXISTS "Enable write access for authenticated users" ON users;
 CREATE POLICY "admin_insert_users" ON users FOR INSERT TO authenticated WITH CHECK (public.is_admin());
 CREATE POLICY "admin_update_users" ON users FOR UPDATE TO authenticated USING (public.is_admin());
 CREATE POLICY "admin_delete_users" ON users FOR DELETE TO authenticated USING (public.is_admin());
@@ -101,6 +103,8 @@ BEGIN
             EXECUTE format('DROP POLICY IF EXISTS "admin_insert_%s" ON %I', tbl, tbl);
             EXECUTE format('DROP POLICY IF EXISTS "admin_update_%s" ON %I', tbl, tbl);
             EXECUTE format('DROP POLICY IF EXISTS "admin_delete_%s" ON %I', tbl, tbl);
+            EXECUTE format('DROP POLICY IF EXISTS "authenticated_access" ON %I', tbl);
+            EXECUTE format('DROP POLICY IF EXISTS "auth_all_%s" ON %I', tbl, tbl);
             EXECUTE format('CREATE POLICY "auth_select_%s"  ON %I FOR SELECT TO authenticated USING (true)', tbl, tbl);
             EXECUTE format('CREATE POLICY "admin_insert_%s" ON %I FOR INSERT TO authenticated WITH CHECK (public.is_admin())', tbl, tbl);
             EXECUTE format('CREATE POLICY "admin_update_%s" ON %I FOR UPDATE TO authenticated USING (public.is_admin())', tbl, tbl);
@@ -115,6 +119,7 @@ END $$;
 -- so RLS default-deny applies to every role, admins included.
 DROP POLICY IF EXISTS "auth_update_audit_logs" ON audit_logs;
 DROP POLICY IF EXISTS "auth_delete_audit_logs" ON audit_logs;
+DROP POLICY IF EXISTS "Allow all access to audit_logs" ON audit_logs;
 
 
 COMMIT;
