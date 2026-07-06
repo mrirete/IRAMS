@@ -22,6 +22,7 @@ import { offlineQueue } from '../services/offlineQueue';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { useNavigate } from 'react-router-dom';
 import { evaluateReading, type AlarmLevel } from '../../lib/readingAlarm';
+import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
 
 interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
 
@@ -49,6 +50,8 @@ export const Readings: React.FC = () => {
     // Confirm modal state
     const [meterChangeDefId, setMeterChangeDefId] = useState<string | null>(null);
     const [deleteDefId, setDeleteDefId] = useState<string | null>(null);
+    // Reading-point editor (proper definition: name/category/unit/alarm bands)
+    const [addPointAssetId, setAddPointAssetId] = useState<string | null>(null);
 
     useEffect(() => {
         loadReadings();
@@ -92,28 +95,23 @@ export const Readings: React.FC = () => {
 
     // --- Derived Data ---
 
-    // Only assets that have definitions show up in the list, unless searching specifically to add
+    // Show every in-scope asset so a first reading point can always be set up.
+    // Assets that already have reading points sort to the top (the rounds list);
+    // the rest remain selectable so you can configure them. Search narrows both.
     const filteredAssets = useMemo(() => {
-        return assets.filter(a => {
-            const hasDefs = definitions.some(d => d.assetId === a.id && d.isActive);
-            const matchesSearch = a.name.toLowerCase().includes(filterText.toLowerCase()) ||
-                a.tag.toLowerCase().includes(filterText.toLowerCase());
-            // Show if it has definitions OR if we are in search mode (to potentially add definitions)
-            return (hasDefs || filterText.length > 0) && matchesSearch;
-        });
+        const q = filterText.toLowerCase();
+        const hasPoints = (id: string) => definitions.some(d => d.assetId === id && d.isActive);
+        return assets
+            .filter(a =>
+                !q || a.name.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q))
+            .sort((a, b) => {
+                const byPoints = (hasPoints(b.id) ? 1 : 0) - (hasPoints(a.id) ? 1 : 0);
+                if (byPoints !== 0) return byPoints;
+                return (a.tag || a.name).localeCompare(b.tag || b.name);
+            });
     }, [assets, definitions, filterText]);
 
     const selectedAsset = assets.find(a => a.id === selectedAssetId);
-
-    // Debug
-    console.log("Readings Render: AssetId:", selectedAssetId);
-    console.log("Definitions Total:", definitions.length);
-    if (selectedAssetId) {
-        const filtered = definitions.filter(d => d.assetId === selectedAssetId);
-        console.log("Filtered for Asset:", filtered.length);
-        console.log("Sample Def AssetId:", definitions[0]?.assetId, "Selected:", selectedAssetId);
-        console.log("Match check:", definitions[0]?.assetId === selectedAssetId);
-    }
 
     // --- Core Logic Handlers ---
 
@@ -144,6 +142,40 @@ export const Readings: React.FC = () => {
             setDefinitions([...definitions, savedDef]);
         } catch (e: any) {
             showToast('Failed to add definition: ' + e.message, 'error');
+        }
+    };
+
+    // Full reading-point creation from the editor — real unit + alarm bands, no
+    // dependency on pre-seeded dictionary types (reading_type_code is a free slug).
+    const handleCreateDefinition = async (payload: {
+        assetId: string; name: string; category: 'METER' | 'CONDITION'; unit: string;
+        minCritical?: number | null; minWarning?: number | null; maxWarning?: number | null; maxCritical?: number | null;
+    }) => {
+        if (!canCreate) {
+            showToast('Access Denied: You do not have permission to add reading points.', 'error');
+            return;
+        }
+        const slug = (payload.name || 'READING').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'READING';
+        const code = `${slug}_${Date.now().toString(36).toUpperCase()}`;
+        const defPayload = {
+            assetId: payload.assetId,
+            readingTypeCode: code,
+            name: payload.name.trim(),
+            unit: payload.unit.trim() || '—',
+            category: payload.category,
+            minCritical: payload.minCritical ?? null,
+            minWarning: payload.minWarning ?? null,
+            maxWarning: payload.maxWarning ?? null,
+            maxCritical: payload.maxCritical ?? null,
+            active: true,
+        };
+        try {
+            const savedDef = await DatabaseService.getInstance().addReadingDefinition(defPayload);
+            setDefinitions(prev => [...prev, savedDef]);
+            setAddPointAssetId(null);
+            showToast(`Reading point "${payload.name}" added.`, 'success');
+        } catch (e: any) {
+            showToast('Failed to add reading point: ' + e.message, 'error');
         }
     };
 
@@ -442,7 +474,18 @@ export const Readings: React.FC = () => {
                             <div className="flex justify-between items-center mb-4">
                                 <div>
                                     <h1 className="text-xl font-bold text-slate-900">{selectedAsset.tag} - {selectedAsset.name}</h1>
-                                    <p className="text-sm text-slate-500">{selectedAsset.category} • {selectedAsset.location}</p>
+                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                        <p className="text-sm text-slate-500">{selectedAsset.category} • {selectedAsset.location}</p>
+                                        {(() => {
+                                            const cad = recommendMonitoringCadence({ criticality: selectedAsset.criticality });
+                                            return (
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600 bg-slate-100 border border-slate-200 rounded px-2 py-0.5" title={cad.basis}>
+                                                    <Clock size={11} /> Suggested cadence: {cad.label}
+                                                    <span className="text-slate-400">· Crit {selectedAsset.criticality}</span>
+                                                </span>
+                                            );
+                                        })()}
+                                    </div>
                                 </div>
                                 <div className="flex gap-2 items-center">
                                     <AskRelanternButton
@@ -480,6 +523,7 @@ export const Readings: React.FC = () => {
                                     onSave={handleSaveReadings}
                                     onAddDefinition={handleAddDefinition}
                                     onDeleteDefinition={handleDeleteDefinition}
+                                    onOpenAddPoint={setAddPointAssetId}
                                     readingTypes={readingTypes} // Pass it down
                                 />
                             )}
@@ -497,6 +541,7 @@ export const Readings: React.FC = () => {
                                     onAdd={handleAddDefinition}
                                     onMeterChange={handleMeterChange}
                                     onDelete={handleDeleteDefinition}
+                                    onOpenAddPoint={setAddPointAssetId}
                                     readingTypes={readingTypes}
                                 />
                             )}
@@ -553,6 +598,15 @@ export const Readings: React.FC = () => {
                 type="danger"
                 confirmText="Delete Point"
             />
+
+            {/* Reading-point editor — proper definition with real alarm bands */}
+            {addPointAssetId && (
+                <AddReadingPointModal
+                    asset={assets.find(a => a.id === addPointAssetId) || null}
+                    onClose={() => setAddPointAssetId(null)}
+                    onCreate={handleCreateDefinition}
+                />
+            )}
 
             {/* R-4: condition-alarm banner → one-tap corrective WO */}
             {alarmBreaches.length > 0 && (
@@ -784,7 +838,8 @@ const SingleAssetEntry: React.FC<{
     onSave: (data: Partial<ReadingLogEntry>[]) => void;
     onAddDefinition: (assetId: string, typeCode: string) => void;
     onDeleteDefinition: (id: string) => void;
-}> = ({ asset, definitions, readingTypes, onSave, onAddDefinition, onDeleteDefinition }) => {
+    onOpenAddPoint: (assetId: string) => void;
+}> = ({ asset, definitions, readingTypes, onSave, onAddDefinition, onDeleteDefinition, onOpenAddPoint }) => {
     return (
         <BatchEntryView
             allAssets={[asset]}
@@ -792,6 +847,7 @@ const SingleAssetEntry: React.FC<{
             onSave={onSave}
             onAddDefinition={onAddDefinition}
             onDeleteDefinition={onDeleteDefinition}
+            onOpenAddPoint={onOpenAddPoint}
             titleOverride="Reading Entry Sheet"
             readingTypes={readingTypes}
         />
@@ -804,9 +860,10 @@ const BatchEntryView: React.FC<{
     onSave: (data: Partial<ReadingLogEntry>[]) => void;
     onAddDefinition?: (assetId: string, typeCode: string) => void;
     onDeleteDefinition?: (id: string) => void;
+    onOpenAddPoint?: (assetId: string) => void;
     titleOverride?: string;
     readingTypes?: DictionaryRecord[]; // Added prop
-}> = ({ allAssets, allDefinitions, onSave, onAddDefinition, onDeleteDefinition, titleOverride, readingTypes = [] }) => {
+}> = ({ allAssets, allDefinitions, onSave, onAddDefinition, onDeleteDefinition, onOpenAddPoint, titleOverride, readingTypes = [] }) => {
     const [inputValues, setInputValues] = useState<Record<string, { value: number | string, date: string, time: string, comment: string }>>({});
 
     // Add New Reading State
@@ -879,13 +936,13 @@ const BatchEntryView: React.FC<{
                     <p className="text-sm text-slate-500">Record data for {rows.length} points.</p>
                 </div>
                 <div className="flex gap-2">
-                    {singleAsset && onAddDefinition && (
+                    {singleAsset && (onOpenAddPoint || onAddDefinition) && (
                         <Button
-                            onClick={() => setIsAddOpen(true)}
+                            onClick={() => onOpenAddPoint ? onOpenAddPoint(singleAsset.id) : setIsAddOpen(true)}
                             variant="secondary"
                             leftIcon={<Plus size={16} />}
                         >
-                            Add Reading
+                            Add Reading Point
                         </Button>
                     )}
                     <button
@@ -972,7 +1029,11 @@ const BatchEntryView: React.FC<{
                             );
                         })}
                         {rows.length === 0 && (
-                            <tr><td colSpan={4} className="p-8 text-center text-slate-400">No reading points configured. Click "Add Reading" to start.</td></tr>
+                            <tr><td colSpan={6} className="p-10 text-center text-slate-400">
+                                {singleAsset
+                                    ? <>No reading points on this asset yet. Click <span className="font-semibold text-slate-500">Add Reading Point</span> to define one (e.g. Bearing Vibration, mm/s, with warning/critical limits).</>
+                                    : <>Select an asset on the left, then add a reading point to start capturing condition data.</>}
+                            </td></tr>
                         )}
                     </tbody>
                 </table>
@@ -1019,7 +1080,8 @@ const DefinitionsManager: React.FC<{
     onAdd: (assetId: string, typeCode: string) => void;
     onMeterChange: (id: string) => void;
     onDelete: (id: string) => void;
-}> = ({ definitions, assetId, readingTypes, onAdd, onMeterChange, onDelete }) => {
+    onOpenAddPoint: (assetId: string) => void;
+}> = ({ definitions, assetId, readingTypes, onAdd, onMeterChange, onDelete, onOpenAddPoint }) => {
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [selectedType, setSelectedType] = useState('');
 
@@ -1041,7 +1103,7 @@ const DefinitionsManager: React.FC<{
         <div className="space-y-4">
             <div className="flex justify-end">
                 <button
-                    onClick={() => setIsAddOpen(true)}
+                    onClick={() => onOpenAddPoint ? onOpenAddPoint(assetId) : setIsAddOpen(true)}
                     className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1"
                 >
                     <Plus size={14} /> Add Point
@@ -1112,6 +1174,118 @@ const DefinitionsManager: React.FC<{
                     No reading points defined for this asset. Add one to start tracking.
                 </div>
             )}
+        </div>
+    );
+};
+
+// ── Reading Point editor ─────────────────────────────────────────────────────
+// A real measuring-point definition (SAP PM "measuring point" / Maximo "meter"):
+// name, meter-vs-condition, engineering unit, and 4 alarm bands. These bands are
+// what drive the condition alarms (R-4) and now the Predict health engine.
+const AddReadingPointModal: React.FC<{
+    asset: Asset | null;
+    onClose: () => void;
+    onCreate: (p: {
+        assetId: string; name: string; category: 'METER' | 'CONDITION'; unit: string;
+        minCritical?: number | null; minWarning?: number | null; maxWarning?: number | null; maxCritical?: number | null;
+    }) => void | Promise<void>;
+}> = ({ asset, onClose, onCreate }) => {
+    const [name, setName] = useState('');
+    const [category, setCategory] = useState<'METER' | 'CONDITION'>('CONDITION');
+    const [unit, setUnit] = useState('');
+    const [minCritical, setMinCritical] = useState('');
+    const [minWarning, setMinWarning] = useState('');
+    const [maxWarning, setMaxWarning] = useState('');
+    const [maxCritical, setMaxCritical] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    if (!asset) return null;
+    const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
+
+    // Guard against crossed bands (min critical should be ≤ min warning ≤ max warning ≤ max critical).
+    const bandOrderOk = (() => {
+        const vals = [num(minCritical), num(minWarning), num(maxWarning), num(maxCritical)].filter(v => v != null) as number[];
+        for (let i = 1; i < vals.length; i++) if (vals[i] < vals[i - 1]) return false;
+        return true;
+    })();
+    const canSave = name.trim().length > 0 && bandOrderOk && !saving;
+
+    const submit = async () => {
+        if (!canSave) return;
+        setSaving(true);
+        await onCreate({
+            assetId: asset.id, name, category, unit,
+            minCritical: num(minCritical), minWarning: num(minWarning),
+            maxWarning: num(maxWarning), maxCritical: num(maxCritical),
+        });
+        setSaving(false);
+    };
+
+    const bandInput = (label: string, tone: string, val: string, set: (v: string) => void) => (
+        <label className="block">
+            <span className={`text-[10px] font-bold uppercase tracking-wide ${tone}`}>{label}</span>
+            <input type="number" value={val} onChange={e => set(e.target.value)} placeholder="—"
+                className="mt-1 w-full p-2 border border-slate-200 rounded-lg text-sm text-right focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none" />
+        </label>
+    );
+
+    return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
+                <div className="px-5 py-3 flex items-center gap-2 bg-primary-600 text-white flex-shrink-0">
+                    <Activity size={18} />
+                    <div className="min-w-0">
+                        <h3 className="font-bold text-sm leading-tight">Add reading point</h3>
+                        <p className="text-[11px] text-white/80 truncate">{asset.tag} · {asset.name}</p>
+                    </div>
+                    <button onClick={onClose} className="ml-auto text-white/80 hover:text-white"><X size={18} /></button>
+                </div>
+
+                <div className="p-5 space-y-4 overflow-y-auto">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Point name</label>
+                        <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Bearing Vibration (DE)"
+                            className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Type</label>
+                            <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-lg">
+                                <button onClick={() => setCategory('CONDITION')} className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-semibold transition ${category === 'CONDITION' ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500'}`}><Activity size={12} /> Condition</button>
+                                <button onClick={() => setCategory('METER')} className={`flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-semibold transition ${category === 'METER' ? 'bg-white text-primary-700 shadow-sm' : 'text-slate-500'}`}><Clock size={12} /> Meter</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Unit</label>
+                            <input value={unit} onChange={e => setUnit(e.target.value)} placeholder="mm/s, °C, hours…"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Alarm bands {category === 'METER' && <span className="text-slate-400 normal-case font-normal">(optional for meters)</span>}</label>
+                            <span className="text-[10px] text-slate-400">low → high</span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-2">
+                            {bandInput('Min Crit', 'text-red-600', minCritical, setMinCritical)}
+                            {bandInput('Min Warn', 'text-amber-600', minWarning, setMinWarning)}
+                            {bandInput('Max Warn', 'text-amber-600', maxWarning, setMaxWarning)}
+                            {bandInput('Max Crit', 'text-red-600', maxCritical, setMaxCritical)}
+                        </div>
+                        {!bandOrderOk && (
+                            <p className="text-[11px] text-red-600 mt-1.5 flex items-center gap-1"><AlertTriangle size={12} /> Bands must increase left to right (min critical ≤ min warning ≤ max warning ≤ max critical).</p>
+                        )}
+                        <p className="text-[11px] text-slate-400 mt-1.5">A reading outside the warning band raises a warning alarm; outside critical raises a critical alarm and can auto-raise corrective work.</p>
+                    </div>
+                </div>
+
+                <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2 flex-shrink-0">
+                    <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
+                    <Button variant="primary" size="sm" loading={saving} disabled={!canSave} leftIcon={<Save size={14} />} onClick={submit}>Add reading point</Button>
+                </div>
+            </div>
         </div>
     );
 };
