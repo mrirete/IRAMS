@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Database, ShieldCheck, Activity, Search, LayoutGrid, List, SlidersHorizontal, AlertTriangle } from 'lucide-react';
+import { Plus, Database, ShieldCheck, Activity, Search, LayoutGrid, List, SlidersHorizontal, AlertTriangle, UploadCloud, Info } from 'lucide-react';
 import { useConnectors } from '../../hooks/useConnectors';
 import { ConnectorCard } from '../../components/connectors/ConnectorCard';
+import { ImportReadingsModal } from '../../components/connectors/ImportReadingsModal';
 import type { ConnectorStatus } from '../../types/connectors';
 
 type SortKey = 'name' | 'dqs' | 'last_sync' | 'status';
@@ -23,6 +24,7 @@ export const ConnectorHub: React.FC = () => {
     const [statusFilter, setStatusFilter] = useState<ConnectorStatus | 'all'>('all');
     const [sortKey, setSortKey] = useState<SortKey>('name');
     const [viewMode, setViewMode] = useState<ViewMode>('grid');
+    const [importOpen, setImportOpen] = useState(false);
 
     // --- Derived data ---
     const filteredConnectors = useMemo(() => {
@@ -91,13 +93,30 @@ export const ConnectorHub: React.FC = () => {
                         <p className="text-slate-500 text-sm font-medium">Manage data integrations and monitor feed health.</p>
                     </div>
                 </div>
-                <Link
-                    to="/admin/connectors/new"
-                    className="px-5 py-2.5 bg-accent-blue text-white font-semibold rounded-lg hover:bg-primary-600 transition-all flex items-center space-x-2 shadow-lg shadow-blue-500/20 active:scale-95 w-fit"
-                >
-                    <Plus size={18} />
-                    <span>Add Connector</span>
-                </Link>
+                <div className="flex items-center gap-2 w-fit">
+                    <button
+                        onClick={() => setImportOpen(true)}
+                        className="px-5 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-500 transition-all flex items-center space-x-2 shadow-lg shadow-blue-500/20 active:scale-95"
+                        title="Import a historian/SCADA/lab CSV export into ers_sensor_readings (feeds Predict)"
+                    >
+                        <UploadCloud size={18} />
+                        <span>Import Readings (CSV)</span>
+                    </button>
+                    <Link
+                        to="/admin/connectors/new"
+                        className="px-5 py-2.5 bg-white border border-slate-200 text-slate-700 font-semibold rounded-lg hover:bg-slate-50 transition-all flex items-center space-x-2 active:scale-95"
+                    >
+                        <Plus size={18} />
+                        <span>Add Connector</span>
+                    </Link>
+                </div>
+            </div>
+
+            {/* Honesty banner — the configured feed cards below are demo data; the CSV
+                import is the one connector that actually writes real readings today. */}
+            <div className="flex items-start gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                <Info size={14} className="shrink-0 mt-0.5 text-amber-600" />
+                <span>The feed cards below are <strong>demo data</strong> (no live streaming connector runs in this deployment). <strong>Import Readings (CSV)</strong> is live — it writes real rows into the sensor feed that Predict reads.</span>
             </div>
 
             {/* High-Level System Stats */}
@@ -290,6 +309,8 @@ export const ConnectorHub: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {importOpen && <ImportReadingsModal onClose={() => setImportOpen(false)} />}
         </div>
     );
 };

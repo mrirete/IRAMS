@@ -347,6 +347,41 @@ class PredictionService {
         return this.getManualReadingsAsSensors(assetId);
     }
 
+    /**
+     * CSV connector — upsert imported sensor readings into ers_sensor_readings
+     * (the online feed the Predict twin reads). Idempotent: existing rows for the
+     * same (asset, tag) are updated in place rather than duplicated, so re-importing
+     * an export refreshes values instead of piling up.
+     */
+    async importSensorReadings(items: Array<{
+        asset_id: string; tag: string; unit: string; current_value: number;
+        trend: 'rising' | 'falling' | 'stable' | null; readings: number[];
+        alarm_high: number | null; alarm_low: number | null;
+    }>): Promise<{ upserted: number }> {
+        if (items.length === 0) return { upserted: 0 };
+        const assetIds = [...new Set(items.map(i => i.asset_id))];
+        const idByKey = new Map<string, string>();
+        for (const aid of assetIds) {
+            const existing = await this.getSensorReadings(aid);
+            existing.forEach(r => idByKey.set(`${aid}|${r.tag}`, r.id));
+        }
+        const payload = items.map(i => ({
+            id: idByKey.get(`${i.asset_id}|${i.tag}`) || crypto.randomUUID(),
+            asset_id: i.asset_id,
+            tag: i.tag,
+            current_value: i.current_value,
+            unit: i.unit || '—',        // column is NOT NULL
+            trend: i.trend,             // nullable, but CHECK-constrained when set
+            alarm_high: i.alarm_high,
+            alarm_low: i.alarm_low,
+            readings: i.readings,
+            created_at: new Date().toISOString(),
+        }));
+        const { error } = await supabase.from('ers_sensor_readings').upsert(payload);
+        if (error) { console.error('PredictionService.importSensorReadings:', error); throw new Error(error.message); }
+        return { upserted: payload.length };
+    }
+
     // ══════════════════════════════════════════════════════════
     //  Run Prediction — compute & persist per insight type
     // ══════════════════════════════════════════════════════════
