@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
     Search, Filter, Plus, Activity, Zap, Check, AlertTriangle,
     BarChart2, Clock, Calendar, RefreshCcw, Save, Trash2, LineChart as LineChartIcon,
-    AlertCircle, CheckCircle, XCircle, X, ChevronLeft, ChevronRight, ChevronDown, List, Network, Minus, Package, MapPin
+    AlertCircle, CheckCircle, XCircle, X, ChevronLeft, ChevronRight, ChevronDown, List, Network, Minus, Package, MapPin, FileWarning, Wrench
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, AreaChart, Area
@@ -25,6 +25,7 @@ import { evaluateReading, type AlarmLevel } from '../../lib/readingAlarm';
 import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
 import { evaluateMeterPMs, type MeterPM, type MeterReadingCtx, type MeterPMDue } from '../../lib/meterPM';
 import { computeReadingDue, summariseDue } from '../../lib/readingDue';
+import { RaiseWorkModal, type RaiseKind } from '../components/RaiseWorkModal';
 
 interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
 
@@ -45,6 +46,9 @@ export const Readings: React.FC = () => {
     const [definitions, setDefinitions] = useState<ReadingDefinition[]>([]);
     const [logs, setLogs] = useState<ReadingLogEntry[]>([]);
     const [readingTypes, setReadingTypes] = useState<DictionaryRecord[]>([]);
+    const [faultTypes, setFaultTypes] = useState<{ code: string; description: string }[]>([]);
+    const [raiseKind, setRaiseKind] = useState<RaiseKind | null>(null);
+    const [raiseMenuOpen, setRaiseMenuOpen] = useState(false);
 
     // UI State
     const navigate = useNavigate();
@@ -101,6 +105,8 @@ export const Readings: React.FC = () => {
             // Filter dictionaries for Reading Types
             const types = dbDicts.filter(d => d.type === 'READING_TYPE' && d.active);
             setReadingTypes(types);
+            // Fault types (ISO 14224 functional failures) for raising requests
+            setFaultTypes(dbDicts.filter(d => d.type === 'FAULT_TYPE' && d.active).map(d => ({ code: d.code, description: d.description })));
 
             if (dbLogs.length > 0) {
                 // Map DB keys to UI keys if needed (DatabaseService usually handles this now, let's trust it maps snake -> camel)
@@ -746,6 +752,31 @@ export const Readings: React.FC = () => {
                                     </div>
                                 </div>
                                 <div className="flex gap-2 items-center">
+                                    {/* Raise ▾ — Request / Work Order / PM from this asset */}
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setRaiseMenuOpen(o => !o)}
+                                            onBlur={() => setTimeout(() => setRaiseMenuOpen(false), 150)}
+                                            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-relantern-500 hover:bg-relantern-600 rounded-lg transition-colors"
+                                        >
+                                            <Plus size={15} /> Raise <ChevronDown size={14} />
+                                        </button>
+                                        {raiseMenuOpen && (
+                                            <div className="absolute right-0 mt-1 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                                                {[
+                                                    { k: 'REQUEST' as RaiseKind, icon: <FileWarning size={14} />, l: 'Maintenance Request', s: 'For approval → WO' },
+                                                    { k: 'WO' as RaiseKind, icon: <Wrench size={14} />, l: 'Work Order', s: 'Corrective, direct' },
+                                                    { k: 'PM' as RaiseKind, icon: <Clock size={14} />, l: 'PM Strategy', s: 'Recurring' },
+                                                ].map(item => (
+                                                    <button key={item.k} onMouseDown={() => { setRaiseKind(item.k); setRaiseMenuOpen(false); }}
+                                                        className="w-full flex items-start gap-2 px-3 py-2.5 text-left hover:bg-slate-50 transition">
+                                                        <span className="text-relantern-600 mt-0.5">{item.icon}</span>
+                                                        <span className="min-w-0"><span className="block text-sm font-semibold text-slate-800">{item.l}</span><span className="block text-[10px] text-slate-400">{item.s}</span></span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                     <AskRelanternButton
                                         contextType="readings"
                                         contextSummary={`Readings for ${selectedAsset.tag} (${selectedAsset.name}): ${definitions.filter(d => d.assetId === selectedAsset.id).length} reading points configured. Categories: ${[...new Set(definitions.filter(d => d.assetId === selectedAsset.id).map(d => d.category))].join(', ')}. ${logs.filter(l => l.assetId === selectedAsset.id && l.isAlarm).length} alarms triggered. Ask about trend analysis, predictive maintenance triggers, condition exceedances, or meter reading optimization.`}
@@ -869,6 +900,19 @@ export const Readings: React.FC = () => {
                 type="danger"
                 confirmText="Delete Point"
             />
+
+            {/* Raise ▾ — Request / Work Order / PM from the focused asset */}
+            {raiseKind && selectedAsset && (
+                <RaiseWorkModal
+                    asset={selectedAsset}
+                    kind={raiseKind}
+                    actor={profile?.username || profile?.fullName || 'user'}
+                    requesterId={profile?.id}
+                    faultTypes={faultTypes}
+                    contextNote={`Condition Data: ${definitions.filter(d => d.assetId === selectedAsset.id).length} reading point(s), ${logs.filter(l => l.assetId === selectedAsset.id && l.isAlarm).length} in alarm.`}
+                    onClose={() => setRaiseKind(null)}
+                />
+            )}
 
             {/* Reading-point editor — proper definition with real alarm bands */}
             {addPointAssetId && (
