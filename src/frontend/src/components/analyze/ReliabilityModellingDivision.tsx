@@ -15,10 +15,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
     Activity, TrendingUp, Package, Cpu, Dices,
     Save, FolderOpen, Trash2, Edit3, Clock, ChevronDown, ChevronUp,
-    AlertCircle, Check, X, Wrench,
+    AlertCircle, Check, X,
 } from 'lucide-react';
-import { Button } from '../../eam/components/ui';
-import { CreatePMFromWeibullModal, type WeibullPMData } from './CreatePMFromWeibullModal';
 
 // Individual calculator tabs exported from the Toolkit
 import {
@@ -254,82 +252,6 @@ function SavedAnalysesPanel({ analyses, activeId, onLoad, onEdit, onDelete, load
     );
 }
 
-// ─── Outcome launcher ─────────────────────────────────────────
-// Outcome-first, NOT a numbered sequence: the lab is organised around two GOALS
-// — "Build a PM program" (life data → maintenance) and "Model & analyze a system"
-// (RBD / RAM / Monte Carlo / Spares). Tools open in any order; the only real gate
-// is that Create PM needs a Weibull fit.
-function WorkflowSpine({ activeCalc, weibullFit, onGoto, onCreatePM }: {
-    activeCalc: CalcTab;
-    weibullFit: { beta: number; eta: number; r2: number } | null;
-    onGoto: (tab: CalcTab) => void;
-    onCreatePM: () => void;
-}) {
-    const hasFit = !!weibullFit;
-    const analyzeTools: { tab: CalcTab; label: string }[] = [
-        { tab: 'rbd', label: 'Block Diagrams' },
-        { tab: 'ram', label: 'RAM Dashboard' },
-        { tab: 'montecarlo', label: 'Monte Carlo' },
-        { tab: 'spares', label: 'Spares Demand' },
-    ];
-    const chip = (active: boolean) =>
-        `px-2.5 py-1 rounded-control text-xs font-semibold border transition-colors ${active ? 'bg-primary-50 border-primary-200 text-primary-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`;
-
-    return (
-        <div className="grid gap-2 sm:grid-cols-2">
-            {/* Outcome 1 — Build a PM program (life data → maintenance strategy) */}
-            <div className="bg-white border border-slate-200 rounded-card shadow-card p-3 flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${hasFit ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
-                    <Wrench size={16} />
-                </div>
-                <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-slate-800 leading-tight">Build a PM program</p>
-                    <p className="text-[11px] text-slate-400 leading-tight truncate">
-                        {hasFit ? `Weibull fitted — β=${weibullFit!.beta} · η=${weibullFit!.eta.toLocaleString()}h` : 'Fit life data to derive the interval'}
-                    </p>
-                </div>
-                {hasFit ? (
-                    <Button
-                        size="sm"
-                        variant="cta"
-                        onClick={onCreatePM}
-                        leftIcon={<Wrench size={14} />}
-                        title="Create a PM program from the Weibull fit"
-                    >
-                        <span className="hidden sm:inline">Create PM</span>
-                        <span className="sm:hidden">PM</span>
-                    </Button>
-                ) : (
-                    <button
-                        onClick={() => onGoto('weibull')}
-                        className={chip(activeCalc === 'weibull')}
-                        title="Fit a Weibull model from failure data, then create a PM"
-                    >
-                        Fit Weibull →
-                    </button>
-                )}
-            </div>
-
-            {/* Outcome 2 — Model & analyze a system (open any tool, any order) */}
-            <div className="bg-white border border-slate-200 rounded-card shadow-card p-3 flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-primary-50 text-primary-600">
-                    <Cpu size={16} />
-                </div>
-                <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-semibold text-slate-800 leading-tight">Model &amp; analyze a system</p>
-                    <div className="flex flex-wrap items-center gap-1 mt-1">
-                        {analyzeTools.map(t => (
-                            <button key={t.tab} onClick={() => onGoto(t.tab)} className={chip(activeCalc === t.tab)}>
-                                {t.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════
 //  MAIN DIVISION
 // ═══════════════════════════════════════════════════════════════
@@ -378,8 +300,6 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     const [currentAsset, setCurrentAsset] = useState<{ id: string; tag: string; name: string } | null>(null);
 
     // Persistent Weibull fit (drives the workflow spine + one-click Create PM)
-    const [weibullFit, setWeibullFit] = useState<{ beta: number; eta: number; r2: number; b10: number; dataPoints: number } | null>(null);
-    const [showCreatePM, setShowCreatePM] = useState(false);
 
     // Load saved analyses + studies
     const loadSavedAnalyses = useCallback(async () => {
@@ -540,12 +460,6 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 if (prev?.beta === results.beta && prev?.eta === results.eta) return prev;
                 return { beta: results.beta, eta: results.eta, dataStr: inputs?.dataStr };
             });
-            // Capture the full fit for the spine + Create-PM bridge
-            const beta = results.beta as number;
-            const eta = results.eta as number;
-            const b10 = (results.b10 as number) ?? eta * Math.pow(-Math.log(0.9), 1 / beta);
-            const dataPoints = (results.dataPoints as number) ?? (results.ranks?.length as number) ?? Number(inputs?.failures) ?? 0;
-            setWeibullFit({ beta, eta, r2: (results.r2 as number) ?? 0, b10, dataPoints });
         }
     }, []);
 
@@ -635,19 +549,6 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         });
     }, [currentAsset, currentResults, activeCalc, onContextChange]);
 
-    // One-click Create-PM payload, built from the persistent Weibull fit
-    const weibullPMData: WeibullPMData | null = weibullFit && currentAsset
-        ? {
-            asset: currentAsset,
-            beta: weibullFit.beta,
-            eta: weibullFit.eta,
-            r2: weibullFit.r2,
-            b10: weibullFit.b10,
-            pmInterval: 0, // modal derives from β/η
-            dataPoints: weibullFit.dataPoints,
-        }
-        : null;
-
     return (
         <div className="space-y-4">
             {/* Study Records — consolidated dated register of every saved study */}
@@ -658,20 +559,6 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 onLoad={handleLoad}
             />
 
-            {/* Workflow spine — Model & Measure → Fit Weibull → Simulate → Create PM */}
-            <WorkflowSpine
-                activeCalc={activeCalc}
-                weibullFit={weibullFit}
-                onGoto={handleTabSwitch}
-                onCreatePM={() => {
-                    if (!weibullPMData) {
-                        setSaveToast('Fit a Weibull model first to create a PM.');
-                        setTimeout(() => setSaveToast(null), 3000);
-                        return;
-                    }
-                    setShowCreatePM(true);
-                }}
-            />
 
             {/* Calculator tools — a palette, not a pipeline. Each tool is a card
                 labelled by the question it answers; open any, in any order. */}
@@ -766,31 +653,6 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 onCancel={() => setDeleteTarget(null)}
             />
 
-            {/* Create PM from the Weibull fit — the reliability → EAM bridge */}
-            {weibullPMData && (
-                <CreatePMFromWeibullModal
-                    isOpen={showCreatePM}
-                    onClose={() => setShowCreatePM(false)}
-                    onSuccess={async (pmId, pmTitle) => {
-                        // Link the PM back to the loaded Weibull study for traceability.
-                        if (pmId && activeAnalysisId) {
-                            const updated = await analyzeService.linkPMToAnalysis(activeAnalysisId, pmId, pmTitle || 'PM');
-                            if (updated) {
-                                setSavedAnalyses(prev => prev.map(a => a.id === updated.id ? updated : a));
-                                setSaveToast('PM created & linked to this study ✓');
-                            } else {
-                                setSaveToast('PM program created ✓');
-                            }
-                        } else if (pmId) {
-                            setSaveToast('PM created ✓ — save the Weibull study to link it.');
-                        } else {
-                            setSaveToast('PM program created ✓');
-                        }
-                        setTimeout(() => setSaveToast(null), 4000);
-                    }}
-                    data={weibullPMData}
-                />
-            )}
         </div>
     );
 };
