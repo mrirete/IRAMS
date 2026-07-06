@@ -1,0 +1,62 @@
+import { describe, it, expect } from 'vitest';
+import { evaluateMeterPMs, isMeterSchedule, matchesReading, type MeterPM, type MeterReadingCtx } from './meterPM';
+
+const pm = (over: Partial<MeterPM> = {}): MeterPM => ({ id: 'pm1', title: '500h Service', scheduleType: 'READING', interval: 500, unit: 'Hours', ...over });
+const rd = (over: Partial<MeterReadingCtx> = {}): MeterReadingCtx => ({ defName: 'Operating Hours', unit: 'Hours', category: 'METER', newValue: 0, ...over });
+
+describe('isMeterSchedule', () => {
+    it('true for READING schedule and legacy meter units', () => {
+        expect(isMeterSchedule(pm())).toBe(true);
+        expect(isMeterSchedule(pm({ scheduleType: undefined, frequencyType: 'HOURS' }))).toBe(true);
+        expect(isMeterSchedule(pm({ scheduleType: 'TIME', frequencyType: 'MONTHS' }))).toBe(false);
+    });
+});
+
+describe('matchesReading', () => {
+    it('matches meter readings by unit / code / name, ignores condition readings', () => {
+        expect(matchesReading(pm({ unit: 'Hours' }), rd({ unit: 'Hours' }))).toBe(true);
+        expect(matchesReading(pm({ unit: 'Hours' }), rd({ unit: 'hr', defName: 'Operating Hours' }))).toBe(true);
+        expect(matchesReading(pm({ unit: 'Km' }), rd({ unit: 'Hours' }))).toBe(false);
+        expect(matchesReading(pm(), rd({ category: 'CONDITION' }))).toBe(false);
+    });
+});
+
+describe('evaluateMeterPMs — baseline known', () => {
+    it('due when meter reaches last-service + interval', () => {
+        const due = evaluateMeterPMs([pm({ baseline: 4800 })], [rd({ previousValue: 5200, newValue: 5310 })]);
+        expect(due).toHaveLength(1);
+        expect(due[0].dueAt).toBe(5300);
+        expect(due[0].pmId).toBe('pm1');
+    });
+    it('not due before the threshold', () => {
+        expect(evaluateMeterPMs([pm({ baseline: 5000 })], [rd({ newValue: 5200 })])).toHaveLength(0);
+    });
+});
+
+describe('evaluateMeterPMs — no baseline (interval crossing)', () => {
+    it('fires when the reading rolls past a new interval boundary', () => {
+        const due = evaluateMeterPMs([pm()], [rd({ previousValue: 480, newValue: 510 })]);
+        expect(due).toHaveLength(1);
+        expect(due[0].dueAt).toBe(500);
+    });
+    it('does not fire when still within the same interval', () => {
+        expect(evaluateMeterPMs([pm()], [rd({ previousValue: 210, newValue: 260 })])).toHaveLength(0);
+    });
+    it('declines (no false trigger) when there is no previous reading', () => {
+        expect(evaluateMeterPMs([pm()], [rd({ previousValue: null, newValue: 999999 })])).toHaveLength(0);
+    });
+});
+
+describe('evaluateMeterPMs — hygiene', () => {
+    it('ignores time-based PMs and zero intervals', () => {
+        expect(evaluateMeterPMs([pm({ scheduleType: 'TIME' })], [rd({ previousValue: 480, newValue: 510 })])).toHaveLength(0);
+        expect(evaluateMeterPMs([pm({ interval: 0 })], [rd({ previousValue: 480, newValue: 510 })])).toHaveLength(0);
+    });
+    it('reports each due PM once even if multiple readings match', () => {
+        const due = evaluateMeterPMs(
+            [pm({ baseline: 0 })],
+            [rd({ newValue: 600 }), rd({ defName: 'Run Hours', newValue: 700 })],
+        );
+        expect(due).toHaveLength(1);
+    });
+});

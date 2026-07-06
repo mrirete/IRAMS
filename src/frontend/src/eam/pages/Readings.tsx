@@ -23,6 +23,7 @@ import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { useNavigate } from 'react-router-dom';
 import { evaluateReading, type AlarmLevel } from '../../lib/readingAlarm';
 import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
+import { evaluateMeterPMs, type MeterPM, type MeterReadingCtx, type MeterPMDue } from '../../lib/meterPM';
 
 interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
 
@@ -52,6 +53,10 @@ export const Readings: React.FC = () => {
     // R-4: condition-alarm → one-tap WO
     const [alarmBreaches, setAlarmBreaches] = useState<BreachInfo[]>([]);
     const [raisingWO, setRaisingWO] = useState(false);
+    // Meter-based PM triggers — recurring_work rows + due prompts on reading save
+    const [pms, setPms] = useState<any[]>([]);
+    const [pmDue, setPmDue] = useState<(MeterPMDue & { assetId: string; assetName: string })[]>([]);
+    const [generatingPM, setGeneratingPM] = useState(false);
     // Confirm modal state
     const [meterChangeDefId, setMeterChangeDefId] = useState<string | null>(null);
     const [deleteDefId, setDeleteDefId] = useState<string | null>(null);
@@ -65,12 +70,14 @@ export const Readings: React.FC = () => {
     const loadReadings = async () => {
         try {
             const dbInstance = DatabaseService.getInstance();
-            const [dbAssets, dbDefs, dbLogs, dbDicts] = await Promise.all([
+            const [dbAssets, dbDefs, dbLogs, dbDicts, dbPMs] = await Promise.all([
                 dbInstance.getAssets(),
                 dbInstance.getReadingDefinitions(),
                 dbInstance.getReadingLogs(),
-                dbInstance.getDictionaries()
+                dbInstance.getDictionaries(),
+                dbInstance.getPMs()
             ]);
+            setPms(dbPMs || []);
 
             // ═══ Site Scope Filtering (ISO 55000 Data Boundary Enforcement) ═══
             const scopedAssets = DatabaseService.filterAssetsBySiteScope(dbAssets, dataScope?.siteIds);
@@ -106,12 +113,16 @@ export const Readings: React.FC = () => {
     // list from being the whole asset register. Assets with points sort to the top
     // (the rounds list); the rest stay selectable so you can configure them.
     const filteredAssets = useMemo(() => {
-        const q = filterText.toLowerCase();
+        const q = filterText.trim().toLowerCase();
         const hasPoints = (id: string) => definitions.some(d => d.assetId === id && d.isActive);
         return assets
-            .filter(a => !NON_MAINTAINABLE_LEVELS.has((a.hierarchyLevel || '').toUpperCase()))
-            .filter(a =>
-                !q || a.name.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q))
+            // Default list = maintainable items only. But a search bypasses the
+            // level filter and looks across the whole register, so an asset that's
+            // mislabelled as a structural level (or untagged) is never unreachable —
+            // search it by tag/name and you can still add reading points to it.
+            .filter(a => q
+                ? (a.name.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q))
+                : !NON_MAINTAINABLE_LEVELS.has((a.hierarchyLevel || '').toUpperCase()))
             .sort((a, b) => {
                 const byPoints = (hasPoints(b.id) ? 1 : 0) - (hasPoints(a.id) ? 1 : 0);
                 if (byPoints !== 0) return byPoints;
@@ -203,6 +214,7 @@ export const Readings: React.FC = () => {
         const updatedDefs = [...definitions];
         let queuedAny = false;
         const breaches: BreachInfo[] = [];
+        const meterCtx: { assetId: string; ctx: MeterReadingCtx }[] = [];
 
         for (const reading of newReadings) {
             if (reading.value === undefined || !reading.definitionId) continue;
@@ -232,6 +244,18 @@ export const Readings: React.FC = () => {
                 } else {
                     delta = reading.value - def.lastReadingValue;
                 }
+            }
+
+            // Meter-based PM: capture the reading against its prior value (before the
+            // optimistic lastReadingValue update) so we can detect interval crossings.
+            if (def.category === 'METER') {
+                meterCtx.push({
+                    assetId: def.assetId,
+                    ctx: {
+                        defName: def.name, unit: def.unit, readingTypeCode: def.readingTypeCode,
+                        category: 'METER', previousValue: def.lastReadingValue ?? null, newValue: reading.value as number,
+                    },
+                });
             }
 
             // R-4: classify against alarm bands (warning + critical, min + max).
@@ -331,6 +355,50 @@ export const Readings: React.FC = () => {
         );
         // R-4: surface any band breaches with a one-tap "Raise Work Order".
         if (breaches.length > 0) setAlarmBreaches(breaches);
+
+        // Meter-based PM triggers — did any reading push an asset past a PM's due meter?
+        if (meterCtx.length > 0 && pms.length > 0) {
+            const byAsset = new Map<string, MeterReadingCtx[]>();
+            meterCtx.forEach(({ assetId, ctx }) => {
+                const arr = byAsset.get(assetId) || [];
+                arr.push(ctx);
+                byAsset.set(assetId, arr);
+            });
+            const allDue: (MeterPMDue & { assetId: string; assetName: string })[] = [];
+            for (const [assetId, rds] of byAsset) {
+                const assetPMs: MeterPM[] = pms
+                    .filter(p => p.active !== false && p.status !== 'INACTIVE')
+                    .filter(p => p.asset_id === assetId || (Array.isArray(p.assigned_assets) && p.assigned_assets.some((a: any) => a.assetId === assetId)))
+                    .map(p => ({
+                        id: p.id,
+                        title: p.title || p.code || 'PM',
+                        scheduleType: p.schedule_type,
+                        frequencyType: p.frequency_type,
+                        interval: Number(p.frequency_interval ?? p.interval ?? 0),
+                        unit: p.frequency_unit || p.frequency_type || '',
+                        baseline: Array.isArray(p.assigned_assets)
+                            ? (p.assigned_assets.find((a: any) => a.assetId === assetId)?.lastReadingValue ?? null)
+                            : null,
+                    }));
+                const assetName = assets.find(a => a.id === assetId)?.name || 'asset';
+                evaluateMeterPMs(assetPMs, rds).forEach(d => allDue.push({ ...d, assetId, assetName }));
+            }
+            if (allDue.length > 0) setPmDue(allDue);
+        }
+    };
+
+    // Meter-based PM → one-tap generate the preventive work order (advances schedule).
+    const generatePMWorkOrder = async (d: MeterPMDue & { assetId: string }) => {
+        setGeneratingPM(true);
+        try {
+            const wo = await DatabaseService.getInstance().generateWOFromPM(d.pmId, d.assetId);
+            showToast('Preventive work order generated from meter trigger.', 'success');
+            setPmDue(prev => prev.filter(x => x.pmId !== d.pmId));
+            const id = (wo as any)?.id;
+            if (id) navigate(`/work-orders/${id}`);
+        } catch (e: any) {
+            showToast('Failed to generate PM work order: ' + (e?.message || 'unknown'), 'error');
+        } finally { setGeneratingPM(false); }
     };
 
     // R-4: one-tap corrective work order from a condition alarm.
@@ -431,10 +499,11 @@ export const Readings: React.FC = () => {
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
                         <input
                             type="text"
-                            placeholder="Search asset..."
+                            placeholder="Search asset (any level)…"
                             value={filterText}
                             onChange={(e) => setFilterText(e.target.value)}
                             className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm"
+                            title="Type to search across the whole register — useful if equipment is mislabelled as a site/system"
                         />
                     </div>
                 </div>
@@ -614,6 +683,40 @@ export const Readings: React.FC = () => {
                     onClose={() => setAddPointAssetId(null)}
                     onCreate={handleCreateDefinition}
                 />
+            )}
+
+            {/* Meter-based PM due → one-tap generate the preventive work order */}
+            {pmDue.length > 0 && (
+                <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+                        <div className="px-5 py-3 flex items-center gap-2 bg-primary-600 text-white">
+                            <Clock size={18} />
+                            <h3 className="font-bold text-sm">Preventive maintenance due{pmDue.length > 1 ? ` (${pmDue.length})` : ''}</h3>
+                            <button onClick={() => setPmDue([])} className="ml-auto text-white/80 hover:text-white"><X size={18} /></button>
+                        </div>
+                        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+                            <p className="text-xs text-slate-500">A meter reading crossed a service interval. Generate the preventive work order now (it inherits the PM's tasks and advances the schedule).</p>
+                            {pmDue.map((d, i) => (
+                                <div key={i} className="border border-slate-200 rounded-lg p-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-semibold text-slate-800 truncate">{d.pmTitle}</div>
+                                            <div className="text-xs text-slate-500 truncate">{d.assetName} · {d.reading}</div>
+                                            <div className="text-[11px] text-slate-400 mt-0.5">{d.basis}</div>
+                                        </div>
+                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary-50 text-primary-700 flex-shrink-0">DUE</span>
+                                    </div>
+                                    <Button variant="primary" size="sm" fullWidth className="mt-2" loading={generatingPM} leftIcon={<Plus size={14} />} onClick={() => generatePMWorkOrder(d)}>
+                                        Generate PM work order
+                                    </Button>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="px-5 py-3 border-t border-slate-100 flex justify-end">
+                            <Button variant="secondary" size="sm" onClick={() => setPmDue([])}>Dismiss</Button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* R-4: condition-alarm banner → one-tap corrective WO */}
