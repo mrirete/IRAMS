@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
     Search, Filter, Plus, Activity, Zap, Check, AlertTriangle,
     BarChart2, Clock, Calendar, RefreshCcw, Save, Trash2, LineChart as LineChartIcon,
-    AlertCircle, CheckCircle, XCircle, X, ChevronLeft, ChevronRight, ChevronDown, List, Network
+    AlertCircle, CheckCircle, XCircle, X, ChevronLeft, ChevronRight, ChevronDown, List, Network, Minus, Package, MapPin
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, AreaChart, Area
@@ -665,14 +665,19 @@ export const Readings: React.FC = () => {
                         if (visibleRoots.length === 0) return (
                             <div className="p-8 text-center text-sm text-slate-400">{dueOnly ? 'No readings due right now — rounds are clear.' : 'No assets match.'}</div>
                         );
-                        return visibleRoots.map(r => (
-                            <AssetTreeNode
-                                key={r.id} asset={r} depth={0} childrenOf={tree.childrenOf} visible={tree.visible}
-                                selectedId={selectedAssetId} forceExpand={force} collapsed={collapsed}
-                                onToggle={toggleCollapse} onSelect={(id) => { setSelectedAssetId(id); setActiveTab('entry'); }}
-                                dueOf={(id) => dueByAsset.get(id)} pointCountOf={(id) => definitions.filter(d => d.assetId === id && d.isActive).length}
-                            />
-                        ));
+                        return (
+                            <div className="py-1">
+                                {visibleRoots.map((r, i) => (
+                                    <AssetTreeNode
+                                        key={r.id} asset={r} depth={0} isLast={i === visibleRoots.length - 1} ancestorLastFlags={[]}
+                                        childrenOf={tree.childrenOf} visible={tree.visible}
+                                        selectedId={selectedAssetId} forceExpand={force} collapsed={collapsed}
+                                        onToggle={toggleCollapse} onSelect={(id) => { setSelectedAssetId(id); setActiveTab('entry'); }}
+                                        dueOf={(id) => dueByAsset.get(id)} pointCountOf={(id) => definitions.filter(d => d.assetId === id && d.isActive).length}
+                                    />
+                                ))}
+                            </div>
+                        );
                     })()}
                     {viewMode === 'list' && filteredAssets.length === 0 && (
                         <div className="p-8 text-center text-sm text-slate-400">
@@ -1586,47 +1591,93 @@ const RelatedWork: React.FC<{ assetId: string; pms: any[]; onOpenWO: (id: string
 // points read on a location in the hierarchy (SAP PM / Maximo style), while the
 // List view keeps the due-sorted rounds worklist.
 const AssetTreeNode: React.FC<{
-    asset: Asset; depth: number;
+    asset: Asset; depth: number; isLast: boolean; ancestorLastFlags: boolean[];
     childrenOf: Map<string, Asset[]>; visible: Set<string>;
     selectedId: string | null; forceExpand: boolean; collapsed: Set<string>;
     onToggle: (id: string) => void; onSelect: (id: string) => void;
     dueOf: (id: string) => { due: number; overdue: number; never: number } | undefined;
     pointCountOf: (id: string) => number;
-}> = ({ asset, depth, childrenOf, visible, selectedId, forceExpand, collapsed, onToggle, onSelect, dueOf, pointCountOf }) => {
+}> = ({ asset, depth, isLast, ancestorLastFlags, childrenOf, visible, selectedId, forceExpand, collapsed, onToggle, onSelect, dueOf, pointCountOf }) => {
     const kids = (childrenOf.get(asset.id) || []).filter(k => visible.has(k.id));
     const hasKids = kids.length > 0;
     const expanded = forceExpand || !collapsed.has(asset.id);
     const due = dueOf(asset.id);
     const pts = pointCountOf(asset.id);
     const isSel = selectedId === asset.id;
+    const crit = asset.criticality;
+    const critTone = crit === 'A' ? 'border-red-400 text-red-600 bg-red-50'
+        : crit === 'B' ? 'border-orange-400 text-orange-600 bg-orange-50'
+        : crit === 'C' ? 'border-blue-400 text-blue-600 bg-blue-50' : 'border-slate-300 text-slate-500 bg-slate-50';
     return (
-        <div>
-            <div
-                onClick={() => onSelect(asset.id)}
-                style={{ paddingLeft: 12 + depth * 16 }}
-                className={`flex items-center gap-1.5 py-2 pr-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${isSel ? 'bg-blue-50 border-l-4 border-l-blue-600' : 'border-l-4 border-l-transparent'}`}
-            >
-                {hasKids ? (
-                    <button onClick={e => { e.stopPropagation(); onToggle(asset.id); }} className="p-0.5 text-slate-400 hover:text-slate-600 flex-shrink-0">
-                        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                    </button>
-                ) : <span className="w-[18px] flex-shrink-0" />}
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-slate-900 text-[13px] truncate">{asset.tag}</span>
-                        {pts > 0 && <span className="text-[9px] bg-slate-200 px-1 py-0.5 rounded text-slate-600 font-bold flex-shrink-0">{pts}</span>}
-                        {due && due.overdue > 0 && <span className="text-[9px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-bold flex-shrink-0">{due.overdue}!</span>}
-                        {due && due.overdue === 0 && due.due > 0 && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded font-bold flex-shrink-0">{due.due}</span>}
+        <>
+            <div className={`hierarchy-row ${depth > 0 ? 'hierarchy-expand-enter' : ''} ${isSel ? 'hierarchy-row--selected' : ''}`} style={{ minHeight: '44px' }}>
+                {/* Tree connector lines */}
+                {depth > 0 && (
+                    <>
+                        {ancestorLastFlags.map((flagLast, i) => !flagLast && (
+                            <div key={`vl-${i}`} className="tree-vline" style={{ left: `calc(8px + ${i} * var(--tree-indent) + var(--tree-line-left))` }} />
+                        ))}
+                        <div className="tree-hbranch" style={{ left: `calc(8px + ${depth - 1} * var(--tree-indent) + var(--tree-line-left))`, top: 0, height: '100%', width: 'var(--tree-branch-width)' }} />
+                        {!isLast && <div className="tree-vline-below" style={{ left: `calc(8px + ${depth - 1} * var(--tree-indent) + var(--tree-line-left))`, top: '50%', height: '50%' }} />}
+                    </>
+                )}
+                {/* Card */}
+                <div
+                    onClick={() => onSelect(asset.id)}
+                    style={{ marginLeft: `calc(8px + ${depth} * var(--tree-indent) + ${depth > 0 ? 'var(--tree-branch-width) + 4px' : '0px'})` }}
+                    className={`hierarchy-card hierarchy-card--equipment flex items-center gap-2 px-2 py-1.5 mx-1 my-0.5 cursor-pointer group bg-white ${isSel ? 'hierarchy-card--selected' : ''}`}
+                >
+                    {/* Expand / collapse */}
+                    <div className="flex-shrink-0">
+                        {hasKids ? (
+                            <button
+                                onClick={e => { e.stopPropagation(); onToggle(asset.id); }}
+                                className={`w-5 h-5 flex items-center justify-center rounded border transition-all duration-150 ${expanded ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm' : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50 hover:border-slate-400'}`}
+                                title={expanded ? 'Collapse' : 'Expand'}
+                            >
+                                {expanded ? <Minus size={11} strokeWidth={2.5} /> : <Plus size={11} strokeWidth={2.5} />}
+                            </button>
+                        ) : (
+                            <span className="w-5 h-5 flex items-center justify-center"><span className="w-1.5 h-1.5 rounded-full bg-blue-300" /></span>
+                        )}
                     </div>
-                    <div className="text-[11px] text-slate-500 truncate">{asset.name}</div>
+                    {/* Type icon */}
+                    <div className={`flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center ${hasKids ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                        {hasKids ? <Package size={14} /> : <MapPin size={13} />}
+                    </div>
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900 group-hover:text-blue-700 truncate transition-colors">{asset.tag}</span>
+                            {pts > 0 && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex-shrink-0">{pts} pt{pts !== 1 ? 's' : ''}</span>}
+                        </div>
+                        <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">{asset.name}</p>
+                        {(hasKids || (due && (due.overdue + due.due) > 0)) && (
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                                {due && due.overdue > 0 && <span className="text-[9px] font-bold text-red-700 bg-red-50 border border-red-100 px-1.5 py-0.5 rounded-full flex items-center gap-1"><Clock size={9} />{due.overdue} overdue</span>}
+                                {due && due.overdue === 0 && due.due > 0 && <span className="text-[9px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full">{due.due} due</span>}
+                                {hasKids && (
+                                    <button onClick={e => { e.stopPropagation(); onToggle(asset.id); }} className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 hover:bg-blue-100 transition-colors">
+                                        {kids.length} {kids.length === 1 ? 'child' : 'children'}
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    {/* Criticality */}
+                    {crit && (
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black border-2 flex-shrink-0 ${critTone}`} title={`Criticality ${crit}`}>
+                            {crit}
+                        </div>
+                    )}
                 </div>
             </div>
-            {expanded && kids.map(k => (
-                <AssetTreeNode key={k.id} asset={k} depth={depth + 1} childrenOf={childrenOf} visible={visible}
-                    selectedId={selectedId} forceExpand={forceExpand} collapsed={collapsed}
+            {expanded && kids.map((k, i) => (
+                <AssetTreeNode key={k.id} asset={k} depth={depth + 1} isLast={i === kids.length - 1} ancestorLastFlags={[...ancestorLastFlags, isLast]}
+                    childrenOf={childrenOf} visible={visible} selectedId={selectedId} forceExpand={forceExpand} collapsed={collapsed}
                     onToggle={onToggle} onSelect={onSelect} dueOf={dueOf} pointCountOf={pointCountOf} />
             ))}
-        </div>
+        </>
     );
 };
 
