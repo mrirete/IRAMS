@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import { Asset, ReadingDefinition, ReadingLogEntry, DictionaryRecord } from '../types';
 
-type TabId = 'entry' | 'history' | 'definitions';
+type TabId = 'entry' | 'history' | 'definitions' | 'work';
 
 import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
@@ -55,6 +55,14 @@ export const Readings: React.FC = () => {
     // R-4: condition-alarm → one-tap WO
     const [alarmBreaches, setAlarmBreaches] = useState<BreachInfo[]>([]);
     const [raisingWO, setRaisingWO] = useState(false);
+    // Auto-raise a corrective WO on a CRITICAL breach (opt-in, persisted per browser).
+    const [autoRaiseCritical, setAutoRaiseCritical] = useState<boolean>(() => {
+        try { return localStorage.getItem('readings.autoRaiseCritical') === '1'; } catch { return false; }
+    });
+    const toggleAutoRaise = (v: boolean) => {
+        setAutoRaiseCritical(v);
+        try { localStorage.setItem('readings.autoRaiseCritical', v ? '1' : '0'); } catch { /* ignore */ }
+    };
     // Meter-based PM triggers — recurring_work rows + due prompts on reading save
     const [pms, setPms] = useState<any[]>([]);
     const [pmDue, setPmDue] = useState<(MeterPMDue & { assetId: string; assetName: string })[]>([]);
@@ -397,8 +405,21 @@ export const Readings: React.FC = () => {
                 : 'Readings saved successfully.',
             queuedAny ? 'info' : 'success',
         );
-        // R-4: surface any band breaches with a one-tap "Raise Work Order".
-        if (breaches.length > 0) setAlarmBreaches(breaches);
+        // R-4: band breaches. If auto-raise is on, CRITICAL breaches become
+        // corrective WOs immediately; the rest (warnings, or criticals when the
+        // option is off) surface in the one-tap banner.
+        if (breaches.length > 0) {
+            const autoTargets = autoRaiseCritical ? breaches.filter(b => b.level === 'CRITICAL') : [];
+            const toBanner = breaches.filter(b => !autoTargets.includes(b));
+            if (autoTargets.length > 0) {
+                const results = await Promise.allSettled(autoTargets.map(b => createWOForBreach(b, true)));
+                const ok = results.filter(r => r.status === 'fulfilled').length;
+                if (ok > 0) showToast(`${ok} critical alarm${ok > 1 ? 's' : ''} auto-raised as corrective work order${ok > 1 ? 's' : ''}.`, 'success');
+                const failed = results.length - ok;
+                if (failed > 0) showToast(`${failed} auto-raise${failed > 1 ? 's' : ''} failed — raise manually.`, 'error');
+            }
+            if (toBanner.length > 0) setAlarmBreaches(toBanner);
+        }
 
         // Meter-based PM triggers — did any reading push an asset past a PM's due meter?
         if (meterCtx.length > 0 && pms.length > 0) {
@@ -457,18 +478,22 @@ export const Readings: React.FC = () => {
         } finally { setGeneratingPM(false); }
     };
 
+    // Shared corrective-WO creator from a condition breach (used by one-tap + auto).
+    const createWOForBreach = (b: BreachInfo, auto: boolean) =>
+        DatabaseService.getInstance().createWorkOrder({
+            title: `Investigate ${b.defName} ${b.level.toLowerCase()} alarm on ${b.assetName}`,
+            description: `Condition alarm: ${b.defName} = ${b.value}${b.unit ? ' ' + b.unit : ''} (${b.detail}). ${auto ? 'Auto-raised on critical breach from condition monitoring.' : 'Raised from readings.'}`,
+            asset_id: b.assetId,
+            type: 'CM',
+            status: 'OPEN',
+            priority_code: b.level === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
+        }, profile?.username || profile?.fullName || 'user');
+
     // R-4: one-tap corrective work order from a condition alarm.
     const raiseWOFromAlarm = async (b: BreachInfo) => {
         setRaisingWO(true);
         try {
-            const wo = await DatabaseService.getInstance().createWorkOrder({
-                title: `Investigate ${b.defName} ${b.level.toLowerCase()} alarm on ${b.assetName}`,
-                description: `Condition alarm: ${b.defName} = ${b.value}${b.unit ? ' ' + b.unit : ''} (${b.detail}). Auto-raised from readings.`,
-                asset_id: b.assetId,
-                type: 'CM',
-                status: 'OPEN',
-                priority_code: b.level === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
-            }, profile?.username || profile?.fullName || 'user');
+            const wo = await createWOForBreach(b, false);
             showToast('Work order raised from alarm.', 'success');
             setAlarmBreaches([]);
             const id = (wo as any)?.id;
@@ -672,6 +697,12 @@ export const Readings: React.FC = () => {
                                     >
                                         Definitions
                                     </button>
+                                    <button
+                                        className={`px-4 py-2 text-sm font-medium rounded-lg transition ${activeTab === 'work' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                        onClick={() => setActiveTab('work')}
+                                    >
+                                        Related Work
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -704,6 +735,13 @@ export const Readings: React.FC = () => {
                                     onDelete={handleDeleteDefinition}
                                     onOpenAddPoint={setAddPointAssetId}
                                     readingTypes={readingTypes}
+                                />
+                            )}
+                            {activeTab === 'work' && (
+                                <RelatedWork
+                                    assetId={selectedAsset.id}
+                                    pms={pms.filter(p => p.asset_id === selectedAsset.id || (Array.isArray(p.assigned_assets) && p.assigned_assets.some((a: any) => a.assetId === selectedAsset.id)))}
+                                    onOpenWO={(id) => navigate(`/work-orders/${id}`)}
                                 />
                             )}
                         </div>
@@ -829,7 +867,11 @@ export const Readings: React.FC = () => {
                                 </div>
                             ))}
                         </div>
-                        <div className="px-5 py-3 border-t border-slate-100 flex justify-end">
+                        <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                            <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer select-none" title="Automatically raise a corrective work order whenever a reading breaches its critical band">
+                                <input type="checkbox" checked={autoRaiseCritical} onChange={e => toggleAutoRaise(e.target.checked)} className="rounded text-primary-600 focus:ring-primary-500 h-3.5 w-3.5" />
+                                Auto-raise WO on critical
+                            </label>
                             <Button variant="secondary" size="sm" onClick={() => setAlarmBreaches([])}>Dismiss</Button>
                         </div>
                     </div>
@@ -1369,6 +1411,105 @@ const DefinitionsManager: React.FC<{
                     No reading points defined for this asset. Add one to start tracking.
                 </div>
             )}
+        </div>
+    );
+};
+
+// ── Related Work ─────────────────────────────────────────────────────────────
+// Ties condition data to Work Management: the asset's open work orders and its
+// maintenance strategies (PMs), so the reading context connects to the work.
+const RelatedWork: React.FC<{ assetId: string; pms: any[]; onOpenWO: (id: string) => void }> = ({ assetId, pms, onOpenWO }) => {
+    const [wos, setWos] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            setLoading(true);
+            try {
+                const rows = await DatabaseService.getInstance().getWorkOrdersByAssetId(assetId);
+                if (active) setWos(rows || []);
+            } catch { if (active) setWos([]); }
+            finally { if (active) setLoading(false); }
+        })();
+        return () => { active = false; };
+    }, [assetId]);
+
+    const CLOSED = new Set(['CLOSED', 'COMPLETED', 'COMPLETE', 'CANCELLED', 'CANCELED', 'DONE']);
+    const openWos = wos.filter(w => !CLOSED.has((w.status || '').toUpperCase()));
+    const activePMs = pms.filter(p => p.active !== false && (p.status || '').toUpperCase() !== 'INACTIVE');
+
+    const statusTone = (s: string) => {
+        const u = (s || '').toUpperCase();
+        if (u === 'OPEN' || u === 'WIP') return 'bg-amber-100 text-amber-700';
+        if (u.includes('HOLD')) return 'bg-slate-200 text-slate-600';
+        return 'bg-blue-100 text-blue-700';
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Open work orders */}
+            <div>
+                <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle size={15} className="text-primary-600" />
+                    <h3 className="text-sm font-bold text-slate-700">Open work orders</h3>
+                    <span className="text-[11px] text-slate-400">{openWos.length}</span>
+                </div>
+                {loading ? (
+                    <div className="text-sm text-slate-400 p-4">Loading…</div>
+                ) : openWos.length === 0 ? (
+                    <div className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-lg p-4 text-center">No open work orders on this asset.</div>
+                ) : (
+                    <div className="space-y-2">
+                        {openWos.map(w => (
+                            <button key={w.id} onClick={() => onOpenWO(w.id)} className="w-full text-left bg-white border border-slate-200 rounded-lg p-3 hover:border-primary-300 hover:shadow-sm transition flex items-center gap-3">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-semibold text-slate-800 truncate">{w.title || w.wo_number}</div>
+                                    <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                        <span className="font-mono">WO-{w.wo_number}</span>
+                                        {w.type && <span>· {w.type}</span>}
+                                        {w.due_date && <span>· due {String(w.due_date).slice(0, 10)}</span>}
+                                    </div>
+                                </div>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${statusTone(w.status)}`}>{(w.status || 'OPEN').toUpperCase()}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* Maintenance strategies (PMs) */}
+            <div>
+                <div className="flex items-center gap-2 mb-2">
+                    <RefreshCcw size={15} className="text-primary-600" />
+                    <h3 className="text-sm font-bold text-slate-700">Maintenance strategies</h3>
+                    <span className="text-[11px] text-slate-400">{activePMs.length}</span>
+                </div>
+                {activePMs.length === 0 ? (
+                    <div className="text-sm text-slate-400 border border-dashed border-slate-200 rounded-lg p-4 text-center">No PM strategies cover this asset yet.</div>
+                ) : (
+                    <div className="space-y-2">
+                        {activePMs.map(p => {
+                            const meter = (p.schedule_type || '').toUpperCase() === 'READING';
+                            const interval = p.frequency_interval ?? p.interval;
+                            const unit = p.frequency_unit || p.frequency_type || '';
+                            return (
+                                <div key={p.id} className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-3">
+                                    {meter ? <Clock size={14} className="text-blue-500 flex-shrink-0" /> : <Calendar size={14} className="text-blue-500 flex-shrink-0" />}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-semibold text-slate-800 truncate">{p.title || p.code}</div>
+                                        <div className="text-[11px] text-slate-400">
+                                            {interval ? `every ${interval} ${unit}` : unit}
+                                            {!meter && p.next_due_date && <span> · next {String(p.next_due_date).slice(0, 10)}</span>}
+                                        </div>
+                                    </div>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${meter ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{meter ? 'METER' : 'TIME'}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };
