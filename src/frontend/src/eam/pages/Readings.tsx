@@ -26,6 +26,11 @@ import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
 
 interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
 
+// Structural hierarchy levels that never take readings — only maintainable items
+// (equipment + sub-components) do. Used to keep the Condition Data asset list from
+// showing the whole register (SAP PM: measuring points sit on equipment).
+const NON_MAINTAINABLE_LEVELS = new Set(['ENTERPRISE', 'SITE', 'UNIT', 'SYSTEM', 'PLANT', 'LOCATION', 'FUNCTIONAL_LOCATION']);
+
 export const Readings: React.FC = () => {
     const { profile, permissions, dataScope } = useAuth();
     // ═══ RBAC Permission Extraction (ISO 27001 / NIST CSF) ═══
@@ -95,13 +100,16 @@ export const Readings: React.FC = () => {
 
     // --- Derived Data ---
 
-    // Show every in-scope asset so a first reading point can always be set up.
-    // Assets that already have reading points sort to the top (the rounds list);
-    // the rest remain selectable so you can configure them. Search narrows both.
+    // Only maintainable items take readings — equipment and their sub-components,
+    // not the structural hierarchy (enterprise/site/unit/system). This mirrors SAP
+    // PM (measuring points sit on equipment / maintainable items) and keeps the
+    // list from being the whole asset register. Assets with points sort to the top
+    // (the rounds list); the rest stay selectable so you can configure them.
     const filteredAssets = useMemo(() => {
         const q = filterText.toLowerCase();
         const hasPoints = (id: string) => definitions.some(d => d.assetId === id && d.isActive);
         return assets
+            .filter(a => !NON_MAINTAINABLE_LEVELS.has((a.hierarchyLevel || '').toUpperCase()))
             .filter(a =>
                 !q || a.name.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q))
             .sort((a, b) => {
