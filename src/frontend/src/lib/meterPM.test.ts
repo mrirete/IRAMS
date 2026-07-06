@@ -31,6 +31,14 @@ describe('evaluateMeterPMs — baseline known', () => {
     it('not due before the threshold', () => {
         expect(evaluateMeterPMs([pm({ baseline: 5000 })], [rd({ newValue: 5200 })])).toHaveLength(0);
     });
+    it('does not re-fire after the baseline is stamped at generation', () => {
+        // Fires at 5310 (baseline 4800 + 500 = 5300 crossed)...
+        expect(evaluateMeterPMs([pm({ baseline: 4800 })], [rd({ newValue: 5310 })])).toHaveLength(1);
+        // ...after stamping baseline=5310, a later 5400 reading must NOT re-fire (next due 5810).
+        expect(evaluateMeterPMs([pm({ baseline: 5310 })], [rd({ previousValue: 5310, newValue: 5400 })])).toHaveLength(0);
+        // ...and it fires again only once the meter passes 5810.
+        expect(evaluateMeterPMs([pm({ baseline: 5310 })], [rd({ newValue: 5820 })])).toHaveLength(1);
+    });
 });
 
 describe('evaluateMeterPMs — no baseline (interval crossing)', () => {

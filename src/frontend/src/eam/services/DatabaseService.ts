@@ -4206,7 +4206,7 @@ export class DatabaseService {
         return { tasks: t.tasks || [], jsa: t.jsa || null, labor: t.labor || [], inventory: t.inventory || [] };
     }
 
-    public async generateWOFromPM(pmId: string, assetId?: string, skipDateAdvance?: boolean): Promise<WorkOrderRecord> {
+    public async generateWOFromPM(pmId: string, assetId?: string, skipDateAdvance?: boolean, meterReading?: number): Promise<WorkOrderRecord> {
         // 1. Fetch PM with templates
         const { data: pm, error: getErr } = await supabase.from('recurring_work').select('*').eq('id', pmId).single();
         if (getErr || !pm) throw new Error('PM Strategy not found');
@@ -4340,8 +4340,10 @@ export class DatabaseService {
             await supabase.from('work_order_parts').insert(partRows);
         }
 
-        // 7. Update PM last_generated_date and calculate next_due_date (skip if multi-asset batch)
-        if (!skipDateAdvance) {
+        // 7. Update PM last_generated_date and calculate next_due_date (skip if multi-asset
+        //    batch, or if this is a meter-driven generation — for a meter PM the running-meter
+        //    baseline below is authoritative, not a calendar date).
+        if (!skipDateAdvance && meterReading == null) {
             const now2 = new Date();
             const freqUnit = (pm.frequency_type || pm.frequency_unit || '').toUpperCase();
             const freqInterval = pm.interval || pm.frequency_interval || 0;
@@ -4374,6 +4376,23 @@ export class DatabaseService {
                 console.log(`[generateWOFromPM] Updated last_completed for asset ${targetAssetId}`);
             } catch (e) {
                 console.warn('[generateWOFromPM] Could not update per-asset last_completed:', e);
+            }
+        }
+
+        // 8b. Meter-based completion: stamp the meter value at this service into the
+        //     per-asset baseline (recurring_work.assigned_assets[].lastReadingValue) so
+        //     the next due is computed from here — not re-fired on the next reading.
+        if (meterReading != null && targetAssetId) {
+            try {
+                const existing: any[] = Array.isArray(pm.assigned_assets) ? [...pm.assigned_assets] : [];
+                const idx = existing.findIndex((a: any) => a.assetId === targetAssetId);
+                const stamp = { assetId: targetAssetId, lastReadingValue: meterReading, lastCompletedDate: new Date().toISOString().split('T')[0] };
+                if (idx >= 0) existing[idx] = { ...existing[idx], ...stamp };
+                else existing.push(stamp);
+                await supabase.from('recurring_work').update({ assigned_assets: existing }).eq('id', pmId);
+                console.log(`[generateWOFromPM] Stamped meter baseline ${meterReading} for asset ${targetAssetId}`);
+            } catch (e) {
+                console.warn('[generateWOFromPM] Could not stamp meter baseline:', e);
             }
         }
 

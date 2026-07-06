@@ -387,13 +387,25 @@ export const Readings: React.FC = () => {
         }
     };
 
-    // Meter-based PM → one-tap generate the preventive work order (advances schedule).
+    // Meter-based PM → one-tap generate the preventive work order. Passes the meter
+    // value so the PM's per-asset baseline is stamped (next due = this + interval),
+    // preventing a re-fire on the next reading.
     const generatePMWorkOrder = async (d: MeterPMDue & { assetId: string }) => {
         setGeneratingPM(true);
         try {
-            const wo = await DatabaseService.getInstance().generateWOFromPM(d.pmId, d.assetId);
+            const wo = await DatabaseService.getInstance().generateWOFromPM(d.pmId, d.assetId, false, d.current);
             showToast('Preventive work order generated from meter trigger.', 'success');
             setPmDue(prev => prev.filter(x => x.pmId !== d.pmId));
+            // Keep in-memory PMs in sync with the stamped baseline so a further reading
+            // this session doesn't re-prompt before a reload.
+            setPms(prev => prev.map(p => {
+                if (p.id !== d.pmId) return p;
+                const existing: any[] = Array.isArray(p.assigned_assets) ? [...p.assigned_assets] : [];
+                const i = existing.findIndex((a: any) => a.assetId === d.assetId);
+                const stamp = { assetId: d.assetId, lastReadingValue: d.current, lastCompletedDate: new Date().toISOString().split('T')[0] };
+                if (i >= 0) existing[i] = { ...existing[i], ...stamp }; else existing.push(stamp);
+                return { ...p, assigned_assets: existing };
+            }));
             const id = (wo as any)?.id;
             if (id) navigate(`/work-orders/${id}`);
         } catch (e: any) {
