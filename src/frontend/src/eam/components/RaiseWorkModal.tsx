@@ -19,7 +19,8 @@ interface Props {
     actor: string;
     requesterId?: string;
     contextNote?: string;
-    faultTypes: { code: string; description: string }[];
+    /** id is the dictionary UUID (service_requests.functional_failure_id is a UUID FK). */
+    faultTypes: { id: string; code: string; description: string }[];
     onClose: () => void;
 }
 
@@ -41,7 +42,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
     const [description, setDescription] = useState(`Raised from Condition Data.\nAsset: ${asset.tag} — ${asset.name}${ctx}`);
     const [priority, setPriority] = useState('MEDIUM');
     const [workType, setWorkType] = useState('CM');
-    const [faultType, setFaultType] = useState(faultTypes[0]?.code || '');
+    const [faultType, setFaultType] = useState(faultTypes[0]?.id || ''); // dictionary UUID
     // PM-specific
     const [scheduleType, setScheduleType] = useState<'TIME' | 'READING'>('TIME');
     const [interval, setInterval] = useState(1);
@@ -148,7 +149,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Fault type {asset.criticality === 'A' && <span className="text-red-500">*</span>}</label>
                             <select value={faultType} onChange={e => setFaultType(e.target.value)} className={inputCls}>
                                 <option value="">Select fault type…</option>
-                                {faultTypes.map(f => <option key={f.code} value={f.code}>{f.description}</option>)}
+                                {faultTypes.map(f => <option key={f.id} value={f.id}>{f.description}</option>)}
                             </select>
                             {faultTypes.length === 0 && <p className="text-[11px] text-amber-600 mt-1">No fault types configured — add them under Admin → Dictionaries (FAULT_TYPE).</p>}
                         </div>

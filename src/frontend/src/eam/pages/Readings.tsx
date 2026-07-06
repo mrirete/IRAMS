@@ -46,7 +46,7 @@ export const Readings: React.FC = () => {
     const [definitions, setDefinitions] = useState<ReadingDefinition[]>([]);
     const [logs, setLogs] = useState<ReadingLogEntry[]>([]);
     const [readingTypes, setReadingTypes] = useState<DictionaryRecord[]>([]);
-    const [faultTypes, setFaultTypes] = useState<{ code: string; description: string }[]>([]);
+    const [faultTypes, setFaultTypes] = useState<{ id: string; code: string; description: string }[]>([]);
     const [raiseKind, setRaiseKind] = useState<RaiseKind | null>(null);
     const [raiseMenuOpen, setRaiseMenuOpen] = useState(false);
 
@@ -106,7 +106,7 @@ export const Readings: React.FC = () => {
             const types = dbDicts.filter(d => d.type === 'READING_TYPE' && d.active);
             setReadingTypes(types);
             // Fault types (ISO 14224 functional failures) for raising requests
-            setFaultTypes(dbDicts.filter(d => d.type === 'FAULT_TYPE' && d.active).map(d => ({ code: d.code, description: d.description })));
+            setFaultTypes(dbDicts.filter(d => d.type === 'FAULT_TYPE' && d.active).map(d => ({ id: d.id, code: d.code, description: d.description })));
 
             if (dbLogs.length > 0) {
                 // Map DB keys to UI keys if needed (DatabaseService usually handles this now, let's trust it maps snake -> camel)
