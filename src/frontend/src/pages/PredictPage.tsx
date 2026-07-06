@@ -12,7 +12,10 @@ import type { FleetAssetHealth } from '../types/intelligence';
 import { supabase } from '../eam/lib/supabase';
 import { failureIntervalsHours, isFailure } from '../eam/services/reliabilityMetrics';
 import { groundedRulFromHistory, type GroundedRul } from '../lib/pmRecommendation';
+import { recommendMonitoringCadence } from '../lib/monitoringCadence';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
+
+type ConditionAlarms = Awaited<ReturnType<DatabaseService['getAssetConditionAlarms']>>;
 
 type InsightType = 'digital_twin' | 'rul_analysis' | 'alert_config' | 'degradation_model';
 
@@ -81,6 +84,22 @@ export const PredictPage: React.FC = () => {
                 .sort((a, b) => b - a)[0];
             const susp = lastFail ? [Math.max(1, Math.floor((Date.now() - lastFail) / 3600000))] : [];
             setGroundedRul(groundedRulFromHistory(intervals, susp));
+        })();
+        return () => { active = false; };
+    }, [selectedAssetId]);
+
+    // ── #3: REAL condition alarms from R-4 measurement-point bands (not synthetic) ──
+    const [conditionAlarms, setConditionAlarms] = useState<ConditionAlarms | null>(null);
+    useEffect(() => {
+        if (!selectedAssetId) { setConditionAlarms(null); return; }
+        let active = true;
+        (async () => {
+            try {
+                const res = await DatabaseService.getInstance().getAssetConditionAlarms(selectedAssetId);
+                if (active) setConditionAlarms(res);
+            } catch {
+                if (active) setConditionAlarms(null);
+            }
         })();
         return () => { active = false; };
     }, [selectedAssetId]);
@@ -263,6 +282,13 @@ export const PredictPage: React.FC = () => {
     const isHealthy = systemHealth >= 80;
     const critLevel = selectedAsset?.criticality;
     const critColor = critLevel === 'A' ? 'bg-red-500/20 text-red-400 border-red-500/30' : critLevel === 'B' ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' : 'bg-slate-100 text-brand-300 border-slate-300';
+
+    // ── #5: criticality-driven monitoring cadence (P-F interval when the asset carries one) ──
+    const cadence = recommendMonitoringCadence({ criticality: critLevel, pfIntervalDays: (selectedAsset as any)?.pfIntervalDays ?? null });
+    // ── #3: prefer REAL measurement-point band breaches; only fall back to synthetic when the asset has no reading definitions ──
+    const hasRealBands = !!conditionAlarms && conditionAlarms.pointCount > 0;
+    const realAlarmCount = conditionAlarms ? conditionAlarms.criticalCount + conditionAlarms.warningCount : 0;
+    const effectiveAlertCount = hasRealBands ? realAlarmCount : assetAlerts.length;
 
     const handleCreateInsight = async () => {
         setPredictionRunning(true);
@@ -635,6 +661,28 @@ export const PredictPage: React.FC = () => {
                                     {selectedAsset?.tag && (
                                         <span className="text-[10px] text-slate-400 font-mono">{selectedAsset.tag}</span>
                                     )}
+                                    {/* #5: criticality-driven monitoring cadence */}
+                                    <span
+                                        className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200"
+                                        title={cadence.basis}
+                                    >
+                                        <Clock size={10} /> Monitor: {cadence.label}
+                                    </span>
+                                    {/* #3: REAL condition alarms from measurement-point bands */}
+                                    {hasRealBands && (
+                                        realAlarmCount > 0 ? (
+                                            <span
+                                                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border font-semibold ${conditionAlarms!.criticalCount > 0 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
+                                                title={conditionAlarms!.breaches.map(b => `${b.level}: ${b.name} = ${b.value}${b.unit ? ' ' + b.unit : ''} (${b.detail})`).join('\n')}
+                                            >
+                                                <AlertTriangle size={10} /> {conditionAlarms!.criticalCount}C · {conditionAlarms!.warningCount}W bands
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200" title="All measurement points within their alarm bands">
+                                                <ShieldCheck size={10} /> Bands nominal
+                                            </span>
+                                        )
+                                    )}
                                 </div>
                             </div>
                         </button>
@@ -782,7 +830,7 @@ export const PredictPage: React.FC = () => {
                     systemHealth={systemHealth}
                     isHealthy={isHealthy}
                     rulDays={rulEstimate?.rul_days}
-                    alertCount={assetAlerts.length}
+                    alertCount={effectiveAlertCount}
                     rulConfidenceBands={rulEstimate?.confidence_bands || []}
                     distributionType={rulEstimate?.distribution_type || null}
                     rulConfidence={rulEstimate?.confidence ?? null}
@@ -804,7 +852,7 @@ export const PredictPage: React.FC = () => {
 
                         setWrForm({
                             title: `PdM — Corrective action on ${assetTag || assetName}`,
-                            description: `Auto-generated from Predictive Insights.\n\nAsset: ${assetTag} — ${assetName}\nHealth Index: ${hiVal}/100\nRemaining Useful Life: ${rulVal} days\nCriticality: ${critLabel}\nAlerts: ${assetAlerts.length}\n\nCondition monitoring indicates degradation. Investigate and perform corrective maintenance per ISO 55000.`,
+                            description: `Auto-generated from Predictive Insights.\n\nAsset: ${assetTag} — ${assetName}\nHealth Index: ${hiVal}/100\nRemaining Useful Life: ${rulVal} days\nCriticality: ${critLabel}\nCondition alarms: ${effectiveAlertCount}${hasRealBands ? ` (${conditionAlarms!.criticalCount} critical, ${conditionAlarms!.warningCount} warning — measurement-point bands)` : ''}\nRecommended monitoring: ${cadence.label} (${cadence.basis})\n\nCondition monitoring indicates degradation. Investigate and perform corrective maintenance per ISO 55000.`,
                             priority: autoPriority,
                             workType: 'CM',
                         });

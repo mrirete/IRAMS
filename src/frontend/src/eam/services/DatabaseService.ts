@@ -24,6 +24,7 @@ import {
     NumberingOverride,
 } from '../types';
 import type { MaintenanceStrategy, StrategyPackage } from '../../lib/maintenanceStrategy';
+import { evaluateReading } from '../../lib/readingAlarm';
 import {
     OperationActual,
     OrderActuals,
@@ -2177,6 +2178,39 @@ export class DatabaseService {
             isAlarm: row.is_alarm,
             comments: row.comments
         }));
+    }
+
+    /**
+     * REAL condition-alarm state for an asset (R-4): evaluate the latest reading
+     * on each measurement point against its alarm bands (min/max critical/warning).
+     * This replaces the synthetic Predict alerts with actual band breaches.
+     */
+    public async getAssetConditionAlarms(assetId: string): Promise<{
+        pointCount: number; criticalCount: number; warningCount: number;
+        breaches: { name: string; unit?: string; value: number; level: 'WARNING' | 'CRITICAL'; detail: string; date?: string }[];
+    }> {
+        const [defs, logs] = await Promise.all([this.getReadingDefinitions(assetId), this.getReadingLogs(assetId)]);
+        // logs are ordered newest-first; keep the first (latest) per definition.
+        const latestByDef = new Map<string, any>();
+        for (const l of logs) if (!latestByDef.has(l.definitionId)) latestByDef.set(l.definitionId, l);
+
+        const breaches: { name: string; unit?: string; value: number; level: 'WARNING' | 'CRITICAL'; detail: string; date?: string }[] = [];
+        for (const def of defs) {
+            const latest = latestByDef.get(def.id);
+            if (!latest || latest.value == null) continue;
+            const res = evaluateReading(Number(latest.value), def);
+            if (res.level !== 'OK') {
+                breaches.push({ name: def.name, unit: def.unit, value: Number(latest.value), level: res.level as 'WARNING' | 'CRITICAL', detail: res.detail, date: latest.date });
+            }
+        }
+        // Critical first, then warning.
+        breaches.sort((a, b) => (a.level === b.level ? 0 : a.level === 'CRITICAL' ? -1 : 1));
+        return {
+            pointCount: defs.length,
+            criticalCount: breaches.filter(b => b.level === 'CRITICAL').length,
+            warningCount: breaches.filter(b => b.level === 'WARNING').length,
+            breaches,
+        };
     }
 
     public async logReading(log: any): Promise<any> {

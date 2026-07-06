@@ -357,12 +357,13 @@ class PredictionService {
         const sensorSummary: Record<string, number> = {};
         sensors.forEach(s => { sensorSummary[s.tag] = s.current_value ?? 0; });
 
-        // Build 30-day health projection with natural decay
+        // Build 30-day health projection — deterministic linear decay from the
+        // current index. Uncertainty is expressed by the widening confidence
+        // band (±0.15/day), NOT by fabricated random noise on the mean.
         const decayRate = healthIndex < 70 ? 0.25 : healthIndex < 85 ? 0.12 : 0.05;
         const healthProjection = Array.from({ length: 30 }, (_, i) => {
             const d = i + 1;
-            const noise = (Math.random() - 0.5) * 2;
-            const predicted = Math.max(20, healthIndex - d * decayRate + noise);
+            const predicted = Math.max(20, healthIndex - d * decayRate);
             return {
                 days_ahead: d,
                 health_index: Math.round(predicted * 10) / 10,
@@ -371,9 +372,12 @@ class PredictionService {
             };
         });
 
-        // Calibration quality based on sensor data recency (always "now" since from DB)
-        const calQuality = Math.round((90 + Math.random() * 8) * 10) / 10;
-        const calDrift = Math.round(Math.random() * 0.04 * 1000) / 1000;
+        // Calibration quality = real data coverage (fraction of sensors reporting
+        // a current value), not a fabricated 90–98. Drift is not measured from
+        // this data, so report 0 rather than inventing a number.
+        const sensorsWithValue = sensors.filter(s => s.current_value != null).length;
+        const calQuality = sensors.length ? Math.round((sensorsWithValue / sensors.length) * 1000) / 10 : 0;
+        const calDrift = 0;
 
         const result = await this.upsertTwinState({
             asset_id: assetId,
@@ -509,7 +513,7 @@ class PredictionService {
         if (existingModels.length > 0) {
             updatedModels = existingModels.map((m: any) => {
                 const advanceRate = healthIndex < 70 ? 2.5 : healthIndex < 85 ? 1.2 : 0.5;
-                const newDamage = Math.min(100, Number(m.current_damage_pct) + advanceRate + Math.random() * 1.5);
+                const newDamage = Math.min(100, Number(m.current_damage_pct) + advanceRate);
                 const daysToFailure = Math.max(14, Math.round((100 - newDamage) / advanceRate * 30));
                 return {
                     ...m,
@@ -526,7 +530,9 @@ class PredictionService {
             updatedModels = [{
                 mechanism,
                 model_type: modelType,
-                parameters: { wear_rate: Math.round((0.001 + Math.random() * 0.005) * 10000) / 10000 },
+                // Deterministic wear rate derived from the health deficit (not random):
+                // the further below 100 the health, the faster the modelled wear.
+                parameters: { wear_rate: Math.round((100 - healthIndex) * 0.0001 * 10000) / 10000 },
                 current_damage_pct: damagePct,
                 projected_failure_date: new Date(Date.now() + daysToFailure * 86400000).toISOString(),
             }];
