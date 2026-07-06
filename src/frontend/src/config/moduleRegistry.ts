@@ -80,7 +80,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     {
         id: 'core', label: 'Core Platform', description: 'Dashboard, Assets, Admin & Settings',
         tier: 'core', icon: Home, path: '/',
-        routes: ['/', '/assets', '/admin', '/admin/companies', '/admin/connectors/new', '/admin/connectors/:id', '/admin/settings', '/admin/error-logs', '/admin/activity-log', '/data-quality', '/login', '/eam-admin', '/system-health', '/readings', '/notifications'],
+        routes: ['/', '/assets', '/admin', '/admin/companies', '/admin/connectors/new', '/admin/connectors/:id', '/admin/settings', '/admin/error-logs', '/admin/activity-log', '/data-quality', '/login', '/eam-admin', '/system-health', '/notifications'],
         dependencies: [], section: 'eam',
     },
     {
@@ -92,12 +92,13 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'requests', label: 'Maintenance Requests', path: '/requests' },
             { id: 'work-orders', label: 'Work Orders', path: '/work-orders' },
             { id: 'recurring-work', label: 'Recurring Work / PM', path: '/recurring-work' },
+            { id: 'condition-data', label: 'Condition Data', path: '/readings' },
             { id: 'maintenance-strategies', label: 'Maintenance Strategies', path: '/maintenance-strategies' },
             { id: 'scheduling', label: 'Scheduling', path: '/scheduling' },
             { id: 'task-library', label: 'Task Library', path: '/task-library' },
             { id: 'moc', label: 'Management of Change', path: '/management-of-change' },
         ],
-        routes: ['/my-work', '/requests', '/work-orders', '/recurring-work', '/maintenance-strategies', '/scheduling', '/task-library', '/management-of-change'],
+        routes: ['/my-work', '/requests', '/work-orders', '/recurring-work', '/readings', '/maintenance-strategies', '/scheduling', '/task-library', '/management-of-change'],
         dependencies: ['core'], section: 'eam',
     },
     {

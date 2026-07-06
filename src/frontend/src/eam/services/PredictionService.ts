@@ -290,6 +290,63 @@ class PredictionService {
         }
     }
 
+    /**
+     * Bridge (Condition Data → Predict): map an asset's manual measurement points
+     * and their latest logged readings into the SensorReading shape the twin
+     * engine consumes. This lets handheld/operator-rounds data drive Health Index
+     * and RUL for sites with no online sensor feed — computed in memory, nothing
+     * fabricated. Alarm bands come from the reading definition; trend is inferred
+     * from the last two readings.
+     */
+    async getManualReadingsAsSensors(assetId: string): Promise<SensorReading[]> {
+        const [defsRes, logsRes] = await Promise.all([
+            supabase.from('reading_definitions').select('*').eq('asset_id', assetId).eq('is_active', true),
+            supabase.from('reading_logs').select('*').eq('asset_id', assetId).order('reading_date', { ascending: false }),
+        ]);
+        const defs = defsRes.data || [];
+        const logs = logsRes.data || [];
+        // Group logs newest-first per definition.
+        const byDef = new Map<string, any[]>();
+        for (const l of logs) {
+            const arr = byDef.get(l.definition_id) || [];
+            arr.push(l);
+            byDef.set(l.definition_id, arr);
+        }
+        return defs.map((d: any): SensorReading => {
+            const hist = byDef.get(d.id) || [];
+            const latest = hist[0];
+            const prev = hist[1];
+            const cur = latest?.reading_value != null ? Number(latest.reading_value) : null;
+            let trend: 'rising' | 'falling' | 'stable' | null = null;
+            if (cur != null && prev?.reading_value != null) {
+                const p = Number(prev.reading_value);
+                trend = cur > p ? 'rising' : cur < p ? 'falling' : 'stable';
+            }
+            return {
+                id: `manual-${d.id}`,
+                asset_id: assetId,
+                tag: d.name,
+                current_value: cur,
+                unit: d.unit || '',
+                trend,
+                alarm_high: d.max_critical ?? d.max_warning ?? null,
+                alarm_low: d.min_critical ?? d.min_warning ?? null,
+                readings: hist.slice(0, 20).map(h => Number(h.reading_value)).filter(v => !Number.isNaN(v)).reverse(),
+                created_at: latest?.reading_date || new Date().toISOString(),
+            };
+        }).filter(s => s.current_value != null);
+    }
+
+    /**
+     * Sensor source for the Predict engine: prefer an online sensor feed
+     * (ers_sensor_readings); fall back to manual Condition Data when none exists.
+     */
+    async getSensorsForAsset(assetId: string): Promise<SensorReading[]> {
+        const online = await this.getSensorReadings(assetId);
+        if (online.length > 0) return online;
+        return this.getManualReadingsAsSensors(assetId);
+    }
+
     // ══════════════════════════════════════════════════════════
     //  Run Prediction — compute & persist per insight type
     // ══════════════════════════════════════════════════════════
@@ -321,9 +378,11 @@ class PredictionService {
 
     // ── Digital Twin Snapshot ───────────────────────────────
     private async _runDigitalTwinSnapshot(assetId: string, title: string): Promise<{ success: boolean; message: string }> {
-        const sensors = await this.getSensorReadings(assetId);
+        const online = await this.getSensorReadings(assetId);
+        const sensors = online.length > 0 ? online : await this.getManualReadingsAsSensors(assetId);
+        const source = online.length > 0 ? 'online sensors' : 'manual Condition Data';
         if (sensors.length === 0) {
-            return { success: false, message: 'No sensor readings found for this asset. Seed sensor data first.' };
+            return { success: false, message: 'No sensor readings found. Enter readings on Condition Data (Work Management), or connect an online sensor feed.' };
         }
 
         // Weighted health scoring from sensor proximity to alarm limits
@@ -392,14 +451,14 @@ class PredictionService {
         });
 
         if (!result) return { success: false, message: 'Failed to persist twin state to database.' };
-        return { success: true, message: `Digital Twin updated — Health Index: ${healthIndex.toFixed(1)}/100` };
+        return { success: true, message: `Digital Twin updated — Health Index: ${healthIndex.toFixed(1)}/100 (from ${source})` };
     }
 
     // ── RUL Analysis ───────────────────────────────────────
     private async _runRULAnalysis(assetId: string, _title: string): Promise<{ success: boolean; message: string }> {
         // Get current twin state for health baseline
         const twin = await this.getTwinState(assetId);
-        const sensors = await this.getSensorReadings(assetId);
+        const sensors = await this.getSensorsForAsset(assetId);
 
         const healthIndex = twin ? Number(twin.health_index) : 75;
         const remainingHealth = healthIndex - 30; // failure threshold at 30
@@ -447,9 +506,9 @@ class PredictionService {
 
     // ── Alert Scan ─────────────────────────────────────────
     private async _runAlertScan(assetId: string, title: string): Promise<{ success: boolean; message: string }> {
-        const sensors = await this.getSensorReadings(assetId);
+        const sensors = await this.getSensorsForAsset(assetId);
         if (sensors.length === 0) {
-            return { success: false, message: 'No sensor readings found — cannot evaluate alert thresholds.' };
+            return { success: false, message: 'No sensor readings found — enter readings on Condition Data (Work Management), or connect an online sensor feed.' };
         }
 
         let alertsCreated = 0;
