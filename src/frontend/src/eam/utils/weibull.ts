@@ -165,3 +165,31 @@ export function fitWeibull(
 export function weibullBLife(beta: number, eta: number, pct: number): number {
     return eta * Math.pow(-Math.log(1 - pct / 100), 1 / beta);
 }
+
+/**
+ * Conditional Mean Residual Life — the rigorous "remaining useful life": the
+ * expected additional time to failure GIVEN the unit has already survived to
+ * `ageHours`. This is the real RUL (replaces heuristic health-index scaling):
+ *
+ *   MRL(t) = ( ∫ₜ^∞ R(x) dx ) / R(t),   R(x) = exp(-(x/η)^β)
+ *
+ * Computed by numeric integration to a generous upper bound. For β>1 (wear-out)
+ * MRL shrinks as age rises — an aging unit has less life left, exactly what a
+ * PdM RUL should show. Returns 0 once survival is negligible.
+ */
+export function meanResidualLifeHours(beta: number, eta: number, ageHours: number): number {
+    if (!(beta > 0) || !(eta > 0)) return 0;
+    const t = Math.max(0, ageHours);
+    const R = (x: number) => Math.exp(-Math.pow(x / eta, beta));
+    const Rt = R(t);
+    if (Rt <= 1e-9) return 0; // essentially certain to have failed by now
+    const upper = t + eta * 10; // R(x) is negligible well before this
+    const N = 2000;
+    const h = (upper - t) / N;
+    let integral = 0;
+    for (let i = 0; i <= N; i++) {
+        const w = i === 0 || i === N ? 0.5 : 1; // trapezoidal
+        integral += w * R(t + i * h);
+    }
+    return (integral * h) / Rt;
+}

@@ -11,10 +11,10 @@
  * component only orchestrates and presents.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Sparkles, Loader2, TrendingUp, AlertTriangle, CheckCircle2, Wrench } from 'lucide-react';
+import { X, Sparkles, Loader2, TrendingUp, AlertTriangle, CheckCircle2, Wrench, Clock } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { failureIntervalsHours, isFailure } from '../../eam/services/reliabilityMetrics';
-import { recommendPM, type PMRecommendation } from '../../lib/pmRecommendation';
+import { recommendPM, groundedRulFromHistory, type PMRecommendation } from '../../lib/pmRecommendation';
 import { weibullBLife } from '../../eam/utils/weibull';
 import { CreatePMFromWeibullModal, type WeibullPMData } from './CreatePMFromWeibullModal';
 
@@ -61,6 +61,9 @@ export const ReliabilityAdvisorModal: React.FC<Props> = ({ asset, onClose, onCre
         () => recommendPM(intervals, suspensions, { costPerFailure, pmCost }),
         [intervals, suspensions, costPerFailure, pmCost],
     );
+    // Data-grounded RUL (conditional mean residual life) — the real replacement
+    // for the heuristic RUL on the Predict page.
+    const grounded = useMemo(() => groundedRulFromHistory(intervals, suspensions), [intervals, suspensions]);
 
     const pmData: WeibullPMData | null = rec.fit && rec.recommendedIntervalHours ? {
         asset,
@@ -105,6 +108,18 @@ export const ReliabilityAdvisorModal: React.FC<Props> = ({ asset, onClose, onCre
                                 </div>
                                 <p className="text-xs mt-1 text-slate-600 leading-relaxed">{rec.rationale}</p>
                             </div>
+
+                            {/* Data-grounded RUL (conditional mean residual life) — the real RUL */}
+                            {grounded.method === 'weibull-mrl' && grounded.rulDays != null && (
+                                <div className="flex items-center justify-between border border-slate-200 rounded-lg p-3">
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wide">Remaining useful life · data-grounded</div>
+                                        <div className="text-2xl font-bold text-slate-800">{grounded.rulDays} <span className="text-sm font-medium">days</span></div>
+                                        <div className="text-[10px] text-slate-400">Weibull mean residual life at {grounded.ageDays}d since last failure (not the heuristic HI estimate)</div>
+                                    </div>
+                                    <Clock size={26} className="text-slate-300" />
+                                </div>
+                            )}
 
                             {/* Recommended interval */}
                             {rec.pmAdvised && rec.recommendedIntervalDays && (

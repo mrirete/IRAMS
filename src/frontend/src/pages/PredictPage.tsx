@@ -9,6 +9,10 @@ import { ScrollTabStrip } from '../eam/components/ui';
 import predictionService from '../eam/services/PredictionService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import type { FleetAssetHealth } from '../types/intelligence';
+import { supabase } from '../eam/lib/supabase';
+import { failureIntervalsHours, isFailure } from '../eam/services/reliabilityMetrics';
+import { groundedRulFromHistory, type GroundedRul } from '../lib/pmRecommendation';
+import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 
 type InsightType = 'digital_twin' | 'rul_analysis' | 'alert_config' | 'degradation_model';
 
@@ -58,6 +62,28 @@ export const PredictPage: React.FC = () => {
     const [wrForm, setWrForm] = useState({ title: '', description: '', priority: 'ROUTINE' as string, workType: 'CM' as string });
 
     const { assetOptions, getAssetById } = useAssetLookup();
+
+    // ── #1: data-grounded RUL (real Weibull MRL) for the selected asset ──
+    const [advisorOpen, setAdvisorOpen] = useState(false);
+    const [groundedRul, setGroundedRul] = useState<GroundedRul | null>(null);
+    useEffect(() => {
+        if (!selectedAssetId) { setGroundedRul(null); return; }
+        let active = true;
+        (async () => {
+            const { data: wos } = await supabase.from('work_orders')
+                .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
+                .eq('asset_id', selectedAssetId).order('created_at');
+            if (!active) return;
+            const rows = wos || [];
+            const intervals = failureIntervalsHours(rows);
+            const lastFail = rows.filter(isFailure)
+                .map((w: any) => new Date(w.closed_at || w.created_at).getTime())
+                .sort((a, b) => b - a)[0];
+            const susp = lastFail ? [Math.max(1, Math.floor((Date.now() - lastFail) / 3600000))] : [];
+            setGroundedRul(groundedRulFromHistory(intervals, susp));
+        })();
+        return () => { active = false; };
+    }, [selectedAssetId]);
 
     // Close fleet filter on outside click
     useEffect(() => {
@@ -295,6 +321,15 @@ export const PredictPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* #2: Reliability Advisor — grounded, cited PM proposal for this asset */}
+                    <button
+                        onClick={() => setAdvisorOpen(true)}
+                        disabled={!selectedAssetId}
+                        title="Run the Reliability Advisor: real Weibull RUL + cost-justified PM proposal you can approve"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm transition-colors"
+                    >
+                        <Cpu size={16} /> Reliability Advisor
+                    </button>
                     {/* New Insight Button */}
                     <button
                         onClick={() => setShowNewInsight(true)}
@@ -604,8 +639,27 @@ export const PredictPage: React.FC = () => {
                             </div>
                         </button>
 
-                        {/* Right: Health gauge */}
+                        {/* Right: RUL (data-grounded when failure history exists) + Health gauge */}
                         <div className="flex items-center gap-5">
+                            {groundedRul?.method === 'weibull-mrl' && groundedRul.rulDays != null ? (
+                                <div className="text-right border-r border-slate-100 pr-5">
+                                    <p className="text-[9px] text-emerald-600 uppercase tracking-wider font-bold mb-1">RUL · data-grounded</p>
+                                    <div className="flex items-baseline gap-1 justify-end">
+                                        <span className={`text-2xl font-bold tabular-nums ${groundedRul.rulDays < 90 ? 'text-red-500' : 'text-slate-800'}`}>{groundedRul.rulDays}</span>
+                                        <span className="text-sm text-slate-400 font-medium">days</span>
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 mt-0.5" title={groundedRul.note}>Weibull MRL · not heuristic</p>
+                                </div>
+                            ) : rulEstimate?.rul_days ? (
+                                <div className="text-right border-r border-slate-100 pr-5">
+                                    <p className="text-[9px] text-amber-600 uppercase tracking-wider font-bold mb-1">RUL · heuristic</p>
+                                    <div className="flex items-baseline gap-1 justify-end">
+                                        <span className="text-2xl font-bold tabular-nums text-slate-500">{rulEstimate.rul_days.toFixed(0)}</span>
+                                        <span className="text-sm text-slate-400 font-medium">days</span>
+                                    </div>
+                                    <p className="text-[9px] text-slate-400 mt-0.5">Thin data — directional only</p>
+                                </div>
+                            ) : null}
                             <div className="text-right">
                                 <p className="text-[9px] text-slate-400 uppercase tracking-wider font-bold mb-1">Health Index</p>
                                 <div className="flex items-baseline gap-1">
@@ -934,6 +988,14 @@ export const PredictPage: React.FC = () => {
                         )}
                     </div>
                 </div>
+            )}
+
+            {/* #2: Reliability Advisor — condition triage → grounded, cited PM decision */}
+            {advisorOpen && selectedAssetId && (
+                <ReliabilityAdvisorModal
+                    asset={{ id: selectedAssetId, tag: selectedAsset?.tag || '', name: selectedAsset?.name || selectedAssetId }}
+                    onClose={() => setAdvisorOpen(false)}
+                />
             )}
         </div>
     );

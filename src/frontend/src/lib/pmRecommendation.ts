@@ -8,7 +8,7 @@
  * (if any) only narrates this; it never does the math. Human approves before
  * anything is created.
  */
-import { fitWeibull, weibullBLife, type WeibullFitResult } from '../eam/utils/weibull';
+import { fitWeibull, weibullBLife, meanResidualLifeHours, type WeibullFitResult } from '../eam/utils/weibull';
 
 export type FailurePattern = 'wear-out' | 'random' | 'infant-mortality' | 'insufficient';
 
@@ -46,6 +46,39 @@ export interface PMRecommendation {
 }
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0);
+
+/**
+ * Data-grounded RUL — replaces the heuristic "health × constant" RUL. Fits a
+ * censored Weibull to the asset's failure inter-arrivals, takes the current age
+ * as the running time since the last failure (the suspension), and returns the
+ * conditional mean residual life. Null when there isn't enough failure history.
+ */
+export interface GroundedRul {
+    rulDays: number | null;
+    ageDays: number;
+    beta: number | null;
+    eta: number | null;
+    method: 'weibull-mrl' | 'insufficient';
+    note: string;
+}
+
+export function groundedRulFromHistory(failureIntervalsHours: number[], suspensionsHours: number[]): GroundedRul {
+    const ageHours = Math.max(0, ...(suspensionsHours.length ? suspensionsHours : [0]));
+    const ageDays = Math.round(ageHours / 24);
+    const fit = fitWeibull((failureIntervalsHours || []).filter(t => t > 0), suspensionsHours || []);
+    if (!fit) {
+        return { rulDays: null, ageDays, beta: null, eta: null, method: 'insufficient', note: 'Not enough failure history for a data-grounded RUL — the heuristic estimate is directional only.' };
+    }
+    const mrlHours = meanResidualLifeHours(fit.beta, fit.eta, ageHours);
+    return {
+        rulDays: Math.max(0, Math.round(mrlHours / 24)),
+        ageDays,
+        beta: fit.beta,
+        eta: fit.eta,
+        method: 'weibull-mrl',
+        note: `Conditional mean residual life from a censored Weibull (β=${fit.beta}, η=${fit.eta}h), given ${ageDays}d since the last failure.`,
+    };
+}
 
 export function recommendPM(
     failureIntervalsHours: number[],
