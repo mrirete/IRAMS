@@ -24,6 +24,7 @@ import { useNavigate } from 'react-router-dom';
 import { evaluateReading, type AlarmLevel } from '../../lib/readingAlarm';
 import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
 import { evaluateMeterPMs, type MeterPM, type MeterReadingCtx, type MeterPMDue } from '../../lib/meterPM';
+import { computeReadingDue, summariseDue } from '../../lib/readingDue';
 
 interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
 
@@ -50,6 +51,7 @@ export const Readings: React.FC = () => {
     const [activeTab, setActiveTab] = useState<TabId>('entry');
     const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
     const [filterText, setFilterText] = useState('');
+    const [dueOnly, setDueOnly] = useState(false); // rounds view: show only assets with readings due
     // R-4: condition-alarm → one-tap WO
     const [alarmBreaches, setAlarmBreaches] = useState<BreachInfo[]>([]);
     const [raisingWO, setRaisingWO] = useState(false);
@@ -112,6 +114,42 @@ export const Readings: React.FC = () => {
     // PM (measuring points sit on equipment / maintainable items) and keeps the
     // list from being the whole asset register. Assets with points sort to the top
     // (the rounds list); the rest stay selectable so you can configure them.
+    // ── Rounds engine: which reading points are due, from last reading + cadence ──
+    const dueByDef = useMemo(() => {
+        const lastByDef = new Map<string, string>();
+        for (const l of logs) {
+            if (l.isActive === false) continue;
+            const prev = lastByDef.get(l.definitionId);
+            if (!prev || l.date > prev) lastByDef.set(l.definitionId, l.date);
+        }
+        const critById = new Map(assets.map(a => [a.id, a.criticality]));
+        const results = computeReadingDue(
+            definitions.filter(d => d.isActive).map(d => ({
+                definitionId: d.id, assetId: d.assetId,
+                criticality: critById.get(d.assetId), lastReadingDate: lastByDef.get(d.id) || null,
+            })),
+        );
+        return new Map(results.map(r => [r.definitionId, r]));
+    }, [logs, definitions, assets]);
+
+    const dueByAsset = useMemo(() => {
+        const m = new Map<string, { due: number; overdue: number; never: number }>();
+        for (const r of dueByDef.values()) {
+            const cur = m.get(r.assetId) || { due: 0, overdue: 0, never: 0 };
+            if (r.status === 'OVERDUE') cur.overdue++;
+            else if (r.status === 'NEVER') cur.never++;
+            else if (r.status === 'DUE') cur.due++;
+            m.set(r.assetId, cur);
+        }
+        return m;
+    }, [dueByDef]);
+
+    const dueSummary = useMemo(() => summariseDue([...dueByDef.values()]), [dueByDef]);
+    const assetIsDue = (id: string) => {
+        const d = dueByAsset.get(id);
+        return !!d && (d.due + d.overdue + d.never) > 0;
+    };
+
     const filteredAssets = useMemo(() => {
         const q = filterText.trim().toLowerCase();
         const hasPoints = (id: string) => definitions.some(d => d.assetId === id && d.isActive);
@@ -123,12 +161,18 @@ export const Readings: React.FC = () => {
             .filter(a => q
                 ? (a.name.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q))
                 : !NON_MAINTAINABLE_LEVELS.has((a.hierarchyLevel || '').toUpperCase()))
+            .filter(a => !dueOnly || assetIsDue(a.id))
             .sort((a, b) => {
+                // Rounds-first: overdue/never/due assets to the top, then by points, then tag.
+                const da = dueByAsset.get(a.id); const db = dueByAsset.get(b.id);
+                const dueScore = (x?: { due: number; overdue: number; never: number }) => x ? x.overdue * 100 + x.never * 10 + x.due : 0;
+                const byDue = dueScore(db) - dueScore(da);
+                if (byDue !== 0) return byDue;
                 const byPoints = (hasPoints(b.id) ? 1 : 0) - (hasPoints(a.id) ? 1 : 0);
                 if (byPoints !== 0) return byPoints;
                 return (a.tag || a.name).localeCompare(b.tag || b.name);
             });
-    }, [assets, definitions, filterText]);
+    }, [assets, definitions, filterText, dueOnly, dueByAsset]);
 
     const selectedAsset = assets.find(a => a.id === selectedAssetId);
 
@@ -519,18 +563,46 @@ export const Readings: React.FC = () => {
                         />
                     </div>
                 </div>
+                {/* Rounds bar — what's due to be read, criticality-driven cadence */}
+                {(dueSummary.overdue + dueSummary.due + dueSummary.never) > 0 && (
+                    <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between gap-2 bg-white">
+                        <div className="flex items-center gap-1.5 text-xs">
+                            <Clock size={13} className="text-slate-400" />
+                            {dueSummary.overdue > 0 && <span className="font-bold text-red-600">{dueSummary.overdue} overdue</span>}
+                            {dueSummary.due > 0 && <span className="font-semibold text-amber-600">{dueSummary.due} due</span>}
+                            {dueSummary.never > 0 && <span className="text-slate-500">{dueSummary.never} never read</span>}
+                        </div>
+                        <button
+                            onClick={() => setDueOnly(v => !v)}
+                            className={`text-[11px] font-semibold px-2 py-1 rounded-md border transition ${dueOnly ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+                            title="Show only assets with readings due (rounds worklist)"
+                        >
+                            {dueOnly ? 'Rounds: on' : 'Due only'}
+                        </button>
+                    </div>
+                )}
                 <div className="flex-1 overflow-y-auto">
+                    {filteredAssets.length === 0 && (
+                        <div className="p-8 text-center text-sm text-slate-400">
+                            {dueOnly ? 'No readings due right now — rounds are clear.' : 'No assets match.'}
+                        </div>
+                    )}
                     {filteredAssets.map(asset => {
                         const assetDefs = definitions.filter(d => d.assetId === asset.id);
+                        const due = dueByAsset.get(asset.id);
                         return (
                             <div
                                 key={asset.id}
                                 onClick={() => { setSelectedAssetId(asset.id); setActiveTab('entry'); }}
                                 className={`mobile-card ${selectedAssetId === asset.id ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`}
                             >
-                                <div className="flex justify-between items-start mb-1">
+                                <div className="flex justify-between items-start mb-1 gap-2">
                                     <span className="font-bold text-slate-900 text-sm">{asset.tag}</span>
-                                    {assetDefs.length > 0 && <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-bold">{assetDefs.length} Points</span>}
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                        {due && due.overdue > 0 && <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">{due.overdue} overdue</span>}
+                                        {due && due.overdue === 0 && due.due > 0 && <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">{due.due} due</span>}
+                                        {assetDefs.length > 0 && <span className="text-[10px] bg-slate-200 px-1.5 py-0.5 rounded text-slate-600 font-bold">{assetDefs.length} Pts</span>}
+                                    </div>
                                 </div>
                                 <p className="text-xs text-slate-500 truncate mb-2">{asset.name}</p>
                                 <div className="flex flex-wrap gap-1">

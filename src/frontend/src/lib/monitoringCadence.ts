@@ -12,7 +12,7 @@
  *
  * Pure and deterministic — no Math.random, no persistence. The UI narrates it.
  */
-export type Criticality = 'A' | 'B' | 'C';
+export type Criticality = 'A' | 'B' | 'C' | 'D';
 
 export interface CadenceInput {
     criticality?: string | null;
@@ -30,11 +30,11 @@ export interface CadenceResult {
     pfDriven: boolean;
 }
 
-const CRIT_DEFAULT_DAYS: Record<Criticality, number> = { A: 7, B: 30, C: 90 };
+const CRIT_DEFAULT_DAYS: Record<Criticality, number> = { A: 7, B: 30, C: 90, D: 180 };
 
 function normCriticality(c?: string | null): Criticality {
     const u = (c || '').toString().trim().toUpperCase();
-    return u === 'A' || u === 'B' || u === 'C' ? u : 'B';
+    return u === 'A' || u === 'B' || u === 'C' || u === 'D' ? u : 'B';
 }
 
 export function cadenceLabel(days: number): string {
