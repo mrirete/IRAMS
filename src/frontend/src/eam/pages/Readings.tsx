@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
     Search, Filter, Plus, Activity, Zap, Check, AlertTriangle,
     BarChart2, Clock, Calendar, RefreshCcw, Save, Trash2, LineChart as LineChartIcon,
-    AlertCircle, CheckCircle, XCircle, X, ChevronLeft
+    AlertCircle, CheckCircle, XCircle, X, ChevronLeft, ChevronRight, ChevronDown, List, Network
 } from 'lucide-react';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, AreaChart, Area
@@ -52,6 +52,8 @@ export const Readings: React.FC = () => {
     const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
     const [filterText, setFilterText] = useState('');
     const [dueOnly, setDueOnly] = useState(false); // rounds view: show only assets with readings due
+    const [viewMode, setViewMode] = useState<'list' | 'tree'>('list'); // list = rounds, tree = hierarchy
+    const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     // R-4: condition-alarm → one-tap WO
     const [alarmBreaches, setAlarmBreaches] = useState<BreachInfo[]>([]);
     const [raisingWO, setRaisingWO] = useState(false);
@@ -181,6 +183,45 @@ export const Readings: React.FC = () => {
                 return (a.tag || a.name).localeCompare(b.tag || b.name);
             });
     }, [assets, definitions, filterText, dueOnly, dueByAsset]);
+
+    // ── Hierarchy tree (from parentId) for the Tree view mode ──
+    const tree = useMemo(() => {
+        const q = filterText.trim().toLowerCase();
+        const pool = assets.filter(a => !NON_MAINTAINABLE_LEVELS.has((a.hierarchyLevel || '').toUpperCase()));
+        const ids = new Set(pool.map(a => a.id));
+        const childrenOf = new Map<string, Asset[]>();
+        const roots: Asset[] = [];
+        for (const a of pool) {
+            if (a.parentId && ids.has(a.parentId)) {
+                const arr = childrenOf.get(a.parentId) || [];
+                arr.push(a); childrenOf.set(a.parentId, arr);
+            } else roots.push(a);
+        }
+        const cmp = (a: Asset, b: Asset) => (a.tag || a.name).localeCompare(b.tag || b.name);
+        roots.sort(cmp);
+        childrenOf.forEach(arr => arr.sort(cmp));
+
+        const matches = (a: Asset) => {
+            const okSearch = !q || a.name.toLowerCase().includes(q) || a.tag.toLowerCase().includes(q);
+            const okDue = !dueOnly || (() => { const d = dueByAsset.get(a.id); return !!d && (d.due + d.overdue + d.never) > 0; })();
+            return okSearch && okDue;
+        };
+        // A node is visible if it matches, or any descendant is visible.
+        const visible = new Set<string>();
+        const visit = (a: Asset): boolean => {
+            let anyChild = false;
+            for (const k of (childrenOf.get(a.id) || [])) if (visit(k)) anyChild = true;
+            const vis = matches(a) || anyChild;
+            if (vis) visible.add(a.id);
+            return vis;
+        };
+        roots.forEach(visit);
+        return { roots, childrenOf, visible };
+    }, [assets, filterText, dueOnly, dueByAsset]);
+
+    const toggleCollapse = (id: string) => setCollapsed(prev => {
+        const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n;
+    });
 
     const selectedAsset = assets.find(a => a.id === selectedAssetId);
 
@@ -566,11 +607,17 @@ export const Readings: React.FC = () => {
         <div className="flex h-[calc(100vh-6rem)] gap-4 sm:gap-6">
             {/* Sidebar List */}
             <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedAssetId ? 'hidden sm:flex sm:w-1/3' : 'w-full sm:w-1/3'}`}>
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center">
-                    <h2 className="font-bold text-slate-900">Assets</h2>
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center gap-2">
+                    <div className="flex items-center gap-2">
+                        <h2 className="font-bold text-slate-900">Assets</h2>
+                        <div className="flex border border-slate-200 rounded-lg overflow-hidden">
+                            <button onClick={() => setViewMode('list')} className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-400 hover:text-slate-600'}`} title="Rounds list (due-sorted)"><List size={14} /></button>
+                            <button onClick={() => setViewMode('tree')} className={`p-1.5 transition-colors ${viewMode === 'tree' ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-400 hover:text-slate-600'}`} title="Hierarchy (equipment → components)"><Network size={14} /></button>
+                        </div>
+                    </div>
                     <button
                         onClick={() => setSelectedAssetId(null)} // Go to Batch Entry
-                        className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 font-medium"
+                        className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 font-medium flex-shrink-0"
                     >
                         Entry Sheet
                     </button>
@@ -607,12 +654,27 @@ export const Readings: React.FC = () => {
                     </div>
                 )}
                 <div className="flex-1 overflow-y-auto">
-                    {filteredAssets.length === 0 && (
+                    {viewMode === 'tree' && (() => {
+                        const visibleRoots = tree.roots.filter(r => tree.visible.has(r.id));
+                        const force = !!filterText.trim() || dueOnly;
+                        if (visibleRoots.length === 0) return (
+                            <div className="p-8 text-center text-sm text-slate-400">{dueOnly ? 'No readings due right now — rounds are clear.' : 'No assets match.'}</div>
+                        );
+                        return visibleRoots.map(r => (
+                            <AssetTreeNode
+                                key={r.id} asset={r} depth={0} childrenOf={tree.childrenOf} visible={tree.visible}
+                                selectedId={selectedAssetId} forceExpand={force} collapsed={collapsed}
+                                onToggle={toggleCollapse} onSelect={(id) => { setSelectedAssetId(id); setActiveTab('entry'); }}
+                                dueOf={(id) => dueByAsset.get(id)} pointCountOf={(id) => definitions.filter(d => d.assetId === id && d.isActive).length}
+                            />
+                        ));
+                    })()}
+                    {viewMode === 'list' && filteredAssets.length === 0 && (
                         <div className="p-8 text-center text-sm text-slate-400">
                             {dueOnly ? 'No readings due right now — rounds are clear.' : 'No assets match.'}
                         </div>
                     )}
-                    {filteredAssets.map(asset => {
+                    {viewMode === 'list' && filteredAssets.map(asset => {
                         const assetDefs = definitions.filter(d => d.assetId === asset.id);
                         const due = dueByAsset.get(asset.id);
                         return (
@@ -1510,6 +1572,55 @@ const RelatedWork: React.FC<{ assetId: string; pms: any[]; onOpenWO: (id: string
                     </div>
                 )}
             </div>
+        </div>
+    );
+};
+
+// ── Asset hierarchy tree node (Tree view) ───────────────────────────────────
+// Renders an asset and, indented beneath it, its sub-components — so measuring
+// points read on a location in the hierarchy (SAP PM / Maximo style), while the
+// List view keeps the due-sorted rounds worklist.
+const AssetTreeNode: React.FC<{
+    asset: Asset; depth: number;
+    childrenOf: Map<string, Asset[]>; visible: Set<string>;
+    selectedId: string | null; forceExpand: boolean; collapsed: Set<string>;
+    onToggle: (id: string) => void; onSelect: (id: string) => void;
+    dueOf: (id: string) => { due: number; overdue: number; never: number } | undefined;
+    pointCountOf: (id: string) => number;
+}> = ({ asset, depth, childrenOf, visible, selectedId, forceExpand, collapsed, onToggle, onSelect, dueOf, pointCountOf }) => {
+    const kids = (childrenOf.get(asset.id) || []).filter(k => visible.has(k.id));
+    const hasKids = kids.length > 0;
+    const expanded = forceExpand || !collapsed.has(asset.id);
+    const due = dueOf(asset.id);
+    const pts = pointCountOf(asset.id);
+    const isSel = selectedId === asset.id;
+    return (
+        <div>
+            <div
+                onClick={() => onSelect(asset.id)}
+                style={{ paddingLeft: 12 + depth * 16 }}
+                className={`flex items-center gap-1.5 py-2 pr-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${isSel ? 'bg-blue-50 border-l-4 border-l-blue-600' : 'border-l-4 border-l-transparent'}`}
+            >
+                {hasKids ? (
+                    <button onClick={e => { e.stopPropagation(); onToggle(asset.id); }} className="p-0.5 text-slate-400 hover:text-slate-600 flex-shrink-0">
+                        {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                ) : <span className="w-[18px] flex-shrink-0" />}
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-slate-900 text-[13px] truncate">{asset.tag}</span>
+                        {pts > 0 && <span className="text-[9px] bg-slate-200 px-1 py-0.5 rounded text-slate-600 font-bold flex-shrink-0">{pts}</span>}
+                        {due && due.overdue > 0 && <span className="text-[9px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-bold flex-shrink-0">{due.overdue}!</span>}
+                        {due && due.overdue === 0 && due.due > 0 && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded font-bold flex-shrink-0">{due.due}</span>}
+                    </div>
+                    <div className="text-[11px] text-slate-500 truncate">{asset.name}</div>
+                </div>
+            </div>
+            {expanded && kids.map(k => (
+                <AssetTreeNode key={k.id} asset={k} depth={depth + 1} childrenOf={childrenOf} visible={visible}
+                    selectedId={selectedId} forceExpand={forceExpand} collapsed={collapsed}
+                    onToggle={onToggle} onSelect={onSelect} dueOf={dueOf} pointCountOf={pointCountOf} />
+            ))}
         </div>
     );
 };
