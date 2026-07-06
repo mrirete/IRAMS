@@ -137,6 +137,8 @@ export const Readings: React.FC = () => {
             definitions.filter(d => d.isActive).map(d => ({
                 definitionId: d.id, assetId: d.assetId,
                 criticality: critById.get(d.assetId), lastReadingDate: lastByDef.get(d.id) || null,
+                monitoringFrequencyDays: d.monitoringFrequencyDays ?? null,
+                pfIntervalDays: d.pfIntervalDays ?? null,
             })),
         );
         return new Map(results.map(r => [r.definitionId, r]));
@@ -262,6 +264,7 @@ export const Readings: React.FC = () => {
     const handleCreateDefinition = async (payload: {
         assetId: string; name: string; category: 'METER' | 'CONDITION'; unit: string;
         minCritical?: number | null; minWarning?: number | null; maxWarning?: number | null; maxCritical?: number | null;
+        monitoringFrequencyDays?: number | null; pfIntervalDays?: number | null;
     }) => {
         if (!canCreate) {
             showToast('Access Denied: You do not have permission to add reading points.', 'error');
@@ -279,6 +282,8 @@ export const Readings: React.FC = () => {
             minWarning: payload.minWarning ?? null,
             maxWarning: payload.maxWarning ?? null,
             maxCritical: payload.maxCritical ?? null,
+            monitoringFrequencyDays: payload.monitoringFrequencyDays ?? null,
+            pfIntervalDays: payload.pfIntervalDays ?? null,
             active: true,
         };
         try {
@@ -1635,6 +1640,7 @@ const AddReadingPointModal: React.FC<{
     onCreate: (p: {
         assetId: string; name: string; category: 'METER' | 'CONDITION'; unit: string;
         minCritical?: number | null; minWarning?: number | null; maxWarning?: number | null; maxCritical?: number | null;
+        monitoringFrequencyDays?: number | null; pfIntervalDays?: number | null;
     }) => void | Promise<void>;
 }> = ({ asset, onClose, onCreate }) => {
     const [name, setName] = useState('');
@@ -1644,6 +1650,8 @@ const AddReadingPointModal: React.FC<{
     const [minWarning, setMinWarning] = useState('');
     const [maxWarning, setMaxWarning] = useState('');
     const [maxCritical, setMaxCritical] = useState('');
+    const [freq, setFreq] = useState('');   // monitoring interval (days) — '' = auto from criticality
+    const [pf, setPf] = useState('');        // P-F interval (days)
     const [saving, setSaving] = useState(false);
 
     if (!asset) return null;
@@ -1664,6 +1672,8 @@ const AddReadingPointModal: React.FC<{
             assetId: asset.id, name, category, unit,
             minCritical: num(minCritical), minWarning: num(minWarning),
             maxWarning: num(maxWarning), maxCritical: num(maxCritical),
+            monitoringFrequencyDays: freq ? Number(freq) : null,
+            pfIntervalDays: pf.trim() ? Number(pf) : null,
         });
         setSaving(false);
     };
@@ -1726,6 +1736,29 @@ const AddReadingPointModal: React.FC<{
                         )}
                         <p className="text-[11px] text-slate-400 mt-1.5">A reading outside the warning band raises a warning alarm; outside critical raises a critical alarm and can auto-raise corrective work.</p>
                     </div>
+
+                    {/* Per-point cadence (0176) */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Monitoring frequency</label>
+                            <select value={freq} onChange={e => setFreq(e.target.value)}
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none">
+                                <option value="">Auto (from criticality)</option>
+                                <option value="1">Daily</option>
+                                <option value="7">Weekly</option>
+                                <option value="14">Fortnightly</option>
+                                <option value="30">Monthly</option>
+                                <option value="90">Quarterly</option>
+                                <option value="180">Half-yearly</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">P-F interval (days)</label>
+                            <input type="number" value={pf} onChange={e => setPf(e.target.value)} placeholder="optional"
+                                className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-blue-500 outline-none" />
+                        </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400 -mt-1">Frequency drives the rounds "due" list. With no explicit frequency, a P-F interval sets it to half the P-F (RCM); otherwise the asset criticality does.</p>
                 </div>
 
                 <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2 flex-shrink-0">

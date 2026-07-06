@@ -422,6 +422,10 @@ export interface ReadingDefinition {
   minCritical?: number;
   maxCritical?: number;
 
+  // Per-point cadence (0176). NULL = derive from asset criticality.
+  monitoringFrequencyDays?: number | null;
+  pfIntervalDays?: number | null;
+
   isActive: boolean;
   lastReadingValue?: number;
   lastReadingDate?: string;

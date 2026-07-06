@@ -15,8 +15,12 @@ export type DueStatus = 'NEVER' | 'OVERDUE' | 'DUE' | 'OK';
 export interface DuePointInput {
     definitionId: string;
     assetId: string;
-    /** Asset criticality (A/B/C/D) — drives the default interval. */
+    /** Asset criticality (A/B/C/D) — the fallback interval when the point has none. */
     criticality?: string | null;
+    /** Per-point monitoring interval in days (0176). Overrides criticality. */
+    monitoringFrequencyDays?: number | null;
+    /** Per-point P-F interval in days (0176). Cadence = half of it when no explicit frequency. */
+    pfIntervalDays?: number | null;
     /** ISO date of the most recent reading on this point, if any. */
     lastReadingDate?: string | null;
 }
@@ -42,7 +46,11 @@ function dayStart(d: string | Date): number {
 export function computeReadingDue(inputs: DuePointInput[], today: Date = new Date()): DuePointResult[] {
     const todayMs = dayStart(today);
     return inputs.map(p => {
-        const intervalDays = recommendMonitoringCadence({ criticality: p.criticality }).intervalDays;
+        // Precedence: explicit per-point frequency → P-F-derived (via cadence lib,
+        // which halves P-F and caps by criticality) → asset-criticality default.
+        const intervalDays = p.monitoringFrequencyDays && p.monitoringFrequencyDays > 0
+            ? p.monitoringFrequencyDays
+            : recommendMonitoringCadence({ criticality: p.criticality, pfIntervalDays: p.pfIntervalDays }).intervalDays;
         if (!p.lastReadingDate) {
             return { definitionId: p.definitionId, assetId: p.assetId, status: 'NEVER', intervalDays, nextDueDate: null, daysOverdue: null };
         }

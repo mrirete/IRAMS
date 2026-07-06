@@ -32,6 +32,20 @@ describe('computeReadingDue', () => {
         expect(r.daysOverdue).toBe(36);
     });
 
+    it('per-point monitoring frequency overrides the criticality default', () => {
+        // C criticality would be 90d; explicit weekly (7d) makes a 16-day-old reading overdue.
+        const [r] = computeReadingDue([p({ criticality: 'C', monitoringFrequencyDays: 7, lastReadingDate: '2026-06-20' })], TODAY);
+        expect(r.intervalDays).toBe(7);
+        expect(r.status).toBe('OVERDUE');
+    });
+
+    it('uses half the P-F interval when no explicit frequency is set', () => {
+        // P-F 20d → cadence 10d; a 16-day-old reading is overdue (criticality alone (C=90) would be OK).
+        const [r] = computeReadingDue([p({ criticality: 'C', pfIntervalDays: 20, lastReadingDate: '2026-06-20' })], TODAY);
+        expect(r.intervalDays).toBe(10);
+        expect(r.status).toBe('OVERDUE');
+    });
+
     it('interval scales with criticality (A weekly is stricter than C quarterly)', () => {
         const last = '2026-06-20'; // 16 days ago
         const [a] = computeReadingDue([p({ criticality: 'A', lastReadingDate: last })], TODAY); // 7d → overdue

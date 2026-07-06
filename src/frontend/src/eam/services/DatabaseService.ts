@@ -2116,13 +2116,15 @@ export class DatabaseService {
             minCritical: row.min_critical,
             minWarning: row.min_warning,
             maxWarning: row.max_warning,
-            maxCritical: row.max_critical
+            maxCritical: row.max_critical,
+            monitoringFrequencyDays: row.monitoring_frequency_days ?? null,
+            pfIntervalDays: row.pf_interval_days ?? null
         }));
     }
 
     public async addReadingDefinition(def: any): Promise<any> {
         // Map UI -> DB
-        const row = {
+        const row: any = {
             asset_id: def.assetId,
             reading_type_code: def.readingTypeCode,
             name: def.name,
@@ -2132,10 +2134,20 @@ export class DatabaseService {
             min_warning: def.minWarning,
             max_warning: def.maxWarning,
             max_critical: def.maxCritical,
-            is_active: true
+            is_active: true,
+            // Per-point cadence (0176). Harmless when null; stripped on retry below
+            // if the migration hasn't been applied yet.
+            monitoring_frequency_days: def.monitoringFrequencyDays ?? null,
+            pf_interval_days: def.pfIntervalDays ?? null,
         };
 
-        const { data, error } = await supabase.from('reading_definitions').insert(row).select().single();
+        let { data, error } = await supabase.from('reading_definitions').insert(row).select().single();
+        // Graceful degradation: if 0176 isn't applied yet, the new columns don't
+        // exist — retry without them so the add-point flow still works.
+        if (error && /monitoring_frequency_days|pf_interval_days|PGRST204|column .* does not exist/i.test(error.message || '')) {
+            const { monitoring_frequency_days, pf_interval_days, ...legacy } = row;
+            ({ data, error } = await supabase.from('reading_definitions').insert(legacy).select().single());
+        }
         if (error) throw new Error(error.message);
 
         return { ...def, id: data.id };
