@@ -16,6 +16,7 @@ import { CreatePMModal } from '../components/modals/CreatePMModal';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { DatabaseService } from '../services/DatabaseService';
+import { buildPMStrategy } from '../lib/pmStrategy';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { NotificationService } from '../services/NotificationService';
 import { ProcedureBuilder } from '../components/ProcedureBuilder';
@@ -344,30 +345,26 @@ export const RecurringWork: React.FC = () => {
         if (!dupAssetId) { showToast('Cannot duplicate: this strategy has no assigned asset.', 'error'); return; }
         setDuplicating(true);
         try {
-            const newPM: any = {
-                id: crypto.randomUUID(),
-                code: `PM-${Math.floor(10000 + Math.random() * 90000)}`,
-                title: (selectedJob.description || 'PM Strategy') + ' (Copy)', // recurring_work.title is NOT NULL
+            const newPM = buildPMStrategy({
+                title: (selectedJob.description || 'PM Strategy') + ' (Copy)',
                 description: (selectedJob.description || '') + ' (Copy)',
-                status: 'ACTIVE',
-                asset_id: dupAssetId,
-                schedule_type: selectedJob.scheduleType,
-                frequency_interval: selectedJob.frequencyInterval,
-                frequency_unit: selectedJob.frequencyUnit,
-                lead_time_days: selectedJob.leadTimeDays,
-                job_type: selectedJob.jobType,
-                priority_code: selectedJob.priority,
-                est_duration: selectedJob.estDuration,
-                est_downtime: selectedJob.estDowntime,
-                created_by: 'system',
-                active: true,
+                assetId: dupAssetId,
+                scheduleType: selectedJob.scheduleType,
+                frequencyInterval: selectedJob.frequencyInterval,
+                frequencyUnit: selectedJob.frequencyUnit,
+                leadTimeDays: selectedJob.leadTimeDays,
+                jobType: selectedJob.jobType,
+                priorityCode: selectedJob.priority,
+                estDuration: selectedJob.estDuration,
+                estDowntime: selectedJob.estDowntime,
+                createdBy: 'system',
                 templates: {
                     tasks: selectedJob.tasks || [],
                     jsa: selectedJob.jsa || null,
                     labor: selectedJob.labor || [],
                     inventory: selectedJob.inventory || [],
                 },
-            };
+            });
             await DatabaseService.getInstance().createPM(newPM);
             showToast('Strategy duplicated successfully', 'success');
             await loadStrategies();
@@ -592,21 +589,20 @@ export const RecurringWork: React.FC = () => {
                 const importAssetId = row['assettag'] ? dbAssets.find(a => a.tag === row['assettag'])?.id : undefined;
                 if (!importAssetId) throw new Error(`asset tag "${row['assettag'] || '(blank)'}" not found`);
                 const importTitle = row['title'] || row['jobdescription'] || row['description'] || row['code'] || 'Imported PM';
-                const payload: any = {
-                    id: crypto.randomUUID(),
+                const payload = buildPMStrategy({
                     code: row['code'] || `PM-${Date.now()}-${imported}`,
                     title: importTitle,
                     description: row['description'] || row['jobdescription'] || row['title'] || 'Imported PM',
                     status: (row['status'] || 'ACTIVE').toUpperCase(),
-                    schedule_type: (row['scheduletype'] || 'TIME').toUpperCase(),
-                    frequency_interval: parseInt(row['frequencyinterval'] || '1') || 1,
-                    frequency_unit: (row['frequencyunit'] || 'months').toLowerCase(),
-                    job_type: row['jobtype'] || 'Preventive',
-                    priority_code: row['priority'] || 'MED',
-                    est_duration: parseFloat(row['estduration'] || '0') || 0,
-                    est_downtime: parseFloat(row['estdowntime'] || '0') || 0,
-                    asset_id: importAssetId,
-                };
+                    assetId: importAssetId,
+                    scheduleType: (row['scheduletype'] || 'TIME').toUpperCase(),
+                    frequencyInterval: parseInt(row['frequencyinterval'] || '1') || 1,
+                    frequencyUnit: (row['frequencyunit'] || 'months').toLowerCase(),
+                    jobType: row['jobtype'] || 'Preventive',
+                    priorityCode: row['priority'] || 'MED',
+                    estDuration: parseFloat(row['estduration'] || '0') || 0,
+                    estDowntime: parseFloat(row['estdowntime'] || '0') || 0,
+                });
                 await db.createPM(payload);
                 imported++;
             } catch (e: any) {

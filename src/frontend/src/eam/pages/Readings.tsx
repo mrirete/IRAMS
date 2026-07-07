@@ -26,6 +26,7 @@ import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
 import { evaluateMeterPMs, type MeterPM, type MeterReadingCtx, type MeterPMDue } from '../../lib/meterPM';
 import { computeReadingDue, summariseDue } from '../../lib/readingDue';
 import { RaiseWorkModal, type RaiseKind } from '../components/RaiseWorkModal';
+import { buildWorkOrder } from '../lib/workOrder';
 
 interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
 
@@ -532,14 +533,14 @@ export const Readings: React.FC = () => {
 
     // Shared corrective-WO creator from a condition breach (used by one-tap + auto).
     const createWOForBreach = (b: BreachInfo, auto: boolean) =>
-        DatabaseService.getInstance().createWorkOrder({
+        DatabaseService.getInstance().createWorkOrder(buildWorkOrder({
             title: `Investigate ${b.defName} ${b.level.toLowerCase()} alarm on ${b.assetName}`,
             description: `Condition alarm: ${b.defName} = ${b.value}${b.unit ? ' ' + b.unit : ''} (${b.detail}). ${auto ? 'Auto-raised on critical breach from condition monitoring.' : 'Raised from readings.'}`,
-            asset_id: b.assetId,
+            assetId: b.assetId,
             type: 'CM',
             status: 'OPEN',
-            priority_code: b.level === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
-        }, profile?.username || profile?.fullName || 'user');
+            priorityCode: b.level === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
+        }), profile?.username || profile?.fullName || 'user');
 
     // R-4: one-tap corrective work order from a condition alarm.
     const raiseWOFromAlarm = async (b: BreachInfo) => {

@@ -7,6 +7,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, FileText, Wrench, Clock, Save, Loader2, AlertTriangle, Users } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
+import { buildWorkOrder } from '../lib/workOrder';
+import { buildPMStrategy } from '../lib/pmStrategy';
 import { useToast } from '../contexts/ToastContext';
 import { useNavigate } from 'react-router-dom';
 import type { Asset, WorkCenter } from '../types';
@@ -67,11 +69,10 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
         const now = new Date().toISOString();
         try {
             if (kind === 'WO') {
-                const wo = await db.createWorkOrder({
-                    title, description, type: workType, status: 'OPEN',
-                    asset_id: asset.id, priority_code: priority,
-                    work_center_id: workCenterId || null,
-                }, actor);
+                const wo = await db.createWorkOrder(buildWorkOrder({
+                    title, description, assetId: asset.id, type: workType,
+                    priorityCode: priority, status: 'OPEN', workCenterId: workCenterId || null,
+                }), actor);
                 showToast('Work order raised.', 'success');
                 onClose();
                 if ((wo as any)?.id) navigate(`/work-orders/${(wo as any).id}`);
@@ -94,21 +95,13 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 if ((req as any)?.id) navigate('/requests');
             } else {
                 const days = scheduleType === 'TIME' ? (unitToDays[freqUnit] || 30) * interval : 0;
-                await db.createPM({
-                    id: crypto.randomUUID(),
-                    code: `PM-${Date.now().toString(36).toUpperCase()}`,
-                    title, description, status: 'ACTIVE',
-                    asset_id: asset.id,
-                    schedule_type: scheduleType,
-                    frequency_interval: interval,
-                    frequency_unit: freqUnit,
-                    job_type: 'PM',
-                    priority_code: priority,
-                    lead_time_days: 7, est_duration: 0, est_downtime: 0,
-                    active: true, created_by: requesterId || null,
-                    work_center_id: workCenterId || null,
-                    next_due_date: new Date(Date.now() + days * 86400000).toISOString(),
-                } as any);
+                await db.createPM(buildPMStrategy({
+                    title, description, assetId: asset.id,
+                    scheduleType, frequencyInterval: interval, frequencyUnit: freqUnit,
+                    priorityCode: priority, workCenterId: workCenterId || null,
+                    createdBy: requesterId || null,
+                    nextDueDate: new Date(Date.now() + days * 86400000).toISOString(),
+                }));
                 showToast('PM strategy created.', 'success');
                 onClose();
                 navigate('/recurring-work');

@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { MOCK_WORK_ORDERS, MOCK_CONTACTS, MOCK_ASSETS, MOCK_RECURRING_JOBS, MOCK_DICTIONARIES } from '../constants';
 import { WorkOrder, WorkOrderStatus, RecurringJob, Asset, DictionaryEntry, Contact } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
+import { buildWorkOrder } from '../lib/workOrder';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { AssignmentModal } from '../components/scheduling/AssignmentModal';
@@ -773,24 +774,22 @@ export const Scheduling: React.FC = () => {
         const rj = proj.originalData.job as RecurringJob;
 
         try {
-            const woPayload = {
-                wo_number: `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
+            const woPayload = buildWorkOrder({
+                woNumber: `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`,
                 title: rj.jobDescription || rj.description,
                 description: rj.jobDescription || rj.description,
                 status: 'SCHED', // Auto-set to SCHED since we have a date
                 type: rj.jobType || 'PM',
-                priority_code: rj.priority || 'MEDIUM',
-                asset_id: proj.originalData.assetId,
-                date_due_start: newDate,
-                due_date: newDate,
-                est_duration: rj.estDuration || 0,
-                recurring_work_id: rj.id,
-                cost_frozen: false,
-                frozen_labor_cost: 0,
-                frozen_material_cost: 0,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-            };
+                priorityCode: rj.priority || 'MEDIUM',
+                assetId: proj.originalData.assetId,
+                dateDueStart: newDate,
+                dueDate: newDate,
+                estDuration: rj.estDuration || 0,
+                recurringWorkId: rj.id,
+                costFrozen: false,
+                frozenLaborCost: 0,
+                frozenMaterialCost: 0,
+            });
 
             const createdWO = await db.createWorkOrder(woPayload, 'scheduler');
             showToast(`PM ${rj.code} committed as ${createdWO.wo_number} on ${new Date(newDate).toLocaleDateString()}`, 'success');

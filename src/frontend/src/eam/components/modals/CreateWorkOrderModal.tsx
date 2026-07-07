@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { X, CheckCircle, Search, Calendar, AlertTriangle, Shield, ShieldAlert } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { DatabaseService } from '../../services/DatabaseService';
+import { buildWorkOrder } from '../../lib/workOrder';
 import { FinOpsService, WarrantyCheckResult, Warranty } from '../../services/FinOpsService';
 import { Asset, WorkOrder, WorkOrderStatus, WorkOrderType } from '../../types';
 import { SearchableDropdown } from '../ui/SearchableDropdown';
@@ -96,22 +97,20 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
             const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
             const validActorUuid = UUID_RE.test(actorId) ? actorId : null;
 
-            // STRICT SCHEMA MAPPING (Matches 'work_orders' table)
-            const newWO: any = {
-                wo_number: woNumber,
+            const newWO = buildWorkOrder({
+                woNumber,
                 title: formData.title,
                 description: formData.title, // Default description to title
                 status: WorkOrderStatus.OPEN,
-                type: formData.type, // DB column is 'type' (TEXT)
-                priority_code: formData.priority, // DB column is 'priority_code'
-                asset_id: formData.assetId,
-                assigned_to: null,
-                cost_center_id: formData.costCenterId || null,
-                created_by: validActorUuid,
-                // Warranty integration (G1, G8)
-                warranty_flag: warrantyCheck?.underWarranty || false,
-                warranty_id: warrantyCheck?.underWarranty ? (selectedWarrantyId || warrantyCheck.warranty?.id) : null,
-            };
+                type: formData.type,
+                priorityCode: formData.priority,
+                assetId: formData.assetId,
+                assignedTo: null,
+                costCenterId: formData.costCenterId || null,
+                createdBy: validActorUuid,
+                warrantyFlag: warrantyCheck?.underWarranty || false,
+                warrantyId: warrantyCheck?.underWarranty ? (selectedWarrantyId || warrantyCheck.warranty?.id) : null,
+            });
 
             await DatabaseService.getInstance().createWorkOrder(newWO, actorId || 'unknown');
 

@@ -14,6 +14,7 @@ import {
     Calendar, Clock, Shield, Info, Loader2,
 } from 'lucide-react';
 import { DatabaseService } from '../../eam/services/DatabaseService';
+import { buildPMStrategy } from '../../eam/lib/pmStrategy';
 
 // ─── Props ──────────────────────────────────────────────────
 export interface WeibullPMData {
@@ -126,29 +127,19 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
             const cls = data.classAssets && data.classAssets.length ? data.classAssets : null;
             // Map the modal's frequency unit to the recurring_work convention.
             const FREQ_UNIT: Record<string, string> = { HOURS: 'Hours', DAYS: 'Days', WEEKS: 'Weeks', MONTHS: 'Months' };
-            const createdPM = await DatabaseService.getInstance().createPM({
-                id: crypto.randomUUID(),
-                code: `PM-${Math.floor(10000 + Math.random() * 90000)}`,
+            const createdPM = await DatabaseService.getInstance().createPM(buildPMStrategy({
                 title,
                 description,
-                status: 'ACTIVE',
                 // Class PM: representative asset + assigned_assets across the whole class.
-                asset_id: cls ? cls[0].id : data.asset.id,
-                assigned_assets: cls ? cls.map(a => ({ assetId: a.id, lastCompletedDate: '', lastReadingValue: 0 })) : undefined,
-                // Canonical NOT-NULL recurring_work columns (so the PM inserts AND the
-                // generator can schedule it — the old frequency_type/interval/job_type_code
-                // were non-columns and omitted the required fields).
-                schedule_type: 'TIME',
-                frequency_interval: intervalValue,
-                frequency_unit: FREQ_UNIT[frequencyType] || 'Months',
-                lead_time_days: 7,
-                job_type: 'PM',
-                priority_code: priorityCode,
-                est_duration: 0,
-                est_downtime: 0,
-                active: true,
-                next_due_date: nextDueDate,
-            });
+                assetId: cls ? cls[0].id : data.asset.id,
+                assignedAssets: cls ? cls.map(a => ({ assetId: a.id, lastCompletedDate: '', lastReadingValue: 0 })) : undefined,
+                scheduleType: 'TIME',
+                frequencyInterval: intervalValue,
+                frequencyUnit: FREQ_UNIT[frequencyType] || 'Months',
+                jobType: 'PM',
+                priorityCode: priorityCode,
+                nextDueDate,
+            }));
             setSuccess(true);
             setTimeout(() => {
                 onSuccess?.(createdPM?.id, title);

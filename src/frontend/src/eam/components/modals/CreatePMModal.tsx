@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, AlertTriangle, Clock, Hash } from 'lucide-react';
 import { DatabaseService } from '../../services/DatabaseService';
+import { buildPMStrategy } from '../../lib/pmStrategy';
 import { Asset, WorkOrderStatus } from '../../types';
 import { SearchableDropdown } from '../ui/SearchableDropdown';
 import { useToast } from '../../contexts/ToastContext';
@@ -85,26 +86,20 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
 
         setSubmitting(true);
         try {
-            const newPM = {
-                id: crypto.randomUUID(),
-                code: `PM-${Math.floor(10000 + Math.random() * 90000)}`,
+            const newPM = buildPMStrategy({
                 title: formData.title,
                 description: formData.description,
-                status: 'ACTIVE',
-                asset_id: formData.assetId,
-                schedule_type: formData.scheduleType,
-                frequency_interval: formData.interval,
-                frequency_unit: formData.frequencyUnit,
-                lead_time_days: formData.leadTimeDays,
-                job_type: formData.type,
-                priority_code: formData.priority,
-                work_center_id: formData.workCenterId || null,
-                est_duration: 0,
-                est_downtime: 0,
-                created_by: currentUser,
-                active: true,
-                next_due_date: new Date(Date.now() + (formData.interval * 30 * 24 * 60 * 60 * 1000)).toISOString() // Rough approx for demo
-            };
+                assetId: formData.assetId,
+                scheduleType: formData.scheduleType,
+                frequencyInterval: formData.interval,
+                frequencyUnit: formData.frequencyUnit,
+                leadTimeDays: formData.leadTimeDays,
+                jobType: formData.type,
+                priorityCode: formData.priority,
+                workCenterId: formData.workCenterId || null,
+                createdBy: currentUser || null,
+                nextDueDate: new Date(Date.now() + (formData.interval * 30 * 24 * 60 * 60 * 1000)).toISOString(),
+            });
 
             await DatabaseService.getInstance().createPM(newPM);
             showToast("Strategy created successfully", 'success');

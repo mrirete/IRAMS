@@ -45,6 +45,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 
 import { DatabaseService } from '../services/DatabaseService';
+import { buildWorkOrder } from '../lib/workOrder';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { aiEngine, type JSAHazardSuggestion } from '../services/AIAnalysisEngine';
 import { SignaturePad } from '../components/ui/SignaturePad';
@@ -1479,17 +1480,17 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 ].filter(Boolean).join('\n');
 
                 try {
-                    const newWO = await DatabaseService.getInstance().createWorkOrder({
-                        wo_number: `WO-FU-${Date.now().toString(36).toUpperCase()}`,
+                    const newWO = await DatabaseService.getInstance().createWorkOrder(buildWorkOrder({
+                        woNumber: `WO-FU-${Date.now().toString(36).toUpperCase()}`,
                         title: followUpTitle,
                         description: followUpDesc,
                         type: 'CM',
                         status: 'OPEN',
-                        priority_code: followUpPriority,
-                        asset_id: localJob.assetId,
-                        parent_wo_id: localJob.id,
-                        created_by: user?.id || 'unknown'
-                    }, user?.id || 'unknown');
+                        priorityCode: followUpPriority,
+                        assetId: localJob.assetId!, // a work order always has an asset (asset_id NOT NULL)
+                        parentWoId: localJob.id,
+                        createdBy: user?.id || null,
+                    }), user?.id || 'unknown');
 
                     const woNum = newWO?.wo_number || newWO?.id || 'NEW';
                     message += `\n\nFollow-up Corrective WO ${woNum} created (Priority: ${followUpPriority}).`;
