@@ -8,6 +8,8 @@ import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
 import { ScrollTabStrip } from '../eam/components/ui';
 import predictionService from '../eam/services/PredictionService';
 import { DatabaseService } from '../eam/services/DatabaseService';
+import { RaiseWorkModal } from '../eam/components/RaiseWorkModal';
+import { useAuth } from '../eam/contexts/AuthContext';
 import type { FleetAssetHealth } from '../types/intelligence';
 import { supabase } from '../eam/lib/supabase';
 import { failureIntervalsHours, isFailure } from '../eam/services/reliabilityMetrics';
@@ -58,11 +60,14 @@ export const PredictPage: React.FC = () => {
     const fleetFilterRef = useRef<HTMLDivElement>(null);
 
     // ── Corrective Work Request Modal state ──
-    const [wrModalOpen, setWrModalOpen] = useState(false);
-    const [wrSubmitting, setWrSubmitting] = useState(false);
-    const [wrSuccess, setWrSuccess] = useState(false);
-    const [wrError, setWrError] = useState<string | null>(null);
-    const [wrForm, setWrForm] = useState({ title: '', description: '', priority: 'ROUTINE' as string, workType: 'CM' as string });
+    const { profile } = useAuth();
+    const [raiseOpen, setRaiseOpen] = useState(false);
+    const [predictFaultTypes, setPredictFaultTypes] = useState<{ id: string; code: string; description: string }[]>([]);
+    useEffect(() => {
+        DatabaseService.getInstance().getDictionaries()
+            .then(d => setPredictFaultTypes((d || []).filter((x: any) => x.type === 'FAULT_TYPE' && x.active).map((x: any) => ({ id: x.id, code: x.code, description: x.description }))))
+            .catch(() => setPredictFaultTypes([]));
+    }, []);
 
     const { assetOptions, getAssetById } = useAssetLookup();
 
@@ -837,29 +842,7 @@ export const PredictPage: React.FC = () => {
                     twinHealth={twinHealth}
                     assetSensorTrends={assetSensorTrends}
                     onInvestigate={() => window.location.href = '/analyze'}
-                    onCreateWR={() => {
-                        // Pre-populate WR form from health data
-                        const hiVal = systemHealth.toFixed(1);
-                        const critLabel = critLevel || 'B';
-                        const assetName = selectedAsset?.name || selectedAssetId;
-                        const assetTag = selectedAsset?.tag || '';
-                        const rulVal = rulEstimate?.rul_days?.toFixed(0) || 'N/A';
-
-                        // Auto-calculate priority: Crit A + HI<70 = EMERGENCY, Crit A + HI<85 = URGENT, else ROUTINE
-                        const autoPriority = critLabel === 'A' && systemHealth < 70 ? 'EMERGENCY'
-                            : (critLabel === 'A' || systemHealth < 60) ? 'URGENT'
-                            : systemHealth < 75 ? 'ROUTINE' : 'ROUTINE';
-
-                        setWrForm({
-                            title: `PdM — Corrective action on ${assetTag || assetName}`,
-                            description: `Auto-generated from Predictive Insights.\n\nAsset: ${assetTag} — ${assetName}\nHealth Index: ${hiVal}/100\nRemaining Useful Life: ${rulVal} days\nCriticality: ${critLabel}\nCondition alarms: ${effectiveAlertCount}${hasRealBands ? ` (${conditionAlarms!.criticalCount} critical, ${conditionAlarms!.warningCount} warning — measurement-point bands)` : ''}\nRecommended monitoring: ${cadence.label} (${cadence.basis})\n\nCondition monitoring indicates degradation. Investigate and perform corrective maintenance per ISO 55000.`,
-                            priority: autoPriority,
-                            workType: 'CM',
-                        });
-                        setWrModalOpen(true);
-                        setWrSuccess(false);
-                        setWrError(null);
-                    }}
+                    onCreateWR={() => setRaiseOpen(true)}
                 />
             )}
 
@@ -879,163 +862,18 @@ export const PredictPage: React.FC = () => {
                 />
             )}
 
-            {/* ═══ CORRECTIVE WORK REQUEST MODAL (PdM → EAM Bridge) ═══ */}
-            {wrModalOpen && (
-                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150" onClick={() => !wrSubmitting && setWrModalOpen(false)}>
-                    <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl shadow-black/40 animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-                        {/* Header */}
-                        <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-primary-50 rounded-xl text-primary-600 border border-primary-100">
-                                    <Wrench size={20} />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-bold text-slate-800">Raise Corrective WR</h2>
-                                    <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider">PdM → EAM Bridge · ISO 55000 Feedback Loop</p>
-                                </div>
-                            </div>
-                            <button onClick={() => setWrModalOpen(false)} disabled={wrSubmitting} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40">
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        {wrSuccess ? (
-                            /* Success state */
-                            <div className="p-8 text-center">
-                                <div className="inline-flex p-3 bg-emerald-50 rounded-xl text-emerald-600 mb-3">
-                                    <CheckCircle size={32} />
-                                </div>
-                                <h3 className="text-base font-bold text-slate-800">Work Request Created</h3>
-                                <p className="text-sm text-slate-500 mt-1 max-w-xs mx-auto">
-                                    The corrective work order has been inserted into the EAM work queue. It will appear in <strong>Work Management</strong>.
-                                </p>
-                                <button onClick={() => { setWrModalOpen(false); setWrSuccess(false); }} className="mt-4 px-5 py-2 bg-accent-cyan text-brand-900 font-semibold rounded-lg text-sm hover:bg-primary-400 transition-colors">
-                                    Done
-                                </button>
-                            </div>
-                        ) : (
-                            /* Form */
-                            <div className="p-5 space-y-4">
-                                {wrError && (
-                                    <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
-                                        <AlertTriangle size={14} /> {wrError}
-                                    </div>
-                                )}
-
-                                {/* Pre-populated source badge */}
-                                <div className="flex items-center gap-2 px-3 py-2 bg-primary-50 border border-primary-100 rounded-lg">
-                                    <FileWarning size={14} className="text-primary-600" />
-                                    <p className="text-xs text-primary-700">
-                                        <strong>Source:</strong> Predictive Insights · {selectedAsset?.tag || selectedAssetId} · HI {systemHealth.toFixed(0)}/100
-                                    </p>
-                                </div>
-
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Title</label>
-                                    <input
-                                        type="text"
-                                        value={wrForm.title}
-                                        onChange={e => setWrForm(f => ({ ...f, title: e.target.value }))}
-                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/30 focus:border-primary-500"
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Work Type</label>
-                                        <select
-                                            value={wrForm.workType}
-                                            onChange={e => setWrForm(f => ({ ...f, workType: e.target.value }))}
-                                            className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
-                                        >
-                                            <option value="CM">CM — Corrective</option>
-                                            <option value="PdM">PdM — Predictive</option>
-                                            <option value="EM">EM — Emergency</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Priority</label>
-                                        <select
-                                            value={wrForm.priority}
-                                            onChange={e => setWrForm(f => ({ ...f, priority: e.target.value }))}
-                                            className={`w-full px-3 py-2.5 border rounded-lg text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500/30 ${wrForm.priority === 'EMERGENCY' ? 'bg-red-50 border-red-300 text-red-700' : wrForm.priority === 'URGENT' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-slate-50 border-slate-200 text-slate-800'}`}
-                                        >
-                                            <option value="ROUTINE">Routine</option>
-                                            <option value="URGENT">Urgent</option>
-                                            <option value="EMERGENCY">Emergency</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Description</label>
-                                    <textarea
-                                        value={wrForm.description}
-                                        onChange={e => setWrForm(f => ({ ...f, description: e.target.value }))}
-                                        rows={5}
-                                        className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30 font-mono leading-relaxed"
-                                    />
-                                </div>
-
-                                {/* Asset + Criticality info */}
-                                <div className="flex items-center gap-3 text-[10px] text-slate-400">
-                                    <span>Asset: <strong className="text-slate-600">{selectedAsset?.tag}</strong></span>
-                                    <span>·</span>
-                                    <span>Criticality: <strong className={`${critLevel === 'A' ? 'text-red-500' : critLevel === 'B' ? 'text-amber-500' : 'text-slate-600'}`}>{critLevel}</strong></span>
-                                    <span>·</span>
-                                    <span>RUL: <strong className="text-slate-600">{rulEstimate?.rul_days?.toFixed(0) || '--'}d</strong></span>
-                                </div>
-
-                                {/* Submit */}
-                                <div className="flex items-center justify-end gap-3 pt-2 border-t border-slate-100">
-                                    <button onClick={() => setWrModalOpen(false)} disabled={wrSubmitting} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors disabled:opacity-40">
-                                        Cancel
-                                    </button>
-                                    <button
-                                        onClick={async () => {
-                                            setWrSubmitting(true);
-                                            setWrError(null);
-                                            try {
-                                                const db = DatabaseService.getInstance();
-                                                const now = new Date().toISOString();
-                                                const woPayload = {
-                                                    title: wrForm.title,
-                                                    description: wrForm.description,
-                                                    type: wrForm.workType,
-                                                    priority: wrForm.priority.toLowerCase(),
-                                                    status: 'WIP',
-                                                    asset_id: selectedAssetId,
-                                                    source: 'PREDICT',
-                                                    wo_number: `PdM-${Date.now().toString(36).toUpperCase()}`,
-                                                    created_at: now,
-                                                    updated_at: now,
-                                                    properties: {
-                                                        source_module: 'predictive_insights',
-                                                        health_index_at_creation: systemHealth,
-                                                        rul_at_creation: rulEstimate?.rul_days || null,
-                                                        criticality_at_creation: critLevel,
-                                                    },
-                                                };
-                                                await db.createWorkOrder(woPayload, 'system_admin');
-                                                setWrSuccess(true);
-                                            } catch (err: any) {
-                                                console.error('[PredictPage] WR creation failed:', err);
-                                                setWrError(err.message || 'Failed to create work request. Check database connection.');
-                                            } finally {
-                                                setWrSubmitting(false);
-                                            }
-                                        }}
-                                        disabled={wrSubmitting || !wrForm.title.trim()}
-                                        className="flex items-center gap-2 px-5 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-bold rounded-lg text-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
-                                    >
-                                        {wrSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Wrench size={16} />}
-                                        {wrSubmitting ? 'Creating...' : 'Create Work Order'}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
+            {/* Corrective work — unified Raise modal (Request / Work Order / PM) */}
+            {raiseOpen && selectedAssetId && (
+                <RaiseWorkModal
+                    asset={{ id: selectedAssetId, tag: selectedAsset?.tag || '', name: selectedAsset?.name || selectedAssetId, criticality: (critLevel as any) } as any}
+                    kind="WO"
+                    actor={profile?.username || profile?.fullName || 'user'}
+                    requesterId={profile?.id}
+                    sourceLabel="Predict"
+                    faultTypes={predictFaultTypes}
+                    contextNote={`From Predict — Health ${systemHealth.toFixed(1)}/100 · RUL ${rulEstimate?.rul_days?.toFixed(0) || 'N/A'}d · Criticality ${critLevel || 'B'} · ${effectiveAlertCount} condition alarm(s).`}
+                    onClose={() => setRaiseOpen(false)}
+                />
             )}
 
             {/* #2: Reliability Advisor — condition triage → grounded, cited PM decision */}

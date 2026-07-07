@@ -19,6 +19,8 @@ interface Props {
     actor: string;
     requesterId?: string;
     contextNote?: string;
+    /** Where this was raised from, e.g. "Condition Data" or "Predict". */
+    sourceLabel?: string;
     /** id is the dictionary UUID (service_requests.functional_failure_id is a UUID FK). */
     faultTypes: { id: string; code: string; description: string }[];
     onClose: () => void;
@@ -30,7 +32,7 @@ const METER_UNITS = ['Hours', 'Km', 'Cycles', 'Starts'];
 const riskFor = (p: string) => (p === 'HIGH' ? 80 : p === 'MEDIUM' ? 50 : 20);
 const unitToDays: Record<string, number> = { Days: 1, Weeks: 7, Months: 30, Years: 365 };
 
-export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, faultTypes, onClose }) => {
+export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onClose }) => {
     const { showToast } = useToast();
     const navigate = useNavigate();
     const [kind, setKind] = useState<RaiseKind>(initialKind);
@@ -39,7 +41,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
 
     const ctx = contextNote ? `\n\n${contextNote}` : '';
     const [title, setTitle] = useState(`${initialKind === 'PM' ? 'PM' : 'Corrective'} — ${asset.tag}`);
-    const [description, setDescription] = useState(`Raised from Condition Data.\nAsset: ${asset.tag} — ${asset.name}${ctx}`);
+    const [description, setDescription] = useState(`Raised from ${sourceLabel}.\nAsset: ${asset.tag} — ${asset.name}${ctx}`);
     const [priority, setPriority] = useState('MEDIUM');
     const [workType, setWorkType] = useState('CM');
     const [faultType, setFaultType] = useState(faultTypes[0]?.id || ''); // dictionary UUID
