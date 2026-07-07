@@ -36,7 +36,14 @@ export const ResetPasswordModal: React.FC<Props> = ({ userId, username, isSelf, 
         if (!canSave) return;
         setSaving(true); setErr(null);
         try {
-            if (isSelf) {
+            // SAFETY: supabase.auth.updateUser() changes the CURRENT session user's
+            // password. Only ever call it when the target genuinely IS the signed-in
+            // user — otherwise an admin resetting someone else would change their own
+            // password. Anything else goes through the admin RPC (which targets the
+            // given user id and is gated by is_admin() server-side).
+            const { data: { user: authUser } } = await supabase.auth.getUser();
+            const targetIsCurrentUser = !!authUser?.id && (!userId || authUser.id === userId);
+            if (isSelf && targetIsCurrentUser) {
                 const { error } = await supabase.auth.updateUser({ password: pw });
                 if (error) throw new Error(error.message);
             } else {
@@ -74,12 +81,17 @@ export const ResetPasswordModal: React.FC<Props> = ({ userId, username, isSelf, 
                         {!isSelf && (
                             <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                                 You're setting a new password for another user. They can sign in with it immediately.
+                                <span className="block mt-1 text-slate-400">If your browser offers to "update your saved password", choose <strong>No / Never</strong> — this is {username ? `@${username}` : 'that user'}'s password, not yours.</span>
                             </p>
                         )}
+                        {/* Bind any browser credential-save to the TARGET user, not the
+                            signed-in admin. autoComplete=new-password stops the "update
+                            your saved password" prompt from clobbering the admin's login. */}
+                        <input type="text" name="username" autoComplete="username" value={username} readOnly hidden aria-hidden />
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">New password</label>
                             <div className="relative">
-                                <input type={show ? 'text' : 'password'} value={pw} autoFocus onChange={e => setPw(e.target.value)}
+                                <input type={show ? 'text' : 'password'} value={pw} autoFocus autoComplete="new-password" name="new-password" onChange={e => setPw(e.target.value)}
                                     className="w-full p-2.5 pr-9 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500 outline-none" />
                                 <button type="button" onClick={() => setShow(s => !s)} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
                                     {show ? <EyeOff size={15} /> : <Eye size={15} />}
@@ -89,7 +101,7 @@ export const ResetPasswordModal: React.FC<Props> = ({ userId, username, isSelf, 
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Confirm password</label>
-                            <input type={show ? 'text' : 'password'} value={confirm} onChange={e => setConfirm(e.target.value)}
+                            <input type={show ? 'text' : 'password'} value={confirm} autoComplete="new-password" name="confirm-password" onChange={e => setConfirm(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter' && canSave) submit(); }}
                                 className="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500 outline-none" />
                             {mismatch && <p className="text-[11px] text-red-600 mt-1">Passwords don't match.</p>}
