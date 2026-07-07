@@ -4,6 +4,7 @@
  * Tables: ers_twin_states, ers_rul_estimates, ers_prediction_alerts, ers_sensor_readings
  */
 import { supabase } from '../lib/supabase';
+import { buildSensorReading } from '../lib/sensorReading';
 
 // ─── Types ───────────────────────────────────────────────────
 export interface TwinState {
@@ -365,17 +366,16 @@ class PredictionService {
             const existing = await this.getSensorReadings(aid);
             existing.forEach(r => idByKey.set(`${aid}|${r.tag}`, r.id));
         }
-        const payload = items.map(i => ({
-            id: idByKey.get(`${i.asset_id}|${i.tag}`) || crypto.randomUUID(),
-            asset_id: i.asset_id,
+        const payload = items.map(i => buildSensorReading({
+            id: idByKey.get(`${i.asset_id}|${i.tag}`),   // reuse existing row id → idempotent upsert
+            assetId: i.asset_id,
             tag: i.tag,
-            current_value: i.current_value,
-            unit: i.unit || '—',        // column is NOT NULL
-            trend: i.trend,             // nullable, but CHECK-constrained when set
-            alarm_high: i.alarm_high,
-            alarm_low: i.alarm_low,
+            currentValue: i.current_value,
+            unit: i.unit,
+            trend: i.trend,
+            alarmHigh: i.alarm_high,
+            alarmLow: i.alarm_low,
             readings: i.readings,
-            created_at: new Date().toISOString(),
         }));
         const { error } = await supabase.from('ers_sensor_readings').upsert(payload);
         if (error) { console.error('PredictionService.importSensorReadings:', error); throw new Error(error.message); }
