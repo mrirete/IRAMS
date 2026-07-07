@@ -22,7 +22,9 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Vercel publish can take 15–20 min under load; the smoke waits up to
+    # SMOKE_DEPLOY_WAIT_MIN (18) for the SHA, so give the job headroom.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
