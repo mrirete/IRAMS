@@ -51,7 +51,8 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
     const [freqUnit, setFreqUnit] = useState('Months');
     // Work group (responsible work center)
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
-    const [workCenterId, setWorkCenterId] = useState('');
+    // Default the work group from the asset's responsible work centre (SAP-style).
+    const [workCenterId, setWorkCenterId] = useState(asset.responsibleWorkCenterId || '');
     useEffect(() => { DatabaseService.getInstance().getWorkCenters(true).then(setWorkCenters).catch(() => setWorkCenters([])); }, []);
 
     const setKindAndDefaults = (k: RaiseKind) => {

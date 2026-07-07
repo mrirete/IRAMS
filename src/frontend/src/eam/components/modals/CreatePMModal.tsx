@@ -48,6 +48,12 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
         }
     }, [propDictionaries]);
 
+    // Default the work group from the selected asset's responsible work centre (0179).
+    useEffect(() => {
+        const a = assets.find(x => x.id === formData.assetId);
+        if (a?.responsibleWorkCenterId) setFormData(f => ({ ...f, workCenterId: a.responsibleWorkCenterId! }));
+    }, [formData.assetId, assets]);
+
     const loadData = async () => {
         setLoading(true);
         try {

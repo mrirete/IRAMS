@@ -2137,6 +2137,9 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
     // State for Models
     const [models, setModels] = useState<{ code: string; description: string }[]>([]);
     const [paramsLoading, setParamsLoading] = useState(false);
+    // Responsible work group (0179)
+    const [workCenters, setWorkCenters] = useState<any[]>([]);
+    useEffect(() => { DatabaseService.getInstance().getWorkCenters(true).then(setWorkCenters).catch(() => setWorkCenters([])); }, []);
 
     // Modal States
     const [isAddMfrOpen, setIsAddMfrOpen] = useState(false);
@@ -2492,6 +2495,19 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                                 <option key={c.id} value={c.code}>{c.code} — {c.description}</option>
                             ))}
                         </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Responsible Work Group</label>
+                        <select
+                            value={asset.responsibleWorkCenterId || ''}
+                            onChange={(e) => handleChange('responsibleWorkCenterId', e.target.value || undefined)}
+                            className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
+                        >
+                            <option value="">Unassigned</option>
+                            {workCenters.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                        </select>
+                        <p className="text-[10px] text-slate-400 mt-1">Defaults onto requests, work orders & PMs raised on this asset (SAP Main Work Center).</p>
                     </div>
                 </div>
             </div>

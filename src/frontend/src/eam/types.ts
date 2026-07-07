@@ -288,6 +288,7 @@ export interface Asset {
   department?: string;
   costCenter?: string;
   location?: string;
+  responsibleWorkCenterId?: string; // 0179 — default work group for work raised on this asset
 
   // Safety
   safetyNotes?: string;

@@ -125,6 +125,11 @@ export const ReportRequestForm: React.FC<{
         DatabaseService.getInstance().getWorkCenters(true).then(setWorkCenters).catch(() => {});
     }, [open, workCenters.length]);
 
+    // Default the work group from the selected asset's responsible work centre.
+    useEffect(() => {
+        if (selectedAsset?.responsibleWorkCenterId) setWorkCenterId(selectedAsset.responsibleWorkCenterId);
+    }, [selectedAsset?.id]);
+
     // Lock body scroll + Esc to close while open
     useEffect(() => {
         if (!open) return;

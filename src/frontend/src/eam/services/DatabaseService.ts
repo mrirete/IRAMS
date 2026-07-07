@@ -1535,6 +1535,8 @@ export class DatabaseService {
 
             status: (row.status_code === 'OPERATING' ? 'ACTIVE' : row.status_code) || 'ACTIVE', // Normalize OPERATING→ACTIVE per ISO 14224
             criticality: row.criticality,
+            responsibleWorkCenterId: row.responsible_work_center_id || undefined, // 0179
+
             location: row.location_id ? 'Linked Loc' : '', // We need to join locations ideally. For now, empty string.
             manufacturer: row.manufacturer,
             manufacturerId: row.manufacturer_id,
@@ -1660,6 +1662,9 @@ export class DatabaseService {
         };
         // Only include hierarchy_level if we determined one
         if (hierarchy_level) row.hierarchy_level = hierarchy_level;
+        // 0179 — persist responsible work group only when the field is present, so
+        // asset saves keep working before the migration is applied (unknown column).
+        if (asset.responsibleWorkCenterId !== undefined) row.responsible_work_center_id = asset.responsibleWorkCenterId || null;
         // W-2: persist the owning Company Code only when set (truthy). Before
         // migration 0174 the column doesn't exist and companyId is null, so
         // asset saves must NOT send it (PostgREST rejects unknown columns).
