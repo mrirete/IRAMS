@@ -13,7 +13,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useCreateServiceRequest } from '../hooks/useCreateServiceRequest';
 import { computeRequestPriority } from '../lib/serviceRequest';
-import type { Asset, JobFile } from '../types';
+import type { Asset, JobFile, WorkCenter } from '../types';
 
 /**
  * ReportRequestForm — the single unified "Report a Problem" / "New Work Request"
@@ -92,6 +92,8 @@ export const ReportRequestForm: React.FC<{
     const [showDetails, setShowDetails] = useState(false);
     const [funcFailure, setFuncFailure] = useState('');
     const [category, setCategory] = useState('GENERAL');
+    const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
+    const [workCenterId, setWorkCenterId] = useState('');
 
     // ── Voice dictation ──
     const [listening, setListening] = useState(false);
@@ -117,6 +119,12 @@ export const ReportRequestForm: React.FC<{
             .finally(() => setIsLoadingAssets(false));
     }, [open, allAssets.length]);
 
+    // Load work groups (work centers) for the responsible-group picker
+    useEffect(() => {
+        if (!open || workCenters.length) return;
+        DatabaseService.getInstance().getWorkCenters(true).then(setWorkCenters).catch(() => {});
+    }, [open, workCenters.length]);
+
     // Lock body scroll + Esc to close while open
     useEffect(() => {
         if (!open) return;
@@ -130,7 +138,7 @@ export const ReportRequestForm: React.FC<{
     const reset = () => {
         setDesc(''); setIsBreakdown(false); setFiles([]);
         setSelectedAsset(null); setSelectedLocationId(''); setAssetSearch('');
-        setShowDetails(false); setFuncFailure(''); setCategory('GENERAL');
+        setShowDetails(false); setFuncFailure(''); setCategory('GENERAL'); setWorkCenterId('');
     };
 
     // ── Hierarchy helpers ──
@@ -264,6 +272,7 @@ export const ReportRequestForm: React.FC<{
             location: getResolvedLocation(),
             category,
             functionalFailureType: funcFailure || undefined,
+            workCenterId: workCenterId || undefined,
             files,
         });
     };
@@ -588,6 +597,17 @@ export const ReportRequestForm: React.FC<{
                                         {CATEGORY_OPTIONS.map(opt => (
                                             <option key={opt.value} value={opt.value}>{opt.label}</option>
                                         ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Work group</label>
+                                    <select
+                                        value={workCenterId}
+                                        onChange={(e) => setWorkCenterId(e.target.value)}
+                                        className="w-full p-2 border border-slate-300 rounded-lg bg-white h-[42px] text-sm"
+                                    >
+                                        <option value="">Unassigned</option>
+                                        {workCenters.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
                                     </select>
                                 </div>
                             </div>

@@ -107,6 +107,8 @@ export interface ServiceRequestRecord {
     authorized_by?: string; // UUID of authorizing user
     authorized_at?: string; // Timestamp of authorization
 
+    work_center_id?: string | null; // 0178 — responsible work group (SAP Main Work Center)
+
     created_at: string;
     updated_at: string;
 }

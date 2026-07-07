@@ -58,6 +58,7 @@ export interface BuildRequestInput {
     location?: string;
     category?: string;             // defaults to GENERAL
     functionalFailureType?: string;
+    workCenterId?: string;         // 0178 — responsible work group
     files?: JobFile[];
     requesterId: string;
     requesterName: string;
@@ -93,6 +94,7 @@ export function buildServiceRequest(input: BuildRequestInput): ServiceRequest {
         slaDeadline: new Date(Date.now() + (priority === 'EMERGENCY' ? 14400000 : 86400000)).toISOString(),
         aiRiskScore: rpn,
         functionalFailureType: input.functionalFailureType || undefined,
+        workCenterId: input.workCenterId || undefined,
         isBreakdown: input.isBreakdown,
         files: input.files || [],
     };

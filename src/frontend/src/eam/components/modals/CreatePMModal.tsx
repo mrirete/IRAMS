@@ -15,6 +15,7 @@ interface CreatePMModalProps {
 export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, onSave, dictionaries: propDictionaries }) => {
     const { showToast } = useToast();
     const [assets, setAssets] = useState<Asset[]>([]);
+    const [workCenters, setWorkCenters] = useState<any[]>([]);
     const [dictionaries, setDictionaries] = useState<any[]>(propDictionaries || []);
     const [loading, setLoading] = useState(false);
     const [submitting, setSubmitting] = useState(false);
@@ -28,7 +29,8 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
         scheduleType: 'TIME',
         interval: 1,
         frequencyUnit: 'Months',
-        leadTimeDays: 7
+        leadTimeDays: 7,
+        workCenterId: ''
     });
 
     const [currentUser, setCurrentUser] = useState<string>('');
@@ -49,13 +51,15 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
     const loadData = async () => {
         setLoading(true);
         try {
-            const [assetData, userData, dictData] = await Promise.all([
+            const [assetData, userData, dictData, wcData] = await Promise.all([
                 DatabaseService.getInstance().getAssets(),
                 DatabaseService.getInstance().getUsers(),
-                DatabaseService.getInstance().getDictionaries()
+                DatabaseService.getInstance().getDictionaries(),
+                DatabaseService.getInstance().getWorkCenters(true)
             ]);
 
             setAssets(assetData);
+            setWorkCenters(wcData);
             if (dictData.length > 0) setDictionaries(dictData);
             if (userData.length > 0) setCurrentUser(userData[0].id);
         } catch (err) {
@@ -88,6 +92,7 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                 lead_time_days: formData.leadTimeDays,
                 job_type: formData.type,
                 priority_code: formData.priority,
+                work_center_id: formData.workCenterId || null,
                 est_duration: 0,
                 est_downtime: 0,
                 created_by: currentUser,
@@ -244,6 +249,18 @@ export const CreatePMModal: React.FC<CreatePMModalProps> = ({ isOpen, onClose, o
                                         ))}
                                     </select>
                                 </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Work Group</label>
+                                <select
+                                    className="w-full text-sm border-slate-300 rounded-md"
+                                    value={formData.workCenterId}
+                                    onChange={e => setFormData({ ...formData, workCenterId: e.target.value })}
+                                >
+                                    <option value="">Unassigned</option>
+                                    {workCenters.map((w: any) => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                                </select>
                             </div>
 
                             <div>

@@ -2248,8 +2248,14 @@ export class DatabaseService {
 
 
     public async createWorkOrder(wo: any, actor: string): Promise<any> {
-        const { data, error } = await supabase.from('work_orders').insert(wo).select().single();
-        
+        let { data, error } = await supabase.from('work_orders').insert(wo).select().single();
+
+        // Tolerate a missing work_center_id column (0178 not applied yet): strip + retry.
+        if (error && wo.work_center_id !== undefined && (/work_center_id|PGRST204|column .* does not exist/i.test(error.message || ''))) {
+            const { work_center_id, ...rest } = wo;
+            ({ data, error } = await supabase.from('work_orders').insert(rest).select().single());
+        }
+
         if (error) {
             // Fallback: if status enum violation on SCHED/PLAN, retry with WIP
             const errMsg = (error.message || '').toLowerCase();
@@ -2723,9 +2729,7 @@ export class DatabaseService {
             }
         }
 
-        const { data, error } = await supabase.from('service_requests').insert(req).select().single();
-        if (error) throw error;
-        return data;
+        return this.insertTolerant('service_requests', req, ['work_center_id']);
     }
 
     public async updateRequest(id: string, updates: Partial<ServiceRequestRecord>, actor: string): Promise<ServiceRequestRecord> {
@@ -4163,7 +4167,22 @@ export class DatabaseService {
     }
 
     public async createPM(pm: Partial<RecurringWorkRecord>): Promise<any> {
-        const { data, error } = await supabase.from('recurring_work').insert(pm).select().single();
+        const data = await this.insertTolerant('recurring_work', pm, ['work_center_id']);
+        return data;
+    }
+
+    /**
+     * Insert a row, retrying without the given optional columns if the DB doesn't
+     * have them yet (migration not applied). Lets features that add a nullable
+     * column ship before the migration lands without breaking the create flow.
+     */
+    private async insertTolerant(table: string, row: any, optionalCols: string[]): Promise<any> {
+        let { data, error } = await supabase.from(table).insert(row).select().single();
+        if (error && optionalCols.some(c => (error!.message || '').includes(c)) || (error && /PGRST204|column .* does not exist/i.test(error.message || ''))) {
+            const trimmed = { ...row };
+            for (const c of optionalCols) delete trimmed[c];
+            ({ data, error } = await supabase.from(table).insert(trimmed).select().single());
+        }
         if (error) throw error;
         return data;
     }

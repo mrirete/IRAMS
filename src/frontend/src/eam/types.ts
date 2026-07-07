@@ -1232,6 +1232,7 @@ export interface ServiceRequest {
   slaDeadline: string;
   aiRiskScore?: number;
   functionalFailureType?: string; // ISO 14224 Functional Failure Code
+  workCenterId?: string;           // 0178 — responsible work group (SAP Main Work Center)
   isBreakdown?: boolean;
   files?: JobFile[];
   linkedWOId?: string; // WO created from this request

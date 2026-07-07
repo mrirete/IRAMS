@@ -4,12 +4,12 @@
  * up top; each kind routes to the right service (createRequest / createWorkOrder
  * / createPM) and navigates to the new record.
  */
-import React, { useState } from 'react';
-import { X, FileText, Wrench, Clock, Save, Loader2, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, FileText, Wrench, Clock, Save, Loader2, AlertTriangle, Users } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
 import { useToast } from '../contexts/ToastContext';
 import { useNavigate } from 'react-router-dom';
-import type { Asset } from '../types';
+import type { Asset, WorkCenter } from '../types';
 
 export type RaiseKind = 'REQUEST' | 'WO' | 'PM';
 
@@ -47,6 +47,10 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
     const [scheduleType, setScheduleType] = useState<'TIME' | 'READING'>('TIME');
     const [interval, setInterval] = useState(1);
     const [freqUnit, setFreqUnit] = useState('Months');
+    // Work group (responsible work center)
+    const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
+    const [workCenterId, setWorkCenterId] = useState('');
+    useEffect(() => { DatabaseService.getInstance().getWorkCenters(true).then(setWorkCenters).catch(() => setWorkCenters([])); }, []);
 
     const setKindAndDefaults = (k: RaiseKind) => {
         setKind(k);
@@ -63,6 +67,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 const wo = await db.createWorkOrder({
                     title, description, type: workType, status: 'OPEN',
                     asset_id: asset.id, priority_code: priority,
+                    work_center_id: workCenterId || null,
                 }, actor);
                 showToast('Work order raised.', 'success');
                 onClose();
@@ -77,6 +82,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                     asset_id: asset.id,
                     requester_id: requesterId || actor,
                     functional_failure_id: faultType,
+                    work_center_id: workCenterId || null,
                     risk_score: riskFor(priority),
                     created_at: now, updated_at: now,
                 } as any, actor);
@@ -97,6 +103,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                     priority_code: priority,
                     lead_time_days: 7, est_duration: 0, est_downtime: 0,
                     active: true, created_by: requesterId || null,
+                    work_center_id: workCenterId || null,
                     next_due_date: new Date(Date.now() + days * 86400000).toISOString(),
                 } as any);
                 showToast('PM strategy created.', 'success');
@@ -176,6 +183,14 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                             </div>
                         </div>
                     )}
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-1"><Users size={12} /> Work group</label>
+                        <select value={workCenterId} onChange={e => setWorkCenterId(e.target.value)} className={inputCls}>
+                            <option value="">Unassigned</option>
+                            {workCenters.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                        </select>
+                    </div>
 
                     <div className="grid grid-cols-2 gap-3">
                         <div>
