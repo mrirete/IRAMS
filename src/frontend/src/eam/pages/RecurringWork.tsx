@@ -340,14 +340,17 @@ export const RecurringWork: React.FC = () => {
 
     const handleDuplicate = async () => {
         if (!selectedJob) return;
+        const dupAssetId = selectedJob.assignedAssets?.[0]?.assetId;
+        if (!dupAssetId) { showToast('Cannot duplicate: this strategy has no assigned asset.', 'error'); return; }
         setDuplicating(true);
         try {
             const newPM: any = {
                 id: crypto.randomUUID(),
                 code: `PM-${Math.floor(10000 + Math.random() * 90000)}`,
+                title: (selectedJob.description || 'PM Strategy') + ' (Copy)', // recurring_work.title is NOT NULL
                 description: (selectedJob.description || '') + ' (Copy)',
                 status: 'ACTIVE',
-                asset_id: selectedJob.assignedAssets?.[0]?.assetId || null,
+                asset_id: dupAssetId,
                 schedule_type: selectedJob.scheduleType,
                 frequency_interval: selectedJob.frequencyInterval,
                 frequency_unit: selectedJob.frequencyUnit,
@@ -585,9 +588,14 @@ export const RecurringWork: React.FC = () => {
         let imported = 0;
         for (const row of rows) {
             try {
+                // recurring_work.asset_id and .title are NOT NULL — resolve/guard both.
+                const importAssetId = row['assettag'] ? dbAssets.find(a => a.tag === row['assettag'])?.id : undefined;
+                if (!importAssetId) throw new Error(`asset tag "${row['assettag'] || '(blank)'}" not found`);
+                const importTitle = row['title'] || row['jobdescription'] || row['description'] || row['code'] || 'Imported PM';
                 const payload: any = {
                     id: crypto.randomUUID(),
                     code: row['code'] || `PM-${Date.now()}-${imported}`,
+                    title: importTitle,
                     description: row['description'] || row['jobdescription'] || row['title'] || 'Imported PM',
                     status: (row['status'] || 'ACTIVE').toUpperCase(),
                     schedule_type: (row['scheduletype'] || 'TIME').toUpperCase(),
@@ -597,7 +605,7 @@ export const RecurringWork: React.FC = () => {
                     priority_code: row['priority'] || 'MED',
                     est_duration: parseFloat(row['estduration'] || '0') || 0,
                     est_downtime: parseFloat(row['estdowntime'] || '0') || 0,
-                    asset_id: row['assettag'] ? dbAssets.find(a => a.tag === row['assettag'])?.id || null : null,
+                    asset_id: importAssetId,
                 };
                 await db.createPM(payload);
                 imported++;
