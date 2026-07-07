@@ -259,6 +259,8 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Username <span className="text-red-500">*</span></label>
                         <input
                             required
+                            autoComplete="off"
+                            name="new-person-username"
                             className="w-full text-sm border-slate-300 rounded-md p-2 focus:ring-primary-500 focus:border-blue-500 font-mono"
                             value={formData.code || ''}
                             onChange={e => setFormData({ ...formData, code: e.target.value })}
@@ -304,6 +306,8 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                                             <input
                                                 type="password"
                                                 required={createUser}
+                                                autoComplete="new-password"
+                                                name="new-account-password"
                                                 className="w-full text-sm border-slate-300 rounded-md p-2"
                                                 value={userCreds.password}
                                                 onChange={e => setUserCreds({ ...userCreds, password: e.target.value })}
@@ -316,6 +320,8 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                                             <input
                                                 type="password"
                                                 required={createUser}
+                                                autoComplete="new-password"
+                                                name="confirm-new-account-password"
                                                 className={`w-full text-sm rounded-md p-2 ${
                                                     userCreds.confirmPassword && userCreds.password !== userCreds.confirmPassword
                                                         ? 'border-red-400 focus:ring-red-500 focus:border-red-500'
