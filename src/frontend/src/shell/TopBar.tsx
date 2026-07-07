@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Grid, LogOut, ChevronDown, Shield, Sparkles, User as UserIcon, Menu, Monitor } from 'lucide-react';
+import { Search, Grid, LogOut, ChevronDown, Sparkles, User as UserIcon, Menu, Monitor, KeyRound } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { ResetPasswordModal } from '../eam/components/modals/ResetPasswordModal';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MODULE_REGISTRY } from '../config/moduleRegistry';
 import { NotificationCenter } from '../components/shell/NotificationCenter';
@@ -56,6 +57,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
     const location = useLocation();
     const crumb = breadcrumbFor(location.pathname);
     const [menuOpen, setMenuOpen] = useState(false);
+    const [pwOpen, setPwOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
     const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
@@ -218,9 +220,12 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                                 <UserIcon size={14} />
                                 My Profile
                             </button>
-                            <button className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-lg transition-colors">
-                                <Shield size={14} />
-                                Security Settings
+                            <button
+                                onClick={() => { setMenuOpen(false); setPwOpen(true); }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-lg transition-colors"
+                            >
+                                <KeyRound size={14} />
+                                Change Password
                             </button>
                             <button
                                 onClick={handleLogout}
@@ -234,6 +239,15 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                     document.body
                 )}
             </div>
+
+            {pwOpen && user && (
+                <ResetPasswordModal
+                    userId={(user as any).id}
+                    username={(user as any).username || user.email}
+                    isSelf
+                    onClose={() => setPwOpen(false)}
+                />
+            )}
         </header>
     );
 };

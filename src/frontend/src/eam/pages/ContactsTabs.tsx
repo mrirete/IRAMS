@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { NotificationService } from '../services/NotificationService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
+import { ResetPasswordModal } from '../components/modals/ResetPasswordModal';
+import { useAuth } from '../contexts/AuthContext';
 
 // --- DETAILS TAB ---
 export const DetailsTab: React.FC<{
@@ -270,6 +272,11 @@ export const DetailsTab: React.FC<{
 // --- PROPERTIES TAB ---
 export const PropertiesTab: React.FC<{ contact: Contact, users: User[], onChange: (c: Contact) => void }> = ({ contact, users, onChange }) => {
     const linkedUser = users.find((u: any) => u.contactId === contact.id || u.contact_id === contact.id);
+    const { profile, role } = useAuth();
+    const [resetOpen, setResetOpen] = useState(false);
+    const isAdmin = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
+    const isSelf = !!linkedUser && !!profile?.id && (linkedUser as any).id === profile.id;
+    const canReset = !!linkedUser && (isAdmin || isSelf);
 
     const handleFlagToggle = (key: string) => {
         const currentFlags = contact.flags || {} as any;
@@ -284,8 +291,21 @@ export const PropertiesTab: React.FC<{ contact: Contact, users: User[], onChange
                 </h3>
                 {linkedUser ? (
                     <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                        <div className="text-sm font-bold text-green-800">Linked User Account</div>
-                        <div className="text-xs text-green-600 font-mono mt-1">@{linkedUser.username}</div>
+                        <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                                <div className="text-sm font-bold text-green-800">Linked User Account</div>
+                                <div className="text-xs text-green-600 font-mono mt-1">@{linkedUser.username}</div>
+                            </div>
+                            {canReset && (
+                                <button
+                                    onClick={() => setResetOpen(true)}
+                                    className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-primary-700 bg-white border border-primary-200 px-2.5 py-1.5 rounded-lg hover:bg-primary-50 transition-colors"
+                                    title={isSelf ? 'Change your password' : 'Set a new password for this user'}
+                                >
+                                    <Key size={13} /> {isSelf ? 'Change password' : 'Reset password'}
+                                </button>
+                            )}
+                        </div>
                     </div>
                 ) : (
                     <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg text-center text-sm text-slate-500">
@@ -293,6 +313,14 @@ export const PropertiesTab: React.FC<{ contact: Contact, users: User[], onChange
                     </div>
                 )}
             </div>
+            {resetOpen && linkedUser && (
+                <ResetPasswordModal
+                    userId={(linkedUser as any).id}
+                    username={linkedUser.username}
+                    isSelf={isSelf}
+                    onClose={() => setResetOpen(false)}
+                />
+            )}
 
             <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
                 <h3 className="font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">Settings & Flags</h3>
