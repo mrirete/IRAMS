@@ -1369,12 +1369,14 @@ export class DatabaseService {
         if (password) {
             try {
                 const contact_id = (user as any).contactId || user.contact_id || null;
+                // Param names MUST match the deployed function. Migration 0141
+                // renamed them to p_* (was email/password/username/role/contact_id).
                 const { data, error } = await supabase.rpc('create_auth_user', {
-                    email: user.email,
-                    password: password,
-                    username: user.username,
-                    role: (user.roles && user.roles.length > 0) ? user.roles[0] : 'GUEST',
-                    contact_id: contact_id
+                    p_email: user.email,
+                    p_password: password,
+                    p_username: user.username,
+                    p_role: (user.roles && user.roles.length > 0) ? user.roles[0] : 'GUEST',
+                    p_contact_id: contact_id
                 });
 
                 if (error) {
