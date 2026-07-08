@@ -55,7 +55,7 @@ FROM public.users u WHERE u.username = 'ersdebug90639';
 SET LOCAL ROLE authenticated;
 
 SELECT 'own notifications'            AS check, count(*) FROM public.notifications;
-SELECT 'foreign notifications (=0?)'  AS check, count(*) FROM public.notifications WHERE recipient_id <> auth.uid();
+SELECT 'foreign notifications (=0?)'  AS check, count(*) FROM public.notifications WHERE recipient_id <> auth.uid()::text;
 ROLLBACK;
 
 -- ══ BLOCK 5 — ADMIN retains governance writes ════════════════════════════

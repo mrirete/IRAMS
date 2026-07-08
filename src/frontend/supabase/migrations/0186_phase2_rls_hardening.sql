@@ -139,19 +139,20 @@ BEGIN
       EXECUTE format(wipe_sql, p.policyname, 'notifications');
     END LOOP;
     ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+    -- NOTE: recipient_id is TEXT on the live table (0052), so cast auth.uid().
     CREATE POLICY p2_select_notifications ON public.notifications
       FOR SELECT TO authenticated
-      USING (recipient_id = auth.uid() OR public.is_admin());
+      USING (recipient_id = auth.uid()::text OR public.is_admin());
     -- anyone may send a notification to anyone (system + cross-user flows)
     CREATE POLICY p2_insert_notifications ON public.notifications
       FOR INSERT TO authenticated WITH CHECK (true);
     CREATE POLICY p2_update_notifications ON public.notifications
       FOR UPDATE TO authenticated
-      USING (recipient_id = auth.uid() OR public.is_admin())
-      WITH CHECK (recipient_id = auth.uid() OR public.is_admin());
+      USING (recipient_id = auth.uid()::text OR public.is_admin())
+      WITH CHECK (recipient_id = auth.uid()::text OR public.is_admin());
     CREATE POLICY p2_delete_notifications ON public.notifications
       FOR DELETE TO authenticated
-      USING (recipient_id = auth.uid() OR public.is_admin());
+      USING (recipient_id = auth.uid()::text OR public.is_admin());
   END IF;
 END $$;
 
