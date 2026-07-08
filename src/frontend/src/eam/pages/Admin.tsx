@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import {
     Search, Plus, Edit2, Trash2, Settings, Database, Shield, ShieldOff, Activity,
     X as XIcon, Users, Save, AlertCircle, User as UserIcon, UserPlus,
-    Globe, MapPin, Briefcase, Bell, BookOpen, AlertTriangle, DollarSign, Layers, Eye, EyeOff
+    Globe, MapPin, Briefcase, Bell, BookOpen, AlertTriangle, DollarSign, Layers, Eye, EyeOff, ArrowLeft
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -567,7 +567,7 @@ const DictionaryManager: React.FC = () => {
             </div>
 
             {/* Entries List */}
-            <div className="flex-1 bg-white flex flex-col p-6">
+            <div className="flex-1 bg-white flex flex-col p-4 md:p-6 min-w-0">
                 <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
                     <div>
                         <h2 className="text-xl font-bold text-slate-900">{DICTIONARY_TYPES.find(t => t.key === selectedType)?.label}</h2>
@@ -1158,7 +1158,9 @@ const UserPermissionManager: React.FC = () => {
     return (
         <div className="flex h-full animate-in fade-in duration-300">
             {/* List of Identities (Users + Contacts) */}
-            <div className="w-72 bg-slate-50 border-r border-slate-200 flex flex-col">
+            {/* Mobile: master-detail collapse — show the directory full-width until a person
+                is picked, then swap to the detail panel. Desktop keeps both side-by-side. */}
+            <div className={`${selectedId ? 'hidden md:flex' : 'flex'} w-full md:w-72 bg-slate-50 border-r border-slate-200 flex-col`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center">
                     <h2 className="font-bold text-slate-800 text-sm">System Access Directory</h2>
                     <span className="text-xs bg-slate-200 px-2 py-0.5 rounded-full text-slate-600">{identities.length}</span>
@@ -1187,13 +1189,20 @@ const UserPermissionManager: React.FC = () => {
             </div>
 
             {/* Detail Editor */}
-            <div className="flex-1 flex flex-col bg-white overflow-hidden">
+            <div className={`${selectedId ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-white overflow-hidden`}>
+                {/* Mobile: back to the directory list */}
+                <button
+                    onClick={() => setSelectedId(null)}
+                    className="md:hidden flex items-center gap-1.5 px-4 py-3 text-sm font-medium text-blue-600 border-b border-slate-200 bg-slate-50 flex-shrink-0"
+                >
+                    <ArrowLeft size={16} /> Back to Directory
+                </button>
                 {selectedIdentity ? (
                     selectedUser ? (
                         linkedContact ? (
                             <div className="flex-1 flex flex-col h-full overflow-hidden">
-                                <div className="p-6 border-b border-slate-200 bg-slate-50/50 flex-shrink-0">
-                                    <div className="flex justify-between items-start">
+                                <div className="p-4 md:p-6 border-b border-slate-200 bg-slate-50/50 flex-shrink-0">
+                                    <div className="flex flex-wrap justify-between items-start gap-3">
                                         <div className="flex items-center gap-4">
                                             <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-lg">
                                                 {linkedContact.name.charAt(0)}
@@ -1227,30 +1236,30 @@ const UserPermissionManager: React.FC = () => {
                                 </div>
 
                                 {/* TABS - NOW STICKY/FIXED */}
-                                <div className="px-6 border-b border-slate-200 bg-white flex-shrink-0 z-10">
-                                <div className="flex gap-6">
+                                <div className="px-4 md:px-6 border-b border-slate-200 bg-white flex-shrink-0 z-10">
+                                <div className="flex gap-6 overflow-x-auto scrollbar-hide">
                                         <button
                                             onClick={() => setActiveTab('assignments')}
-                                            className={`pb-3 pt-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'assignments' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                            className={`pb-3 pt-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap shrink-0 ${activeTab === 'assignments' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                         >
                                             Assignments & Scope
                                         </button>
                                         <button
                                             onClick={() => setActiveTab('moduleAccess')}
-                                            className={`pb-3 pt-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-1.5 ${activeTab === 'moduleAccess' ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                            className={`pb-3 pt-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap shrink-0 flex items-center gap-1.5 ${activeTab === 'moduleAccess' ? 'border-amber-600 text-amber-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                         >
                                             <Layers size={14} /> Module Access
                                         </button>
                                         <button
                                             onClick={() => setActiveTab('matrix')}
-                                            className={`pb-3 pt-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'matrix' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                                            className={`pb-3 pt-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap shrink-0 ${activeTab === 'matrix' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                                         >
                                             Effective Permission Matrix
                                         </button>
                                     </div>
                                 </div>
 
-                                <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-8">
 
 
 
@@ -1418,7 +1427,7 @@ const UserPermissionManager: React.FC = () => {
                                                 </h3>
                                                 <div className="p-5 border border-slate-200 rounded-xl bg-white shadow-sm space-y-6">
                                                     {/* Mode Selection */}
-                                                    <div className="flex gap-4">
+                                                    <div className="flex flex-col sm:flex-row gap-4">
                                                         <label className={`flex-1 flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition ${isGlobalScope ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'border-slate-200 hover:bg-slate-50'}`}>
                                                             <input
                                                                 type="radio"
@@ -1451,7 +1460,7 @@ const UserPermissionManager: React.FC = () => {
                                                     {!isGlobalScope && (
                                                         <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 animate-in slide-in-from-top-2">
                                                             <label className="block text-xs font-bold text-slate-500 uppercase mb-3">Allowed Sites / Locations</label>
-                                                            <div className="grid grid-cols-2 gap-3">
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                                 {sites.map(site => {
                                                                     const isChecked = selectedUser.dataScopeOverrides?.siteIds?.includes(site.id);
                                                                     return (
@@ -1638,7 +1647,7 @@ const UserPermissionManager: React.FC = () => {
                                             <h3 className="font-bold text-slate-800 mb-4 text-sm uppercase tracking-wide flex items-center gap-2">
                                                 <Shield size={16} className="text-blue-600" /> Effective Permission Matrix
                                             </h3>
-                                            <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                                            <div className="border border-slate-200 rounded-lg overflow-x-auto shadow-sm">
                                                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center gap-2 text-xs text-blue-800">
                                                     <AlertCircle size={14} />
                                                     <span>Permissions below are a union of the Base Role and User Overrides.</span>
@@ -2001,37 +2010,37 @@ export const Admin: React.FC = () => {
                 <div className="border-b border-slate-200 flex overflow-x-auto scrollbar-hide">
                     <button
                         onClick={() => setActiveTab('dictionaries')}
-                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'dictionaries' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-4 md:px-6 py-4 text-sm font-medium flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${activeTab === 'dictionaries' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
                         <Database size={16} /> Dictionaries
                     </button>
                     <button
                         onClick={() => setActiveTab('permissions')}
-                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'permissions' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-4 md:px-6 py-4 text-sm font-medium flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${activeTab === 'permissions' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
                         <Shield size={16} /> User Access
                     </button>
                     <button
                         onClick={() => setActiveTab('licensing')}
-                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'licensing' ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-4 md:px-6 py-4 text-sm font-medium flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${activeTab === 'licensing' ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
                         <Layers size={16} /> Module Licensing
                     </button>
                     <button
                         onClick={() => setActiveTab('notifications')}
-                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'notifications' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-4 md:px-6 py-4 text-sm font-medium flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${activeTab === 'notifications' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
                         <Bell size={16} /> Notifications
                     </button>
                     <button
                         onClick={() => setActiveTab('libraries')}
-                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'libraries' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-4 md:px-6 py-4 text-sm font-medium flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${activeTab === 'libraries' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
                         <BookOpen size={16} /> Task Library
                     </button>
                     <button
                         onClick={() => setActiveTab('settings')}
-                        className={`px-6 py-4 text-sm font-medium flex items-center gap-2 transition-colors ${activeTab === 'settings' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                        className={`px-4 md:px-6 py-4 text-sm font-medium flex items-center gap-2 whitespace-nowrap shrink-0 transition-colors ${activeTab === 'settings' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                     >
                         <Settings size={16} /> Configuration
                     </button>
