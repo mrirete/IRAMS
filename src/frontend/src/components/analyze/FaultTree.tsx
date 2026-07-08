@@ -6,7 +6,7 @@
  * Light theme variant aligned with ERS design system.
  */
 import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, Calculator, Edit3 } from 'lucide-react';
+import { Plus, Trash2, Calculator, Edit3, CloudUpload } from 'lucide-react';
 
 export interface FaultTreeEvent {
     id: string;
@@ -348,6 +348,9 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                     }`}>
                         <Calculator size={10} className="inline mr-1" />
                         Top Event P = {topProb.toExponential(2)}
+                    </span>
+                    <span className="text-[9px] font-semibold text-slate-400 flex items-center gap-1" title="Every change (add, rename, delete, probability) is written to the database immediately — there is nothing to save manually.">
+                        <CloudUpload size={10} /> Saves automatically
                     </span>
                 </div>
                 <div className="flex items-center gap-3.5 flex-wrap">
