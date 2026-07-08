@@ -118,8 +118,10 @@ export const RCATab: React.FC<RCATabProps> = ({
 
     // Determine if user has admin/manager-level visibility (full portfolio access)
     const isFullAccessRole = useMemo(() => {
-        const fullAccessRoles = ['SYS_ADMIN', 'MANAGER', 'EXECUTIVE', 'PLANNER', 'SUPERVISOR'];
-        return fullAccessRoles.includes(currentRole);
+        // SUPER_ADMIN/ADMIN were missing — the super admin saw an EMPTY list
+        // because the ownership fallback below could never match them either.
+        const fullAccessRoles = ['SUPER_ADMIN', 'SYS_ADMIN', 'ADMIN', 'MANAGER', 'EXECUTIVE', 'PLANNER', 'SUPERVISOR'];
+        return fullAccessRoles.includes((currentRole || '').toUpperCase());
     }, [currentRole]);
 
     // â”€â”€ Helper: check if a user is a collaborator on an RCA â”€â”€â”€
@@ -136,10 +138,13 @@ export const RCATab: React.FC<RCATabProps> = ({
     const isUserInvolved = useCallback((rca: any): boolean => {
         return (
             rca.lead_investigator === currentUsername ||
+            // created_by holds the auth user's UUID (0184) — compare against the
+            // auth id, keeping the legacy username match for older rows.
+            (authUser?.id && rca.created_by === authUser.id) ||
             rca.created_by === currentUsername ||
             isUserCollaborator(rca)
         );
-    }, [currentUsername, isUserCollaborator]);
+    }, [currentUsername, authUser?.id, isUserCollaborator]);
 
     // â”€â”€ Filtered RCA list â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Full-access roles see all RCAs; scoped roles only see their own.
