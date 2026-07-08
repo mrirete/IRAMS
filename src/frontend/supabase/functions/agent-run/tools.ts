@@ -605,6 +605,102 @@ const scanWarrantyRecovery: AgentTool = {
   },
 };
 
+// ── get_asset_health ─────────────────────────────────────────────────────
+// Reads the semantic layer (sem_asset_health view, 0183) instead of hand-rolled
+// joins: one canonical row per asset with criticality, KPIs and live aggregates.
+const getAssetHealth: AgentTool = {
+  name: "get_asset_health",
+  description:
+    "Get the canonical health snapshot for one asset (by tag) or the worst N assets fleet-wide: criticality, MTBF days, MTTR hours, open work orders, failure events and downtime hours over the trailing 12 months, overdue PM count, and last condition-reading time. Use this for asset context before judging any claim about an asset's condition.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: {
+        type: "string",
+        description: "Asset tag to look up. Omit for a fleet-wide worst-N scan.",
+      },
+      top_n: {
+        type: "integer",
+        description: "Fleet scan: how many worst assets to return, ranked by 12-month failure events then open work (default 10).",
+      },
+    },
+    required: [],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const topN: number = Number.isFinite(args?.top_n) ? Math.max(1, Math.min(25, args.top_n)) : 10;
+
+    let query = ctx.db
+      .from("sem_asset_health")
+      .select(
+        "asset_id, asset_tag, asset_name, criticality, status_code, work_center_code, mtbf_days, mttr_hours, failure_count_ytd, open_wo_count, failure_events_12mo, downtime_hrs_12mo, overdue_pm_count, last_reading_at",
+      );
+    if (typeof args?.asset_tag === "string" && args.asset_tag.trim()) {
+      query = query.ilike("asset_tag", args.asset_tag.trim());
+    } else {
+      query = query
+        .order("failure_events_12mo", { ascending: false })
+        .order("open_wo_count", { ascending: false })
+        .limit(topN);
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`sem_asset_health query failed: ${error.message}`);
+
+    const rows = data ?? [];
+    for (const r of rows) {
+      ctx.sources.push({ kind: "assets", ref: r.asset_id, label: `health snapshot ${r.asset_tag}` });
+    }
+    return {
+      data: { assets: rows },
+      sources: [{ kind: "semantic_layer", ref: "sem_asset_health", label: `${rows.length} asset health rows` }],
+      warnings: rows.length === 0 ? ["No asset matched — check the tag or whether assets exist."] : undefined,
+    };
+  },
+};
+
+// ── lookup_data_definitions ──────────────────────────────────────────────
+// Reads the data catalog (semantic_catalog, 0183) so agents ground their
+// terminology in the org's canonical definitions — and cite them.
+const lookupDataDefinitions: AgentTool = {
+  name: "lookup_data_definitions",
+  description:
+    "Look up the organisation's canonical data definitions from the data catalog: what a dataset or column means, its tags, source tables (lineage) and ISO standard. Use when you need to explain a metric (e.g. event_cost, breach_severity, criticality) or verify what a dataset covers before reasoning about it.",
+  parameters: {
+    type: "object",
+    properties: {
+      search: {
+        type: "string",
+        description: "Free-text term to search titles/descriptions/columns (e.g. 'downtime', 'criticality'). Omit to list all dataset-level definitions.",
+      },
+    },
+    required: [],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    let query = ctx.db
+      .from("semantic_catalog")
+      .select("object_name, column_name, title, description, tags, source_tables, iso_standard")
+      .limit(40);
+    if (typeof args?.search === "string" && args.search.trim()) {
+      const term = args.search.trim().replace(/[%_]/g, "");
+      query = query.or(
+        `description.ilike.%${term}%,column_name.ilike.%${term}%,object_name.ilike.%${term}%,title.ilike.%${term}%`,
+      );
+    } else {
+      query = query.is("column_name", null);
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`semantic_catalog query failed: ${error.message}`);
+
+    const rows = data ?? [];
+    return {
+      data: { definitions: rows },
+      sources: [{ kind: "semantic_layer", ref: "semantic_catalog", label: `${rows.length} catalog definitions` }],
+      warnings: rows.length === 0 ? ["No catalog entry matched — the term may not be documented yet."] : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [rankBadActors.name]: rankBadActors,
   [draftDeTask.name]: draftDeTask,
@@ -613,4 +709,6 @@ export const TOOLS: Record<string, AgentTool> = {
   [analyzePmEffectiveness.name]: analyzePmEffectiveness,
   [summarizeWorkBacklog.name]: summarizeWorkBacklog,
   [scanWarrantyRecovery.name]: scanWarrantyRecovery,
+  [getAssetHealth.name]: getAssetHealth,
+  [lookupDataDefinitions.name]: lookupDataDefinitions,
 };

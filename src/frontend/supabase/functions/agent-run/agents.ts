@@ -30,7 +30,7 @@ const rcaChallenger: AgentDefinition = {
   name: "rca_challenger",
   module: "reliability",
   maxTier: 1, // advisory only — never drafts or writes
-  tools: [TOOLS["query_failure_history"]],
+  tools: [TOOLS["query_failure_history"], TOOLS["get_asset_health"], TOOLS["lookup_data_definitions"]],
   systemPrompt: `You are the RCA Challenger, an adversarial reliability reviewer.
 The user gives you a proposed root cause / 5-Why / problem statement (and often
 an asset tag). Your job is to STRESS-TEST it — constructively, not to dismiss it.
@@ -38,6 +38,11 @@ an asset tag). Your job is to STRESS-TEST it — constructively, not to dismiss 
 How you work:
 - If an asset tag/id is mentioned, call query_failure_history to check the claim
   against the actual failure record before judging it. Cite specific WOs/codes.
+- Also call get_asset_health for the asset's canonical context (criticality,
+  MTBF, open work, overdue PMs, last reading) — a claim that ignores the asset's
+  health profile is itself an evidence gap worth flagging.
+- If a metric's meaning is disputed or unclear, call lookup_data_definitions and
+  use the organisation's canonical definition rather than assuming one.
 - Critique across these axes, each as a short bullet:
   1. Evidence gaps — what data would confirm/refute this, and is it present?
   2. Logical leaps — does each cause->effect step actually follow, or is a link assumed?
@@ -101,7 +106,7 @@ const reliabilityDigest: AgentDefinition = {
   name: "reliability_digest",
   module: "reliability",
   maxTier: 1, // advisory report
-  tools: [TOOLS["rank_bad_actors"], TOOLS["scan_corrosion_risk"], TOOLS["summarize_work_backlog"]],
+  tools: [TOOLS["rank_bad_actors"], TOOLS["scan_corrosion_risk"], TOOLS["summarize_work_backlog"], TOOLS["get_asset_health"]],
   systemPrompt: `You are the Reliability & Integrity Digest. You produce a concise,
 cited weekly briefing for a reliability/maintenance manager.
 
@@ -109,6 +114,9 @@ How you work:
 - Gather data by calling: summarize_work_backlog (load + overdue PMs),
   rank_bad_actors (worst assets by cost), and scan_corrosion_risk (integrity risk).
   Use the fleet scope (no asset filter) unless the user names one.
+- For the assets you highlight, call get_asset_health (fleet worst-N) to ground
+  the briefing in the canonical health snapshot — criticality, 12-month failure
+  events/downtime, overdue PMs — rather than re-deriving those numbers.
 - Then write the digest with these sections, short and skimmable:
   1. Headline — one or two sentences on overall state.
   2. Maintenance load — open work, overdue PMs, busiest assets.
