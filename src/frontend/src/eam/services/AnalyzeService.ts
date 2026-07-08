@@ -8,6 +8,14 @@
 import { supabase } from '../lib/supabase';
 import { notifyError } from '../lib/notify';
 
+// Canonical WO cost: frozen labor + material (locked at closure), falling back
+// to total_actual_cost. Same definition as sem_work_history and the agent tools.
+// work_orders has NO total_cost column — selecting it 400s the whole query.
+const woCost = (wo: { frozen_labor_cost?: unknown; frozen_material_cost?: unknown; total_actual_cost?: unknown }): number => {
+    const frozen = (Number(wo.frozen_labor_cost) || 0) + (Number(wo.frozen_material_cost) || 0);
+    return frozen || Number(wo.total_actual_cost) || 0;
+};
+
 // ─── Types ───────────────────────────────────────────────────
 
 // FMEA
@@ -1253,7 +1261,10 @@ class AnalyzeService {
         try {
             const { data, error } = await supabase
                 .from('work_orders')
-                .select('id, wo_number, title, type, status, description, failure_mode, failure_code, total_cost, created_at, closed_at, due_date, priority_code, wo_failure_data(*)')
+                // NOTE: there is no total_cost column — canonical cost is frozen labor
+                // + material (falling back to total_actual_cost), same definition as
+                // sem_work_history and the agent tools.
+                .select('id, wo_number, title, type, status, description, failure_mode, failure_code, total_actual_cost, frozen_labor_cost, frozen_material_cost, created_at, closed_at, due_date, priority_code, wo_failure_data(*)')
                 .eq('asset_id', assetId)
                 .order('created_at', { ascending: false })
                 .limit(100);
@@ -1271,7 +1282,7 @@ class AnalyzeService {
                     failure_cause: fd?.failure_cause_code || null,
                     remedy: fd?.remedy_code || null,
                     failure_comments: fd?.comments || null,
-                    total_cost: Number(wo.total_cost) || 0,
+                    total_cost: woCost(wo),
                     priority: wo.priority_code || null,
                     created_at: wo.created_at,
                     closed_at: wo.closed_at || null,
@@ -2268,7 +2279,7 @@ class AnalyzeService {
             cutoff.setMonth(cutoff.getMonth() - 12);
             const { data, error } = await supabase
                 .from('work_orders')
-                .select('id, wo_number, type, status, failure_mode, failure_code, total_cost, created_at, closed_at, wo_failure_data(*)')
+                .select('id, wo_number, type, status, failure_mode, failure_code, total_actual_cost, frozen_labor_cost, frozen_material_cost, created_at, closed_at, wo_failure_data(*)')
                 .eq('asset_id', assetId)
                 .gte('created_at', cutoff.toISOString())
                 .order('created_at', { ascending: true });
@@ -2284,7 +2295,7 @@ class AnalyzeService {
                 const mode = fd?.failure_mode_code || wo.failure_mode || 'Unspecified';
                 const prev = modeMap.get(mode) || { count: 0, totalCost: 0, lastDate: '' };
                 prev.count++;
-                prev.totalCost += Number(wo.total_cost) || 0;
+                prev.totalCost += woCost(wo);
                 if (wo.created_at > prev.lastDate) prev.lastDate = wo.created_at;
                 modeMap.set(mode, prev);
             }
@@ -2296,10 +2307,10 @@ class AnalyzeService {
                 date: wo.created_at,
                 wo_number: wo.wo_number || '—',
                 mode: ((wo as any).wo_failure_data?.[0]?.failure_mode_code || wo.failure_mode || 'Unspecified'),
-                cost: Number(wo.total_cost) || 0,
+                cost: woCost(wo),
                 type: wo.type || 'CM',
             }));
-            const totalCost = rows.reduce((sum, wo) => sum + (Number(wo.total_cost) || 0), 0);
+            const totalCost = rows.reduce((sum, wo) => sum + woCost(wo), 0);
             return { modes, timeline, totalCM: cmRows.length, totalPM: pmRows.length, totalCost };
         } catch (e) {
             console.error('Error fetching failure trends:', e);
