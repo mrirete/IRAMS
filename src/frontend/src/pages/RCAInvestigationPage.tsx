@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { friendlyAIError } from '../eam/lib/aiError';
 import { analyzeService } from '../eam/services/AnalyzeService';
+import { DatabaseService } from '../eam/services/DatabaseService';
+import { RaiseWorkModal } from '../eam/components/RaiseWorkModal';
 import { ImageGallery } from '../eam/components/ui/ImageGallery';
 import CauseAnalysisSection from '../components/analyze/CauseAnalysisSection';
 import { RcaChallengerPanel } from '../components/analyze/RcaChallengerPanel';
@@ -104,6 +106,15 @@ export function RCAInvestigationPage() {
     // Barrier analysis is standard RCA (defense-in-depth) but optional noise for
     // routine failure RCAs — collapsed unless barriers exist or the user opens it.
     const [barriersOpen, setBarriersOpen] = useState<boolean | null>(null);
+
+    // ── Raise corrective work (WO / Request) from an action ──
+    const [raiseAction, setRaiseAction] = useState<RCACorrectiveAction | null>(null);
+    const [rcaFaultTypes, setRcaFaultTypes] = useState<{ id: string; code: string; description: string }[]>([]);
+    useEffect(() => {
+        DatabaseService.getInstance().getDictionaries()
+            .then(d => setRcaFaultTypes((d || []).filter((x: any) => x.type === 'FAULT_TYPE' && x.active).map((x: any) => ({ id: x.id, code: x.code, description: x.description }))))
+            .catch(() => setRcaFaultTypes([]));
+    }, []);
     const [team, setTeam] = useState<RCATeamMember[]>([]);
     const [auditLog, setAuditLog] = useState<RCAAuditLog[]>([]);
     const [taxonomy, setTaxonomy] = useState<RCACauseTaxonomy[]>([]);
@@ -1689,20 +1700,40 @@ export function RCAInvestigationPage() {
                                             </span>
                                             <span className="text-sm font-bold text-slate-800">{a.action_description}</span>
                                         </div>
-                                        <select 
-                                            className="w-full sm:w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs shrink-0"
-                                            value={a.status} 
-                                            onChange={async e => {
-                                                const updated = await analyzeService.updateRCACorrectiveAction(a.id, { status: e.target.value as any });
-                                                if (updated) setActions(acts => acts.map(x => x.id === a.id ? updated : x));
-                                            }}
-                                        >
-                                            <option value="open">Open</option>
-                                            <option value="in_progress">In Progress</option>
-                                            <option value="completed">Completed</option>
-                                            <option value="overdue">Overdue</option>
-                                            <option value="cancelled">Cancelled</option>
-                                        </select>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {/* Close the loop: corrective action → real work in Work Management */}
+                                            {a.work_order_id ? (
+                                                <button
+                                                    onClick={() => navigate(`/work-orders/${a.work_order_id}`)}
+                                                    className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center gap-1"
+                                                    title="Open the linked work order"
+                                                >
+                                                    <Wrench size={10} /> WO linked ↗
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    onClick={() => setRaiseAction(a)}
+                                                    className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                                                    title="Raise a corrective Work Order or Maintenance Request for this action"
+                                                >
+                                                    <Plus size={10} /> Raise work
+                                                </button>
+                                            )}
+                                            <select
+                                                className="w-full sm:w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all cursor-pointer shadow-xs shrink-0"
+                                                value={a.status}
+                                                onChange={async e => {
+                                                    const updated = await analyzeService.updateRCACorrectiveAction(a.id, { status: e.target.value as any });
+                                                    if (updated) setActions(acts => acts.map(x => x.id === a.id ? updated : x));
+                                                }}
+                                            >
+                                                <option value="open">Open</option>
+                                                <option value="in_progress">In Progress</option>
+                                                <option value="completed">Completed</option>
+                                                <option value="overdue">Overdue</option>
+                                                <option value="cancelled">Cancelled</option>
+                                            </select>
+                                        </div>
                                     </div>
                                 ))}
                                 {actions.length === 0 && (
@@ -1991,6 +2022,34 @@ export function RCAInvestigationPage() {
                     accentColor="violet"
                 />
             )}
+
+            {/* Raise corrective WO / Request from a corrective action (Step 5).
+                On create, the WO id is written back to the action so the loop
+                RCA → corrective action → work order is closed and visible. */}
+            {raiseAction && inv && (() => {
+                const rcaAsset = allHierarchyAssets.find(a => a.id === inv.asset_id);
+                return (
+                    <RaiseWorkModal
+                        asset={(rcaAsset || { id: inv.asset_id || '', tag: 'Unassigned', name: inv.title, criticality: 'B' }) as any}
+                        kind="WO"
+                        actor={profile?.username || profile?.fullName || 'user'}
+                        requesterId={profile?.id}
+                        sourceLabel="RCA"
+                        faultTypes={rcaFaultTypes}
+                        contextNote={`From RCA "${inv.title}" — corrective action (${raiseAction.cause_category || 'uncategorised'}): ${raiseAction.action_description}${inv.root_cause_summary ? `\nRoot cause: ${inv.root_cause_summary}` : ''}`}
+                        onCreated={async (kind, id) => {
+                            if (kind === 'WO' && id) {
+                                const updated = await analyzeService.updateRCACorrectiveAction(raiseAction.id, {
+                                    work_order_id: id,
+                                    status: raiseAction.status === 'open' ? 'in_progress' : raiseAction.status,
+                                } as any);
+                                if (updated) setActions(acts => acts.map(x => x.id === raiseAction.id ? updated : x));
+                            }
+                        }}
+                        onClose={() => setRaiseAction(null)}
+                    />
+                );
+            })()}
         </div>
     );
 }

@@ -25,6 +25,9 @@ interface Props {
     sourceLabel?: string;
     /** id is the dictionary UUID (service_requests.functional_failure_id is a UUID FK). */
     faultTypes: { id: string; code: string; description: string }[];
+    /** Called with the created record's id (before navigation) so callers can
+     *  link it back to their source record (e.g. RCA corrective action → WO). */
+    onCreated?: (kind: RaiseKind, id: string | null) => void | Promise<void>;
     onClose: () => void;
 }
 
@@ -34,7 +37,7 @@ const METER_UNITS = ['Hours', 'Km', 'Cycles', 'Starts'];
 const riskFor = (p: string) => (p === 'HIGH' ? 80 : p === 'MEDIUM' ? 50 : 20);
 const unitToDays: Record<string, number> = { Days: 1, Weeks: 7, Months: 30, Years: 365 };
 
-export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onClose }) => {
+export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose }) => {
     const { showToast } = useToast();
     const navigate = useNavigate();
     const [kind, setKind] = useState<RaiseKind>(initialKind);
@@ -73,6 +76,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                     title, description, assetId: asset.id, type: workType,
                     priorityCode: priority, status: 'OPEN', workCenterId: workCenterId || null,
                 }), actor);
+                if (onCreated) await onCreated('WO', (wo as any)?.id ?? null);
                 showToast('Work order raised.', 'success');
                 onClose();
                 if ((wo as any)?.id) navigate(`/work-orders/${(wo as any).id}`);
@@ -90,6 +94,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                     risk_score: riskFor(priority),
                     created_at: now, updated_at: now,
                 } as any, actor);
+                if (onCreated) await onCreated('REQUEST', (req as any)?.id ?? null);
                 showToast('Maintenance request raised.', 'success');
                 onClose();
                 if ((req as any)?.id) navigate('/requests');
