@@ -444,6 +444,35 @@ export function RCAInvestigationPage() {
         if (step >= 1 && step <= 6) setActiveStep(step);
     };
 
+    // ── AI method advisor (compact corner button) ────────────
+    const runMethodAdvisor = useCallback(async () => {
+        if (!inv) return;
+        setAiMethodLoading(true);
+        setAiMethodRec(null);
+        setAiMethodError(null);
+        try {
+            const result = await aiEngine.recommendRCAMethod({
+                problemDescription: inv.problem_statement || inv.title || '',
+                assetCriticality: formAssetDetail?.criticality || undefined,
+                rcaCategory: inv.rca_category || 'asset_failure',
+                investigationType: inv.investigation_type || 'reactive',
+                triggerType: inv.trigger_type || 'manual',
+                failureCount: formAssetTrends ? (formAssetTrends.totalCM + formAssetTrends.totalPM) : undefined,
+                totalCost: formAssetTrends?.totalCost || undefined,
+            });
+            if ((result as any)?.error) {
+                console.error('[AI Method Advisor]', (result as any).error);
+                setAiMethodError(friendlyAIError((result as any).error));
+            } else {
+                setAiMethodRec(result);
+            }
+        } catch (err: any) {
+            console.error('[AI Method Advisor]', err);
+            setAiMethodError(friendlyAIError(err));
+        }
+        setAiMethodLoading(false);
+    }, [inv, formAssetDetail, formAssetTrends]);
+
     // ── Open DE Task modal (auto-populate from RCA data) ─────
     const openDEModal = useCallback(() => {
         // Build root cause summary from nodes
@@ -1124,8 +1153,20 @@ export function RCAInvestigationPage() {
                     <div className="space-y-6">
                         {/* Tool Selection Guidance Card */}
                         <div className="bg-gradient-to-br from-blue-50/50 to-blue-50/50 border border-blue-200/60 rounded-xl p-5 md:p-6 shadow-sm">
-                            <div className="text-sm sm:text-base font-extrabold text-blue-900 pb-2 flex items-center gap-2">
-                                <AlertTriangle size={16} className="text-blue-600" /> Which RCA Tool Should I Use?
+                            <div className="pb-2 flex items-center justify-between gap-2">
+                                <span className="text-sm sm:text-base font-extrabold text-blue-900 flex items-center gap-2">
+                                    <AlertTriangle size={16} className="text-blue-600" /> Which RCA Tool Should I Use?
+                                </span>
+                                {/* Compact AI advisor — replaces the old full-width card */}
+                                <button
+                                    onClick={runMethodAdvisor}
+                                    disabled={aiMethodLoading}
+                                    title="AI recommends the best RCA method from the problem context, asset criticality and failure history. Advisory only — you decide."
+                                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg border border-blue-200 bg-white text-blue-600 hover:bg-blue-50 hover:border-blue-300 shadow-xs transition-all disabled:opacity-60"
+                                >
+                                    {aiMethodLoading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                                    {aiMethodLoading ? 'Analyzing…' : 'Ask AI'}
+                                </button>
                             </div>
                             <p className="text-xs text-blue-950/60 font-medium mb-4">
                                 The type of problem determines the best analysis method. Select a methodology below to use for building the causal framework.
@@ -1158,170 +1199,71 @@ export function RCAInvestigationPage() {
                                     );
                                 })}
                             </div>
-                        </div>
 
-                        {/* ── AI Method Recommendation ─────────────── */}
-                        <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                            <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-blue-50 to-blue-50 border-b border-blue-100">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-lg">🤖</span>
-                                    <span className="text-xs font-extrabold text-blue-900 uppercase tracking-wider">AI Method Advisor</span>
+                            {/* Compact AI advisor output (only when asked) */}
+                            {aiMethodError && (
+                                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                                    <span className="font-bold">AI assistant unavailable — </span>
+                                    {aiMethodError}
+                                    <button onClick={() => setAiMethodError(null)} className="ml-2 text-amber-600 hover:text-amber-800 underline">Dismiss</button>
                                 </div>
-                                <span className="text-[9px] font-semibold text-blue-400 italic">HITL · Advisory Only</span>
-                            </div>
-                            <div className="px-5 py-4">
-                                {!aiMethodRec && !aiMethodLoading && (
-                                    <div className="flex flex-col items-center text-center py-3">
-                                        <p className="text-xs text-slate-500 mb-3 max-w-md">
-                                            Let AI analyze the problem context, asset criticality, failure patterns, and investigation type to recommend the best RCA methodology.
-                                        </p>
-                                        <button
-                                            onClick={async () => {
-                                                setAiMethodLoading(true);
-                                                setAiMethodError(null);
-                                                try {
-                                                    const result = await aiEngine.recommendRCAMethod({
-                                                        problemDescription: inv.problem_statement || inv.title || '',
-                                                        assetCriticality: formAssetDetail?.criticality || undefined,
-                                                        rcaCategory: inv.rca_category || 'asset_failure',
-                                                        investigationType: inv.investigation_type || 'reactive',
-                                                        triggerType: inv.trigger_type || 'manual',
-                                                        failureCount: formAssetTrends ? (formAssetTrends.totalCM + formAssetTrends.totalPM) : undefined,
-                                                        totalCost: formAssetTrends?.totalCost || undefined,
-                                                    });
-                                                    if ((result as any)?.error) {
-                                                        console.error('[AI Method Advisor]', (result as any).error);
-                                                        setAiMethodError(friendlyAIError((result as any).error));
-                                                    } else {
-                                                        setAiMethodRec(result);
-                                                    }
-                                                } catch (err: any) {
-                                                    console.error('[AI Method Advisor]', err);
-                                                    setAiMethodError(friendlyAIError(err));
-                                                }
-                                                setAiMethodLoading(false);
-                                            }}
-                                            className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-600 text-white text-xs font-bold rounded-lg shadow-md shadow-blue-500/20 hover:shadow-lg hover:scale-[1.02] transition-all flex items-center gap-2"
-                                        >
-                                            <Zap size={13} /> Ask AI to Recommend
-                                        </button>
-                                    </div>
-                                )}
-
-                                {aiMethodLoading && (
-                                    <div className="flex items-center justify-center gap-3 py-6">
-                                        <Loader2 size={18} className="animate-spin text-blue-500" />
-                                        <span className="text-sm text-blue-600 font-semibold">Analyzing problem context…</span>
-                                    </div>
-                                )}
-
-                                {aiMethodError && (
-                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                                        <div className="font-bold mb-1">AI assistant unavailable</div>
-                                        {aiMethodError}
-                                        <button onClick={() => { setAiMethodError(null); }} className="ml-3 text-amber-600 hover:text-amber-800 underline">Dismiss</button>
-                                    </div>
-                                )}
-
-                                {aiMethodRec && (
-                                    <div className="space-y-3">
-                                        {/* Recommended method */}
-                                        <div className="flex items-center gap-3">
-                                            <span className={`text-xs font-extrabold px-3 py-1.5 rounded-lg border ${
-                                                aiMethodRec.method === 'five_why' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                                : aiMethodRec.method === 'fishbone' ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                : aiMethodRec.method === 'fault_tree' ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                                : 'bg-blue-50 text-blue-700 border-blue-200'
-                                            }`}>
-                                                {METHODS.find(m => m.value === aiMethodRec.method)?.label || aiMethodRec.method}
+                            )}
+                            {aiMethodRec && (
+                                <div className="mt-3 bg-white border border-blue-100 rounded-lg p-3 space-y-2">
+                                    <div className="flex items-center flex-wrap gap-2">
+                                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-400">🤖 AI suggests</span>
+                                        <span className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
+                                            aiMethodRec.method === 'five_why' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                            : aiMethodRec.method === 'fishbone' ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                            : aiMethodRec.method === 'fault_tree' ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                                        }`}>
+                                            {METHODS.find(m => m.value === aiMethodRec.method)?.label || aiMethodRec.method}
+                                        </span>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                            aiMethodRec.confidence >= 0.85 ? 'bg-emerald-100 text-emerald-700'
+                                            : aiMethodRec.confidence >= 0.7 ? 'bg-blue-100 text-blue-700'
+                                            : 'bg-amber-100 text-amber-700'
+                                        }`}>
+                                            {Math.round(aiMethodRec.confidence * 100)}%
+                                        </span>
+                                        {inv.method === aiMethodRec.method ? (
+                                            <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                                                <Check size={11} /> Selected
                                             </span>
-                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                                aiMethodRec.confidence >= 0.85 ? 'bg-emerald-100 text-emerald-700'
-                                                : aiMethodRec.confidence >= 0.7 ? 'bg-blue-100 text-blue-700'
-                                                : 'bg-amber-100 text-amber-700'
-                                            }`}>
-                                                {Math.round(aiMethodRec.confidence * 100)}% confidence
-                                            </span>
-                                            {inv.method === aiMethodRec.method && (
-                                                <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                                                    <Check size={11} /> Currently selected
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        {/* Reasoning */}
-                                        <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 rounded-lg p-3 border border-slate-100">
-                                            {aiMethodRec.reasoning}
-                                        </p>
-
-                                        {/* Alternatives */}
-                                        {aiMethodRec.alternatives && aiMethodRec.alternatives.length > 0 && (
-                                            <div className="text-xs text-slate-500">
-                                                <span className="font-bold text-slate-600">Alternatives: </span>
-                                                {aiMethodRec.alternatives.map((alt, i) => (
-                                                    <span key={alt.method}>
-                                                        {i > 0 && ' · '}
-                                                        <span className="font-semibold text-slate-700">{alt.label || alt.method}</span>
-                                                        <span className="text-slate-400"> — {alt.reason}</span>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {/* Action buttons */}
-                                        <div className="flex items-center gap-2 pt-1">
-                                            {inv.method !== aiMethodRec.method && (
-                                                <button
-                                                    onClick={async () => {
-                                                        const updated = await analyzeService.updateRCAInvestigation(inv.id, { method: aiMethodRec.method as any });
-                                                        if (updated) setInv(updated);
-                                                    }}
-                                                    className="px-4 py-2 text-[11px] font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all"
-                                                >
-                                                    Apply Recommendation
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={() => { setAiMethodRec(null); setAiMethodError(null); }}
-                                                className="px-3 py-2 text-[11px] font-semibold rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
-                                            >
-                                                Dismiss
-                                            </button>
+                                        ) : (
                                             <button
                                                 onClick={async () => {
-                                                    setAiMethodLoading(true);
-                                                    setAiMethodRec(null);
-                                                    setAiMethodError(null);
-                                                    try {
-                                                        const result = await aiEngine.recommendRCAMethod({
-                                                            problemDescription: inv.problem_statement || inv.title || '',
-                                                            assetCriticality: formAssetDetail?.criticality || undefined,
-                                                            rcaCategory: inv.rca_category || 'asset_failure',
-                                                            investigationType: inv.investigation_type || 'reactive',
-                                                            triggerType: inv.trigger_type || 'manual',
-                                                            failureCount: formAssetTrends ? (formAssetTrends.totalCM + formAssetTrends.totalPM) : undefined,
-                                                            totalCost: formAssetTrends?.totalCost || undefined,
-                                                        });
-                                                        if ((result as any)?.error) {
-                                                            console.error('[AI Method Advisor]', (result as any).error);
-                                                            setAiMethodError(friendlyAIError((result as any).error));
-                                                        } else {
-                                                            setAiMethodRec(result);
-                                                        }
-                                                    } catch (err: any) {
-                                                        console.error('[AI Method Advisor]', err);
-                                                        setAiMethodError(friendlyAIError(err));
-                                                    }
-                                                    setAiMethodLoading(false);
+                                                    const updated = await analyzeService.updateRCAInvestigation(inv.id, { method: aiMethodRec.method as any });
+                                                    if (updated) setInv(updated);
                                                 }}
-                                                className="px-3 py-2 text-[11px] font-semibold rounded-lg text-blue-500 hover:text-blue-700 hover:bg-blue-50 transition-all flex items-center gap-1"
+                                                className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all"
                                             >
-                                                <Zap size={10} /> Re-analyze
+                                                Apply
                                             </button>
-                                        </div>
+                                        )}
+                                        <button
+                                            onClick={() => { setAiMethodRec(null); setAiMethodError(null); }}
+                                            className="ml-auto text-slate-300 hover:text-slate-500 transition-colors"
+                                            title="Dismiss"
+                                        >
+                                            <X size={13} />
+                                        </button>
                                     </div>
-                                )}
-                            </div>
+                                    <p className="text-xs text-slate-600 leading-relaxed">{aiMethodRec.reasoning}</p>
+                                    {aiMethodRec.alternatives && aiMethodRec.alternatives.length > 0 && (
+                                        <div className="text-[11px] text-slate-400">
+                                            <span className="font-bold text-slate-500">Alternatives: </span>
+                                            {aiMethodRec.alternatives.map((alt, i) => (
+                                                <span key={alt.method}>
+                                                    {i > 0 && ' · '}
+                                                    <span className="font-semibold text-slate-600">{alt.label || alt.method}</span>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Method switching happens via the guide cards above (each card
