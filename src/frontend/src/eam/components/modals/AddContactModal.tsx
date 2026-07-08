@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, Shield, Key, Network } from 'lucide-react';
+import { X, Shield, Key, Network, Loader2 } from 'lucide-react';
 import { Contact, DictionaryEntry, OrganizationUnit } from '../../types';
 import { DatabaseService } from '../../services/DatabaseService';
+import { useToast } from '../../contexts/ToastContext';
 
 interface AddContactModalProps {
     onClose: () => void;
@@ -14,6 +15,7 @@ interface AddContactModalProps {
 }
 
 export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSave, contactTypes, costCenters, initialType, existingUser }) => {
+    const { showToast } = useToast();
     const [formData, setFormData] = useState({
         code: '', firstName: '', lastName: '', title: '', email: '', type: initialType || 'INTERNAL',
         orgUnitId: '', costCenterId: '', country: '', phone: ''
@@ -88,6 +90,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                     },
                 } as Contact;
                 await DatabaseService.getInstance().addContact(mfr);
+                showToast(`Manufacturer "${mfr.name}" created.`, 'success');
                 onSave(mfr);
                 onClose();
                 return;
@@ -192,10 +195,17 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 }
             }
 
+            const accountMsg = existingUser
+                ? `Linked to existing account @${existingUser.username}.`
+                : createUser
+                    ? `Person "${formData.code}" created with a login account.`
+                    : `Person "${formData.code}" created.`;
+            showToast(accountMsg, 'success');
             onSave(newContact);
             onClose();
         } catch (err: any) {
             setError(err.message);
+            showToast(err.message || 'Could not create record.', 'error');
         } finally {
             setCreateLoading(false);
         }
@@ -382,9 +392,11 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         </button>
                         <button
                             type="submit"
-                            className="px-6 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-500 shadow-sm"
+                            disabled={createLoading || (createUser && !existingUser && !isMfr && userCreds.password !== userCreds.confirmPassword)}
+                            className="px-6 py-2 bg-primary-600 text-white rounded-md text-sm font-medium hover:bg-primary-500 shadow-sm flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
                         >
-                            Create Record
+                            {createLoading && <Loader2 size={16} className="animate-spin" />}
+                            {createLoading ? 'Creating…' : 'Create Record'}
                         </button>
                     </div>
                 </form >
