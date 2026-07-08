@@ -2,11 +2,12 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAssetContext } from '../contexts/AssetContext';
 import {
-    ArrowLeft, CheckCircle2, Circle, Lock, ChevronRight, ChevronLeft,
+    ArrowLeft, CheckCircle2, Circle, Lock, ChevronRight, ChevronLeft, ChevronDown,
     AlertTriangle, FileText, Search, Shield, Wrench, BarChart3,
-    Plus, Trash2, Users, ClipboardList, Clock, Flag, Settings,
+    Plus, Trash2, Users, ClipboardList, Clock, Flag,
     Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check
 } from 'lucide-react';
+import { friendlyAIError } from '../eam/lib/aiError';
 import { analyzeService } from '../eam/services/AnalyzeService';
 import { ImageGallery } from '../eam/components/ui/ImageGallery';
 import CauseAnalysisSection from '../components/analyze/CauseAnalysisSection';
@@ -100,6 +101,9 @@ export function RCAInvestigationPage() {
     const [evidence, setEvidence] = useState<RCAEvidence[]>([]);
     const [actions, setActions] = useState<RCACorrectiveAction[]>([]);
     const [barriers, setBarriers] = useState<RCABarrier[]>([]);
+    // Barrier analysis is standard RCA (defense-in-depth) but optional noise for
+    // routine failure RCAs — collapsed unless barriers exist or the user opens it.
+    const [barriersOpen, setBarriersOpen] = useState<boolean | null>(null);
     const [team, setTeam] = useState<RCATeamMember[]>([]);
     const [auditLog, setAuditLog] = useState<RCAAuditLog[]>([]);
     const [taxonomy, setTaxonomy] = useState<RCACauseTaxonomy[]>([]);
@@ -1186,12 +1190,14 @@ export function RCAInvestigationPage() {
                                                         totalCost: formAssetTrends?.totalCost || undefined,
                                                     });
                                                     if ((result as any)?.error) {
-                                                        setAiMethodError((result as any).error);
+                                                        console.error('[AI Method Advisor]', (result as any).error);
+                                                        setAiMethodError(friendlyAIError((result as any).error));
                                                     } else {
                                                         setAiMethodRec(result);
                                                     }
                                                 } catch (err: any) {
-                                                    setAiMethodError(err?.message || 'AI analysis failed');
+                                                    console.error('[AI Method Advisor]', err);
+                                                    setAiMethodError(friendlyAIError(err));
                                                 }
                                                 setAiMethodLoading(false);
                                             }}
@@ -1210,10 +1216,10 @@ export function RCAInvestigationPage() {
                                 )}
 
                                 {aiMethodError && (
-                                    <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-700">
-                                        <div className="font-bold mb-1">⚠️ AI Error</div>
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                                        <div className="font-bold mb-1">AI assistant unavailable</div>
                                         {aiMethodError}
-                                        <button onClick={() => { setAiMethodError(null); }} className="ml-3 text-rose-500 hover:text-rose-700 underline">Dismiss</button>
+                                        <button onClick={() => { setAiMethodError(null); }} className="ml-3 text-amber-600 hover:text-amber-800 underline">Dismiss</button>
                                     </div>
                                 )}
 
@@ -1297,12 +1303,14 @@ export function RCAInvestigationPage() {
                                                             totalCost: formAssetTrends?.totalCost || undefined,
                                                         });
                                                         if ((result as any)?.error) {
-                                                            setAiMethodError((result as any).error);
+                                                            console.error('[AI Method Advisor]', (result as any).error);
+                                                            setAiMethodError(friendlyAIError((result as any).error));
                                                         } else {
                                                             setAiMethodRec(result);
                                                         }
                                                     } catch (err: any) {
-                                                        setAiMethodError(err?.message || 'AI analysis failed');
+                                                        console.error('[AI Method Advisor]', err);
+                                                        setAiMethodError(friendlyAIError(err));
                                                     }
                                                     setAiMethodLoading(false);
                                                 }}
@@ -1316,28 +1324,9 @@ export function RCAInvestigationPage() {
                             </div>
                         </div>
 
-                        {/* Analysis Method Selection */}
-                        <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
-                            <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <Settings size={16} className="text-blue-600" /> Active Analysis Method
-                            </div>
-                            <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
-                                <select
-                                    className="w-full sm:w-64 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer shrink-0"
-                                    value={inv.method || 'five_why'}
-                                    onChange={async e => {
-                                        const newMethod = e.target.value;
-                                        const updated = await analyzeService.updateRCAInvestigation(inv.id, { method: newMethod as any });
-                                        if (updated) setInv(updated);
-                                    }}
-                                >
-                                    {METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                                </select>
-                                <span className="text-xs text-slate-400 font-semibold leading-relaxed">
-                                    Change the selector above to load the appropriate visual framework and coding requirements.
-                                </span>
-                            </div>
-                        </div>
+                        {/* Method switching happens via the guide cards above (each card
+                            activates its method) — the old standalone "Active Analysis
+                            Method" dropdown card duplicated that and was removed. */}
 
                         {/* ── Visual Diagram (method-specific) ──────── */}
                         {inv.method === 'five_why' && (
@@ -1465,13 +1454,25 @@ export function RCAInvestigationPage() {
                         </div>
                         )}
 
-                        {/* Barrier Analysis */}
+                        {/* Barrier Analysis — optional, collapsed by default when empty */}
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
-                            <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <Shield className="w-4 h-4 text-blue-600" /> Barrier Analysis (Defense-in-Depth)
-                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setBarriersOpen(!(barriersOpen ?? barriers.length > 0))}
+                                className={`w-full text-sm sm:text-base font-extrabold text-slate-900 flex items-center justify-between gap-2 ${(barriersOpen ?? barriers.length > 0) ? 'border-b border-slate-100 pb-3.5 mb-4' : ''}`}
+                            >
+                                <span className="flex items-center gap-2">
+                                    <Shield className="w-4 h-4 text-blue-600" /> Barrier Analysis (Defense-in-Depth)
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">Optional</span>
+                                    {barriers.length > 0 && (
+                                        <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-full px-2 py-0.5">{barriers.length}</span>
+                                    )}
+                                </span>
+                                <ChevronDown size={16} className={`text-slate-400 transition-transform ${(barriersOpen ?? barriers.length > 0) ? 'rotate-180' : ''}`} />
+                            </button>
+                            {(barriersOpen ?? barriers.length > 0) && (<>
                             <p className="text-xs text-slate-400 font-medium mb-4">
-                                Define what design controls, technical trips, human checks, or organizational policies should have prevented or mitigated this failure.
+                                Define what design controls, technical trips, human checks, or organizational policies should have prevented or mitigated this failure. Most valuable for safety and incident investigations.
                             </p>
                             
                             <div className="space-y-2">
@@ -1546,6 +1547,7 @@ export function RCAInvestigationPage() {
                                     <Plus size={14} strokeWidth={2.5} /> Add
                                 </button>
                             </div>
+                            </>)}
                         </div>
                         {/* Challenge — AI stress-tests THIS cause analysis against the asset's evidence */}
                         <RcaChallengerPanel

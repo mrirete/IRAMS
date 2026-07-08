@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import { Radar, Loader2, AlertTriangle } from 'lucide-react';
 import { runCorrosionSentinel, type AgentRunResponse } from '../../eam/services/agentRunClient';
+import { friendlyAIError } from '../../eam/lib/aiError';
 
 interface CorrosionSentinelPanelProps {
     /** Pre-fill an asset tag to scope the scan. */
@@ -25,7 +26,8 @@ export const CorrosionSentinelPanel: React.FC<CorrosionSentinelPanelProps> = ({ 
         try {
             setRes(await runCorrosionSentinel(tag.trim() || undefined));
         } catch (e: any) {
-            setError(e?.message || 'Failed to run the agent. Is agent-run deployed and GEMINI_API_KEY set?');
+            console.error('[AgentPanel]', e);
+            setError(friendlyAIError(e));
         } finally {
             setLoading(false);
         }

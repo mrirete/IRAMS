@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { ShieldQuestion, Loader2, AlertTriangle } from 'lucide-react';
 import { runRcaChallenger, type AgentRunResponse } from '../../eam/services/agentRunClient';
+import { friendlyAIError } from '../../eam/lib/aiError';
 
 interface RcaChallengerPanelProps {
     /** Pre-fill the analysis text (e.g. the current RCA summary). */
@@ -30,7 +31,8 @@ export const RcaChallengerPanel: React.FC<RcaChallengerPanelProps> = ({ initialT
         try {
             setRes(await runRcaChallenger(text.trim(), tag.trim() || undefined));
         } catch (e: any) {
-            setError(e?.message || 'Failed to run the agent. Is agent-run deployed and GEMINI_API_KEY set?');
+            console.error('[RcaChallenger]', e);
+            setError(friendlyAIError(e));
         } finally {
             setLoading(false);
         }

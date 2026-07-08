@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import type { AgentRunResponse } from '../../services/agentRunClient';
+import { friendlyAIError } from '../../lib/aiError';
 
 type Accent = 'teal' | 'violet' | 'indigo' | 'amber' | 'blue' | 'emerald';
 
@@ -46,7 +47,8 @@ export const AdvisoryAgentPanel: React.FC<AdvisoryAgentPanelProps> = ({
         try {
             setRes(await onRun(input.trim()));
         } catch (e: any) {
-            setError(e?.message || 'Failed to run the agent. Is agent-run deployed and GEMINI_API_KEY set?');
+            console.error('[AgentPanel]', e);
+            setError(friendlyAIError(e));
         } finally {
             setLoading(false);
         }

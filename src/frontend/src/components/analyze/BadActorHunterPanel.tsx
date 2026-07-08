@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { Sparkles, Loader2, CheckCircle2, X, AlertTriangle } from 'lucide-react';
 import { runBadActorHunter, type AgentRunResponse, type AgentProposal } from '../../eam/services/agentRunClient';
+import { friendlyAIError } from '../../eam/lib/aiError';
 import type { DefectEliminationTask } from './DefectEliminationPanel';
 
 interface BadActorHunterPanelProps {
@@ -54,7 +55,8 @@ export const BadActorHunterPanel: React.FC<BadActorHunterPanelProps> = ({ onAppr
         try {
             setRes(await runBadActorHunter());
         } catch (e: any) {
-            setError(e?.message || 'Failed to run the agent. Is the agent-run function deployed and GEMINI_API_KEY set?');
+            console.error('[AgentPanel]', e);
+            setError(friendlyAIError(e));
         } finally {
             setLoading(false);
         }
