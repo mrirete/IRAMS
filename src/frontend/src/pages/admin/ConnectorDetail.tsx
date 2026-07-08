@@ -180,12 +180,12 @@ export const ConnectorDetail: React.FC = () => {
 
             {/* Tab Navigation */}
             <div className="border-b border-slate-200">
-                <div className="flex gap-1">
+                <div className="flex gap-1 overflow-x-auto scrollbar-hide">
                     {TAB_ITEMS.map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${activeTab === tab.id
+                            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 shrink-0 whitespace-nowrap transition-colors ${activeTab === tab.id
                                 ? 'border-accent-cyan text-primary-700'
                                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300'
                                 }`}

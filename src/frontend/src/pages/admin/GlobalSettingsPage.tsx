@@ -57,14 +57,14 @@ export const GlobalSettingsPage: React.FC = () => {
             </div>
 
             {/* Tab Bar + Content */}
-            <div className="flex gap-6">
-                {/* Sidebar Tabs */}
-                <div className="w-52 shrink-0 space-y-1">
+            <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+                {/* Sidebar Tabs — horizontal scroll on mobile, sidebar on desktop */}
+                <div className="w-full md:w-52 shrink-0 flex md:block gap-1 overflow-x-auto scrollbar-hide md:overflow-visible space-y-0 md:space-y-1">
                     {TABS.map(t => (
                         <button
                             key={t.key}
                             onClick={() => setTab(t.key)}
-                            className={`w-full flex items-center gap-2.5 px-4 py-3 rounded-lg text-sm font-semibold transition-all text-left ${tab === t.key
+                            className={`w-full shrink-0 whitespace-nowrap flex items-center gap-2.5 px-4 py-3 rounded-lg text-sm font-semibold transition-all text-left ${tab === t.key
                                 ? 'bg-accent-cyan/10 text-primary-700 border border-accent-cyan/30 shadow-sm'
                                 : 'text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-transparent'
                                 }`}
@@ -75,7 +75,7 @@ export const GlobalSettingsPage: React.FC = () => {
                 </div>
 
                 {/* Content Panel */}
-                <div className="flex-1 bg-white border border-slate-200 rounded-xl p-6 min-h-[500px] shadow-sm">
+                <div className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl p-4 md:p-6 min-h-[500px] shadow-sm">
                     {tab === 'general' && <GeneralTab />}
                     {tab === 'financial' && <FinancialTab />}
                     {tab === 'notifications' && <NotificationsTab />}
@@ -91,12 +91,12 @@ export const GlobalSettingsPage: React.FC = () => {
 // ── Reusable Field ────────────────────────────────────────
 
 const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
-    <div className="flex items-start justify-between gap-8 py-5 border-b border-slate-100 last:border-0">
-        <div className="min-w-[200px]">
+    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-8 py-5 border-b border-slate-100 last:border-0">
+        <div className="sm:min-w-[200px]">
             <p className="text-sm font-bold text-slate-800">{label}</p>
             {hint && <p className="text-xs text-slate-500 mt-1 leading-relaxed">{hint}</p>}
         </div>
-        <div className="flex-1 max-w-sm">{children}</div>
+        <div className="w-full sm:flex-1 sm:max-w-sm">{children}</div>
     </div>
 );
 

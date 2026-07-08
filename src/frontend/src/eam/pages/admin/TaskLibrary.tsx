@@ -122,14 +122,14 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     return (
         <div className="flex h-full flex-col bg-white">
             {/* Header / Filter Bar */}
-            <div className="p-6 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+            <div className="p-4 md:p-6 border-b border-slate-200 flex flex-col md:flex-row md:justify-between md:items-center gap-3 bg-slate-50">
                 <div>
                     <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
                         <BookOpen className="text-blue-600" /> Task Library
                     </h2>
                     <p className="text-sm text-slate-500">Manage reusable usage templates for Maintenance, Inspection, and Safety.</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                     <select
                         className="p-2 border border-slate-300 rounded-lg text-sm bg-white"
                         value={selectedCategory}
@@ -148,7 +148,7 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
                             placeholder="Search library..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
-                            className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm w-64"
+                            className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm w-full sm:w-64"
                         />
                     </div>
                     <button
@@ -356,7 +356,7 @@ const TaskEditorModal: React.FC<{
                     )}
 
                     {/* Core Info */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Task Code</label>
                             <input
@@ -477,7 +477,7 @@ const TaskEditorModal: React.FC<{
                     <div className="border border-slate-200 rounded-lg p-4 bg-slate-50">
                         <h4 className="font-bold text-sm text-slate-700 mb-3 flex items-center gap-2"><Wrench size={14} /> Required Resources</h4>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {/* Roles */}
                             <div className="bg-white p-3 rounded border border-slate-200">
                                 <h5 className="text-xs font-bold text-slate-500 uppercase mb-2">Labour / Roles</h5>

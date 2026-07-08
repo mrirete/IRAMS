@@ -289,22 +289,22 @@ export const NotificationConfig: React.FC = () => {
     return (
         <div className="flex h-full flex-col bg-white">
             {/* Sub-Header */}
-            <div className="border-b border-slate-200 px-6 py-3 flex gap-6 text-sm font-medium">
+            <div className="border-b border-slate-200 px-4 md:px-6 py-3 flex gap-6 text-sm font-medium overflow-x-auto scrollbar-hide">
                 <button
                     onClick={() => setActiveTab('RULES')}
-                    className={`pb-3 -mb-3.5 border-b-2 transition ${activeTab === 'RULES' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`pb-3 -mb-3.5 border-b-2 shrink-0 whitespace-nowrap transition ${activeTab === 'RULES' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Rules Engine
                 </button>
                 <button
                     onClick={() => setActiveTab('CHANNELS')}
-                    className={`pb-3 -mb-3.5 border-b-2 transition ${activeTab === 'CHANNELS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`pb-3 -mb-3.5 border-b-2 shrink-0 whitespace-nowrap transition ${activeTab === 'CHANNELS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Delivery Channels
                 </button>
                 <button
                     onClick={() => setActiveTab('TEMPLATES')}
-                    className={`pb-3 -mb-3.5 border-b-2 transition ${activeTab === 'TEMPLATES' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`pb-3 -mb-3.5 border-b-2 shrink-0 whitespace-nowrap transition ${activeTab === 'TEMPLATES' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                 >
                     Message Templates
                 </button>
@@ -422,7 +422,7 @@ export const NotificationConfig: React.FC = () => {
                                     {/* Trigger */}
                                     <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                         <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><Zap size={16} className="text-amber-500" /> Trigger Condition</h4>
-                                        <div className="grid grid-cols-2 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Module</label>
                                                 <select
@@ -455,7 +455,7 @@ export const NotificationConfig: React.FC = () => {
                                         <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><Filter size={16} className="text-blue-500" /> Filters (Optional)</h4>
                                         <div className="text-xs text-slate-500 italic mb-2">Apply this rule only when...</div>
                                         {editingRule.filters?.map((f, i) => (
-                                            <div key={i} className="flex gap-2 mb-2 items-center">
+                                            <div key={i} className="flex flex-wrap gap-2 mb-2 items-center">
                                                 <select
                                                     value={f.field}
                                                     onChange={e => {
@@ -728,7 +728,7 @@ export const NotificationConfig: React.FC = () => {
 
                                         <div>
                                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Channels</label>
-                                            <div className="flex gap-4">
+                                            <div className="flex flex-wrap gap-3">
                                                 {['IN_APP', 'EMAIL', 'PUSH', 'SMS', 'WEBHOOK'].map(ch => (
                                                     <label key={ch} className="flex items-center gap-2 cursor-pointer">
                                                         <input
@@ -751,7 +751,7 @@ export const NotificationConfig: React.FC = () => {
                                     {/* Escalation */}
                                     <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                                         <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><Clock size={16} className="text-red-500" /> Severity &amp; Escalation</h4>
-                                        <div className="grid grid-cols-4 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Severity Level</label>
                                                 <select
@@ -897,7 +897,7 @@ export const NotificationConfig: React.FC = () => {
                                         </button>
                                     </div>
                                 </div>
-                                <div className="flex-1 overflow-y-auto p-0">
+                                <div className="flex-1 overflow-auto p-0">
                                     {logs.length === 0 ? (
                                         <div className="flex flex-col items-center justify-center h-full text-slate-400 p-8">
                                             <Mail size={32} className="mb-2 opacity-20" />
