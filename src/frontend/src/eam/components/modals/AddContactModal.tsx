@@ -168,19 +168,28 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
 
                 console.log('[AddContactModal] Creating user with:', { username: formData.code, email: userEmail });
 
-                await db.createUser({
-                    id: userId,
-                    username: formData.code, // Use code as username (single source of truth)
-                    email: userEmail,
-                    contact_id: contactId,
-                    status: 'active',
-                    roles: [formData.type], // Use selected type as role
-                    created_at: new Date().toISOString(),
-                    updated_at: new Date().toISOString()
-                } as any, userCreds.password); // password MUST be the 2nd arg — that's what routes
-                                               // through the secure create_auth_user RPC that actually
-                                               // creates the auth.users record. Passing it inside the
-                                               // object leaves it undefined and no auth account is made.
+                try {
+                    await db.createUser({
+                        id: userId,
+                        username: formData.code, // Use code as username (single source of truth)
+                        email: userEmail,
+                        contact_id: contactId,
+                        status: 'active',
+                        roles: [formData.type], // Use selected type as role
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                    } as any, userCreds.password); // password MUST be the 2nd arg — that's what routes
+                                                   // through the secure create_auth_user RPC that actually
+                                                   // creates the auth.users record. Passing it inside the
+                                                   // object leaves it undefined and no auth account is made.
+                } catch (userErr) {
+                    // Roll back the contact we created in step 2 — otherwise a failed
+                    // account-create leaves an orphaned person (the "duplicate/unlinked"
+                    // records we had to clean up). Keep create atomic: person + login,
+                    // or neither.
+                    try { await db.deleteContact(contactId); } catch (rbErr) { console.warn('[AddContactModal] contact rollback failed:', rbErr); }
+                    throw userErr;
+                }
             }
 
             onSave(newContact);
