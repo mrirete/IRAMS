@@ -48,32 +48,45 @@ const CauseAnalysisSection: React.FC<Props> = ({
 
     // ── Fault Tree ───────────────────────────────────────────
     if (method === 'fault_tree') {
-        // Convert RCANodes → FaultTreeEvents for the FaultTree component
-        // Auto-create a top event if no nodes exist yet
+        // Convert RCANodes → FaultTreeEvents for the FaultTree component.
+        // A top event must ALWAYS exist: with none (e.g. leftover fishbone
+        // nodes after a method switch, no 'problem' node) the canvas rendered
+        // blank and the gate buttons vanished. Orphaned nodes (parent deleted
+        // or invalid) are re-parented under the top so they stay visible and
+        // deletable instead of silently disappearing.
         const problemNode = nodes.find(n => n.node_type === 'problem');
-        
-        const faultTreeEvents: FaultTreeEvent[] = nodes.length > 0
-            ? nodes.map(n => ({
+        const knownIds = new Set(nodes.map(n => n.id));
+        const topId = problemNode?.id ?? 'top-event';
+
+        const mapped: FaultTreeEvent[] = nodes.map(n => {
+            const isTop = n.id === topId;
+            const parentValid = !!n.parent_id && n.parent_id !== n.id && knownIds.has(n.parent_id);
+            return {
                 id: n.id,
                 label: n.description,
-                type: n.node_type === 'problem' ? 'top' as const
+                type: isTop ? 'top' as const
                     : n.is_root_cause ? 'basic' as const
                     : 'intermediate' as const,
                 probability: n.is_root_cause ? (n.cause_code ? parseFloat(n.cause_code) || 0.01 : 0.01) : undefined,
-                gateType: n.node_type === 'problem' ? 'OR' as const
+                gateType: isTop ? 'OR' as const
                     : (n.evidence_notes === 'AND' || n.evidence_notes === 'OR')
                         ? n.evidence_notes as 'AND' | 'OR'
                         : undefined,
-                parentId: n.parent_id ?? null,
-            }))
-            : [{
+                parentId: isTop ? null : (parentValid ? n.parent_id : topId),
+            };
+        });
+
+        const faultTreeEvents: FaultTreeEvent[] = problemNode ? mapped : [
+            {
                 id: 'top-event',
                 label: problemStatement || 'Top Event',
                 type: 'top' as const,
                 probability: undefined,
                 gateType: 'OR' as const,
                 parentId: null,
-            }];
+            },
+            ...mapped,
+        ];
 
         return (
             <div style={{
@@ -150,7 +163,23 @@ const CauseAnalysisSection: React.FC<Props> = ({
                     }}
                     onRemoveEvent={async (id) => {
                         await analyzeService.deleteRCANode(id);
-                        setNodes(prev => prev.filter(n => n.id !== id));
+                        // The DB FK cascades the delete to all descendants —
+                        // mirror that locally, or stale children linger with
+                        // dangling parent_ids until the next refetch.
+                        setNodes(prev => {
+                            const toRemove = new Set([id]);
+                            let grew = true;
+                            while (grew) {
+                                grew = false;
+                                for (const n of prev) {
+                                    if (n.parent_id && toRemove.has(n.parent_id) && !toRemove.has(n.id)) {
+                                        toRemove.add(n.id);
+                                        grew = true;
+                                    }
+                                }
+                            }
+                            return prev.filter(n => !toRemove.has(n.id));
+                        });
                     }}
                     onUpdateLabel={async (id, label) => {
                         await analyzeService.updateRCANode(id, { description: label });

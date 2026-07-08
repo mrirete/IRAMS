@@ -28,13 +28,16 @@ interface FaultTreeProps {
 
 // ─── Probability Calculations ───────────────────────────────
 
-function calculateProbability(event: FaultTreeEvent, allEvents: FaultTreeEvent[]): number {
+function calculateProbability(event: FaultTreeEvent, allEvents: FaultTreeEvent[], visited: Set<string> = new Set()): number {
+    // Cycle guard — malformed parent chains must never hang the tab.
+    if (visited.has(event.id)) return 0;
+    visited.add(event.id);
     if (event.type === 'basic') return event.probability ?? 0;
 
-    const children = allEvents.filter(e => e.parentId === event.id);
+    const children = allEvents.filter(e => e.parentId === event.id && e.id !== event.id);
     if (children.length === 0) return event.probability ?? 0;
 
-    const childProbs = children.map(c => calculateProbability(c, allEvents));
+    const childProbs = children.map(c => calculateProbability(c, allEvents, visited));
 
     if (event.gateType === 'AND') {
         return childProbs.reduce((a, b) => a * b, 1);
@@ -308,13 +311,20 @@ const FaultTree: React.FC<FaultTreeProps> = ({
         const result: FaultTreeEvent[][] = [];
         if (!topEvent) return result;
 
+        // Visited guard: a malformed parent chain (cycle / duplicate ids) must
+        // never turn this walk into an infinite loop that hangs the tab.
+        const seen = new Set<string>([topEvent.id]);
         let currentLayer = [topEvent];
         while (currentLayer.length > 0) {
             result.push(currentLayer);
             const nextLayer: FaultTreeEvent[] = [];
             currentLayer.forEach(e => {
-                const children = events.filter(c => c.parentId === e.id);
-                nextLayer.push(...children);
+                events.forEach(c => {
+                    if (c.parentId === e.id && !seen.has(c.id)) {
+                        seen.add(c.id);
+                        nextLayer.push(c);
+                    }
+                });
             });
             currentLayer = nextLayer;
         }
