@@ -19,11 +19,17 @@ type Part = Record<string, any>;
 // deno-lint-ignore no-explicit-any
 type Content = { role: string; parts: Part[] };
 
+export interface HistoryTurn {
+  role: "user" | "model";
+  text: string;
+}
+
 export async function runToolLoop(
   agent: AgentDefinition,
   userQuery: string,
   ctx: ToolContext,
   apiKey: string,
+  history: HistoryTurn[] = [],
 ): Promise<LoopResult> {
   const functionDeclarations = agent.tools.map((t) => ({
     name: t.name,
@@ -31,7 +37,15 @@ export async function runToolLoop(
     parameters: t.parameters,
   }));
 
-  const contents: Content[] = [{ role: "user", parts: [{ text: userQuery }] }];
+  // Multi-turn: prior conversation (prose only — tool exchanges are not
+  // replayed; the model re-fetches anything it still needs) + the new message.
+  const contents: Content[] = [
+    ...history
+      .filter((h) => (h.role === "user" || h.role === "model") && typeof h.text === "string" && h.text.trim())
+      .slice(-20) // cap context growth
+      .map((h) => ({ role: h.role, parts: [{ text: h.text }] })),
+    { role: "user", parts: [{ text: userQuery }] },
+  ];
   let tokensUsed = 0;
   const toolCalls: string[] = [];
 

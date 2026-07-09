@@ -4,7 +4,7 @@ import { useAssetContext } from '../contexts/AssetContext';
 import {
     ArrowLeft, CheckCircle2, Circle, Lock, ChevronRight, ChevronLeft, ChevronDown,
     AlertTriangle, FileText, Search, Shield, Wrench, BarChart3,
-    Plus, Trash2, Users, ClipboardList, Clock, Flag,
+    Plus, Trash2, Users, ClipboardList, Clock, Flag, Bot,
     Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check
 } from 'lucide-react';
 import { friendlyAIError } from '../eam/lib/aiError';
@@ -14,6 +14,7 @@ import { RaiseWorkModal } from '../eam/components/RaiseWorkModal';
 import { ImageGallery } from '../eam/components/ui/ImageGallery';
 import CauseAnalysisSection from '../components/analyze/CauseAnalysisSection';
 import { RcaChallengerPanel } from '../components/analyze/RcaChallengerPanel';
+import { RcaCopilotPanel } from '../components/analyze/RcaCopilotPanel';
 import FiveWhySection from '../components/analyze/FiveWhySection';
 import { TeamPanel, AvatarStack } from '../components/analyze/CollaboratorPicker';
 import { NotificationService } from '../eam/services/NotificationService';
@@ -106,6 +107,9 @@ export function RCAInvestigationPage() {
     // Barrier analysis is standard RCA (defense-in-depth) but optional noise for
     // routine failure RCAs — collapsed unless barriers exist or the user opens it.
     const [barriersOpen, setBarriersOpen] = useState<boolean | null>(null);
+
+    // ── RCA Copilot (agentic facilitator) ────────────────────
+    const [copilotOpen, setCopilotOpen] = useState(false);
 
     // ── Raise corrective work (WO / Request) from an action ──
     const [raiseAction, setRaiseAction] = useState<RCACorrectiveAction | null>(null);
@@ -2020,6 +2024,25 @@ export function RCAInvestigationPage() {
                     onUpdateRole={handleUpdateCollaboratorRole}
                     onClose={() => setShowTeamPanel(false)}
                     accentColor="violet"
+                />
+            )}
+
+            {/* ── RCA Copilot: agentic facilitator, available on every step ── */}
+            {inv && !copilotOpen && (
+                <button
+                    onClick={() => setCopilotOpen(true)}
+                    className="fixed bottom-6 right-6 z-40 flex items-center gap-2 pl-3.5 pr-4 py-3 rounded-full bg-gradient-to-r from-violet-600 to-violet-500 text-white text-sm font-bold shadow-lg shadow-violet-500/30 hover:shadow-xl hover:scale-[1.03] transition-all"
+                    title="Open the RCA Copilot — an AI facilitator that works the investigation with you"
+                >
+                    <Bot size={17} /> Copilot
+                </button>
+            )}
+            {inv && copilotOpen && (
+                <RcaCopilotPanel
+                    inv={inv}
+                    nodes={nodes}
+                    onApplied={() => fetchAll(inv.id)}
+                    onClose={() => setCopilotOpen(false)}
                 />
             )}
 

@@ -38,14 +38,14 @@ serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     // 2. Route.
-    const { agent: agentName, query } = await req.json().catch(() => ({}));
+    const { agent: agentName, query, history } = await req.json().catch(() => ({}));
     const agent = AGENTS[agentName];
     if (!agent) return json({ error: `Unknown agent '${agentName}'` }, 400);
     if (!query || typeof query !== "string") return json({ error: "Missing 'query'" }, 400);
 
-    // 3. Run the tool-calling loop.
+    // 3. Run the tool-calling loop (history enables multi-turn copilots).
     const ctx: ToolContext = { db, proposals: [], sources: [] };
-    const loop = await runToolLoop(agent, query, ctx, GEMINI_API_KEY);
+    const loop = await runToolLoop(agent, query, ctx, GEMINI_API_KEY, Array.isArray(history) ? history : []);
 
     const proposals: AgentProposal[] = ctx.proposals;
     const requiresApproval = proposals.length > 0; // any draft needs a human

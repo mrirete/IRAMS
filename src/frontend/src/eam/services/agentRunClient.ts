@@ -36,16 +36,38 @@ export interface AgentRunResponse {
     duration_ms: number;
 }
 
+/** One prior conversational turn (prose only) for multi-turn agents. */
+export interface AgentTurn {
+    role: 'user' | 'model';
+    text: string;
+}
+
 /** Invoke a named agent. `supabase.functions.invoke` attaches the user's JWT. */
-export async function runAgent(agent: string, query: string): Promise<AgentRunResponse> {
+export async function runAgent(agent: string, query: string, history: AgentTurn[] = []): Promise<AgentRunResponse> {
     const { data, error } = await supabase.functions.invoke('agent-run', {
-        body: { agent, query },
+        body: { agent, query, history },
     });
     if (error) throw new Error(error.message || 'agent-run request failed');
     if (data && (data as { error?: string }).error) {
         throw new Error((data as { error: string }).error);
     }
     return data as AgentRunResponse;
+}
+
+/**
+ * RCA Copilot — multi-turn facilitator embedded in an investigation.
+ * The first turn carries the investigation id; the agent grounds itself via
+ * get_investigation / asset health / failure history and co-drives the RCA.
+ */
+export function runRcaCopilot(
+    investigationId: string,
+    message: string,
+    history: AgentTurn[] = [],
+): Promise<AgentRunResponse> {
+    const query = history.length === 0
+        ? `investigation_id: ${investigationId}\n\n${message}`
+        : `(investigation_id: ${investigationId})\n${message}`;
+    return runAgent('rca_copilot', query, history);
 }
 
 const DEFAULT_BAD_ACTOR_QUERY =

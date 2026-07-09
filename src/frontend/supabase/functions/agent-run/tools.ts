@@ -701,6 +701,66 @@ const lookupDataDefinitions: AgentTool = {
   },
 };
 
+// ── get_investigation ────────────────────────────────────────────────────
+// Reads the FULL current state of one RCA investigation — header, cause nodes,
+// evidence, corrective actions, linked asset — so the copilot facilitates from
+// what the team has actually captured, not from guesses.
+const getInvestigation: AgentTool = {
+  name: "get_investigation",
+  description:
+    "Read the current state of an RCA investigation by id: title, problem statement, method, status, linked asset (tag/criticality), all cause nodes (the 5-why/fishbone/tree so far), evidence items, and corrective actions. ALWAYS call this first when facilitating an investigation.",
+  parameters: {
+    type: "object",
+    properties: {
+      investigation_id: { type: "string", description: "UUID of the RCA investigation." },
+    },
+    required: ["investigation_id"],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const id = String(args?.investigation_id ?? "").trim();
+    if (!id) throw new Error("investigation_id is required");
+
+    const { data: inv, error } = await ctx.db
+      .from("ers_rca_investigations")
+      .select("id, title, method, status, problem_statement, root_cause_summary, rca_category, investigation_type, event_date, event_location, asset_id, current_step, created_at")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw new Error(`investigation query failed: ${error.message}`);
+    if (!inv) return { data: { found: false }, sources: [], warnings: ["No investigation with that id (or not visible to this user)."] };
+
+    const [nodesQ, evidenceQ, actionsQ, assetQ] = await Promise.all([
+      ctx.db.from("ers_rca_nodes")
+        .select("id, parent_id, node_type, description, depth, is_root_cause, cause_category, evidence_notes")
+        .eq("investigation_id", id).order("depth").order("created_at"),
+      ctx.db.from("ers_rca_evidence")
+        .select("evidence_type, title, description, event_timestamp")
+        .eq("investigation_id", id).limit(50),
+      ctx.db.from("ers_rca_corrective_actions")
+        .select("action_description, action_type, cause_category, status, work_order_id")
+        .eq("investigation_id", id).limit(50),
+      inv.asset_id
+        ? ctx.db.from("assets").select("id, tag, name, criticality, status_code").eq("id", inv.asset_id).maybeSingle()
+        : Promise.resolve({ data: null } as { data: null }),
+    ]);
+
+    const asset = (assetQ as { data: { id: string; tag: string; name: string; criticality: string | null } | null }).data;
+    ctx.sources.push({ kind: "rca_investigation", ref: inv.id, label: `RCA "${inv.title}"` });
+
+    return {
+      data: {
+        found: true,
+        investigation: inv,
+        asset,
+        nodes: nodesQ.data ?? [],
+        evidence: evidenceQ.data ?? [],
+        corrective_actions: actionsQ.data ?? [],
+      },
+      sources: [{ kind: "rca_investigation", ref: inv.id, label: `investigation state (${(nodesQ.data ?? []).length} nodes)` }],
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [rankBadActors.name]: rankBadActors,
   [draftDeTask.name]: draftDeTask,
@@ -711,4 +771,5 @@ export const TOOLS: Record<string, AgentTool> = {
   [scanWarrantyRecovery.name]: scanWarrantyRecovery,
   [getAssetHealth.name]: getAssetHealth,
   [lookupDataDefinitions.name]: lookupDataDefinitions,
+  [getInvestigation.name]: getInvestigation,
 };
