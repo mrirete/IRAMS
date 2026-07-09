@@ -129,13 +129,14 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         tier: 'reliability', icon: Shield, path: null,
         // Ordered as the reliability loop so the tier reads as one workflow, not 5 flat tools.
         children: [
+            { id: 'reliability-home', label: 'Start · Home', path: '/reliability' },
             { id: 'reliability-metrics', label: 'Measure · Metrics', path: '/reliability-metrics' },
             { id: 'analyze-dash', label: 'Diagnose · Analyze', path: '/analyze' },
             { id: 'reliability-modelling', label: 'Model · Reliability Modelling', path: '/reliability-modelling' },
             { id: 'rcm-dash', label: 'Decide · RCM', path: '/rcm' },
             { id: 'predict-dash', label: 'Forecast · Predict (preview)', path: '/predict' },
         ],
-        routes: ['/reliability-metrics', '/analyze', '/analyze/rca', '/reliability-modelling', '/rcm', '/predict'],
+        routes: ['/reliability', '/reliability-metrics', '/analyze', '/analyze/rca', '/reliability-modelling', '/rcm', '/predict'],
         dependencies: ['core'], section: 'ers', launchReady: true,
     },
 

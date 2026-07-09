@@ -34,6 +34,8 @@ interface Props {
     contextAsset: Asset | null;
     paretoData: ParetoResult[];
     paretoCriteria: string;
+    /** Landing-page handoff: opens the drawer with this text pre-seeded in the composer. */
+    initialPrompt?: string;
 }
 
 // ─── Quick Action Definitions ────────────────────────────────
@@ -80,12 +82,22 @@ const TOOL_LABELS: Record<string, string> = {
 //  COMPONENT
 // ═════════════════════════════════════════════════════════════
 
-const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, paretoData, paretoCriteria }) => {
+const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, paretoData, paretoCriteria, initialPrompt }) => {
     const [expanded, setExpanded] = useState(false); // call-up: closed until summoned
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Landing-page handoff: open the drawer with the user's question pre-seeded
+    // (they press Send themselves — no auto-fire, so an AI outage never greets
+    // them with an error they didn't ask for).
+    useEffect(() => {
+        if (initialPrompt && initialPrompt.trim()) {
+            setInput(initialPrompt.trim());
+            setExpanded(true);
+        }
+    }, [initialPrompt]);
 
     // Auto-scroll on new messages
     useEffect(() => {

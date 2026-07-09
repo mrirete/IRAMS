@@ -69,6 +69,7 @@ const PredictPage = lazyWithReload(() => import('./pages/PredictPage').then(m =>
 const AnalyzePage = lazyWithReload(() => import('./pages/AnalyzePage').then(m => ({ default: m.AnalyzePage })));
 const ReliabilityModellingPage = lazyWithReload(() => import('./pages/ReliabilityModellingPage'));
 const ReliabilityMetricsPage = lazyWithReload(() => import('./pages/ReliabilityMetricsPage').then(m => ({ default: m.ReliabilityMetricsPage })));
+const ReliabilityHomePage = lazyWithReload(() => import('./pages/ReliabilityHomePage').then(m => ({ default: m.ReliabilityHomePage })));
 const RCAInvestigationPage = lazyWithReload(() => import('./pages/RCAInvestigationPage').then(m => ({ default: m.RCAInvestigationPage })));
 const RCAReport = lazyWithReload(() => import('./components/analyze/RCAReport'));
 const FMEAWorksheetDetail = lazyWithReload(() => import('./pages/FMEAWorksheetDetail'));
@@ -181,6 +182,7 @@ function App() {
                                 {/* ═══════════════════════════════════════════ */}
                                 {/* Reliability tier */}
                                 <Route path="/predict" element={<Gated moduleId="predict"><PredictPage /></Gated>} />
+                                <Route path="/reliability" element={<Gated moduleId="predict"><ReliabilityHomePage /></Gated>} />
                                 <Route path="/reliability-metrics" element={<Gated moduleId="predict"><ReliabilityMetricsPage /></Gated>} />
                                 <Route path="/reliability-modelling" element={<Gated moduleId="predict"><ReliabilityModellingPage /></Gated>} />
                                 <Route path="/analyze" element={<Gated moduleId="predict"><AnalyzePage /></Gated>} />
