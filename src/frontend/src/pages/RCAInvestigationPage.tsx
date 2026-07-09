@@ -1183,33 +1183,33 @@ export function RCAInvestigationPage() {
                                     {aiMethodLoading ? 'Analyzing…' : 'Ask AI'}
                                 </button>
                             </div>
-                            <p className="text-xs text-blue-950/60 font-medium mb-4">
-                                The type of problem determines the best analysis method. Select a methodology below to use for building the causal framework.
-                            </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Compact method picker — tool name + best-for; full rationale on hover */}
+                            <div className="flex flex-wrap gap-2">
                                 {[
-                                    { type: 'Simple / single-cause', tool: '5-Why Analysis', why: 'Linear cause chain — quick for straightforward failures', method: 'five_why', color: 'border-emerald-500 text-emerald-700 bg-emerald-50/20' },
-                                    { type: 'Multiple contributing factors', tool: 'Fishbone (Ishikawa)', why: 'Category-based brainstorming (6M) for complex interactions', method: 'fishbone', color: 'border-blue-500 text-blue-700 bg-blue-50/20' },
-                                    { type: 'Safety-critical / quantitative', tool: 'Fault Tree Analysis', why: 'Boolean AND/OR gates with probability calculations for SIL/PSM', method: 'fault_tree', color: 'border-rose-500 text-rose-700 bg-rose-50/20' },
-                                    { type: 'Chronic recurring failures', tool: 'Logic Tree (LTA)', why: 'Physical → Human → Latent structured decision tree — the RCFA workhorse', method: 'logic_tree', color: 'border-blue-500 text-blue-700 bg-blue-50/20' },
+                                    { type: 'Simple / single-cause', tool: '5-Why', why: 'Linear cause chain — quick for straightforward failures', method: 'five_why', color: 'border-emerald-500 text-emerald-700 ring-emerald-500/20' },
+                                    { type: 'Multiple factors', tool: 'Fishbone', why: 'Category-based brainstorming (6M) for complex interactions', method: 'fishbone', color: 'border-blue-500 text-blue-700 ring-blue-500/20' },
+                                    { type: 'Safety-critical / quantitative', tool: 'Fault Tree', why: 'Boolean AND/OR gates with probability calculations for SIL/PSM', method: 'fault_tree', color: 'border-rose-500 text-rose-700 ring-rose-500/20' },
+                                    { type: 'Chronic recurring', tool: 'Logic Tree', why: 'Physical → Human → Latent decision tree — the RCFA workhorse', method: 'logic_tree', color: 'border-violet-500 text-violet-700 ring-violet-500/20' },
                                 ].map(g => {
                                     const isSelected = inv.method === g.method;
                                     return (
                                         <button
                                             key={g.method}
+                                            title={`${g.tool} — best for ${g.type}. ${g.why}`}
                                             onClick={async () => {
                                                 const updated = await analyzeService.updateRCAInvestigation(inv.id, { method: g.method as any });
                                                 if (updated) setInv(updated);
                                             }}
-                                            className={`p-4 rounded-xl text-left transition-all cursor-pointer ${
-                                                isSelected 
-                                                    ? `border-2 bg-white ${g.color} shadow-md` 
-                                                    : 'border border-slate-200 bg-white hover:border-slate-300 hover:shadow-xs'
+                                            className={`flex-1 min-w-[130px] px-3 py-2 rounded-lg text-left transition-all cursor-pointer bg-white ${
+                                                isSelected
+                                                    ? `border-2 ring-2 ${g.color} shadow-sm`
+                                                    : 'border border-slate-200 text-slate-700 hover:border-slate-300'
                                             }`}
                                         >
-                                            <div className="text-[10px] font-extrabold tracking-wider uppercase mb-1">{g.tool}</div>
-                                            <div className="text-xs text-slate-800 font-bold mb-1">Best for: {g.type}</div>
-                                            <div className="text-[11px] text-slate-400 font-medium leading-relaxed">{g.why}</div>
+                                            <div className="text-xs font-extrabold flex items-center gap-1.5">
+                                                {isSelected && <Check size={12} />}{g.tool}
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 font-medium truncate">Best for: {g.type}</div>
                                         </button>
                                     );
                                 })}
