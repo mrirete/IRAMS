@@ -333,6 +333,15 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
         } catch { showToast('Could not copy — select and copy the text manually.', 'warning'); }
     };
 
+    // Esc leaves the guide — unless a modal is open (those own Esc themselves).
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' && !uploadOpen && !csvOpen) onExit();
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [uploadOpen, csvOpen, onExit]);
+
     // ── Step 4: auto twin snapshot ────────────────────────
     // Fired from the event handlers (save / CSV import), NOT an effect — an
     // effect keyed on the state it sets cancels its own async completion.
@@ -369,6 +378,15 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
 
     return (
         <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+            {/* Escape hatch — always visible, top-left (Esc works too) */}
+            <button
+                onClick={() => onExit()}
+                className="flex items-center gap-1.5 mb-4 px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-800 bg-white border border-slate-200 hover:border-slate-300 rounded-lg transition-colors"
+                title="Leave the guide (Esc)"
+            >
+                <ChevronLeft size={15} /> Back to Predict
+            </button>
+
             {/* Welcome header */}
             <div className="text-center mb-8">
                 <div className="inline-flex p-3 bg-primary-50 border border-primary-100 rounded-2xl text-primary-600 mb-3">
