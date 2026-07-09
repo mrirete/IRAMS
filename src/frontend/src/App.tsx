@@ -27,6 +27,7 @@ const ManufacturersPage = lazyWithReload(() => import('./pages/ManufacturersPage
 const WorkCentersPage = lazyWithReload(() => import('./pages/WorkCentersPage').then(m => ({ default: m.WorkCentersPage })));
 const CompaniesPage = lazyWithReload(() => import('./pages/CompaniesPage').then(m => ({ default: m.CompaniesPage })));
 const AdminActivityPage = lazyWithReload(() => import('./pages/admin/AdminActivityPage').then(m => ({ default: m.AdminActivityPage })));
+const InvitationsPage = lazyWithReload(() => import('./pages/admin/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
 
 // ── React Query Client ──────────────────────────────────
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ const queryClient = new QueryClient({
 
 // ── EAM pages (Supabase-backed, replace ERS mock pages) ─
 const EamLogin = lazyWithReload(() => import('./eam/pages/Login').then(m => ({ default: m.Login })));
+const EamAcceptInvite = lazyWithReload(() => import('./eam/pages/AcceptInvite').then(m => ({ default: m.AcceptInvite })));
 const EamDashboard = lazyWithReload(() => import('./eam/pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const EamMyWork = lazyWithReload(() => import('./eam/pages/MyWork').then(m => ({ default: m.MyWork })));
 const EamAssets = lazyWithReload(() => import('./eam/pages/Assets').then(m => ({ default: m.Assets })));
@@ -141,6 +143,8 @@ function App() {
                   <Routes>
                     {/* Public — Login (EAM Supabase auth) */}
                     <Route path="/login" element={<Suspense fallback={<Loading />}><EamLogin /></Suspense>} />
+                    {/* Public — invite acceptance (the token in the URL is the credential) */}
+                    <Route path="/invite/:token" element={<Suspense fallback={<Loading />}><EamAcceptInvite /></Suspense>} />
                     <Route
                       path="*"
                       element={
@@ -221,6 +225,7 @@ function App() {
                                 <Route path="/sustain" element={<Gated moduleId="sustain"><SustainPage /></Gated>} />
 
                                 {/* Admin — ERS connector hub + EAM dictionaries/permissions */}
+                                <Route path="/admin/invitations" element={<PermissionGate module="admin"><InvitationsPage /></PermissionGate>} />
                                 <Route path="/admin/connectors" element={<PermissionGate module="admin"><ConnectorHub /></PermissionGate>} />
                                 <Route path="/admin/connectors/new" element={<PermissionGate module="admin"><ConnectorWizard /></PermissionGate>} />
                                 <Route path="/admin/connectors/:id" element={<PermissionGate module="admin"><ConnectorDetail /></PermissionGate>} />

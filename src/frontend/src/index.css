@@ -51,9 +51,9 @@
      higher-contrast copy across all modules; the surface tiers (50-300 —
      backgrounds, borders, dividers) keep Tailwind defaults so the UI stays
      light and breathable. ── */
-  --color-slate-400: #7E8CA3;  /* was #94a3b8 — secondary text, icons */
-  --color-slate-500: #55637C;  /* was #64748b — body-muted */
-  --color-slate-600: #3D4A60;  /* was #475569 — body */
+  --color-slate-400: #6B7A94;  /* was #94a3b8 — secondary text, icons */
+  --color-slate-500: #47556E;  /* was #64748b — body-muted */
+  --color-slate-600: #333F54;  /* was #475569 — body */
   --color-slate-700: #2B3648;  /* was #334155 — emphasized body */
   --color-slate-800: #16202F;  /* was #1e293b — headings */
   --color-slate-900: #0B1322;  /* was #0f172a — display */

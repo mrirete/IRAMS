@@ -177,7 +177,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const subLinkClass = (isActive: boolean) =>
         `block w-full text-left px-3 py-1.5 rounded-lg text-[13px] transition-all duration-150 tracking-[-0.01em] ${isActive
             ? 'text-primary-600 font-semibold bg-primary-50'
-            : 'text-slate-500 hover:text-slate-700 hover:bg-primary-50 font-medium'
+            : 'text-slate-600 hover:text-slate-800 hover:bg-primary-50 font-medium'
         }`;
 
     const renderModule = (mod: ModuleDefinition) => {
@@ -191,7 +191,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         <NavLink key="home" to="/" end className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                             {({ isActive }) => (
                                 <>
-                                    <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                                    <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
                                     <span className="flex-1 text-left">Dashboard</span>
                                 </>
                             )}
@@ -201,7 +201,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         <NavLink key="assets" to="/assets" className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                             {({ isActive }) => (
                                 <>
-                                    <Database size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                                    <Database size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
                                     <span className="flex-1 text-left">Asset Register</span>
                                 </>
                             )}
@@ -227,7 +227,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         className={linkClass(isSectionActive)}
                         style={isSectionActive ? activeBgStyle : undefined}
                     >
-                        <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isSectionActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                        <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isSectionActive ? 'text-primary-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
                         <span className="flex-1 text-left">{mod.label}</span>
                         {isExpanded
                             ? <ChevronDown size={14} className={isSectionActive ? 'text-primary-400' : 'text-slate-400'} />
@@ -268,7 +268,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 <NavLink key={mod.id} to={mod.path} onClick={onClose} className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                     {({ isActive }) => (
                         <>
-                            <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                            <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
                             <span className="flex-1 text-left">{mod.label}</span>
                         </>
                     )}
@@ -366,7 +366,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             className={linkClass(isAdminActive)}
                             style={isAdminActive ? activeBgStyle : undefined}
                         >
-                            <Lock size={18} className={`mr-3 flex-shrink-0 transition-colors ${isAdminActive ? 'text-primary-600' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                            <Lock size={18} className={`mr-3 flex-shrink-0 transition-colors ${isAdminActive ? 'text-primary-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
                             <span className="flex-1 text-left">Admin</span>
                             {adminExpanded
                                 ? <ChevronDown size={14} className={isAdminActive ? 'text-primary-400' : 'text-slate-400'} />
@@ -378,6 +378,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                             <div className="mt-1 mb-2 ml-6 pl-3 border-l border-slate-200 space-y-0.5">
                                 <NavLink to="/eam-admin" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Dictionaries & Permissions
+                                </NavLink>
+                                <NavLink to="/admin/invitations" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                                    Invitations
                                 </NavLink>
                                 <NavLink to="/admin/connectors" end onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Connector Hub

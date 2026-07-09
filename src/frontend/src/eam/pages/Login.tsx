@@ -111,9 +111,12 @@ export const Login: React.FC = () => {
     };
 
     const loginWithUsername = async (user: string, pass: string) => {
-        const normalizedUser = user.toLowerCase();
+        const normalizedUser = user.trim().toLowerCase();
         let virtualEmail = '';
-        if (normalizedUser === 'mrirete') {
+        if (normalizedUser.includes('@')) {
+            // Invited users register under their real (company) email — use as-is.
+            virtualEmail = normalizedUser;
+        } else if (normalizedUser === 'mrirete') {
             virtualEmail = 'admin001@cainergy.com';
         } else {
             virtualEmail = `${normalizedUser}@cainergy.com`;
@@ -214,7 +217,7 @@ export const Login: React.FC = () => {
                             {/* Username */}
                             <div>
                                 <label htmlFor="login-username" className="block text-[13px] font-semibold mb-2" style={{ color: '#334155' }}>
-                                    Username
+                                    Username or Email
                                 </label>
                                 <div className="relative rounded-xl transition-all duration-200"
                                      style={{
@@ -234,7 +237,7 @@ export const Login: React.FC = () => {
                                         onBlur={() => setFocusedField(null)}
                                         className="w-full bg-transparent rounded-xl py-3.5 pl-12 pr-4 outline-none text-[15px] font-medium placeholder:text-slate-400"
                                         style={{ color: '#1e293b' }}
-                                        placeholder="Enter your username"
+                                        placeholder="Enter your username or email"
                                         required
                                         autoComplete="username"
                                     />

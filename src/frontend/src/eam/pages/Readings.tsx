@@ -58,6 +58,9 @@ export const Readings: React.FC = () => {
     const [filterText, setFilterText] = useState('');
     const [dueOnly, setDueOnly] = useState(false); // rounds view: show only assets with readings due
     const [viewMode, setViewMode] = useState<'list' | 'tree'>('list'); // list = rounds, tree = hierarchy
+    // Full-page batch entry sheet with its own in-sheet asset picker (the asset
+    // list "moves into" the sheet — operators build their round right there).
+    const [sheetOpen, setSheetOpen] = useState(false);
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     // R-4: condition-alarm → one-tap WO
     const [alarmBreaches, setAlarmBreaches] = useState<BreachInfo[]>([]);
@@ -618,7 +621,7 @@ export const Readings: React.FC = () => {
     return (
         <div className="flex h-[calc(100vh-6rem)] gap-4 sm:gap-6">
             {/* Sidebar List */}
-            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedAssetId ? 'hidden sm:flex sm:w-1/3' : 'w-full sm:w-1/3'}`}>
+            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${sheetOpen ? 'hidden' : selectedAssetId ? 'hidden sm:flex sm:w-1/3' : 'w-full sm:w-1/3'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center gap-2">
                     <div className="flex items-center gap-2">
                         <h2 className="font-bold text-slate-900">Assets</h2>
@@ -628,10 +631,10 @@ export const Readings: React.FC = () => {
                         </div>
                     </div>
                     <button
-                        onClick={() => setSelectedAssetId(null)} // Go to Batch Entry
+                        onClick={() => { setSelectedAssetId(null); setSheetOpen(true); }} // Full-page sheet with in-sheet asset picker
                         className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 font-medium flex-shrink-0"
                     >
-                        Entry Sheet
+                        New Entry Sheet
                     </button>
                 </div>
                 <div className="p-4 bg-slate-50 border-b border-slate-200">
@@ -725,7 +728,7 @@ export const Readings: React.FC = () => {
             </div>
 
             {/* Main Content */}
-            <div className={`flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden ${!selectedAssetId ? 'hidden sm:flex' : ''}`}>
+            <div className={`flex-1 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col overflow-hidden ${sheetOpen ? '' : !selectedAssetId ? 'hidden sm:flex' : ''}`}>
                 {selectedAsset ? (
                     <>
                     {/* Mobile back button */}
@@ -850,15 +853,24 @@ export const Readings: React.FC = () => {
                             )}
                         </div>
                     </>
-                ) : (
+                ) : sheetOpen ? (
+                    /* Full-page entry sheet — assets are picked INSIDE the sheet */
                     <BatchEntryView
                         allAssets={filteredAssets}
                         allDefinitions={definitions}
                         onSave={handleSaveReadings}
                         readingTypes={readingTypes}
-                        onAddDefinition={handleAddDefinition} // Allow adding from Batch View too if needed
+                        onAddDefinition={handleAddDefinition}
                         onDeleteDefinition={handleDeleteDefinition}
+                        pickAssets
+                        onBack={() => setSheetOpen(false)}
                     />
+                ) : (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400">
+                        <Activity size={40} className="mb-3 opacity-20" />
+                        <p className="text-sm font-semibold text-slate-500">Select an asset to view its readings</p>
+                        <p className="text-xs mt-1 max-w-xs">…or open a <strong>New Entry Sheet</strong> to record a round across several assets at once.</p>
+                    </div>
                 )}
             </div>
 
@@ -1217,23 +1229,44 @@ const BatchEntryView: React.FC<{
     onOpenAddPoint?: (assetId: string) => void;
     titleOverride?: string;
     readingTypes?: DictionaryRecord[]; // Added prop
-}> = ({ allAssets, allDefinitions, onSave, onAddDefinition, onDeleteDefinition, onOpenAddPoint, titleOverride, readingTypes = [] }) => {
+    /** In-sheet asset picker: the user builds their round by adding assets here. */
+    pickAssets?: boolean;
+    onBack?: () => void;
+}> = ({ allAssets, allDefinitions, onSave, onAddDefinition, onDeleteDefinition, onOpenAddPoint, titleOverride, readingTypes = [], pickAssets = false, onBack }) => {
     const [inputValues, setInputValues] = useState<Record<string, { value: number | string, date: string, time: string, comment: string }>>({});
 
     // Add New Reading State
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [selectedType, setSelectedType] = useState('');
 
+    // In-sheet picker state (pickAssets mode)
+    const [sheetAssetIds, setSheetAssetIds] = useState<string[]>([]);
+    const [pickerText, setPickerText] = useState('');
+
+    const sheetAssets = useMemo(
+        () => pickAssets ? allAssets.filter(a => sheetAssetIds.includes(a.id)) : allAssets,
+        [pickAssets, allAssets, sheetAssetIds],
+    );
+
+    const pickerMatches = useMemo(() => {
+        if (!pickAssets) return [];
+        const q = pickerText.trim().toLowerCase();
+        return allAssets
+            .filter(a => !sheetAssetIds.includes(a.id))
+            .filter(a => !q || a.tag?.toLowerCase().includes(q) || a.name?.toLowerCase().includes(q))
+            .slice(0, 8);
+    }, [pickAssets, allAssets, sheetAssetIds, pickerText]);
+
     const rows = useMemo(() => {
         const result: { asset: Asset, def: ReadingDefinition }[] = [];
-        allAssets.forEach(asset => {
+        sheetAssets.forEach(asset => {
             const defs = allDefinitions.filter(d => d.assetId === asset.id && d.isActive);
             defs.forEach(def => {
                 result.push({ asset, def });
             });
         });
         return result;
-    }, [allAssets, allDefinitions]);
+    }, [sheetAssets, allDefinitions]);
 
     // Available Types for Add Modal (If single asset)
     const singleAsset = allAssets.length === 1 ? allAssets[0] : null;
@@ -1284,10 +1317,17 @@ const BatchEntryView: React.FC<{
 
     return (
         <div className="flex flex-col h-full relative">
-            <div className="p-6 border-b border-slate-200 bg-white flex justify-between items-center">
-                <div>
-                    <h1 className="text-xl font-bold text-slate-900">{titleOverride || 'Batch Readings Entry'}</h1>
-                    <p className="text-sm text-slate-500">Record data for {rows.length} points.</p>
+            <div className="p-4 sm:p-6 border-b border-slate-200 bg-white flex flex-wrap justify-between items-center gap-3">
+                <div className="flex items-center gap-3">
+                    {onBack && (
+                        <button onClick={onBack} className="flex items-center gap-1 text-xs font-bold text-slate-600 hover:text-slate-800 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50" title="Back to the asset browser">
+                            ← Assets
+                        </button>
+                    )}
+                    <div>
+                        <h1 className="text-xl font-bold text-slate-900">{titleOverride || 'Readings Entry Sheet'}</h1>
+                        <p className="text-sm text-slate-500">{pickAssets ? `${sheetAssets.length} asset${sheetAssets.length === 1 ? '' : 's'} · ${rows.length} points` : `Record data for ${rows.length} points.`}</p>
+                    </div>
                 </div>
                 <div className="flex gap-2">
                     {singleAsset && (onOpenAddPoint || onAddDefinition) && (
@@ -1307,8 +1347,56 @@ const BatchEntryView: React.FC<{
                     </button>
                 </div>
             </div>
+            {/* In-sheet asset picker: build the round right here */}
+            {pickAssets && (
+                <div className="px-4 sm:px-6 py-3 border-b border-slate-200 bg-slate-50/60">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="relative flex-1 min-w-[220px] max-w-md">
+                            <Search className="absolute left-3 top-2.5 text-slate-500" size={15} />
+                            <input
+                                value={pickerText}
+                                onChange={e => setPickerText(e.target.value)}
+                                placeholder="Add asset to this sheet — search tag or name…"
+                                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
+                            />
+                            {pickerText.trim() && pickerMatches.length > 0 && (
+                                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden">
+                                    {pickerMatches.map(a => {
+                                        const nPts = allDefinitions.filter(d => d.assetId === a.id && d.isActive).length;
+                                        return (
+                                            <button key={a.id}
+                                                onClick={() => { setSheetAssetIds(prev => [...prev, a.id]); setPickerText(''); }}
+                                                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-primary-50 text-sm">
+                                                <span className="min-w-0">
+                                                    <span className="font-bold text-slate-800">{a.tag}</span>
+                                                    <span className="text-slate-500 truncate"> — {a.name}</span>
+                                                </span>
+                                                <span className={`shrink-0 text-[10px] font-semibold ${nPts ? 'text-slate-500' : 'text-amber-600'}`}>{nPts ? `${nPts} pts` : 'no points'}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        {sheetAssets.map(a => (
+                            <span key={a.id} className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 bg-white border border-primary-200 text-primary-700 rounded-full text-xs font-bold">
+                                {a.tag}
+                                <button onClick={() => setSheetAssetIds(prev => prev.filter(id => id !== a.id))}
+                                    className="w-4 h-4 rounded-full hover:bg-primary-100 flex items-center justify-center" title="Remove from sheet">×</button>
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            )}
             <div className="flex-1 overflow-y-auto bg-slate-50/50">
-                <table className="min-w-full divide-y divide-slate-200 border-b border-slate-200">
+                {pickAssets && rows.length === 0 && (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
+                        <Activity size={36} className="mb-3 opacity-20" />
+                        <p className="text-sm font-semibold text-slate-500">Build your entry sheet</p>
+                        <p className="text-xs mt-1 max-w-sm">Search above and add the assets on your round — their reading points appear here as one sheet. Assets marked <span className="text-amber-600 font-semibold">no points</span> need a reading point configured first.</p>
+                    </div>
+                )}
+                <table className={`min-w-full divide-y divide-slate-200 border-b border-slate-200 ${pickAssets && rows.length === 0 ? 'hidden' : ''}`}>
                     <thead className="bg-slate-100 sticky top-0 z-10 shadow-sm">
                         <tr>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-40">Asset</th>
