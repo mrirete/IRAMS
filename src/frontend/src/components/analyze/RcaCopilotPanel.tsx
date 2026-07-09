@@ -221,8 +221,8 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
             <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-violet-50 via-white to-white shrink-0">
                 <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-100 text-violet-600 shrink-0"><Bot size={16} /></span>
                 <div className="min-w-0 flex-1">
-                    <h4 className="text-sm font-bold text-slate-800">RCA Copilot</h4>
-                    <p className="text-[10px] text-slate-400 truncate">Facilitating “{inv.title}” · advisory — you approve every change</p>
+                    <h4 className="text-sm font-bold text-slate-800">Reliability Specialist</h4>
+                    <p className="text-[10px] text-slate-400 truncate">Facilitating “{inv.title}” · advisory only — you approve every change</p>
                 </div>
                 <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1"><X size={16} /></button>
             </div>

@@ -555,9 +555,10 @@ export const AnalyzePage: React.FC = () => {
 
 
             {/* ── Main Content + Reliability Specialist sidebar ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                {/* Left: Active Division Content (3/4) */}
-                <div className="lg:col-span-3 min-w-0">
+            {/* Specialist is a call-up now — content gets the full width. */}
+            <div className="space-y-4">
+                {/* Active Division Content — full width */}
+                <div className="min-w-0">
 
 
                     {/* ═ ROOT CAUSE ANALYSIS ═════════════════════════ */}
@@ -599,7 +600,7 @@ export const AnalyzePage: React.FC = () => {
                     {/* OEE retired — its real metric (Availability) now lives in Reliability -> Metrics. */}
                 </div>
 
-                {/* Right: Reliability Specialist + Triggers (1/4) */}
+                {/* Reliability Specialist — floating call-up (renders fixed) + compact triggers */}
                 <div className="space-y-4">
                     <ReliabilitySpecialist
                         activeDivision={activeDivision as any}

@@ -2027,14 +2027,15 @@ export function RCAInvestigationPage() {
                 />
             )}
 
-            {/* ── RCA Copilot: agentic facilitator, available on every step ── */}
+            {/* ── Reliability Specialist: agentic facilitator, every step ──
+                One persona everywhere; launcher clears the mobile bottom nav. */}
             {inv && !copilotOpen && (
                 <button
                     onClick={() => setCopilotOpen(true)}
-                    className="fixed bottom-6 right-6 z-40 flex items-center gap-2 pl-3.5 pr-4 py-3 rounded-full bg-gradient-to-r from-violet-600 to-violet-500 text-white text-sm font-bold shadow-lg shadow-violet-500/30 hover:shadow-xl hover:scale-[1.03] transition-all"
-                    title="Open the RCA Copilot — an AI facilitator that works the investigation with you"
+                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 flex items-center gap-2 pl-3.5 pr-4 py-3 rounded-full bg-gradient-to-r from-violet-600 to-violet-500 text-white text-sm font-bold shadow-lg shadow-violet-500/30 hover:shadow-xl hover:scale-[1.03] transition-all"
+                    title="Reliability Specialist — facilitates this investigation with you. Advisory only: you decide."
                 >
-                    <Bot size={17} /> Copilot
+                    <Bot size={17} /> Specialist
                 </button>
             )}
             {inv && copilotOpen && (

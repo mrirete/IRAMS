@@ -6,7 +6,7 @@
  */
 import React, { useState, useCallback, useRef, useEffect, Component, type ErrorInfo, type ReactNode } from 'react';
 import {
-    Bot, Send, ChevronDown, ChevronUp, Sparkles, Loader2,
+    Bot, Send, ChevronDown, Sparkles, Loader2,
     Lightbulb, Shield, Search, Wrench, BarChart2, Cpu,
     AlertTriangle, CheckCircle, MessageSquare, Clock, RefreshCw,
 } from 'lucide-react';
@@ -81,7 +81,7 @@ const TOOL_LABELS: Record<string, string> = {
 // ═════════════════════════════════════════════════════════════
 
 const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, paretoData, paretoCriteria }) => {
-    const [expanded, setExpanded] = useState(true);
+    const [expanded, setExpanded] = useState(false); // call-up: closed until summoned
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -298,34 +298,43 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
     // ═══════════════════════════════════════════════════════════
     //  RENDER
     // ═══════════════════════════════════════════════════════════
+    // Call-up pattern: one floating launcher, one slide-in drawer — the same
+    // "Reliability Specialist" persona everywhere. Full-screen sheet on mobile
+    // (launcher clears the bottom tab bar), 430px panel on desktop.
     return (
-        <div className="bg-white border border-blue-200 rounded-xl shadow-sm overflow-hidden transition-all duration-300">
-            {/* ── Header ────────────────────────────────────── */}
-            <button
-                onClick={() => setExpanded(e => !e)}
-                className="w-full flex items-center justify-between px-4 py-3 hover:bg-blue-50/50 transition-colors"
-            >
-                <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-md">
-                        <Bot size={16} className="text-white" />
-                    </div>
-                    <div className="text-left">
-                        <div className="text-sm font-semibold text-slate-800">Reliability Specialist</div>
-                        <div className="text-[10px] text-slate-400">AI-Powered • ISO 55000 • HITL</div>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2">
+        <>
+            {!expanded && (
+                <button
+                    onClick={() => setExpanded(true)}
+                    title="Reliability Specialist — your dependable mentor. Advisory only: you decide."
+                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 flex items-center gap-2 pl-3.5 pr-4 py-3 rounded-full bg-gradient-to-r from-violet-600 to-violet-500 text-white text-sm font-bold shadow-lg shadow-violet-500/30 hover:shadow-xl hover:scale-[1.03] transition-all"
+                >
+                    <Bot size={17} /> Specialist
                     {messages.length > 0 && (
-                        <span className="flex items-center gap-1 text-[10px] text-blue-400 bg-blue-50 px-2 py-0.5 rounded-full">
-                            <MessageSquare size={10} /> {messages.length}
+                        <span className="flex items-center gap-1 text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">
+                            <MessageSquare size={9} /> {messages.length}
                         </span>
                     )}
-                    {expanded ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-                </div>
-            </button>
+                </button>
+            )}
 
             {expanded && (
-                <div className="border-t border-blue-100">
+                <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[430px] bg-white border-l border-slate-200 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+                    {/* ── Header ────────────────────────────────── */}
+                    <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-violet-50 via-white to-white shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0">
+                            <Bot size={16} />
+                        </div>
+                        <div className="min-w-0 flex-1 text-left">
+                            <div className="text-sm font-bold text-slate-800">Reliability Specialist</div>
+                            <div className="text-[10px] text-slate-400 truncate">Your reliability mentor · advisory only — you decide</div>
+                        </div>
+                        <button onClick={() => setExpanded(false)} className="text-slate-400 hover:text-slate-600 p-1.5" title="Close">
+                            <ChevronDown size={18} />
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto">
                     {/* ── Quick Actions ────────────────────────── */}
                     <div className="px-4 py-2.5 bg-blue-50/30 border-b border-blue-100">
                         <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-1.5 font-medium">Quick Actions</div>
@@ -459,12 +468,13 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                             </button>
                         </div>
                         <p className="text-[9px] text-slate-300 mt-1 text-center">
-                            Powered by Gemini · All responses are advisory · ISO 55000 · HITL
+                            Every figure comes from your data · advisory only · ISO 55000 · HITL
                         </p>
+                    </div>
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 };
 
