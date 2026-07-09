@@ -473,6 +473,7 @@ export class DataMapper {
             createdById: record.created_by,
             dateCreated: record.created_at,
             costCenter: record.cost_center,
+            workCenterId: record.work_center_id || undefined, // 0178 — Main Work Center
 
             // Scheduling
             dateDueStart,
@@ -541,6 +542,11 @@ export class DataMapper {
         // Cost Center (text field in DB)
         if (ui.costCenter !== undefined) {
             record.cost_center = ui.costCenter || null;
+        }
+
+        // Main Work Center — the responsible work group (0178, SAP Main Work Center)
+        if (ui.workCenterId !== undefined) {
+            record.work_center_id = ui.workCenterId || null;
         }
 
         // Scope (STANDARD / PROJECT)

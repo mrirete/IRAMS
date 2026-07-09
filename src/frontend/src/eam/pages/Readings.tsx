@@ -20,7 +20,7 @@ import { useToast } from '../contexts/ToastContext';
 import { Button } from '../components/ui';
 import { offlineQueue } from '../services/offlineQueue';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { evaluateReading, type AlarmLevel } from '../../lib/readingAlarm';
 import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
 import { evaluateMeterPMs, type MeterPM, type MeterReadingCtx, type MeterPMDue } from '../../lib/meterPM';
@@ -60,7 +60,7 @@ export const Readings: React.FC = () => {
     const [viewMode, setViewMode] = useState<'list' | 'tree'>('list'); // list = rounds, tree = hierarchy
     // Full-page batch entry sheet with its own in-sheet asset picker (the asset
     // list "moves into" the sheet — operators build their round right there).
-    const [sheetOpen, setSheetOpen] = useState(false);
+    const [sheetOpen, setSheetOpen] = useState(true); // sheet-first: the asset list moved INTO the sheet
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
     // R-4: condition-alarm → one-tap WO
     const [alarmBreaches, setAlarmBreaches] = useState<BreachInfo[]>([]);
@@ -86,6 +86,15 @@ export const Readings: React.FC = () => {
     useEffect(() => {
         loadReadings();
     }, [dataScope]); // Re-run when user's data scope changes
+
+    // Deep link (?asset=<id>) — e.g. the Predict setup guide's "log daily rounds
+    // here" hand-off lands with the asset already selected on the entry sheet.
+    const location = useLocation();
+    useEffect(() => {
+        const q = new URLSearchParams(location.search).get('asset');
+        if (q) { setSelectedAssetId(q); setActiveTab('entry'); }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const loadReadings = async () => {
         try {
@@ -864,6 +873,8 @@ export const Readings: React.FC = () => {
                         onDeleteDefinition={handleDeleteDefinition}
                         pickAssets
                         onBack={() => setSheetOpen(false)}
+                        onOpenAddPoint={setAddPointAssetId}
+                        onOpenAsset={(id) => { setSheetOpen(false); setSelectedAssetId(id); }}
                     />
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400">
@@ -1232,7 +1243,9 @@ const BatchEntryView: React.FC<{
     /** In-sheet asset picker: the user builds their round by adding assets here. */
     pickAssets?: boolean;
     onBack?: () => void;
-}> = ({ allAssets, allDefinitions, onSave, onAddDefinition, onDeleteDefinition, onOpenAddPoint, titleOverride, readingTypes = [], pickAssets = false, onBack }) => {
+    /** Open the asset's detail view (history/analysis/config). */
+    onOpenAsset?: (assetId: string) => void;
+}> = ({ allAssets, allDefinitions, onSave, onAddDefinition, onDeleteDefinition, onOpenAddPoint, titleOverride, readingTypes = [], pickAssets = false, onBack, onOpenAsset }) => {
     const [inputValues, setInputValues] = useState<Record<string, { value: number | string, date: string, time: string, comment: string }>>({});
 
     // Add New Reading State
@@ -1380,7 +1393,7 @@ const BatchEntryView: React.FC<{
                         </div>
                         {sheetAssets.map(a => (
                             <span key={a.id} className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 bg-white border border-primary-200 text-primary-700 rounded-full text-xs font-bold">
-                                {a.tag}
+                                <button onClick={() => onOpenAsset?.(a.id)} className="hover:underline" title="Open asset detail (history & configuration)">{a.tag}</button>
                                 <button onClick={() => setSheetAssetIds(prev => prev.filter(id => id !== a.id))}
                                     className="w-4 h-4 rounded-full hover:bg-primary-100 flex items-center justify-center" title="Remove from sheet">×</button>
                             </span>
@@ -1389,6 +1402,20 @@ const BatchEntryView: React.FC<{
                 </div>
             )}
             <div className="flex-1 overflow-y-auto bg-slate-50/50">
+                {/* Added assets with no reading points: configure them right here */}
+                {pickAssets && sheetAssets.filter(a => !allDefinitions.some(d => d.assetId === a.id && d.isActive)).map(a => (
+                    <div key={a.id} className="mx-4 sm:mx-6 mt-3 flex flex-wrap items-center justify-between gap-2 px-4 py-3 bg-relantern-50 border border-relantern-200 rounded-xl">
+                        <span className="text-sm text-slate-700">
+                            <strong>{a.tag}</strong> — {a.name}: <span className="text-slate-500">no reading points yet.</span>
+                        </span>
+                        {onOpenAddPoint && (
+                            <button onClick={() => onOpenAddPoint(a.id)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-relantern-500 hover:bg-relantern-600 text-white">
+                                <Plus size={12} /> Add reading point
+                            </button>
+                        )}
+                    </div>
+                ))}
                 {pickAssets && rows.length === 0 && (
                     <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
                         <Activity size={36} className="mb-3 opacity-20" />

@@ -671,6 +671,7 @@ export interface WorkOrder {
 
   // Financial & Org
   costCenter?: string;
+  workCenterId?: string;          // 0178 — Main Work Center (responsible work group)
   enforceJobCostCenter?: boolean;
   customerId?: string; // Contact ID for Customer
 

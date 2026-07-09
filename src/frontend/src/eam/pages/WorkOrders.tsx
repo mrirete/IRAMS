@@ -3191,9 +3191,12 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     const [showParentPicker, setShowParentPicker] = useState(false);
     const [pickAssets, setPickAssets] = useState<any[]>([]);
     const [pickWOs, setPickWOs] = useState<any[]>([]);
+    // Main Work Center (0178): active work groups for the header-level picker.
+    const [detailWorkCenters, setDetailWorkCenters] = useState<{ id: string; code: string; name: string }[]>([]);
     useEffect(() => {
         DatabaseService.getInstance().getAssets().then(a => setPickAssets(a || [])).catch(() => {});
         DatabaseService.getInstance().getWorkOrders().then(w => setPickWOs((w as any[]) || [])).catch(() => {});
+        DatabaseService.getInstance().getWorkCenters(true).then((w: any[]) => setDetailWorkCenters(w || [])).catch(() => setDetailWorkCenters([]));
     }, []);
     const parentWoLabel = (() => {
         if (!job.parentWoId) return '';
@@ -3430,6 +3433,20 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             {!dictionaries.some(d => d.type === 'PRIORITY' && d.code === job.priority) && (
                                 <option value={job.priority}>{job.priority}</option>
                             )}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5" title="SAP Main Work Center — the work group responsible for executing this order. Per-operation work centers (costing) are set on the Tasks tab.">Main Work Group</label>
+                        <select
+                            className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
+                            value={job.workCenterId || ''}
+                            onChange={(e) => onUpdate({ workCenterId: e.target.value || undefined })}
+                        >
+                            <option value="">-- No work group --</option>
+                            {detailWorkCenters.map(wc => (
+                                <option key={wc.id} value={wc.id}>{wc.code} — {wc.name}</option>
+                            ))}
                         </select>
                     </div>
 
