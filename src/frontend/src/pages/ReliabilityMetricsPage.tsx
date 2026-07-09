@@ -345,29 +345,44 @@ export const ReliabilityMetricsPage: React.FC = () => {
                         <span className="text-slate-400 ml-auto">{filteredAssets.length} assets · {filteredWos.length} WOs</span>
                     </div>
 
-                    {/* KPI cards */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                        {kpis.map(k => (
-                            <div key={k.key} className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 md:p-4" title={`${k.smrpRef ? k.smrpRef + ' — ' : ''}${k.definition}`}>
-                                <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 flex items-center gap-1">
-                                    {k.label}{k.smrpRef && <span className="text-slate-300">·{k.smrpRef.replace('SMRP ', '')}</span>}
-                                </div>
-                                <div className={`text-2xl md:text-3xl font-extrabold mt-1 ${ragColor(k)}`}>{k.display}</div>
-                                {(() => {
-                                    const dv = deltas[k.key];
-                                    if (dv == null || dv === 0) return null;
-                                    const better = k.direction === 'higher-better' ? dv > 0 : dv < 0;
-                                    const suffix = k.unit === '%' ? 'pp' : '';
-                                    return (
-                                        <div className={`text-[10px] font-semibold mt-0.5 ${better ? 'text-emerald-600' : 'text-red-500'}`} title={`vs previous ${windowLabel}`}>
-                                            {dv > 0 ? '▲' : '▼'} {Math.abs(dv)}{suffix} vs prev
+                    {/* KPI cards — calm rule: only KPIs with real data get a tile;
+                        the rest wait in ONE quiet line instead of six shouting N/As. */}
+                    {(() => {
+                        const withData = kpis.filter(k => k.value != null);
+                        const awaiting = kpis.filter(k => k.value == null);
+                        return (<>
+                            {withData.length > 0 && (
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                                    {withData.map(k => (
+                                        <div key={k.key} className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 md:p-4" title={`${k.smrpRef ? k.smrpRef + ' — ' : ''}${k.definition}`}>
+                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400 flex items-center gap-1">
+                                                {k.label}{k.smrpRef && <span className="text-slate-300">·{k.smrpRef.replace('SMRP ', '')}</span>}
+                                            </div>
+                                            <div className={`text-2xl md:text-3xl font-extrabold mt-1 ${ragColor(k)}`}>{k.display}</div>
+                                            {(() => {
+                                                const dv = deltas[k.key];
+                                                if (dv == null || dv === 0) return null;
+                                                const better = k.direction === 'higher-better' ? dv > 0 : dv < 0;
+                                                const suffix = k.unit === '%' ? 'pp' : '';
+                                                return (
+                                                    <div className={`text-[10px] font-semibold mt-0.5 ${better ? 'text-emerald-600' : 'text-red-500'}`} title={`vs previous ${windowLabel}`}>
+                                                        {dv > 0 ? '▲' : '▼'} {Math.abs(dv)}{suffix} vs prev
+                                                    </div>
+                                                );
+                                            })()}
+                                            {k.benchmark && <div className="text-[10px] text-slate-400 mt-0.5">benchmark {k.benchmark}</div>}
                                         </div>
-                                    );
-                                })()}
-                                {k.benchmark && <div className="text-[10px] text-slate-400 mt-0.5">benchmark {k.benchmark}</div>}
-                            </div>
-                        ))}
-                    </div>
+                                    ))}
+                                </div>
+                            )}
+                            {awaiting.length > 0 && (
+                                <div className="bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] text-slate-400 font-medium">
+                                    <span className="font-bold text-slate-500">Awaiting data:</span>{' '}
+                                    {awaiting.map(k => k.label).join(' · ')} — these compute automatically as work orders complete and failure history accumulates.
+                                </div>
+                            )}
+                        </>);
+                    })()}
 
                     {/* Work Execution — mirrored from Schedule (shared spine) */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -406,7 +421,15 @@ export const ReliabilityMetricsPage: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Maintenance Cost vs RAV — SAP FI-CO / SMRP financial metrics (FI-2) */}
+                    {/* Maintenance Cost vs RAV — SAP FI-CO / SMRP financial metrics (FI-2).
+                        Calm rule: when there's no cost data at all, one quiet line, not
+                        three N/A monoliths. */}
+                    {cost.pctRav == null && cost.maint12 <= 0 && cost.rav <= 0 ? (
+                        <div className="bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] text-slate-400 font-medium">
+                            <span className="font-bold text-slate-500">Cost KPIs awaiting data:</span>{' '}
+                            Maint. cost % of RAV · Maintenance cost · Replacement Asset Value — appear once WO costs and asset RAV are captured.
+                        </div>
+                    ) : (
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
                             <Gauge size={15} className="text-emerald-600" />
@@ -440,6 +463,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             })()}
                         </div>
                     </div>
+                    )}
 
                     {/* Register Health — data quality (ISO 14224) */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -455,7 +479,9 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                 { label: 'Class coded', v: health.classPct, hint: 'equipment · ISO 14224' },
                                 { label: 'Equip # set', v: health.eqNumPct, hint: 'equipment' },
                             ].map(m => {
-                                const color = m.v == null ? 'text-slate-400' : m.v >= 90 ? 'text-emerald-600' : m.v >= 70 ? 'text-amber-500' : 'text-red-500';
+                                // Calm rule: data-quality gaps are chores, not emergencies —
+                                // amber worst case; red is reserved for true operational alarms.
+                                const color = m.v == null ? 'text-slate-400' : m.v >= 90 ? 'text-emerald-600' : m.v >= 70 ? 'text-amber-500' : 'text-amber-600';
                                 return (
                                     <div key={m.label} className="p-4">
                                         <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{m.label}</div>
