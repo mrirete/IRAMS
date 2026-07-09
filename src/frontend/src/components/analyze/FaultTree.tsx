@@ -423,7 +423,12 @@ const FaultTree: React.FC<FaultTreeProps> = ({
         return result;
     }, [topEvent, events]);
 
-    const SVG_WIDTH = 900;
+    // Canvas sized to the WIDEST layer (160-unit node spacing + margins) so
+    // sibling-heavy trees never clip at the edges; positions are relative to
+    // SVG_WIDTH/2 so everything re-centers automatically. Very wide trees
+    // scroll horizontally (min-width below) instead of shrinking to unreadable.
+    const widestLayer = layers.reduce((m, l) => Math.max(m, l.length), 1);
+    const SVG_WIDTH = Math.max(900, widestLayer * 160 + 100);
     const LAYER_HEIGHT = 130;
     const SVG_HEIGHT = Math.max(400, layers.length * LAYER_HEIGHT + 60);
 
@@ -660,7 +665,16 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                 </div>
             )}
 
-            <svg viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`} style={{ width: '100%', height: 'auto' }}>
+            <div className="overflow-x-auto">
+            <svg
+                viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+                style={{
+                    width: '100%',
+                    height: 'auto',
+                    // Wide trees keep node text legible and scroll instead of shrinking.
+                    minWidth: SVG_WIDTH > 1000 ? `${Math.round(SVG_WIDTH * 0.85)}px` : undefined,
+                }}
+            >
                 {/* Background grid */}
                 <defs>
                     <pattern id="ftGrid" width="40" height="40" patternUnits="userSpaceOnUse">
@@ -724,6 +738,7 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                     })
                 )}
             </svg>
+            </div>
 
             {/* Removed bottom controls as they are now in the top header beside the top event context */}
 
