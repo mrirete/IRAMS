@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircl
 import { useIntelligence } from '../hooks/useIntelligence';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
+import { FleetHealthMap } from '../components/predict/FleetHealthMap';
 import { DigitalTwinTab } from '../components/predict/DigitalTwinTab';
 import { RULReliabilityTab } from '../components/predict/RULReliabilityTab';
 import { ScrollTabStrip } from '../eam/components/ui';
@@ -129,12 +130,8 @@ export const PredictPage: React.FC = () => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [manageFleetOpen]);
 
-    // Auto-select the first equipment asset once real data loads
-    useEffect(() => {
-        if (!selectedAssetId && assetOptions.length > 0) {
-            setSelectedAssetId(assetOptions[0].id);
-        }
-    }, [assetOptions, selectedAssetId]);
+    // Deliberately NO auto-selection: the page defaults to a plain chooser —
+    // the user picks the asset or system to study (or sets up new equipment).
 
     const { loading, twinHealth, rulEstimate, getAssetAlerts, getSensorTrends, refetchPredict } = useIntelligence(selectedAssetId);
 
@@ -390,14 +387,16 @@ export const PredictPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* ═══ Experimental disclaimer — keep heuristic forecasts from being mistaken for fitted reliability models ═══ */}
-            <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-card text-sm">
-                <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                <p className="text-amber-800 leading-relaxed">
-                    <strong>Experimental:</strong> Health Index and RUL here are <strong>heuristic estimates</strong> from condition trends — useful for triage, not for life decisions. For rigorous Weibull fits and Monte-Carlo availability analysis, use{' '}
-                    <a href="/reliability-modelling" className="font-semibold underline decoration-amber-400 underline-offset-2 hover:text-amber-900">Reliability Modelling</a>.
-                </p>
-            </div>
+            {/* ═══ Experimental disclaimer — only once an asset's heuristics are on screen ═══ */}
+            {selectedAssetId && (
+                <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-card text-sm">
+                    <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-amber-800 leading-relaxed">
+                        <strong>Experimental:</strong> Health Index and RUL here are <strong>heuristic estimates</strong> from condition trends — useful for triage, not for life decisions. For rigorous Weibull fits and Monte-Carlo availability analysis, use{' '}
+                        <a href="/reliability-modelling" className="font-semibold underline decoration-amber-400 underline-offset-2 hover:text-amber-900">Reliability Modelling</a>.
+                    </p>
+                </div>
+            )}
 
             {/* ═══ Command Palette Modal ═══ */}
             {assetPickerOpen && (
@@ -654,7 +653,9 @@ export const PredictPage: React.FC = () => {
                     {!hasTwin && selectedAssetId && (
                         <span className="hidden sm:inline text-[10px] font-semibold text-primary-600 shrink-0">Not connected yet</span>
                     )}
-                    <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${critColor}`}>Crit {critLevel || '?'}</span>
+                    {selectedAsset && (
+                        <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${critColor}`}>Crit {critLevel || '?'}</span>
+                    )}
                     <kbd className="hidden md:inline px-1.5 py-0.5 text-[10px] font-mono font-bold bg-slate-100 text-slate-400 border border-slate-200 rounded shrink-0">Ctrl+K</kbd>
                 </button>
                 <button
@@ -665,7 +666,45 @@ export const PredictPage: React.FC = () => {
                 </button>
             </div>
 
+            {/* ═══ PLAIN DEFAULT — no asset selected: choose what to study ═══ */}
+            {!selectedAssetId && (
+                <>
+                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center">
+                        <div className="inline-flex p-3 bg-slate-50 rounded-xl text-slate-300 mb-3">
+                            <Target size={28} />
+                        </div>
+                        <h2 className="text-lg font-bold text-slate-800">Choose an asset or system to study</h2>
+                        <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+                            Search above, pick from the fleet below — or set up new equipment for monitoring.
+                        </p>
+                        <div className="flex flex-wrap items-center justify-center gap-3 mt-5">
+                            <button
+                                onClick={() => { setAssetPickerOpen(true); setAssetSearch(''); }}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-lg text-sm transition-colors"
+                            >
+                                <Search size={15} /> Select asset or system
+                            </button>
+                            <button
+                                onClick={() => openSetup()}
+                                className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-700 text-slate-600 font-semibold rounded-lg text-sm transition-colors"
+                            >
+                                <HeartPulse size={15} /> Set up new equipment
+                            </button>
+                        </div>
+                    </div>
+                    {visibleFleetData.length > 0 && (
+                        <FleetHealthMap
+                            selectedAssetId=""
+                            onAssetSelect={(id: string) => setSelectedAssetId(id)}
+                            fleetData={visibleFleetData}
+                            totalAssetCount={fleetData.length}
+                        />
+                    )}
+                </>
+            )}
+
             {/* ═══ TAB NAVIGATION ═══ */}
+            {selectedAssetId && (
             <ScrollTabStrip activeId={activeTab} className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 shadow-sm">
                 {PREDICT_TABS.map(tab => (
                     <button
@@ -684,9 +723,10 @@ export const PredictPage: React.FC = () => {
                     </button>
                 ))}
             </ScrollTabStrip>
+            )}
 
             {/* ═══ TAB CONTENT ═══ */}
-            {activeTab === 'overview' && (
+            {selectedAssetId && activeTab === 'overview' && (
                 <PredictOverviewTab
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
@@ -780,7 +820,7 @@ export const PredictPage: React.FC = () => {
                 />
             )}
 
-            {activeTab === 'twin' && (
+            {selectedAssetId && activeTab === 'twin' && (
                 <DigitalTwinTab
                     twinHealth={twinHealth}
                     rulEstimate={rulEstimate}
@@ -789,7 +829,7 @@ export const PredictPage: React.FC = () => {
                 />
             )}
 
-            {activeTab === 'rul' && (
+            {selectedAssetId && activeTab === 'rul' && (
                 <RULReliabilityTab
                     rulEstimate={rulEstimate}
                     assetAlerts={assetAlerts}

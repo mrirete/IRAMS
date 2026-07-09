@@ -11,7 +11,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bot, Send, Search, Gauge, GitBranch, Target, TrendingUp, ArrowRight, FolderOpen } from 'lucide-react';
+import { Bot, Send, Search, Gauge, GitBranch, Target, TrendingUp, ArrowRight, FolderOpen, HeartPulse } from 'lucide-react';
 import ReliabilitySpecialist from '../components/analyze/ReliabilitySpecialist';
 import { analyzeService, type RCAInvestigation } from '../eam/services/AnalyzeService';
 import { useAuth } from '../eam/contexts/AuthContext';
@@ -22,6 +22,7 @@ const INTENTS: { icon: React.ReactNode; label: string; hint: string; path: strin
     { icon: <Gauge size={15} />, label: 'Check asset health', hint: 'KPIs, Golden Spot & Success Rate', path: '/reliability-metrics' },
     { icon: <GitBranch size={15} />, label: 'Model reliability', hint: 'Weibull, RBD, Monte Carlo', path: '/reliability-modelling' },
     { icon: <Target size={15} />, label: 'Decide a strategy', hint: 'RCM decision logic', path: '/rcm' },
+    { icon: <HeartPulse size={15} />, label: 'Predict & monitor', hint: 'Live health, sensors & setup guide', path: '/predict' },
 ];
 
 const LOOP = [
