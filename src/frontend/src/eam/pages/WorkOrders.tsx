@@ -1645,7 +1645,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 pb-32 sm:pb-5 md:pb-6 bg-slate-50/50">
-                <div className="max-w-7xl mx-auto">
+                {/* Breathable: WO detail (incl. Tasks) uses the full page width. */}
+                <div className="max-w-none">
                     {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
                     {activeTab === 'tasks' && (
                         <TasksTab

@@ -61,7 +61,7 @@ interface Props {
 const CAT_STYLE: Record<string, string> = {
     physical: 'bg-red-50 border-red-200 text-red-700',
     human: 'bg-amber-50 border-amber-200 text-amber-700',
-    latent: 'bg-violet-50 border-violet-200 text-violet-700',
+    latent: 'bg-primary-50 border-primary-200 text-primary-700',
 };
 
 export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClose }) => {
@@ -166,9 +166,9 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
         if (!m.proposal) return null;
         const p = m.proposal;
         return (
-            <div className="mt-2 border border-violet-200 bg-violet-50/40 rounded-xl p-3 space-y-2">
+            <div className="mt-2 border border-primary-200 bg-primary-50/40 rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-violet-500 flex items-center gap-1">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-primary-500 flex items-center gap-1">
                         <Sparkles size={11} />
                         {p.type === 'why_chain' ? 'Proposed cause chain' : p.type === 'corrective_actions' ? 'Proposed corrective actions' : 'Proposed problem statement'}
                     </span>
@@ -178,7 +178,7 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
                         <button
                             onClick={() => applyProposal(idx, p)}
                             disabled={applying}
-                            className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-60 flex items-center gap-1"
+                            className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-60 flex items-center gap-1"
                         >
                             {applying ? <Loader2 size={10} className="animate-spin" /> : <Plus size={10} />} Apply to investigation
                         </button>
@@ -191,7 +191,7 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
                                 <span className={`shrink-0 text-[9px] font-extrabold px-1.5 py-0.5 rounded border uppercase ${CAT_STYLE[n.category] || 'bg-slate-50 border-slate-200 text-slate-500'}`}>
                                     {n.category}
                                 </span>
-                                <span>{n.description}{n.is_root_cause && <strong className="text-violet-700"> ← root cause</strong>}</span>
+                                <span>{n.description}{n.is_root_cause && <strong className="text-primary-700"> ← root cause</strong>}</span>
                             </li>
                         ))}
                     </ol>
@@ -218,8 +218,8 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
     return (
         <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[440px] bg-white border-l border-slate-200 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
             {/* Header */}
-            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-violet-50 via-white to-white shrink-0">
-                <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-100 text-violet-600 shrink-0"><Bot size={16} /></span>
+            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-primary-50 via-white to-white shrink-0">
+                <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary-100 text-primary-600 shrink-0"><Bot size={16} /></span>
                 <div className="min-w-0 flex-1">
                     <h4 className="text-sm font-bold text-slate-800">Reliability Specialist</h4>
                     <p className="text-[10px] text-slate-400 truncate">Facilitating “{inv.title}” · advisory only — you approve every change</p>
@@ -233,7 +233,7 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
                     <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
                         <div className={`max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
                             m.role === 'user'
-                                ? 'bg-violet-600 text-white rounded-br-sm'
+                                ? 'bg-primary-600 text-white rounded-br-sm'
                                 : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-sm'
                         }`}>
                             {m.text}
@@ -245,7 +245,7 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
                     </div>
                 ))}
                 {loading && (
-                    <div className="flex items-center gap-2 text-xs text-violet-500 font-semibold px-1">
+                    <div className="flex items-center gap-2 text-xs text-primary-500 font-semibold px-1">
                         <Loader2 size={13} className="animate-spin" /> analyzing…
                     </div>
                 )}
@@ -265,12 +265,12 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
                         placeholder="Answer the copilot, add observations, or ask it anything…"
                         rows={2}
-                        className="flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400"
+                        className="flex-1 resize-none rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400"
                     />
                     <button
                         onClick={() => send(input)}
                         disabled={loading || !input.trim()}
-                        className="shrink-0 self-end flex items-center justify-center w-10 h-10 rounded-xl bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-50"
+                        className="shrink-0 self-end flex items-center justify-center w-10 h-10 rounded-xl bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-50"
                     >
                         <Send size={15} />
                     </button>

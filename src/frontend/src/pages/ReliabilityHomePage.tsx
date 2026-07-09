@@ -58,7 +58,7 @@ export const ReliabilityHomePage: React.FC = () => {
             {/* ── Centered ask ─────────────────────────────────── */}
             <div className="flex-1 flex flex-col items-center justify-center px-4 py-10 sm:py-16">
                 <div className="w-full max-w-2xl text-center">
-                    <div className="mx-auto mb-4 flex items-center justify-center w-12 h-12 rounded-2xl bg-violet-100 text-violet-600">
+                    <div className="mx-auto mb-4 flex items-center justify-center w-12 h-12 rounded-2xl bg-primary-100 text-primary-600">
                         <Bot size={22} />
                     </div>
                     <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -69,7 +69,7 @@ export const ReliabilityHomePage: React.FC = () => {
                     </p>
 
                     {/* Ask box */}
-                    <div className="mt-6 flex items-center gap-2 bg-white border border-slate-300 rounded-2xl shadow-sm px-4 py-1.5 focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-500/15 transition-all">
+                    <div className="mt-6 flex items-center gap-2 bg-white border border-slate-300 rounded-2xl shadow-sm px-4 py-1.5 focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/15 transition-all">
                         <input
                             value={question}
                             onChange={e => setQuestion(e.target.value)}
@@ -80,7 +80,7 @@ export const ReliabilityHomePage: React.FC = () => {
                         <button
                             onClick={ask}
                             disabled={!question.trim()}
-                            className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40 transition-all"
+                            className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-40 transition-all"
                             title="Ask the Reliability Specialist"
                         >
                             <Send size={15} />
@@ -94,7 +94,7 @@ export const ReliabilityHomePage: React.FC = () => {
                                 key={i.label}
                                 onClick={() => navigate(i.path)}
                                 title={i.hint}
-                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:border-violet-300 hover:text-violet-700 hover:shadow-sm transition-all"
+                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-full border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 hover:shadow-sm transition-all"
                             >
                                 <span className="text-slate-400">{i.icon}</span>{i.label}
                             </button>
@@ -114,7 +114,7 @@ export const ReliabilityHomePage: React.FC = () => {
                             <button
                                 key={r.id}
                                 onClick={() => navigate(`/analyze/rca/${r.id}`)}
-                                className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-left hover:border-violet-300 hover:shadow-sm transition-all"
+                                className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-left hover:border-primary-300 hover:shadow-sm transition-all"
                             >
                                 <span className="min-w-0">
                                     <span className="block text-xs font-bold text-slate-800 truncate">{r.title}</span>
@@ -133,7 +133,7 @@ export const ReliabilityHomePage: React.FC = () => {
                     {LOOP.map((s, i) => (
                         <React.Fragment key={s.label}>
                             {i > 0 && <span className="text-slate-200">→</span>}
-                            <button onClick={() => navigate(s.path)} className="px-2 py-1 rounded-lg hover:text-violet-600 hover:bg-violet-50 transition-colors">
+                            <button onClick={() => navigate(s.path)} className="px-2 py-1 rounded-lg hover:text-primary-600 hover:bg-primary-50 transition-colors">
                                 {s.label}
                             </button>
                         </React.Fragment>

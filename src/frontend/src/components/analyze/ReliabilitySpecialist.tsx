@@ -319,7 +319,7 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                 <button
                     onClick={() => setExpanded(true)}
                     title="Reliability Specialist — your dependable mentor. Advisory only: you decide."
-                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 flex items-center gap-2 pl-3.5 pr-4 py-3 rounded-full bg-gradient-to-r from-violet-600 to-violet-500 text-white text-sm font-bold shadow-lg shadow-violet-500/30 hover:shadow-xl hover:scale-[1.03] transition-all"
+                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 flex items-center gap-2 pl-3.5 pr-4 py-3 rounded-full bg-gradient-to-r from-primary-600 to-primary-500 text-white text-sm font-bold shadow-glow-relantern hover:shadow-xl hover:scale-[1.03] transition-all"
                 >
                     <Bot size={17} /> Specialist
                     {messages.length > 0 && (
@@ -333,8 +333,8 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
             {expanded && (
                 <div className="fixed inset-y-0 right-0 z-50 w-full sm:w-[430px] bg-white border-l border-slate-200 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
                     {/* ── Header ────────────────────────────────── */}
-                    <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-violet-50 via-white to-white shrink-0">
-                        <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0">
+                    <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100 bg-gradient-to-r from-primary-50 via-white to-white shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-primary-100 text-primary-600 flex items-center justify-center shrink-0">
                             <Bot size={16} />
                         </div>
                         <div className="min-w-0 flex-1 text-left">

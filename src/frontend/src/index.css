@@ -46,6 +46,21 @@
   --color-accent-warn: #f59e0b;
   --color-accent-safe: #10b981;
 
+  /* ── Readability: darkened slate TEXT range (visibility pass 2026-07-09).
+     Only the text tiers (400-900) are deepened one notch for sharper,
+     higher-contrast copy across all modules; the surface tiers (50-300 —
+     backgrounds, borders, dividers) keep Tailwind defaults so the UI stays
+     light and breathable. ── */
+  --color-slate-400: #7E8CA3;  /* was #94a3b8 — secondary text, icons */
+  --color-slate-500: #55637C;  /* was #64748b — body-muted */
+  --color-slate-600: #3D4A60;  /* was #475569 — body */
+  --color-slate-700: #2B3648;  /* was #334155 — emphasized body */
+  --color-slate-800: #16202F;  /* was #1e293b — headings */
+  --color-slate-900: #0B1322;  /* was #0f172a — display */
+
+  /* ── Relantern glow — the "reliability lantern" accent for launchers/CTAs ── */
+  --shadow-glow-relantern: 0 4px 14px -2px rgb(245 166 35 / 0.45), 0 0 0 1px rgb(245 166 35 / 0.15);
+
   --font-sans: 'Inter', 'Roboto', sans-serif;
 
   /* ── Breakpoints (migrated from tailwind.config.js) ── */
@@ -70,6 +85,8 @@
     text-rendering: optimizeLegibility;
     font-feature-settings: 'liga' 1, 'kern' 1;
   }
+  /* Brand touch: text selection glows relantern gold. */
+  ::selection { background: #FDE4B3; color: #0B1322; }
   body {
     @apply bg-brand-900 text-brand-100 font-sans antialiased;
     letter-spacing: -0.011em;

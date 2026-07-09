@@ -25,7 +25,7 @@ interface Props {
 const initials = (name: string) => name.split(/[\s._]+/).filter(Boolean).slice(0, 2).map(s => s[0]?.toUpperCase()).join('') || '?';
 
 // Deterministic avatar tint from the name (calm palette, no random).
-const TINTS = ['bg-violet-100 text-violet-700', 'bg-blue-100 text-blue-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700'];
+const TINTS = ['bg-primary-100 text-primary-700', 'bg-blue-100 text-blue-700', 'bg-emerald-100 text-emerald-700', 'bg-amber-100 text-amber-700', 'bg-rose-100 text-rose-700'];
 const tintFor = (s: string) => TINTS[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % TINTS.length];
 
 function fmtTime(iso: string): string {
@@ -159,7 +159,7 @@ export const ThreadPanel: React.FC<Props> = ({ threadType, threadId, threadLabel
                                     <span>{fmtTime(m.created_at)}</span>
                                     {(m as any)._queued && <span className="flex items-center gap-0.5 text-amber-500"><WifiOff size={9} /> queued</span>}
                                 </div>
-                                <div className={`rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${mine ? 'bg-violet-600 text-white rounded-br-sm' : 'bg-slate-100 text-slate-800 rounded-bl-sm'}`}>
+                                <div className={`rounded-2xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words ${mine ? 'bg-primary-600 text-white rounded-br-sm' : 'bg-slate-100 text-slate-800 rounded-bl-sm'}`}>
                                     {renderBody(m.body, mine)}
                                 </div>
                             </div>
@@ -174,7 +174,7 @@ export const ThreadPanel: React.FC<Props> = ({ threadType, threadId, threadLabel
                     <div className="absolute bottom-full left-3 mb-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-10">
                         {mentionMatches.map(p => (
                             <button key={p.id} onClick={() => pickMention(p)}
-                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-violet-50 text-xs">
+                                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-primary-50 text-xs">
                                 <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-extrabold ${tintFor(p.name)}`}>{initials(p.name)}</span>
                                 <span className="font-semibold text-slate-700">{p.name}</span>
                             </button>
@@ -189,10 +189,10 @@ export const ThreadPanel: React.FC<Props> = ({ threadType, threadId, threadLabel
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !mentionMatches.length) { e.preventDefault(); send(); } }}
                         rows={1}
                         placeholder="Message the team…  (@ to mention)"
-                        className="flex-1 resize-none max-h-28 rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400"
+                        className="flex-1 resize-none max-h-28 rounded-xl border border-slate-300 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400"
                     />
                     <button onClick={send} disabled={sending || !body.trim()}
-                        className="shrink-0 flex items-center justify-center w-11 h-11 rounded-xl bg-violet-600 text-white hover:bg-violet-500 disabled:opacity-40 transition-all">
+                        className="shrink-0 flex items-center justify-center w-11 h-11 rounded-xl bg-primary-600 text-white hover:bg-primary-500 disabled:opacity-40 transition-all">
                         {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
                     </button>
                 </div>
@@ -207,7 +207,7 @@ function renderBody(text: string, mine: boolean) {
     const parts = text.split(/(@[\w.]+(?:\s[\w.]+)?)/g);
     return parts.map((p, i) =>
         p.startsWith('@')
-            ? <span key={i} className={`font-bold ${mine ? 'text-violet-100 underline' : 'text-violet-600'}`}>{p}</span>
+            ? <span key={i} className={`font-bold ${mine ? 'text-primary-100 underline' : 'text-primary-600'}`}>{p}</span>
             : <React.Fragment key={i}>{p}</React.Fragment>,
     );
 }
