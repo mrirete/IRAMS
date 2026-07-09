@@ -47,6 +47,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/DatabaseService';
 import { buildWorkOrder } from '../lib/workOrder';
 import { ImageGallery } from '../components/ui/ImageGallery';
+import { ThreadPanel } from '../../components/messaging/ThreadPanel';
 import { aiEngine, type JSAHazardSuggestion } from '../services/AIAnalysisEngine';
 import { SignaturePad } from '../components/ui/SignaturePad';
 import { DataMapper } from '../services/DataMapper';
@@ -71,7 +72,7 @@ import { supabase } from '../lib/supabase';
 import ersApi from '../services/ERSApiClient';
 
 type ViewMode = 'LIST' | 'DETAIL' | 'PM_LIST' | 'MY_WORK';
-type TabId = 'details' | 'tasks' | 'jsa' | 'resources' | 'cost' | 'files' | 'analysis';
+type TabId = 'details' | 'tasks' | 'jsa' | 'resources' | 'cost' | 'files' | 'analysis' | 'discussion';
 
 // ...
 
@@ -1138,6 +1139,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         { id: 'cost', label: 'Cost', icon: DollarSign },
         { id: 'files', label: 'Files', icon: Paperclip },
         { id: 'analysis', label: 'Analysis & History', icon: AlertOctagon }, // Merged Tab
+        { id: 'discussion', label: 'Discussion', icon: MessageSquare },
     ];
 
     // ── Core DB persist function (called after debounce or immediately) ──
@@ -1662,6 +1664,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     {activeTab === 'cost' && <CostTab job={localJob} refreshKey={costRefreshKey} />}
                     {activeTab === 'files' && <FilesTab job={localJob} onUpdate={updateJob} tasks={localJob.tasks || []} />}
                     {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} />}
+                    {activeTab === 'discussion' && localJob.id && (
+                        <div className="h-[60vh] border border-slate-200 rounded-xl overflow-hidden">
+                            <ThreadPanel threadType="work_order" threadId={localJob.id} threadLabel={localJob.woNumber || 'this work order'} />
+                        </div>
+                    )}
                     {/* Placeholders */}
                     {[''].includes(activeTab) && (
                         <div className="flex flex-col items-center justify-center h-64 text-slate-400">

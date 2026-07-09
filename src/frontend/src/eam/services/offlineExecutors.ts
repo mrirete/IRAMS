@@ -1,5 +1,7 @@
 import { offlineQueue } from './offlineQueue';
 import { DatabaseService } from './DatabaseService';
+import { supabase } from '../lib/supabase';
+import { threadLink, type Message, type ThreadType } from './MessagingService';
 import type { ServiceRequestRecord } from '../schema';
 
 // Derive the updateWorkOrder args from the method itself — no fragile type imports.
@@ -50,6 +52,39 @@ export function initOfflineExecutors() {
     offlineQueue.register('saveWorkOrder', async (payload) => {
         const { id, updates, actor } = payload as SaveWorkOrderPayload;
         await DatabaseService.getInstance().updateWorkOrder(id, updates, actor);
+    });
+
+    // Contextual message send (thread chat). The row carries a client-generated
+    // id, so replaying the insert is idempotent (unique PK). @mentions fan out
+    // into notifications AFTER the insert lands — done here (not at the UI) so
+    // an offline-queued message still notifies mentioned users on replay.
+    offlineQueue.register('postMessage', async (payload) => {
+        const { row, senderName, threadLabel } = payload as { row: Message; senderName: string; threadLabel: string };
+        const { error } = await supabase.from('messages').insert(row);
+        // 23505 = the row already landed (a prior partial success) — treat as done.
+        if (error && (error as { code?: string }).code !== '23505') throw error;
+
+        const mentions: string[] = Array.isArray(row.mentions) ? row.mentions : [];
+        if (mentions.length === 0) return;
+        const db = DatabaseService.getInstance();
+        const link = threadLink(row.thread_type as ThreadType, row.thread_id);
+        const label = threadLabel || row.thread_type.replace('_', ' ');
+        const snippet = row.body.length > 120 ? row.body.slice(0, 117) + '…' : row.body;
+        await Promise.all(mentions
+            .filter(uid => uid && uid !== row.sender_id)
+            .map(uid => db.createNotification({
+                recipientId: uid,
+                title: `💬 ${senderName} mentioned you on ${label}`,
+                message: snippet,
+                severity: 'INFO',
+                notificationType: 'MENTION',
+                module: 'messaging',
+                entityId: row.thread_id,
+                entityType: row.thread_type.toUpperCase(),
+                actionLink: link,
+                actionRequired: false,
+                createdBy: row.sender_id,
+            }).catch(e => console.warn('[postMessage] mention notify failed:', e))));
     });
 
     // Replay anything left over from a previous (offline) session.
