@@ -156,6 +156,123 @@ export const WorkCentersPage: React.FC = () => {
                     </table>
                 </div>
             )}
+
+            {/* ── Crew: the people ↔ work-center intersection (0191) ──
+                Org units say who you ARE; work centers say who DOES the work.
+                Each member row shows their org-chart home, so the overlap is
+                visible: a crew is drawn FROM org units, but exists apart. */}
+            {!loading && <CrewPanel workCenters={rows.filter(r => !r._new && r.id)} orgUnits={sites} />}
+        </div>
+    );
+};
+
+const CrewPanel: React.FC<{
+    workCenters: { id?: string; code: string; name: string }[];
+    orgUnits: { id: string; name: string }[];
+}> = ({ workCenters, orgUnits }) => {
+    const { showToast } = useToast();
+    const [wcId, setWcId] = useState('');
+    const [members, setMembers] = useState<{ workCenterId: string; contactId: string; role: 'MEMBER' | 'LEAD' }[]>([]);
+    const [contacts, setContacts] = useState<any[]>([]);
+    const [search, setSearch] = useState('');
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+        DatabaseService.getInstance().getContacts().then(cs =>
+            setContacts((cs as any[]).filter(c => c.active !== false && !(c.types || []).includes('MANUFACTURER')))
+        ).catch(() => {});
+    }, []);
+    useEffect(() => {
+        if (!workCenters.length) return;
+        if (!wcId) { setWcId(workCenters[0].id as string); return; }
+        DatabaseService.getInstance().getWorkCenterMembers(wcId).then(setMembers);
+    }, [wcId, workCenters.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const orgName = (c: any) => orgUnits.find(o => o.id === c.organizationUnitId)?.name;
+    const memberContacts = members
+        .map(m => ({ m, c: contacts.find(c => c.id === m.contactId) }))
+        .filter(x => x.c);
+    const candidates = search.trim()
+        ? contacts.filter(c => !members.some(m => m.contactId === c.id) &&
+            (c.name?.toLowerCase().includes(search.toLowerCase()) || c.code?.toLowerCase().includes(search.toLowerCase()))).slice(0, 6)
+        : [];
+
+    const add = async (contactId: string) => {
+        if (!wcId) return;
+        setBusy(true);
+        const ok = await DatabaseService.getInstance().addWorkCenterMember(wcId, contactId);
+        setBusy(false);
+        if (!ok) { showToast('Could not add crew member (admin only — and check migration 0191 is applied).', 'error'); return; }
+        setSearch('');
+        setMembers(await DatabaseService.getInstance().getWorkCenterMembers(wcId));
+    };
+    const remove = async (contactId: string) => {
+        if (!wcId) return;
+        if (await DatabaseService.getInstance().removeWorkCenterMember(wcId, contactId)) {
+            setMembers(prev => prev.filter(m => m.contactId !== contactId));
+        }
+    };
+    const setRole = async (contactId: string, role: 'MEMBER' | 'LEAD') => {
+        if (!wcId) return;
+        if (await DatabaseService.getInstance().addWorkCenterMember(wcId, contactId, role)) {
+            setMembers(prev => prev.map(m => m.contactId === contactId ? { ...m, role } : m));
+        }
+    };
+
+    if (!workCenters.length) return null;
+    return (
+        <div className="mt-6 bg-white rounded-xl border border-slate-200 shadow-sm p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+                <div>
+                    <h3 className="text-sm font-extrabold text-slate-900">Crew</h3>
+                    <p className="text-[11px] text-slate-500">Assign people to this work center. Their org-chart home stays untouched — a person can serve on several crews.</p>
+                </div>
+                <select value={wcId} onChange={e => setWcId(e.target.value)}
+                    className="px-2.5 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white">
+                    {workCenters.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
+                </select>
+            </div>
+
+            <div className="mt-3 space-y-1.5">
+                {memberContacts.map(({ m, c }) => (
+                    <div key={m.contactId} className="flex flex-wrap items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg">
+                        <span className="text-sm font-bold text-slate-800">{c.name}</span>
+                        {orgName(c) && (
+                            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500" title="Org-chart home (People & Org)">
+                                {orgName(c)}
+                            </span>
+                        )}
+                        <span className="ml-auto flex items-center gap-1.5">
+                            <button onClick={() => setRole(m.contactId, m.role === 'LEAD' ? 'MEMBER' : 'LEAD')}
+                                className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${m.role === 'LEAD' ? 'bg-relantern-50 border-relantern-300 text-relantern-700' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
+                                title="Toggle crew lead">
+                                {m.role === 'LEAD' ? '★ LEAD' : 'member'}
+                            </button>
+                            <button onClick={() => remove(m.contactId)} className="text-slate-300 hover:text-red-500" title="Remove from crew"><Trash2 size={13} /></button>
+                        </span>
+                    </div>
+                ))}
+                {memberContacts.length === 0 && (
+                    <p className="text-xs text-slate-400 py-2">No crew assigned yet — search below to add people.</p>
+                )}
+            </div>
+
+            <div className="mt-3 relative max-w-sm">
+                <input value={search} onChange={e => setSearch(e.target.value)}
+                    placeholder="Add person — search name or code…"
+                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
+                {candidates.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden">
+                        {candidates.map(c => (
+                            <button key={c.id} disabled={busy} onClick={() => add(c.id)}
+                                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-primary-50 text-sm disabled:opacity-50">
+                                <span className="font-semibold text-slate-800">{c.name}</span>
+                                {orgName(c) && <span className="text-[10px] text-slate-400">{orgName(c)}</span>}
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

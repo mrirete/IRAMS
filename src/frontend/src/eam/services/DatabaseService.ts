@@ -646,6 +646,32 @@ export class DatabaseService {
         }));
     }
 
+    // ── Work center crew (0191): people ↔ work-center bridge ──────────────
+    /** Members of one work center (or all memberships when no id given). */
+    public async getWorkCenterMembers(workCenterId?: string): Promise<{ workCenterId: string; contactId: string; role: 'MEMBER' | 'LEAD' }[]> {
+        let q = supabase.from('work_center_members').select('*');
+        if (workCenterId) q = q.eq('work_center_id', workCenterId);
+        const { data, error } = await q;
+        if (error) { console.error('DatabaseService.getWorkCenterMembers:', error); return []; }
+        return (data || []).map((r: any) => ({
+            workCenterId: r.work_center_id, contactId: r.contact_id, role: r.role === 'LEAD' ? 'LEAD' : 'MEMBER',
+        }));
+    }
+
+    public async addWorkCenterMember(workCenterId: string, contactId: string, role: 'MEMBER' | 'LEAD' = 'MEMBER'): Promise<boolean> {
+        const { error } = await supabase.from('work_center_members')
+            .upsert({ work_center_id: workCenterId, contact_id: contactId, role }, { onConflict: 'work_center_id,contact_id' });
+        if (error) { console.error('DatabaseService.addWorkCenterMember:', error); return false; }
+        return true;
+    }
+
+    public async removeWorkCenterMember(workCenterId: string, contactId: string): Promise<boolean> {
+        const { error } = await supabase.from('work_center_members')
+            .delete().eq('work_center_id', workCenterId).eq('contact_id', contactId);
+        if (error) { console.error('DatabaseService.removeWorkCenterMember:', error); return false; }
+        return true;
+    }
+
     public async saveWorkCenter(wc: Partial<WorkCenter> & { code: string; name: string }): Promise<void> {
         const row: any = {
             code: wc.code.trim(),
