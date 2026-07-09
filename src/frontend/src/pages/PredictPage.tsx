@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Activity, AlertTriangle, ShieldCheck, HeartPulse, Clock, Search, ChevronDown, Gauge, Thermometer, Wind, Droplets, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3, Wrench, FileWarning, Loader2 } from 'lucide-react';
+import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3, FileWarning } from 'lucide-react';
 import { useIntelligence } from '../hooks/useIntelligence';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import { PredictOverviewTab } from '../components/predict/PredictOverviewTab';
@@ -11,10 +11,6 @@ import { DatabaseService } from '../eam/services/DatabaseService';
 import { RaiseWorkModal } from '../eam/components/RaiseWorkModal';
 import { useAuth } from '../eam/contexts/AuthContext';
 import type { FleetAssetHealth } from '../types/intelligence';
-import { supabase } from '../eam/lib/supabase';
-import { failureIntervalsHours, isFailure } from '../eam/services/reliabilityMetrics';
-import { groundedRulFromHistory, type GroundedRul } from '../lib/pmRecommendation';
-import { recommendMonitoringCadence } from '../lib/monitoringCadence';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 import { SetupJourney } from '../components/predict/SetupJourney';
 import { usePredictSetup } from '../hooks/usePredictSetup';
@@ -100,27 +96,9 @@ export const PredictPage: React.FC = () => {
         }
     };
 
-    // ── #1: data-grounded RUL (real Weibull MRL) for the selected asset ──
+    // #2: Reliability Advisor modal (grounded Weibull RUL lives in there now —
+    // the old banner's inline grounded-RUL display went with the banner).
     const [advisorOpen, setAdvisorOpen] = useState(false);
-    const [groundedRul, setGroundedRul] = useState<GroundedRul | null>(null);
-    useEffect(() => {
-        if (!selectedAssetId) { setGroundedRul(null); return; }
-        let active = true;
-        (async () => {
-            const { data: wos } = await supabase.from('work_orders')
-                .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
-                .eq('asset_id', selectedAssetId).order('created_at');
-            if (!active) return;
-            const rows = wos || [];
-            const intervals = failureIntervalsHours(rows);
-            const lastFail = rows.filter(isFailure)
-                .map((w: any) => new Date(w.closed_at || w.created_at).getTime())
-                .sort((a, b) => b - a)[0];
-            const susp = lastFail ? [Math.max(1, Math.floor((Date.now() - lastFail) / 3600000))] : [];
-            setGroundedRul(groundedRulFromHistory(intervals, susp));
-        })();
-        return () => { active = false; };
-    }, [selectedAssetId]);
 
     // ── #3: REAL condition alarms from R-4 measurement-point bands (not synthetic) ──
     const [conditionAlarms, setConditionAlarms] = useState<ConditionAlarms | null>(null);
@@ -330,8 +308,6 @@ export const PredictPage: React.FC = () => {
     const critLevel = selectedAsset?.criticality;
     const critColor = critLevel === 'A' ? 'bg-red-500/20 text-red-400 border-red-500/30' : critLevel === 'B' ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' : 'bg-slate-100 text-brand-300 border-slate-300';
 
-    // ── #5: criticality-driven monitoring cadence (P-F interval when the asset carries one) ──
-    const cadence = recommendMonitoringCadence({ criticality: critLevel, pfIntervalDays: (selectedAsset as any)?.pfIntervalDays ?? null });
     // ── #3: prefer REAL measurement-point band breaches; only fall back to synthetic when the asset has no reading definitions ──
     const hasRealBands = !!conditionAlarms && conditionAlarms.pointCount > 0;
     const realAlarmCount = conditionAlarms ? conditionAlarms.criticalCount + conditionAlarms.warningCount : 0;
@@ -410,29 +386,6 @@ export const PredictPage: React.FC = () => {
                         className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm transition-colors"
                     >
                         <Cpu size={16} /> Reliability Advisor
-                    </button>
-                    {/* New Insight Button */}
-                    <button
-                        onClick={() => setShowNewInsight(true)}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]"
-                    >
-                        <Plus size={16} /> New Prediction
-                    </button>
-
-                    {/* Slim Focused Asset Display + Search Trigger */}
-                    <button
-                        onClick={() => { setAssetPickerOpen(true); setAssetSearch(''); }}
-                        className="flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-lg hover:border-accent-cyan/50 hover:shadow-md transition-all min-w-[260px] group"
-                        title="Ctrl+K to search"
-                    >
-                        <div className="flex-1 text-left">
-                            <p className="text-sm font-semibold text-slate-800 group-hover:text-accent-cyan transition-colors truncate">{selectedAsset?.name || selectedAssetId || 'Select asset...'}</p>
-                            <p className="text-[10px] text-slate-400 truncate">{selectedAsset?.system || 'Click or press Ctrl+K'}</p>
-                        </div>
-                        <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${critColor}`}>
-                            Crit {critLevel || '?'}
-                        </span>
-                        <Search size={16} className="text-slate-400 group-hover:text-accent-cyan transition-colors shrink-0" />
                     </button>
                 </div>
             </div>
@@ -682,119 +635,34 @@ export const PredictPage: React.FC = () => {
                 </div>
             )}
 
-            {/* ═══ FOCUSED ASSET BANNER — with integrated asset selector ═══ */}
-            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-                <div className="flex items-stretch">
-                    {/* Left accent stripe — quiet slate when no data yet, never alarm-red */}
-                    <div className={`w-1.5 shrink-0 ${!hasTwin ? 'bg-slate-300' : isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} />
-
-                    <div className="flex-1 flex items-center justify-between px-5 py-4">
-                        {/* Left: Asset info + clickable selector */}
-                        <button
-                            onClick={() => { setAssetPickerOpen(true); setAssetSearch(''); }}
-                            className="flex items-center gap-4 text-left hover:bg-slate-50 -mx-2 px-2 py-1 rounded-lg transition-colors group"
-                            title="Click to change asset · Ctrl+K"
-                        >
-                            <div className={`p-3 rounded-xl border transition-colors ${isHealthy ? 'bg-emerald-50 border-emerald-200 text-emerald-600 group-hover:bg-emerald-100' : systemHealth >= 60 ? 'bg-amber-50 border-amber-200 text-amber-600 group-hover:bg-amber-100' : 'bg-red-50 border-red-200 text-red-500 group-hover:bg-red-100'}`}>
-                                <Target size={24} />
-                            </div>
-                            <div>
-                                <div className="flex items-center gap-2 mb-0.5">
-                                    <p className="text-[9px] text-slate-400 uppercase tracking-widest font-bold">Focused Asset</p>
-                                    <span className={`text-[9px] uppercase font-bold px-2 py-0.5 rounded border ${critColor}`}>Crit {critLevel || '?'}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <h2 className="text-lg font-bold text-slate-800 leading-tight group-hover:text-primary-700 transition-colors">{selectedAsset?.name || selectedAssetId}</h2>
-                                    <ChevronDown size={14} className="text-slate-300 group-hover:text-primary-500 transition-colors" />
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                    {selectedAsset?.system && (
-                                        <span className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                            <Layers size={10} /> {selectedAsset.system}
-                                        </span>
-                                    )}
-                                    {selectedAsset?.tag && (
-                                        <span className="text-[10px] text-slate-400 font-mono">{selectedAsset.tag}</span>
-                                    )}
-                                    {/* #5: criticality-driven monitoring cadence */}
-                                    <span
-                                        className="flex items-center gap-1 text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200"
-                                        title={cadence.basis}
-                                    >
-                                        <Clock size={10} /> Monitor: {cadence.label}
-                                    </span>
-                                    {/* #3: REAL condition alarms from measurement-point bands */}
-                                    {hasRealBands && (
-                                        realAlarmCount > 0 ? (
-                                            <span
-                                                className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded border font-semibold ${conditionAlarms!.criticalCount > 0 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}
-                                                title={conditionAlarms!.breaches.map(b => `${b.level}: ${b.name} = ${b.value}${b.unit ? ' ' + b.unit : ''} (${b.detail})`).join('\n')}
-                                            >
-                                                <AlertTriangle size={10} /> {conditionAlarms!.criticalCount}C · {conditionAlarms!.warningCount}W bands
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200" title="All measurement points within their alarm bands">
-                                                <ShieldCheck size={10} /> Bands nominal
-                                            </span>
-                                        )
-                                    )}
-                                </div>
-                            </div>
-                        </button>
-
-                        {/* Right: RUL (data-grounded when failure history exists) + Health gauge */}
-                        <div className="flex items-center gap-5">
-                            {groundedRul?.method === 'weibull-mrl' && groundedRul.rulDays != null ? (
-                                <div className="text-right border-r border-slate-100 pr-5">
-                                    <p className="text-[9px] text-emerald-600 uppercase tracking-wider font-bold mb-1">RUL · data-grounded</p>
-                                    <div className="flex items-baseline gap-1 justify-end">
-                                        <span className={`text-2xl font-bold tabular-nums ${groundedRul.rulDays < 90 ? 'text-red-500' : 'text-slate-800'}`}>{groundedRul.rulDays}</span>
-                                        <span className="text-sm text-slate-400 font-medium">days</span>
-                                    </div>
-                                    <p className="text-[9px] text-slate-400 mt-0.5" title={groundedRul.note}>Weibull MRL · not heuristic</p>
-                                </div>
-                            ) : rulEstimate?.rul_days ? (
-                                <div className="text-right border-r border-slate-100 pr-5">
-                                    <p className="text-[9px] text-amber-600 uppercase tracking-wider font-bold mb-1">RUL · heuristic</p>
-                                    <div className="flex items-baseline gap-1 justify-end">
-                                        <span className="text-2xl font-bold tabular-nums text-slate-500">{rulEstimate.rul_days.toFixed(0)}</span>
-                                        <span className="text-sm text-slate-400 font-medium">days</span>
-                                    </div>
-                                    <p className="text-[9px] text-slate-400 mt-0.5">Thin data — directional only</p>
-                                </div>
-                            ) : null}
-                            <div className="text-right">
-                                <p className="text-[9px] text-slate-400 uppercase tracking-wider font-bold mb-1">Health Index</p>
-                                {hasTwin ? (
-                                    <>
-                                        <div className="flex items-baseline gap-1">
-                                            <span className={`text-3xl font-bold tabular-nums ${isHealthy ? 'text-emerald-600' : systemHealth >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
-                                                {systemHealth.toFixed(1)}
-                                            </span>
-                                            <span className="text-sm text-slate-400 font-medium">/ 100</span>
-                                        </div>
-                                        <div className="mt-1.5 w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                            <div
-                                                className={`h-full rounded-full transition-all ${isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                                style={{ width: `${systemHealth}%` }}
-                                            />
-                                        </div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <span className="text-3xl font-bold text-slate-300">—</span>
-                                        <button
-                                            onClick={() => openSetup(selectedAssetId || undefined)}
-                                            className="block text-[10px] font-semibold text-primary-600 hover:underline mt-1"
-                                        >
-                                            Not connected yet — set up →
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-                        </div>
+            {/* ═══ ASSET BAR — search-first selector + New Prediction (replaces the old focused-asset banner) ═══ */}
+            <div className="flex items-stretch gap-3">
+                <button
+                    onClick={() => { setAssetPickerOpen(true); setAssetSearch(''); }}
+                    className="flex-1 min-w-0 flex items-center gap-3 px-4 py-2.5 bg-white border border-slate-200 rounded-xl shadow-sm hover:border-accent-cyan/50 hover:shadow-md transition-all text-left group"
+                    title="Change asset · Ctrl+K"
+                >
+                    <Search size={17} className="text-slate-400 group-hover:text-accent-cyan transition-colors shrink-0" />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 group-hover:text-accent-cyan transition-colors truncate">
+                            {selectedAsset ? selectedAsset.name : 'Search assets…'}
+                        </p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                            {selectedAsset ? [selectedAsset.tag, selectedAsset.system].filter(Boolean).join(' · ') : 'by tag, name, or system'}
+                        </p>
                     </div>
-                </div>
+                    {!hasTwin && selectedAssetId && (
+                        <span className="hidden sm:inline text-[10px] font-semibold text-primary-600 shrink-0">Not connected yet</span>
+                    )}
+                    <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${critColor}`}>Crit {critLevel || '?'}</span>
+                    <kbd className="hidden md:inline px-1.5 py-0.5 text-[10px] font-mono font-bold bg-slate-100 text-slate-400 border border-slate-200 rounded shrink-0">Ctrl+K</kbd>
+                </button>
+                <button
+                    onClick={() => setShowNewInsight(true)}
+                    className="flex items-center gap-2 px-4 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-xl text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] whitespace-nowrap"
+                >
+                    <Plus size={16} /> New Prediction
+                </button>
             </div>
 
             {/* ═══ TAB NAVIGATION ═══ */}
