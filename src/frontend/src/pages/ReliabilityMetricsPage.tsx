@@ -9,6 +9,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench } from 'lucide-react';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
+import { PSCPanel } from '../components/metrics/PSCPanel';
 import { supabase } from '../eam/lib/supabase';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { useRelantern } from '../eam/contexts/RelanternContext';
@@ -563,6 +564,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             </div>
                         )}
                     </div>
+
+                    {/* Success-centric layer: Potential Success Curve (Golden Spot / MTOP /
+                        MTTRg / SR) — the complement to the failure-centric KPIs above. */}
+                    <PSCPanel />
 
                     <p className="text-[11px] text-slate-400">
                         Metrics computed over the {windowLabel} window via the shared reliability engine.
