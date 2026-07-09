@@ -6,8 +6,9 @@
  *   Step 2: Analyze failure modes for high-criticality assets
  */
 import React, { useState } from 'react';
-import { ShieldAlert, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, AlertTriangle, Star } from 'lucide-react';
 import FMEATab from './FMEATab';
+import SMEATab from './SMEATab';
 import CriticalityAssessmentTab from './CriticalityAssessmentTab';
 
 interface FMECADivisionProps {
@@ -16,7 +17,7 @@ interface FMECADivisionProps {
     onRefresh?: () => void;
 }
 
-type FMECASubTab = 'criticality' | 'fmea';
+type FMECASubTab = 'criticality' | 'fmea' | 'smea';
 
 export const FMECADivision: React.FC<FMECADivisionProps> = ({
     fmeaWorksheets,
@@ -28,6 +29,7 @@ export const FMECADivision: React.FC<FMECADivisionProps> = ({
     const SUB_TABS: { id: FMECASubTab; label: string; icon: React.ReactNode; desc: string }[] = [
         { id: 'criticality', label: 'Criticality Assessment', icon: <AlertTriangle size={14} />, desc: 'Risk-rank assets (Severity × Probability) — determines which need FMEA' },
         { id: 'fmea', label: 'FMEA Worksheets', icon: <ShieldAlert size={14} />, desc: 'Failure Mode & Effects Analysis — identify how assets can fail and score RPN' },
+        { id: 'smea', label: 'SMEA Worksheets', icon: <Star size={14} />, desc: 'Success Mode & Effects Analysis — define the conditions that sustain peak performance and score SPN (PSC framework)' },
     ];
 
     return (
@@ -59,6 +61,7 @@ export const FMECADivision: React.FC<FMECADivisionProps> = ({
 
             {/* Content */}
             {activeSubTab === 'criticality' && <CriticalityAssessmentTab />}
+            {activeSubTab === 'smea' && <SMEATab />}
             {activeSubTab === 'fmea' && (
                 <FMEATab
                     fmeaWorksheets={fmeaWorksheets}

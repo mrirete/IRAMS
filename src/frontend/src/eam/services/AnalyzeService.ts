@@ -18,6 +18,32 @@ const woCost = (wo: { frozen_labor_cost?: unknown; frozen_material_cost?: unknow
 
 // ─── Types ───────────────────────────────────────────────────
 
+// SMEA (Success Mode & Effects Analysis — PSC framework, 0188)
+export interface SMEAWorksheet {
+    id: string;
+    asset_id: string | null;
+    title: string;
+    status: 'draft' | 'active' | 'review' | 'closed';
+    description: string | null;
+    created_by: string | null;
+    created_at: string;
+    updated_at: string;
+}
+export interface SMEAItem {
+    id: string;
+    worksheet_id: string;
+    success_mode: string;
+    success_condition: string | null;
+    value_impact: number;
+    sustainability: number;
+    monitorability: number;
+    /** generated in the DB: value_impact × sustainability × monitorability */
+    spn: number;
+    priority_action: string | null;
+    status: 'open' | 'monitored' | 'sustained' | 'dropped';
+    created_at: string;
+}
+
 // FMEA
 export interface FMEAWorksheet {
     id: string;
@@ -662,6 +688,94 @@ class AnalyzeService {
             return true;
         } catch (e) {
             console.error('Error deleting reliability study:', e);
+            return false;
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  SMEA — Success Mode & Effects Analysis (PSC framework)
+    //  Value-centric complement to FMEA; SPN = V × S × M is a DB
+    //  generated column, never computed client-side.
+    // ══════════════════════════════════════════════════════════
+
+    async getSMEAWorksheets(assetId?: string): Promise<SMEAWorksheet[]> {
+        try {
+            let query = supabase.from('ers_smea_worksheets').select('*');
+            if (assetId) query = query.eq('asset_id', assetId);
+            const { data, error } = await query.order('created_at', { ascending: false });
+            if (error) { console.error('AnalyzeService.getSMEAWorksheets:', error); return []; } // table may predate 0188
+            return (data || []) as SMEAWorksheet[];
+        } catch (e) {
+            console.error('Error fetching SMEA worksheets:', e);
+            return [];
+        }
+    }
+
+    async getSMEAItems(worksheetId: string): Promise<SMEAItem[]> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_smea_items').select('*')
+                .eq('worksheet_id', worksheetId)
+                .order('spn', { ascending: false });
+            if (error) { console.error('AnalyzeService.getSMEAItems:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
+            return (data || []) as SMEAItem[];
+        } catch (e) {
+            console.error('Error fetching SMEA items:', e);
+            return [];
+        }
+    }
+
+    async createSMEAWorksheet(ws: Omit<SMEAWorksheet, 'id' | 'created_at' | 'updated_at'>): Promise<SMEAWorksheet | null> {
+        try {
+            const { data, error } = await supabase.from('ers_smea_worksheets').insert(ws).select().single();
+            if (error) { console.error('AnalyzeService.createSMEAWorksheet:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
+            return data as SMEAWorksheet;
+        } catch (e) {
+            console.error('Error creating SMEA worksheet:', e);
+            return null;
+        }
+    }
+
+    async createSMEAItem(item: Omit<SMEAItem, 'id' | 'created_at' | 'spn'>): Promise<SMEAItem | null> {
+        try {
+            const { data, error } = await supabase.from('ers_smea_items').insert(item).select().single();
+            if (error) { console.error('AnalyzeService.createSMEAItem:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
+            return data as SMEAItem;
+        } catch (e) {
+            console.error('Error creating SMEA item:', e);
+            return null;
+        }
+    }
+
+    async updateSMEAItem(id: string, updates: Partial<Omit<SMEAItem, 'id' | 'created_at' | 'spn'>>): Promise<SMEAItem | null> {
+        try {
+            const { data, error } = await supabase.from('ers_smea_items').update(updates).eq('id', id).select().single();
+            if (error) { console.error('AnalyzeService.updateSMEAItem:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
+            return data as SMEAItem;
+        } catch (e) {
+            console.error('Error updating SMEA item:', e);
+            return null;
+        }
+    }
+
+    async deleteSMEAItem(id: string): Promise<boolean> {
+        try {
+            const { error } = await supabase.from('ers_smea_items').delete().eq('id', id);
+            if (error) { console.error('AnalyzeService.deleteSMEAItem:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
+            return true;
+        } catch (e) {
+            console.error('Error deleting SMEA item:', e);
+            return false;
+        }
+    }
+
+    async deleteSMEAWorksheet(id: string): Promise<boolean> {
+        try {
+            const { error } = await supabase.from('ers_smea_worksheets').delete().eq('id', id);
+            if (error) { console.error('AnalyzeService.deleteSMEAWorksheet:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
+            return true;
+        } catch (e) {
+            console.error('Error deleting SMEA worksheet:', e);
             return false;
         }
     }
