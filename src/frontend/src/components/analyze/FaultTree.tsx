@@ -5,8 +5,8 @@
  * Designed for Criticality A safety-critical assets.
  * Light theme variant aligned with ERS design system.
  */
-import React, { useState, useMemo } from 'react';
-import { Plus, Trash2, Calculator, Edit3, CloudUpload } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Plus, Trash2, Calculator, Edit3, CloudUpload, HelpCircle } from 'lucide-react';
 
 export interface FaultTreeEvent {
     id: string;
@@ -189,11 +189,17 @@ const FaultTree: React.FC<FaultTreeProps> = ({
     const [editingSelected, setEditingSelected] = useState(false);
     const [editSelectedText, setEditSelectedText] = useState('');
 
-    // Undo history engine
+    // Undo/redo history engine. Every NEW user action clears the redo stack
+    // (standard editor semantics); undo pushes its inverse onto redo and
+    // vice-versa. Node re-creation mints new ids, so entries always reference
+    // the id captured at operation time.
     const [historyStack, setHistoryStack] = useState<HistoryItem[]>([]);
+    const [redoStack, setRedoStack] = useState<HistoryItem[]>([]);
+    const [showGuide, setShowGuide] = useState(false);
 
     const pushHistory = (item: HistoryItem) => {
         setHistoryStack(prev => [...prev, item]);
+        setRedoStack([]); // a fresh action invalidates the redo branch
     };
 
     const handleAddEventWithHistory = async (parentId: string, type: 'intermediate' | 'basic', gateType?: 'AND' | 'OR') => {
@@ -203,6 +209,9 @@ const FaultTree: React.FC<FaultTreeProps> = ({
             pushHistory({
                 type: 'add',
                 nodeId: newId,
+                parentId,
+                nodeType: type,
+                gateType,
             });
             setSelectedEventId(newId); // auto-select newly created node
         }
@@ -264,13 +273,26 @@ const FaultTree: React.FC<FaultTreeProps> = ({
 
         try {
             if (lastAction.type === 'add') {
+                // Undo an add = delete the node. Capture its CURRENT state first
+                // so redo can faithfully recreate it (label/prob may have changed).
+                const ev = events.find(e => e.id === lastAction.nodeId);
                 if (onRemoveEvent) {
                     await onRemoveEvent(lastAction.nodeId);
+                    setRedoStack(prev => [...prev, {
+                        type: 'add',
+                        nodeId: lastAction.nodeId,
+                        parentId: lastAction.parentId ?? ev?.parentId,
+                        nodeType: lastAction.nodeType ?? ev?.type,
+                        gateType: lastAction.gateType ?? ev?.gateType,
+                        label: ev?.label,
+                        probability: ev?.probability,
+                    }]);
                     if (selectedEventId === lastAction.nodeId) {
                         setSelectedEventId(null);
                     }
                 }
             } else if (lastAction.type === 'delete') {
+                // Undo a delete = recreate the node (new id). Redo deletes that id.
                 if (onAddEvent && lastAction.parentId) {
                     const restoredId = await onAddEvent(
                         lastAction.parentId,
@@ -283,20 +305,90 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                     if (restoredId && lastAction.probability !== undefined && onUpdateProbability) {
                         await onUpdateProbability(restoredId, lastAction.probability);
                     }
+                    if (restoredId) {
+                        setRedoStack(prev => [...prev, { ...lastAction, nodeId: restoredId }]);
+                    }
                 }
             } else if (lastAction.type === 'update_label') {
                 if (onUpdateLabel && lastAction.label !== undefined) {
+                    const current = events.find(e => e.id === lastAction.nodeId)?.label;
                     await onUpdateLabel(lastAction.nodeId, lastAction.label);
+                    setRedoStack(prev => [...prev, { type: 'update_label', nodeId: lastAction.nodeId, label: current }]);
                 }
             } else if (lastAction.type === 'update_prob') {
                 if (onUpdateProbability && lastAction.probability !== undefined) {
+                    const current = events.find(e => e.id === lastAction.nodeId)?.probability;
                     await onUpdateProbability(lastAction.nodeId, lastAction.probability);
+                    setRedoStack(prev => [...prev, { type: 'update_prob', nodeId: lastAction.nodeId, probability: current }]);
                 }
             }
         } catch (e) {
             console.error('Failed to undo action:', e);
         }
     };
+
+    const handleRedo = async () => {
+        if (redoStack.length === 0) return;
+        const action = redoStack[redoStack.length - 1];
+        setRedoStack(prev => prev.slice(0, -1)); // pop
+
+        try {
+            if (action.type === 'add') {
+                // Re-apply an add (new id); push it back onto undo history.
+                if (onAddEvent && action.parentId) {
+                    const newId = await onAddEvent(
+                        action.parentId,
+                        action.nodeType === 'basic' ? 'basic' : 'intermediate',
+                        action.gateType
+                    );
+                    if (newId && action.label && onUpdateLabel) await onUpdateLabel(newId, action.label);
+                    if (newId && action.probability !== undefined && onUpdateProbability) await onUpdateProbability(newId, action.probability);
+                    if (newId) {
+                        setHistoryStack(prev => [...prev, { ...action, nodeId: newId }]);
+                        setSelectedEventId(newId);
+                    }
+                }
+            } else if (action.type === 'delete') {
+                if (onRemoveEvent) {
+                    await onRemoveEvent(action.nodeId);
+                    setHistoryStack(prev => [...prev, action]);
+                    if (selectedEventId === action.nodeId) setSelectedEventId(null);
+                }
+            } else if (action.type === 'update_label') {
+                if (onUpdateLabel && action.label !== undefined) {
+                    const old = events.find(e => e.id === action.nodeId)?.label;
+                    await onUpdateLabel(action.nodeId, action.label);
+                    setHistoryStack(prev => [...prev, { type: 'update_label', nodeId: action.nodeId, label: old }]);
+                }
+            } else if (action.type === 'update_prob') {
+                if (onUpdateProbability && action.probability !== undefined) {
+                    const old = events.find(e => e.id === action.nodeId)?.probability;
+                    await onUpdateProbability(action.nodeId, action.probability);
+                    setHistoryStack(prev => [...prev, { type: 'update_prob', nodeId: action.nodeId, probability: old }]);
+                }
+            }
+        } catch (e) {
+            console.error('Failed to redo action:', e);
+        }
+    };
+
+    // Keyboard shortcuts: Ctrl/Cmd+Z undo · Ctrl+Y or Ctrl/Cmd+Shift+Z redo.
+    // Skipped while typing in inputs so text-field undo keeps native behavior.
+    const undoRef = useRef(handleUndo); undoRef.current = handleUndo;
+    const redoRef = useRef(handleRedo); redoRef.current = handleRedo;
+    useEffect(() => {
+        if (readOnly) return;
+        const onKey = (e: KeyboardEvent) => {
+            const t = e.target as HTMLElement | null;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+            const mod = e.ctrlKey || e.metaKey;
+            if (!mod) return;
+            if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undoRef.current(); }
+            else if (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey)) { e.preventDefault(); redoRef.current(); }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [readOnly]);
 
     const selectedEvent = useMemo(() => events.find(e => e.id === selectedEventId), [events, selectedEventId]);
 
@@ -369,9 +461,30 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                                         ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 cursor-pointer shadow-xs'
                                         : 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed opacity-60'
                                 }`}
-                                title="Undo last action"
+                                title="Undo last action (Ctrl+Z)"
                             >
                                 Undo ({historyStack.length})
+                            </button>
+                            <button
+                                onClick={handleRedo}
+                                disabled={redoStack.length === 0}
+                                className={`px-2.5 py-1 text-[10px] font-bold rounded-lg border flex items-center gap-1 transition-all ${
+                                    redoStack.length > 0
+                                        ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 cursor-pointer shadow-xs'
+                                        : 'bg-slate-50 border-slate-100 text-slate-300 cursor-not-allowed opacity-60'
+                                }`}
+                                title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
+                            >
+                                Redo ({redoStack.length})
+                            </button>
+                            <button
+                                onClick={() => setShowGuide(g => !g)}
+                                className={`px-2 py-1 text-[10px] font-bold rounded-lg border flex items-center gap-1 transition-all cursor-pointer ${
+                                    showGuide ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-slate-200 text-slate-400 hover:text-blue-600 hover:border-blue-200'
+                                }`}
+                                title="How to build a fault tree"
+                            >
+                                <HelpCircle size={11} /> Guide
                             </button>
                             <span className="h-4 w-px bg-slate-200 mx-1" />
                             {/* Context-aware buttons */}
@@ -400,6 +513,25 @@ const FaultTree: React.FC<FaultTreeProps> = ({
                     )}
                 </div>
             </div>
+
+            {/* ── How-to guide (toggled) ─────────────────────── */}
+            {showGuide && (
+                <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 mb-3.5 text-xs text-slate-600 space-y-2 animate-in slide-in-from-top duration-200">
+                    <div className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wide">How to build a fault tree</div>
+                    <ol className="list-decimal list-inside space-y-1">
+                        <li><strong>Start at the top:</strong> the top event is the failure you're explaining — write it as a failure statement (e.g. “P-101 fails to deliver flow”), not a topic.</li>
+                        <li><strong>Click a node to select it</strong>, then add causes beneath it: <strong>OR gate</strong> = any child alone causes it · <strong>AND gate</strong> = all children must occur together (this is where safeguards multiply safety) · <strong>Basic event</strong> = a root-level cause you can estimate.</li>
+                        <li><strong>Set probabilities on basic events</strong> (circles): select one and type P between 0 and 1 in the bar above — e.g. 0.1 ≈ once per 10 periods. Gates compute themselves: OR = 1−∏(1−pᵢ), AND = ∏pᵢ.</li>
+                        <li><strong>Read Top Event P</strong> — the roll-up chance of the failure. The point is usually the <em>ranking</em>: which branch dominates the risk.</li>
+                    </ol>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-400 pt-1 border-t border-blue-100">
+                        <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded">Ctrl+Z</kbd> undo</span>
+                        <span><kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded">Ctrl+Y</kbd> / <kbd className="px-1 py-0.5 bg-white border border-slate-200 rounded">Ctrl+Shift+Z</kbd> redo</span>
+                        <span>Rename/delete via the selected-node bar</span>
+                        <span>Everything saves automatically</span>
+                    </div>
+                </div>
+            )}
 
             {/* Selected Event Context Actions Popover */}
             {!readOnly && selectedEvent && (
