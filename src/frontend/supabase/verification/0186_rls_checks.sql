@@ -41,7 +41,7 @@ SET LOCAL ROLE authenticated;
 DELETE FROM public.work_orders     WHERE id = (SELECT id FROM public.work_orders LIMIT 1)     RETURNING 'WO DELETE — MUST BE 0 ROWS' AS check, id;
 DELETE FROM public.assets          WHERE id = (SELECT id FROM public.assets LIMIT 1)          RETURNING 'ASSET DELETE — MUST BE 0 ROWS' AS check, id;
 DELETE FROM public.contacts        WHERE id = (SELECT id FROM public.contacts LIMIT 1)        RETURNING 'CONTACT DELETE — MUST BE 0 ROWS' AS check, id;
-UPDATE public.audit_logs SET details = '{}'::jsonb
+UPDATE public.audit_logs SET id = id
   WHERE id = (SELECT id FROM public.audit_logs LIMIT 1)
   RETURNING 'AUDIT UPDATE — MUST BE 0 ROWS' AS check, id;
 ROLLBACK;
