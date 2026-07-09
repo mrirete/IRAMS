@@ -16,6 +16,8 @@ import { failureIntervalsHours, isFailure } from '../eam/services/reliabilityMet
 import { groundedRulFromHistory, type GroundedRul } from '../lib/pmRecommendation';
 import { recommendMonitoringCadence } from '../lib/monitoringCadence';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
+import { SetupJourney } from '../components/predict/SetupJourney';
+import { usePredictSetup } from '../hooks/usePredictSetup';
 
 type ConditionAlarms = Awaited<ReturnType<DatabaseService['getAssetConditionAlarms']>>;
 
@@ -69,7 +71,34 @@ export const PredictPage: React.FC = () => {
             .catch(() => setPredictFaultTypes([]));
     }, []);
 
-    const { assetOptions, getAssetById } = useAssetLookup();
+    const { assetOptions, getAssetById, loading: assetsLoading } = useAssetLookup();
+
+    // ── Setup Journey: first-timers land in the guide, not an empty dashboard ──
+    const setup = usePredictSetup();
+    const [setupOpen, setSetupOpen] = useState<{ assetId?: string } | null>(null);
+    const [setupSkipped, setSetupSkipped] = useState<boolean>(() => {
+        try { return localStorage.getItem('predict.setupSkipped') === '1'; } catch { return false; }
+    });
+    // Auto-enter the journey when NO registered equipment has any condition data
+    // yet (empty register counts — the journey starts with equipment intake).
+    useEffect(() => {
+        if (setup.loading || assetsLoading || setupSkipped || setupOpen) return;
+        const anyConnected = assetOptions.some(a => setup.connected.has(a.id));
+        if (!anyConnected) setSetupOpen({});
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [setup.loading, assetsLoading, setupSkipped, assetOptions, setup.connected]);
+
+    const openSetup = (assetId?: string) => setSetupOpen({ assetId });
+    const closeSetup = (focusAssetId?: string) => {
+        setSetupOpen(null);
+        setSetupSkipped(true);
+        try { localStorage.setItem('predict.setupSkipped', '1'); } catch { /* ignore */ }
+        setup.refresh();
+        if (focusAssetId) {
+            setSelectedAssetId(focusAssetId);
+            refetchPredict(focusAssetId);
+        }
+    };
 
     // ── #1: data-grounded RUL (real Weibull MRL) for the selected asset ──
     const [advisorOpen, setAdvisorOpen] = useState(false);
@@ -262,7 +291,18 @@ export const PredictPage: React.FC = () => {
         return () => document.removeEventListener('keydown', handleKeyDown);
     }, [assetPickerOpen]);
 
-    if (loading) {
+    // First-timer experience: the setup guide IS the page until data flows.
+    // Every click in it performs real setup (register, measurement points,
+    // first readings) — the dashboard appears once there is something to show.
+    if (setupOpen) {
+        return (
+            <div className="py-4">
+                <SetupJourney initialAssetId={setupOpen.assetId} onExit={closeSetup} />
+            </div>
+        );
+    }
+
+    if (loading || setup.loading) {
         return (
             <div className="space-y-6 animate-pulse">
                 {/* Skeleton Header */}
@@ -284,6 +324,8 @@ export const PredictPage: React.FC = () => {
     }
 
     const systemHealth = twinHealth?.health_index || 0;
+    // Honesty guard: no twin state = "not connected yet", never "0.0 health".
+    const hasTwin = !!twinHealth;
     const isHealthy = systemHealth >= 80;
     const critLevel = selectedAsset?.criticality;
     const critColor = critLevel === 'A' ? 'bg-red-500/20 text-red-400 border-red-500/30' : critLevel === 'B' ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30' : 'bg-slate-100 text-brand-300 border-slate-300';
@@ -352,6 +394,14 @@ export const PredictPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    {/* Guided setup — always reachable, auto-shown for first-timers */}
+                    <button
+                        onClick={() => openSetup(selectedAssetId || undefined)}
+                        title="Step-by-step guide: register equipment, define measurements, get data flowing"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-primary-300 hover:text-primary-700 text-slate-600 font-semibold rounded-lg text-sm transition-colors"
+                    >
+                        <HeartPulse size={16} /> Setup guide
+                    </button>
                     {/* #2: Reliability Advisor — grounded, cited PM proposal for this asset */}
                     <button
                         onClick={() => setAdvisorOpen(true)}
@@ -635,8 +685,8 @@ export const PredictPage: React.FC = () => {
             {/* ═══ FOCUSED ASSET BANNER — with integrated asset selector ═══ */}
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                 <div className="flex items-stretch">
-                    {/* Left accent stripe */}
-                    <div className={`w-1.5 shrink-0 ${isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} />
+                    {/* Left accent stripe — quiet slate when no data yet, never alarm-red */}
+                    <div className={`w-1.5 shrink-0 ${!hasTwin ? 'bg-slate-300' : isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} />
 
                     <div className="flex-1 flex items-center justify-between px-5 py-4">
                         {/* Left: Asset info + clickable selector */}
@@ -715,18 +765,32 @@ export const PredictPage: React.FC = () => {
                             ) : null}
                             <div className="text-right">
                                 <p className="text-[9px] text-slate-400 uppercase tracking-wider font-bold mb-1">Health Index</p>
-                                <div className="flex items-baseline gap-1">
-                                    <span className={`text-3xl font-bold tabular-nums ${isHealthy ? 'text-emerald-600' : systemHealth >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
-                                        {systemHealth.toFixed(1)}
-                                    </span>
-                                    <span className="text-sm text-slate-400 font-medium">/ 100</span>
-                                </div>
-                                <div className="mt-1.5 w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                                    <div
-                                        className={`h-full rounded-full transition-all ${isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`}
-                                        style={{ width: `${systemHealth}%` }}
-                                    />
-                                </div>
+                                {hasTwin ? (
+                                    <>
+                                        <div className="flex items-baseline gap-1">
+                                            <span className={`text-3xl font-bold tabular-nums ${isHealthy ? 'text-emerald-600' : systemHealth >= 60 ? 'text-amber-500' : 'text-red-500'}`}>
+                                                {systemHealth.toFixed(1)}
+                                            </span>
+                                            <span className="text-sm text-slate-400 font-medium">/ 100</span>
+                                        </div>
+                                        <div className="mt-1.5 w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                            <div
+                                                className={`h-full rounded-full transition-all ${isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`}
+                                                style={{ width: `${systemHealth}%` }}
+                                            />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="text-3xl font-bold text-slate-300">—</span>
+                                        <button
+                                            onClick={() => openSetup(selectedAssetId || undefined)}
+                                            className="block text-[10px] font-semibold text-primary-600 hover:underline mt-1"
+                                        >
+                                            Not connected yet — set up →
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -843,6 +907,8 @@ export const PredictPage: React.FC = () => {
                     assetSensorTrends={assetSensorTrends}
                     onInvestigate={() => window.location.href = '/analyze'}
                     onCreateWR={() => setRaiseOpen(true)}
+                    onSetup={() => openSetup(selectedAssetId || undefined)}
+                    hasData={hasTwin}
                 />
             )}
 

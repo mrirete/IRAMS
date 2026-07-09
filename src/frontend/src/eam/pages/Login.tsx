@@ -104,7 +104,15 @@ export const Login: React.FC = () => {
             navigate(from, { replace: true });
         } catch (err: any) {
             console.error("Login failed", err);
-            setError(err.message || 'Failed to log in.');
+            // A bare username only resolves for legacy (username@cainergy.com)
+            // accounts. Invited accounts (0190) are registered under their real
+            // email — steer the user there instead of a dead-end error.
+            const invalidCreds = (err.message || '').toLowerCase().includes('invalid login credentials');
+            if (invalidCreds && !username.includes('@')) {
+                setError('No account found for that username — try signing in with your email address instead.');
+            } else {
+                setError(err.message || 'Failed to log in.');
+            }
         } finally {
             setLoading(false);
         }

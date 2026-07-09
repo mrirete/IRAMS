@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
     Activity, AlertTriangle, ShieldAlert, ShieldCheck, Clock, Gauge,
-    Thermometer, Wind, Droplets, ChevronDown, Cpu, Zap, Power,
+    Thermometer, Wind, Droplets, ChevronDown, Zap, Power,
     TrendingDown, TrendingUp, Minus, FileWarning, Wrench,
     CircleDot, BarChart3
 } from 'lucide-react';
@@ -43,6 +43,10 @@ interface PredictOverviewTabProps {
     /* Actions */
     onInvestigate?: () => void;
     onCreateWR?: () => void;
+    /** Opens the guided setup journey (asset preselected by the caller). */
+    onSetup?: () => void;
+    /** False when the asset has no twin state yet — KPIs show "—", not fake alarms. */
+    hasData?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -173,7 +177,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     systemHealth, isHealthy, rulDays, alertCount,
     rulConfidenceBands, distributionType, rulConfidence,
     twinHealth, assetSensorTrends,
-    onInvestigate, onCreateWR,
+    onInvestigate, onCreateWR, onSetup, hasData = true,
 }) => {
     const [fleetExpanded, setFleetExpanded] = useState(true);
 
@@ -181,7 +185,9 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     const operatingState = useMemo(() => deriveOperatingState(assetSensorTrends, twinHealth), [assetSensorTrends, twinHealth]);
     const opConfig = OP_STATE_CONFIG[operatingState];
 
-    // P(Failure) calculations
+    // P(Failure) — only a real forecast when RUL data exists. Absence of data
+    // must read as "—", never as a fabricated 99% failure probability.
+    const pfAvailable = hasData && !!rulDays && rulDays > 0;
     const pf30 = useMemo(() => calcPFailure(rulDays, rulConfidence, distributionType, 30), [rulDays, rulConfidence, distributionType]);
     const pf90 = useMemo(() => calcPFailure(rulDays, rulConfidence, distributionType, 90), [rulDays, rulConfidence, distributionType]);
 
@@ -365,17 +371,19 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                     <div className="inline-flex p-3 bg-slate-50 rounded-xl text-slate-400 mb-3">
                         <Gauge size={28} />
                     </div>
-                    <h3 className="text-sm font-semibold text-slate-600 mb-1">No live sensor data for {selectedAssetName}</h3>
+                    <h3 className="text-sm font-semibold text-slate-600 mb-1">{selectedAssetName} isn't connected yet</h3>
                     <p className="text-xs text-slate-400 max-w-md mx-auto">
-                        Run a <strong>Digital Twin Snapshot</strong> or connect SCADA/historian to generate health data and sensor readings.
+                        Two short steps: tell us what you measure on it, then log or upload the first readings.
+                        The guide walks you through both — it takes about five minutes.
                     </p>
-                    <div className="flex items-center justify-center gap-3 mt-4">
-                        <span className="flex items-center gap-1 text-[10px] text-slate-400"><Cpu size={12} /> Digital Twin</span>
-                        <span className="text-slate-300">→</span>
-                        <span className="flex items-center gap-1 text-[10px] text-slate-400"><Zap size={12} /> Sensor Readings</span>
-                        <span className="text-slate-300">→</span>
-                        <span className="flex items-center gap-1 text-[10px] text-slate-400"><Activity size={12} /> Health Model</span>
-                    </div>
+                    {onSetup && (
+                        <button
+                            onClick={onSetup}
+                            className="mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-bold rounded-lg text-sm transition-colors"
+                        >
+                            <Zap size={15} /> Set up this asset
+                        </button>
+                    )}
                 </div>
             )}
 
@@ -386,17 +394,26 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                 <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 hover:shadow-sm hover:border-slate-300 transition-all cursor-default group">
                     <div className="flex items-center justify-between mb-1">
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Health Index</p>
-                        <div className={`p-1 rounded-md ${isHealthy ? 'bg-emerald-50 text-emerald-600' : systemHealth >= 60 ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-500'}`}>
-                            {isHealthy ? <ShieldCheck size={12} /> : <AlertTriangle size={12} />}
+                        <div className={`p-1 rounded-md ${!hasData ? 'bg-slate-50 text-slate-300' : isHealthy ? 'bg-emerald-50 text-emerald-600' : systemHealth >= 60 ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-500'}`}>
+                            {!hasData || isHealthy ? <ShieldCheck size={12} /> : <AlertTriangle size={12} />}
                         </div>
                     </div>
-                    <div className="flex items-baseline gap-1">
-                        <h2 className={`text-xl font-bold tabular-nums ${isHealthy ? 'text-emerald-600' : systemHealth >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{systemHealth.toFixed(1)}</h2>
-                        <span className="text-[10px] text-slate-400">/ 100</span>
-                    </div>
-                    <div className="mt-1.5 w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${systemHealth}%` }} />
-                    </div>
+                    {hasData ? (
+                        <>
+                            <div className="flex items-baseline gap-1">
+                                <h2 className={`text-xl font-bold tabular-nums ${isHealthy ? 'text-emerald-600' : systemHealth >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{systemHealth.toFixed(1)}</h2>
+                                <span className="text-[10px] text-slate-400">/ 100</span>
+                            </div>
+                            <div className="mt-1.5 w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full transition-all ${isHealthy ? 'bg-emerald-500' : systemHealth >= 60 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${systemHealth}%` }} />
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <h2 className="text-xl font-bold text-slate-300">—</h2>
+                            <p className="text-[9px] text-slate-400 mt-0.5">Awaiting first data</p>
+                        </>
+                    )}
                     {/* Inline sub-indices */}
                     {healthSubs.length > 0 && (
                         <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center gap-3 flex-wrap">
@@ -451,24 +468,33 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                 <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 hover:shadow-sm hover:border-slate-300 transition-all cursor-default">
                     <div className="flex items-center justify-between mb-1">
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">P(Failure) 30d</p>
-                        <div className={`p-1 rounded-md ${pf30 > 30 ? 'bg-red-50 text-red-500' : pf30 > 10 ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-600'}`}>
+                        <div className={`p-1 rounded-md ${!pfAvailable ? 'bg-slate-50 text-slate-300' : pf30 > 30 ? 'bg-red-50 text-red-500' : pf30 > 10 ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-600'}`}>
                             <TrendingDown size={12} />
                         </div>
                     </div>
-                    <div className="flex items-baseline gap-1">
-                        <h2 className={`text-xl font-bold tabular-nums ${pf30 > 30 ? 'text-red-500' : pf30 > 10 ? 'text-amber-500' : 'text-emerald-600'}`}>{pf30.toFixed(1)}</h2>
-                        <span className="text-[10px] text-slate-400">%</span>
-                    </div>
-                    <div className="mt-1.5 w-full h-1 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                            className={`h-full rounded-full transition-all ${pf30 > 30 ? 'bg-red-500' : pf30 > 10 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                            style={{ width: `${Math.min(100, pf30)}%` }}
-                        />
-                    </div>
-                    <div className="mt-1 flex items-center justify-between">
-                        <span className="text-[9px] text-slate-400">90-day</span>
-                        <span className={`text-[9px] font-bold tabular-nums ${pf90 > 50 ? 'text-red-500' : pf90 > 20 ? 'text-amber-500' : 'text-emerald-600'}`}>{pf90.toFixed(1)}%</span>
-                    </div>
+                    {pfAvailable ? (
+                        <>
+                            <div className="flex items-baseline gap-1">
+                                <h2 className={`text-xl font-bold tabular-nums ${pf30 > 30 ? 'text-red-500' : pf30 > 10 ? 'text-amber-500' : 'text-emerald-600'}`}>{pf30.toFixed(1)}</h2>
+                                <span className="text-[10px] text-slate-400">%</span>
+                            </div>
+                            <div className="mt-1.5 w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full rounded-full transition-all ${pf30 > 30 ? 'bg-red-500' : pf30 > 10 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                                    style={{ width: `${Math.min(100, pf30)}%` }}
+                                />
+                            </div>
+                            <div className="mt-1 flex items-center justify-between">
+                                <span className="text-[9px] text-slate-400">90-day</span>
+                                <span className={`text-[9px] font-bold tabular-nums ${pf90 > 50 ? 'text-red-500' : pf90 > 20 ? 'text-amber-500' : 'text-emerald-600'}`}>{pf90.toFixed(1)}%</span>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <h2 className="text-xl font-bold text-slate-300">—</h2>
+                            <p className="text-[9px] text-slate-400 mt-0.5">Needs an RUL forecast first</p>
+                        </>
+                    )}
                 </div>
             </div>
 

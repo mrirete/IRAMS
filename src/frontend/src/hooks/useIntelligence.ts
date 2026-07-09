@@ -235,6 +235,14 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
 
                 if (dbSensors.length > 0) {
                     setSensorData(prev => ({ ...prev, [selectedAssetId]: dbSensors.map(normalizeSensor) }));
+                } else {
+                    // Bridge (Condition Data → Predict): with no online feed, surface
+                    // the asset's manual measurement-point readings so operator-rounds
+                    // data shows up here without waiting for a prediction run.
+                    const manual = await predictionService.getManualReadingsAsSensors(selectedAssetId);
+                    if (!cancelled && manual.length > 0) {
+                        setSensorData(prev => ({ ...prev, [selectedAssetId]: manual.map(normalizeSensor) }));
+                    }
                 }
             } catch {
                 if (!cancelled && USE_MOCK) {
@@ -325,6 +333,12 @@ export function useIntelligence(selectedAssetId = '', paretoCriteria: 'cost' | '
             }
             if (dbSensors.length > 0) {
                 setSensorData(prev => ({ ...prev, [assetId]: dbSensors.map(normalizeSensor) }));
+            } else {
+                // Same manual-readings bridge as the initial fetch (Condition Data → Predict).
+                const manual = await predictionService.getManualReadingsAsSensors(assetId);
+                if (manual.length > 0) {
+                    setSensorData(prev => ({ ...prev, [assetId]: manual.map(normalizeSensor) }));
+                }
             }
             console.log('[useIntelligence] refetchPredict complete for', assetId);
         } catch (e) {
