@@ -4,8 +4,10 @@ import {
     Type, CheckSquare, Hash, Calendar, Camera, PenTool, Activity, Gauge,
     AlertTriangle, Lock, Trash2, ListChecks, HelpCircle, Link as LinkIcon,
     Image as ImageIcon, MoreVertical, CheckCircle, XCircle, Plus,
-    ClipboardCheck, FileText, X, Copy
+    ClipboardCheck, FileText, X, Copy, Upload, Loader2
 } from 'lucide-react';
+import { DatabaseService } from '../services/DatabaseService';
+import { useToast } from '../contexts/ToastContext';
 
 interface ProcedureItemEditorProps {
     block: InstructionBlock;
@@ -57,13 +59,18 @@ const TextObservationField: React.FC<{ value: string; onChange: (val: string) =>
                     <X size={11} /> Remove
                 </button>
             </div>
+            {/* Compact: stays one line high and grows only with the content typed */}
             <textarea
                 ref={textareaRef}
                 value={value}
-                onChange={(e) => onChange(e.target.value)}
+                onChange={(e) => {
+                    onChange(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = e.target.scrollHeight + 'px';
+                }}
                 placeholder="Operator note / observation recorded during the job…"
-                className="w-full min-h-[80px] border border-amber-200 rounded-lg bg-white text-slate-700 text-sm p-3 resize-y focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
-                rows={3}
+                className="w-full border border-amber-200 rounded-lg bg-white text-slate-700 text-xs px-3 py-2 resize-none overflow-hidden focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
+                rows={1}
             />
         </div>
     );
@@ -71,6 +78,11 @@ const TextObservationField: React.FC<{ value: string; onChange: (val: string) =>
 
 export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block, onChange, onDelete, onDuplicate, onAddSibling }) => {
     const [showMenu, setShowMenu] = React.useState(false);
+    const [showImageMenu, setShowImageMenu] = React.useState(false);
+    const [uploading, setUploading] = React.useState(false);
+    const deviceInputRef = React.useRef<HTMLInputElement>(null);
+    const cameraInputRef = React.useRef<HTMLInputElement>(null);
+    const { showToast } = useToast();
 
     const getIcon = () => {
         switch (block.type) {
@@ -113,18 +125,35 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
         return labels[type] || type.replace(/_/g, ' ');
     };
 
-    const handleAddMedia = (type: 'LINK' | 'IMAGE') => {
-        const url = prompt(type === 'LINK' ? 'Enter URL:' : 'Enter Image URL:');
-        if (!url) return;
-
+    const addMediaEntry = (type: 'LINK' | 'IMAGE', url: string) => {
         const newMedia: ProcedureMedia = {
             id: Math.random().toString(36).substr(2, 9),
             type,
             url,
             label: type === 'LINK' ? 'Reference Link' : 'Reference Image'
         };
-
         onChange({ media: [...(block.media || []), newMedia] });
+    };
+
+    const handleAddMedia = (type: 'LINK' | 'IMAGE') => {
+        const url = prompt(type === 'LINK' ? 'Enter URL:' : 'Enter Image URL:');
+        if (!url) return;
+        addMediaEntry(type, url);
+    };
+
+    // Device / camera image -> Supabase storage -> reference image on the block
+    const handleImageFile = async (file: File | undefined | null) => {
+        if (!file) return;
+        setShowImageMenu(false);
+        setUploading(true);
+        try {
+            const url = await DatabaseService.getInstance().uploadImage(file, 'work-order-docs', 'proc_img_');
+            addMediaEntry('IMAGE', url);
+        } catch (e: any) {
+            showToast('Image upload failed: ' + (e?.message || 'unknown error'), 'error');
+        } finally {
+            setUploading(false);
+        }
     };
 
     const removeMedia = (mediaId: string) => {
@@ -523,12 +552,57 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                     >
                         <LinkIcon size={12} /> Link
                     </button>
-                    <button
-                        onClick={() => handleAddMedia('IMAGE')}
-                        className="text-xs text-slate-400 hover:text-blue-600 flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-50 transition-colors"
-                    >
-                        <ImageIcon size={12} /> Image
-                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowImageMenu(v => !v)}
+                            disabled={uploading}
+                            className="text-xs text-slate-400 hover:text-blue-600 flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-50 transition-colors disabled:opacity-60"
+                        >
+                            {uploading ? <Loader2 size={12} className="animate-spin" /> : <ImageIcon size={12} />}
+                            {uploading ? 'Uploading…' : 'Image'}
+                        </button>
+                        {showImageMenu && (
+                            <>
+                                <div className="fixed inset-0 z-10" onClick={() => setShowImageMenu(false)} />
+                                <div className="absolute left-0 bottom-8 bg-white shadow-lg border border-slate-200 rounded-lg z-20 w-48 py-1 flex flex-col animate-in fade-in zoom-in-95 duration-100">
+                                    <button
+                                        onClick={() => deviceInputRef.current?.click()}
+                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Upload size={12} className="text-blue-500" /> Upload from device
+                                    </button>
+                                    <button
+                                        onClick={() => cameraInputRef.current?.click()}
+                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Camera size={12} className="text-emerald-500" /> Take photo
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowImageMenu(false); handleAddMedia('IMAGE'); }}
+                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors border-t border-slate-100"
+                                    >
+                                        <LinkIcon size={12} className="text-slate-400" /> From URL…
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    {/* Hidden pickers: device gallery + direct camera capture (mobile) */}
+                    <input
+                        ref={deviceInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => { handleImageFile(e.target.files?.[0]); e.target.value = ''; }}
+                    />
+                    <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => { handleImageFile(e.target.files?.[0]); e.target.value = ''; }}
+                    />
                 </div>
 
                 {/* Media List with visible delete */}
@@ -536,10 +610,14 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                     <div className="space-y-1">
                         {block.media.map(m => (
                             <div key={m.id} className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-100">
-                                <span className="text-slate-400">
-                                    {m.type === 'LINK' ? <LinkIcon size={10} /> : <ImageIcon size={10} />}
-                                </span>
-                                <span className="text-xs text-blue-600 truncate flex-1">{m.url}</span>
+                                {m.type === 'IMAGE' ? (
+                                    <a href={m.url} target="_blank" rel="noreferrer" className="shrink-0">
+                                        <img src={m.url} alt={m.label || 'Reference image'} className="w-9 h-9 rounded object-cover border border-slate-200" />
+                                    </a>
+                                ) : (
+                                    <span className="text-slate-400"><LinkIcon size={10} /></span>
+                                )}
+                                <span className="text-xs text-blue-600 truncate flex-1">{m.type === 'IMAGE' ? (m.label || 'Reference image') : m.url}</span>
                                 <button
                                     onClick={() => removeMedia(m.id)}
                                     className="text-slate-400 hover:text-red-500 p-0.5 rounded hover:bg-red-50 transition-colors"

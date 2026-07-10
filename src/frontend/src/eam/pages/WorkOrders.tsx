@@ -4419,7 +4419,7 @@ const TasksTab: React.FC<{
                                     {index + 1}
                                 </span>
 
-                                {/* Task description — editable inline */}
+                                {/* Task description — editable inline, clearly an input (bordered) */}
                                 <div className="flex-1 min-w-0">
                                     <input
                                         type="text"
@@ -4427,25 +4427,17 @@ const TasksTab: React.FC<{
                                         onChange={(e) => updateTask(task.id, { description: e.target.value })}
                                         onClick={(e) => e.stopPropagation()}
                                         onFocus={(e) => e.stopPropagation()}
-                                        className="w-full font-medium text-sm text-slate-900 bg-transparent border-none p-0 focus:ring-0 focus:outline-none placeholder:text-slate-300 truncate"
+                                        className="w-full font-medium text-sm text-slate-900 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 hover:border-slate-300 focus:ring-2 focus:ring-primary-400 focus:border-primary-600 focus:outline-none placeholder:text-slate-300 truncate transition-colors"
                                         placeholder="Enter task step name..."
                                     />
-                                    {/* Operation number (SAP) + dependency indicator */}
-                                    <div className="flex items-center gap-2 mt-0.5">
-                                        {task.operationNo && (
-                                            <span className="text-[10px] text-slate-400 font-mono" title="SAP operation number">
-                                                Op {task.operationNo}
+                                    {task.predecessorTaskId && (() => {
+                                        const pred = tasks.find(t => t.id === task.predecessorTaskId);
+                                        return pred ? (
+                                            <span className="text-[10px] text-blue-500 font-medium flex items-center gap-0.5 mt-0.5">
+                                                <ArrowRight size={9} className="rotate-180" /> After #{pred.sequence}
                                             </span>
-                                        )}
-                                        {task.predecessorTaskId && (() => {
-                                            const pred = tasks.find(t => t.id === task.predecessorTaskId);
-                                            return pred ? (
-                                                <span className="text-[10px] text-blue-500 font-medium flex items-center gap-0.5">
-                                                    <ArrowRight size={9} className="rotate-180" /> After #{pred.sequence}
-                                                </span>
-                                            ) : null;
-                                        })()}
-                                    </div>
+                                        ) : null;
+                                    })()}
                                 </div>
 
                                 {/* Delete task button — always visible */}
@@ -4543,10 +4535,15 @@ const TasksTab: React.FC<{
                             <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-sm sm:text-base truncate">{expandedTask.description || 'Untitled step'}</div>
                                 <div className="text-[10px] sm:text-[11px] text-blue-100">
-                                    {expandedTask.operationNo ? `Op ${expandedTask.operationNo} · ` : ''}Step {expandedIndex + 1} of {tasks.length}
+                                    Step {expandedIndex + 1} of {tasks.length}
                                 </div>
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                    onClick={addTask}
+                                    className="hidden sm:flex items-center gap-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25 transition-colors mr-1"
+                                    title="Add a new step to this work order"
+                                ><Plus size={13} /> New step</button>
                                 <button
                                     onClick={() => setExpandedTaskId(tasks[expandedIndex - 1].id)}
                                     disabled={expandedIndex <= 0}
@@ -4565,6 +4562,27 @@ const TasksTab: React.FC<{
                                     title="Close (Esc)"
                                 ><X size={16} /></button>
                             </div>
+                        </div>
+                        {/* Step name — guide: name the step first, then write instructions below */}
+                        <div className="px-3 sm:px-5 py-3 bg-white border-b border-slate-200 shrink-0">
+                            <label className="text-[11px] font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1.5 mb-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> Step name
+                            </label>
+                            <input
+                                type="text"
+                                value={expandedTask.description}
+                                onChange={(e) => updateTask(expandedTask.id, { description: e.target.value })}
+                                autoFocus={!expandedTask.description}
+                                placeholder="What does this step do? e.g. Isolate and lock out main drive"
+                                className={`w-full text-sm font-medium rounded-lg px-3 py-2 border outline-none transition-colors focus:ring-2 focus:ring-primary-400 focus:border-primary-600 ${
+                                    !expandedTask.description
+                                        ? 'border-amber-300 bg-amber-50/40 placeholder:text-amber-500/60'
+                                        : 'border-slate-200 bg-white hover:border-slate-300'
+                                }`}
+                            />
+                            {!expandedTask.description && (
+                                <p className="text-[10px] text-amber-600 mt-1">Name this step first — then add instructions and resources below.</p>
+                            )}
                         </div>
                         {/* Body */}
                         <div className="flex-1 overflow-y-auto overscroll-contain">
@@ -5057,10 +5075,10 @@ const TaskEditor: React.FC<{
                     <select
                         value={task.workCenterId || ''}
                         onChange={(e) => onChange({ workCenterId: e.target.value || undefined })}
-                        className="flex-1 min-w-0 px-1.5 py-1 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-primary-500 text-slate-600"
-                        title="Work center"
+                        className={`flex-1 min-w-0 px-1.5 py-1 text-xs border rounded focus:ring-1 focus:ring-primary-500 ${!task.workCenterId ? 'border-blue-300 bg-blue-50/60 text-blue-700 font-medium' : 'border-slate-200 text-slate-600'}`}
+                        title="Work center — the crew this operation is routed to and costed at"
                     >
-                        <option value="">Work center…</option>
+                        <option value="">Choose work center…</option>
                         {workCenters.map(wc => (
                             <option key={wc.id} value={wc.id}>{wc.code}</option>
                         ))}
@@ -5084,9 +5102,9 @@ const TaskEditor: React.FC<{
                         <select
                             value={task.workCenterId || ''}
                             onChange={(e) => onChange({ workCenterId: e.target.value || undefined })}
-                            className="px-1.5 py-0.5 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-primary-500 max-w-[150px] text-slate-600"
+                            className={`px-1.5 py-0.5 text-xs border rounded focus:ring-1 focus:ring-primary-500 max-w-[170px] ${!task.workCenterId ? 'border-blue-300 bg-blue-50/60 text-blue-700 font-medium' : 'border-slate-200 text-slate-600'}`}
                         >
-                            <option value="">Work center…</option>
+                            <option value="">Choose work center…</option>
                             {workCenters.map(wc => (
                                 <option key={wc.id} value={wc.id}>{wc.code} · {wc.name}</option>
                             ))}

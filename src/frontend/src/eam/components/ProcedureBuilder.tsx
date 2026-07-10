@@ -67,11 +67,22 @@ const BLOCK_TYPES: { type: InstructionBlockType; label: string; icon: React.Comp
 
 const CATEGORIES = ['Structure', 'Input', 'Inspection', 'Evidence', 'Safety'];
 
+// IRAMS category accents — colored dot + tinted icon chip per family
+const CATEGORY_STYLES: Record<string, { dot: string; chip: string }> = {
+    Structure: { dot: 'bg-slate-400', chip: 'bg-slate-100 text-slate-500' },
+    Input: { dot: 'bg-blue-500', chip: 'bg-blue-50 text-blue-600' },
+    Inspection: { dot: 'bg-violet-500', chip: 'bg-violet-50 text-violet-600' },
+    Evidence: { dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-600' },
+    Safety: { dot: 'bg-red-500', chip: 'bg-red-50 text-red-600' },
+};
+
+// The four most-used types, surfaced as one-click cards
+const QUICK_TYPES: InstructionBlockType[] = ['CHECKBOX', 'TEXT', 'PASS_FAIL', 'CONDITION_READING'];
+
 export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions, onChange, readOnly, mode }) => {
 
     const confirm = useConfirm();
     const [showAddMenu, setShowAddMenu] = useState(false);
-    const [activeCategory, setActiveCategory] = useState('Input');
 
     // DnD Sensors
     const sensors = useSensors(
@@ -200,67 +211,66 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
                 </SortableContext>
             </DndContext>
 
-            {/* Add Instruction Menu (Edit Mode) */}
+            {/* Add Instruction (Edit Mode) — IRAMS motif: dot-labelled section, tinted icon chips */}
             {mode === 'EDIT' && !readOnly && (
-                <div className="border-t border-dashed border-slate-200 mt-4 pt-4">
-                    {/* Quick-add bar: most common types */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <button onClick={() => addBlock('CHECKBOX')} className="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-md hover:bg-slate-50 hover:border-slate-300 flex items-center gap-1.5 transition-colors">
-                            <CheckSquare size={12} className="text-slate-400" /> Checkbox
-                        </button>
-                        <button onClick={() => addBlock('TEXT')} className="text-xs bg-white border border-slate-200 px-3 py-1.5 rounded-md hover:bg-slate-50 hover:border-slate-300 flex items-center gap-1.5 transition-colors">
-                            <FileText size={12} className="text-slate-400" /> Text
-                        </button>
-                        <button onClick={() => addBlock('PASS_FAIL')} className="text-xs bg-white border border-blue-200 px-3 py-1.5 rounded-md hover:bg-blue-50 hover:border-blue-300 flex items-center gap-1.5 font-semibold text-blue-700 transition-colors">
-                            <AlertTriangle size={12} /> Inspection
-                        </button>
-                        <button onClick={() => addBlock('CONDITION_READING')} className="text-xs bg-white border border-blue-200 px-3 py-1.5 rounded-md hover:bg-blue-50 hover:border-blue-300 flex items-center gap-1.5 font-semibold text-blue-700 transition-colors">
-                            <Activity size={12} /> Condition
-                        </button>
-
-                        <div className="h-5 w-px bg-slate-200 mx-1" />
-
+                <div className="border-t border-dashed border-slate-200 mt-4 pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[11px] text-blue-600 uppercase font-bold tracking-wider flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> Add instruction
+                        </span>
                         <button
                             onClick={() => setShowAddMenu(!showAddMenu)}
-                            className={`text-xs px-3 py-1.5 rounded-md flex items-center gap-1.5 font-medium transition-colors ${showAddMenu ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                            className={`text-[11px] px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition-colors ${showAddMenu ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                         >
-                            <Plus size={12} /> All Types {showAddMenu ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                            <Plus size={11} /> All types {showAddMenu ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
                         </button>
                     </div>
 
-                    {/* Expanded category menu */}
+                    {/* Quick add — the four most-used, as one-click cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {QUICK_TYPES.map(qt => {
+                            const tool = BLOCK_TYPES.find(t => t.type === qt)!;
+                            const style = CATEGORY_STYLES[tool.category];
+                            return (
+                                <button
+                                    key={qt}
+                                    onClick={() => addBlock(qt)}
+                                    className="group flex items-center gap-2 p-2 bg-white border border-slate-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all text-left"
+                                    title={`Add a ${tool.label} block`}
+                                >
+                                    <span className={`p-1.5 rounded-md transition-colors ${style.chip}`}>
+                                        <tool.icon size={14} />
+                                    </span>
+                                    <span className="text-xs font-medium text-slate-700 group-hover:text-blue-900 truncate">{tool.label}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Full palette — every category visible at once, grouped rows */}
                     {showAddMenu && (
-                        <div className="mt-3 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
-                            {/* Category tabs */}
-                            <div className="flex border-b border-slate-100 bg-slate-50 px-2 pt-2 gap-1">
-                                {CATEGORIES.map(cat => (
-                                    <button
-                                        key={cat}
-                                        onClick={() => setActiveCategory(cat)}
-                                        className={`px-3 py-1.5 text-xs font-semibold rounded-t-md transition-colors ${activeCategory === cat
-                                            ? 'bg-white text-slate-800 border border-slate-200 border-b-white -mb-px'
-                                            : 'text-slate-500 hover:text-slate-700'
-                                            }`}
-                                    >
-                                        {cat}
-                                    </button>
-                                ))}
-                            </div>
-                            {/* Block type grid */}
-                            <div className="grid grid-cols-3 gap-2 p-3">
-                                {BLOCK_TYPES.filter(t => t.category === activeCategory).map(tool => (
-                                    <button
-                                        key={`${tool.category}-${tool.type}`}
-                                        onClick={() => addBlock(tool.type)}
-                                        className="flex items-center gap-2.5 p-2.5 rounded-lg border border-slate-100 hover:border-blue-300 hover:bg-blue-50 hover:shadow-sm transition text-left group"
-                                    >
-                                        <div className="p-1.5 bg-slate-100 rounded-md group-hover:bg-white text-slate-500 group-hover:text-blue-600 transition-colors">
-                                            <tool.icon size={14} />
-                                        </div>
-                                        <span className="text-xs font-medium text-slate-700 group-hover:text-blue-900">{tool.label}</span>
-                                    </button>
-                                ))}
-                            </div>
+                        <div className="mt-2 bg-white border border-slate-200 rounded-xl p-3 space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                            {CATEGORIES.map(cat => (
+                                <div key={cat} className="flex items-start gap-3">
+                                    <span className="w-20 shrink-0 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5 mt-2">
+                                        <span className={`w-1.5 h-1.5 rounded-full inline-block ${CATEGORY_STYLES[cat].dot}`} /> {cat}
+                                    </span>
+                                    <div className="flex flex-wrap gap-1.5 flex-1">
+                                        {BLOCK_TYPES.filter(t => t.category === cat).map(tool => (
+                                            <button
+                                                key={`${tool.category}-${tool.type}`}
+                                                onClick={() => addBlock(tool.type)}
+                                                className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-100 hover:border-blue-300 hover:bg-blue-50/50 transition-colors"
+                                            >
+                                                <span className={`p-1 rounded ${CATEGORY_STYLES[cat].chip}`}>
+                                                    <tool.icon size={12} />
+                                                </span>
+                                                <span className="text-xs font-medium text-slate-600 group-hover:text-blue-800">{tool.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
