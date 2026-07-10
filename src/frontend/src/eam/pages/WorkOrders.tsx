@@ -46,6 +46,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 import { DatabaseService } from '../services/DatabaseService';
 import { buildWorkOrder } from '../lib/workOrder';
+import { resolveLabourRate, labourRateSourceLabel } from '../lib/labourRate';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { ThreadPanel } from '../../components/messaging/ThreadPanel';
 import { aiEngine, type JSAHazardSuggestion } from '../services/AIAnalysisEngine';
@@ -1769,6 +1770,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             onUpdateJob={updateJob}
                             onOperationConfirmed={reloadOperations}
                             dictionaries={dictionaries}
+                            onSave={handleSave}
+                            saving={isSaving}
                         />
                     )}
                     {activeTab === 'jsa' && <JSATab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
@@ -4248,7 +4251,9 @@ const TasksTab: React.FC<{
     onUpdateJob: (u: Partial<WorkOrder>) => void;
     onOperationConfirmed?: () => Promise<void> | void;
     dictionaries: DictionaryEntry[];
-}> = ({ job, onUpdate, availableOrgUnits, availableUsers, contacts, onUpdateJob, onOperationConfirmed, dictionaries }) => {
+    onSave?: () => void;
+    saving?: boolean;
+}> = ({ job, onUpdate, availableOrgUnits, availableUsers, contacts, onUpdateJob, onOperationConfirmed, dictionaries, onSave, saving = false }) => {
     const confirm = useConfirm();
     const tasks = job.tasks || [];
     const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
@@ -4603,6 +4608,36 @@ const TasksTab: React.FC<{
                                 execMode={execMode}
                             />
                         </div>
+                        {/* Footer — persist & exit actions */}
+                        <div className="flex items-center gap-2 px-3 sm:px-5 py-3 bg-white border-t border-slate-200 shrink-0">
+                            <button
+                                onClick={() => deleteTask(expandedTask.id)}
+                                className="flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 px-2.5 py-2 rounded-lg transition-colors"
+                                title="Delete this step from the work order"
+                            >
+                                <Trash2 size={13} /> Delete step
+                            </button>
+                            <span className="hidden sm:flex items-center gap-1 text-[10px] text-slate-400 ml-1">
+                                <CheckCircle size={11} className="text-emerald-500" /> Changes auto-save as you edit
+                            </span>
+                            <div className="flex-1" />
+                            <button
+                                onClick={() => onSave?.()}
+                                disabled={saving}
+                                className="px-3.5 py-2 text-xs font-bold text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-60"
+                                title="Save now and keep editing"
+                            >
+                                {saving ? 'Saving…' : 'Save'}
+                            </button>
+                            <button
+                                onClick={() => { onSave?.(); setExpandedTaskId(null); }}
+                                disabled={saving}
+                                className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-500 shadow-sm transition-colors disabled:opacity-60"
+                                title="Save and return to the step list"
+                            >
+                                <Save size={13} /> Save & close
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -4634,31 +4669,12 @@ const TaskEditor: React.FC<{
     const effectiveRate = task.plannedRate ?? selectedWorkCenter?.activityRate;
 
     // WM-2c: time confirmation posting (IW41/CO11). Posts immediately, then refetches.
+    // Rate + posting logic lives below, after taskLabor, so the confirmation can be
+    // valued by the same cascade that priced the planned craft lines.
     const [confHours, setConfHours] = useState('');
+    const [confUserId, setConfUserId] = useState('');
     const [confFinal, setConfFinal] = useState(false);
     const [posting, setPosting] = useState(false);
-    const postTimeConfirmation = async () => {
-        const hrs = parseFloat(confHours);
-        if (!hrs || hrs <= 0) { showToast('Enter the hours worked.', 'warning'); return; }
-        if (task.id.startsWith('new-')) { showToast('Save the work order before confirming time.', 'warning'); return; }
-        setPosting(true);
-        try {
-            await DatabaseService.getInstance().postConfirmation({
-                woId: jobContext.id,
-                operationId: task.id,
-                hours: hrs,
-                ratePerHour: effectiveRate,
-                isFinal: confFinal,
-            });
-            showToast(confFinal ? 'Final confirmation posted — operation completed.' : 'Time confirmation posted.', 'success');
-            setConfHours(''); setConfFinal(false);
-            await onConfirmed?.();
-        } catch (e: any) {
-            showToast('Confirmation failed: ' + (e?.message || 'unknown'), 'error');
-        } finally {
-            setPosting(false);
-        }
-    };
     const { user } = useAuth();
 
     // State for Picker
@@ -4765,19 +4781,10 @@ const TaskEditor: React.FC<{
         return entry?.description || roleCode;
     };
 
-    // Helper: Dual Rate Cascade � User Override ? Role Dictionary ? Default
-    const resolveRate = (roleCode: string, contactId?: string): number => {
-        // 1. User-level override (contact.hourlyRate from Admin Financials)
-        if (contactId) {
-            const contact = contacts.find((c: any) => c.id === contactId);
-            if (contact?.hourlyRate && contact.hourlyRate > 0) return contact.hourlyRate;
-        }
-        // 2. Role-level rate (CONTACT_TYPE dictionary)
-        const roleEntry = dictionaries.find(d => d.type === 'CONTACT_TYPE' && d.code === roleCode && d.active);
-        if (roleEntry?.hourlyRate && roleEntry.hourlyRate > 0) return roleEntry.hourlyRate;
-        // 3. Default fallback
-        return 75;
-    };
+    // Rate cascade, shared with time confirmations so estimates and actuals are
+    // valued on the same basis: person override → role rate → work-centre rate → default.
+    const resolveRate = (roleCode: string, contactId?: string): number =>
+        resolveLabourRate({ contactId, roleCode, contacts, dictionaries, workCenterRate: effectiveRate }).rate;
 
     // Unified Filter Logic:
     // 1. Must have a valid Contact record (Fixes "Ghost Users" / Username mismatch)
@@ -4832,6 +4839,68 @@ const TaskEditor: React.FC<{
     // --- Task-Based Resource Logic ---
     const taskLabor = useMemo(() => (jobContext.labor || []).filter(l => l.jobTaskId === task.id), [jobContext.labor, task.id]);
     const taskParts = useMemo(() => (jobContext.inventory || []).filter(i => i.jobTaskId === task.id), [jobContext.inventory, task.id]);
+
+    // WM-2c: default the confirmation's "worked by" to the person most likely posting
+    // time — the signed-in user when they're on the job, else the sole assignee.
+    useEffect(() => {
+        const assigned = task.assignedUserIds || [];
+        const me = availableUsers.find(u => u.id === (user as any)?.id || u.username === (user as any)?.username);
+        if (me && (assigned.length === 0 || assigned.includes(me.id))) setConfUserId(me.id);
+        else if (assigned.length === 1) setConfUserId(assigned[0]);
+        else setConfUserId('');
+        // Re-defaults per operation only — a manual pick mid-edit shouldn't be fought over.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [task.id]);
+
+    // Confirmation costing: the same cascade that priced the planned craft lines
+    // (person → craft → work centre), so actuals land on the plan's rate basis.
+    const confCosting = useMemo(() => {
+        const confUser = availableUsers.find(u => u.id === confUserId);
+        const confContact = confUser ? contacts.find((c: any) => c.id === confUser.contactId) : undefined;
+        const leadLine = taskLabor.find(l => l.isLead) || taskLabor[0];
+        let roleCode: string | undefined;
+        if (confContact) {
+            // Craft for the posting: the planned line this person staffs, else their default craft.
+            const held = new Set<string>([...((confContact.types || []) as string[]), confContact.defaultType].filter(Boolean));
+            roleCode = taskLabor.find(l => l.contactType && held.has(l.contactType))?.contactType
+                || confContact.defaultType || undefined;
+        } else {
+            roleCode = leadLine?.contactType || undefined;
+        }
+        const { rate, source } = resolveLabourRate({
+            contactId: confContact?.id,
+            roleCode,
+            contacts,
+            dictionaries,
+            workCenterRate: effectiveRate,
+        });
+        return { rate, source, roleCode, contactId: confContact?.id as string | undefined };
+    }, [confUserId, availableUsers, contacts, dictionaries, taskLabor, effectiveRate]);
+
+    const postTimeConfirmation = async () => {
+        const hrs = parseFloat(confHours);
+        if (!hrs || hrs <= 0) { showToast('Enter the hours worked.', 'warning'); return; }
+        if (task.id.startsWith('new-')) { showToast('Save the work order before confirming time.', 'warning'); return; }
+        setPosting(true);
+        try {
+            await DatabaseService.getInstance().postConfirmation({
+                woId: jobContext.id,
+                operationId: task.id,
+                hours: hrs,
+                contactId: confCosting.contactId,
+                contactType: confCosting.roleCode,
+                ratePerHour: confCosting.rate,
+                isFinal: confFinal,
+            });
+            showToast(confFinal ? 'Final confirmation posted — operation completed.' : 'Time confirmation posted.', 'success');
+            setConfHours(''); setConfFinal(false);
+            await onConfirmed?.();
+        } catch (e: any) {
+            showToast('Confirmation failed: ' + (e?.message || 'unknown'), 'error');
+        } finally {
+            setPosting(false);
+        }
+    };
 
     // --- Planning-First: Role-Driven People Filter ---
     const plannedRoleCodes = useMemo(() =>
@@ -5145,6 +5214,17 @@ const TaskEditor: React.FC<{
                     <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1">
                         <Clock size={12} /> Confirm time
                     </span>
+                    <select
+                        value={confUserId}
+                        onChange={(e) => setConfUserId(e.target.value)}
+                        className="px-1.5 py-1 text-xs border border-slate-200 rounded focus:ring-1 focus:ring-blue-500 max-w-[160px] text-slate-700"
+                        title="Worked by — the posting is valued at this person's resolved rate (person → craft → work centre)"
+                    >
+                        <option value="">Worked by…</option>
+                        {sortedAssignableUsers.map(({ user: u, contact }) => (
+                            <option key={u.id} value={u.id}>{contact?.name || u.username}</option>
+                        ))}
+                    </select>
                     <input
                         type="number"
                         min={0}
@@ -5154,8 +5234,10 @@ const TaskEditor: React.FC<{
                         placeholder="Hours"
                         className="w-20 px-2 py-1 text-xs text-right border border-slate-200 rounded focus:ring-1 focus:ring-blue-500"
                     />
-                    {effectiveRate != null && parseFloat(confHours) > 0 && (
-                        <span className="text-[11px] text-slate-500">≈ {(parseFloat(confHours) * effectiveRate).toFixed(2)} labour cost</span>
+                    {parseFloat(confHours) > 0 && (
+                        <span className="text-[11px] text-slate-500" title="Same rate cascade as planning, so est-vs-actual variance stays a pure hours signal">
+                            ≈ {(parseFloat(confHours) * confCosting.rate).toFixed(2)} @ ${confCosting.rate}/hr · {labourRateSourceLabel[confCosting.source]}
+                        </span>
                     )}
                     <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer">
                         <input type="checkbox" checked={confFinal} onChange={(e) => setConfFinal(e.target.checked)} className="rounded border-slate-300 text-blue-600 focus:ring-blue-400" />
@@ -5483,7 +5565,7 @@ const TaskEditor: React.FC<{
                                                     {labor.contactType && crewCoversCraft(labor.contactType) === false && (
                                                         <span
                                                             className="text-[9px] px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0"
-                                                            title={`No one in the ${[crewWorkCenter?.code, crewWorkCenter?.name].filter(Boolean).join(' ') || 'assigned work centre'} crew holds this craft — check the operation's work centre (labour is costed at its rate) or plan cross-crew labour.`}
+                                                            title={`No one in the ${[crewWorkCenter?.code, crewWorkCenter?.name].filter(Boolean).join(' ') || 'assigned work centre'} crew holds this craft — check the operation's work centre or plan cross-crew labour. Labour is costed at the craft/person rate; the work-centre rate applies only when neither is set.`}
                                                         >
                                                             ⚠ not in {crewWorkCenter?.code || 'crew'}
                                                         </span>
