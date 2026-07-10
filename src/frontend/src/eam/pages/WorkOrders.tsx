@@ -1130,6 +1130,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const modalJournalsMet = hasJournals || !!modalJournalNote.trim();
     const modalCanComplete = modalFailureModeMet && modalJournalsMet;
     const [defectFound, setDefectFound] = useState(false);
+    const [duplicating, setDuplicating] = useState(false);
 
     const tabs: { id: TabId; label: string; icon: any }[] = [
         { id: 'details', label: 'Details', icon: FileText },
@@ -1513,6 +1514,116 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         }
     };
 
+    // ── Print: field-ready job card (meta, description, tasks w/ tick boxes,
+    // labor, parts, sign-off) via a hidden same-origin iframe — no popup blockers.
+    const handlePrint = () => {
+        const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+        const tasks = [...(localJob.tasks || [])].sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+        const labor = localJob.labor || [];
+        const parts = localJob.inventory || [];
+        const meta: [string, string][] = [
+            ['Status', (localJob.status || '').replace(/_/g, ' ')],
+            ['Type', localJob.type || '—'],
+            ['Priority', localJob.priority || '—'],
+            ['Asset', [localJob.assetCode, localJob.assetName].filter(Boolean).join(' — ') || '—'],
+            ['Due', localJob.dueDate || '—'],
+            ['Created', (localJob.dateCreated || '').slice(0, 10) || '—'],
+            ['Est. duration', localJob.estDuration ? `${localJob.estDuration} h` : '—'],
+            ['Cost centre', localJob.costCenter || '—'],
+        ];
+        const html = `<!doctype html><html><head><title>${esc(localJob.woNumber || localJob.id)}</title><style>
+            * { box-sizing: border-box; } body { font: 12px/1.45 -apple-system, 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 24px; }
+            h1 { font-size: 18px; margin: 0; } .sub { color: #475569; margin: 2px 0 14px; font-size: 13px; }
+            .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px 16px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; }
+            .meta b { display: block; font-size: 9px; text-transform: uppercase; color: #64748b; letter-spacing: .04em; }
+            h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #334155; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin: 16px 0 6px; }
+            table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #cbd5e1; padding: 5px 8px; text-align: left; vertical-align: top; }
+            th { background: #f1f5f9; font-size: 10px; text-transform: uppercase; color: #475569; }
+            .box { display: inline-block; width: 12px; height: 12px; border: 1.5px solid #64748b; border-radius: 2px; }
+            .sig { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; margin-top: 28px; }
+            .sig div { border-top: 1px solid #334155; padding-top: 4px; font-size: 10px; color: #475569; }
+            @media print { body { margin: 10mm; } }
+        </style></head><body>
+            <h1>${esc(localJob.woNumber || localJob.id)} — Work Order</h1>
+            <p class="sub">${esc(localJob.title)}</p>
+            <div class="meta">${meta.map(([k, v]) => `<span><b>${esc(k)}</b>${esc(v)}</span>`).join('')}</div>
+            <h2>Description</h2><p>${esc(localJob.description || '—').replace(/\n/g, '<br/>')}</p>
+            <h2>Tasks (${tasks.length})</h2>
+            ${tasks.length ? `<table><tr><th style="width:28px">#</th><th>Task</th><th style="width:60px">Est. h</th><th style="width:44px">Done</th><th style="width:70px">Initials</th></tr>
+                ${tasks.map(t => `<tr><td>${esc(t.sequence)}</td><td>${esc(t.description)}</td><td>${esc(t.estHours || '')}</td><td style="text-align:center"><span class="box"></span></td><td></td></tr>`).join('')}</table>` : '<p>No tasks defined.</p>'}
+            ${labor.length ? `<h2>Labor</h2><table><tr><th>Role</th><th style="width:70px">People</th><th style="width:70px">Est. h</th><th>Performed by</th></tr>
+                ${labor.map(l => `<tr><td>${esc(l.contactType)}</td><td>${esc(l.headcount || 1)}</td><td>${esc(l.estDuration || '')}</td><td></td></tr>`).join('')}</table>` : ''}
+            ${parts.length ? `<h2>Parts &amp; Materials</h2><table><tr><th>Item</th><th style="width:70px">Qty</th><th style="width:70px">UoM</th><th style="width:90px">Used</th></tr>
+                ${parts.map(p => `<tr><td>${esc(p.description)}</td><td>${esc(p.estQty)}</td><td>${esc(p.uom)}</td><td></td></tr>`).join('')}</table>` : ''}
+            <div class="sig"><div>Completed by</div><div>Signature</div><div>Date</div></div>
+        </body></html>`;
+
+        const frame = document.createElement('iframe');
+        frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+        document.body.appendChild(frame);
+        const doc = frame.contentWindow?.document;
+        if (!doc) { showToast('Unable to open the print view.', 'error'); frame.remove(); return; }
+        doc.open(); doc.write(html); doc.close();
+        frame.contentWindow!.focus();
+        frame.contentWindow!.print();
+        // Removing the frame too early blanks the dialog in some browsers.
+        setTimeout(() => frame.remove(), 60000);
+    };
+
+    // ── Duplicate: copy the WO + its plan (tasks/labor/parts as estimates).
+    // Actuals, confirmations, journals, failure data and JSA sign-offs stay behind.
+    const handleDuplicate = async () => {
+        if (duplicating) return;
+        if (!localJob.assetId) { showToast('Cannot duplicate: this work order has no asset.', 'error'); return; }
+        setDuplicating(true);
+        try {
+            const db = DatabaseService.getInstance();
+            const created = await db.createWorkOrder(buildWorkOrder({
+                title: localJob.title,
+                description: localJob.description,
+                type: localJob.type,
+                status: 'OPEN',
+                priorityCode: localJob.priority,
+                assetId: localJob.assetId,
+                workCenterId: localJob.workCenterId ?? null,
+                estDuration: localJob.estDuration,
+                createdBy: user?.id || null,
+            }), user?.id || 'unknown');
+            const newId = (created as any)?.id;
+
+            // Fresh ids for child rows (upsert-by-id must not touch the original),
+            // task links remapped so labor/parts still point at the copied task.
+            const idMap = new Map<string, string>();
+            const tasks = (localJob.tasks || []).map(t => {
+                const id = crypto.randomUUID(); idMap.set(t.id, id);
+                return {
+                    ...t, id, status: 'PENDING' as const,
+                    actualHours: undefined, actualStartDate: undefined, actualStartTime: undefined,
+                    actualFinishDate: undefined, actualFinishTime: undefined,
+                    completedBy: undefined, completedDate: undefined,
+                };
+            });
+            const labor = (localJob.labor || []).map(l => ({
+                ...l, id: crypto.randomUUID(), jobTaskId: l.jobTaskId ? idMap.get(l.jobTaskId) : undefined,
+                actualDuration: undefined, actualRate: undefined, dateWorkPerformed: undefined,
+                isFinal: undefined, confirmationNo: undefined, remainingHours: undefined,
+            }));
+            const inventory = (localJob.inventory || []).map(p => ({
+                ...p, id: crypto.randomUUID(), jobTaskId: p.jobTaskId ? idMap.get(p.jobTaskId) : undefined,
+                actualQty: undefined, actualUnitCost: undefined, dateUsed: undefined,
+            }));
+            if (newId && (tasks.length || labor.length || inventory.length)) {
+                await db.updateWorkOrder(newId, { tasks, labor, inventory } as any, user?.id || 'unknown');
+            }
+
+            showToast(`Duplicated as ${(created as any)?.wo_number || 'a new work order'} — opening the copy.`, 'success');
+            if (newId) navigate(`/work-orders/${newId}`);
+        } catch (e: any) {
+            showToast('Failed to duplicate: ' + (e?.message || 'unknown error'), 'error');
+        } finally {
+            setDuplicating(false);
+        }
+    };
 
     return (
         <div className="flex flex-col h-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden relative">
@@ -1564,7 +1675,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             {/* Action Toolbar — hidden on mobile, visible md+ */}
             <div className="px-3 py-2 md:px-5 md:py-2.5 border-t border-slate-100 hidden md:flex flex-wrap justify-between items-center gap-2 bg-slate-50/50">
                 <div className="flex flex-wrap gap-1 md:gap-2">
-                    <button className="flex items-center gap-1.5 px-2 py-1 md:px-2.5 md:py-1.5 text-[11px] md:text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white border border-transparent hover:border-slate-200 rounded transition-colors" title="Print Work Order">
+                    <button onClick={handlePrint} className="flex items-center gap-1.5 px-2 py-1 md:px-2.5 md:py-1.5 text-[11px] md:text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white border border-transparent hover:border-slate-200 rounded transition-colors" title="Print Work Order">
                         <Printer size={14} /> Print
                     </button>
                     <button
@@ -1594,8 +1705,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     >
                         <Book size={14} /> Template
                     </button>
-                    <button className="flex items-center gap-1.5 px-2 py-1 md:px-2.5 md:py-1.5 text-[11px] md:text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white border border-transparent hover:border-slate-200 rounded transition-colors" title="Duplicate Work Order">
-                        <Copy size={14} /> Duplicate
+                    <button onClick={handleDuplicate} disabled={duplicating} className="flex items-center gap-1.5 px-2 py-1 md:px-2.5 md:py-1.5 text-[11px] md:text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-white border border-transparent hover:border-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-wait" title="Duplicate Work Order (copies tasks, labor and parts as a fresh OPEN work order)">
+                        <Copy size={14} /> {duplicating ? 'Duplicating…' : 'Duplicate'}
                     </button>
                     <button
                         onClick={() => setDeleteModal({
@@ -4140,7 +4251,7 @@ const TasksTab: React.FC<{
 }> = ({ job, onUpdate, availableOrgUnits, availableUsers, contacts, onUpdateJob, onOperationConfirmed, dictionaries }) => {
     const confirm = useConfirm();
     const tasks = job.tasks || [];
-    const [expandedTaskId, setExpandedTaskId] = useState<string | null>(tasks.length === 1 ? tasks[0]?.id : null);
+    const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
     const [editorTab, setEditorTab] = useState<'instructions' | 'resources'>('instructions');
     // WM-2b: active work centers for the per-operation picker (loaded once).
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
@@ -4190,7 +4301,7 @@ const TasksTab: React.FC<{
         if (!ok) return;
         const filtered = tasks.filter(t => t.id !== id);
         onUpdate(filtered);
-        if (expandedTaskId === id) setExpandedTaskId(filtered.length > 0 ? filtered[0].id : null);
+        if (expandedTaskId === id) setExpandedTaskId(null); // close the drawer with its task
     };
 
     const updateTask = (id: string, updates: Partial<JobTask>) => {
@@ -4201,6 +4312,18 @@ const TasksTab: React.FC<{
         setExpandedTaskId(prev => prev === taskId ? null : taskId);
         setEditorTab('instructions'); // Reset tab on expand
     };
+
+    // Slide-over drawer plumbing: which step is open, Esc to close, body scroll lock.
+    const expandedIndex = tasks.findIndex(t => t.id === expandedTaskId);
+    const expandedTask = expandedIndex >= 0 ? tasks[expandedIndex] : null;
+    useEffect(() => {
+        if (!expandedTaskId) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExpandedTaskId(null); };
+        window.addEventListener('keydown', onKey);
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prevOverflow; };
+    }, [expandedTaskId]);
 
     // Progress stats
     const completed = tasks.filter(t => t.status === 'COMPLETED').length;
@@ -4385,27 +4508,6 @@ const TasksTab: React.FC<{
                                 </div>
                             </div>
 
-                            {/* Expanded: Full-Width Task Editor */}
-                            {isExpanded && (
-                                <div className="bg-white border-t border-slate-200 animate-in slide-in-from-top-2 duration-200">
-                                    <TaskEditor
-                                        task={task}
-                                        onChange={(updates) => updateTask(task.id, updates)}
-                                        onDelete={() => deleteTask(task.id)}
-                                        onUpdateJob={onUpdateJob}
-                                        jobContext={job}
-                                        availableOrgUnits={availableOrgUnits}
-                                        availableUsers={availableUsers}
-                                        contacts={contacts}
-                                        dictionaries={dictionaries}
-                                        workCenters={workCenters}
-                                        onConfirmed={onOperationConfirmed}
-                                        editorTab={editorTab}
-                                        onTabChange={setEditorTab}
-                                        execMode={execMode}
-                                    />
-                                </div>
-                            )}
                         </div>
                     );
                 })}
@@ -4419,6 +4521,73 @@ const TasksTab: React.FC<{
                     </div>
                 )}
             </div>
+
+            {/* Step popup — centered modal (MaintainX procedure-style: bold header, scrollable body) */}
+            {expandedTask && (
+                <div className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center sm:p-6">
+                    <div
+                        className="absolute inset-0 bg-black/50 animate-in fade-in duration-200"
+                        onClick={() => setExpandedTaskId(null)}
+                    />
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={`Step ${expandedIndex + 1}: ${expandedTask.description || 'Untitled step'}`}
+                        className="relative w-full sm:max-w-3xl h-full sm:h-[90vh] bg-slate-50 sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 fade-in duration-200"
+                    >
+                        {/* Header — step identity + navigation */}
+                        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 bg-blue-600 text-white shrink-0">
+                            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white/20 shrink-0">
+                                {expandedIndex + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-sm sm:text-base truncate">{expandedTask.description || 'Untitled step'}</div>
+                                <div className="text-[10px] sm:text-[11px] text-blue-100">
+                                    {expandedTask.operationNo ? `Op ${expandedTask.operationNo} · ` : ''}Step {expandedIndex + 1} of {tasks.length}
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                    onClick={() => setExpandedTaskId(tasks[expandedIndex - 1].id)}
+                                    disabled={expandedIndex <= 0}
+                                    className="p-1.5 rounded-lg text-blue-100 hover:bg-white/15 disabled:opacity-30 transition-colors"
+                                    title="Previous step"
+                                ><ChevronLeft size={16} /></button>
+                                <button
+                                    onClick={() => setExpandedTaskId(tasks[expandedIndex + 1].id)}
+                                    disabled={expandedIndex >= tasks.length - 1}
+                                    className="p-1.5 rounded-lg text-blue-100 hover:bg-white/15 disabled:opacity-30 transition-colors"
+                                    title="Next step"
+                                ><ChevronRight size={16} /></button>
+                                <button
+                                    onClick={() => setExpandedTaskId(null)}
+                                    className="p-1.5 rounded-lg text-blue-100 hover:bg-white/15 ml-1 transition-colors"
+                                    title="Close (Esc)"
+                                ><X size={16} /></button>
+                            </div>
+                        </div>
+                        {/* Body */}
+                        <div className="flex-1 overflow-y-auto overscroll-contain">
+                            <TaskEditor
+                                task={expandedTask}
+                                onChange={(updates) => updateTask(expandedTask.id, updates)}
+                                onDelete={() => deleteTask(expandedTask.id)}
+                                onUpdateJob={onUpdateJob}
+                                jobContext={job}
+                                availableOrgUnits={availableOrgUnits}
+                                availableUsers={availableUsers}
+                                contacts={contacts}
+                                dictionaries={dictionaries}
+                                workCenters={workCenters}
+                                onConfirmed={onOperationConfirmed}
+                                editorTab={editorTab}
+                                onTabChange={setEditorTab}
+                                execMode={execMode}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
@@ -4541,6 +4710,36 @@ const TaskEditor: React.FC<{
     const [teamsSectionOpen, setTeamsSectionOpen] = useState(false);
     const [peopleSectionOpen, setPeopleSectionOpen] = useState(true);
 
+    // Crew check (0191): members of this operation's work center, falling back to the
+    // WO's main work center. Soft signal only — cross-crew assignment stays allowed.
+    const crewWorkCenterId = task.workCenterId || jobContext.workCenterId;
+    const crewWorkCenter = workCenters.find(w => w.id === crewWorkCenterId);
+    const [crewContactIds, setCrewContactIds] = useState<Set<string> | null>(null);
+    useEffect(() => {
+        if (!crewWorkCenterId) { setCrewContactIds(null); return; }
+        let cancelled = false;
+        DatabaseService.getInstance().getWorkCenterMembers(crewWorkCenterId).then(members => {
+            // Empty roster = membership not maintained for this crew; don't flag anyone.
+            if (!cancelled) setCrewContactIds(members.length > 0 ? new Set(members.map(m => m.contactId)) : null);
+        });
+        return () => { cancelled = true; };
+    }, [crewWorkCenterId]);
+    const isOutsideCrew = (contact: any): boolean =>
+        !!(crewContactIds && contact && !crewContactIds.has(contact.id));
+
+    // Crew-first candidate pool: when the work centre has a maintained roster, the
+    // People list defaults to that crew. Toggleable, and searching always bypasses it.
+    const [crewFilterOn, setCrewFilterOn] = useState(true);
+    const crewFilterActive = crewFilterOn && !!crewContactIds;
+
+    // Craft ↔ work-centre coverage: can this crew staff a planned craft at all?
+    // Data-driven (roster crafts, not label matching); null = no roster, no signal.
+    const crewCoversCraft = (roleCode: string): boolean | null => {
+        if (!crewContactIds || !roleCode) return null;
+        return contacts.some((c: any) => crewContactIds.has(c.id) &&
+            (((c.types || []) as string[]).includes(roleCode) || c.defaultType === roleCode));
+    };
+
     // Helper: Get role description from dictionary
     const getRoleLabel = (roleCode?: string): string => {
         if (!roleCode) return '';
@@ -4634,12 +4833,16 @@ const TaskEditor: React.FC<{
     // All assignable people - qualified first, then everyone else
     // When craft requirements exist, show qualified people + already-assigned people
     const sortedAssignableUsers = useMemo(() => {
-        // When actively searching, bypass craft requirement filter so supervisors can find anyone
+        // When actively searching, bypass the crew and craft filters so supervisors can find anyone
         const isSearching = resourceSearchPeople.trim().length > 0;
         const assignedIds = new Set(task.assignedUserIds || []);
-        const base = (!isSearching && plannedRoleCodes.size > 0)
-            ? displayedUsers.filter(({ user, contact }) => isQualifiedForPlannedRoles(contact) || assignedIds.has(user.id))
+        // Crew-first: default candidate pool = the work centre's roster (assigned people stay visible)
+        const pool = (!isSearching && crewFilterActive)
+            ? displayedUsers.filter(({ user, contact }) => (contact && crewContactIds!.has(contact.id)) || assignedIds.has(user.id))
             : displayedUsers;
+        const base = (!isSearching && plannedRoleCodes.size > 0)
+            ? pool.filter(({ user, contact }) => isQualifiedForPlannedRoles(contact) || assignedIds.has(user.id))
+            : pool;
         return [...base].sort((a, b) => {
             // Sort assigned people first, then by name
             const aAssigned = assignedIds.has(a.user.id) ? 0 : 1;
@@ -4649,7 +4852,7 @@ const TaskEditor: React.FC<{
             const nameB = b.contact?.name || b.user.username || '';
             return nameA.localeCompare(nameB);
         });
-    }, [displayedUsers, plannedRoleCodes, resourceSearchPeople, task.assignedUserIds]);
+    }, [displayedUsers, plannedRoleCodes, resourceSearchPeople, task.assignedUserIds, crewFilterActive, crewContactIds]);
 
     const qualifiedCount = useMemo(() => {
         return displayedUsers.filter(({ contact }) => isQualifiedForPlannedRoles(contact)).length;
@@ -5223,7 +5426,7 @@ const TaskEditor: React.FC<{
                                                     <select
                                                         value={labor.contactType}
                                                         onChange={(e) => updateTaskLabor(labor.id, { contactType: e.target.value })}
-                                                        className="text-xs border-slate-300 rounded-lg p-1.5 flex-1"
+                                                        className="text-xs bg-white border border-slate-300 rounded-lg p-1.5 flex-1 cursor-pointer hover:border-slate-400 focus:ring-2 focus:ring-primary-400 focus:border-primary-600 transition-colors"
                                                     >
                                                         <option value="">— Select Role —</option>
                                                         {dictionaries.filter(d => d.type === 'CONTACT_TYPE' && d.active).length === 0 && (
@@ -5258,6 +5461,15 @@ const TaskEditor: React.FC<{
                                                     <span className="text-[10px] font-medium text-blue-600 min-w-[40px] text-right" title="Line Cost (all people)">
                                                         ${((labor.estDuration * labor.estRate) * (labor.headcount || 1)).toFixed(0)}
                                                     </span>
+                                                    {/* Craft ↔ work-centre mismatch (soft): crew can't staff this craft */}
+                                                    {labor.contactType && crewCoversCraft(labor.contactType) === false && (
+                                                        <span
+                                                            className="text-[9px] px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0"
+                                                            title={`No one in the ${[crewWorkCenter?.code, crewWorkCenter?.name].filter(Boolean).join(' ') || 'assigned work centre'} crew holds this craft — check the operation's work centre (labour is costed at its rate) or plan cross-crew labour.`}
+                                                        >
+                                                            ⚠ not in {crewWorkCenter?.code || 'crew'}
+                                                        </span>
+                                                    )}
                                                     {/* Skill Gap Warning */}
                                                     {qualifiedCount === 0 && labor.contactType && <span className="text-[9px] text-red-500 shrink-0" title="No qualified personnel available">⚠ 0</span>}
                                                     <button onClick={() => removeTaskLabor(labor.id)} className="text-slate-400 hover:text-red-500">
@@ -5306,7 +5518,7 @@ const TaskEditor: React.FC<{
                                 >
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
                                     {teamsSectionOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                                    Teams
+                                    Filter by team
                                     {(task.assignedOrgUnitIds || []).length > 0 && (
                                         <span className="text-[9px] text-slate-400 font-normal ml-1">
                                             ({(task.assignedOrgUnitIds || []).length} selected)
@@ -5346,24 +5558,43 @@ const TaskEditor: React.FC<{
                                 </button>
                                 {peopleSectionOpen && (
                                     <>
+                                    {crewContactIds && (
+                                        <div className="flex items-center gap-2 mb-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setCrewFilterOn(v => !v)}
+                                                className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold transition-colors shrink-0 ${crewFilterActive ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
+                                                title={crewFilterActive
+                                                    ? `Showing the ${crewWorkCenter?.name || 'work centre'} crew — click to show everyone`
+                                                    : `Click to limit the list to the ${crewWorkCenter?.name || 'work centre'} crew`}
+                                            >
+                                                {crewFilterActive ? '✓ ' : ''}Crew: {crewWorkCenter?.code || crewWorkCenter?.name || 'work centre'} ({crewContactIds.size})
+                                            </button>
+                                            <span className="text-[9px] text-slate-400">
+                                                {crewFilterActive ? 'crew members only — search finds anyone' : 'showing everyone'}
+                                            </span>
+                                        </div>
+                                    )}
+                                    <input
+                                        type="text"
+                                        placeholder="Search by name, username, or craft..."
+                                        value={resourceSearchPeople}
+                                        onChange={(e) => setResourceSearchPeople(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg mb-1.5 focus:ring-2 focus:ring-primary-400 focus:border-primary-600"
+                                    />
                                     {sortedAssignableUsers.length === 0 ? (
                                         <div className="border border-dashed border-slate-200 rounded-lg p-4 text-center">
                                             <Users size={20} className="mx-auto text-slate-300 mb-1" />
                                             <div className="text-[11px] text-slate-400">
-                                                {plannedRoleCodes.size > 0 || selectedTeamIds.size > 0
-                                                    ? 'No matching people — check craft requirements and team selections'
-                                                    : 'No people found — add contacts in the People module'}
+                                                {crewFilterActive && !resourceSearchPeople.trim()
+                                                    ? `No one from the ${crewWorkCenter?.code || 'crew'} roster is assignable — search to find anyone, or click the crew chip to show everyone`
+                                                    : plannedRoleCodes.size > 0 || selectedTeamIds.size > 0
+                                                        ? 'No matching people — check craft requirements and team selections'
+                                                        : 'No people found — add contacts in the People module'}
                                             </div>
                                         </div>
                                     ) : (
                                         <>
-                                            <input
-                                                type="text"
-                                                placeholder="Search by name, username, or craft..."
-                                                value={resourceSearchPeople}
-                                                onChange={(e) => setResourceSearchPeople(e.target.value)}
-                                                className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg mb-1.5 focus:ring-2 focus:ring-primary-400 focus:border-primary-600"
-                                            />
                                             <div className="border border-slate-200 rounded-lg max-h-56 overflow-y-auto p-1.5 text-xs">
                                                 {sortedAssignableUsers.map(({ user, contact }, idx) => {
                                                     const isInternal = (contact as any)?.flags?.isLabour;
@@ -5376,6 +5607,7 @@ const TaskEditor: React.FC<{
                                                         contactOrgIds.some(id => selectedTeamIds.has(id)) ||
                                                         (singleOrgId && selectedTeamIds.has(singleOrgId))
                                                     );
+                                                    const outsideCrew = isOutsideCrew(contact);
                                                     return (
                                                         <React.Fragment key={user.id}>
                                                             <label className={`flex items-center gap-2 p-1.5 cursor-pointer rounded-lg transition-colors ${isAssigned ? 'bg-emerald-50' : isInSelectedTeam ? 'bg-blue-50/50 ring-1 ring-blue-100' : 'hover:bg-slate-50'
@@ -5383,7 +5615,13 @@ const TaskEditor: React.FC<{
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isAssigned}
-                                                                    onChange={() => onChange({ assignedUserIds: toggleSelection(task.assignedUserIds, user.id) })}
+                                                                    onChange={() => {
+                                                                        if (!isAssigned && outsideCrew) {
+                                                                            const wcLabel = [crewWorkCenter?.code, crewWorkCenter?.name].filter(Boolean).join(' ') || 'work center';
+                                                                            showToast(`⚠ ${contact?.name || user.username} is not in the ${wcLabel} crew — assigned anyway.`, 'warning');
+                                                                        }
+                                                                        onChange({ assignedUserIds: toggleSelection(task.assignedUserIds, user.id) });
+                                                                    }}
                                                                     className="rounded border-slate-300 h-3 w-3"
                                                                 />
                                                                 <span className={`text-xs flex-1 ${isQualified ? 'text-slate-700 font-medium' : 'text-slate-500'}`}>
@@ -5391,6 +5629,9 @@ const TaskEditor: React.FC<{
                                                                 </span>
                                                                 {isQualified && plannedRoleCodes.size > 0 && (
                                                                     <span className="text-[8px] px-1 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-200 shrink-0" title="Matches planned role">✓</span>
+                                                                )}
+                                                                {outsideCrew && (
+                                                                    <span className="text-[8px] px-1 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-200 shrink-0" title={`Not in the ${crewWorkCenter?.name || 'assigned work center'} crew — assignment still allowed`}>not in crew</span>
                                                                 )}
                                                                 {isInSelectedTeam && !isAssigned && (
                                                                     <span className="text-[8px] px-1 py-0.5 rounded bg-blue-50 text-blue-500 border border-blue-100 shrink-0" title="In selected team">team</span>
