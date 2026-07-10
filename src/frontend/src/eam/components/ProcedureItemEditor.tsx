@@ -293,8 +293,8 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
     return (
         <div className={`bg-white border rounded-xl shadow-xs hover:shadow-sm transition-all group relative ${isHeading ? 'border-blue-200 bg-blue-50/20 p-2.5' : 'border-slate-200 p-3 sm:p-4'}`}>
 
-            {/* ── HEADER: Label + Type + Required + Actions ── */}
-            <div className="flex flex-col gap-3 mb-2">
+            {/* ── HEADER: Label + Type + Media + Required + Actions ── */}
+            <div className="flex flex-col gap-2 mb-1">
                 {/* Row 1: Icon + Label input */}
                 <div className="flex items-start gap-2.5">
                     <div className="mt-2.5 text-slate-400 flex-shrink-0">
@@ -314,11 +314,71 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                     </div>
                 </div>
 
-                {/* Row 2: Type badge + Actions (always visible, mobile-friendly) */}
-                <div className="flex items-center gap-2 pl-0 sm:pl-8 flex-wrap">
+                {/* Row 2: Type badge + reference media + Actions (one compact row) */}
+                <div className="flex items-center gap-1.5 pl-0 sm:pl-8 flex-wrap">
                     <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
                         {getTypeLabel(block.type)}
                     </span>
+
+                    {/* Reference media — attaches to THIS instruction (not the observation) */}
+                    <button
+                        onClick={() => handleAddMedia('LINK')}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
+                        title="Attach a reference link to this instruction"
+                    >
+                        <LinkIcon size={13} />
+                    </button>
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowImageMenu(v => !v)}
+                            disabled={uploading}
+                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100 disabled:opacity-60"
+                            title="Attach a reference image to this instruction"
+                        >
+                            {uploading ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
+                        </button>
+                        {showImageMenu && (
+                            <>
+                                <div className="fixed inset-0 z-10" onClick={() => setShowImageMenu(false)} />
+                                <div className="absolute left-0 top-8 bg-white shadow-lg border border-slate-200 rounded-lg z-20 w-48 py-1 flex flex-col animate-in fade-in zoom-in-95 duration-100">
+                                    <button
+                                        onClick={() => deviceInputRef.current?.click()}
+                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Upload size={12} className="text-blue-500" /> Upload from device
+                                    </button>
+                                    <button
+                                        onClick={() => cameraInputRef.current?.click()}
+                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Camera size={12} className="text-emerald-500" /> Take photo
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowImageMenu(false); handleAddMedia('IMAGE'); }}
+                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors border-t border-slate-100"
+                                    >
+                                        <LinkIcon size={12} className="text-slate-400" /> From URL…
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                    {/* Hidden pickers: device gallery + direct camera capture (mobile) */}
+                    <input
+                        ref={deviceInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => { handleImageFile(e.target.files?.[0]); e.target.value = ''; }}
+                    />
+                    <input
+                        ref={cameraInputRef}
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        onChange={(e) => { handleImageFile(e.target.files?.[0]); e.target.value = ''; }}
+                    />
 
                     <div className="flex-1" />
 
@@ -543,67 +603,6 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                         </button>
                     </div>
                 )}
-
-                {/* ── FOOTER: Media Toolbar ── */}
-                <div className="flex items-center gap-2 pt-2 mt-2 border-t border-slate-100">
-                    <button
-                        onClick={() => handleAddMedia('LINK')}
-                        className="text-xs text-slate-400 hover:text-blue-600 flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-50 transition-colors"
-                    >
-                        <LinkIcon size={12} /> Link
-                    </button>
-                    <div className="relative">
-                        <button
-                            onClick={() => setShowImageMenu(v => !v)}
-                            disabled={uploading}
-                            className="text-xs text-slate-400 hover:text-blue-600 flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-50 transition-colors disabled:opacity-60"
-                        >
-                            {uploading ? <Loader2 size={12} className="animate-spin" /> : <ImageIcon size={12} />}
-                            {uploading ? 'Uploading…' : 'Image'}
-                        </button>
-                        {showImageMenu && (
-                            <>
-                                <div className="fixed inset-0 z-10" onClick={() => setShowImageMenu(false)} />
-                                <div className="absolute left-0 bottom-8 bg-white shadow-lg border border-slate-200 rounded-lg z-20 w-48 py-1 flex flex-col animate-in fade-in zoom-in-95 duration-100">
-                                    <button
-                                        onClick={() => deviceInputRef.current?.click()}
-                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors"
-                                    >
-                                        <Upload size={12} className="text-blue-500" /> Upload from device
-                                    </button>
-                                    <button
-                                        onClick={() => cameraInputRef.current?.click()}
-                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors"
-                                    >
-                                        <Camera size={12} className="text-emerald-500" /> Take photo
-                                    </button>
-                                    <button
-                                        onClick={() => { setShowImageMenu(false); handleAddMedia('IMAGE'); }}
-                                        className="text-xs text-left px-3 py-2.5 hover:bg-slate-50 text-slate-700 flex items-center gap-2 transition-colors border-t border-slate-100"
-                                    >
-                                        <LinkIcon size={12} className="text-slate-400" /> From URL…
-                                    </button>
-                                </div>
-                            </>
-                        )}
-                    </div>
-                    {/* Hidden pickers: device gallery + direct camera capture (mobile) */}
-                    <input
-                        ref={deviceInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => { handleImageFile(e.target.files?.[0]); e.target.value = ''; }}
-                    />
-                    <input
-                        ref={cameraInputRef}
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        className="hidden"
-                        onChange={(e) => { handleImageFile(e.target.files?.[0]); e.target.value = ''; }}
-                    />
-                </div>
 
                 {/* Media List with visible delete */}
                 {block.media && block.media.length > 0 && (
