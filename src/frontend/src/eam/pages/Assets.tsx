@@ -1987,8 +1987,9 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                 }}
             />
 
-            {/* FAB for mobile — one-hand creation menu (visible < 768px only) */}
-            {canCreate && (
+            {/* FAB for mobile — one-hand creation menu (visible < 768px only).
+                Hidden while the add form is open so it can't sit over the Create button. */}
+            {canCreate && !isAddModalOpen && (
                 <div className="sm:hidden fixed bottom-20 right-5 z-[999] flex flex-col items-end gap-3">
                     {showFabMenu && (
                         <>

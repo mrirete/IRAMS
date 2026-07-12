@@ -75,6 +75,16 @@ const METHODS: Record<string, { label: string; color: string }> = {
     apollo: { label: 'Apollo', color: '#3b82f6' },
 };
 
+// Inline-style status chip (used by the portfolio table + its mobile card equivalent)
+const STATUS_CHIP: Record<string, { label: string; color: string; bg: string }> = {
+    draft: { label: 'Draft', color: '#64748b', bg: '#f1f5f9' },
+    in_progress: { label: 'In Progress', color: '#2563eb', bg: '#eff6ff' },
+    review: { label: 'Review', color: '#d97706', bg: '#fffbeb' },
+    closed: { label: 'Closed', color: '#059669', bg: '#ecfdf5' },
+};
+const statusChip = (status?: string) =>
+    STATUS_CHIP[status || ''] || { label: status || '—', color: '#94a3b8', bg: '#f8fafc' };
+
 const STATUS_STYLES: Record<string, { bg: string; text: string; border: string }> = {
     draft: { bg: 'bg-slate-100', text: 'text-slate-600', border: 'border-slate-300' },
     in_progress: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-300' },
@@ -573,8 +583,116 @@ export const RCATab: React.FC<RCATabProps> = ({
                             </div>
                         </div>
 
-                        {/* Table */}
-                        <div style={{ overflowX: 'auto' }}>
+                        {/* Mobile: stacked cards — no sideways scrolling */}
+                        <div className="sm:hidden">
+                            {portfolioList.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '40px 24px', color: '#94a3b8' }}>
+                                    <div style={{
+                                        width: 56, height: 56, borderRadius: '50%', background: '#f1f5f9',
+                                        margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    }}>
+                                        <GitMerge size={24} color="#94a3b8" />
+                                    </div>
+                                    <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6, color: '#64748b' }}>No investigations yet</div>
+                                    <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+                                        Run a Pareto analysis below to identify bad actors, then create an RCA investigation.
+                                    </div>
+                                </div>
+                            ) : portfolioList.map(rca => {
+                                const method = METHODS[rca.method] || { label: rca.method || 'RCA', color: '#64748b' };
+                                const st = statusChip(rca.status);
+                                const ai = assetTagMap[rca.asset_id];
+                                const cc = ai?.criticality?.toUpperCase();
+                                const critBg = cc === 'A' ? '#fef2f2' : cc === 'B' ? '#fffbeb' : cc === 'C' ? '#eff6ff' : '#f8fafc';
+                                const critTc = cc === 'A' ? '#dc2626' : cc === 'B' ? '#d97706' : cc === 'C' ? '#2563eb' : '#64748b';
+                                const critBc = cc === 'A' ? '#fecaca' : cc === 'B' ? '#fde68a' : cc === 'C' ? '#bfdbfe' : '#e2e8f0';
+                                return (
+                                    <div key={rca.id}
+                                        onClick={() => navigate(`/analyze/rca/${rca.id}`)}
+                                        style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                                    >
+                                        {/* Title row */}
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 14, lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                                    <span>{rca.title || 'Untitled Investigation'}</span>
+                                                    {isUserCollaborator(rca) && (
+                                                        <span style={{
+                                                            fontSize: 9, fontWeight: 800, textTransform: 'uppercase' as const,
+                                                            padding: '2px 7px', borderRadius: 4, letterSpacing: '0.05em',
+                                                            background: '#ede9fe', color: '#7c3aed', border: '1px solid #c4b5fd',
+                                                        }}>INVITED</span>
+                                                    )}
+                                                </div>
+                                                {rca.problem_statement && (
+                                                    <div style={{
+                                                        fontSize: 12, color: '#94a3b8', lineHeight: 1.4, marginTop: 2,
+                                                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                    }}>
+                                                        {rca.problem_statement}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <ArrowRight size={16} color="#cbd5e1" style={{ flexShrink: 0, marginTop: 2 }} />
+                                        </div>
+
+                                        {/* Asset */}
+                                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                                            {ai ? (
+                                                <>
+                                                    <span style={{
+                                                        display: 'inline-flex', padding: '2px 6px', borderRadius: 6,
+                                                        background: critBg, color: critTc, border: `1px solid ${critBc}`,
+                                                        fontSize: 10, fontWeight: 800, letterSpacing: '0.03em', flexShrink: 0,
+                                                    }}>{cc}</span>
+                                                    <span style={{ fontSize: 12, color: '#334155', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {ai.tag || ai.name}
+                                                    </span>
+                                                </>
+                                            ) : rca.event_what ? (
+                                                <>
+                                                    <span style={{ display: 'inline-flex', padding: '2px 6px', borderRadius: 6, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', fontSize: 10, fontWeight: 800, flexShrink: 0 }}>MANUAL</span>
+                                                    <span style={{ fontSize: 12, color: '#475569', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rca.event_what}</span>
+                                                </>
+                                            ) : (
+                                                <span style={{ color: '#cbd5e1', fontSize: 11 }}>No asset linked</span>
+                                            )}
+                                        </div>
+
+                                        {/* Badges + meta */}
+                                        <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                            <span style={{
+                                                display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 10,
+                                                fontSize: 11, fontWeight: 700, background: `${method.color}12`, color: method.color,
+                                                border: `1px solid ${method.color}30`,
+                                            }}>{method.label}</span>
+                                            <span style={{
+                                                display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 10,
+                                                fontSize: 11, fontWeight: 700, background: st.bg, color: st.color,
+                                                border: `1px solid ${st.color}30`,
+                                            }}>{st.label}</span>
+                                            {rca.rca_category && (
+                                                <span style={{ fontSize: 11, color: '#64748b', textTransform: 'capitalize' }}>
+                                                    {rca.rca_category.replace('_', ' ')}
+                                                </span>
+                                            )}
+                                            <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                                                {rca.created_at ? new Date(rca.created_at).toLocaleDateString() : ''}
+                                            </span>
+                                        </div>
+
+                                        {(rca as any).collaborators?.length > 0 && (
+                                            <div style={{ marginTop: 8 }}>
+                                                <AvatarStack collaborators={(rca as any).collaborators} max={3} size="sm" />
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {/* Table (tablet / desktop) */}
+                        <div className="hidden sm:block" style={{ overflowX: 'auto' }}>
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                 <thead>
                                     <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
@@ -629,18 +747,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                         </tr>
                                     ) : portfolioList.map(rca => {
                                         const method = METHODS[rca.method] || { label: rca.method || 'RCA', color: '#64748b' };
-                                        const statusLabel = rca.status === 'in_progress' ? 'In Progress'
-                                            : rca.status === 'draft' ? 'Draft'
-                                            : rca.status === 'review' ? 'Review'
-                                            : rca.status === 'closed' ? 'Closed' : rca.status || 'â€”';
-                                        const statusColor = rca.status === 'in_progress' ? '#2563eb'
-                                            : rca.status === 'draft' ? '#64748b'
-                                            : rca.status === 'review' ? '#d97706'
-                                            : rca.status === 'closed' ? '#059669' : '#94a3b8';
-                                        const statusBg = rca.status === 'in_progress' ? '#eff6ff'
-                                            : rca.status === 'draft' ? '#f1f5f9'
-                                            : rca.status === 'review' ? '#fffbeb'
-                                            : rca.status === 'closed' ? '#ecfdf5' : '#f8fafc';
+                                        const { label: statusLabel, color: statusColor, bg: statusBg } = statusChip(rca.status);
                                         return (
                                             <tr key={rca.id}
                                                 onClick={() => navigate(`/analyze/rca/${rca.id}`)}
