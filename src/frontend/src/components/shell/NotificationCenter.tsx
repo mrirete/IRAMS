@@ -195,7 +195,7 @@ export const NotificationCenter: React.FC = () => {
 
             {/* Dropdown */}
             {open && (
-                <div className="absolute right-0 top-full mt-2 w-[360px] bg-white border border-slate-200 rounded-xl shadow-2xl shadow-black/50 z-50 animate-in slide-in-from-top-2 duration-150 overflow-hidden">
+                <div className="fixed left-2 right-2 top-14 w-auto sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-2 sm:w-[360px] bg-white border border-slate-200 rounded-xl shadow-2xl shadow-black/50 z-50 animate-in slide-in-from-top-2 duration-150 overflow-hidden">
                     {/* Header */}
                     <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
                         <h3 className="text-sm font-semibold text-slate-800">Notifications</h3>
@@ -224,7 +224,7 @@ export const NotificationCenter: React.FC = () => {
                     </div>
 
                     {/* Items */}
-                    <div className="max-h-[360px] overflow-y-auto divide-y divide-slate-100">
+                    <div className="max-h-[50vh] sm:max-h-[360px] overflow-y-auto divide-y divide-slate-100">
                         {loading ? (
                             <div className="py-8 text-center">
                                 <div className="w-5 h-5 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-2" />
