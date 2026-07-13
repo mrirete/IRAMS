@@ -2221,7 +2221,8 @@ export class DatabaseService {
             enteredBy: row.entered_by,
             isActive: row.is_active,
             isAlarm: row.is_alarm,
-            comments: row.comments
+            comments: row.comments,
+            valuationCode: row.valuation_code
         }));
     }
 
@@ -2259,7 +2260,7 @@ export class DatabaseService {
     }
 
     public async logReading(log: any): Promise<any> {
-        const row = {
+        const row: any = {
             definition_id: log.definitionId || log.definition_id,
             asset_id: log.assetId || log.asset_id,
             reading_type_code: log.readingTypeCode || log.reading_type_code,
@@ -2267,13 +2268,23 @@ export class DatabaseService {
             reading_time: log.time || log.reading_time,
             reading_value: log.value,
             delta: log.delta,
-            entered_by: log.enteredBy,
+            entered_by: log.enteredBy || log.entered_by, // entry sheet sends snake_case — was silently NULL
             comments: log.comments,
             // is_alarm calculated by DB trigger ideally, or passed from UI
             is_alarm: log.isAlarm || log.is_alarm || false
         };
+        // Coded finding (0192) — only sent when picked, so inserts keep working
+        // against databases where the column doesn't exist yet.
+        const vCode = log.valuationCode || log.valuation_code;
+        if (vCode) row.valuation_code = vCode;
 
-        const { data, error } = await supabase.from('reading_logs').insert(row).select().single();
+        let { data, error } = await supabase.from('reading_logs').insert(row).select().single();
+
+        // Tolerate a missing valuation_code column (0192 not applied yet): strip + retry.
+        if (error && row.valuation_code !== undefined && (/valuation_code|PGRST204|column .* does not exist/i.test(error.message || ''))) {
+            const { valuation_code, ...rest } = row;
+            ({ data, error } = await supabase.from('reading_logs').insert(rest).select().single());
+        }
         if (error) throw new Error(error.message);
 
         return { ...log, id: data.id };

@@ -447,6 +447,8 @@ export interface ReadingLogEntry {
   enteredBy: string;
   isActive: boolean; // For "Meter Change" logic (deactivate old readings)
   comments?: string;
+  /** Coded finding at reading time (SAP valuation code) — see lib/valuationCodes.ts */
+  valuationCode?: string | null;
 
   isAlarm: boolean;
 }

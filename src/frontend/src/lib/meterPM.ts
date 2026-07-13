@@ -109,3 +109,67 @@ export function evaluateMeterPMs(pms: MeterPM[], readings: MeterReadingCtx[]): M
     const seen = new Set<string>();
     return due.filter(d => (seen.has(d.pmId) ? false : (seen.add(d.pmId), true)));
 }
+
+// ── Due-date forecasting (SAP "annual estimate" for counter-based plans) ────
+// Given the latest meter value and the observed usage rate, project WHEN a
+// meter-based PM will fall due — so the scheduler sees it weeks ahead instead
+// of only when the crossing actually happens.
+
+export interface MeterPMForecast {
+    pmId: string;
+    /** Meter value at which the PM falls due. */
+    dueAt: number;
+    /** Meter units still to run (0 = due/overdue now). */
+    remaining: number;
+    /** Usage per day the forecast is based on, if known. */
+    dailyRate: number | null;
+    /** Whole days until due (0 = due now), null when the rate is unknown/zero. */
+    daysToDue: number | null;
+    /** Projected due date (ISO yyyy-mm-dd), null when it can't be projected. */
+    forecastDate: string | null;
+    basis: string;
+}
+
+const addDays = (iso: string, days: number): string => {
+    const d = new Date(`${iso}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+};
+
+/**
+ * Forecast when a meter-based PM falls due. Pure: `today` is injectable.
+ * Returns null for non-meter PMs / zero intervals — nothing to forecast.
+ */
+export function forecastMeterPM(
+    pm: MeterPM,
+    current: { value: number; date: string },
+    dailyRate: number | null,
+    today: string = new Date().toISOString().slice(0, 10),
+): MeterPMForecast | null {
+    if (!isMeterSchedule(pm) || !(pm.interval > 0)) return null;
+
+    // Next due point: from the last-service baseline when tracked, else the next
+    // interval boundary above the current meter (mirrors evaluateMeterPMs).
+    const dueAt = pm.baseline != null
+        ? pm.baseline + pm.interval
+        : (Math.floor(current.value / pm.interval) + 1) * pm.interval;
+    const remaining = Math.max(0, dueAt - current.value);
+
+    if (remaining === 0) {
+        return {
+            pmId: pm.id, dueAt, remaining, dailyRate, daysToDue: 0, forecastDate: today,
+            basis: `Meter ${current.value}${pm.unit ? ' ' + pm.unit : ''} ≥ due at ${dueAt} — due now`,
+        };
+    }
+    if (dailyRate == null || !(dailyRate > 0)) {
+        return {
+            pmId: pm.id, dueAt, remaining, dailyRate: null, daysToDue: null, forecastDate: null,
+            basis: `${remaining}${pm.unit ? ' ' + pm.unit : ''} to go — no usage rate yet to project a date`,
+        };
+    }
+    const daysToDue = Math.ceil(remaining / dailyRate);
+    return {
+        pmId: pm.id, dueAt, remaining, dailyRate, daysToDue, forecastDate: addDays(today, daysToDue),
+        basis: `${remaining}${pm.unit ? ' ' + pm.unit : ''} to go at ~${dailyRate.toFixed(1)}/day → ~${daysToDue}d`,
+    };
+}

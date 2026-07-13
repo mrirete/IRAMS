@@ -6,7 +6,7 @@ import {
     AlertCircle, CheckCircle, XCircle, X, ChevronLeft, ChevronRight, ChevronDown, List, Network, Minus, Package, MapPin, FileWarning, Wrench
 } from 'lucide-react';
 import {
-    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, AreaChart, Area
+    LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ComposedChart, Area
 } from 'recharts';
 import { Asset, ReadingDefinition, ReadingLogEntry, DictionaryRecord } from '../types';
 
@@ -23,10 +23,11 @@ import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { evaluateReading, type AlarmLevel } from '../../lib/readingAlarm';
 import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
-import { evaluateMeterPMs, type MeterPM, type MeterReadingCtx, type MeterPMDue } from '../../lib/meterPM';
+import { evaluateMeterPMs, forecastMeterPM, isMeterSchedule, matchesReading, type MeterPM, type MeterReadingCtx, type MeterPMDue, type MeterPMForecast } from '../../lib/meterPM';
 import { computeReadingDue, summariseDue } from '../../lib/readingDue';
 import { RaiseWorkModal, type RaiseKind } from '../components/RaiseWorkModal';
 import { buildWorkOrder } from '../lib/workOrder';
+import { VALUATION_CODES, valuationByCode, VALUATION_TONE_CLASSES } from '../../lib/valuationCodes';
 
 interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
 
@@ -330,6 +331,7 @@ export const Readings: React.FC = () => {
         const updatedLogs = [...logs];
         const updatedDefs = [...definitions];
         let queuedAny = false;
+        let propagatedCount = 0; // child meter readings advanced from a parent delta
         const breaches: BreachInfo[] = [];
         const meterCtx: { assetId: string; ctx: MeterReadingCtx }[] = [];
 
@@ -392,7 +394,8 @@ export const Readings: React.FC = () => {
                 entered_by: profile?.username || profile?.fullName || 'Unknown User',
                 is_active: true,
                 is_alarm: alarm.level !== 'OK',
-                comments: reading.comments
+                comments: reading.comments,
+                valuation_code: reading.valuationCode || null
             };
 
             const newLog: ReadingLogEntry = {
@@ -407,7 +410,8 @@ export const Readings: React.FC = () => {
                 enteredBy: dbLog.entered_by,
                 isActive: dbLog.is_active,
                 isAlarm: dbLog.is_alarm,
-                comments: dbLog.comments
+                comments: dbLog.comments,
+                valuationCode: dbLog.valuation_code
             };
 
             try {
@@ -429,10 +433,61 @@ export const Readings: React.FC = () => {
                     };
                 }
 
-                // PARENT READINGS PROPAGATION
+                // Parent → child meter propagation (SAP hierarchy measurement
+                // transfer / AMPRO parent readings): a meter delta on a parent
+                // advances every descendant's matching meter by the same delta.
                 if (def.category === 'METER' && delta > 0) {
-                    // (Omitted parent propagation DB save for brevity in this step, but would follow similar pattern)
-                    // Ideally we iterate and save child logs too.
+                    const sameName = (a?: string, b?: string) => (a || '').trim().toUpperCase() === (b || '').trim().toUpperCase();
+                    const visited = new Set<string>([def.assetId]);
+                    const queue = assets.filter(a => a.parentId === def.assetId).map(a => a.id);
+                    while (queue.length > 0) {
+                        const childId = queue.shift()!;
+                        if (visited.has(childId)) continue; // cycle guard
+                        visited.add(childId);
+                        assets.filter(a => a.parentId === childId).forEach(a => queue.push(a.id));
+
+                        const childDefs = updatedDefs.filter(d =>
+                            d.assetId === childId && d.isActive && d.category === 'METER' &&
+                            (d.readingTypeCode === def.readingTypeCode || sameName(d.name, def.name)));
+                        for (const cd of childDefs) {
+                            const childDate = reading.date || dateStr;
+                            // Same 24h meter rule as direct entry — skip, don't overwrite.
+                            if (updatedLogs.some(l => l.definitionId === cd.id && l.date === childDate && l.isActive)) continue;
+                            const prevVal = cd.lastReadingValue ?? 0;
+                            const childValue = prevVal + delta;
+                            const childAlarm = evaluateReading(childValue, cd);
+                            const childAssetName = assets.find(a => a.id === childId)?.name || 'sub-asset';
+                            const childDbLog = {
+                                id: crypto.randomUUID(),
+                                definition_id: cd.id,
+                                asset_id: childId,
+                                reading_type_code: cd.readingTypeCode,
+                                reading_date: childDate,
+                                reading_time: '00:00',
+                                value: childValue,
+                                delta,
+                                entered_by: profile?.username || profile?.fullName || 'Unknown User',
+                                is_active: true,
+                                is_alarm: childAlarm.level !== 'OK',
+                                comments: `Propagated +${delta}${cd.unit ? ' ' + cd.unit : ''} from parent meter "${def.name}"`,
+                            };
+                            const { queued: childQueued } = await offlineQueue.run('logReading', childDbLog, `Reading: ${cd.name} (${childAssetName})`);
+                            if (childQueued) queuedAny = true;
+                            updatedLogs.push({
+                                id: childDbLog.id, definitionId: cd.id, assetId: childId, readingTypeCode: cd.readingTypeCode,
+                                date: childDate, time: '00:00', value: childValue, delta,
+                                enteredBy: childDbLog.entered_by, isActive: true, isAlarm: childDbLog.is_alarm, comments: childDbLog.comments,
+                            });
+                            const ci = updatedDefs.findIndex(d => d.id === cd.id);
+                            if (ci >= 0) updatedDefs[ci] = { ...updatedDefs[ci], lastReadingValue: childValue, lastReadingDate: childDate };
+                            // Child meters feed their own meter-based PMs too.
+                            meterCtx.push({ assetId: childId, ctx: { defName: cd.name, unit: cd.unit, readingTypeCode: cd.readingTypeCode, category: 'METER', previousValue: prevVal, newValue: childValue } });
+                            if (childAlarm.level !== 'OK') {
+                                breaches.push({ assetId: childId, assetName: childAssetName, defName: cd.name, unit: cd.unit, value: childValue, level: childAlarm.level, detail: childAlarm.detail });
+                            }
+                            propagatedCount++;
+                        }
+                    }
                 }
 
                 // R-4: on a band breach, raise a notification pre-coded with the
@@ -470,6 +525,9 @@ export const Readings: React.FC = () => {
                 : 'Readings saved successfully.',
             queuedAny ? 'info' : 'success',
         );
+        if (propagatedCount > 0) {
+            showToast(`${propagatedCount} child meter reading${propagatedCount > 1 ? 's' : ''} advanced by the parent's delta.`, 'info');
+        }
         // R-4: band breaches. If auto-raise is on, CRITICAL breaches become
         // corrective WOs immediately; the rest (warnings, or criticals when the
         // option is off) surface in the one-tap banner.
@@ -857,6 +915,8 @@ export const Readings: React.FC = () => {
                                 <RelatedWork
                                     assetId={selectedAsset.id}
                                     pms={pms.filter(p => p.asset_id === selectedAsset.id || (Array.isArray(p.assigned_assets) && p.assigned_assets.some((a: any) => a.assetId === selectedAsset.id)))}
+                                    definitions={definitions.filter(d => d.assetId === selectedAsset.id)}
+                                    logs={logs}
                                     onOpenWO={(id) => navigate(`/work-orders/${id}`)}
                                 />
                             )}
@@ -1031,6 +1091,15 @@ const TrendAnalysis: React.FC<{
     const [selectedDefId, setSelectedDefId] = useState<string>(definitions[0]?.id || '');
     const selectedDef = definitions.find(d => d.id === selectedDefId);
 
+    // Date-range filter for the chart + history (AMPRO/SAP graph filtering).
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState('');
+    const applyPreset = (days: number | null) => {
+        if (days == null) { setFromDate(''); setToDate(''); return; }
+        const d = new Date(); d.setDate(d.getDate() - days);
+        setFromDate(d.toISOString().slice(0, 10)); setToDate('');
+    };
+
     // Prepare Graph Data - Sorted Ascending for Line Chart
     const graphData = useMemo(() => {
         if (!selectedDefId) return [];
@@ -1040,51 +1109,89 @@ const TrendAnalysis: React.FC<{
             .map(l => ({
                 id: l.id,
                 date: l.date,
+                time: l.time,
                 value: l.value,
                 delta: l.delta || 0,
                 active: l.isActive,
+                enteredBy: l.enteredBy,
+                valuationCode: l.valuationCode,
                 comment: l.comments
             }));
     }, [logs, selectedDefId]);
 
-    // Average Calculations
+    // ISO dates compare lexicographically — no Date parsing needed.
+    const filteredData = useMemo(() =>
+        graphData.filter(d => (!fromDate || d.date >= fromDate) && (!toDate || d.date <= toDate)),
+        [graphData, fromDate, toDate]);
+
+    // Least-squares trend over the visible ACTIVE readings (x = date in ms).
+    const trendFit = useMemo(() => {
+        const pts = filteredData.filter(d => d.active);
+        if (pts.length < 2) return null;
+        const xs = pts.map(p => new Date(p.date).getTime());
+        const ys = pts.map(p => p.value);
+        const n = pts.length;
+        const mx = xs.reduce((a, b) => a + b, 0) / n;
+        const my = ys.reduce((a, b) => a + b, 0) / n;
+        let num = 0, den = 0;
+        for (let i = 0; i < n; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2; }
+        if (den === 0) return null;
+        const slope = num / den;
+        return { slope, intercept: my - slope * mx, perDay: slope * 86400000 };
+    }, [filteredData]);
+
+    const chartData = useMemo(() =>
+        trendFit
+            ? filteredData.map(d => ({ ...d, trend: +(trendFit.intercept + trendFit.slope * new Date(d.date).getTime()).toFixed(2) }))
+            : filteredData,
+        [filteredData, trendFit]);
+
+    // Average Calculations — over the visible date range; lifetime cumulative
+    // deliberately ignores the filter (it's a total, not a window stat).
     const averages = useMemo(() => {
-        const activeData = graphData.filter(d => d.active);
-        if (activeData.length < 2) return { daily: 0, weekly: 0, monthly: 0, yearly: 0, overall: 0 };
+        const activeData = filteredData.filter(d => d.active);
 
         if (selectedDef?.category === 'METER') {
+            // Lifetime cumulative — walks ALL history (inactive rows too) so the
+            // total keeps counting through meter replacements (SAP counter
+            // semantics): a value lower than its predecessor means the meter was
+            // replaced, and the new meter's position counts as fresh usage.
+            let cumulative = 0; let prev: number | null = null;
+            for (const r of graphData) {
+                if (prev != null) cumulative += r.value >= prev ? r.value - prev : r.value;
+                prev = r.value;
+            }
+            // Averages restart at a meter change: they use the active span only,
+            // and need at least two active readings.
+            if (activeData.length < 2) return { daily: 0, weekly: 0, monthly: 0, yearly: 0, overall: cumulative };
             const first = activeData[0];
             const last = activeData[activeData.length - 1];
-            // Calculate Days Span
             const msDiff = new Date(last.date).getTime() - new Date(first.date).getTime();
             const daysDiff = Math.max(1, msDiff / (1000 * 3600 * 24));
-
-            // Usage is delta between last and first VALUE (assuming cumulative meter)
-            const totalUsage = last.value - first.value;
-
-            const daily = totalUsage / daysDiff;
+            const daily = (last.value - first.value) / daysDiff;
             return {
                 daily: daily,
                 weekly: daily * 7,
                 monthly: daily * 30.4,
                 yearly: daily * 365,
-                overall: totalUsage // Cumulative for meters
+                overall: cumulative
             };
         } else {
+            if (activeData.length < 2) return { daily: 0, weekly: 0, monthly: 0, yearly: 0, overall: 0 };
             // Condition Monitoring - Simple Average
             const sum = activeData.reduce((acc, curr) => acc + curr.value, 0);
             const avg = sum / activeData.length;
             return { daily: avg, weekly: avg, monthly: avg, yearly: avg, overall: avg };
         }
-    }, [graphData, selectedDef]);
+    }, [graphData, filteredData, selectedDef]);
 
     if (!selectedDef) return <div className="text-center p-8 text-slate-400">No reading definitions found for this asset.</div>;
 
     return (
         <div className="space-y-6">
             {/* Toolbar */}
-            <div className="flex gap-4 items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <div className="flex-1">
+            <div className="flex gap-4 items-start bg-slate-50 p-4 rounded-xl border border-slate-200 flex-wrap">
+                <div className="flex-1 min-w-[220px]">
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Select Reading Type</label>
                     <div className="flex gap-2 flex-wrap">
                         {definitions.map(def => (
@@ -1097,6 +1204,26 @@ const TrendAnalysis: React.FC<{
                                 {def.name}
                             </button>
                         ))}
+                    </div>
+                </div>
+                {/* Date range — presets + explicit from/to */}
+                <div className="flex-shrink-0">
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Date Range</label>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        {([[30, '30d'], [90, '90d'], [365, '1y'], [null, 'All']] as [number | null, string][]).map(([days, label]) => {
+                            const active = days == null ? (!fromDate && !toDate) : false;
+                            return (
+                                <button key={label} onClick={() => applyPreset(days)}
+                                    className={`text-[11px] font-semibold px-2 py-1 rounded-md border transition ${active ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'}`}>
+                                    {label}
+                                </button>
+                            );
+                        })}
+                        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} title="From"
+                            className="p-1.5 border border-slate-300 rounded-md text-xs bg-white" />
+                        <span className="text-slate-400 text-xs">–</span>
+                        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} title="To"
+                            className="p-1.5 border border-slate-300 rounded-md text-xs bg-white" />
                     </div>
                 </div>
             </div>
@@ -1129,9 +1256,14 @@ const TrendAnalysis: React.FC<{
             <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm h-80">
                 <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
                     <LineChartIcon size={16} className="text-blue-600" /> Trend Analysis
+                    {trendFit && (
+                        <span className={`ml-auto text-[11px] font-semibold ${trendFit.perDay > 0 ? 'text-slate-500' : 'text-slate-400'}`} title="Least-squares trend over the visible active readings">
+                            Trend {trendFit.perDay >= 0 ? '+' : ''}{trendFit.perDay.toFixed(2)} {selectedDef.unit}/day
+                        </span>
+                    )}
                 </h3>
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={graphData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                    <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
                         <defs>
                             <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1} />
@@ -1155,7 +1287,10 @@ const TrendAnalysis: React.FC<{
                             fill="url(#colorValue)"
                             connectNulls
                         />
-                    </AreaChart>
+                        {trendFit && (
+                            <Line type="linear" dataKey="trend" stroke="#64748b" strokeWidth={1.5} strokeDasharray="6 4" dot={false} activeDot={false} name="Trend" />
+                        )}
+                    </ComposedChart>
                 </ResponsiveContainer>
             </div>
 
@@ -1174,19 +1309,31 @@ const TrendAnalysis: React.FC<{
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Time</th>
                             <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase">Value ({selectedDef.unit})</th>
                             {selectedDef.category === 'METER' && <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase">Delta</th>}
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Finding</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Source</th>
                             <th className="px-6 py-3 text-center text-xs font-bold text-slate-500 uppercase">Active</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Comment</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
-                        {graphData.slice().reverse().map((row, idx) => ( // Show newest first
+                        {filteredData.length === 0 && (
+                            <tr><td colSpan={selectedDef.category === 'METER' ? 8 : 7} className="p-8 text-center text-sm text-slate-400">No readings in this date range.</td></tr>
+                        )}
+                        {filteredData.slice().reverse().map((row, idx) => ( // Show newest first
                             <tr key={row.id} className={`hover:bg-slate-50 ${!row.active ? 'opacity-50 bg-slate-50' : ''}`}>
                                 <td className="px-6 py-3 text-sm text-slate-900">{row.date}</td>
-                                <td className="px-6 py-3 text-sm text-slate-500">-</td>
+                                <td className="px-6 py-3 text-sm text-slate-500">{selectedDef.category === 'METER' ? '—' : (row.time || '—')}</td>
                                 <td className="px-6 py-3 text-sm text-right font-bold text-slate-900">{row.value}</td>
                                 {selectedDef.category === 'METER' && <td className="px-6 py-3 text-sm text-right text-blue-600">{row.active ? `+${row.delta}` : '-'}</td>}
-                                <td className="px-6 py-3 text-sm text-slate-500">System</td>
+                                <td className="px-6 py-3">
+                                    {(() => {
+                                        const v = valuationByCode(row.valuationCode);
+                                        return v
+                                            ? <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${VALUATION_TONE_CLASSES[v.tone]}`}>{v.label}</span>
+                                            : <span className="text-sm text-slate-300">—</span>;
+                                    })()}
+                                </td>
+                                <td className="px-6 py-3 text-sm text-slate-500">{row.enteredBy || '—'}</td>
                                 <td className="px-6 py-3 text-center">
                                     <input
                                         type="checkbox"
@@ -1246,7 +1393,7 @@ const BatchEntryView: React.FC<{
     /** Open the asset's detail view (history/analysis/config). */
     onOpenAsset?: (assetId: string) => void;
 }> = ({ allAssets, allDefinitions, onSave, onAddDefinition, onDeleteDefinition, onOpenAddPoint, titleOverride, readingTypes = [], pickAssets = false, onBack, onOpenAsset }) => {
-    const [inputValues, setInputValues] = useState<Record<string, { value: number | string, date: string, time: string, comment: string }>>({});
+    const [inputValues, setInputValues] = useState<Record<string, { value: number | string, date: string, time: string, comment: string, finding?: string }>>({});
 
     // Add New Reading State
     const [isAddOpen, setIsAddOpen] = useState(false);
@@ -1269,6 +1416,33 @@ const BatchEntryView: React.FC<{
             .filter(a => !q || a.tag?.toLowerCase().includes(q) || a.name?.toLowerCase().includes(q))
             .slice(0, 8);
     }, [pickAssets, allAssets, sheetAssetIds, pickerText]);
+
+    // Shared results dropdown — the picker renders in two places (centered hero on
+    // an empty sheet, compact top bar once assets are added) but is one search.
+    const pickerDropdown = pickerText.trim() ? (
+        pickerMatches.length > 0 ? (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden">
+                {pickerMatches.map(a => {
+                    const nPts = allDefinitions.filter(d => d.assetId === a.id && d.isActive).length;
+                    return (
+                        <button key={a.id}
+                            onClick={() => { setSheetAssetIds(prev => [...prev, a.id]); setPickerText(''); }}
+                            className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-primary-50 text-sm">
+                            <span className="min-w-0">
+                                <span className="font-bold text-slate-800">{a.tag}</span>
+                                <span className="text-slate-500 truncate"> — {a.name}</span>
+                            </span>
+                            <span className={`shrink-0 text-[10px] font-semibold ${nPts ? 'text-slate-500' : 'text-amber-600'}`}>{nPts ? `${nPts} pts` : 'no points'}</span>
+                        </button>
+                    );
+                })}
+            </div>
+        ) : (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 px-3 py-2.5 text-xs text-slate-400">
+                No matching assets — check the tag or name.
+            </div>
+        )
+    ) : null;
 
     const rows = useMemo(() => {
         const result: { asset: Asset, def: ReadingDefinition }[] = [];
@@ -1311,7 +1485,8 @@ const BatchEntryView: React.FC<{
                     value: Number(entry.value),
                     date: entry.date || new Date().toISOString().split('T')[0],
                     time: entry.time || new Date().toTimeString().split(' ')[0].substring(0, 5),
-                    comments: entry.comment
+                    comments: entry.comment,
+                    valuationCode: entry.finding || undefined
                 });
             }
         });
@@ -1360,8 +1535,9 @@ const BatchEntryView: React.FC<{
                     </button>
                 </div>
             </div>
-            {/* In-sheet asset picker: build the round right here */}
-            {pickAssets && (
+            {/* In-sheet asset picker (compact bar) — once the sheet has assets. An
+                empty sheet shows the centered hero picker below instead. */}
+            {pickAssets && sheetAssets.length > 0 && (
                 <div className="px-4 sm:px-6 py-3 border-b border-slate-200 bg-slate-50/60">
                     <div className="flex flex-wrap items-center gap-2">
                         <div className="relative flex-1 min-w-[220px] max-w-md">
@@ -1369,27 +1545,10 @@ const BatchEntryView: React.FC<{
                             <input
                                 value={pickerText}
                                 onChange={e => setPickerText(e.target.value)}
-                                placeholder="Add asset to this sheet — search tag or name…"
+                                placeholder="Add another asset — search tag or name…"
                                 className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
                             />
-                            {pickerText.trim() && pickerMatches.length > 0 && (
-                                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-20 overflow-hidden">
-                                    {pickerMatches.map(a => {
-                                        const nPts = allDefinitions.filter(d => d.assetId === a.id && d.isActive).length;
-                                        return (
-                                            <button key={a.id}
-                                                onClick={() => { setSheetAssetIds(prev => [...prev, a.id]); setPickerText(''); }}
-                                                className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-primary-50 text-sm">
-                                                <span className="min-w-0">
-                                                    <span className="font-bold text-slate-800">{a.tag}</span>
-                                                    <span className="text-slate-500 truncate"> — {a.name}</span>
-                                                </span>
-                                                <span className={`shrink-0 text-[10px] font-semibold ${nPts ? 'text-slate-500' : 'text-amber-600'}`}>{nPts ? `${nPts} pts` : 'no points'}</span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            )}
+                            {pickerDropdown}
                         </div>
                         {sheetAssets.map(a => (
                             <span key={a.id} className="flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 bg-white border border-primary-200 text-primary-700 rounded-full text-xs font-bold">
@@ -1416,11 +1575,23 @@ const BatchEntryView: React.FC<{
                         )}
                     </div>
                 ))}
-                {pickAssets && rows.length === 0 && (
-                    <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400">
-                        <Activity size={36} className="mb-3 opacity-20" />
-                        <p className="text-sm font-semibold text-slate-500">Build your entry sheet</p>
-                        <p className="text-xs mt-1 max-w-sm">Search above and add the assets on your round — their reading points appear here as one sheet. Assets marked <span className="text-amber-600 font-semibold">no points</span> need a reading point configured first.</p>
+                {/* Empty sheet → centered hero picker, front and centre */}
+                {pickAssets && sheetAssets.length === 0 && (
+                    <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                        <Activity size={36} className="mb-3 text-slate-300" />
+                        <p className="text-lg font-bold text-slate-800">Find an asset · capture its readings</p>
+                        <p className="text-xs mt-1.5 max-w-sm text-slate-500">Search the register and add assets to this sheet — their reading points stack below as one round. Assets marked <span className="text-amber-600 font-semibold">no points</span> need a reading point configured first.</p>
+                        <div className="relative w-full max-w-lg mt-6 text-left">
+                            <Search className="absolute left-4 top-3.5 text-slate-400" size={18} />
+                            <input
+                                autoFocus
+                                value={pickerText}
+                                onChange={e => setPickerText(e.target.value)}
+                                placeholder="Find asset — search tag or name…"
+                                className="w-full pl-11 pr-4 py-3 border border-slate-300 rounded-xl text-sm bg-white shadow-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                            />
+                            {pickerDropdown}
+                        </div>
                     </div>
                 )}
                 <table className={`min-w-full divide-y divide-slate-200 border-b border-slate-200 ${pickAssets && rows.length === 0 ? 'hidden' : ''}`}>
@@ -1431,6 +1602,7 @@ const BatchEntryView: React.FC<{
                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-20">Last</th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-auto">Date</th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Value</th>
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-40">Finding</th>
                             <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider w-10"></th>
                         </tr>
                     </thead>
@@ -1483,6 +1655,18 @@ const BatchEntryView: React.FC<{
                                             />
                                         </div>
                                     </td>
+                                    <td className="px-4 py-3 whitespace-nowrap">
+                                        {/* Coded finding (SAP valuation code) — what was observed, countable later */}
+                                        <select
+                                            value={currentInput.finding || ''}
+                                            onChange={(e) => handleInputChange(def.id, 'finding', e.target.value)}
+                                            className={`w-36 p-2 border rounded text-xs focus:ring-2 focus:ring-primary-500 outline-none transition-all shadow-sm bg-white ${currentInput.finding ? 'border-slate-300 text-slate-700 font-semibold' : 'border-slate-200 text-slate-400'}`}
+                                            title="Coded finding — what you observed while taking the reading"
+                                        >
+                                            <option value="">— finding —</option>
+                                            {VALUATION_CODES.map(v => <option key={v.code} value={v.code}>{v.label}</option>)}
+                                        </select>
+                                    </td>
                                     <td className="px-4 py-3 text-center">
                                         {onDeleteDefinition && (
                                             <button
@@ -1498,7 +1682,7 @@ const BatchEntryView: React.FC<{
                             );
                         })}
                         {rows.length === 0 && (
-                            <tr><td colSpan={6} className="p-10 text-center text-slate-400">
+                            <tr><td colSpan={7} className="p-10 text-center text-slate-400">
                                 {singleAsset
                                     ? <>No reading points on this asset yet. Click <span className="font-semibold text-slate-500">Add Reading Point</span> to define one (e.g. Bearing Vibration, mm/s, with warning/critical limits).</>
                                     : <>Select an asset on the left, then add a reading point to start capturing condition data.</>}
@@ -1650,9 +1834,52 @@ const DefinitionsManager: React.FC<{
 // ── Related Work ─────────────────────────────────────────────────────────────
 // Ties condition data to Work Management: the asset's open work orders and its
 // maintenance strategies (PMs), so the reading context connects to the work.
-const RelatedWork: React.FC<{ assetId: string; pms: any[]; onOpenWO: (id: string) => void }> = ({ assetId, pms, onOpenWO }) => {
+const RelatedWork: React.FC<{
+    assetId: string; pms: any[];
+    definitions: ReadingDefinition[]; logs: ReadingLogEntry[];
+    onOpenWO: (id: string) => void;
+}> = ({ assetId, pms, definitions, logs, onOpenWO }) => {
     const [wos, setWos] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // SAP-style due forecasting for meter PMs: latest meter value + observed
+    // usage/day → projected due date, so the scheduler sees it weeks ahead
+    // instead of only when the reading actually crosses the interval.
+    const forecasts = useMemo(() => {
+        const map = new Map<string, MeterPMForecast>();
+        const meterDefs = definitions.filter(d => d.isActive && d.category === 'METER');
+        for (const p of pms) {
+            if (p.active === false || (p.status || '').toUpperCase() === 'INACTIVE') continue;
+            const mp: MeterPM = {
+                id: p.id,
+                title: p.title || p.code || 'PM',
+                scheduleType: p.schedule_type,
+                frequencyType: p.frequency_type,
+                interval: Number(p.frequency_interval ?? p.interval ?? 0),
+                unit: p.frequency_unit || p.frequency_type || '',
+                baseline: Array.isArray(p.assigned_assets)
+                    ? (p.assigned_assets.find((a: any) => a.assetId === assetId)?.lastReadingValue ?? null)
+                    : null,
+            };
+            if (!isMeterSchedule(mp) || !(mp.interval > 0)) continue;
+            const def = meterDefs.find(d => matchesReading(mp, { defName: d.name, unit: d.unit, readingTypeCode: d.readingTypeCode, category: 'METER', newValue: 0 }));
+            if (!def) continue;
+            const defLogs = logs
+                .filter(l => l.definitionId === def.id && l.isActive !== false)
+                .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            if (defLogs.length === 0) continue;
+            const last = defLogs[defLogs.length - 1];
+            let dailyRate: number | null = null;
+            if (defLogs.length >= 2) {
+                const first = defLogs[0];
+                const days = Math.max(1, (new Date(last.date).getTime() - new Date(first.date).getTime()) / 86400000);
+                dailyRate = (last.value - first.value) / days;
+            }
+            const f = forecastMeterPM(mp, { value: last.value, date: last.date }, dailyRate);
+            if (f) map.set(p.id, f);
+        }
+        return map;
+    }, [pms, definitions, logs, assetId]);
 
     useEffect(() => {
         let active = true;
@@ -1733,6 +1960,13 @@ const RelatedWork: React.FC<{ assetId: string; pms: any[]; onOpenWO: (id: string
                                         <div className="text-[11px] text-slate-400">
                                             {interval ? `every ${interval} ${unit}` : unit}
                                             {!meter && p.next_due_date && <span> · next {String(p.next_due_date).slice(0, 10)}</span>}
+                                            {meter && (() => {
+                                                const f = forecasts.get(p.id);
+                                                if (!f) return null;
+                                                if (f.daysToDue === 0) return <span className="text-red-600 font-bold"> · due now (meter ≥ {f.dueAt})</span>;
+                                                if (f.forecastDate) return <span title={f.basis}> · due at {f.dueAt} — <span className="font-semibold text-slate-600">≈ {f.forecastDate}</span> ({f.remaining} to go)</span>;
+                                                return <span> · due at {f.dueAt} ({f.remaining} to go — more readings needed to project a date)</span>;
+                                            })()}
                                         </div>
                                     </div>
                                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${meter ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{meter ? 'METER' : 'TIME'}</span>
