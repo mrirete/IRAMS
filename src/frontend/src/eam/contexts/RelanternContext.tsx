@@ -17,9 +17,31 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 
+/**
+ * A page-supplied Specialist skill.
+ *
+ * `run` MUST call a deterministic IRAMS engine (aiEngine / Weibull / Monte Carlo /
+ * criticality) and return the formatted result. It must NOT ask the chat model to
+ * compute anything: the Specialist cites our engines, it does not do the reliability
+ * maths itself. The panel renders whatever markdown `run` returns, verbatim.
+ *
+ * These live on the page because the page owns the structured data (the asset,
+ * the Pareto set) the engines need — the panel only ever sees a context string.
+ */
+export interface SpecialistAction {
+    label: string;
+    /** Tooltip — what this skill does. */
+    description?: string;
+    /** Message shown as the user's turn when the chip is clicked. */
+    userMessage: string;
+    /** Calls an engine; returns markdown to render as the Specialist's reply. */
+    run: () => Promise<string>;
+}
+
 interface PageContext {
     data: string;
     type?: string;
+    actions?: SpecialistAction[];
 }
 
 interface RelanternContextType {
@@ -27,6 +49,8 @@ interface RelanternContextType {
     contextData?: string;
     contextType?: string;
     initialPrompt?: string;
+    /** Engine-backed skills supplied by the page that was active when the panel opened. */
+    pageActions?: SpecialistAction[];
     /** Open the panel. With no args, falls back to the current page's registered context. */
     openRelantern: (contextData?: string, contextType?: string, initialPrompt?: string) => void;
     closeRelantern: () => void;
@@ -44,16 +68,23 @@ const RelanternCtx = createContext<RelanternContextType>({
 export const useRelantern = () => useContext(RelanternCtx);
 
 /**
- * Convenience hook for pages: registers this page's AI context for as long as
- * the page is mounted, so the global TopBar Specialist opens pre-grounded.
+ * Convenience hook for pages: registers this page's AI context — and optionally its
+ * engine-backed skills — for as long as the page is mounted, so the global TopBar
+ * Specialist opens pre-grounded and with the right tools.
+ *
+ * Pass `actions` from a useMemo so this doesn't re-register every render.
  */
-export const usePageRelanternContext = (data: string | null, type?: string) => {
+export const usePageRelanternContext = (
+    data: string | null,
+    type?: string,
+    actions?: SpecialistAction[],
+) => {
     const { registerPageContext } = useRelantern();
     useEffect(() => {
         if (!data) return;
-        registerPageContext({ data, type });
+        registerPageContext({ data, type, actions });
         return () => registerPageContext(null);
-    }, [data, type, registerPageContext]);
+    }, [data, type, actions, registerPageContext]);
 };
 
 interface RelanternProviderProps {
@@ -65,9 +96,11 @@ export const RelanternProvider: React.FC<RelanternProviderProps> = ({ children }
     const [contextData, setContextData] = useState<string>();
     const [contextType, setContextType] = useState<string>();
     const [initialPrompt, setInitialPrompt] = useState<string>();
+    const [pageActions, setPageActions] = useState<SpecialistAction[] | undefined>();
 
     // Held in a ref, not state: registering page context must not re-render the
     // whole tree, and openRelantern needs to read the latest value at call time.
+    // Snapshotted into state when the panel opens, so the panel can render it.
     const pageContext = useRef<PageContext | null>(null);
 
     const registerPageContext = useCallback((ctx: PageContext | null) => {
@@ -75,10 +108,12 @@ export const RelanternProvider: React.FC<RelanternProviderProps> = ({ children }
     }, []);
 
     const openRelantern = useCallback((data?: string, type?: string, prompt?: string) => {
-        const fallback = pageContext.current;
-        setContextData(data ?? fallback?.data);
-        setContextType(type ?? (data ? undefined : fallback?.type));
+        const page = pageContext.current;
+        setContextData(data ?? page?.data);
+        setContextType(type ?? (data ? undefined : page?.type));
         setInitialPrompt(prompt);
+        // Engine-backed skills always come from the page we're standing on.
+        setPageActions(page?.actions);
         setIsOpen(true);
     }, []);
 
@@ -87,11 +122,12 @@ export const RelanternProvider: React.FC<RelanternProviderProps> = ({ children }
         setContextData(undefined);
         setContextType(undefined);
         setInitialPrompt(undefined);
+        setPageActions(undefined);
     }, []);
 
     return (
         <RelanternCtx.Provider value={{
-            isOpen, contextData, contextType, initialPrompt,
+            isOpen, contextData, contextType, initialPrompt, pageActions,
             openRelantern, closeRelantern, registerPageContext,
         }}>
             {children}

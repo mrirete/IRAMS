@@ -23,7 +23,8 @@ import NewAssessmentModal from '../components/analyze/NewAssessmentModal';
 
 // ── Services ─────────────────────────────────────────────────
 import { ScrollTabStrip } from '../eam/components/ui';
-import { usePageRelanternContext } from '../eam/contexts/RelanternContext';
+import { usePageRelanternContext, type SpecialistAction } from '../eam/contexts/RelanternContext';
+import { aiEngine } from '../eam/services/AIAnalysisEngine';
 import analyzeService from '../eam/services/AnalyzeService';
 import type { ParetoResult, StudyCollaborator } from '../eam/services/AnalyzeService';
 import { type DefectEliminationTask } from '../components/analyze/DefectEliminationPanel';
@@ -32,6 +33,16 @@ import { type DefectEliminationTask } from '../components/analyze/DefectEliminat
 type Division = 'rca' | 'defect_elimination' | 'oee';
 type ParetoCriteria = 'cost' | 'downtime' | 'wo_frequency';
 type AssessmentType = 'fmea' | 'rca' | 'criticality' | 'bad_actor';
+
+// Human labels for the tool aiEngine.recommendTool() returns.
+const TOOL_LABELS: Record<string, string> = {
+    rca: 'Root Cause Analysis',
+    fmea: 'FMECA',
+    pareto: 'Pareto Analysis',
+    rbd: 'Reliability Block Diagram',
+    fault_tree: 'Fault Tree Analysis',
+    monte_carlo: 'Monte Carlo Simulation',
+};
 
 // ── Division Tabs ────────────────────────────────────────────
 const DIVISIONS: { id: Division; label: string; mobileLabel: string; icon: React.ReactNode; description: string }[] = [
@@ -251,7 +262,130 @@ export const AnalyzePage: React.FC = () => {
         return parts.join(' ');
     }, [activeDivision, contextAsset, paretoData, paretoCriteria, rcas.length, deTasks.length]);
 
-    usePageRelanternContext(specialistContext, 'analyze');
+    // Engine-backed Specialist skills. Each one calls a deterministic IRAMS engine
+    // (aiEngine) with this page's real data and renders what it returns — the chat
+    // model is never asked to compute a failure rate, a cost, or a payback period.
+    // Ported from the retired Analyze-only Specialist bubble.
+    const specialistActions = useMemo<SpecialistAction[]>(() => [
+        {
+            label: 'Recommend Tool',
+            description: 'Suggest the best analysis approach for this situation',
+            userMessage: '🔍 Recommend the best analysis tool for my current situation',
+            run: async () => {
+                const r = await aiEngine.recommendTool({
+                    problemDescription: contextAsset?.name || paretoData[0]?.asset_name || 'General reliability analysis',
+                    assetCriticality: contextAsset?.criticality || paretoData[0]?.criticality || 'B',
+                    failureCount: paretoData.reduce((s, p) => s + p.event_count, 0) || undefined,
+                    totalCost: paretoData.reduce((s, p) => s + p.metric_value, 0) || undefined,
+                });
+                let out = `**Recommended: ${TOOL_LABELS[r.tool] || r.tool}**\n\n${r.reasoning}`;
+                if (r.suggestedSteps?.length) {
+                    out += '\n\n**Suggested Steps:**\n' + r.suggestedSteps.map((s, i) => `${i + 1}. ${s}`).join('\n');
+                }
+                return out;
+            },
+        },
+        {
+            label: 'Generate Hypotheses',
+            description: 'AI-generated RCA hypotheses (5-Why / Fishbone)',
+            userMessage: '🧪 Generate RCA hypotheses for the current asset',
+            run: async () => {
+                const r = await aiEngine.generateRCAHypothesis({
+                    problemStatement: contextAsset
+                        ? `Investigate failures on ${contextAsset.name} (${contextAsset.tag})`
+                        : 'General failure investigation',
+                    assetType: (contextAsset as any)?.equipment_type,
+                });
+                if (!r.hypotheses.length) {
+                    return 'No hypotheses could be generated. Please provide more context about the failure event.';
+                }
+                let out = '**RCA Hypotheses (PROACT 3-Layer Model):**\n\n';
+                r.hypotheses.forEach((h, i) => {
+                    const icon = h.likelihood === 'high' ? '🔴' : h.likelihood === 'medium' ? '🟡' : '🟢';
+                    out += `${i + 1}. ${icon} **[${h.category}]** ${h.description} _(Likelihood: ${h.likelihood})_\n`;
+                });
+                if (r.suggestedEvidence?.length) {
+                    out += '\n**Evidence to Collect:**\n' + r.suggestedEvidence.map(e => `- ${e}`).join('\n');
+                }
+                if (Object.keys(r.fishboneCategories).length > 0) {
+                    out += '\n\n**Fishbone (6M) Categories:**\n';
+                    Object.entries(r.fishboneCategories).forEach(([cat, items]) => {
+                        if (items.length > 0) out += `- **${cat}:** ${items.join(', ')}\n`;
+                    });
+                }
+                return out;
+            },
+        },
+        {
+            label: 'Corrective Actions',
+            description: 'Suggest corrective actions for root causes',
+            userMessage: '🔧 Suggest corrective actions for identified root causes',
+            run: async () => {
+                const r = await aiEngine.suggestCorrectiveActions({
+                    rootCauses: [{
+                        description: contextAsset ? `Repeated failures on ${contextAsset.name}` : 'General equipment failure',
+                        category: 'physical',
+                    }],
+                    assetCriticality: contextAsset?.criticality || 'B',
+                    industry: 'Oil & Gas',
+                });
+                if (!r.actions.length) {
+                    return 'Unable to generate corrective actions. Please provide more context about the root causes.';
+                }
+                let out = '**Corrective Actions:**\n\n';
+                r.actions.forEach((a, i) => {
+                    const icon = a.type === 'immediate' ? '⚡' : a.type === 'short_term' ? '📋' : '🏗️';
+                    out += `${i + 1}. ${icon} **[${a.type.replace('_', ' ')}]** ${a.description}`;
+                    if (a.estimatedCost) out += ` _(Est: ${a.estimatedCost})_`;
+                    if (a.requiresMoC) out += ' `⚠️ MoC Required`';
+                    out += '\n';
+                });
+                if (r.riskOfInaction) out += `\n**Risk of Inaction:** ${r.riskOfInaction}`;
+                return out;
+            },
+        },
+        {
+            label: 'Defect Pattern',
+            description: 'Detect repeat failure patterns',
+            userMessage: '📊 Assess defect patterns from work order history',
+            run: async () => {
+                const r = await aiEngine.assessDefectPattern({
+                    assetName: contextAsset?.name || paretoData[0]?.asset_name || 'Unknown',
+                    assetType: (contextAsset as any)?.equipment_type,
+                    workOrders: paretoData.slice(0, 10).map(p => ({
+                        type: 'CM', title: `Failure on ${p.asset_tag}`, cost: p.metric_value,
+                        date: new Date().toISOString().slice(0, 10), failureMode: 'Unknown',
+                    })),
+                });
+                return r.patternDetected
+                    ? `**⚠️ Pattern Detected**\n\n- **Failure Mode:** ${r.failureMode}\n- **Recurrence Rate:** ${r.recurrenceRate} failures/year\n- **Estimated Annual Cost:** $${r.estimatedAnnualCost.toLocaleString()}\n\n**Recommendation:** ${r.recommendation}`
+                    : '**✅ No Repeat Pattern Detected**\n\nThe failure data does not show a clear recurring pattern. Continue monitoring.';
+            },
+        },
+        {
+            label: 'Draft DE Plan',
+            description: 'Draft a defect elimination plan',
+            userMessage: '📝 Draft a defect elimination plan',
+            run: async () => {
+                const top = paretoData[0];
+                const r = await aiEngine.draftEliminationPlan({
+                    assetName: contextAsset?.name || top?.asset_name || 'Unknown',
+                    assetCriticality: contextAsset?.criticality || top?.criticality || 'B',
+                    annualFailureCost: top?.metric_value || 50000,
+                    failureCount: top?.event_count || 5,
+                    dominantFailureMode: 'Mechanical wear',
+                });
+                return `**Defect Elimination Plan Draft**\n\n**Title:** ${r.title}\n**Scope:** ${r.scope}\n**Priority:** \`${r.priority}\`\n\n`
+                    + `**Root Cause Summary:** ${r.rootCauseSummary}\n\n**Proposed Solution:** ${r.proposedSolution}\n\n`
+                    + `| Metric | Value |\n|---|---|\n`
+                    + `| Est. Annual Savings | $${r.estimatedSavingsPerYear.toLocaleString()} |\n`
+                    + `| Implementation Cost | $${r.estimatedImplementationCost.toLocaleString()} |\n`
+                    + `| Payback Period | ${r.paybackMonths} months |`;
+            },
+        },
+    ], [contextAsset, paretoData]);
+
+    usePageRelanternContext(specialistContext, 'analyze', specialistActions);
 
     // ── Callback: ParetoAnalysisTab bubbles up its data + criteria ──
     const handleParetoDataChange = useCallback((data: ParetoResult[], criteria: ParetoCriteria) => {

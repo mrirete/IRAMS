@@ -339,15 +339,31 @@ async function callGemini(prompt: string, temperature: number = 0.3): Promise<st
     }
 }
 
+/**
+ * When callGemini can't reach the model it returns `{"error": "..."}` as its payload.
+ * That is valid JSON, so a bare JSON.parse used to hand the error envelope straight
+ * back as if it were a result — callers then read `.tool` / `.reasoning` off it and
+ * rendered "Recommended: undefined" instead of reporting the failure. Reject the
+ * envelope so a failed engine call fails loudly at the call site.
+ */
 function parseJSON<T>(raw: string, fallback: T): T {
+    let parsed: unknown;
     try {
         // Strip markdown fences if present
         const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        return JSON.parse(cleaned);
+        parsed = JSON.parse(cleaned);
     } catch {
         console.warn('[AIAnalysisEngine] Failed to parse AI response:', raw.substring(0, 200));
         return fallback;
     }
+
+    if (parsed && typeof parsed === 'object' && 'error' in parsed && !('tool' in parsed)) {
+        const msg = String((parsed as { error: unknown }).error);
+        console.warn('[AIAnalysisEngine] Engine call failed:', msg);
+        throw new Error(msg);
+    }
+
+    return parsed as T;
 }
 
 // ─── Engine ─────────────────────────────────────────────────

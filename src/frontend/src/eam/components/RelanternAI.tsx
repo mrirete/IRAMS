@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Send, Bot, AlertTriangle, ShieldCheck, Sparkles, TrendingUp, DollarSign, Wrench, BarChart3, Target, Loader2, Clock, Search } from 'lucide-react';
 import { createRelanternChat, proxyAIChat, isAIProxyEnabled } from '../services/geminiService';
+import type { SpecialistAction } from '../contexts/RelanternContext';
 import { ChatMessage } from '../types';
 import { Button } from './ui';
 
@@ -90,6 +91,11 @@ interface RelanternAIProps {
   contextType?: string;
   /** Optional question to auto-send once after the panel opens & context is primed. */
   initialPrompt?: string;
+  /** Engine-backed skills supplied by the active page. These call IRAMS engines
+   *  directly and render their result — they never round-trip through the chat
+   *  model, so the numbers are computed, not generated. Shown instead of the
+   *  prompt chips when present. */
+  pageActions?: SpecialistAction[];
 }
 
 // ─── HITL Badge ──────────────────────────────────────────────
@@ -137,7 +143,7 @@ const renderMarkdown = (text: string): React.ReactNode[] => {
   });
 };
 
-export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, contextData, contextType, initialPrompt }) => {
+export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, contextData, contextType, initialPrompt, pageActions }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome',
@@ -265,6 +271,34 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
     handleSend(prompt);
   };
 
+  // Engine-backed skill: calls an IRAMS engine on the active page and renders what
+  // it returns. Deliberately does NOT go through handleSend — no chat round-trip, so
+  // the model can't restate (or invent) the numbers the engine computed.
+  const handlePageAction = async (action: SpecialistAction) => {
+    if (isLoading) return;
+    setMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      role: 'user',
+      text: action.userMessage,
+      timestamp: new Date(),
+    }]);
+    setIsLoading(true);
+    let text: string;
+    try {
+      text = await action.run();
+    } catch (err: any) {
+      console.error('[ReliabilitySpecialist] Engine action failed:', err);
+      text = `⚠️ **${action.label} failed** — ${err?.message || 'the analysis engine did not return a result.'}`;
+    }
+    setMessages(prev => [...prev, {
+      id: (Date.now() + 1).toString(),
+      role: 'model',
+      text,
+      timestamp: new Date(),
+    }]);
+    setIsLoading(false);
+  };
+
   // Auto-send an initial question once after the panel opens (e.g. "Review this
   // job plan" from the Work Order). Delayed so the context-priming effect above
   // runs first (proxy: primedContextRef set synchronously; direct: chat primed).
@@ -302,8 +336,26 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
         </button>
       </div>
 
-      {/* Quick Actions */}
-      {activeChips.length > 0 && (
+      {/* Quick Actions.
+          Engine-backed skills from the active page take precedence over the generic
+          prompt chips: they compute rather than ask the model, so where a page offers
+          them they are always the better answer. */}
+      {(pageActions?.length ?? 0) > 0 ? (
+        <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap gap-2">
+          {pageActions!.map((action, i) => (
+            <button
+              key={i}
+              onClick={() => handlePageAction(action)}
+              disabled={isLoading}
+              title={action.description}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-primary-200 text-primary-700 rounded-full hover:border-primary-400 hover:bg-primary-50 transition-all shadow-sm disabled:opacity-50"
+            >
+              <Sparkles size={12} />
+              {action.label}
+            </button>
+          ))}
+        </div>
+      ) : activeChips.length > 0 && (
         <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap gap-2">
           {activeChips.filter(c => c.prompt).map((chip, i) => (
             <button
