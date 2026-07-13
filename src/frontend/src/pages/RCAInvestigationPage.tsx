@@ -7,6 +7,8 @@ import {
     Plus, Trash2, Users, ClipboardList, Clock, Flag, Bot,
     Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check
 } from 'lucide-react';
+import RCAStepGuide from '../components/analyze/RCAStepGuide';
+import { getStepCompletion } from '../components/analyze/RCAStepIndicator';
 import { friendlyAIError } from '../eam/lib/aiError';
 import { analyzeService, scopeNodesToMethod, rcaMethodLabel, rcaMethodColor } from '../eam/services/AnalyzeService';
 import { DatabaseService } from '../eam/services/DatabaseService';
@@ -658,6 +660,28 @@ export function RCAInvestigationPage() {
         if (mem) { setTeam(t => [...t, mem]); setNewMemberName(''); }
     };
 
+    // ── Step completion — derived from the WORK, not from a counter ────────────
+    // This used to be `(inv?.current_step || 1) > st.num`, where current_step was
+    // written by handleSave as the step you were LEAVING. So a step never ticked
+    // until you had moved two steps past it — the checkmarks permanently lagged
+    // reality, and clicking straight to step 6 "completed" nothing.
+    // A step is done when its work exists. getStepCompletion already encoded exactly
+    // this; it was only ever called from unreachable code.
+    // NOTE: must stay above the `if (loading)` early return — it's a hook.
+    const stepDone = useMemo(() => getStepCompletion({
+        hasProblemStatement: !!(inv?.problem_statement || draft.problem_statement || '').trim(),
+        has5W2H: [
+            draft.event_what, draft.event_how, draft.event_location, draft.event_date,
+            (draft.event_how_much?.cost || draft.event_how_much?.downtime_hrs) ? 'x' : '',
+        ].filter(v => !!v && String(v).trim()).length >= 2,
+        evidenceCount: evidence.length,
+        hasRootCause: scopeNodesToMethod(nodes, inv?.method)
+            .some(n => n.is_root_cause || n.node_type === 'root_cause'),
+        actionCount: actions.length,
+        allActionsAssigned: actions.length > 0 && actions.every(a => !!a.assigned_to),
+        effectivenessReviewed: !!inv?.effectiveness_status && inv.effectiveness_status !== 'pending',
+    }), [inv, draft, evidence.length, nodes, actions]);
+
     if (loading) {
         return (
             <div className="bg-slate-50 min-h-screen p-6 md:p-8 flex items-center justify-center">
@@ -764,7 +788,7 @@ export function RCAInvestigationPage() {
                 {/* Stepper Indicator */}
                 <div className="bg-white border border-slate-200/80 rounded-xl p-1.5 shadow-sm flex items-center gap-1 overflow-x-auto scrollbar-hide scroll-fade-right">
                     {STEPS.map(st => {
-                        const done = (inv?.current_step || 1) > st.num;
+                        const done = stepDone[st.num - 1];
                         const active = activeStep === st.num;
                         const Icon = st.icon;
 
@@ -793,6 +817,12 @@ export function RCAInvestigationPage() {
                         );
                     })}
                 </div>
+
+                {/* What this step is for, what good looks like, and what to check off.
+                    This content has existed since the module was written (RCAStepGuide) but
+                    was only ever mounted inside RCATab's unreachable workspace — the app
+                    shipped a six-step curriculum to nobody. It leads every step now. */}
+                <RCAStepGuide activeStep={activeStep - 1} />
 
                 {/* ── STEP 1: Define Problem ─────────────────────────── */}
                 {activeStep === 1 && (

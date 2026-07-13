@@ -309,10 +309,12 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                 </div>
             )}
 
-            {/* ═══ MAIN LAYOUT: SVG (left) + Side Panel (right) ═══ */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 380px',
+            {/* ═══ MAIN LAYOUT: SVG (top/left) + Side Panel (bottom/right) ═══
+                Was a hard `1fr 380px` grid with a 600px-min SVG — ~980px of layout
+                inside a 360px phone, which squeezed the side panel (where you actually
+                TYPE the causes) down to nothing. Now: stacked on mobile, side-by-side
+                from lg. The diagram scrolls sideways in its own box; the page doesn't. */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px]" style={{
                 gap: 0,
                 border: '1px solid #e2e8f0',
                 borderRadius: 14,
@@ -321,10 +323,9 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                 minHeight: 420,
             }}>
                 {/* ─── LEFT: SVG Fishbone ─── */}
-                <div style={{
+                <div className="border-b lg:border-b-0 lg:border-r border-slate-200" style={{
                     background: '#f8fafc',
                     overflowX: 'auto',
-                    borderRight: '1px solid #e2e8f0',
                     position: 'relative',
                 }}>
                     <svg viewBox={`0 0 ${VB_W} ${VB_H}`}

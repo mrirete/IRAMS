@@ -116,7 +116,18 @@ const STEP_GUIDANCE: {
 ];
 
 const RCAStepGuide: React.FC<RCAStepGuideProps> = ({ activeStep }) => {
-    const [expanded, setExpanded] = useState(false);
+    // Open by default: the point of this panel is to lead the user into the step.
+    // Collapsed-by-default guidance is guidance nobody reads. It stays collapsible,
+    // and the choice is remembered, so an expert can shut it once and be left alone.
+    const [expanded, setExpanded] = useState(() => {
+        try { return localStorage.getItem('ers_rca_guide_collapsed') !== 'true'; } catch { return true; }
+    });
+
+    const toggle = () => setExpanded(prev => {
+        const next = !prev;
+        try { localStorage.setItem('ers_rca_guide_collapsed', next ? 'false' : 'true'); } catch { /* private mode */ }
+        return next;
+    });
 
     const guide = STEP_GUIDANCE[activeStep] ?? STEP_GUIDANCE[0];
 
@@ -130,7 +141,7 @@ const RCAStepGuide: React.FC<RCAStepGuideProps> = ({ activeStep }) => {
         }}>
             {/* Header — always visible */}
             <button
-                onClick={() => setExpanded(!expanded)}
+                onClick={toggle}
                 style={{
                     width: '100%', padding: '10px 14px',
                     background: 'transparent', border: 'none', cursor: 'pointer',
