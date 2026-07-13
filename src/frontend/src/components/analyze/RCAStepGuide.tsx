@@ -51,16 +51,17 @@ const STEP_GUIDANCE: {
     },
     {
         title: 'Step 3 — Identify Possible Causal Factors',
-        summary: 'Apply structured analysis techniques to identify all potential causes. Use 5-Why for simple linear chains, Fishbone (Ishikawa) for multi-category analysis, or Fault Tree Analysis for complex systems.',
+        summary: 'Commit to ONE analysis method, now that the evidence is in, and work it through. Running several tools over the same evidence pulls the analysis in different directions and leaves a record nobody can defend at review.',
         tips: [
             '5-Why: Best for straightforward failures. Validate with the "therefore" reverse test.',
             'Fishbone: Choose the right framework — 6Ms for manufacturing, 4Ps for process industries, 4Ss for service.',
             'FTA: Use for safety-critical assets (Criticality A) where redundancy and gate logic matter.',
+            'Logic Tree: Use for chronic, recurring failures where the root is systemic rather than technical.',
             'Look beyond the immediate technical cause — also investigate human and organizational factors.',
         ],
         checklist: [
-            'Analysis method selected and applied',
-            'Causes categorized (Physical / Human / Organizational)',
+            'One analysis method committed',
+            'Causes categorized (Physical / Human / Latent)',
             'Root cause validated (therefore test or peer review)',
         ],
     },

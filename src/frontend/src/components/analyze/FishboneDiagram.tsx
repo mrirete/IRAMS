@@ -52,6 +52,30 @@ const FRAMEWORK_LABELS: Record<FishboneFramework, string> = {
     '4Ss': '4Ss — Surroundings, Suppliers, Systems, Skills',
 };
 
+/**
+ * Bridge from the fishbone's category axis to the PROACT cause layer.
+ *
+ * Fishbone categories and the Physical → Human → Latent ladder are different axes, and
+ * the fishbone used to write `cause_category: null`. A fishbone investigation therefore
+ * produced ZERO cause-layer data: its root cause was invisible to the physical/human/latent
+ * rollup and silently defaulted into the "Physical" bucket on the solutions step.
+ *
+ * A category implies a default layer — Man is a human cause, Method is a systemic one —
+ * so we seed it here. It is only a default: the cause layer stays editable downstream,
+ * which matters because "the physical cause is never the root" only holds if the layer
+ * is a judgement, not a lookup.
+ */
+const CATEGORY_CAUSE_LAYER: Record<string, 'physical' | 'human' | 'latent'> = {
+    // Physical — tangible component / condition
+    Machine: 'physical', Material: 'physical', 'Mother Nature': 'physical',
+    Plant: 'physical', Surroundings: 'physical',
+    // Human — an action or omission
+    Man: 'human', People: 'human', Skills: 'human',
+    // Latent — a management-system deficiency
+    Method: 'latent', Measurement: 'latent', Policies: 'latent',
+    Procedures: 'latent', Systems: 'latent', Suppliers: 'latent',
+};
+
 interface FishboneDiagramProps {
     investigationId: string;
     problemStatement: string;
@@ -88,64 +112,104 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
 
     const CATS = FISHBONE_FRAMEWORKS[framework];
 
-    // ── Auto-initialize categories ──────────────────────────
-    useEffect(() => {
-        const fishboneCatKeys = CATS.map(c => c.key);
-        const existingFishboneCats = nodes.filter(
-            n => n.node_type === 'category' && fishboneCatKeys.includes(n.description)
-        );
-        if (existingFishboneCats.length >= CATS.length) return;
-        (async () => {
-            const created: RCANode[] = [];
-            for (const cat of CATS) {
-                const exists = nodes.find(n => n.node_type === 'category' && n.description === cat.key);
-                if (exists) continue;
-                const node = await analyzeService.createRCANode({
-                    investigation_id: investigationId, parent_id: null,
-                    node_type: 'category', description: cat.key,
-                    depth: 0, is_root_cause: false,
-                    cause_category: null, cause_code: null, evidence_notes: null,
-                });
-                if (node) created.push(node);
-            }
-            if (created.length > 0) setNodes(prev => [...prev, ...created]);
-        })();
-    }, [investigationId, framework]); // eslint-disable-line react-hooks/exhaustive-deps
-
     // ── Organize nodes ──────────────────────────────────────
+    // A category can have more than one spine node: older builds seeded them from an
+    // effect that raced its own StrictMode double-invoke, so real investigations out
+    // there hold duplicates. Keep the first as the write target but gather causes from
+    // ALL of them — last-wins used to make causes hanging off the older duplicate
+    // silently vanish from the diagram.
     const categoryMap = useMemo(() => {
         const map: Record<string, { catNode: RCANode; causes: RCANode[] }> = {};
+        const catIds: Record<string, string[]> = {};
         nodes.filter(n => n.node_type === 'category').forEach(cn => {
-            map[cn.description] = {
-                catNode: cn,
-                causes: nodes.filter(n =>
-                    n.parent_id === cn.id &&
-                    (n.node_type === 'why' || n.node_type === 'root_cause' || n.node_type === 'contributing_factor')
-                ),
-            };
+            (catIds[cn.description] ??= []).push(cn.id);
+            if (!map[cn.description]) map[cn.description] = { catNode: cn, causes: [] };
+        });
+        Object.keys(map).forEach(key => {
+            const ids = new Set(catIds[key]);
+            map[key].causes = nodes.filter(n =>
+                n.parent_id && ids.has(n.parent_id) &&
+                (n.node_type === 'why' || n.node_type === 'root_cause' || n.node_type === 'contributing_factor')
+            );
         });
         return map;
     }, [nodes]);
 
     const rootCauseNode = useMemo(() => nodes.find(n => n.is_root_cause), [nodes]);
 
+    /**
+     * Resolve a category's spine node, creating it if this investigation has never
+     * used it. Adding a cause used to bail out silently when the category node was
+     * missing from local state, which is exactly what happened whenever the parent's
+     * async node fetch resolved after the seeding effect had appended its rows and
+     * overwrote them: the "+ Add" button then did nothing, forever, with no error.
+     * Creating on demand means a cause can always be recorded regardless of that race.
+     */
+    const catNodeIdRef = useRef<Record<string, string>>({});
+    // Memoize the in-flight insert, not just the finished id. Two callers can ask for the
+    // same category before either has returned — StrictMode double-invokes the seeding
+    // effect in dev, and a fast "+ Add" click can overtake it in any environment. Sharing
+    // one promise per key is what stops that becoming a duplicate spine node.
+    const inflightRef = useRef<Record<string, Promise<string | null>>>({});
+
+    const ensureCategoryNode = useCallback((categoryKey: string): Promise<string | null> => {
+        const known = categoryMap[categoryKey]?.catNode.id ?? catNodeIdRef.current[categoryKey];
+        if (known) return Promise.resolve(known);
+        const pending = inflightRef.current[categoryKey] as Promise<string | null> | undefined;
+        if (pending) return pending;
+
+        const p = (async () => {
+            const node = await analyzeService.createRCANode({
+                investigation_id: investigationId, parent_id: null,
+                node_type: 'category', description: categoryKey,
+                depth: 0, is_root_cause: false,
+                cause_category: null, cause_code: null, evidence_notes: null,
+                method: 'fishbone',
+            });
+            if (!node) { delete inflightRef.current[categoryKey]; return null; }
+            catNodeIdRef.current[categoryKey] = node.id;
+            setNodes(prev => prev.some(n => n.id === node.id) ? prev : [...prev, node]);
+            return node.id;
+        })();
+        inflightRef.current[categoryKey] = p;
+        return p;
+    }, [categoryMap, investigationId, setNodes]);
+
+    // ── Seed the category spine so the bones render before any cause exists ──
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            for (const cat of CATS) {
+                if (cancelled) return;
+                await ensureCategoryNode(cat.key);
+            }
+        })();
+        return () => { cancelled = true; };
+        // Intentionally not keyed on `nodes` — ensureCategoryNode already dedupes via
+        // categoryMap and catNodeIdRef, and re-running this on every keystroke would
+        // hammer the DB. Keyed on the framework because 4Ps/4Ss need their own spine.
+    }, [investigationId, framework]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // ── CRUD handlers ───────────────────────────────────────
     const handleAddCause = useCallback(async (categoryKey: string) => {
-        if (!newCauseText.trim() || busyOp) return;
-        const catData = categoryMap[categoryKey];
-        if (!catData) return;
+        const text = newCauseText.trim();
+        if (!text || busyOp) return;
         setBusyOp(true);
         try {
+            const parentId = await ensureCategoryNode(categoryKey);
+            if (!parentId) return; // createRCANode already surfaced the error
             const node = await analyzeService.createRCANode({
-                investigation_id: investigationId, parent_id: catData.catNode.id,
-                node_type: 'why', description: newCauseText.trim(),
+                investigation_id: investigationId, parent_id: parentId,
+                node_type: 'why', description: text,
                 depth: 1, is_root_cause: false,
-                cause_category: null, cause_code: null, evidence_notes: null,
+                cause_category: CATEGORY_CAUSE_LAYER[categoryKey] ?? null,
+                cause_code: null, evidence_notes: null,
+                method: 'fishbone',
             });
             if (node) setNodes(prev => [...prev, node]);
             setNewCauseText(''); setAddingTo(null);
         } finally { setBusyOp(false); }
-    }, [newCauseText, busyOp, categoryMap, investigationId, setNodes]);
+    }, [newCauseText, busyOp, ensureCategoryNode, investigationId, setNodes]);
 
     const handleSaveEdit = useCallback(async (nodeId: string) => {
         if (!editText.trim() || busyOp) return;

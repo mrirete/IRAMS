@@ -8,7 +8,7 @@ import {
     Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check
 } from 'lucide-react';
 import { friendlyAIError } from '../eam/lib/aiError';
-import { analyzeService } from '../eam/services/AnalyzeService';
+import { analyzeService, scopeNodesToMethod, rcaMethodLabel, rcaMethodColor } from '../eam/services/AnalyzeService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { RaiseWorkModal } from '../eam/components/RaiseWorkModal';
 import { ImageGallery } from '../eam/components/ui/ImageGallery';
@@ -16,6 +16,7 @@ import CauseAnalysisSection from '../components/analyze/CauseAnalysisSection';
 import { RcaChallengerPanel } from '../components/analyze/RcaChallengerPanel';
 import { RcaCopilotPanel } from '../components/analyze/RcaCopilotPanel';
 import FiveWhySection from '../components/analyze/FiveWhySection';
+import RCAMethodGate from '../components/analyze/RCAMethodGate';
 import { TeamPanel, AvatarStack } from '../components/analyze/CollaboratorPicker';
 import { NotificationService } from '../eam/services/NotificationService';
 import { useAuth } from '../eam/contexts/AuthContext';
@@ -45,14 +46,9 @@ const RCA_CATEGORIES = [
     { value: 'asset_failure', label: 'Asset Failure-based', color: '#8b5cf6' },
 ];
 
-const METHODS = [
-    { value: 'five_why', label: '5-Why Analysis' },
-    { value: 'fishbone', label: 'Fishbone (Ishikawa)' },
-    { value: 'fault_tree', label: 'Fault Tree Analysis' },
-    { value: 'logic_tree', label: 'Logic Tree Analysis (LTA)' },
-];
-
-// Methods that have a dedicated visual diagram component
+// The method catalog lives in AnalyzeService (RCA_METHODS / rcaMethodLabel) — it was
+// duplicated here, in RCATab and in the step guide, and the three copies had drifted.
+// Methods that have a dedicated editor; anything else falls back to the flat cause list.
 const VISUAL_DIAGRAM_METHODS = ['five_why', 'fishbone', 'fault_tree', 'logic_tree'];
 
 const CAUSE_CATEGORIES = [
@@ -164,7 +160,7 @@ export function RCAInvestigationPage() {
 
     // Draft state for new investigations
     const [draft, setDraft] = useState({
-        title: '', asset_id: '', method: 'five_why' as string,
+        title: '', asset_id: '',
         rca_category: 'asset_failure' as string,
         investigation_type: 'reactive' as string,
         problem_statement: '', event_what: '', event_how: '',
@@ -231,7 +227,6 @@ export function RCAInvestigationPage() {
                 setActiveStep(invData.current_step || 1);
                 setDraft(d => ({
                     ...d, title: invData.title, asset_id: invData.asset_id,
-                    method: invData.method || 'five_why',
                     rca_category: invData.rca_category || 'asset_failure',
                     investigation_type: invData.investigation_type || 'reactive',
                     problem_statement: invData.problem_statement || '',
@@ -415,7 +410,9 @@ export function RCAInvestigationPage() {
                 const created = await analyzeService.createRCAInvestigation({
                     asset_id: draft.asset_id || '00000000-0000-0000-0000-000000000000',
                     title: draft.title || 'Untitled Investigation',
-                    method: draft.method as any, status: 'draft',
+                    // No method at creation. It is chosen at the step-3 gate, once the
+                    // evidence is in — picking one here would be picking before looking.
+                    method: null, status: 'draft',
                     problem_statement: draft.problem_statement,
                     root_cause_summary: null,
                     rca_category: draft.rca_category as any,
@@ -439,7 +436,10 @@ export function RCAInvestigationPage() {
             } else if (inv) {
                 await analyzeService.updateRCAInvestigation(inv.id, {
                     title: draft.title, problem_statement: draft.problem_statement,
-                    method: draft.method as any, rca_category: draft.rca_category as any,
+                    // `method` is deliberately absent: it is owned by the step-3 gate.
+                    // Writing it from this draft reverted a committed method back to the
+                    // stale value the draft was loaded with every time step 1 was saved.
+                    rca_category: draft.rca_category as any,
                     investigation_type: draft.investigation_type as any,
                     event_date: draft.event_date || null,
                     event_location: draft.event_location || null,
@@ -490,13 +490,14 @@ export function RCAInvestigationPage() {
 
     // ── Open DE Task modal (auto-populate from RCA data) ─────
     const openDEModal = useCallback(() => {
-        // Build root cause summary from nodes
-        const rootCauseNodes = nodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
-        const whyNodes = nodes.filter(n => n.node_type === 'why').sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
+        // Build root cause summary from the committed method's nodes only — causes left
+        // behind by an abandoned method are not this investigation's conclusion.
+        const own = scopeNodesToMethod(nodes, inv?.method);
+        const rootCauseNodes = own.filter(n => n.is_root_cause || n.node_type === 'root_cause');
+        const whyNodes = own.filter(n => n.node_type === 'why').sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
         const allCauseNodes = rootCauseNodes.length > 0 ? rootCauseNodes : whyNodes;
 
-        // Auto-detect method label
-        const methodLabel = METHODS.find(m => m.value === (inv?.method || draft.method))?.label || 'RCA';
+        const methodLabel = rcaMethodLabel(inv?.method);
 
         const rootCauseSummary = allCauseNodes.length > 0
             ? `${methodLabel}: ${allCauseNodes.map(n => n.description).join(' → ')}`
@@ -667,6 +668,13 @@ export function RCAInvestigationPage() {
             </div>
         );
     }
+
+    // ── Method scoping ───────────────────────────────────────
+    // The step-3 editors must only ever see the nodes their own method authored.
+    // Passing the raw investigation-wide array is what let a fishbone's 6M category
+    // rows resurface inside the fault tree as intermediate gate events.
+    const methodCommitted = !!inv?.method_locked_at && !!inv?.method;
+    const scopedNodes = scopeNodesToMethod(nodes, inv?.method);
 
     // ── Render ───────────────────────────────────────────────
     return (
@@ -1166,13 +1174,15 @@ export function RCAInvestigationPage() {
                 {/* ── STEP 3: Identify Causes ──────────────────────── */}
                 {activeStep === 3 && inv && (
                     <div className="space-y-6">
-                        {/* Tool Selection Guidance Card */}
-                        <div className="bg-gradient-to-br from-blue-50/50 to-blue-50/50 border border-blue-200/60 rounded-xl p-5 md:p-6 shadow-sm">
-                            <div className="pb-2 flex items-center justify-between gap-2">
-                                <span className="text-sm sm:text-base font-extrabold text-blue-900 flex items-center gap-2">
-                                    <AlertTriangle size={16} className="text-blue-600" /> Which RCA Tool Should I Use?
-                                </span>
-                                {/* Compact AI advisor — replaces the old full-width card */}
+                        {/* Method commitment gate — one investigation, one method, one editor.
+                            This used to be a free-browse toolbox: four buttons that each swapped
+                            the editor without touching the nodes the previous one had written, so
+                            the tools silently re-interpreted each other's work. */}
+                        <RCAMethodGate
+                            investigation={inv}
+                            nodes={nodes}
+                            onCommitted={setInv}
+                            advisorSlot={
                                 <button
                                     onClick={runMethodAdvisor}
                                     disabled={aiMethodLoading}
@@ -1182,135 +1192,98 @@ export function RCAInvestigationPage() {
                                     {aiMethodLoading ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
                                     {aiMethodLoading ? 'Analyzing…' : 'Ask AI'}
                                 </button>
-                            </div>
-                            {/* Compact method picker — tool name + best-for; full rationale on hover */}
-                            <div className="flex flex-wrap gap-2">
-                                {[
-                                    { type: 'Simple / single-cause', tool: '5-Why', why: 'Linear cause chain — quick for straightforward failures', method: 'five_why', color: 'border-emerald-500 text-emerald-700 ring-emerald-500/20' },
-                                    { type: 'Multiple factors', tool: 'Fishbone', why: 'Category-based brainstorming (6M) for complex interactions', method: 'fishbone', color: 'border-blue-500 text-blue-700 ring-blue-500/20' },
-                                    { type: 'Safety-critical / quantitative', tool: 'Fault Tree', why: 'Boolean AND/OR gates with probability calculations for SIL/PSM', method: 'fault_tree', color: 'border-rose-500 text-rose-700 ring-rose-500/20' },
-                                    { type: 'Chronic recurring', tool: 'Logic Tree', why: 'Physical → Human → Latent decision tree — the RCFA workhorse', method: 'logic_tree', color: 'border-violet-500 text-violet-700 ring-violet-500/20' },
-                                ].map(g => {
-                                    const isSelected = inv.method === g.method;
-                                    return (
-                                        <button
-                                            key={g.method}
-                                            title={`${g.tool} — best for ${g.type}. ${g.why}`}
-                                            onClick={async () => {
-                                                const updated = await analyzeService.updateRCAInvestigation(inv.id, { method: g.method as any });
-                                                if (updated) setInv(updated);
-                                            }}
-                                            className={`flex-1 min-w-[130px] px-3 py-2 rounded-lg text-left transition-all cursor-pointer bg-white ${
-                                                isSelected
-                                                    ? `border-2 ring-2 ${g.color} shadow-sm`
-                                                    : 'border border-slate-200 text-slate-700 hover:border-slate-300'
-                                            }`}
-                                        >
-                                            <div className="text-xs font-extrabold flex items-center gap-1.5">
-                                                {isSelected && <Check size={12} />}{g.tool}
-                                            </div>
-                                            <div className="text-[10px] text-slate-400 font-medium truncate">Best for: {g.type}</div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            }
+                        />
 
-                            {/* Compact AI advisor output (only when asked) */}
-                            {aiMethodError && (
-                                <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-                                    <span className="font-bold">AI assistant unavailable — </span>
-                                    {aiMethodError}
-                                    <button onClick={() => setAiMethodError(null)} className="ml-2 text-amber-600 hover:text-amber-800 underline">Dismiss</button>
-                                </div>
-                            )}
-                            {aiMethodRec && (
-                                <div className="mt-3 bg-white border border-blue-100 rounded-lg p-3 space-y-2">
-                                    <div className="flex items-center flex-wrap gap-2">
-                                        <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-400">🤖 AI suggests</span>
-                                        <span className={`text-xs font-extrabold px-2.5 py-1 rounded-lg border ${
-                                            aiMethodRec.method === 'five_why' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                            : aiMethodRec.method === 'fishbone' ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                            : aiMethodRec.method === 'fault_tree' ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                            : 'bg-blue-50 text-blue-700 border-blue-200'
-                                        }`}>
-                                            {METHODS.find(m => m.value === aiMethodRec.method)?.label || aiMethodRec.method}
+                        {/* AI advisor output — advisory only; "Apply" pre-selects the gate,
+                            it does not commit the method on the user's behalf. */}
+                        {aiMethodError && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+                                <span className="font-bold">AI assistant unavailable — </span>
+                                {aiMethodError}
+                                <button onClick={() => setAiMethodError(null)} className="ml-2 text-amber-600 hover:text-amber-800 underline">Dismiss</button>
+                            </div>
+                        )}
+                        {aiMethodRec && (
+                            <div className="bg-white border border-blue-100 rounded-lg p-3 space-y-2">
+                                <div className="flex items-center flex-wrap gap-2">
+                                    <span className="text-[10px] font-extrabold uppercase tracking-wider text-blue-400">🤖 AI suggests</span>
+                                    <span
+                                        className="text-xs font-extrabold px-2.5 py-1 rounded-lg border"
+                                        style={{
+                                            background: `${rcaMethodColor(aiMethodRec.method)}14`,
+                                            color: rcaMethodColor(aiMethodRec.method),
+                                            borderColor: `${rcaMethodColor(aiMethodRec.method)}40`,
+                                        }}
+                                    >
+                                        {rcaMethodLabel(aiMethodRec.method)}
+                                    </span>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                        aiMethodRec.confidence >= 0.85 ? 'bg-emerald-100 text-emerald-700'
+                                        : aiMethodRec.confidence >= 0.7 ? 'bg-blue-100 text-blue-700'
+                                        : 'bg-amber-100 text-amber-700'
+                                    }`}>
+                                        {Math.round(aiMethodRec.confidence * 100)}%
+                                    </span>
+                                    {inv.method === aiMethodRec.method && (
+                                        <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                                            <Check size={11} /> Committed
                                         </span>
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                            aiMethodRec.confidence >= 0.85 ? 'bg-emerald-100 text-emerald-700'
-                                            : aiMethodRec.confidence >= 0.7 ? 'bg-blue-100 text-blue-700'
-                                            : 'bg-amber-100 text-amber-700'
-                                        }`}>
-                                            {Math.round(aiMethodRec.confidence * 100)}%
-                                        </span>
-                                        {inv.method === aiMethodRec.method ? (
-                                            <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
-                                                <Check size={11} /> Selected
-                                            </span>
-                                        ) : (
-                                            <button
-                                                onClick={async () => {
-                                                    const updated = await analyzeService.updateRCAInvestigation(inv.id, { method: aiMethodRec.method as any });
-                                                    if (updated) setInv(updated);
-                                                }}
-                                                className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all"
-                                            >
-                                                Apply
-                                            </button>
-                                        )}
-                                        <button
-                                            onClick={() => { setAiMethodRec(null); setAiMethodError(null); }}
-                                            className="ml-auto text-slate-300 hover:text-slate-500 transition-colors"
-                                            title="Dismiss"
-                                        >
-                                            <X size={13} />
-                                        </button>
-                                    </div>
-                                    <p className="text-xs text-slate-600 leading-relaxed">{aiMethodRec.reasoning}</p>
-                                    {aiMethodRec.alternatives && aiMethodRec.alternatives.length > 0 && (
-                                        <div className="text-[11px] text-slate-400">
-                                            <span className="font-bold text-slate-500">Alternatives: </span>
-                                            {aiMethodRec.alternatives.map((alt, i) => (
-                                                <span key={alt.method}>
-                                                    {i > 0 && ' · '}
-                                                    <span className="font-semibold text-slate-600">{alt.label || alt.method}</span>
-                                                </span>
-                                            ))}
-                                        </div>
                                     )}
+                                    <button
+                                        onClick={() => { setAiMethodRec(null); setAiMethodError(null); }}
+                                        className="ml-auto text-slate-300 hover:text-slate-500 transition-colors"
+                                        title="Dismiss"
+                                    >
+                                        <X size={13} />
+                                    </button>
                                 </div>
-                            )}
-                        </div>
+                                <p className="text-xs text-slate-600 leading-relaxed">{aiMethodRec.reasoning}</p>
+                                {aiMethodRec.alternatives && aiMethodRec.alternatives.length > 0 && (
+                                    <div className="text-[11px] text-slate-400">
+                                        <span className="font-bold text-slate-500">Alternatives: </span>
+                                        {aiMethodRec.alternatives.map((alt, i) => (
+                                            <span key={alt.method}>
+                                                {i > 0 && ' · '}
+                                                <span className="font-semibold text-slate-600">{alt.label || alt.method}</span>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
-                        {/* Method switching happens via the guide cards above (each card
-                            activates its method) — the old standalone "Active Analysis
-                            Method" dropdown card duplicated that and was removed. */}
-
-                        {/* ── Visual Diagram (method-specific) ──────── */}
-                        {inv.method === 'five_why' && (
+                        {/* ── The one editor for the committed method ──────────
+                            Nodes are scoped: each tool sees only the nodes its own method
+                            authored. Without this, a fishbone's six 6M category rows render
+                            as fault-tree intermediate gate events and as phantom WHY steps. */}
+                        {methodCommitted && inv.method === 'five_why' && (
                             <FiveWhySection
                                 selectedRca={{
                                     id: inv.id,
-                                    method: inv.method || 'five_why',
+                                    method: inv.method,
                                     root_cause_summary: inv.root_cause_summary,
                                 }}
-                                nodes={nodes}
+                                nodes={scopedNodes}
                                 setNodes={setNodes}
                             />
                         )}
 
-                        {(inv.method === 'fishbone' || inv.method === 'fault_tree' || inv.method === 'logic_tree') && (
+                        {methodCommitted && (inv.method === 'fishbone' || inv.method === 'fault_tree' || inv.method === 'logic_tree') && (
                             <CauseAnalysisSection
                                 method={inv.method}
                                 investigationId={inv.id}
                                 problemStatement={inv.problem_statement || draft.problem_statement || ''}
-                                nodes={nodes}
+                                nodes={scopedNodes}
                                 setNodes={setNodes}
                                 saving={saving}
                             />
                         )}
 
-                        {/* Cause Tree (flat list) — shown only for methods WITHOUT a dedicated diagram */}
-                        {!VISUAL_DIAGRAM_METHODS.includes(inv.method || '') && (
+                        {/* Cause Tree (flat list) — only for legacy records on a method with no
+                            editor (taproot / apollo). The gate offers no such option, so this is
+                            a fallback for old investigations, not a path anyone can newly enter. */}
+                        {methodCommitted && !VISUAL_DIAGRAM_METHODS.includes(inv.method || '') && (
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
                                 <AlertTriangle size={16} className="text-blue-600" /> Causal Factor Identification
@@ -1871,7 +1844,7 @@ export function RCAInvestigationPage() {
                                         <span>Source Investigation:</span>
                                         <span className="font-bold text-blue-700 truncate max-w-[200px]">{inv?.title || draft.title}</span>
                                         <span className="ml-auto text-[9px] font-extrabold px-2 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 tracking-wide uppercase shrink-0">
-                                            {METHODS.find(m => m.value === (inv?.method || draft.method))?.label || 'RCA'}
+                                            {rcaMethodLabel(inv?.method)}
                                         </span>
                                     </div>
 

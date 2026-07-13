@@ -81,7 +81,12 @@ export interface RCAInvestigation {
     id: string;
     asset_id: string;
     title: string;
-    method: 'five_why' | 'fishbone' | 'fault_tree' | 'logic_tree' | 'taproot' | 'apollo' | null;
+    /** The committed analysis method. One investigation, one method, one editor. */
+    method: RCAMethod | null;
+    /** Advisory only — captured at step 1, pre-selects the step-3 gate. Never binds. */
+    proposed_method: RCAMethod | null;
+    /** Set when the investigator commits at step 3. Changing method after this is confirmed. */
+    method_locked_at: string | null;
     status: 'draft' | 'in_progress' | 'review' | 'closed' | null;
     problem_statement: string | null;
     root_cause_summary: string | null;
@@ -127,8 +132,72 @@ export interface RCANode {
     // ISO 14224 taxonomy code
     cause_code: string | null;
     evidence_notes: string | null;
+    // Which analysis method authored this node (0196). Every editor reads only its
+    // own nodes — otherwise a fishbone's 6M category rows resurface as fault-tree
+    // gate events and as phantom "WHY" steps. Stamped by DB trigger if omitted.
+    method: RCAMethod | null;
     created_at: string;
 }
+
+// ─── RCA method catalog — the single source of truth ──────────
+// Label/colour tables for these used to be duplicated in RCATab, RCAInvestigationPage
+// and the step guide, and had already drifted apart.
+
+export type RCAMethod = 'five_why' | 'fishbone' | 'fault_tree' | 'logic_tree' | 'taproot' | 'apollo';
+
+export interface RCAMethodDef {
+    value: RCAMethod;
+    label: string;
+    color: string;
+    bestFor: string;
+    why: string;
+}
+
+/** The methods with a working editor — the only ones offered at the step-3 gate. */
+export const RCA_METHODS: RCAMethodDef[] = [
+    {
+        value: 'five_why', label: '5-Why', color: '#0891b2',
+        bestFor: 'Simple / single-cause',
+        why: 'A linear cause chain. Fast for straightforward failures with one obvious thread to pull.',
+    },
+    {
+        value: 'fishbone', label: 'Fishbone (Ishikawa)', color: '#d97706',
+        bestFor: 'Many candidate causes',
+        why: 'Category-based brainstorming (6Ms / 4Ps) when you need to widen the net before narrowing it.',
+    },
+    {
+        value: 'fault_tree', label: 'Fault Tree (FTA)', color: '#e11d48',
+        bestFor: 'Safety-critical / quantitative',
+        why: 'Boolean AND/OR gates with probabilities. The right tool for SIL and PSM work.',
+    },
+    {
+        value: 'logic_tree', label: 'Logic Tree (LTA)', color: '#7c3aed',
+        bestFor: 'Chronic / recurring',
+        why: 'Physical → Human → Latent ladder. The RCFA workhorse when the root is systemic.',
+    },
+];
+
+/** Legacy methods kept valid in the DB but no longer offered — they have no editor. */
+const LEGACY_METHOD_LABELS: Record<string, string> = { taproot: 'TapRooT®', apollo: 'Apollo' };
+
+export const rcaMethodDef = (method: string | null | undefined): RCAMethodDef | null =>
+    RCA_METHODS.find(m => m.value === method) ?? null;
+
+export const rcaMethodLabel = (method: string | null | undefined): string =>
+    rcaMethodDef(method)?.label ?? LEGACY_METHOD_LABELS[method ?? ''] ?? 'No method selected';
+
+export const rcaMethodColor = (method: string | null | undefined): string =>
+    rcaMethodDef(method)?.color ?? '#94a3b8';
+
+/**
+ * Nodes belonging to one method. Every step-3 editor MUST filter through this —
+ * passing the raw investigation-wide array is what let the tools corrupt each other.
+ * Nodes with no method (created by a client bundle older than 0196, before the DB
+ * trigger backstop) are treated as belonging to the active method rather than
+ * vanishing from the UI.
+ */
+export const scopeNodesToMethod = (nodes: RCANode[], method: string | null | undefined): RCANode[] =>
+    nodes.filter(n => !n.method || n.method === method);
 
 // Bad Actors
 export interface BadActorSnapshot {
@@ -928,7 +997,11 @@ class AnalyzeService {
         }
     }
 
-    async createRCAInvestigation(rca: Omit<RCAInvestigation, 'id' | 'created_at' | 'updated_at'>): Promise<RCAInvestigation | null> {
+    /** `proposed_method` (step-1 hint) and `method_locked_at` (step-3 commitment) are set later, not at creation. */
+    async createRCAInvestigation(
+        rca: Omit<RCAInvestigation, 'id' | 'created_at' | 'updated_at' | 'proposed_method' | 'method_locked_at'>
+            & { proposed_method?: RCAMethod | null; method_locked_at?: string | null },
+    ): Promise<RCAInvestigation | null> {
         try {
             // created_by is required on the row — without it the insert is rejected and
             // the investigation silently never appears in the list.
@@ -943,7 +1016,8 @@ class AnalyzeService {
         }
     }
 
-    async createRCANode(node: Omit<RCANode, 'id' | 'created_at'>): Promise<RCANode | null> {
+    /** `method` may be omitted — a DB trigger stamps it from the parent investigation. */
+    async createRCANode(node: Omit<RCANode, 'id' | 'created_at' | 'method'> & { method?: RCAMethod | null }): Promise<RCANode | null> {
         try {
             const { data, error } = await supabase.from('ers_rca_nodes').insert(node).select().single();
             if (error) { console.error('AnalyzeService.createRCANode:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }

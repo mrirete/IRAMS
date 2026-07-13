@@ -7,7 +7,7 @@ import {
     Database, Server, Loader2, CheckCircle,
     ChevronUp, ChevronDown, Users, MapPin, ChevronRight, FileText, Link2, Unlink,
 } from 'lucide-react';
-import analyzeService from '../../eam/services/AnalyzeService';
+import analyzeService, { scopeNodesToMethod, RCA_METHODS } from '../../eam/services/AnalyzeService';
 import { useAuth } from '../../eam/contexts/AuthContext';
 import { aiEngine } from '../../eam/services/AIAnalysisEngine';
 import type { RCAMethodRecommendation } from '../../eam/services/AIAnalysisEngine';
@@ -22,6 +22,7 @@ import ParetoAnalysisTab from './ParetoAnalysisTab';
 import AssetDrillDrawer from './AssetDrillDrawer';
 import CauseAnalysisSection from './CauseAnalysisSection';
 import FiveWhySection from './FiveWhySection';
+import RCAMethodGate from './RCAMethodGate';
 import RCAStepIndicator, { type StepCompletionData } from './RCAStepIndicator';
 import RCAStepGuide from './RCAStepGuide';
 import RCAEvidencePanel from './RCAEvidencePanel';
@@ -204,10 +205,16 @@ export const RCATab: React.FC<RCATabProps> = ({
         priority: 'high' as 'critical' | 'high' | 'medium' | 'low',
     });
 
-    const selectedRca = rcas.find(r => r.id === selectedId) || null;
+    // `rcas` is refetched by the parent, which lags a write by a round trip. Patch
+    // locally so committing a method at the step-3 gate swaps the editor immediately
+    // instead of leaving the gate on screen until the refresh lands.
+    const [rcaPatch, setRcaPatch] = useState<Partial<RCAInvestigation>>({});
+    const baseRca = rcas.find(r => r.id === selectedId) || null;
+    const selectedRca = baseRca ? { ...baseRca, ...rcaPatch } : null;
 
     // â”€â”€ Load detail data when selection changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     useEffect(() => {
+        setRcaPatch({});
         if (!selectedId) { setNodes([]); setActions([]); setEvidence([]); return; }
 
         let cancelled = false;
@@ -337,8 +344,11 @@ export const RCATab: React.FC<RCATabProps> = ({
     // â”€â”€ DE Task creation from RCA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const openDEModal = useCallback(() => {
         if (!selectedRca) return;
-        const rootCauseNodes = nodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
-        const whyNodes = nodes.filter(n => n.node_type === 'why').sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
+        // Only the committed method's causes belong in the defect-elimination summary —
+        // nodes abandoned with a previous method are not this investigation's conclusion.
+        const scoped = scopeNodesToMethod(nodes, selectedRca.method);
+        const rootCauseNodes = scoped.filter(n => n.is_root_cause || n.node_type === 'root_cause');
+        const whyNodes = scoped.filter(n => n.node_type === 'why').sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0));
         const allCauseNodes = rootCauseNodes.length > 0 ? rootCauseNodes : whyNodes;
         const methodLabel = METHODS[selectedRca.method]?.label || 'RCA';
 
@@ -1270,7 +1280,9 @@ export const RCATab: React.FC<RCATabProps> = ({
                                     hasProblemStatement: !!selectedRca.problem_statement,
                                     has5W2H: !!(selectedRca.event_what || selectedRca.event_how || selectedRca.event_location),
                                     evidenceCount: evidence.length,
-                                    hasRootCause: nodes.some(n => n.is_root_cause),
+                                    // Scoped: a root cause left behind by an abandoned method
+                                    // must not mark step 3 complete for the current one.
+                                    hasRootCause: scopeNodesToMethod(nodes, selectedRca.method).some(n => n.is_root_cause),
                                     actionCount: actions.length,
                                     allActionsAssigned: actions.length > 0 && actions.every(a => a.assigned_to),
                                     effectivenessReviewed: selectedRca.effectiveness_status === 'effective',
@@ -1293,6 +1305,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                             event_how: rca?.event_how || '',
                                             event_date: rca?.event_date ? new Date(rca.event_date).toISOString().split('T')[0] : '',
                                             event_how_much: rca?.event_how_much as any || { cost: 0, downtime_hrs: 0 },
+                                            proposed_method: rca?.proposed_method || '',
                                         });
                                         const [inlineSaving, setInlineSaving] = React.useState(false);
                                         const [saved, setSaved] = React.useState(false);
@@ -1310,6 +1323,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                     event_date: d.event_date ? new Date(d.event_date).toISOString() : null,
                                                     event_how_much: (d.event_how_much?.cost || d.event_how_much?.downtime_hrs)
                                                         ? d.event_how_much : null,
+                                                    proposed_method: d.proposed_method || null,
                                                 } as any);
                                                 onRefresh?.();
                                                 setSaved(true);
@@ -1394,6 +1408,30 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                     </div>
                                                 </div>
 
+                                                {/* Provisional method — advisory, never binding. It pre-selects the
+                                                    step-3 gate and tells step 2 what evidence is worth collecting
+                                                    (a fault tree needs system logic; a human-factors RCA needs
+                                                    interviews). The real commitment happens at step 3, once the
+                                                    evidence is in — you cannot honestly pick a method before you
+                                                    have looked. */}
+                                                <div style={{ marginBottom: 14 }}>
+                                                    <label style={labelStyle}>Likely method (provisional)</label>
+                                                    <select
+                                                        value={draft.proposed_method}
+                                                        onChange={e => handleChange('proposed_method', e.target.value)}
+                                                        style={{ ...inputStyle, cursor: 'pointer' }}
+                                                    >
+                                                        <option value="">Decide at step 3 (recommended)</option>
+                                                        {RCA_METHODS.map(m => (
+                                                            <option key={m.value} value={m.value}>{m.label} — {m.bestFor}</option>
+                                                        ))}
+                                                    </select>
+                                                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4, lineHeight: 1.5 }}>
+                                                        A hint, not a commitment — it shapes what evidence you collect at step 2.
+                                                        You confirm or override it at step 3 once the evidence is in.
+                                                    </div>
+                                                </div>
+
                                                 {/* Save status bar */}
                                                 <div style={{
                                                     display: 'flex', alignItems: 'center', gap: 8,
@@ -1447,17 +1485,49 @@ export const RCATab: React.FC<RCATabProps> = ({
                                     />
                                 )}
 
-                                {/* STEP 3: Identify Causal Factors */}
-                                {currentStep === 3 && (
-                                    <div>
-                                        <CauseAnalysisSection method={selectedRca.method} investigationId={selectedRca.id} problemStatement={selectedRca.problem_statement || ''} nodes={nodes} setNodes={setNodes} saving={saving} />
-                                        <FiveWhySection
-                                            selectedRca={selectedRca}
-                                            nodes={nodes}
-                                            setNodes={setNodes}
-                                        />
+                                {/* STEP 3: Identify Causal Factors —
+                                    Gate, then exactly ONE editor. This used to render
+                                    CauseAnalysisSection AND FiveWhySection together, so with
+                                    Fault Tree or Logic Tree active the user saw two editors
+                                    writing into the same node table at once. */}
+                                {currentStep === 3 && (detailLoading ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 24, color: '#64748b', fontSize: 12 }}>
+                                        <Loader2 size={14} className="animate-spin" style={{ animation: 'spin 1s linear infinite' }} />
+                                        Loading causesâ€¦
                                     </div>
-                                )}
+                                ) : (() => {
+                                    const committed = !!selectedRca.method_locked_at && !!selectedRca.method;
+                                    const scoped = scopeNodesToMethod(nodes, selectedRca.method);
+                                    return (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                            <RCAMethodGate
+                                                investigation={selectedRca as RCAInvestigation}
+                                                nodes={nodes}
+                                                onCommitted={(u) => {
+                                                    setRcaPatch(p => ({ ...p, method: u.method, method_locked_at: u.method_locked_at }));
+                                                    onRefresh?.();
+                                                }}
+                                            />
+
+                                            {committed && (selectedRca.method === 'five_why' ? (
+                                                <FiveWhySection
+                                                    selectedRca={selectedRca}
+                                                    nodes={scoped}
+                                                    setNodes={setNodes}
+                                                />
+                                            ) : (
+                                                <CauseAnalysisSection
+                                                    method={selectedRca.method}
+                                                    investigationId={selectedRca.id}
+                                                    problemStatement={selectedRca.problem_statement || ''}
+                                                    nodes={scoped}
+                                                    setNodes={setNodes}
+                                                    saving={saving}
+                                                />
+                                            ))}
+                                        </div>
+                                    );
+                                })())}
 
                                 {/* STEP 4: Develop Solutions */}
                                 {currentStep === 4 && (
