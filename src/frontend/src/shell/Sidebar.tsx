@@ -188,7 +188,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             return (
                 <React.Fragment key="core-nav">
                     {hasPermission('/') && (
-                        <NavLink key="home" to="/" end className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                        <NavLink key="home" to="/" end onClick={onClose} className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                             {({ isActive }) => (
                                 <>
                                     <Icon size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
@@ -198,7 +198,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                         </NavLink>
                     )}
                     {hasPermission('/assets') && (
-                        <NavLink key="assets" to="/assets" className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
+                        <NavLink key="assets" to="/assets" onClick={onClose} className={({ isActive }) => linkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                             {({ isActive }) => (
                                 <>
                                     <Database size={18} className={`mr-3 flex-shrink-0 transition-colors ${isActive ? 'text-primary-600' : 'text-slate-500 group-hover:text-slate-700'}`} />
