@@ -319,12 +319,13 @@ const ReliabilitySpecialist: React.FC<Props> = ({ activeDivision, contextAsset, 
                 <button
                     onClick={() => setExpanded(true)}
                     title="Reliability Specialist — your dependable mentor. Advisory only: you decide."
-                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 flex items-center gap-2 pl-3.5 pr-4 py-3 rounded-full bg-gradient-to-r from-primary-600 to-primary-500 text-white text-sm font-bold shadow-glow-relantern hover:shadow-xl hover:scale-[1.03] transition-all"
+                    aria-label="Open Reliability Specialist"
+                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 w-11 h-11 flex items-center justify-center rounded-full bg-gradient-to-r from-primary-600 to-primary-500 text-white text-base font-extrabold shadow-glow-relantern hover:shadow-xl hover:scale-[1.05] transition-all"
                 >
-                    <Bot size={17} /> Specialist
+                    S
                     {messages.length > 0 && (
-                        <span className="flex items-center gap-1 text-[10px] bg-white/20 px-1.5 py-0.5 rounded-full">
-                            <MessageSquare size={9} /> {messages.length}
+                        <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-white text-primary-600 text-[9px] font-bold border border-primary-200">
+                            {messages.length > 9 ? '9+' : messages.length}
                         </span>
                     )}
                 </button>
