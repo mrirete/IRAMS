@@ -204,44 +204,41 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-            {/* ════ KPI CARDS (always visible) ═══════════════════ */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+            {/* ════ KPI CARDS ═══════════════════════════════════
+                4-up on desktop, 2-up on phones. Forcing repeat(4, 1fr) at 412px gave
+                each card ~85px, which wrapped every label to shreds ("Bad / Act…") and
+                clipped the savings figure. The label now sits above the icon+value row,
+                so the widest thing in the card is the number itself. */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3.5">
                 {[
-                    { label: 'Bad Actors', value: top5.length, sub: 'Top Pareto offenders', icon: <AlertTriangle size={20} />, color: '#ef4444', bgCard: '#fef2f2' },
-                    { label: 'Active Tasks', value: tasks.filter(t => t.status === 'identified' || t.status === 'in_progress').length, sub: 'In progress', icon: <Target size={20} />, color: '#f59e0b', bgCard: '#fffbeb' },
-                    { label: 'Resolved', value: tasks.filter(t => t.status === 'resolved' || t.status === 'verified').length, sub: 'Defects eliminated', icon: <CheckCircle2 size={20} />, color: '#22c55e', bgCard: '#f0fdf4' },
-                    { label: 'Est. Savings', value: fmt$(totalSavings), sub: 'Annual savings', icon: <DollarSign size={20} />, color: '#818cf8', bgCard: '#eef2ff' },
+                    { label: 'Bad Actors', value: top5.length, sub: 'Top Pareto offenders', icon: <AlertTriangle size={16} />, color: '#ef4444', bgCard: '#fef2f2' },
+                    { label: 'Active Tasks', value: tasks.filter(t => t.status === 'identified' || t.status === 'in_progress').length, sub: 'In progress', icon: <Target size={16} />, color: '#f59e0b', bgCard: '#fffbeb' },
+                    { label: 'Resolved', value: tasks.filter(t => t.status === 'resolved' || t.status === 'verified').length, sub: 'Defects eliminated', icon: <CheckCircle2 size={16} />, color: '#22c55e', bgCard: '#f0fdf4' },
+                    { label: 'Est. Savings', value: fmt$(totalSavings), sub: 'Annual savings', icon: <DollarSign size={16} />, color: '#818cf8', bgCard: '#eef2ff' },
                 ].map(kpi => (
-                    <div key={kpi.label} style={{
-                        background: kpi.bgCard,
-                        borderRadius: 16,
-                        border: `1px solid ${kpi.color}25`,
-                        padding: '22px 20px 18px',
-                        position: 'relative',
-                        overflow: 'hidden',
-                        boxShadow: '0 2px 12px rgba(0,0,0,0.25)',
-                    }}>
+                    <div key={kpi.label} className="relative overflow-hidden rounded-xl px-3 py-3 sm:px-4 sm:py-3.5"
+                        style={{
+                            background: kpi.bgCard,
+                            border: `1px solid ${kpi.color}25`,
+                            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+                        }}>
                         {/* Top accent bar */}
                         <div style={{
                             position: 'absolute', top: 0, left: 0, right: 0, height: 3,
                             background: kpi.color,
                         }} />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-                            <div style={{
-                                width: 40, height: 40, borderRadius: 12,
-                                background: `${kpi.color}20`,
-                                border: `1px solid ${kpi.color}30`,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                color: kpi.color,
-                            }}>
-                                {kpi.icon}
-                            </div>
-                            <span style={{ fontSize: 13, color: TEXT_BRIGHT, fontWeight: 600, letterSpacing: '0.01em' }}>{kpi.label}</span>
+                        <div className="flex items-center gap-1.5 mb-2">
+                            <span style={{ color: kpi.color, display: 'inline-flex' }}>{kpi.icon}</span>
+                            <span className="text-[11px] sm:text-xs font-semibold truncate" style={{ color: TEXT_BRIGHT }}>
+                                {kpi.label}
+                            </span>
                         </div>
-                        <div style={{ fontSize: 34, fontWeight: 800, color: TEXT_WHITE, lineHeight: 1 }}>
+                        <div className="text-2xl sm:text-3xl font-extrabold leading-none truncate" style={{ color: TEXT_WHITE }}>
                             {kpi.value}
                         </div>
-                        <div style={{ fontSize: 12, color: TEXT_MUTED, marginTop: 8, fontWeight: 500 }}>{kpi.sub}</div>
+                        <div className="text-[10px] sm:text-[11px] mt-1.5 font-medium truncate" style={{ color: TEXT_MUTED }} title={kpi.sub}>
+                            {kpi.sub}
+                        </div>
                     </div>
                 ))}
             </div>
@@ -252,43 +249,43 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
                     background: BG_CARD, borderRadius: 16, border: `1px solid ${BORDER}`,
                     overflow: 'hidden', boxShadow: '0 2px 16px rgba(0,0,0,0.06)',
                 }}>
-                    {/* Table Header */}
-                    <div style={{
-                        padding: '16px 20px', borderBottom: `1px solid ${BORDER}`,
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        background: BG_HEADER,
-                    }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {/* Table Header — stacks on mobile; the search was a fixed 200px which,
+                        next to the title and status filter, forced the row wider than a phone. */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"
+                        style={{ padding: '12px 16px', borderBottom: `1px solid ${BORDER}`, background: BG_HEADER }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                             <div style={{
-                                width: 28, height: 28, borderRadius: 8,
+                                width: 28, height: 28, borderRadius: 8, flexShrink: 0,
                                 background: 'linear-gradient(135deg, #ecfdf5, #d1fae5)', border: '1px solid #a7f3d0',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
                                 <Target size={14} color="#059669" />
                             </div>
-                            <span style={{ fontSize: 15, fontWeight: 700, color: TEXT_WHITE }}>Elimination Tasks</span>
+                            <span style={{ fontSize: 15, fontWeight: 700, color: TEXT_WHITE, whiteSpace: 'nowrap' }}>Elimination Tasks</span>
                             <span style={{
                                 background: '#f0f9ff', color: '#0891b2', fontSize: 12, fontWeight: 700,
-                                padding: '3px 12px', borderRadius: 12, border: '1px solid #a5f3fc',
+                                padding: '3px 12px', borderRadius: 12, border: '1px solid #a5f3fc', flexShrink: 0,
                             }}>{filteredTasks.length}</span>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div style={{ position: 'relative' }}>
-                                <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }} />
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
+                                <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
                                 <input
                                     value={deSearch} onChange={e => setDeSearch(e.target.value)}
                                     placeholder="Search tasks..."
+                                    className="w-full sm:w-[200px]"
                                     style={{
                                         padding: '7px 12px 7px 32px', fontSize: 13, border: `1px solid ${BORDER}`,
-                                        borderRadius: 8, width: 200, outline: 'none', background: '#fff', color: TEXT_WHITE,
+                                        borderRadius: 8, outline: 'none', background: '#fff', color: TEXT_WHITE,
                                     }}
                                 />
                             </div>
                             <select
                                 value={deFilter} onChange={e => setDeFilter(e.target.value)}
                                 style={{
-                                    padding: '7px 12px', fontSize: 13, border: `1px solid ${BORDER}`,
-                                    borderRadius: 8, background: '#fff', color: TEXT_WHITE, cursor: 'pointer', outline: 'none',
+                                    padding: '7px 10px', fontSize: 13, border: `1px solid ${BORDER}`,
+                                    borderRadius: 8, background: '#fff', color: TEXT_WHITE, cursor: 'pointer',
+                                    outline: 'none', flexShrink: 0,
                                 }}
                             >
                                 <option value="all">All Statuses</option>
@@ -300,8 +297,88 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
                         </div>
                     </div>
 
-                    {/* Table Body */}
-                    <div style={{ overflowX: 'auto' }}>
+                    {/* Mobile: stacked cards — the 8-column table forced sideways scrolling */}
+                    <div className="sm:hidden">
+                        {filteredTasks.length === 0 ? (
+                            <div style={{ textAlign: 'center', padding: '40px 24px', color: TEXT_DIM }}>
+                                <div style={{
+                                    width: 56, height: 56, borderRadius: '50%', background: '#f1f5f9',
+                                    margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                    <Target size={24} color={TEXT_DIM} />
+                                </div>
+                                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6, color: TEXT_MUTED }}>No elimination tasks yet</div>
+                                <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+                                    Run a Pareto analysis to identify bad actors, then create DE tasks from RCA findings.
+                                </div>
+                            </div>
+                        ) : filteredTasks.map((task, idx) => {
+                            const sm = STATUS_META[task.status];
+                            return (
+                                <div key={task.id}
+                                    onClick={() => openTaskWorkspace(task.id)}
+                                    style={{
+                                        padding: '14px 16px', cursor: 'pointer',
+                                        borderTop: idx === 0 ? 'none' : '1px solid #e2e8f0',
+                                        background: idx % 2 === 1 ? '#fbfcfd' : '#fff',
+                                    }}
+                                >
+                                    {/* Title + number */}
+                                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                        <span style={{
+                                            flexShrink: 0, minWidth: 22, height: 22, borderRadius: 6,
+                                            background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#64748b',
+                                            fontSize: 11, fontWeight: 800, display: 'inline-flex',
+                                            alignItems: 'center', justifyContent: 'center', padding: '0 5px', marginTop: 1,
+                                        }}>{idx + 1}</span>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ fontWeight: 600, color: TEXT_WHITE, fontSize: 14, lineHeight: 1.35 }}>
+                                                {task.title}
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3 }}>
+                                                <Activity size={11} color={TEXT_DIM} />
+                                                <span style={{
+                                                    fontSize: 12, color: TEXT_BRIGHT,
+                                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                }}>{task.assetName}</span>
+                                            </div>
+                                        </div>
+                                        <ArrowRight size={16} color="#cbd5e1" style={{ flexShrink: 0, marginTop: 2 }} />
+                                    </div>
+
+                                    {/* Badges */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                                        <span style={{
+                                            padding: '3px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                                            background: PRIORITY_BG[task.priority], color: PRIORITY_COLORS[task.priority],
+                                            border: `1px solid ${PRIORITY_COLORS[task.priority]}35`,
+                                        }}>{PRIORITY_LABELS[task.priority]}</span>
+                                        <span style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                                            padding: '3px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                                            background: sm.bg, color: sm.color, border: `1px solid ${sm.color}40`,
+                                        }}>{sm.icon} {sm.label}</span>
+                                        {task.collaborators && task.collaborators.length > 0 && (
+                                            <AvatarStack collaborators={task.collaborators} max={3} size="sm" />
+                                        )}
+                                    </div>
+
+                                    {/* Money — the reason this row exists */}
+                                    <div style={{ display: 'flex', gap: 16, marginTop: 8, fontSize: 11 }}>
+                                        <span style={{ color: TEXT_MUTED }}>
+                                            Annual cost <strong style={{ color: '#ef4444', fontSize: 12 }}>{fmt$(task.annualCost)}</strong>
+                                        </span>
+                                        <span style={{ color: TEXT_MUTED }}>
+                                            Est. savings <strong style={{ color: '#059669', fontSize: 12 }}>{fmt$(task.estimatedSavings)}</strong>
+                                        </span>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Table Body (tablet / desktop) */}
+                    <div className="hidden sm:block" style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                             <thead>
                                 <tr style={{ background: '#f1f5f9', borderBottom: `1px solid ${BORDER}` }}>

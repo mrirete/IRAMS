@@ -84,21 +84,19 @@ export const BadActorHunterPanel: React.FC<BadActorHunterPanelProps> = ({ onAppr
                     className="shrink-0 flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-amber-500 to-amber-600 shadow-sm hover:shadow disabled:opacity-60"
                 >
                     {loading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
-                    <span className="hidden sm:inline">{loading ? 'Analysing…' : 'Run Hunter'}</span>
+                    <span>{loading ? 'Analysing…' : 'Run'}</span>
+                    <span className="hidden sm:inline">Hunter</span>
                 </button>
             </div>
 
-            <div className="p-4 sm:p-5 space-y-4">
+            {/* Body only exists once there's something to say. Idle state used to render a
+                four-line paragraph restating the subtitle, which cost a third of a phone
+                screen before the user had done anything. */}
+            <div className={`${(error || res) ? 'p-4 sm:p-5 space-y-4' : 'hidden'}`}>
                 {error && (
                     <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
                         <AlertTriangle size={15} className="mt-0.5 shrink-0" /><span>{error}</span>
                     </div>
-                )}
-                {!res && !error && !loading && (
-                    <p className="text-sm text-slate-400">
-                        Run the Hunter to rank maintenance bad actors over the last 12 months (by work-order cost) and
-                        get drafted defect-elimination tasks to review and approve.
-                    </p>
                 )}
 
                 {res && (
