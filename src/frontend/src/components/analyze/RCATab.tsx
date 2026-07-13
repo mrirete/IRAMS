@@ -64,6 +64,10 @@ interface RCATabProps {
     onInitiateRCA?: (asset: ParetoResult) => void;
     onCreateFMEA?: (asset: ParetoResult) => void;
     incomingWO?: IncomingWOPayload | null;
+    /** Bubbles up the visible (searched/filtered/sorted) portfolio as CSV rows so the
+     *  page-header Export button can offer exactly what's on screen. Asset tags are
+     *  resolved here because only this component holds the id → tag map. */
+    onExportRowsChange?: (rows: string[] | null) => void;
 }
 
 const METHODS: Record<string, { label: string; color: string }> = {
@@ -104,6 +108,7 @@ export const RCATab: React.FC<RCATabProps> = ({
     onParetoDataChange,
     onInitiateRCA,
     onCreateFMEA,
+    onExportRowsChange,
 }) => {
     const navigate = useNavigate();
     const { assets: allHierarchyAssets } = useAssetContext();
@@ -455,6 +460,32 @@ export const RCATab: React.FC<RCATabProps> = ({
         return list;
     }, [displayedRcas, portfolioSearch, portfolioSort, portfolioFilter]);
 
+    // Publish the visible portfolio as CSV rows for the page-header Export button.
+    const exportRows = useMemo(() => {
+        if (portfolioList.length === 0) return null;
+        const q = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const rows = ['#,Title,Asset,Criticality,Method,Status,Category,Problem Statement,Created'];
+        portfolioList.forEach((r, i) => {
+            const ai = assetTagMap[r.asset_id];
+            rows.push([
+                i + 1,
+                q(r.title || 'Untitled Investigation'),
+                q(ai ? (ai.tag || ai.name) : (r.event_what || '')),
+                q(ai?.criticality || ''),
+                q(METHODS[r.method]?.label || r.method),
+                q(statusChip(r.status).label),
+                q((r.rca_category || '').replace('_', ' ')),
+                q(r.problem_statement),
+                q(r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : ''),
+            ].join(','));
+        });
+        return rows;
+    }, [portfolioList, assetTagMap]);
+
+    useEffect(() => {
+        onExportRowsChange?.(exportRows);
+    }, [exportRows, onExportRowsChange]);
+
     // Helpers for portfolio â†’ workspace transitions
     const openWorkspace = useCallback((rcaId: string) => {
         setSelectedId(rcaId);
@@ -598,7 +629,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                         Run a Pareto analysis below to identify bad actors, then create an RCA investigation.
                                     </div>
                                 </div>
-                            ) : portfolioList.map(rca => {
+                            ) : portfolioList.map((rca, idx) => {
                                 const method = METHODS[rca.method] || { label: rca.method || 'RCA', color: '#64748b' };
                                 const st = statusChip(rca.status);
                                 const ai = assetTagMap[rca.asset_id];
@@ -609,10 +640,20 @@ export const RCATab: React.FC<RCATabProps> = ({
                                 return (
                                     <div key={rca.id}
                                         onClick={() => navigate(`/analyze/rca/${rca.id}`)}
-                                        style={{ padding: '14px 16px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                                        style={{
+                                            padding: '14px 16px', cursor: 'pointer',
+                                            borderTop: idx === 0 ? 'none' : '1px solid #e2e8f0',
+                                            background: idx % 2 === 1 ? '#fbfcfd' : '#fff',
+                                        }}
                                     >
                                         {/* Title row */}
                                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                            <span style={{
+                                                flexShrink: 0, minWidth: 22, height: 22, borderRadius: 6,
+                                                background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#64748b',
+                                                fontSize: 11, fontWeight: 800, display: 'inline-flex',
+                                                alignItems: 'center', justifyContent: 'center', padding: '0 5px', marginTop: 1,
+                                            }}>{idx + 1}</span>
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div style={{ fontWeight: 600, color: '#1e293b', fontSize: 14, lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                                     <span>{rca.title || 'Untitled Investigation'}</span>
@@ -696,6 +737,9 @@ export const RCATab: React.FC<RCATabProps> = ({
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                                 <thead>
                                     <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0' }}>
+                                        <th style={{ textAlign: 'left', padding: '10px 0 10px 16px', fontWeight: 600, color: '#64748b', fontSize: 12, width: 40 }}>
+                                            #
+                                        </th>
                                         {[
                                             { key: 'title', label: 'Investigation' },
                                             { key: 'asset_id', label: 'Asset' },
@@ -718,9 +762,9 @@ export const RCATab: React.FC<RCATabProps> = ({
                                             >
                                                 {col.label}
                                                 {portfolioSort.field === col.key && (
-                                                    <span style={{ marginLeft: 4, fontSize: 10 }}>
-                                                        {portfolioSort.dir === 'asc' ? 'â–²' : 'â–¼'}
-                                                    </span>
+                                                    portfolioSort.dir === 'asc'
+                                                        ? <ChevronUp size={12} style={{ display: 'inline', marginLeft: 4, verticalAlign: 'middle' }} />
+                                                        : <ChevronDown size={12} style={{ display: 'inline', marginLeft: 4, verticalAlign: 'middle' }} />
                                                 )}
                                             </th>
                                         ))}
@@ -732,7 +776,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                                 <tbody>
                                     {portfolioList.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
+                                            <td colSpan={8} style={{ textAlign: 'center', padding: '48px 24px', color: '#94a3b8' }}>
                                                 <div style={{
                                                     width: 56, height: 56, borderRadius: '50%', background: '#f1f5f9',
                                                     margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -745,19 +789,23 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                 </div>
                                             </td>
                                         </tr>
-                                    ) : portfolioList.map(rca => {
+                                    ) : portfolioList.map((rca, idx) => {
                                         const method = METHODS[rca.method] || { label: rca.method || 'RCA', color: '#64748b' };
                                         const { label: statusLabel, color: statusColor, bg: statusBg } = statusChip(rca.status);
+                                        const rowBg = idx % 2 === 1 ? '#fbfcfd' : '#fff';
                                         return (
                                             <tr key={rca.id}
                                                 onClick={() => navigate(`/analyze/rca/${rca.id}`)}
                                                 style={{
-                                                    cursor: 'pointer', borderBottom: '1px solid #f1f5f9',
-                                                    transition: 'background .15s',
+                                                    cursor: 'pointer', borderBottom: '1px solid #e2e8f0',
+                                                    background: rowBg, transition: 'background .15s',
                                                 }}
-                                                onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
-                                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                                onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                                                onMouseLeave={e => (e.currentTarget.style.background = rowBg)}
                                             >
+                                                <td style={{ padding: '14px 0 14px 16px', color: '#94a3b8', fontSize: 12, fontWeight: 800, verticalAlign: 'top' }}>
+                                                    {idx + 1}
+                                                </td>
                                                 <td style={{ padding: '14px 16px', maxWidth: 320 }}>
                                                     <div style={{ fontWeight: 600, color: '#1e293b', lineHeight: 1.4, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
                                                         {rca.title || 'Untitled Investigation'}

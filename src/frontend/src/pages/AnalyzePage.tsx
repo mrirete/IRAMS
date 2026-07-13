@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
     Target, GitMerge, Cpu,
@@ -164,6 +164,9 @@ export const AnalyzePage: React.FC = () => {
     const [paretoData, setParetoData] = useState<ParetoResult[]>([]);
     const [paretoCriteria, setParetoCriteria] = useState<ParetoCriteria>('cost');
 
+    // ── Visible investigation rows (bubbled up from RCATab) for CSV export ──
+    const [rcaExportRows, setRcaExportRows] = useState<string[] | null>(null);
+
     // ── RCA expand/collapse ───────────────────────────────────
     const [expandedRca, setExpandedRca] = useState<string | null>(null);
 
@@ -258,18 +261,50 @@ export const AnalyzePage: React.FC = () => {
     }, [refreshDETasks]);
 
     // ── Handlers ──────────────────────────────────────────────
+
+    // Export targets what's actually on screen. Pareto wins when an analysis has
+    // been run (it's the more specific dataset); otherwise we export the list the
+    // active division is showing. `null` = nothing to export, so the button
+    // disables rather than silently no-opping.
+    const exportTarget = useMemo<{ label: string; file: string; rows: string[] } | null>(() => {
+        const csv = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const today = new Date().toISOString().slice(0, 10);
+
+        if (paretoData.length > 0) {
+            const rows = ['Rank,Tag,Asset Name,Criticality,Metric Value,Unit,Event Count,% of Total,Cumulative %'];
+            paretoData.forEach(d => {
+                rows.push([d.rank, csv(d.asset_tag), csv(d.asset_name), d.criticality, d.metric_value,
+                    d.metric_unit, d.event_count, d.pct_of_total, d.cumulative_pct].join(','));
+            });
+            return { label: 'Export Pareto', file: `pareto_${paretoCriteria}_${today}.csv`, rows };
+        }
+
+        // RCATab supplies these — it holds the asset id → tag map and the active
+        // search/filter/sort, so the export matches the rows actually on screen.
+        if (activeDivision === 'rca' && rcaExportRows) {
+            return { label: 'Export Investigations', file: `investigations_${today}.csv`, rows: rcaExportRows };
+        }
+
+        if (activeDivision === 'defect_elimination' && deTasks.length > 0) {
+            const rows = ['#,Title,Asset,Status,Priority,Owner,Due'];
+            deTasks.forEach((t: any, i: number) => {
+                rows.push([i + 1, csv(t.title), csv(t.asset_tag), csv(t.status), csv(t.priority),
+                    csv(t.owner || t.assigned_to), csv(t.due_date)].join(','));
+            });
+            return { label: 'Export DE Tasks', file: `defect_elimination_${today}.csv`, rows };
+        }
+
+        return null;
+    }, [paretoData, paretoCriteria, activeDivision, rcaExportRows, deTasks]);
+
     const handleExportCSV = useCallback(() => {
-        if (paretoData.length === 0) return;
-        const rows = ['Rank,Tag,Asset Name,Criticality,Metric Value,Unit,Event Count,% of Total,Cumulative %'];
-        paretoData.forEach(d => {
-            rows.push(`${d.rank},"${d.asset_tag}","${d.asset_name}",${d.criticality},${d.metric_value},${d.metric_unit},${d.event_count},${d.pct_of_total},${d.cumulative_pct}`);
-        });
-        const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+        if (!exportTarget) return;
+        const blob = new Blob([exportTarget.rows.join('\n')], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `pareto_${paretoCriteria}_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.href = url; a.download = exportTarget.file;
         a.click(); URL.revokeObjectURL(url);
-    }, [paretoData, paretoCriteria]);
+    }, [exportTarget]);
 
     const openNewAnalysis = useCallback((type: AssessmentType, opts?: {
         assetId?: string; title?: string; targetLevel?: string; description?: string;
@@ -507,16 +542,26 @@ export const AnalyzePage: React.FC = () => {
                     </div>
                     <p className="text-slate-500 text-xs sm:text-sm mt-1.5 ml-4">Root cause analysis &amp; defect elimination — Pareto → RCA → DE · ISO 55000</p>
                 </div>
-                <div className="flex gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
+                    {/* Next step in the reliability spine (Diagnose → Model), not a page action */}
                     <button
                         onClick={() => navigate('/reliability-modelling')}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-600 rounded-xl text-xs sm:text-sm transition-all border border-slate-200 shadow-sm hover:shadow"
+                        className="flex items-center gap-1.5 px-2 py-2 text-blue-600 hover:text-blue-700 hover:underline underline-offset-4 text-xs sm:text-sm font-medium transition-colors"
                         title="Open Reliability Modelling — RBD, RAM, Weibull, Spares"
                     >
-                        <Cpu size={15} /> Modelling
+                        <Cpu size={15} /> Model reliability <ArrowRight size={13} />
                     </button>
-                    <button onClick={handleExportCSV} className="flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-600 rounded-xl text-xs sm:text-sm transition-all border border-slate-200 shadow-sm hover:shadow">
-                        <Download size={15} /> <span className="hidden xs:inline">Export</span> CSV
+                    <button
+                        onClick={handleExportCSV}
+                        disabled={!exportTarget}
+                        title={exportTarget
+                            ? `Download ${exportTarget.file}`
+                            : 'Nothing to export yet — run an analysis or create an investigation first'}
+                        className="flex items-center gap-2 px-3.5 py-2 bg-white text-slate-600 rounded-xl text-xs sm:text-sm transition-all border border-slate-200 shadow-sm enabled:hover:bg-slate-50 enabled:hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Download size={15} />
+                        <span className="hidden xs:inline">{exportTarget?.label ?? 'Export'}</span>
+                        <span className="xs:hidden">CSV</span>
                     </button>
                     <button
                         onClick={handleNewAnalysis}
@@ -575,6 +620,7 @@ export const AnalyzePage: React.FC = () => {
                             onParetoDataChange={handleParetoDataChange}
                             onInitiateRCA={handleInitiateRCA}
                             onCreateFMEA={handleCreateFMEA}
+                            onExportRowsChange={setRcaExportRows}
                         />
                     )}
 
