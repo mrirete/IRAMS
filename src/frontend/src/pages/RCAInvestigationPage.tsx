@@ -2005,10 +2005,11 @@ export function RCAInvestigationPage() {
             {inv && !copilotOpen && (
                 <button
                     onClick={() => setCopilotOpen(true)}
-                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 flex items-center gap-2 pl-3.5 pr-4 py-3 rounded-full bg-gradient-to-r from-primary-600 to-primary-500 text-white text-sm font-bold shadow-glow-relantern hover:shadow-xl hover:scale-[1.03] transition-all"
+                    className="fixed bottom-20 sm:bottom-6 right-4 sm:right-6 z-40 w-11 h-11 flex items-center justify-center rounded-full bg-gradient-to-r from-primary-600 to-primary-500 text-white text-base font-extrabold shadow-glow-relantern hover:shadow-xl hover:scale-[1.05] transition-all"
                     title="Reliability Specialist — facilitates this investigation with you. Advisory only: you decide."
+                    aria-label="Open Reliability Specialist"
                 >
-                    <Bot size={17} /> Specialist
+                    S
                 </button>
             )}
             {inv && copilotOpen && (
