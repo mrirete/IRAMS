@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
     Target, GitMerge, Cpu,
-    Plus, Download, Zap, X, ArrowRight, Gauge,
+    Plus, Download, X, ArrowRight, MoreHorizontal,
 } from 'lucide-react';
 import { useIntelligence } from '../hooks/useIntelligence';
 import { supabase } from '../eam/lib/supabase';
@@ -16,7 +16,6 @@ import RCATab from '../components/analyze/RCATab';
 import type { IncomingWOPayload } from '../components/analyze/RCATab';
 
 // ── OEE Tab ──────────────────────────────────────────────────
-import { OEETab } from '../components/analyze/OEETab';
 
 // ── Shared modals ────────────────────────────────────────────
 import NewAssessmentModal from '../components/analyze/NewAssessmentModal';
@@ -178,6 +177,18 @@ export const AnalyzePage: React.FC = () => {
     // ── Visible investigation rows (bubbled up from RCATab) for CSV export ──
     const [rcaExportRows, setRcaExportRows] = useState<string[] | null>(null);
 
+    // ── Page overflow menu (Export / Model reliability) ──
+    const [pageMenuOpen, setPageMenuOpen] = useState(false);
+    const pageMenuRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!pageMenuOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (pageMenuRef.current && !pageMenuRef.current.contains(e.target as Node)) setPageMenuOpen(false);
+        };
+        document.addEventListener('mousedown', onDown);
+        return () => document.removeEventListener('mousedown', onDown);
+    }, [pageMenuOpen]);
+
     // ── RCA expand/collapse ───────────────────────────────────
     const [expandedRca, setExpandedRca] = useState<string | null>(null);
 
@@ -197,25 +208,12 @@ export const AnalyzePage: React.FC = () => {
         }
     }, [location.state, navigate]);
 
-    // ── New Analysis — opens the assessment modal with the right type ─
-    const handleNewAnalysis = useCallback(() => {
-        const typeMap: Record<Division, AssessmentType> = {
-            rca: 'rca',
-            oee: 'fmea',
-            defect_elimination: 'bad_actor',
-        };
-        const type = typeMap[activeDivision] || 'fmea';
-        // RCA has a dedicated full-page form at /analyze/rca/new — the SAME place
-        // the "New Investigation" button goes. Jump straight there instead of
-        // popping a modal that collects a subset of fields and then forwards to
-        // that page (confusing double-entry / two journeys to one destination).
-        if (type === 'rca') {
-            navigate('/analyze/rca/new');
-            return;
-        }
-        setModalInitialType(type);
-        setShowNewAssessment(true);
-    }, [activeDivision, navigate]);
+    // The page-header "New Analysis" button is gone: it duplicated the "New" button
+    // on the Investigations list (both went to /analyze/rca/new), and on the DE tab it
+    // mapped to type 'bad_actor', which NewAssessmentModal handles in neither branch —
+    // it fell straight through to setAssessmentCreated(true), showing a green
+    // "Analysis Created / Redirecting…" screen while writing nothing and going nowhere.
+    // Creation now happens on the list that the thing is created into.
 
     // ── Modal state ───────────────────────────────────────────
     const [showNewAssessment, setShowNewAssessment] = useState(false);
@@ -232,9 +230,6 @@ export const AnalyzePage: React.FC = () => {
 
     // ── Intelligence data (FMEA, RCA lists) ───────────────────
     const { loading, fmeaWorksheets, rcas, refetchAnalyze } = useIntelligence(assetIdFromUrl, paretoCriteria);
-
-    // ── Triggers ──────────────────────────────────────────────
-    const [triggers, setTriggers] = useState<{ asset_id: string; asset_name: string; trigger: string; value: number; threshold: number }[]>([]);
 
     // ── Defect Elimination tasks ──────────────────────────────
     const [deTasks, setDeTasks] = useState<DefectEliminationTask[]>([]);
@@ -393,10 +388,6 @@ export const AnalyzePage: React.FC = () => {
         setParetoCriteria(criteria);
     }, []);
 
-    // ── Load triggers on mount ───────────────────────────────
-    useEffect(() => {
-        analyzeService.checkTriggers().then(setTriggers).catch(console.error);
-    }, []);
 
     // ── Load DE tasks from Supabase ─────────────────────────
     const refreshDETasks = useCallback(() => {
@@ -692,42 +683,47 @@ export const AnalyzePage: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Page Header ─────────────────────────────────── */}
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-3">
-                <div>
-                    <div className="flex items-center gap-2.5">
-                        <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-blue-500 to-blue-600" />
-                        <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight">Analyze &amp; Investigate</h1>
-                    </div>
-                    <p className="text-slate-500 text-xs sm:text-sm mt-1.5 ml-4">Root cause analysis &amp; defect elimination — Pareto → RCA → DE · ISO 55000</p>
+            {/* ── Page Header ───────────────────────────────────
+                One title, one line, no method narration. The workflow used to be
+                restated four times on this page (here, the tab tooltips, the DE loop
+                strip, the Pareto explainer) — the page teaches by leading, not by
+                captioning itself. Secondary actions live behind ⋯ so the header is
+                calm; the primary action lives on the list it creates into. */}
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 shrink-0" />
+                    <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight truncate">Analyze</h1>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                    {/* Next step in the reliability spine (Diagnose → Model), not a page action */}
+
+                <div className="relative shrink-0" ref={pageMenuRef}>
                     <button
-                        onClick={() => navigate('/reliability-modelling')}
-                        className="flex items-center gap-1.5 px-2 py-2 text-blue-600 hover:text-blue-700 hover:underline underline-offset-4 text-xs sm:text-sm font-medium transition-colors"
-                        title="Open Reliability Modelling — RBD, RAM, Weibull, Spares"
+                        onClick={() => setPageMenuOpen(o => !o)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                        aria-label="More actions"
+                        aria-expanded={pageMenuOpen}
                     >
-                        <Cpu size={15} /> Model reliability <ArrowRight size={13} />
+                        <MoreHorizontal size={20} />
                     </button>
-                    <button
-                        onClick={handleExportCSV}
-                        disabled={!exportTarget}
-                        title={exportTarget
-                            ? `Download ${exportTarget.file}`
-                            : 'Nothing to export yet — run an analysis or create an investigation first'}
-                        className="flex items-center gap-2 px-3.5 py-2 bg-white text-slate-600 rounded-xl text-xs sm:text-sm transition-all border border-slate-200 shadow-sm enabled:hover:bg-slate-50 enabled:hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <Download size={15} />
-                        <span className="hidden xs:inline">{exportTarget?.label ?? 'Export'}</span>
-                        <span className="xs:hidden">CSV</span>
-                    </button>
-                    <button
-                        onClick={handleNewAnalysis}
-                        className="flex items-center gap-2 px-4 sm:px-5 py-2 bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 text-white font-semibold rounded-xl text-xs sm:text-sm transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30"
-                    >
-                        <Plus size={15} /> New Analysis
-                    </button>
+                    {pageMenuOpen && (
+                        <div className="absolute right-0 top-full mt-1 w-60 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden py-1">
+                            <button
+                                onClick={() => { setPageMenuOpen(false); handleExportCSV(); }}
+                                disabled={!exportTarget}
+                                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 enabled:hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-left"
+                            >
+                                <Download size={15} className="text-slate-400 shrink-0" />
+                                <span className="truncate">{exportTarget?.label ?? 'Nothing to export yet'}</span>
+                            </button>
+                            <button
+                                onClick={() => { setPageMenuOpen(false); navigate('/reliability-modelling'); }}
+                                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
+                            >
+                                <Cpu size={15} className="text-slate-400 shrink-0" />
+                                <span className="flex-1">Model reliability</span>
+                                <ArrowRight size={13} className="text-slate-300 shrink-0" />
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -805,41 +801,12 @@ export const AnalyzePage: React.FC = () => {
                     {/* OEE retired — its real metric (Availability) now lives in Reliability -> Metrics. */}
                 </div>
 
-                {/* The Specialist is the global TopBar panel — grounded in this page via
-                    usePageRelanternContext above. No page-local chat. */}
-                <div className="space-y-4">
-                    {/* Trigger Alerts */}
-                    <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-yellow-500 mb-2">
-                            <Zap size={16} /> Active Triggers ({triggers.length})
-                        </div>
-                        {triggers.length > 0 ? (
-                            <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                                {triggers.slice(0, 6).map((t, i) => (
-                                    <div
-                                        key={i}
-                                        className="flex items-center gap-2 text-xs cursor-pointer hover:bg-yellow-50 rounded-lg px-1 py-0.5 transition-colors"
-                                        onClick={() => {
-                                            setActiveDivision('rca');
-                                            // scroll Pareto section into view after tab switch
-                                            setTimeout(() => {
-                                                document.getElementById('rca-investigations-section')
-                                                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                            }, 200);
-                                        }}
-                                        title={`Investigate ${t.asset_name} — click to open Pareto prioritization`}
-                                    >
-                                        <span className="px-1.5 py-0.5 bg-yellow-50 text-yellow-600 border border-yellow-200 rounded text-[10px] font-semibold">{t.trigger}</span>
-                                        <span className="text-slate-700 truncate">{t.asset_name}</span>
-                                        <span className="text-slate-400 ml-auto text-[10px]">{t.value.toLocaleString()} / {t.threshold.toLocaleString()}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-xs text-slate-400">No active triggers. Assets are within normal operating parameters.</p>
-                        )}
-                    </div>
-                </div>
+                {/* Active Triggers panel removed. It was AnalyzeService.checkTriggers() —
+                    i.e. getParetoAnalysis() re-skinned as alerts — so it was a fifth ranking
+                    of the same bad actors, sat below ~2000px of content, and its click handler
+                    scrolled to an element id that only exists inside RCATab's unreachable
+                    workspace, ignoring the row you clicked. Bad actors now live in one place:
+                    the Bad actors sheet. */}
             </div>
 
 

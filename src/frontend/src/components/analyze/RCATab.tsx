@@ -18,6 +18,7 @@ import WOPickerModal from './WOPickerModal';
 import type { WOPickerResult } from './WOPickerModal';
 import { useAssetContext } from '../../contexts/AssetContext';
 import { useConnectors } from '../../hooks/useConnectors';
+import { Drawer } from '../../eam/components/ui';
 import ParetoAnalysisTab from './ParetoAnalysisTab';
 import AssetDrillDrawer from './AssetDrillDrawer';
 import CauseAnalysisSection from './CauseAnalysisSection';
@@ -122,7 +123,10 @@ export const RCATab: React.FC<RCATabProps> = ({
     const [evidence, setEvidence] = useState<RCAEvidence[]>([]);
     const [detailLoading, setDetailLoading] = useState(false);
     const [drillAsset, setDrillAsset] = useState<ParetoResult | null>(null);
-    const [paretoCollapsed, setParetoCollapsed] = useState(rcas.length > 0);
+    // Bad-actors sheet. Closed by default, always — the previous inline section used
+    // `useState(rcas.length > 0)`, which meant a brand-new user with nothing on the page
+    // had the entire Pareto tool expanded at them on first load.
+    const [paretoOpen, setParetoOpen] = useState(false);
     const [expandedMode, setExpandedMode] = useState(false);
     const [rcaScope, setRcaScope] = useState<'all' | 'mine'>('all');
 
@@ -920,59 +924,54 @@ export const RCATab: React.FC<RCATabProps> = ({
                         </div>
                     </div>
 
-                    {/* â”€â”€ Pareto Bad Actor Section (portfolio level) â”€â”€ */}
+                    {/* ── Bad actors — one quiet row that OPENS THE TOOL ──────────────
+                        This used to be an inline collapsible holding the whole Pareto tool
+                        (explainer + 5-control filter card + chart + 4 stat tiles + 20-row
+                        table). Worse, it defaulted to EXPANDED when you had no
+                        investigations — the emptiest user got the heaviest page. The tool is
+                        unchanged; it now lives in a sheet you open when you want it. */}
                     {onParetoDataChange && (
-                        <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden', boxShadow: '0 4px 24px rgba(0,0,0,0.06)' }}>
-                            <button
-                                onClick={() => setParetoCollapsed(c => !c)}
-                                style={{
-                                    width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                    padding: '14px 20px', background: paretoCollapsed ? '#fff' : '#fafbfc',
-                                    border: 'none', cursor: 'pointer', borderBottom: paretoCollapsed ? 'none' : '1px solid #e2e8f0',
-                                    transition: 'background .2s',
-                                }}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                    <div style={{
-                                        width: 28, height: 28, borderRadius: 8,
-                                        background: 'linear-gradient(135deg, #fef2f2, #fee2e2)', border: '1px solid #fecaca',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    }}>
-                                        <BarChart3 size={14} color="#ef4444" />
-                                    </div>
-                                    <div style={{ textAlign: 'left' }}>
-                                        <div style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                            Bad Actor Identification
-                                            <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                                Pareto 80/20
-                                            </span>
-                                        </div>
-                                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                                            Which assets are driving 80% of your maintenance cost, downtime, or failures?
-                                        </div>
-                                    </div>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    {paretoData.length > 0 && (
-                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#ef4444', background: '#fef2f2', padding: '3px 10px', borderRadius: 10, border: '1px solid #fecaca' }}>
-                                            {paretoData.length} assets
-                                        </span>
-                                    )}
-                                    {paretoCollapsed ? <ChevronDown size={16} color="#94a3b8" /> : <ChevronUp size={16} color="#94a3b8" />}
-                                </div>
-                            </button>
-                            {!paretoCollapsed && (
-                                <div style={{ padding: '16px 20px 20px' }}>
-                                    <ParetoAnalysisTab
-                                        onDrillDown={setDrillAsset}
-                                        onParetoDataChange={onParetoDataChange}
-                                        onInvestigate={handleInvestigateFromPareto}
-                                    />
-                                </div>
+                        <button
+                            onClick={() => setParetoOpen(true)}
+                            className="w-full flex items-center gap-3 px-4 py-3.5 bg-white border border-slate-200 rounded-xl hover:border-slate-300 hover:shadow-sm transition-all text-left"
+                        >
+                            <span className="w-9 h-9 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center shrink-0">
+                                <BarChart3 size={16} className="text-red-500" />
+                            </span>
+                            <span className="flex-1 min-w-0">
+                                <span className="block text-sm font-semibold text-slate-800">Bad actors</span>
+                                <span className="block text-xs text-slate-400 truncate">
+                                    Find the few assets driving most of your cost
+                                </span>
+                            </span>
+                            {paretoData.length > 0 && (
+                                <span className="shrink-0 text-[11px] font-semibold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                                    {paretoData.length}
+                                </span>
                             )}
-                        </div>
+                            <ChevronRight size={16} className="text-slate-300 shrink-0" />
+                        </button>
                     )}
                 </>
+            )}
+
+            {/* Bad actors sheet — the Pareto tool, on demand */}
+            {onParetoDataChange && (
+                <Drawer
+                    open={paretoOpen}
+                    onClose={() => setParetoOpen(false)}
+                    title="Bad actors"
+                    subtitle="Which assets drive 80% of your cost, downtime, or failures"
+                    width="xl"
+                >
+                    <div className="p-4">
+                        <ParetoAnalysisTab
+                            onDrillDown={setDrillAsset}
+                            onParetoDataChange={onParetoDataChange}
+                            onInvestigate={rca => { setParetoOpen(false); handleInvestigateFromPareto(rca); }}
+                        />
+                    </div>
+                </Drawer>
             )}
 
             {/* â•â•â•â•â•â•â• WORKSPACE VIEW (investigation detail) â•â•â•â•â•â•â•â•â• */}

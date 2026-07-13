@@ -110,48 +110,10 @@ export const ParetoAnalysisTab: React.FC<ParetoAnalysisTabProps> = ({
 
     return (
         <div className="space-y-4">
-            {/* ── Contextual Explanation Banner ──────────── */}
-            {showExplainer && (
-                <div style={{
-                    background: 'linear-gradient(135deg, #eff6ff, #f0fdf4)',
-                    border: '1px solid #bfdbfe',
-                    borderRadius: 12,
-                    padding: '14px 18px',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 12,
-                }}>
-                    <div style={{
-                        width: 32, height: 32, borderRadius: 10,
-                        background: '#dbeafe', border: '1px solid #93c5fd',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        flexShrink: 0, marginTop: 1,
-                    }}>
-                        <Info size={16} color="#3b82f6" />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', marginBottom: 4 }}>Pareto (80/20) Analysis</div>
-                        <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.6 }}>
-                            Identifies the <strong>"vital few"</strong> assets responsible for 80% of your maintenance cost, downtime, or work order volume.
-                            Use the filters below to drill into specific hierarchy levels, date ranges, and work order types.
-                            Click <strong>"Investigate"</strong> on any asset row to start a Root Cause Analysis.
-                        </div>
-                    </div>
-                    <button
-                        onClick={() => {
-                            setShowExplainer(false);
-                            try { localStorage.setItem('ers_pareto_explainer_dismissed', 'true'); } catch {}
-                        }}
-                        style={{
-                            background: 'transparent', border: 'none', cursor: 'pointer',
-                            padding: 4, borderRadius: 6, color: '#94a3b8', flexShrink: 0,
-                        }}
-                        title="Dismiss"
-                    >
-                        <X size={14} />
-                    </button>
-                </div>
-            )}
+            {/* The explainer banner is gone: it restated the sheet's own subtitle
+                ("which assets drive 80% of your cost…") and the action it described
+                ("click Investigate on any row") is visible in the table below it. */}
+
             {/* ── Filter Bar ──────────────────────────────── */}
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
                 <div className="flex items-center gap-2 mb-3 text-xs text-slate-600 font-semibold uppercase tracking-wider">
