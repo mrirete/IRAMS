@@ -12,7 +12,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bot, Send, Search, Gauge, GitBranch, Target, TrendingUp, ArrowRight, FolderOpen, HeartPulse } from 'lucide-react';
-import ReliabilitySpecialist from '../components/analyze/ReliabilitySpecialist';
+import { useRelantern } from '../eam/contexts/RelanternContext';
 import { analyzeService, type RCAInvestigation } from '../eam/services/AnalyzeService';
 import { useAuth } from '../eam/contexts/AuthContext';
 
@@ -37,8 +37,8 @@ export const ReliabilityHomePage: React.FC = () => {
     const navigate = useNavigate();
     const { profile } = useAuth();
     const [question, setQuestion] = useState('');
-    const [seededPrompt, setSeededPrompt] = useState<string | undefined>(undefined);
     const [openWork, setOpenWork] = useState<RCAInvestigation[]>([]);
+    const { openRelantern } = useRelantern();
 
     useEffect(() => {
         analyzeService.getRCAInvestigations().then(rcas =>
@@ -46,9 +46,15 @@ export const ReliabilityHomePage: React.FC = () => {
         );
     }, []);
 
+    // Opens the one global Specialist panel, pre-seeded with the question.
     const ask = () => {
         if (!question.trim()) return;
-        setSeededPrompt(question.trim()); // opens the Specialist drawer, pre-seeded
+        openRelantern(
+            'Reliability tier home — the user is starting from the reliability loop ' +
+            '(Measure → Diagnose → Model → Decide → Forecast) and has not yet picked an asset.',
+            'reliability',
+            question.trim(),
+        );
         setQuestion('');
     };
 
@@ -142,14 +148,7 @@ export const ReliabilityHomePage: React.FC = () => {
                 </div>
             </div>
 
-            {/* The Specialist call-up (renders its own launcher + drawer) */}
-            <ReliabilitySpecialist
-                activeDivision={'rca' as any}
-                contextAsset={null}
-                paretoData={[]}
-                paretoCriteria="cost"
-                initialPrompt={seededPrompt}
-            />
+            {/* The Specialist is the global TopBar panel — `ask` opens it pre-seeded. */}
         </div>
     );
 };

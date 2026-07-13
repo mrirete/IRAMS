@@ -140,9 +140,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
 
                 <ReliabilityPresenceWidget />
 
-                {/* Reliability Specialist — opens the AI panel (shown on mobile too, icon-only) */}
+                {/* Reliability Specialist — the one AI panel, reachable from every page.
+                    Called with no args so it opens grounded in whatever context the current
+                    page registered; pages that register nothing fall back to general. */}
                 <button
-                    onClick={() => openRelantern('General reliability & maintenance assistance — ask about any asset, work order, or analysis.', 'general')}
+                    onClick={() => openRelantern()}
                     className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
                     title="Reliability Specialist · AI"
                 >

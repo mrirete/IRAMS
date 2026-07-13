@@ -20,10 +20,10 @@ import { OEETab } from '../components/analyze/OEETab';
 
 // ── Shared modals ────────────────────────────────────────────
 import NewAssessmentModal from '../components/analyze/NewAssessmentModal';
-import ReliabilitySpecialist from '../components/analyze/ReliabilitySpecialist';
 
 // ── Services ─────────────────────────────────────────────────
 import { ScrollTabStrip } from '../eam/components/ui';
+import { usePageRelanternContext } from '../eam/contexts/RelanternContext';
 import analyzeService from '../eam/services/AnalyzeService';
 import type { ParetoResult, StudyCollaborator } from '../eam/services/AnalyzeService';
 import { type DefectEliminationTask } from '../components/analyze/DefectEliminationPanel';
@@ -227,6 +227,31 @@ export const AnalyzePage: React.FC = () => {
 
     // ── Defect Elimination tasks ──────────────────────────────
     const [deTasks, setDeTasks] = useState<DefectEliminationTask[]>([]);
+
+    // ── Ground the global Reliability Specialist in this page ─────────────────
+    // Analyze used to carry its own floating Specialist with a separate chat
+    // history. There is one Specialist now (the TopBar / RelanternAI panel); this
+    // hands it the same context the old bubble built, so opening it from anywhere
+    // in Analyze lands pre-grounded rather than generic.
+    const specialistContext = useMemo(() => {
+        const divisionLabel = DIVISIONS.find(d => d.id === activeDivision)?.label || activeDivision;
+        const parts = [`Analyze module — active division: ${divisionLabel}.`];
+        if (contextAsset) {
+            parts.push(`Asset in context: ${contextAsset.tag} (${contextAsset.name})` +
+                `${contextAsset.criticality ? `, criticality ${contextAsset.criticality}` : ''}` +
+                `${(contextAsset as any).equipment_type ? `, type ${(contextAsset as any).equipment_type}` : ''}.`);
+        }
+        if (paretoData.length > 0) {
+            const top = paretoData.slice(0, 3)
+                .map(p => `${p.asset_tag} (${p.metric_value.toLocaleString()})`).join(', ');
+            parts.push(`Top ${Math.min(3, paretoData.length)} bad actors by ${paretoCriteria}: ${top}.`);
+        }
+        if (rcas.length > 0) parts.push(`${rcas.length} RCA investigation(s) open.`);
+        if (deTasks.length > 0) parts.push(`${deTasks.length} defect-elimination task(s) tracked.`);
+        return parts.join(' ');
+    }, [activeDivision, contextAsset, paretoData, paretoCriteria, rcas.length, deTasks.length]);
+
+    usePageRelanternContext(specialistContext, 'analyze');
 
     // ── Callback: ParetoAnalysisTab bubbles up its data + criteria ──
     const handleParetoDataChange = useCallback((data: ParetoResult[], criteria: ParetoCriteria) => {
@@ -646,15 +671,9 @@ export const AnalyzePage: React.FC = () => {
                     {/* OEE retired — its real metric (Availability) now lives in Reliability -> Metrics. */}
                 </div>
 
-                {/* Reliability Specialist — floating call-up (renders fixed) + compact triggers */}
+                {/* The Specialist is the global TopBar panel — grounded in this page via
+                    usePageRelanternContext above. No page-local chat. */}
                 <div className="space-y-4">
-                    <ReliabilitySpecialist
-                        activeDivision={activeDivision as any}
-                        contextAsset={contextAsset}
-                        paretoData={paretoData}
-                        paretoCriteria={paretoCriteria}
-                    />
-
                     {/* Trigger Alerts */}
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
                         <div className="flex items-center gap-2 text-sm font-semibold text-yellow-500 mb-2">
