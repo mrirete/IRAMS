@@ -163,7 +163,8 @@ BEGIN
     RAISE EXCEPTION 'This invite is no longer active — ask your administrator for a new one';
   END IF;
   IF v_invite.expires_at <= now() THEN
-    UPDATE public.user_invites SET status = 'expired', updated_at = now() WHERE id = v_invite.id;
+    -- No status write here: RAISE would roll it back anyway. get_invite and
+    -- the admin list both compute effective status from expires_at.
     RAISE EXCEPTION 'This invite has expired — ask your administrator for a new one';
   END IF;
 
@@ -251,6 +252,46 @@ BEGIN
   RETURN jsonb_build_object('user_id', new_user_id, 'email', v_email);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- ── Harden handle_new_user (0070) for the accept path ──
+-- The trigger fires inside accept_invite's auth.users INSERT and inserts a
+-- users row with username = email prefix. users.username is UNIQUE, so an
+-- invitee whose email prefix matches an existing username would abort the
+-- whole accept. Bare ON CONFLICT DO NOTHING tolerates ANY unique collision —
+-- accept_invite's own upsert then writes the authoritative row.
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  linked_contact_id UUID;
+  user_role text[];
+  contact_username text;
+BEGIN
+  BEGIN
+    SELECT id, roles INTO linked_contact_id, user_role
+    FROM public.contacts
+    WHERE email = NEW.email
+    LIMIT 1;
+  EXCEPTION WHEN OTHERS THEN
+    linked_contact_id := NULL;
+    user_role := NULL;
+  END;
+
+  contact_username := split_part(NEW.email, '@', 1);
+
+  INSERT INTO public.users (id, username, email, contact_id, status, roles)
+  VALUES (
+    NEW.id,
+    contact_username,
+    NEW.email,
+    linked_contact_id,
+    'active',
+    to_jsonb(COALESCE(user_role, ARRAY['TECHNICIAN']))
+  )
+  ON CONFLICT DO NOTHING;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Grants: minting is admin-session-only; lookup + accept must work signed-out
 -- (the token inside is the credential).
