@@ -45,11 +45,19 @@ const FISHBONE_FRAMEWORKS: Record<FishboneFramework, CatDef[]> = {
     ],
 };
 
+// A <select> can only show its selected option's text, so the label has to be short —
+// the closed control used to spell out all six categories and swamped the header, which
+// is redundant anyway when the bones are labelled right there on the diagram. The full
+// category list lives in the tooltip.
 const FRAMEWORK_LABELS: Record<FishboneFramework, string> = {
-    '6Ms': '6Ms — Man, Machine, Material, Method, Environment, Measurement',
-    '4Ms': '4Ms — Man, Machine, Material, Method',
-    '4Ps': '4Ps — Policies, Procedures, People, Plant',
-    '4Ss': '4Ss — Surroundings, Suppliers, Systems, Skills',
+    '6Ms': '6Ms', '4Ms': '4Ms', '4Ps': '4Ps', '4Ss': '4Ss',
+};
+
+const FRAMEWORK_DESCRIPTIONS: Record<FishboneFramework, string> = {
+    '6Ms': 'Man, Machine, Material, Method, Environment, Measurement',
+    '4Ms': 'Man, Machine, Material, Method',
+    '4Ps': 'Policies, Procedures, People, Plant',
+    '4Ss': 'Surroundings, Suppliers, Systems, Skills',
 };
 
 /**
@@ -290,9 +298,11 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                 <select value={framework}
                     onChange={(e) => setFramework(e.target.value as FishboneFramework)}
                     style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, color: '#4338ca', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 6, cursor: 'pointer', outline: 'none' }}
-                    title="Select analysis framework">
+                    title={`Analysis framework — ${FRAMEWORK_DESCRIPTIONS[framework]}`}>
                     {(Object.keys(FRAMEWORK_LABELS) as FishboneFramework[]).map(fw => (
-                        <option key={fw} value={fw}>{FRAMEWORK_LABELS[fw]}</option>
+                        <option key={fw} value={fw} title={FRAMEWORK_DESCRIPTIONS[fw]}>
+                            {FRAMEWORK_LABELS[fw]}
+                        </option>
                     ))}
                 </select>
                 <span style={{ fontSize: 11, color: '#94a3b8' }}>
@@ -601,7 +611,7 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                                     if (e.key === 'Enter' && newCauseText.trim()) handleAddCause(cat.key);
                                                     if (e.key === 'Escape') { setAddingTo(null); setNewCauseText(''); }
                                                 }}
-                                                placeholder={`Describe a ${cat.label.toLowerCase()} cause…`}
+                                                placeholder={`Describe ${/^[aeiou]/i.test(cat.label) ? 'an' : 'a'} ${cat.label.toLowerCase()} cause…`}
                                                 autoFocus
                                                 style={{
                                                     flex: 1, padding: '8px 12px', fontSize: 13,
