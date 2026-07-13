@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Bell, Wrench, Zap, ShieldAlert, Clock, Check, CheckCheck, ExternalLink, Package, BarChart3, FileText, Shield, CheckSquare, X, Loader2 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { DatabaseService } from '../../eam/services/DatabaseService';
+import { NotificationService } from '../../eam/services/NotificationService';
 import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from '../../eam/contexts/ToastContext';
 import { notificationRoute, isApprovableRequest } from '../../lib/notificationNav';
@@ -50,6 +51,7 @@ function getTypeIcon(type: string): React.ReactNode {
 type TabFilter = 'all' | 'unread' | 'action';
 
 const POLL_INTERVAL_MS = 30_000; // 30 seconds
+const ESCALATION_SWEEP_MS = 5 * 60_000; // escalation deadlines are minutes-scale; 5 min is fine
 
 // ─────────────────────────────────────────────────────────
 //  Component
@@ -96,6 +98,21 @@ export const NotificationCenter: React.FC = () => {
         const interval = setInterval(fetchUnreadCount, POLL_INTERVAL_MS);
         return () => clearInterval(interval);
     }, [fetchUnreadCount]);
+
+    // Escalation sweep: my unattended notifications past their rule's deadline
+    // escalate (same person / org-chart supervisor / role per the rule). Runs on
+    // the recipient's own session — RLS scopes reads/updates to own rows, and the
+    // escalation-level bump on the original row dedups across sessions.
+    useEffect(() => {
+        if (!userId) return;
+        const sweep = () =>
+            NotificationService.checkEscalations(userId)
+                .then(n => { if (n > 0) fetchUnreadCount(); })
+                .catch(() => { });
+        sweep();
+        const interval = setInterval(sweep, ESCALATION_SWEEP_MS);
+        return () => clearInterval(interval);
+    }, [userId, fetchUnreadCount]);
 
     // Fetch full list when dropdown opens
     useEffect(() => {

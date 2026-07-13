@@ -2,7 +2,47 @@ import { DatabaseService } from './DatabaseService';
 import { ModuleName } from '../types';
 import { supabase } from '../lib/supabase';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export class NotificationService {
+
+    /** Session cache of recipient-id → user-id resolutions. */
+    private static recipientUserIdCache = new Map<string, string>();
+
+    /**
+     * The bell query and RLS both match notifications on recipient_id = auth
+     * user id, but callers often hold a contacts.id (e.g. work_orders.assigned_to),
+     * which made those notifications invisible to the recipient. Map contact ids
+     * to the owning user id; anything that isn't a contact row (already a user
+     * id, 'SYSTEM', …) passes through unchanged.
+     */
+    static async resolveRecipientUserId(id: string): Promise<string> {
+        if (!id || !UUID_RE.test(id)) return id;
+        const cached = this.recipientUserIdCache.get(id);
+        if (cached) return cached;
+        let resolved = id;
+        try {
+            // users.contact_id is the reliably-populated link (invites/0190 and
+            // AuthContext use it); contacts.user_id is a legacy second direction.
+            const { data: userRow } = await supabase
+                .from('users').select('id').eq('contact_id', id).maybeSingle();
+            if (userRow?.id) {
+                resolved = userRow.id;
+            } else {
+                const { data: contactRow } = await supabase
+                    .from('contacts').select('user_id').eq('id', id).maybeSingle();
+                if (contactRow) {
+                    if (contactRow.user_id) {
+                        resolved = contactRow.user_id;
+                    } else {
+                        console.warn(`[NotificationService] Contact ${id} has no linked user — notification only visible to admins.`);
+                    }
+                }
+            }
+        } catch { /* keep the original id */ }
+        this.recipientUserIdCache.set(id, resolved);
+        return resolved;
+    }
 
     /**
      * Evaluate rules and trigger notifications.
@@ -69,7 +109,8 @@ export class NotificationService {
     }) {
         try {
             const db = DatabaseService.getInstance();
-            await db.createNotification(params);
+            const recipientId = await this.resolveRecipientUserId(params.recipientId);
+            await db.createNotification({ ...params, recipientId });
         } catch (e) {
             console.error('[NotificationService] Error sending direct notification:', e);
         }
@@ -143,9 +184,10 @@ export class NotificationService {
         console.log(`%c[NOTIFICATION] Dispatching: ${rule.name} via [${activeChannels.join(', ')}]`, 'color: #10b981; font-weight: bold;');
 
         const recipients = await this.resolveRecipients(rule.recipients, entity, context, rule.escalationScope);
+        console.log(`[NOTIFICATION] Resolved ${recipients.length} recipient(s) for "${rule.name}": ${recipients.join(', ') || '(none)'}`);
 
         // Build notification content
-        const entityNumber = entity.woNumber || entity.requestNumber || entity.poNumber || entity.assetCode || '';
+        const entityNumber = entity.woNumber || entity.requestNumber || entity.poNumber || entity.pmCode || entity.itemCode || entity.definitionName || entity.assetCode || '';
         const entityType = this.inferEntityType(rule.module);
 
         for (const recipientId of recipients) {
@@ -189,7 +231,7 @@ export class NotificationService {
                 // Standard internal user — create IN_APP notification
                 if (activeChannels.includes('IN_APP')) {
                     await db.createNotification({
-                        recipientId,
+                        recipientId: await this.resolveRecipientUserId(recipientId),
                         title: rule.name,
                         message: rule.description || `${rule.name} triggered for ${entityNumber}`,
                         severity: rule.severity,
@@ -249,12 +291,19 @@ export class NotificationService {
                     const targetKey = (r.targetId || '').toLowerCase();
                     if (targetKey === 'assignee' && entity.assignedTo) {
                         resolved.push(entity.assignedTo);
-                    } else if (targetKey === 'requester' && entity.requestedBy) {
-                        resolved.push(entity.requestedBy);
+                    } else if (targetKey === 'requester' && (entity.requestedBy || entity.requesterId)) {
+                        resolved.push(entity.requestedBy || entity.requesterId);
                     } else if (targetKey === 'permitholder' && entity.requestedBy) {
                         resolved.push(entity.requestedBy);
                     } else if (targetKey === 'createdby' && entity.createdBy) {
                         resolved.push(entity.createdBy);
+                    } else if (targetKey === 'workcentercrew' || targetKey === 'workcentersupervisor') {
+                        // Route to the entity's (responsible) work centre crew — 0191 roster.
+                        const wcId = entity.workCenterId || entity.work_center_id;
+                        if (wcId) {
+                            const crew = await this.resolveWorkCenterRecipients(wcId, targetKey === 'workcentersupervisor');
+                            crew.forEach(uid => resolved.push(uid));
+                        }
                     }
                     break;
                 }
@@ -371,7 +420,7 @@ export class NotificationService {
         const map: Record<string, string> = {
             'requests': '/requests',
             'workOrders': '/work-orders',
-            'pm': '/pm',
+            'pm': '/recurring-work',
             'purchasing': '/purchasing',
             'inventory': '/inventory',
             'safety': '/work-orders',
@@ -395,10 +444,28 @@ export class NotificationService {
      * @param assets Array of assets for criticality lookup
      * @param currentUserId The current logged-in user
      */
+    /** Concurrent-invocation guard — StrictMode double-mount (and any racing
+     *  callers) would both read the session cache before either writes it. */
+    private static pmSweepInFlight = false;
+
     static async triggerPMDueNotifications(
         jobs: any[],
         assets: any[] = [],
         currentUserId: string = 'SYSTEM'
+    ): Promise<number> {
+        if (this.pmSweepInFlight) return 0;
+        this.pmSweepInFlight = true;
+        try {
+            return await this.runPMDueSweep(jobs, assets, currentUserId);
+        } finally {
+            this.pmSweepInFlight = false;
+        }
+    }
+
+    private static async runPMDueSweep(
+        jobs: any[],
+        assets: any[],
+        currentUserId: string
     ): Promise<number> {
         const DEDUP_KEY = 'pm_notification_session';
         const sessionCache = JSON.parse(localStorage.getItem(DEDUP_KEY) || '{}');
@@ -422,55 +489,24 @@ export class NotificationService {
             const primaryAsset = assets.find((a: any) => a.id === primaryAssetId);
             const criticality = primaryAsset?.criticality || 'C';
 
-            let tier: number = 0;
-            let severity: 'INFO' | 'SUCCESS' | 'WARNING' | 'CRITICAL' = 'INFO';
-            let title = '';
-            let message = '';
-
-            if (daysUntilDue < 0) {
-                // OVERDUE
-                if (criticality === 'A') {
-                    // Tier 4 — Crit-A Overdue → EMERGENCY
-                    tier = 4;
-                    severity = 'CRITICAL';
-                    title = `🚨 EMERGENCY: Criticality A PM Overdue — ${job.code}`;
-                    message = `PM "${job.description}" is ${Math.abs(daysUntilDue)} day(s) overdue on a SAFETY-CRITICAL asset. Immediate action required per governance protocol. Auto-escalated to Emergency status.`;
-                } else {
-                    // Tier 3 — Standard Overdue
-                    tier = 3;
-                    severity = 'CRITICAL';
-                    title = `⚠ PM Overdue — ${job.code}`;
-                    message = `PM "${job.description}" is ${Math.abs(daysUntilDue)} day(s) overdue. Schedule immediate execution to maintain compliance.`;
-                }
-            } else if (daysUntilDue === 0) {
-                // Tier 2 — Due Today
-                tier = 2;
-                severity = 'CRITICAL';
-                title = `📅 PM Due Today — ${job.code}`;
-                message = `PM "${job.description}" is due today. ${criticality === 'A' ? 'Safety-critical asset — prioritize immediately.' : 'Ensure work order is generated and assigned.'}`;
-            } else if (daysUntilDue <= (job.leadTimeDays || 7)) {
-                // Tier 1 — Approaching
-                tier = 1;
-                severity = 'WARNING';
-                title = `🔔 PM Approaching — ${job.code}`;
-                message = `PM "${job.description}" is due in ${daysUntilDue} day(s). Begin planning and resource allocation.`;
-            }
+            // Tier classification: 4 = Crit-A overdue, 3 = overdue, 2 = due today,
+            // 1 = approaching (within lead time). Overdue tiers emit PM_OVERDUE,
+            // upcoming tiers emit PM_DUE — routed/escalated by notification rules
+            // (planner/supervisor), not self-notified to whoever opened the page.
+            let tier = 0;
+            if (daysUntilDue < 0) tier = criticality === 'A' ? 4 : 3;
+            else if (daysUntilDue === 0) tier = 2;
+            else if (daysUntilDue <= (job.leadTimeDays || 7)) tier = 1;
 
             if (tier > 0) {
-                await this.notify({
-                    recipientId: currentUserId,
-                    title,
-                    message,
-                    severity,
-                    notificationType: tier === 4 ? 'EMERGENCY' : 'SCHEDULE_ALERT',
-                    module: 'pm',
-                    entityId: job.id,
-                    entityType: 'PREVENTIVE_MAINTENANCE',
-                    entityNumber: job.code,
-                    actionLink: '/pm',
-                    actionRequired: tier >= 2,
-                    createdBy: 'SYSTEM',
-                });
+                await this.checkRules('pm', tier >= 3 ? 'PM_OVERDUE' : 'PM_DUE', {
+                    ...job,
+                    pmCode: job.code,
+                    criticality,
+                    daysUntilDue,
+                    daysOverdue: Math.max(0, -daysUntilDue),
+                    tier,
+                }, { currentUserId });
 
                 sessionCache[tierKey] = Date.now();
                 notificationCount++;
@@ -571,40 +607,39 @@ export class NotificationService {
     }
 
     /**
-     * Polls for notifications with breached escalation deadlines.
-     * Called periodically from Layout.tsx alongside the regular polling.
-     * Creates escalation-level follow-up notifications for unacknowledged alerts.
-     * 
+     * Sweeps the CURRENT USER's notifications for breached escalation deadlines
+     * and escalates per the originating rule. Called from the live shell's
+     * NotificationCenter poll loop.
+     *
+     * Per-user by design: RLS only lets a session read/update its own rows, so
+     * each recipient's session escalates their own unattended alerts. The
+     * cross-session/browser dedup is server-side — after escalating, the
+     * original row's escalation_level is bumped and its deadline cleared.
+     *
      * **Hierarchy-based escalation:**
-     * - If `escalation_recipient_role` is empty → re-notifies the same recipient
-     * - If `escalation_recipient_role` is `__SUPERVISOR` → looks up the org chart 
-     *   to find the original recipient's supervisor/manager
-     * - If `escalation_recipient_role` is a role code (e.g. 'MAINT_MANAGER') →
-     *   queries all users with that contact_type and notifies them
+     * - `escalation_recipient_role` empty → re-notifies the same recipient
+     * - `__SUPERVISOR` → org-chart supervisor of the original recipient (original in copy)
+     * - role code (e.g. 'MAINT_MANAGER') → all users holding that role, org-walk scoped
      */
-    static async checkEscalations(): Promise<number> {
-        const ESCAL_KEY = 'ers_escalation_cache';
-        const cache: Record<string, number> = JSON.parse(localStorage.getItem(ESCAL_KEY) || '{}');
+    static async checkEscalations(currentUserId?: string): Promise<number> {
+        if (!currentUserId) return 0;
         let escalated = 0;
 
         try {
             const db = DatabaseService.getInstance();
-            // Get all unacknowledged notifications (limit to recent)
-            const notifications = await db.getNotifications('__ALL__', { limit: 50, unreadOnly: true });
+            // My unread notifications — RLS scopes this to rows I own anyway.
+            const notifications = await db.getNotifications(currentUserId, { limit: 50, unreadOnly: true });
 
             const now = Date.now();
 
             for (const notif of notifications) {
-                // Skip if already escalated recently (24h dedup)
-                if (cache[notif.id] && now - cache[notif.id] < 86400000) continue;
-
                 // Check if escalation deadline is set and breached
                 if (!notif.escalationDeadline) continue;
                 const deadline = new Date(notif.escalationDeadline).getTime();
                 if (deadline > now) continue; // not yet breached
 
-                // Skip if already acknowledged
-                if (notif.isAcknowledged) continue;
+                // Skip if already acknowledged or read
+                if (notif.isAcknowledged || notif.isRead) continue;
 
                 // Determine escalation level
                 const newLevel = (notif.escalationLevel || 0) + 1;
@@ -677,10 +712,10 @@ export class NotificationService {
                     }
                 }
 
-                cache[notif.id] = now;
+                // Server-side dedup: bump the level and clear the deadline so no
+                // other session (or later poll) escalates this row again.
+                await db.bumpNotificationEscalation(notif.id, newLevel);
             }
-
-            localStorage.setItem(ESCAL_KEY, JSON.stringify(cache));
         } catch (e) {
             console.error('[NotificationService] Escalation check failed:', e);
         }
@@ -817,11 +852,35 @@ export class NotificationService {
      * - SITE: Find users with roleCode at the same site as the entity
      * - GLOBAL: Find ALL users with roleCode enterprise-wide
      */
+    /**
+     * Case/format-insensitive role match against contacts.roles (text[]):
+     * 'Supervisor' ≡ 'SUPERVISOR', 'Sys Admin' ≡ 'SYS_ADMIN'. Rules seeded at
+     * different times used different casings, and roles live in the array —
+     * there is no contacts.contact_type column.
+     */
+    private static roleMatches(roleCode: string, roles: unknown): boolean {
+        const norm = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const target = norm(roleCode || '');
+        if (!target) return false;
+        return Array.isArray(roles) && roles.some(r => typeof r === 'string' && norm(r) === target);
+    }
+
+    /**
+     * Contact row → notifiable user id. users.contact_id is the reliably-populated
+     * link direction (0190/seeds); contacts.user_id is the legacy one — many real
+     * accounts (e.g. seeded admins) have it null. Null = contact has no login.
+     */
+    private static async contactToUserId(c: { id: string; user_id?: string | null }): Promise<string | null> {
+        if (c.user_id) return c.user_id;
+        const mapped = await this.resolveRecipientUserId(c.id);
+        return mapped !== c.id ? mapped : null;
+    }
+
     private static async resolveRoleRecipientsScoped(
         roleCode: string,
         scope: 'ORG_UNIT' | 'SITE' | 'GLOBAL',
         contextUserId?: string,
-        entitySiteId?: string
+        _entitySiteId?: string
     ): Promise<string[]> {
         try {
             // Shared singleton client (never a second GoTrue instance — avoids token races).
@@ -854,18 +913,17 @@ export class NotificationService {
 
                             if (unitMembers && unitMembers.length > 0) {
                                 const memberContactIds = unitMembers.map((m: any) => m.contact_id);
-                                const { data: roleMatches } = await supabase
+                                const { data: candidates } = await supabase
                                     .from('contacts')
-                                    .select('user_id')
-                                    .in('id', memberContactIds)
-                                    .ilike('contact_type', roleCode);
+                                    .select('id, user_id, roles')
+                                    .in('id', memberContactIds);
 
-                                if (roleMatches && roleMatches.length > 0) {
-                                    const userIds = roleMatches.map((c: any) => c.user_id).filter(Boolean);
-                                    if (userIds.length > 0) {
-                                        console.log(`[SCOPED-ROLE] Found ${userIds.length} ${roleCode} at org depth ${depth}`);
-                                        return userIds;
-                                    }
+                                const matches = (candidates || []).filter((c: any) => this.roleMatches(roleCode, c.roles));
+                                const userIds = (await Promise.all(matches.map((c: any) => this.contactToUserId(c))))
+                                    .filter(Boolean) as string[];
+                                if (userIds.length > 0) {
+                                    console.log(`[SCOPED-ROLE] Found ${userIds.length} ${roleCode} at org depth ${depth}`);
+                                    return userIds;
                                 }
                             }
 
@@ -883,35 +941,51 @@ export class NotificationService {
                 console.warn(`[SCOPED-ROLE] No ${roleCode} found in org tree for user ${contextUserId}, falling back to GLOBAL`);
             }
 
-            // === SITE scope: same site as the entity's asset ===
-            if (scope === 'SITE' && entitySiteId) {
-                // Find contacts with target role at the same site
-                const { data: siteContacts } = await supabase
-                    .from('contacts')
-                    .select('user_id')
-                    .ilike('contact_type', roleCode)
-                    .eq('site_id', entitySiteId);
-
-                if (siteContacts && siteContacts.length > 0) {
-                    const userIds = siteContacts.map((c: any) => c.user_id).filter(Boolean);
-                    if (userIds.length > 0) {
-                        console.log(`[SCOPED-ROLE] Found ${userIds.length} ${roleCode} at site ${entitySiteId}`);
-                        return userIds;
-                    }
-                }
-                console.warn(`[SCOPED-ROLE] No ${roleCode} found at site ${entitySiteId}, falling back to GLOBAL`);
-            }
+            // === SITE scope: contacts carry no site column today, so SITE resolves
+            // like GLOBAL. (The previous implementation queried a nonexistent
+            // contacts.site_id and silently fell through to GLOBAL anyway.)
 
             // === GLOBAL scope (or fallback): all users with the role ===
             const { data: contacts } = await supabase
                 .from('contacts')
-                .select('user_id')
-                .ilike('contact_type', roleCode);
+                .select('id, user_id, roles')
+                .limit(1000);
 
-            if (!contacts) return [];
-            return contacts.map((c: any) => c.user_id).filter(Boolean);
+            const matches = (contacts || []).filter((c: any) => this.roleMatches(roleCode, c.roles));
+            return (await Promise.all(matches.map((c: any) => this.contactToUserId(c))))
+                .filter(Boolean) as string[];
         } catch (e) {
             console.error('[SCOPED-ROLE] Role resolution failed:', e);
+            return [];
+        }
+    }
+
+    /**
+     * Resolves a work centre's crew (0191 work_center_members) to user ids —
+     * the SAP-style route: the asset's responsible work centre owns incoming
+     * requests. leadOnly prefers members flagged LEAD, falling back to the
+     * whole crew when none is. Members without a login are skipped.
+     */
+    private static async resolveWorkCenterRecipients(workCenterId: string, leadOnly: boolean): Promise<string[]> {
+        try {
+            const { data: members } = await supabase
+                .from('work_center_members')
+                .select('contact_id, role')
+                .eq('work_center_id', workCenterId);
+            if (!members || members.length === 0) return [];
+
+            const pick = leadOnly && members.some((m: any) => m.role === 'LEAD')
+                ? members.filter((m: any) => m.role === 'LEAD')
+                : members;
+
+            const { data: contacts } = await supabase
+                .from('contacts')
+                .select('id, user_id')
+                .in('id', pick.map((m: any) => m.contact_id));
+            return (await Promise.all((contacts || []).map((c: any) => this.contactToUserId(c))))
+                .filter(Boolean) as string[];
+        } catch (e) {
+            console.error('[WC-CREW] Work-center recipient resolution failed:', e);
             return [];
         }
     }

@@ -7,6 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, FileText, Wrench, Clock, Save, Loader2, AlertTriangle, Users } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
+import { NotificationService } from '../services/NotificationService';
 import { buildWorkOrder } from '../lib/workOrder';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import { useToast } from '../contexts/ToastContext';
@@ -94,6 +95,12 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                     risk_score: riskFor(priority),
                     created_at: now, updated_at: now,
                 } as any, actor);
+                // Reviewer alerting (rule "WR Submitted for Review")
+                NotificationService.checkRules('requests', 'SR_CREATED', {
+                    ...(req as any),
+                    requestNumber: (req as any)?.request_number,
+                    requesterId: (req as any)?.requester_id,
+                }, { currentUserId: requesterId || actor }).catch(console.warn);
                 if (onCreated) await onCreated('REQUEST', (req as any)?.id ?? null);
                 showToast('Maintenance request raised.', 'success');
                 onClose();

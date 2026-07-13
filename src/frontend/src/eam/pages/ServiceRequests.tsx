@@ -80,17 +80,18 @@ export const ServiceRequests: React.FC = () => {
             }
             await refreshData();
 
-            // Update selected view if open
-            if (selectedRequest && selectedRequest.id === id) {
-                // Re-fetch specific item
-                const all = await db.getRequests(); // Inefficient but safe for migration
-                const updated = all.find(r => r.id === id);
-                if (updated) {
-                    const uiRequest = DataMapper.toUIRequest(updated, assets, users);
+            // Re-fetch the updated item — the rules engine must fire even when
+            // the detail view is closed (requester approve/reject notifications).
+            const all = await db.getRequests(); // Inefficient but safe for migration
+            const updated = all.find(r => r.id === id);
+            if (updated) {
+                const uiRequest = DataMapper.toUIRequest(updated, assets, users);
+                // Update selected view if open
+                if (selectedRequest && selectedRequest.id === id) {
                     setSelectedRequest(uiRequest);
-                    // Trigger Rules Engine
-                    await NotificationService.checkRules('requests', 'SR_STATUS_CHANGE', uiRequest);
                 }
+                // Trigger Rules Engine
+                await NotificationService.checkRules('requests', 'SR_STATUS_CHANGE', uiRequest, { currentUserId: user?.id });
             }
         } catch (e: any) {
             console.error('Action Failed:', e.message);

@@ -1069,10 +1069,27 @@ export const Scheduling: React.FC = () => {
                 onAssign={(contactId, contactName) => {
                     const updated = jobs.map(j => assignTargetIds.has(j.id) ? { ...j, assignedTo: contactId } : j);
                     setJobs(updated);
-                    // Persist each assignment
+                    // Persist each assignment, then notify the assignee (GAP-G parity with MRS drag-drop)
                     const db = DatabaseService.getInstance();
                     assignTargetIds.forEach(woId => {
-                        db.updateWorkOrder(woId, { assigned_to: contactId } as any, 'scheduler').catch(console.error);
+                        db.updateWorkOrder(woId, { assigned_to: contactId } as any, 'scheduler')
+                            .then(() => {
+                                const wo = jobs.find(j => j.id === woId);
+                                return NotificationService.notify({
+                                    recipientId: contactId,
+                                    title: `New Assignment: ${wo?.woNumber || 'WO'}`,
+                                    message: `You have been assigned "${wo?.title || 'Work Order'}".`,
+                                    severity: wo?.priority === 'EMERGENCY' ? 'CRITICAL' : 'INFO',
+                                    notificationType: 'ASSIGNMENT',
+                                    module: 'workOrders',
+                                    entityId: woId,
+                                    entityType: 'WORK_ORDER',
+                                    entityNumber: wo?.woNumber || '',
+                                    actionLink: '/work-orders',
+                                    createdBy: (permissions?.username || 'scheduler') as string,
+                                });
+                            })
+                            .catch(console.error);
                     });
                     showToast(`Assigned ${assignTargetIds.size} job(s) to ${contactName}`, 'success');
                     setAssignModalOpen(false);

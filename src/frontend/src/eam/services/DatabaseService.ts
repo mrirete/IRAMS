@@ -5140,6 +5140,7 @@ export class DatabaseService {
             actionRequired: r.action_required,
             escalationLevel: r.escalation_level,
             escalationDeadline: r.escalation_deadline,
+            escalationRecipientRole: r.escalation_recipient_role,
             isRead: r.is_read,
             isAcknowledged: r.is_acknowledged,
             readAt: r.read_at,
@@ -5170,6 +5171,19 @@ export class DatabaseService {
             read_at: new Date().toISOString(),
         }).eq('id', id);
         if (error) console.error('[DatabaseService] Error marking read:', error);
+    }
+
+    /**
+     * Records that a notification has been escalated: bumps the level and clears
+     * the deadline so no other session or later sweep escalates it again (the
+     * server-side dedup for NotificationService.checkEscalations).
+     */
+    public async bumpNotificationEscalation(id: string, level: number): Promise<void> {
+        const { error } = await supabase.from('notifications').update({
+            escalation_level: level,
+            escalation_deadline: null,
+        }).eq('id', id);
+        if (error) console.error('[DatabaseService] Error bumping escalation:', error);
     }
 
     public async markAllNotificationsRead(userId: string): Promise<void> {

@@ -508,7 +508,13 @@ export const Readings: React.FC = () => {
                         actionRequired: true,
                     }).catch(e => console.warn('[R-4] alarm notification failed:', e));
                     // Keep the CBM rules engine in the loop too (escalation, etc.).
-                    NotificationService.checkRules('readings', 'READING_ALARM', { ...newLog, assetId: def.assetId, definitionName: def.name, readingValue: reading.value }, { currentUserId: profile?.id || 'SYSTEM' });
+                    const ruleEntity = { ...newLog, assetId: def.assetId, definitionName: def.name, readingValue: reading.value, alarmLevel: alarm.level };
+                    NotificationService.checkRules('readings', 'READING_ALARM', ruleEntity, { currentUserId: profile?.id || 'SYSTEM' });
+                    // Critical band breaches additionally fire READING_CRITICAL — the
+                    // fast-escalation rule (15 min) listens on this, not on every breach.
+                    if (alarm.level === 'CRITICAL') {
+                        NotificationService.checkRules('readings', 'READING_CRITICAL', ruleEntity, { currentUserId: profile?.id || 'SYSTEM' });
+                    }
                     breaches.push({ assetId: def.assetId, assetName, defName: def.name, unit: def.unit, value: reading.value as number, level: alarm.level, detail: alarm.detail });
                 }
             } catch (e: any) {

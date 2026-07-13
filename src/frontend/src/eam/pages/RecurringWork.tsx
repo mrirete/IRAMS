@@ -23,6 +23,7 @@ import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { SearchableDropdown } from '../components/ui/SearchableDropdown';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { useAuth } from '../contexts/AuthContext';
 import type { ImportType } from '../services/assetTemplates';
 
 type TabId = 'details' | 'assets' | 'tasks' | 'jsa' | 'labor' | 'inventory' | 'files' | 'history';
@@ -48,6 +49,7 @@ const CONTROL_HIERARCHY = ['Elimination', 'Substitution', 'Engineering', 'Admin'
 
 export const RecurringWork: React.FC = () => {
     const { showToast } = useToast();
+    const { user } = useAuth();
     const [jobs, setJobs] = useState<RecurringJob[]>([]);
     const [selectedJob, setSelectedJob] = useState<RecurringJob | null>(null);
     const [activeTab, setActiveTab] = useState<TabId>('details');
@@ -85,10 +87,10 @@ export const RecurringWork: React.FC = () => {
 
     // PM-Due Notification Trigger — 4-tier escalation (ISO 55000)
     useEffect(() => {
-        if (jobs.length > 0) {
-            NotificationService.triggerPMDueNotifications(jobs, dbAssets.length > 0 ? dbAssets : MOCK_ASSETS, 'current-user').catch(console.error);
+        if (jobs.length > 0 && user?.id) {
+            NotificationService.triggerPMDueNotifications(jobs, dbAssets.length > 0 ? dbAssets : MOCK_ASSETS, user.id).catch(console.error);
         }
-    }, [jobs]);
+    }, [jobs, user?.id]);
 
     const loadDictionaries = async () => {
         try {

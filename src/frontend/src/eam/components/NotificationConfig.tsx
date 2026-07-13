@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { MOCK_NOTIFICATION_RULES, MOCK_DICTIONARIES } from '../constants';
 import { NotificationRule, NotificationSeverity, NotificationChannel, ModuleName, NotificationChannelConfig, MessageTemplate, NotificationLog } from '../types';
+import { NOTIFICATION_EVENTS } from '../lib/notificationEvents';
 import { DatabaseService } from '../services/DatabaseService';
 import { useEffect } from 'react';
 
@@ -210,57 +211,17 @@ export const NotificationConfig: React.FC = () => {
         return Array.from(unique.values()).sort((a: any, b: any) => a.description.localeCompare(b.description));
     }, [dictionaries]);
 
-    // Hardcoded event options per module (fallback when NOTIFICATION_EVENT dictionaries don't exist)
-    const BUILTIN_EVENTS: Record<string, { code: string; description: string }[]> = {
-        workOrders: [
-            { code: 'WO_CREATED', description: 'Work Order Created' },
-            { code: 'WO_ASSIGNED', description: 'Work Order Assigned' },
-            { code: 'WO_STATUS_CHANGE', description: 'Status Changed' },
-            { code: 'WO_COMPLETED', description: 'Work Order Completed' },
-            { code: 'WO_CLOSED', description: 'Work Order Closed' },
-            { code: 'WO_OVERDUE', description: 'Work Order Overdue' },
-            { code: 'WO_CANCELLED', description: 'Work Order Cancelled' },
-            { code: 'WO_PRIORITY_ESCALATED', description: 'Priority Escalated' },
-        ],
-        requests: [
-            { code: 'SR_CREATED', description: 'Service Request Created' },
-            { code: 'SR_APPROVED', description: 'Service Request Approved' },
-            { code: 'SR_REJECTED', description: 'Service Request Rejected' },
-            { code: 'SR_STATUS_CHANGE', description: 'Status Changed' },
-            { code: 'SR_CONVERTED_TO_WO', description: 'Converted to Work Order' },
-        ],
-        inventory: [
-            { code: 'STOCK_LOW', description: 'Stock Below Reorder Point' },
-            { code: 'STOCK_OUT', description: 'Stock Out (Zero Quantity)' },
-            { code: 'STOCK_RECEIVED', description: 'Stock Received' },
-            { code: 'STOCK_ISSUED', description: 'Stock Issued' },
-            { code: 'STOCK_ADJUSTED', description: 'Stock Adjustment Made' },
-        ],
-        pm: [
-            { code: 'PM_DUE', description: 'PM Due for Execution' },
-            { code: 'PM_OVERDUE', description: 'PM Overdue' },
-            { code: 'PM_WO_GENERATED', description: 'WO Generated from PM' },
-            { code: 'PM_COMPLETED', description: 'PM Cycle Completed' },
-        ],
-        readings: [
-            { code: 'READING_ALARM', description: 'Reading Exceeded Alarm Limit' },
-            { code: 'READING_WARNING', description: 'Reading Exceeded Warning Limit' },
-            { code: 'READING_MISSED', description: 'Scheduled Reading Missed' },
-            { code: 'READING_TREND_ANOMALY', description: 'Trend Anomaly Detected' },
-        ],
-        purchasing: [
-            { code: 'PO_CREATED', description: 'Purchase Order Created' },
-            { code: 'PO_APPROVED', description: 'Purchase Order Approved' },
-            { code: 'PO_RECEIVED', description: 'Goods Received' },
-            { code: 'PO_OVERDUE', description: 'Purchase Order Overdue' },
-            { code: 'PO_BUDGET_EXCEEDED', description: 'Budget Threshold Exceeded' },
-        ],
-    };
+    // Canonical event options per module — the registry only lists events the
+    // code actually emits, so a rule can't be configured against a dead event.
+    const BUILTIN_EVENTS = NOTIFICATION_EVENTS;
 
-    // Dynamic events from dictionaries (Admin-configurable), filtered by selected module
-    // Falls back to hardcoded BUILTIN_EVENTS if no dictionary entries exist
+    // Event options = canonical registry (always present, guaranteed emitted)
+    // merged with any NOTIFICATION_EVENT dictionary extensions for the module.
     const eventOptions = useMemo(() => {
         const selectedModule = editingRule?.module;
+        const builtin = selectedModule
+            ? (BUILTIN_EVENTS[selectedModule] || [])
+            : Object.values(BUILTIN_EVENTS).flat();
         const raw = dictionaries.filter(d => {
             if (d.type !== 'NOTIFICATION_EVENT' || d.active === false) return false;
             if (!selectedModule) return true;
@@ -268,22 +229,11 @@ export const NotificationConfig: React.FC = () => {
             return modules.includes(selectedModule);
         });
 
-        // If we have dictionary events, use them
-        if (raw.length > 0) {
-            const unique = new Map();
-            raw.forEach(r => {
-                if (!unique.has(r.code)) unique.set(r.code, r);
-            });
-            return Array.from(unique.values()).sort((a: any, b: any) => a.description.localeCompare(b.description));
-        }
-
-        // Fallback to hardcoded events for the selected module
-        if (selectedModule && BUILTIN_EVENTS[selectedModule]) {
-            return BUILTIN_EVENTS[selectedModule];
-        }
-
-        // If no module selected, return all built-in events
-        return Object.values(BUILTIN_EVENTS).flat();
+        // Registry first (canonical, guaranteed emitted), dictionary extensions on top.
+        const unique = new Map<string, { code: string; description: string }>();
+        builtin.forEach(e => unique.set(e.code, e));
+        raw.forEach((r: any) => { if (!unique.has(r.code)) unique.set(r.code, r); });
+        return Array.from(unique.values()).sort((a: any, b: any) => a.description.localeCompare(b.description));
     }, [dictionaries, editingRule?.module]);
 
     return (
@@ -605,7 +555,7 @@ export const NotificationConfig: React.FC = () => {
                                             {/* Dynamic Recipients */}
                                             <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 mt-2">Dynamic (context-aware)</p>
                                             <div className="flex flex-wrap gap-2 mb-3">
-                                                {['Assignee', 'Requester'].map(dyn => {
+                                                {['Assignee', 'Requester', 'workCenterCrew', 'workCenterSupervisor'].map(dyn => {
                                                     const isChecked = editingRule.recipients?.some(r => r.type === 'DYNAMIC' && r.targetId === dyn);
                                                     return (
                                                         <label key={dyn} className="flex items-center gap-2 bg-white px-3 py-1.5 rounded border border-slate-300 cursor-pointer">
@@ -624,7 +574,7 @@ export const NotificationConfig: React.FC = () => {
                                                                     });
                                                                 }}
                                                             />
-                                                            <span className="text-sm">{dyn === 'Assignee' ? 'Job Assignee' : dyn}</span>
+                                                            <span className="text-sm">{dyn === 'Assignee' ? 'Job Assignee' : dyn === 'workCenterCrew' ? 'Work Centre Crew' : dyn === 'workCenterSupervisor' ? 'Work Centre Lead' : dyn}</span>
                                                         </label>
                                                     );
                                                 })}
@@ -1004,10 +954,9 @@ export const NotificationConfig: React.FC = () => {
                                                 className="w-full p-2 border border-slate-300 rounded text-sm bg-white"
                                             >
                                                 <option value="">Select Event...</option>
-                                                <option value="JOB_ASSIGNED">Job Assigned</option>
-                                                <option value="STATUS_CHANGE">Status Change</option>
-                                                <option value="SLA_BREACH">SLA Breach</option>
-                                                <option value="STOCK_LOW">Stock Low</option>
+                                                {Object.values(NOTIFICATION_EVENTS).flat().map(e => (
+                                                    <option key={e.code} value={e.code}>{e.description}</option>
+                                                ))}
                                             </select>
                                         </div>
                                         <div>

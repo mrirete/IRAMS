@@ -465,6 +465,7 @@ export const ModelsTab: React.FC<{ contact: Contact }> = ({ contact }) => {
 
 // --- QUALIFICATIONS TAB ---
 export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) => {
+    const { user } = useAuth();
     const [quals, setQuals] = useState<Qualification[]>([]);
     const [qualTypes, setQualTypes] = useState<DictionaryEntry[]>([]);
     const [loading, setLoading] = useState(true);
@@ -494,9 +495,10 @@ export const QualificationsTab: React.FC<{ contact: Contact }> = ({ contact }) =
             const qt = dicts.filter((d: DictionaryEntry) => d.type === 'QUALIFICATION_TYPE' && d.active);
             setQualTypes(qt);
 
-            // Trigger expiry notifications
-            if (qualData.length > 0) {
-                NotificationService.triggerQualificationExpiryNotifications(qualData, contact.name).catch(console.error);
+            // Trigger expiry notifications — addressed to the viewing user
+            // (the 'SYSTEM' default is unreadable by anyone but admins)
+            if (qualData.length > 0 && user?.id) {
+                NotificationService.triggerQualificationExpiryNotifications(qualData, contact.name, user.id).catch(console.error);
             }
         } finally { setLoading(false); }
     };

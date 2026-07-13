@@ -1,5 +1,6 @@
 import { offlineQueue } from './offlineQueue';
 import { DatabaseService } from './DatabaseService';
+import { NotificationService } from './NotificationService';
 import { supabase } from '../lib/supabase';
 import { threadLink, type Message, type ThreadType } from './MessagingService';
 import type { ServiceRequestRecord } from '../schema';
@@ -36,6 +37,14 @@ export function initOfflineExecutors() {
     offlineQueue.register('createServiceRequest', async (payload) => {
         const { record, actor } = payload as CreateServiceRequestPayload;
         await DatabaseService.getInstance().createRequest(record, actor);
+        // Reviewer alerting (rule "WR Submitted for Review") — fired here, like
+        // mention fan-out, so an offline-queued request still notifies on replay.
+        NotificationService.checkRules('requests', 'SR_CREATED', {
+            ...record,
+            requestNumber: record.request_number,
+            requesterId: record.requester_id,
+        }, { currentUserId: record.requester_id }).catch(e =>
+            console.warn('[createServiceRequest] SR_CREATED rules failed:', e));
     });
 
     // Field meter/condition readings — operators often log these with no signal.
