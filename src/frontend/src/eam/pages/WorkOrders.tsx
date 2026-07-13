@@ -4232,7 +4232,7 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                         </div>
                     </div>
                     <p className="text-[11px] text-slate-400">
-                        Actuals roll up from time confirmations posted on the Tasks tab (Do-work mode). Rate precedence: per-operation planned rate → work-center activity rate → the confirmation's own rate.
+                        Actuals roll up from time confirmations posted on the Tasks tab (Do-work mode). Each confirmation is valued at its posted rate (person → craft → work centre, snapshotted at posting); the operation's planned/work-centre rate applies only to rows posted without one.
                     </p>
                 </>
             )}
@@ -4781,10 +4781,20 @@ const TaskEditor: React.FC<{
         return entry?.description || roleCode;
     };
 
+    // Labor lines may carry a contact id or a user id (work_order_labor.contact_id
+    // FKs users(id) since 0071) — resolve to the contact record either way.
+    const contactFromAnyId = (id?: string): any => {
+        if (!id) return undefined;
+        const direct = contacts.find((c: any) => c.id === id);
+        if (direct) return direct;
+        const u = availableUsers.find(us => us.id === id);
+        return u ? contacts.find((c: any) => c.id === u.contactId) : undefined;
+    };
+
     // Rate cascade, shared with time confirmations so estimates and actuals are
     // valued on the same basis: person override → role rate → work-centre rate → default.
     const resolveRate = (roleCode: string, contactId?: string): number =>
-        resolveLabourRate({ contactId, roleCode, contacts, dictionaries, workCenterRate: effectiveRate }).rate;
+        resolveLabourRate({ contactId: contactFromAnyId(contactId)?.id, roleCode, contacts, dictionaries, workCenterRate: effectiveRate }).rate;
 
     // Unified Filter Logic:
     // 1. Must have a valid Contact record (Fixes "Ghost Users" / Username mismatch)
@@ -4874,7 +4884,8 @@ const TaskEditor: React.FC<{
             dictionaries,
             workCenterRate: effectiveRate,
         });
-        return { rate, source, roleCode, contactId: confContact?.id as string | undefined };
+        // Post the USER id — work_order_labor.contact_id FKs users(id) (0071).
+        return { rate, source, roleCode, userId: confUser?.id as string | undefined };
     }, [confUserId, availableUsers, contacts, dictionaries, taskLabor, effectiveRate]);
 
     const postTimeConfirmation = async () => {
@@ -4887,7 +4898,7 @@ const TaskEditor: React.FC<{
                 woId: jobContext.id,
                 operationId: task.id,
                 hours: hrs,
-                contactId: confCosting.contactId,
+                contactId: confCosting.userId,
                 contactType: confCosting.roleCode,
                 ratePerHour: confCosting.rate,
                 isFinal: confFinal,
@@ -7059,7 +7070,11 @@ const ResourcesTab: React.FC<{
 
         // 2. From standalone labor records (work_order_labor)
         (job.labor || []).forEach(l => {
-            const c = l.contactId ? contacts.find((co: any) => co.id === l.contactId) : null;
+            // contact_id may hold a contact id (legacy lines) or a user id (confirmations — the column FKs users(id)).
+            const c = l.contactId
+                ? (contacts.find((co: any) => co.id === l.contactId)
+                    || contacts.find((co: any) => co.id === users.find((us: any) => us.id === l.contactId)?.contactId))
+                : null;
             const taskRef = l.jobTaskId ? (job.tasks || []).find(t => t.id === l.jobTaskId) : null;
             const hasRealPerson = !!(l.contactId && c);
             entries.push({

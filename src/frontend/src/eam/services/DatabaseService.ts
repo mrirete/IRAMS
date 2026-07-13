@@ -3924,10 +3924,16 @@ export class DatabaseService {
             if (data) activeIds.push(data.id);
         }
 
-        // 2. Handle Deletions — use ACTUAL DB IDs, not UI IDs
-        const { data: existing } = await supabase.from('work_order_labor').select('id').eq('wo_id', woId);
+        // 2. Handle Deletions — use ACTUAL DB IDs, not UI IDs. Posted time
+        // confirmations (confirmation_no set) are actuals owned by the WM-2c
+        // confirmation flow, not planner resource lines — a resource re-sync from a
+        // session with stale labor state must never delete them.
+        const { data: existing } = await supabase.from('work_order_labor').select('id, confirmation_no').eq('wo_id', woId);
         if (existing) {
-            const toDelete = existing.map((r: any) => r.id).filter(id => !activeIds.includes(id));
+            const toDelete = existing
+                .filter((r: any) => r.confirmation_no == null)
+                .map((r: any) => r.id)
+                .filter(id => !activeIds.includes(id));
             if (toDelete.length > 0) {
                 await supabase.from('work_order_labor').delete().in('id', toDelete);
             }
@@ -3994,8 +4000,12 @@ export class DatabaseService {
             let hours = 0, cost = 0;
             for (const l of labour.filter((x: any) => x.job_task_id === task.id)) {
                 const h = Number(l.hours_worked) || 0;
-                // Rate precedence: operation planned rate → work-center rate → the confirmation's own rate.
-                const rate = plannedRate ?? wcRate ?? (Number(l.rate_per_hour) || 0);
+                // Rate precedence: the row's own posted rate first — it's the snapshot
+                // resolved at posting time (person → craft → work centre) and must not be
+                // re-valued at the blended work-centre rate. Op/WC rates are fallbacks
+                // for legacy rows posted without one.
+                const posted = Number(l.rate_per_hour) || 0;
+                const rate = posted > 0 ? posted : (plannedRate ?? wcRate ?? 0);
                 hours += h;
                 cost += h * rate;
             }
@@ -4060,7 +4070,7 @@ export class DatabaseService {
         hours: number;
         contactId?: string;
         contactType?: string;
-        ratePerHour?: number;     // fallback rate when the operation/work-center has none
+        ratePerHour?: number;     // resolved rate snapshot (person → craft → work centre) valid at posting time
         dateWorked?: string;      // ISO date; defaults to today
         isFinal?: boolean;
         remainingHours?: number;
