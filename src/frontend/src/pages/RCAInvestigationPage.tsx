@@ -7,6 +7,7 @@ import {
     Plus, Trash2, Users, ClipboardList, Clock, Flag, Bot,
     Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check
 } from 'lucide-react';
+import { Drawer, Button, Field, Input, Select, Textarea } from '../eam/components/ui';
 import RCAStepGuide from '../components/analyze/RCAStepGuide';
 import { getStepCompletion } from '../components/analyze/RCAStepIndicator';
 import { friendlyAIError } from '../eam/lib/aiError';
@@ -604,10 +605,14 @@ export function RCAInvestigationPage() {
             title: newEvTitle.trim(), content: newEvContent || null,
             linked_entity_id: null, event_timestamp: null, uploaded_by: null,
         });
-        if (ev) { setEvidence(e => [...e, ev]); setNewEvTitle(''); setNewEvContent(''); }
+        if (ev) { setEvidence(e => [...e, ev]); setNewEvTitle(''); setNewEvContent(''); setAddEvidenceOpen(false); }
     };
 
     // ── Corrective Action management ─────────────────────────
+    // Add-forms live in sheets, not stacked open at the bottom of each step.
+    const [addEvidenceOpen, setAddEvidenceOpen] = useState(false);
+    const [addActionOpen, setAddActionOpen] = useState(false);
+
     const [newActionDesc, setNewActionDesc] = useState('');
     const [newActionType, setNewActionType] = useState<string>('short_term');
     const [newActionCategory, setNewActionCategory] = useState<string>('physical');
@@ -627,7 +632,11 @@ export function RCAInvestigationPage() {
             completion_notes: null, risk_of_not_acting: null,
             work_order_id: null,
         });
-        if (act) { setActions(a => [...a, act]); setNewActionDesc(''); }
+        if (act) {
+            setActions(a => [...a, act]);
+            setNewActionDesc(''); setNewActionAssignee(''); setNewActionDue('');
+            setAddActionOpen(false);
+        }
     };
 
     // ── Barrier management ───────────────────────────────────
@@ -1134,52 +1143,22 @@ export function RCAInvestigationPage() {
                                     </div>
                                 ))}
                                 {evidence.length === 0 && (
-                                    <div className="py-8 text-center text-slate-400 font-medium text-xs">No evidence records logged. Add some below.</div>
+                                    <div className="py-8 text-center text-slate-400 font-medium text-xs">
+                                        Nothing collected yet. Start with the failure scene, the work-order history,
+                                        and what the operators saw.
+                                    </div>
                                 )}
                             </div>
 
-                            <div className="flex flex-col md:flex-row gap-3 mt-5 items-stretch md:items-end border-t border-slate-100 pt-4">
-                                <div className="w-full md:w-40 shrink-0">
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Evidence Type</label>
-                                    <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
-                                        value={newEvType} 
-                                        onChange={e => setNewEvType(e.target.value)}
-                                    >
-                                        <option value="note">Note</option>
-                                        <option value="photo">Photo</option>
-                                        <option value="document">Document</option>
-                                        <option value="work_order">Work Order</option>
-                                        <option value="fmea">FMEA</option>
-                                        <option value="sensor_data">Sensor Data</option>
-                                        <option value="timeline_event">Timeline Event</option>
-                                    </select>
-                                </div>
-                                <div className="flex-1">
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Evidence Title</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
-                                        placeholder="Title / Reference Tag" 
-                                        value={newEvTitle} 
-                                        onChange={e => setNewEvTitle(e.target.value)} 
-                                    />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Content / Attachment details</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
-                                        placeholder="Content / URL / Note Details" 
-                                        value={newEvContent} 
-                                        onChange={e => setNewEvContent(e.target.value)} 
-                                    />
-                                </div>
-                                <button 
-                                    className="bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs md:h-[38px] shrink-0"
-                                    onClick={addEvidence}
-                                >
-                                    <Plus size={14} strokeWidth={2.5} /> Add
-                                </button>
-                            </div>
+                            {/* The add-form used to sit open at the bottom of the step: a 3-field row
+                                that stacked into a full column on mobile, so you scrolled past every
+                                record you already had to reach it. It's a sheet now. */}
+                            <button
+                                onClick={() => setAddEvidenceOpen(true)}
+                                className="mt-4 w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-dashed border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50 font-bold text-xs transition-colors"
+                            >
+                                <Plus size={14} strokeWidth={2.5} /> Add evidence
+                            </button>
                         </div>
 
                         {/* Photo Evidence Gallery */}
@@ -1588,68 +1567,19 @@ export function RCAInvestigationPage() {
                                 );
                             })}
                             {actions.length === 0 && (
-                                <div className="py-8 text-center text-slate-400 font-medium text-xs">No recommendations recorded. Add corrective actions below.</div>
+                                <div className="py-8 text-center text-slate-400 font-medium text-xs">
+                                    No corrective actions yet. Each root cause you identified should have one.
+                                </div>
                             )}
 
-                            <div className="flex flex-col lg:flex-row gap-3 mt-5 items-stretch lg:items-end border-t border-slate-100 pt-4">
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 flex-1 lg:flex-[2]">
-                                    <div>
-                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Target Cause Category</label>
-                                        <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
-                                            value={newActionCategory} 
-                                            onChange={e => setNewActionCategory(e.target.value)}
-                                        >
-                                            {CAUSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Action Horizon</label>
-                                        <select 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm cursor-pointer"
-                                            value={newActionType} 
-                                            onChange={e => setNewActionType(e.target.value)}
-                                        >
-                                            <option value="immediate">Immediate</option>
-                                            <option value="short_term">Short-term</option>
-                                            <option value="long_term">Long-term</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Assignee</label>
-                                        <input 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
-                                            placeholder="Assignee Name" 
-                                            value={newActionAssignee} 
-                                            onChange={e => setNewActionAssignee(e.target.value)} 
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Due Date</label>
-                                        <input 
-                                            className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
-                                            type="date" 
-                                            value={newActionDue} 
-                                            onChange={e => setNewActionDue(e.target.value)} 
-                                        />
-                                    </div>
-                                </div>
-                                <div className="flex-1 lg:flex-[2]">
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Action Recommendation Details</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-blue-500 transition-all shadow-sm"
-                                        placeholder="e.g. Conduct MoC to replace seal grade to Viton Extreme-90" 
-                                        value={newActionDesc} 
-                                        onChange={e => setNewActionDesc(e.target.value)} 
-                                    />
-                                </div>
-                                <button 
-                                    className="bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 font-bold px-4 py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-xs lg:h-[38px] shrink-0"
-                                    onClick={addAction}
-                                >
-                                    <Plus size={14} strokeWidth={2.5} /> Add
-                                </button>
-                            </div>
+                            {/* Was a 6-field row inline: on a phone it stacked into a column you had
+                                to scroll the whole action list to reach. Sheet. */}
+                            <button
+                                onClick={() => setAddActionOpen(true)}
+                                className="mt-4 w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-dashed border-blue-200 text-blue-700 bg-blue-50/50 hover:bg-blue-50 font-bold text-xs transition-colors"
+                            >
+                                <Plus size={14} strokeWidth={2.5} /> Add corrective action
+                            </button>
                         </div>
                     </div>
                 )}
@@ -2019,6 +1949,103 @@ export function RCAInvestigationPage() {
                     )}
                 </div>
             </div>
+
+            {/* ── Add evidence (step 2) ───────────────────────────────────────── */}
+            <Drawer
+                open={addEvidenceOpen}
+                onClose={() => setAddEvidenceOpen(false)}
+                title="Add evidence"
+                subtitle="What you found, and where it came from"
+                width="md"
+                footer={
+                    <div className="flex gap-2">
+                        <Button variant="secondary" className="flex-1" onClick={() => setAddEvidenceOpen(false)}>Cancel</Button>
+                        <Button className="flex-1" onClick={addEvidence} disabled={!newEvTitle.trim()}>Add evidence</Button>
+                    </div>
+                }
+            >
+                <div className="p-4 space-y-4">
+                    <Field label="Evidence type">
+                        <Select value={newEvType} onChange={e => setNewEvType(e.target.value)}>
+                            <option value="note">Note</option>
+                            <option value="photo">Photo</option>
+                            <option value="document">Document</option>
+                            <option value="work_order">Work Order</option>
+                            <option value="fmea">FMEA</option>
+                            <option value="sensor_data">Sensor Data</option>
+                            <option value="timeline_event">Timeline Event</option>
+                        </Select>
+                    </Field>
+                    <Field label="Title">
+                        <Input
+                            placeholder="Title / reference tag"
+                            value={newEvTitle}
+                            onChange={e => setNewEvTitle(e.target.value)}
+                            autoFocus
+                        />
+                    </Field>
+                    <Field label="Details" hint="Content, URL, or a note about what this shows">
+                        <Textarea
+                            rows={4}
+                            placeholder="e.g. Seal face scored circumferentially; photo taken before disassembly"
+                            value={newEvContent}
+                            onChange={e => setNewEvContent(e.target.value)}
+                        />
+                    </Field>
+                </div>
+            </Drawer>
+
+            {/* ── Add corrective action (step 4) ──────────────────────────────── */}
+            <Drawer
+                open={addActionOpen}
+                onClose={() => setAddActionOpen(false)}
+                title="Add corrective action"
+                subtitle="What will be done, by whom, by when"
+                width="md"
+                footer={
+                    <div className="flex gap-2">
+                        <Button variant="secondary" className="flex-1" onClick={() => setAddActionOpen(false)}>Cancel</Button>
+                        <Button className="flex-1" onClick={addAction} disabled={!newActionDesc.trim()}>Add action</Button>
+                    </div>
+                }
+            >
+                <div className="p-4 space-y-4">
+                    <Field label="Action" hint="Be concrete — what exactly will change?">
+                        <Textarea
+                            rows={3}
+                            placeholder="e.g. Raise MoC to change seal grade to Viton Extreme-90"
+                            value={newActionDesc}
+                            onChange={e => setNewActionDesc(e.target.value)}
+                            autoFocus
+                        />
+                    </Field>
+                    <Field label="Targets which cause layer?" hint="The physical cause is never the root — actions against latent causes are the ones that stop recurrence.">
+                        <Select value={newActionCategory} onChange={e => setNewActionCategory(e.target.value)}>
+                            {CAUSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                        </Select>
+                    </Field>
+                    <div className="grid grid-cols-2 gap-3">
+                        <Field label="Horizon">
+                            <Select value={newActionType} onChange={e => setNewActionType(e.target.value)}>
+                                <option value="immediate">Immediate</option>
+                                <option value="short_term">Short-term</option>
+                                <option value="long_term">Long-term</option>
+                            </Select>
+                        </Field>
+                        <Field label="Due date">
+                            <Input type="date" value={newActionDue} onChange={e => setNewActionDue(e.target.value)} />
+                        </Field>
+                    </div>
+                    <Field label="Assignee" hint="An action with no owner is a wish.">
+                        <Input
+                            placeholder="Who owns this?"
+                            value={newActionAssignee}
+                            onChange={e => setNewActionAssignee(e.target.value)}
+                        />
+                    </Field>
+                </div>
+            </Drawer>
+
             {showTeamPanel && (
                 <TeamPanel
                     collaborators={rcaCollaborators}
