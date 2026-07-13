@@ -108,6 +108,9 @@ interface FiveWhySectionProps {
     };
     nodes: RCANode[];
     setNodes: React.Dispatch<React.SetStateAction<RCANode[]>>;
+    /** Take the user to the method gate. The escalation hint below told them to switch
+     *  method and then gave them no way to do it — the gate is far up the page. */
+    onEscalate?: () => void;
 }
 
 // ── Component ─────────────────────────────────────────────────
@@ -115,6 +118,7 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
     selectedRca,
     nodes,
     setNodes,
+    onEscalate,
 }) => {
     // Local editing / input state
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -314,6 +318,18 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
                             for multi-category analysis, or a <strong>Fault Tree Analysis</strong> for complex systems with redundancy.
                         </div>
                     </div>
+                    {onEscalate && (
+                        <button
+                            onClick={onEscalate}
+                            style={{
+                                flexShrink: 0, padding: '6px 12px', borderRadius: 8,
+                                background: '#fff', border: '1px solid #fbbf24', cursor: 'pointer',
+                                fontSize: 11, fontWeight: 700, color: '#92400e',
+                            }}
+                        >
+                            Change method
+                        </button>
+                    )}
                 </div>
             )}
         </div>

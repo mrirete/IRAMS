@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAssetContext } from '../contexts/AssetContext';
 import {
     ArrowLeft, CheckCircle2, Circle, Lock, ChevronRight, ChevronLeft, ChevronDown,
     AlertTriangle, FileText, Search, Shield, Wrench, BarChart3,
     Plus, Trash2, Users, ClipboardList, Clock, Flag, Bot,
-    Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check
+    Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check, MoreHorizontal
 } from 'lucide-react';
 import { Drawer, Button, Field, Input, Select, Textarea } from '../eam/components/ui';
 import RCAStepGuide from '../components/analyze/RCAStepGuide';
@@ -613,6 +613,21 @@ export function RCAInvestigationPage() {
     const [addEvidenceOpen, setAddEvidenceOpen] = useState(false);
     const [addActionOpen, setAddActionOpen] = useState(false);
 
+    // Scroll target for "Change method" — the 5-Why escalation hint sits far below the gate.
+    const methodGateRef = useRef<HTMLDivElement>(null);
+
+    // Header overflow menu (team / DE task / report)
+    const [invMenuOpen, setInvMenuOpen] = useState(false);
+    const invMenuRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!invMenuOpen) return;
+        const onDown = (e: MouseEvent) => {
+            if (invMenuRef.current && !invMenuRef.current.contains(e.target as Node)) setInvMenuOpen(false);
+        };
+        document.addEventListener('mousedown', onDown);
+        return () => document.removeEventListener('mousedown', onDown);
+    }, [invMenuOpen]);
+
     const [newActionDesc, setNewActionDesc] = useState('');
     const [newActionType, setNewActionType] = useState<string>('short_term');
     const [newActionCategory, setNewActionCategory] = useState<string>('physical');
@@ -749,23 +764,50 @@ export function RCAInvestigationPage() {
                     </div>
 
                     <div className="flex items-center gap-2.5 flex-wrap">
+                        {/* Invite Team / Create DE Task / Report behind ⋯ — Save is the only
+                            thing on this screen you press often, so it's the only button. */}
                         {!isNew && (
                             <>
                                 {rcaCollaborators.length > 0 && (
                                     <AvatarStack collaborators={rcaCollaborators} max={3} size="md" />
                                 )}
-                                <button
-                                    onClick={() => setShowTeamPanel(true)}
-                                    className="px-3.5 py-2 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                                >
-                                    <Users size={14} strokeWidth={2.5} /> {rcaCollaborators.length > 0 ? `Team (${rcaCollaborators.length})` : 'Invite Team'}
-                                </button>
-                                <button
-                                    onClick={openDEModal}
-                                    className="px-3.5 py-2 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                                >
-                                    <Target size={14} strokeWidth={2.5} /> Create DE Task
-                                </button>
+                                <div className="relative" ref={invMenuRef}>
+                                    <button
+                                        onClick={() => setInvMenuOpen(o => !o)}
+                                        className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                                        aria-label="More actions"
+                                        aria-expanded={invMenuOpen}
+                                    >
+                                        <MoreHorizontal size={18} />
+                                    </button>
+                                    {invMenuOpen && (
+                                        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden py-1">
+                                            <button
+                                                onClick={() => { setInvMenuOpen(false); setShowTeamPanel(true); }}
+                                                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
+                                            >
+                                                <Users size={15} className="text-slate-400 shrink-0" />
+                                                {rcaCollaborators.length > 0 ? `Team (${rcaCollaborators.length})` : 'Invite team'}
+                                            </button>
+                                            <button
+                                                onClick={() => { setInvMenuOpen(false); openDEModal(); }}
+                                                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
+                                            >
+                                                <Target size={15} className="text-slate-400 shrink-0" />
+                                                Create DE task
+                                            </button>
+                                            {/* The printable ISO report has always existed at this route.
+                                                Nothing in the UI linked to it. */}
+                                            <button
+                                                onClick={() => { setInvMenuOpen(false); navigate(`/analyze/rca/${inv?.id}/report`); }}
+                                                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
+                                            >
+                                                <FileText size={15} className="text-slate-400 shrink-0" />
+                                                View RCA report
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             </>
                         )}
                         <button 
@@ -1187,6 +1229,7 @@ export function RCAInvestigationPage() {
                             This used to be a free-browse toolbox: four buttons that each swapped
                             the editor without touching the nodes the previous one had written, so
                             the tools silently re-interpreted each other's work. */}
+                        <div ref={methodGateRef} className="scroll-mt-4">
                         <RCAMethodGate
                             investigation={inv}
                             nodes={nodes}
@@ -1203,6 +1246,7 @@ export function RCAInvestigationPage() {
                                 </button>
                             }
                         />
+                        </div>
 
                         {/* AI advisor output — advisory only; "Apply" pre-selects the gate,
                             it does not commit the method on the user's behalf. */}
@@ -1275,6 +1319,7 @@ export function RCAInvestigationPage() {
                                 }}
                                 nodes={scopedNodes}
                                 setNodes={setNodes}
+                                onEscalate={() => methodGateRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
                             />
                         )}
 
@@ -1719,7 +1764,37 @@ export function RCAInvestigationPage() {
                                     </select>
                                 </div>
                             </div>
-                            
+
+                            {/* "New RCA Required" used to be a dead end: the status said so and then
+                                left you to go and build it yourself. Close the loop — the follow-up
+                                opens pre-seeded with this investigation's asset and history. */}
+                            {inv.effectiveness_status === 'recurred' && (
+                                <div className="flex flex-col sm:flex-row sm:items-center gap-3 p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                                    <AlertTriangle size={18} className="text-amber-600 shrink-0" />
+                                    <p className="flex-1 text-xs text-amber-900 leading-relaxed">
+                                        The fix did not hold. A recurrence means the real root was never
+                                        reached — the follow-up should start from what this one missed.
+                                    </p>
+                                    <Button
+                                        className="shrink-0"
+                                        onClick={() => navigate('/analyze/rca/new', {
+                                            state: {
+                                                title: `RCA: recurrence of "${inv.title}"`,
+                                                asset_id: inv.asset_id || '',
+                                                description:
+                                                    `Recurrence following investigation "${inv.title}".\n\n` +
+                                                    `Previous root cause: ${inv.root_cause_summary || '(not recorded)'}\n\n` +
+                                                    `The corrective actions from that investigation did not prevent re-failure — ` +
+                                                    `treat the previous root cause as a symptom and carry the analysis further ` +
+                                                    `(physical → human → latent).`,
+                                            },
+                                        })}
+                                    >
+                                        Start follow-up RCA
+                                    </Button>
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Root Cause Summary (Final Engineering Sign-off)</label>
                                 <textarea 
