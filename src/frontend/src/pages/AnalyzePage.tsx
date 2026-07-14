@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import {
     Target, GitMerge, Cpu,
-    Plus, Download, X, ArrowRight, MoreHorizontal,
+    Plus, Download, X, ArrowRight, ArrowLeft, MoreHorizontal,
 } from 'lucide-react';
 import { useIntelligence } from '../hooks/useIntelligence';
 import { supabase } from '../eam/lib/supabase';
@@ -692,7 +692,17 @@ export const AnalyzePage: React.FC = () => {
             <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
                     <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 shrink-0" />
-                    <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight truncate">Analyze</h1>
+                    <div className="min-w-0">
+                        {/* Way back up to the Reliability tier — Analyze is a step in the loop
+                            (Measure → Diagnose → Model → Decide), not a destination. */}
+                        <button
+                            onClick={() => navigate('/reliability')}
+                            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-700 transition-colors -mt-0.5"
+                        >
+                            <ArrowLeft size={12} strokeWidth={2.5} /> Reliability
+                        </button>
+                        <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight truncate leading-tight">Analyze</h1>
+                    </div>
                 </div>
 
                 <div className="relative shrink-0" ref={pageMenuRef}>

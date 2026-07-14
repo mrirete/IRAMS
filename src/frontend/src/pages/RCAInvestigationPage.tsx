@@ -5,8 +5,10 @@ import {
     ArrowLeft, CheckCircle2, Circle, Lock, ChevronRight, ChevronLeft, ChevronDown,
     AlertTriangle, FileText, Search, Shield, Wrench, BarChart3,
     Plus, Trash2, Users, ClipboardList, Clock, Flag, Bot,
-    Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check, MoreHorizontal
+    Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check, MoreHorizontal,
+    Maximize2, Minimize2
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { Drawer, Button, Field, Input, Select, Textarea } from '../eam/components/ui';
 import RCAStepGuide from '../components/analyze/RCAStepGuide';
 import { getStepCompletion } from '../components/analyze/RCAStepIndicator';
@@ -616,6 +618,21 @@ export function RCAInvestigationPage() {
     // Scroll target for "Change method" — the 5-Why escalation hint sits far below the gate.
     const methodGateRef = useRef<HTMLDivElement>(null);
 
+    // The cause tool opens as a full-screen workspace (all four methods).
+    const [causeFullscreen, setCauseFullscreen] = useState(false);
+    // Esc closes it; and don't let the page behind scroll while it's open.
+    useEffect(() => {
+        if (!causeFullscreen) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCauseFullscreen(false); };
+        document.addEventListener('keydown', onKey);
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.removeEventListener('keydown', onKey);
+            document.body.style.overflow = prevOverflow;
+        };
+    }, [causeFullscreen]);
+
     // Header overflow menu (team / DE task / report)
     const [invMenuOpen, setInvMenuOpen] = useState(false);
     const invMenuRef = useRef<HTMLDivElement>(null);
@@ -740,8 +757,11 @@ export function RCAInvestigationPage() {
             )}
             <div className="max-w-7xl mx-auto space-y-6">
                 
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200/80 pb-5">
+                {/* Header — sticks to the top. An RCA is a team exercise and the page is long;
+                    Invite has to be reachable from wherever you are in it, not just from the
+                    top of a six-step scroll. */}
+                <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 md:-mx-8 px-4 sm:px-6 md:px-8 pt-1 pb-4 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/80
+                                flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="flex flex-col gap-2">
                         <button 
                             className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors w-fit cursor-pointer"
@@ -764,14 +784,22 @@ export function RCAInvestigationPage() {
                     </div>
 
                     <div className="flex items-center gap-2.5 flex-wrap">
-                        {/* Invite Team / Create DE Task / Report behind ⋯ — Save is the only
-                            thing on this screen you press often, so it's the only button. */}
+                        {/* Invite stays a first-class button — an RCA is collaborative, and burying
+                            "get the people who were there into this" behind ⋯ was a mistake.
+                            DE task and Report stay in the menu: you do those once, at the end. */}
                         {!isNew && (
                             <>
                                 {rcaCollaborators.length > 0 && (
                                     <AvatarStack collaborators={rcaCollaborators} max={3} size="md" />
                                 )}
-                                <div className="relative" ref={invMenuRef}>
+                                <button
+                                    onClick={() => setShowTeamPanel(true)}
+                                    className="px-3.5 py-2 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg flex items-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0"
+                                >
+                                    <Users size={14} strokeWidth={2.5} />
+                                    {rcaCollaborators.length > 0 ? `Team (${rcaCollaborators.length})` : 'Invite'}
+                                </button>
+                                <div className="relative shrink-0" ref={invMenuRef}>
                                     <button
                                         onClick={() => setInvMenuOpen(o => !o)}
                                         className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
@@ -782,13 +810,6 @@ export function RCAInvestigationPage() {
                                     </button>
                                     {invMenuOpen && (
                                         <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden py-1">
-                                            <button
-                                                onClick={() => { setInvMenuOpen(false); setShowTeamPanel(true); }}
-                                                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
-                                            >
-                                                <Users size={15} className="text-slate-400 shrink-0" />
-                                                {rcaCollaborators.length > 0 ? `Team (${rcaCollaborators.length})` : 'Invite team'}
-                                            </button>
                                             <button
                                                 onClick={() => { setInvMenuOpen(false); openDEModal(); }}
                                                 className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
@@ -1306,32 +1327,70 @@ export function RCAInvestigationPage() {
                             </div>
                         )}
 
-                        {/* ── The one editor for the committed method ──────────
-                            Nodes are scoped: each tool sees only the nodes its own method
-                            authored. Without this, a fishbone's six 6M category rows render
-                            as fault-tree intermediate gate events and as phantom WHY steps. */}
-                        {methodCommitted && inv.method === 'five_why' && (
-                            <FiveWhySection
-                                selectedRca={{
-                                    id: inv.id,
-                                    method: inv.method,
-                                    root_cause_summary: inv.root_cause_summary,
-                                }}
-                                nodes={scopedNodes}
-                                setNodes={setNodes}
-                                onEscalate={() => methodGateRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                            />
-                        )}
+                        {/* ── Cause analysis ──────────────────────────────────────────────
+                            The four tools (5-Why, Fishbone, Fault Tree, Logic Tree) are diagrams:
+                            they want the whole screen, not a column squeezed between a stepper and
+                            a nav bar. Step 3 rests as a summary of what you've found; the tool
+                            opens as a full-screen workspace. */}
+                        {methodCommitted && VISUAL_DIAGRAM_METHODS.includes(inv.method || '') && (
+                            <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
+                                <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3.5 mb-4">
+                                    <div className="text-sm sm:text-base font-extrabold text-slate-900 flex items-center gap-2 min-w-0">
+                                        <Search className="w-4 h-4 text-blue-600 shrink-0" />
+                                        <span className="truncate">Cause analysis</span>
+                                        <span
+                                            className="text-[10px] font-extrabold px-2 py-0.5 rounded-md border shrink-0"
+                                            style={{
+                                                background: `${rcaMethodColor(inv.method)}14`,
+                                                color: rcaMethodColor(inv.method),
+                                                borderColor: `${rcaMethodColor(inv.method)}40`,
+                                            }}
+                                        >
+                                            {rcaMethodLabel(inv.method)}
+                                        </span>
+                                    </div>
+                                    <Button onClick={() => setCauseFullscreen(true)} className="shrink-0">
+                                        <Maximize2 size={14} strokeWidth={2.5} />
+                                        <span className="hidden sm:inline">Open workspace</span>
+                                        <span className="sm:hidden">Open</span>
+                                    </Button>
+                                </div>
 
-                        {methodCommitted && (inv.method === 'fishbone' || inv.method === 'fault_tree' || inv.method === 'logic_tree') && (
-                            <CauseAnalysisSection
-                                method={inv.method}
-                                investigationId={inv.id}
-                                problemStatement={inv.problem_statement || draft.problem_statement || ''}
-                                nodes={scopedNodes}
-                                setNodes={setNodes}
-                                saving={saving}
-                            />
+                                {/* Summary of what the tool has recorded so far */}
+                                {scopedNodes.filter(n => n.node_type !== 'problem' && n.node_type !== 'category').length === 0 ? (
+                                    <button
+                                        onClick={() => setCauseFullscreen(true)}
+                                        className="w-full py-8 text-center text-slate-400 hover:text-blue-600 font-medium text-xs transition-colors"
+                                    >
+                                        No causes recorded yet — open the {rcaMethodLabel(inv.method)} workspace to start.
+                                    </button>
+                                ) : (
+                                    <div className="space-y-1.5">
+                                        {scopedNodes
+                                            .filter(n => n.node_type !== 'problem' && n.node_type !== 'category')
+                                            .map(n => (
+                                                <div
+                                                    key={n.id}
+                                                    className={`flex items-start gap-2 p-2.5 rounded-lg border text-sm ${
+                                                        n.is_root_cause || n.node_type === 'root_cause'
+                                                            ? 'bg-rose-50 border-rose-200 text-rose-900 font-semibold'
+                                                            : 'bg-slate-50 border-slate-200 text-slate-700'
+                                                    }`}
+                                                >
+                                                    {(n.is_root_cause || n.node_type === 'root_cause')
+                                                        ? <Target size={14} className="text-rose-500 mt-0.5 shrink-0" />
+                                                        : <Circle size={8} className="text-slate-300 mt-1.5 shrink-0" />}
+                                                    <span className="min-w-0">{n.description}</span>
+                                                    {(n.is_root_cause || n.node_type === 'root_cause') && (
+                                                        <span className="ml-auto text-[9px] font-extrabold uppercase tracking-wider text-rose-500 shrink-0">
+                                                            Root cause
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ))}
+                                    </div>
+                                )}
+                            </div>
                         )}
 
                         {/* Cause Tree (flat list) — only for legacy records on a method with no
@@ -2024,6 +2083,67 @@ export function RCAInvestigationPage() {
                     )}
                 </div>
             </div>
+
+            {/* ══ CAUSE WORKSPACE — full screen ═══════════════════════════════════
+                Every RCA tool is a diagram, and a diagram needs room. Fishbone alone wants
+                ~980px of layout; inside the step column on a phone it was unusable. Here it
+                gets the whole viewport, with the page's own chrome out of the way. */}
+            {causeFullscreen && inv && methodCommitted && createPortal(
+                <div className="fixed inset-0 z-[80] bg-slate-50 flex flex-col">
+                    <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-white border-b border-slate-200 shrink-0">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                            <span
+                                className="text-[10px] font-extrabold px-2 py-1 rounded-md border shrink-0"
+                                style={{
+                                    background: `${rcaMethodColor(inv.method)}14`,
+                                    color: rcaMethodColor(inv.method),
+                                    borderColor: `${rcaMethodColor(inv.method)}40`,
+                                }}
+                            >
+                                {rcaMethodLabel(inv.method)}
+                            </span>
+                            <div className="min-w-0">
+                                <div className="text-sm font-bold text-slate-800 truncate">{inv.title}</div>
+                                <div className="text-[11px] text-slate-400 truncate hidden sm:block">
+                                    {inv.problem_statement || 'Cause analysis'}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            {/* Everything in here saves as you go — this button is just "I'm done looking". */}
+                            <Button variant="secondary" onClick={() => setCauseFullscreen(false)}>
+                                <Minimize2 size={14} strokeWidth={2.5} />
+                                <span className="hidden sm:inline">Done</span>
+                            </Button>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-3 sm:p-5">
+                        {inv.method === 'five_why' && (
+                            <FiveWhySection
+                                selectedRca={{ id: inv.id, method: inv.method, root_cause_summary: inv.root_cause_summary }}
+                                nodes={scopedNodes}
+                                setNodes={setNodes}
+                                onEscalate={() => {
+                                    setCauseFullscreen(false);
+                                    setTimeout(() => methodGateRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+                                }}
+                            />
+                        )}
+                        {(inv.method === 'fishbone' || inv.method === 'fault_tree' || inv.method === 'logic_tree') && (
+                            <CauseAnalysisSection
+                                method={inv.method}
+                                investigationId={inv.id}
+                                problemStatement={inv.problem_statement || draft.problem_statement || ''}
+                                nodes={scopedNodes}
+                                setNodes={setNodes}
+                                saving={saving}
+                            />
+                        )}
+                    </div>
+                </div>,
+                document.body,
+            )}
 
             {/* ── Add evidence (step 2) ───────────────────────────────────────── */}
             <Drawer
