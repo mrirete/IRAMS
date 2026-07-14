@@ -763,12 +763,24 @@ export function RCAInvestigationPage() {
                 <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 md:-mx-8 px-4 sm:px-6 md:px-8 pt-1 pb-4 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/80
                                 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="flex flex-col gap-2">
-                        <button 
-                            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors w-fit cursor-pointer"
-                            onClick={() => navigate('/analyze')}
-                        >
-                            <ArrowLeft size={14} strokeWidth={2.5} /> Back to Analyze
-                        </button>
+                        {/* Breadcrumb, not a single back-step: an investigation is two levels
+                            deep, so the main menu (Reliability) has to be one click away — not
+                            a back-button chain the user has to discover. */}
+                        <nav className="flex items-center gap-1.5 text-xs font-bold w-fit" aria-label="Breadcrumb">
+                            <button
+                                className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                                onClick={() => navigate('/reliability')}
+                            >
+                                <ArrowLeft size={14} strokeWidth={2.5} /> Reliability
+                            </button>
+                            <span className="text-slate-300">/</span>
+                            <button
+                                className="text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
+                                onClick={() => navigate('/analyze')}
+                            >
+                                Analyze
+                            </button>
+                        </nav>
                         <div className="flex items-center gap-3 flex-wrap">
                             <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
                                 {isNew ? 'New RCA Investigation' : (inv?.title || 'Investigation')}

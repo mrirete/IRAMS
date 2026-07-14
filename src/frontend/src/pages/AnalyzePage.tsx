@@ -694,12 +694,14 @@ export const AnalyzePage: React.FC = () => {
                     <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-blue-500 to-blue-600 shrink-0" />
                     <div className="min-w-0">
                         {/* Way back up to the Reliability tier — Analyze is a step in the loop
-                            (Measure → Diagnose → Model → Decide), not a destination. */}
+                            (Measure → Diagnose → Model → Decide), not a destination. Styled as a
+                            real control, not a caption: at 11px/slate-400 it read as decoration
+                            and users couldn't find their way out. */}
                         <button
                             onClick={() => navigate('/reliability')}
-                            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-700 transition-colors -mt-0.5"
+                            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors w-fit cursor-pointer py-0.5"
                         >
-                            <ArrowLeft size={12} strokeWidth={2.5} /> Reliability
+                            <ArrowLeft size={14} strokeWidth={2.5} /> Back to Reliability
                         </button>
                         <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight truncate leading-tight">Analyze</h1>
                     </div>

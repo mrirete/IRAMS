@@ -16,10 +16,6 @@ import { ImageCapture } from '../components/ui/ImageCapture';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts';
-import {
-    MOCK_ASSETS, MOCK_WORK_ORDERS, MOCK_CONTACTS, MOCK_DICTIONARIES,
-    MOCK_READING_DEFINITIONS, MOCK_READING_LOGS, MOCK_RECURRING_JOBS
-} from '../constants';
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
@@ -43,6 +39,9 @@ import { AssetQRCode } from '../components/AssetQRCode';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { Button } from '../components/ui';
 import { ReliabilityIntelligenceTab } from '../components/ReliabilityIntelligenceTab';
+import { AddReadingPointModal } from '../components/modals/AddReadingPointModal';
+import { saveReadings, latestByDefinition, type PMDue } from '../services/readingEntry';
+import { evaluateReading } from '../../lib/readingAlarm';
 
 interface AssetsProps {
     onAnalyze?: (context: string) => void;
@@ -192,9 +191,6 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
     const [moveTargetSearch, setMoveTargetSearch] = useState('');
     const [moveTargetId, setMoveTargetId] = useState<string | null>(null);
 
-    // State for Reading Definitions (Lifted to allow adding)
-    const [readingDefs, setReadingDefs] = useState<ReadingDefinition[]>([]);
-
     // Dictionary State
     const [dictionaries, setDictionaries] = useState<DictionaryEntry[]>([]);
     const [assetTypes, setAssetTypes] = useState<any[]>([]);
@@ -333,24 +329,6 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
         return flatten(roots);
     }, [assets, searchTerm, critFilter, expandedIds]);
 
-
-    const handleAddReadingDef = (assetId: string, typeCode: string) => {
-        const dictEntry = MOCK_DICTIONARIES.find(d => d.type === 'READING_TYPE' && d.code === typeCode);
-        if (!dictEntry) return;
-
-        const newDef: ReadingDefinition = {
-            id: `def-${Date.now()}`,
-            assetId: assetId,
-            readingTypeCode: dictEntry.code,
-            name: dictEntry.description,
-            unit: 'Unit', // Simplified
-            category: dictEntry.categoryCode === 'Meter Reading' ? 'METER' : 'CONDITION',
-            isActive: true,
-            minWarning: 0,
-            maxCritical: 100,
-        };
-        setReadingDefs([...readingDefs, newDef]);
-    };
 
     const getStatusColor = (status: AssetStatus) => {
         switch (status) {
@@ -1578,13 +1556,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
 
                             {activeTab === 'hierarchy' && <HierarchyTab asset={selectedAsset} assets={assets} onSelect={setSelectedAsset} />}
                             {activeTab === 'bom' && !isLocation(selectedAsset) && <BOMTab asset={selectedAsset} onUpdate={handleUpdateAsset} />}
-                            {activeTab === 'readings' && (
-                                <ReadingsTab
-                                    asset={selectedAsset}
-                                    definitions={readingDefs.filter(d => d.assetId === selectedAsset.id)}
-                                    onAdd={handleAddReadingDef}
-                                />
-                            )}
+                            {activeTab === 'readings' && <ReadingsTab asset={selectedAsset} />}
                             {activeTab === 'reliability' && !isLocation(selectedAsset) && <ReliabilityIntelligenceTab asset={selectedAsset} />}
                             {activeTab === 'jobs' && <JobsTab asset={selectedAsset} />}
                             {activeTab === 'financials' && <FinancialsTab asset={selectedAsset} />}
@@ -3497,166 +3469,362 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
     );
 };
 
-interface ReadingsTabProps {
-    asset: Asset;
-    definitions: ReadingDefinition[];
-    onAdd: (assetId: string, typeCode: string) => void;
-}
+// ── Readings tab (asset drawer) ──────────────────────────────────────────────
+// The asset-side window onto the Condition Data module. It reads and writes the
+// SAME rows as the /readings page — reading_definitions + reading_logs — through
+// the same DatabaseService, the same alarm-band evaluation and the same offline
+// queue. There is no asset-local copy of a reading point.
+//
+// Scope note: this is single-point capture against one asset. Rounds (batch entry
+// across a route), parent→child meter propagation and meter-based PM triggering
+// stay on the Condition Data page; "Open in Condition Data" hands off to it.
+function ReadingsTab({ asset }: { asset: Asset }) {
+    const navigate = useNavigate();
+    const { profile, permissions } = useAuth();
+    const { showToast } = useToast();
+    const canCreate = permissions?.readings?.create === true;
 
-function ReadingsTab({ asset, definitions, onAdd }: ReadingsTabProps) {
+    // The engine needs the full picture, not just this asset: parent→child meter
+    // propagation walks descendants' points, and meter-PM triggering needs the
+    // recurring-work rows. We hold everything and render only this asset's points.
+    const [allDefs, setAllDefs] = useState<ReadingDefinition[]>([]);
+    const [allLogs, setAllLogs] = useState<ReadingLogEntry[]>([]);
+    const [allAssets, setAllAssets] = useState<Asset[]>([]);
+    const [pms, setPms] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
     const [selectedGraphId, setSelectedGraphId] = useState<string | null>(null);
-    const [entryValue, setEntryValue] = useState<Record<string, number>>({});
+    const [entryValue, setEntryValue] = useState<Record<string, string>>({});
+    const [savingId, setSavingId] = useState<string | null>(null);
     const [isAddOpen, setIsAddOpen] = useState(false);
-    const [selectedType, setSelectedType] = useState('');
+    const [pmDue, setPmDue] = useState<PMDue[]>([]);
+    const [generatingPM, setGeneratingPM] = useState(false);
 
-    const availableTypes = MOCK_DICTIONARIES.filter(d =>
-        d.type === 'READING_TYPE' &&
-        d.active &&
-        !definitions.some(def => def.readingTypeCode === d.code)
-    );
+    const load = useCallback(async () => {
+        setLoading(true);
+        try {
+            const db = DatabaseService.getInstance();
+            const [defs, defLogs, assets, dbPMs] = await Promise.all([
+                db.getReadingDefinitions(),
+                db.getReadingLogs(),
+                db.getAssets(),
+                db.getPMs(),
+            ]);
+            setAllDefs(defs);
+            setAllLogs(defLogs);
+            setAllAssets(assets || []);
+            setPms(dbPMs || []);
+        } catch (e) {
+            console.error('Failed to load readings for asset', e);
+            showToast('Could not load reading points for this asset.', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, [showToast]);
 
-    const toggleGraph = (id: string) => {
-        if (selectedGraphId === id) setSelectedGraphId(null);
-        else setSelectedGraphId(id);
-    };
+    useEffect(() => { load(); }, [load]);
 
-    const handleAddSubmit = () => {
-        if (selectedType) {
-            onAdd(asset.id, selectedType);
+    const definitions = useMemo(() => allDefs.filter(d => d.assetId === asset.id), [allDefs, asset.id]);
+    const logs = useMemo(() => allLogs.filter(l => l.assetId === asset.id), [allLogs, asset.id]);
+    // Previous value per point comes from the logs — reading_definitions has no
+    // last-reading column, so a stale field there would silently zero meter deltas.
+    const latestByDef = useMemo(() => latestByDefinition(allLogs), [allLogs]);
+
+    const alarmCount = useMemo(() => definitions.reduce((n, def) => {
+        const latest = latestByDef.get(def.id);
+        if (!latest || latest.value == null) return n;
+        return evaluateReading(Number(latest.value), def).level === 'OK' ? n : n + 1;
+    }, 0), [definitions, latestByDef]);
+
+    const handleCreatePoint = async (p: {
+        assetId: string; name: string; category: 'METER' | 'CONDITION'; unit: string;
+        minCritical?: number | null; minWarning?: number | null; maxWarning?: number | null; maxCritical?: number | null;
+        monitoringFrequencyDays?: number | null; pfIntervalDays?: number | null;
+    }) => {
+        if (!canCreate) {
+            showToast('Access Denied: You do not have permission to add reading points.', 'error');
+            return;
+        }
+        // Free-slug reading_type_code, same rule as the Condition Data page — a new
+        // point never depends on a pre-seeded dictionary type.
+        const slug = (p.name || 'READING').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'READING';
+        try {
+            const saved = await DatabaseService.getInstance().addReadingDefinition({
+                ...p,
+                readingTypeCode: `${slug}_${Date.now().toString(36).toUpperCase()}`,
+                name: p.name.trim(),
+                unit: p.unit.trim() || '—',
+                active: true,
+            });
+            setAllDefs(prev => [...prev, saved]);
             setIsAddOpen(false);
-            setSelectedType('');
+            showToast(`Reading point "${p.name}" added.`, 'success');
+        } catch (e: any) {
+            showToast('Failed to add reading point: ' + e.message, 'error');
         }
     };
 
-    // Quick Entry Handler (Mock)
-    const handleSaveReading = (def: ReadingDefinition) => {
-        const val = entryValue[def.id];
-        if (val === undefined || isNaN(val)) return;
-        console.log(`Saved value ${val} for ${def.name}. (Simulated)`);
-        // In real app, this would dispatch to the Readings context/store
-        setEntryValue({ ...entryValue, [def.id]: 0 }); // Reset or clear
+    // Capture goes through the shared readingEntry engine — identical rules to the
+    // Condition Data rounds sheet: 24h meter guard, delta + rollover, alarm bands →
+    // notification + CBM rules, parent→child meter propagation, meter-PM triggering,
+    // offline-first write.
+    const handleSaveReading = async (def: ReadingDefinition) => {
+        if (!canCreate) {
+            showToast('Access Denied: You do not have permission to enter readings.', 'error');
+            return;
+        }
+        const raw = entryValue[def.id];
+        const value = Number(raw);
+        if (raw === undefined || raw.trim() === '' || Number.isNaN(value)) return;
+
+        setSavingId(def.id);
+        try {
+            const result = await saveReadings([{ definitionId: def.id, value }], {
+                definitions: allDefs, logs: allLogs, assets: allAssets, pms,
+                actor: profile?.username || profile?.fullName || 'Unknown User',
+                actorId: profile?.id || 'SYSTEM',
+            });
+
+            setAllLogs(result.logs);
+            setAllDefs(result.definitions);
+            result.warnings.forEach(w => showToast(w, 'warning'));
+            result.errors.forEach(e => showToast(e, 'error'));
+
+            if (result.errors.length === 0) {
+                setEntryValue(prev => ({ ...prev, [def.id]: '' }));
+                const breach = result.breaches.find(b => b.defName === def.name && b.assetId === def.assetId);
+                if (result.queuedAny) showToast(`Saved offline — '${def.name}' will sync when you reconnect.`, 'info');
+                else if (breach) showToast(`${breach.level === 'CRITICAL' ? 'CRITICAL' : 'Warning'}: ${def.name} ${value}${def.unit ? ' ' + def.unit : ''} — ${breach.detail}.`, breach.level === 'CRITICAL' ? 'error' : 'warning');
+                else showToast(`Reading logged for ${def.name}.`, 'success');
+
+                if (result.propagatedCount > 0) {
+                    showToast(`${result.propagatedCount} child meter reading${result.propagatedCount > 1 ? 's' : ''} advanced by this delta.`, 'info');
+                }
+                if (result.pmDue.length > 0) setPmDue(result.pmDue);
+            }
+        } catch (e: any) {
+            showToast('Failed to save reading: ' + e.message, 'error');
+        } finally {
+            setSavingId(null);
+        }
     };
+
+    // Meter-based PM fell due → one tap to raise the preventive work order. Passing
+    // the meter value stamps the PM's per-asset baseline, so it won't re-fire on the
+    // next reading.
+    const generatePM = async (d: PMDue) => {
+        setGeneratingPM(true);
+        try {
+            const wo = await DatabaseService.getInstance().generateWOFromPM(d.pmId, d.assetId, false, d.current);
+            showToast('Preventive work order generated from meter trigger.', 'success');
+            setPmDue(prev => prev.filter(x => x.pmId !== d.pmId));
+            const id = (wo as any)?.id;
+            if (id) navigate(`/work-orders/${id}`);
+        } catch (e: any) {
+            showToast('Failed to generate PM work order: ' + (e?.message || 'unknown'), 'error');
+        } finally {
+            setGeneratingPM(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[0, 1, 2].map(i => <div key={i} className="h-40 bg-white border border-slate-200 rounded-lg animate-pulse" />)}
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-4">
-            <div className="flex justify-end relative">
-                <button
-                    onClick={() => setIsAddOpen(!isAddOpen)}
-                    className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1"
-                >
-                    <Plus size={14} /> Add Point
-                </button>
-
-                {isAddOpen && (
-                    <div className="absolute top-8 right-0 w-64 bg-white rounded-lg shadow-xl border border-slate-200 z-10 p-3 animate-in fade-in slide-in-from-top-2">
-                        <h4 className="text-xs font-bold text-slate-800 uppercase mb-2">New Reading Point</h4>
-                        <select
-                            className="w-full p-2 border border-slate-300 rounded text-sm mb-2"
-                            value={selectedType}
-                            onChange={(e) => setSelectedType(e.target.value)}
-                        >
-                            <option value="">-- Select Type --</option>
-                            {availableTypes.map(t => (
-                                <option key={t.id} value={t.code}>{t.description}</option>
-                            ))}
-                        </select>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-xs text-slate-500">
+                    {definitions.length > 0 && (
+                        <>
+                            <span className="font-semibold text-slate-700">{definitions.length}</span> reading point{definitions.length === 1 ? '' : 's'}
+                            {alarmCount > 0 && (
+                                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200 font-bold">
+                                    <AlertTriangle size={11} /> {alarmCount} in alarm
+                                </span>
+                            )}
+                        </>
+                    )}
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => navigate(`/readings?asset=${asset.id}`)}
+                        className="text-xs text-slate-600 hover:text-primary-600 px-2 py-1.5 rounded flex items-center gap-1 border border-slate-200 bg-white hover:border-primary-300"
+                        title="Open this asset in Condition Data — rounds, history, trends and alarm work"
+                    >
+                        Open in Condition Data <ArrowUpRight size={13} />
+                    </button>
+                    {canCreate && (
                         <button
-                            disabled={!selectedType}
-                            onClick={handleAddSubmit}
-                            className="w-full py-1.5 bg-primary-600 text-white text-xs font-bold rounded hover:bg-primary-500 disabled:opacity-50"
+                            onClick={() => setIsAddOpen(true)}
+                            className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1"
                         >
-                            Add
+                            <Plus size={14} /> Add Point
                         </button>
-                        {availableTypes.length === 0 && <p className="text-[10px] text-center text-slate-400 mt-2">No more types available.</p>}
-                    </div>
-                )}
+                    )}
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {definitions.map((def) => {
-                    const isMeter = def.category === 'METER';
-                    const isAlarm = (def.maxCritical && (def.lastReadingValue || 0) > def.maxCritical);
+                    const latest = latestByDef.get(def.id);
+                    const lastValue = latest?.value != null ? Number(latest.value) : null;
+                    const alarm = lastValue != null ? evaluateReading(lastValue, def) : null;
+                    const level = alarm?.level ?? 'OK';
+                    const isCritical = level === 'CRITICAL';
+                    const isWarning = level === 'WARNING';
                     const showGraph = selectedGraphId === def.id;
+
+                    // Oldest → newest for the trend line.
+                    const series = logs
+                        .filter(l => l.definitionId === def.id && l.isActive !== false)
+                        .slice()
+                        .sort((a, b) => `${a.date} ${a.time || ''}`.localeCompare(`${b.date} ${b.time || ''}`))
+                        .map(l => ({ date: l.date, value: Number(l.value) }));
+
+                    const tone = isCritical
+                        ? 'bg-red-100 text-red-700 border-red-200'
+                        : isWarning
+                            ? 'bg-amber-100 text-amber-700 border-amber-200'
+                            : lastValue == null
+                                ? 'bg-slate-100 text-slate-500 border-slate-200'
+                                : 'bg-green-100 text-green-700 border-green-200';
 
                     return (
                         <div key={def.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm relative group">
                             <div className="flex justify-between items-start mb-2">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
                                     <button
-                                        onClick={() => toggleGraph(def.id)}
-                                        className={`p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition ${showGraph ? 'text-blue-600 bg-blue-50' : ''}`}
-                                        title="Toggle Trend Graph"
+                                        onClick={() => setSelectedGraphId(showGraph ? null : def.id)}
+                                        disabled={series.length === 0}
+                                        className={`p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600 transition disabled:opacity-30 disabled:hover:bg-transparent ${showGraph ? 'text-blue-600 bg-blue-50' : ''}`}
+                                        title={series.length ? 'Toggle trend' : 'No readings yet'}
                                     >
                                         <LineChartIcon size={16} />
                                     </button>
-                                    <span className="text-sm font-bold text-slate-700">{def.name}</span>
+                                    <span className="text-sm font-bold text-slate-700 truncate" title={def.name}>{def.name}</span>
                                 </div>
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${isAlarm ? 'bg-red-100 text-red-700 border-red-200' : 'bg-green-100 text-green-700 border-green-200'
-                                    }`}>
-                                    {isAlarm ? 'ALARM' : 'NORMAL'}
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border flex-shrink-0 ${tone}`}>
+                                    {lastValue == null ? 'NO DATA' : level === 'OK' ? 'NORMAL' : level}
                                 </span>
                             </div>
 
-                            <div className="flex items-baseline gap-1 mb-2">
-                                <span className={`text-2xl font-bold ${isAlarm ? 'text-red-600' : 'text-slate-900'}`}>
-                                    {def.lastReadingValue ?? '-'}
+                            <div className="flex items-baseline gap-1 mb-1">
+                                <span className={`text-2xl font-bold ${isCritical ? 'text-red-600' : isWarning ? 'text-amber-600' : 'text-slate-900'}`}>
+                                    {lastValue ?? '—'}
                                 </span>
                                 <span className="text-sm text-slate-500">{def.unit}</span>
+                                <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                    {def.category === 'METER' ? 'Meter' : 'Condition'}
+                                </span>
                             </div>
+                            {alarm && level !== 'OK' && (
+                                <p className={`text-[11px] mb-2 ${isCritical ? 'text-red-600' : 'text-amber-600'}`}>{alarm.detail}</p>
+                            )}
 
-                            {/* Inline Graph */}
-                            {showGraph && (
+                            {showGraph ? (
                                 <div className="h-32 -mx-2 mb-2">
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <LineChart data={MOCK_READING_LOGS.filter(l => l.definitionId === def.id)}>
-                                            <Line type="monotone" dataKey="value" stroke={isAlarm ? "#ef4444" : "#2563eb"} strokeWidth={2} dot={false} />
-                                            <Tooltip />
+                                        <LineChart data={series}>
+                                            <Tooltip labelFormatter={(l) => `Date: ${l}`} formatter={(v: any) => [`${v} ${def.unit || ''}`.trim(), def.name]} />
+                                            {def.maxCritical != null && <ReferenceLine y={def.maxCritical} stroke="#ef4444" strokeDasharray="3 3" />}
+                                            {def.maxWarning != null && <ReferenceLine y={def.maxWarning} stroke="#f59e0b" strokeDasharray="3 3" />}
+                                            {def.minWarning != null && <ReferenceLine y={def.minWarning} stroke="#f59e0b" strokeDasharray="3 3" />}
+                                            {def.minCritical != null && <ReferenceLine y={def.minCritical} stroke="#ef4444" strokeDasharray="3 3" />}
+                                            <Line type="monotone" dataKey="value" stroke={isCritical ? '#ef4444' : isWarning ? '#f59e0b' : '#2563eb'} strokeWidth={2} dot={false} />
                                         </LineChart>
                                     </ResponsiveContainer>
                                 </div>
-                            )}
-
-                            {/* Limits & Meta */}
-                            {!showGraph && (
+                            ) : (
                                 <div className="text-xs text-slate-400 mb-3 space-y-1">
                                     <div className="flex justify-between">
-                                        <span>Last Reading:</span>
-                                        <span>{def.lastReadingDate || 'Never'}</span>
+                                        <span>Last reading:</span>
+                                        <span>{latest?.date || 'Never'}</span>
                                     </div>
                                     <div className="flex justify-between">
                                         <span>Limits:</span>
-                                        <span>{def.minCritical ?? '-'} / {def.maxCritical ?? '-'}</span>
+                                        <span>{def.minCritical ?? '—'} / {def.maxCritical ?? '—'}</span>
                                     </div>
                                 </div>
                             )}
 
-                            {/* Quick Entry */}
-                            <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">
-                                <input
-                                    type="number"
-                                    placeholder="Enter value"
-                                    className="w-full text-xs p-1.5 border border-slate-300 rounded"
-                                    value={entryValue[def.id] || ''}
-                                    onChange={(e) => setEntryValue({ ...entryValue, [def.id]: parseFloat(e.target.value) })}
-                                />
-                                <button
-                                    onClick={() => handleSaveReading(def)}
-                                    className="bg-primary-600 hover:bg-primary-500 text-white px-2 rounded text-xs font-medium"
-                                >
-                                    Save
-                                </button>
-                            </div>
+                            {canCreate && (
+                                <div className="flex gap-2 mt-2 pt-2 border-t border-slate-100">
+                                    <input
+                                        type="number"
+                                        placeholder={`Enter value${def.unit ? ` (${def.unit})` : ''}`}
+                                        className="w-full text-xs p-1.5 border border-slate-300 rounded"
+                                        value={entryValue[def.id] ?? ''}
+                                        onChange={(e) => setEntryValue({ ...entryValue, [def.id]: e.target.value })}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveReading(def); }}
+                                    />
+                                    <button
+                                        onClick={() => handleSaveReading(def)}
+                                        disabled={savingId === def.id || !(entryValue[def.id] ?? '').trim()}
+                                        className="bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white px-2 rounded text-xs font-medium"
+                                    >
+                                        {savingId === def.id ? '…' : 'Save'}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     );
                 })}
+
                 {!definitions.length && (
-                    <div className="col-span-3 text-center py-12 text-slate-400 border border-dashed border-slate-200 rounded-xl">
+                    <div className="col-span-full text-center py-12 text-slate-400 border border-dashed border-slate-200 rounded-xl">
                         <Activity size={32} className="mx-auto mb-2 opacity-20" />
                         <p>No reading points defined for this asset.</p>
-                        <button onClick={() => setIsAddOpen(true)} className="text-xs text-blue-600 hover:underline mt-2">Add Reading Point</button>
+                        <p className="text-xs mt-1 text-slate-400">Add a vibration, temperature or running-hours point to start tracking condition.</p>
+                        {canCreate && (
+                            <button onClick={() => setIsAddOpen(true)} className="text-xs text-blue-600 hover:underline mt-2">Add Reading Point</button>
+                        )}
                     </div>
                 )}
             </div>
+
+            {isAddOpen && (
+                <AddReadingPointModal
+                    asset={asset}
+                    onClose={() => setIsAddOpen(false)}
+                    onCreate={handleCreatePoint}
+                />
+            )}
+
+            {/* Meter reading crossed a PM's due meter → one tap to raise the work order */}
+            {pmDue.length > 0 && createPortal(
+                <div className="fixed inset-0 z-[65] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+                        <div className="px-5 py-3 flex items-center gap-2 bg-primary-600 text-white">
+                            <Clock size={18} />
+                            <h3 className="font-bold text-sm">Preventive maintenance due{pmDue.length > 1 ? ` (${pmDue.length})` : ''}</h3>
+                            <button onClick={() => setPmDue([])} className="ml-auto text-white/80 hover:text-white"><X size={18} /></button>
+                        </div>
+                        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+                            {pmDue.map(d => (
+                                <div key={`${d.pmId}-${d.assetId}`} className="border border-slate-200 rounded-xl p-3">
+                                    <div className="font-bold text-sm text-slate-800">{d.pmTitle}</div>
+                                    <div className="text-[11px] text-slate-500 mt-0.5">{d.assetName} · {d.basis}</div>
+                                    <button
+                                        onClick={() => generatePM(d)}
+                                        disabled={generatingPM}
+                                        className="mt-2 w-full py-1.5 text-xs font-bold text-white bg-primary-600 hover:bg-primary-500 disabled:opacity-50 rounded-lg"
+                                    >
+                                        {generatingPM ? 'Generating…' : 'Generate work order'}
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="px-5 py-3 border-t border-slate-100 flex justify-end">
+                            <button onClick={() => setPmDue([])} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Not now</button>
+                        </div>
+                    </div>
+                </div>,
+                document.body,
+            )}
         </div>
     );
 };

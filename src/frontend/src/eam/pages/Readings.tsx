@@ -28,8 +28,8 @@ import { computeReadingDue, summariseDue } from '../../lib/readingDue';
 import { RaiseWorkModal, type RaiseKind } from '../components/RaiseWorkModal';
 import { buildWorkOrder } from '../lib/workOrder';
 import { VALUATION_CODES, valuationByCode, VALUATION_TONE_CLASSES } from '../../lib/valuationCodes';
-
-interface BreachInfo { assetId: string; assetName: string; defName: string; unit?: string; value: number; level: AlarmLevel; detail: string; }
+import { AddReadingPointModal } from '../components/modals/AddReadingPointModal';
+import { saveReadings, withLastReadings, type BreachInfo } from '../services/readingEntry';
 
 // Structural hierarchy levels that never take readings — only maintainable items
 // (equipment + sub-components) do. Used to keep the Condition Data asset list from
@@ -113,24 +113,20 @@ export const Readings: React.FC = () => {
             const scopedAssets = DatabaseService.filterAssetsBySiteScope(dbAssets, dataScope?.siteIds);
             const scopedAssetIds = new Set(scopedAssets.map(a => a.id));
             setAssets(scopedAssets);
-            // Only show reading definitions for in-scope assets
-            setDefinitions(dbDefs.filter(d => scopedAssetIds.has(d.assetId)));
+
+            // Only show reading definitions for in-scope assets. reading_definitions
+            // carries no last-reading column, so stamp each point with its latest log
+            // — otherwise every meter delta after a page load would be computed
+            // against an undefined previous value (i.e. silently recorded as 0).
+            const scopedDefs = dbDefs.filter(d => scopedAssetIds.has(d.assetId));
+            setDefinitions(withLastReadings(scopedDefs, dbLogs));
+            setLogs(dbLogs || []);
 
             // Filter dictionaries for Reading Types
             const types = dbDicts.filter(d => d.type === 'READING_TYPE' && d.active);
             setReadingTypes(types);
             // Fault types (ISO 14224 functional failures) for raising requests
             setFaultTypes(dbDicts.filter(d => d.type === 'FAULT_TYPE' && d.active).map(d => ({ id: d.id, code: d.code, description: d.description })));
-
-            if (dbLogs.length > 0) {
-                // Map DB keys to UI keys if needed (DatabaseService usually handles this now, let's trust it maps snake -> camel)
-                // But wait, getReadingLogs in Service returns: definitionId, readingTypeCode, ... (camelCase)
-                // So we can set directly?
-                // Let's ensure types match.
-                setLogs(dbLogs);
-            } else {
-                setLogs([]);
-            }
         } catch (e) {
             console.error("Failed to load readings data", e);
             showToast('Failed to load readings data. See console.', 'error');
@@ -315,8 +311,9 @@ export const Readings: React.FC = () => {
             showToast('Failed to add reading point: ' + e.message, 'error');
         }
     };
-
-    // 3.2 Reading Entry (Batch or Single)
+    // 3.2 Reading Entry (Batch or Single) — all the capture rules live in the
+    // shared readingEntry engine, so the asset drawer's Readings tab behaves
+    // identically. This function is now just RBAC + presentation.
     const handleSaveReadings = async (newReadings: Partial<ReadingLogEntry>[]) => {
         // ═══ RBAC Layer 2: Submit-level guard (ISO 27001 / NIST CSF) ═══
         if (!canCreate) {
@@ -324,222 +321,49 @@ export const Readings: React.FC = () => {
             showToast('Access Denied: You do not have permission to enter readings.', 'error');
             return;
         }
-        const timestamp = new Date();
-        const dateStr = timestamp.toISOString().split('T')[0];
-        const timeStr = timestamp.toTimeString().split(' ')[0].substring(0, 5);
 
-        const updatedLogs = [...logs];
-        const updatedDefs = [...definitions];
-        let queuedAny = false;
-        let propagatedCount = 0; // child meter readings advanced from a parent delta
-        const breaches: BreachInfo[] = [];
-        const meterCtx: { assetId: string; ctx: MeterReadingCtx }[] = [];
-
-        for (const reading of newReadings) {
-            if (reading.value === undefined || !reading.definitionId) continue;
-
-            const def = definitions.find(d => d.id === reading.definitionId);
-            if (!def) continue;
-
-            // Rule: "THE EAM only needs one meter reading in a 24hour period"
-            if (def.category === 'METER') {
-                const duplicate = logs.find(l =>
-                    l.definitionId === def.id && l.date === (reading.date || dateStr) && l.isActive
-                );
-                if (duplicate) {
-                    showToast(`A valid meter reading for '${def.name}' already exists for ${reading.date || dateStr}. Deactivate the existing reading first.`, 'warning');
-                    continue;
-                }
-            }
-
-            // Delta Calculation for Meters
-            let delta = 0;
-            if (def.category === 'METER' && def.lastReadingValue !== undefined) {
-                // If value is lower, assume meter rollover or replacement if not explicitly handled?
-                // For this strict implementation, we warn.
-                if (reading.value < def.lastReadingValue) {
-                    showToast(`Meter rollover detected for '${def.name}': New value (${reading.value}) < Previous (${def.lastReadingValue}). Treating as meter replacement.`, 'warning');
-                    delta = reading.value; // Treat as new start
-                } else {
-                    delta = reading.value - def.lastReadingValue;
-                }
-            }
-
-            // Meter-based PM: capture the reading against its prior value (before the
-            // optimistic lastReadingValue update) so we can detect interval crossings.
-            if (def.category === 'METER') {
-                meterCtx.push({
-                    assetId: def.assetId,
-                    ctx: {
-                        defName: def.name, unit: def.unit, readingTypeCode: def.readingTypeCode,
-                        category: 'METER', previousValue: def.lastReadingValue ?? null, newValue: reading.value as number,
-                    },
-                });
-            }
-
-            // R-4: classify against alarm bands (warning + critical, min + max).
-            const alarm = evaluateReading(reading.value, def);
-
-            // Create Log Entry
-            // Map UI -> DB keys
-            const dbLog = {
-                id: crypto.randomUUID(),
-                definition_id: def.id,
-                asset_id: def.assetId,
-                reading_type_code: def.readingTypeCode,
-                reading_date: reading.date || dateStr,
-                reading_time: def.category === 'METER' ? '00:00' : (reading.time || timeStr),
-                value: reading.value,
-                delta: def.category === 'METER' ? delta : undefined,
-                entered_by: profile?.username || profile?.fullName || 'Unknown User',
-                is_active: true,
-                is_alarm: alarm.level !== 'OK',
-                comments: reading.comments,
-                valuation_code: reading.valuationCode || null
-            };
-
-            const newLog: ReadingLogEntry = {
-                id: dbLog.id,
-                definitionId: dbLog.definition_id,
-                assetId: dbLog.asset_id,
-                readingTypeCode: dbLog.reading_type_code,
-                date: dbLog.reading_date,
-                time: dbLog.reading_time,
-                value: dbLog.value,
-                delta: dbLog.delta,
-                enteredBy: dbLog.entered_by,
-                isActive: dbLog.is_active,
-                isAlarm: dbLog.is_alarm,
-                comments: dbLog.comments,
-                valuationCode: dbLog.valuation_code
-            };
-
-            try {
-                // Save Reading — route through the offline queue so field readings
-                // logged without signal are saved locally and synced on reconnect.
-                const { queued } = await offlineQueue.run('logReading', dbLog, `Reading: ${def.name}`);
-                if (queued) queuedAny = true;
-                updatedLogs.push(newLog); // optimistic — dbLog.id is client-generated, so it's stable online or offline
-
-                // Update Definition Cache if needed (e.g. last reading)
-                // For now, we rely on logs reload or local optimistic?
-                // Local optimistic for speed:
-                const defIndex = updatedDefs.findIndex(d => d.id === def.id);
-                if (defIndex >= 0) {
-                    updatedDefs[defIndex] = {
-                        ...updatedDefs[defIndex],
-                        lastReadingValue: reading.value,
-                        lastReadingDate: dateStr
-                    };
-                }
-
-                // Parent → child meter propagation (SAP hierarchy measurement
-                // transfer / AMPRO parent readings): a meter delta on a parent
-                // advances every descendant's matching meter by the same delta.
-                if (def.category === 'METER' && delta > 0) {
-                    const sameName = (a?: string, b?: string) => (a || '').trim().toUpperCase() === (b || '').trim().toUpperCase();
-                    const visited = new Set<string>([def.assetId]);
-                    const queue = assets.filter(a => a.parentId === def.assetId).map(a => a.id);
-                    while (queue.length > 0) {
-                        const childId = queue.shift()!;
-                        if (visited.has(childId)) continue; // cycle guard
-                        visited.add(childId);
-                        assets.filter(a => a.parentId === childId).forEach(a => queue.push(a.id));
-
-                        const childDefs = updatedDefs.filter(d =>
-                            d.assetId === childId && d.isActive && d.category === 'METER' &&
-                            (d.readingTypeCode === def.readingTypeCode || sameName(d.name, def.name)));
-                        for (const cd of childDefs) {
-                            const childDate = reading.date || dateStr;
-                            // Same 24h meter rule as direct entry — skip, don't overwrite.
-                            if (updatedLogs.some(l => l.definitionId === cd.id && l.date === childDate && l.isActive)) continue;
-                            const prevVal = cd.lastReadingValue ?? 0;
-                            const childValue = prevVal + delta;
-                            const childAlarm = evaluateReading(childValue, cd);
-                            const childAssetName = assets.find(a => a.id === childId)?.name || 'sub-asset';
-                            const childDbLog = {
-                                id: crypto.randomUUID(),
-                                definition_id: cd.id,
-                                asset_id: childId,
-                                reading_type_code: cd.readingTypeCode,
-                                reading_date: childDate,
-                                reading_time: '00:00',
-                                value: childValue,
-                                delta,
-                                entered_by: profile?.username || profile?.fullName || 'Unknown User',
-                                is_active: true,
-                                is_alarm: childAlarm.level !== 'OK',
-                                comments: `Propagated +${delta}${cd.unit ? ' ' + cd.unit : ''} from parent meter "${def.name}"`,
-                            };
-                            const { queued: childQueued } = await offlineQueue.run('logReading', childDbLog, `Reading: ${cd.name} (${childAssetName})`);
-                            if (childQueued) queuedAny = true;
-                            updatedLogs.push({
-                                id: childDbLog.id, definitionId: cd.id, assetId: childId, readingTypeCode: cd.readingTypeCode,
-                                date: childDate, time: '00:00', value: childValue, delta,
-                                enteredBy: childDbLog.entered_by, isActive: true, isAlarm: childDbLog.is_alarm, comments: childDbLog.comments,
-                            });
-                            const ci = updatedDefs.findIndex(d => d.id === cd.id);
-                            if (ci >= 0) updatedDefs[ci] = { ...updatedDefs[ci], lastReadingValue: childValue, lastReadingDate: childDate };
-                            // Child meters feed their own meter-based PMs too.
-                            meterCtx.push({ assetId: childId, ctx: { defName: cd.name, unit: cd.unit, readingTypeCode: cd.readingTypeCode, category: 'METER', previousValue: prevVal, newValue: childValue } });
-                            if (childAlarm.level !== 'OK') {
-                                breaches.push({ assetId: childId, assetName: childAssetName, defName: cd.name, unit: cd.unit, value: childValue, level: childAlarm.level, detail: childAlarm.detail });
-                            }
-                            propagatedCount++;
-                        }
-                    }
-                }
-
-                // R-4: on a band breach, raise a notification pre-coded with the
-                // asset + reading (deep-links via U-5) and collect it so we can
-                // offer a one-tap work order once the batch is saved.
-                if (alarm.level !== 'OK') {
-                    const assetName = assets.find(a => a.id === def.assetId)?.name || 'asset';
-                    DatabaseService.getInstance().createNotification({
-                        recipientId: profile?.id || 'SYSTEM',
-                        title: `${alarm.level === 'CRITICAL' ? '🔴 Critical' : '🟠 Warning'} alarm — ${def.name}`,
-                        message: `${assetName}: ${def.name} = ${reading.value}${def.unit ? ' ' + def.unit : ''} (${alarm.detail}). Consider raising corrective work.`,
-                        severity: alarm.level === 'CRITICAL' ? 'CRITICAL' : 'WARNING',
-                        notificationType: 'CONDITION_ALARM',
-                        module: 'readings',
-                        entityId: def.assetId,
-                        entityType: 'ASSET',
-                        entityNumber: def.name,
-                        actionRequired: true,
-                    }).catch(e => console.warn('[R-4] alarm notification failed:', e));
-                    // Keep the CBM rules engine in the loop too (escalation, etc.).
-                    const ruleEntity = { ...newLog, assetId: def.assetId, definitionName: def.name, readingValue: reading.value, alarmLevel: alarm.level };
-                    NotificationService.checkRules('readings', 'READING_ALARM', ruleEntity, { currentUserId: profile?.id || 'SYSTEM' });
-                    // Critical band breaches additionally fire READING_CRITICAL — the
-                    // fast-escalation rule (15 min) listens on this, not on every breach.
-                    if (alarm.level === 'CRITICAL') {
-                        NotificationService.checkRules('readings', 'READING_CRITICAL', ruleEntity, { currentUserId: profile?.id || 'SYSTEM' });
-                    }
-                    breaches.push({ assetId: def.assetId, assetName, defName: def.name, unit: def.unit, value: reading.value as number, level: alarm.level, detail: alarm.detail });
-                }
-            } catch (e: any) {
-                console.error("Failed to save reading", e);
-                showToast('Failed to save reading: ' + e.message, 'error');
-            }
-        }
-
-        setLogs(updatedLogs);
-        setDefinitions(updatedDefs);
-        showToast(
-            queuedAny
-                ? 'Saved offline — readings will sync when you reconnect.'
-                : 'Readings saved successfully.',
-            queuedAny ? 'info' : 'success',
+        const result = await saveReadings(
+            newReadings
+                .filter(r => r.definitionId != null && r.value != null)
+                .map(r => ({
+                    definitionId: r.definitionId as string,
+                    value: r.value as number,
+                    date: r.date,
+                    time: r.time,
+                    comments: r.comments,
+                    valuationCode: r.valuationCode,
+                })),
+            {
+                definitions, logs, assets, pms,
+                actor: profile?.username || profile?.fullName || 'Unknown User',
+                actorId: profile?.id || 'SYSTEM',
+            },
         );
-        if (propagatedCount > 0) {
-            showToast(`${propagatedCount} child meter reading${propagatedCount > 1 ? 's' : ''} advanced by the parent's delta.`, 'info');
+
+        setLogs(result.logs);
+        setDefinitions(result.definitions);
+
+        result.warnings.forEach(w => showToast(w, 'warning'));
+        result.errors.forEach(e => showToast(e, 'error'));
+
+        if (result.errors.length === 0) {
+            showToast(
+                result.queuedAny
+                    ? 'Saved offline — readings will sync when you reconnect.'
+                    : 'Readings saved successfully.',
+                result.queuedAny ? 'info' : 'success',
+            );
         }
+        if (result.propagatedCount > 0) {
+            showToast(`${result.propagatedCount} child meter reading${result.propagatedCount > 1 ? 's' : ''} advanced by the parent's delta.`, 'info');
+        }
+
         // R-4: band breaches. If auto-raise is on, CRITICAL breaches become
         // corrective WOs immediately; the rest (warnings, or criticals when the
         // option is off) surface in the one-tap banner.
-        if (breaches.length > 0) {
-            const autoTargets = autoRaiseCritical ? breaches.filter(b => b.level === 'CRITICAL') : [];
-            const toBanner = breaches.filter(b => !autoTargets.includes(b));
+        if (result.breaches.length > 0) {
+            const autoTargets = autoRaiseCritical ? result.breaches.filter(b => b.level === 'CRITICAL') : [];
+            const toBanner = result.breaches.filter(b => !autoTargets.includes(b));
             if (autoTargets.length > 0) {
                 const results = await Promise.allSettled(autoTargets.map(b => createWOForBreach(b, true)));
                 const ok = results.filter(r => r.status === 'fulfilled').length;
@@ -550,36 +374,9 @@ export const Readings: React.FC = () => {
             if (toBanner.length > 0) setAlarmBreaches(toBanner);
         }
 
-        // Meter-based PM triggers — did any reading push an asset past a PM's due meter?
-        if (meterCtx.length > 0 && pms.length > 0) {
-            const byAsset = new Map<string, MeterReadingCtx[]>();
-            meterCtx.forEach(({ assetId, ctx }) => {
-                const arr = byAsset.get(assetId) || [];
-                arr.push(ctx);
-                byAsset.set(assetId, arr);
-            });
-            const allDue: (MeterPMDue & { assetId: string; assetName: string })[] = [];
-            for (const [assetId, rds] of byAsset) {
-                const assetPMs: MeterPM[] = pms
-                    .filter(p => p.active !== false && p.status !== 'INACTIVE')
-                    .filter(p => p.asset_id === assetId || (Array.isArray(p.assigned_assets) && p.assigned_assets.some((a: any) => a.assetId === assetId)))
-                    .map(p => ({
-                        id: p.id,
-                        title: p.title || p.code || 'PM',
-                        scheduleType: p.schedule_type,
-                        frequencyType: p.frequency_type,
-                        interval: Number(p.frequency_interval ?? p.interval ?? 0),
-                        unit: p.frequency_unit || p.frequency_type || '',
-                        baseline: Array.isArray(p.assigned_assets)
-                            ? (p.assigned_assets.find((a: any) => a.assetId === assetId)?.lastReadingValue ?? null)
-                            : null,
-                    }));
-                const assetName = assets.find(a => a.id === assetId)?.name || 'asset';
-                evaluateMeterPMs(assetPMs, rds).forEach(d => allDue.push({ ...d, assetId, assetName }));
-            }
-            if (allDue.length > 0) setPmDue(allDue);
-        }
+        if (result.pmDue.length > 0) setPmDue(result.pmDue);
     };
+
 
     // Meter-based PM → one-tap generate the preventive work order. Passes the meter
     // value so the PM's per-asset baseline is stamped (next due = this + interval),
@@ -2081,242 +1878,3 @@ const AssetTreeNode: React.FC<{
     );
 };
 
-// ── Reading Point editor ─────────────────────────────────────────────────────
-// A real measuring-point definition (SAP PM "measuring point" / Maximo "meter"):
-// name, meter-vs-condition, engineering unit, and 4 alarm bands. These bands are
-// what drive the condition alarms (R-4) and now the Predict health engine.
-// Common engineering units, grouped, for the reading-point unit picker. Techs
-// pick from these; custom ones they add are remembered (localStorage).
-const UNIT_GROUPS: { label: string; units: string[] }[] = [
-    { label: 'Vibration', units: ['mm/s', 'µm', 'in/s', 'g'] },
-    { label: 'Temperature', units: ['°C', '°F', 'K'] },
-    { label: 'Pressure', units: ['bar', 'psi', 'kPa', 'MPa', 'mbar'] },
-    { label: 'Flow', units: ['m³/h', 'L/min', 'L/s', 'GPM'] },
-    { label: 'Rotation / Electrical', units: ['rpm', 'Hz', 'A', 'V', 'kW', 'kWh'] },
-    { label: 'Level / Thickness', units: ['%', 'mm', 'm', 'in'] },
-    { label: 'Oil analysis', units: ['cSt', 'ppm', 'TAN', 'TBN'] },
-    { label: 'Meter / runtime', units: ['hours', 'days', 'km', 'miles', 'cycles', 'starts'] },
-];
-const ALL_PRESET_UNITS = new Set(UNIT_GROUPS.flatMap(g => g.units));
-
-// One-tap templates that prefill a whole point (name/type/unit/bands) — the big
-// time-saver for technicians configuring rounds.
-const QUICK_POINTS: { label: string; name: string; category: 'METER' | 'CONDITION'; unit: string; maxWarning?: string; maxCritical?: string }[] = [
-    { label: 'Vibration', name: 'Vibration', category: 'CONDITION', unit: 'mm/s', maxWarning: '4.5', maxCritical: '7.1' },
-    { label: 'Temperature', name: 'Temperature', category: 'CONDITION', unit: '°C', maxWarning: '80', maxCritical: '95' },
-    { label: 'Pressure', name: 'Pressure', category: 'CONDITION', unit: 'bar' },
-    { label: 'Oil level', name: 'Oil Level', category: 'CONDITION', unit: '%' },
-    { label: 'Running hours', name: 'Running Hours', category: 'METER', unit: 'hours' },
-];
-
-const AddReadingPointModal: React.FC<{
-    asset: Asset | null;
-    onClose: () => void;
-    onCreate: (p: {
-        assetId: string; name: string; category: 'METER' | 'CONDITION'; unit: string;
-        minCritical?: number | null; minWarning?: number | null; maxWarning?: number | null; maxCritical?: number | null;
-        monitoringFrequencyDays?: number | null; pfIntervalDays?: number | null;
-    }) => void | Promise<void>;
-}> = ({ asset, onClose, onCreate }) => {
-    const [name, setName] = useState('');
-    const [category, setCategory] = useState<'METER' | 'CONDITION'>('CONDITION');
-    const [unit, setUnit] = useState('');
-    const [minCritical, setMinCritical] = useState('');
-    const [minWarning, setMinWarning] = useState('');
-    const [maxWarning, setMaxWarning] = useState('');
-    const [maxCritical, setMaxCritical] = useState('');
-    const [freq, setFreq] = useState('');   // monitoring interval (days) — '' = auto from criticality
-    const [pf, setPf] = useState('');        // P-F interval (days)
-    const [saving, setSaving] = useState(false);
-    // Unit picker: preset dropdown + remembered custom units.
-    const [customUnits, setCustomUnits] = useState<string[]>(() => {
-        try { return JSON.parse(localStorage.getItem('readings.customUnits') || '[]'); } catch { return []; }
-    });
-    const [unitMode, setUnitMode] = useState<'pick' | 'custom'>('pick');
-
-    if (!asset) return null;
-    const num = (s: string): number | null => (s.trim() === '' ? null : Number(s));
-
-    const rememberUnit = (u: string) => {
-        const v = u.trim();
-        if (!v || ALL_PRESET_UNITS.has(v) || customUnits.includes(v)) return;
-        const next = [...customUnits, v];
-        setCustomUnits(next);
-        try { localStorage.setItem('readings.customUnits', JSON.stringify(next)); } catch { /* ignore */ }
-    };
-
-    const applyTemplate = (t: typeof QUICK_POINTS[number]) => {
-        setName(t.name); setCategory(t.category); setUnit(t.unit); setUnitMode('pick');
-        setMaxWarning(t.maxWarning ?? ''); setMaxCritical(t.maxCritical ?? '');
-        setMinWarning(''); setMinCritical('');
-    };
-
-    // Guard against crossed bands (min critical should be ≤ min warning ≤ max warning ≤ max critical).
-    const bandOrderOk = (() => {
-        const vals = [num(minCritical), num(minWarning), num(maxWarning), num(maxCritical)].filter(v => v != null) as number[];
-        for (let i = 1; i < vals.length; i++) if (vals[i] < vals[i - 1]) return false;
-        return true;
-    })();
-    const canSave = name.trim().length > 0 && bandOrderOk && !saving;
-
-    const submit = async () => {
-        if (!canSave) return;
-        rememberUnit(unit); // any freshly-typed unit becomes a future option
-        setSaving(true);
-        await onCreate({
-            assetId: asset.id, name, category, unit,
-            minCritical: num(minCritical), minWarning: num(minWarning),
-            maxWarning: num(maxWarning), maxCritical: num(maxCritical),
-            monitoringFrequencyDays: freq ? Number(freq) : null,
-            pfIntervalDays: pf.trim() ? Number(pf) : null,
-        });
-        setSaving(false);
-    };
-
-    const ring = 'focus:ring-2 focus:ring-relantern-300 focus:border-relantern-400 outline-none';
-    const bandInput = (label: string, tone: string, val: string, set: (v: string) => void) => (
-        <label className="block">
-            <span className={`text-[10px] font-bold uppercase tracking-wide ${tone}`}>{label}</span>
-            <input type="number" value={val} onChange={e => set(e.target.value)} placeholder="—"
-                className={`mt-1 w-full p-2 border border-slate-200 rounded-lg text-sm text-right ${ring}`} />
-        </label>
-    );
-
-    const TypeCard = (val: 'CONDITION' | 'METER', icon: React.ReactNode, title: string, desc: string) => (
-        <button onClick={() => setCategory(val)}
-            className={`text-left p-2.5 rounded-xl border-2 transition ${category === val ? 'border-relantern-400 bg-relantern-50' : 'border-slate-200 hover:border-slate-300 bg-white'}`}>
-            <div className={`flex items-center gap-1.5 font-bold text-sm ${category === val ? 'text-relantern-700' : 'text-slate-700'}`}>{icon} {title}</div>
-            <div className="text-[11px] text-slate-500 mt-0.5 leading-tight">{desc}</div>
-        </button>
-    );
-
-    return (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
-            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
-                <div className="px-5 py-3 flex items-center gap-2 bg-gradient-to-r from-relantern-500 to-relantern-600 text-white flex-shrink-0">
-                    <Activity size={18} />
-                    <div className="min-w-0">
-                        <h3 className="font-bold text-sm leading-tight">Add reading point</h3>
-                        <p className="text-[11px] text-white/90 truncate">{asset.tag} · {asset.name}</p>
-                    </div>
-                    <button onClick={onClose} className="ml-auto text-white/80 hover:text-white"><X size={18} /></button>
-                </div>
-
-                <div className="p-5 space-y-4 overflow-y-auto">
-                    {/* Quick-start templates */}
-                    <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Quick start</label>
-                        <div className="flex flex-wrap gap-1.5">
-                            {QUICK_POINTS.map(t => (
-                                <button key={t.label} onClick={() => applyTemplate(t)}
-                                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full border border-relantern-200 bg-relantern-50 text-relantern-700 hover:bg-relantern-100 transition">
-                                    {t.label}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Point name</label>
-                        <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Bearing Vibration (DE)"
-                            className={`w-full p-2.5 border border-slate-300 rounded-lg text-sm ${ring}`} />
-                    </div>
-
-                    {/* Type — descriptive cards */}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Type</label>
-                        <div className="grid grid-cols-2 gap-2">
-                            {TypeCard('CONDITION', <Activity size={14} />, 'Condition', 'Spot value — vibration, temp, pressure')}
-                            {TypeCard('METER', <Clock size={14} />, 'Meter', 'Cumulative — running hours, km, cycles')}
-                        </div>
-                    </div>
-
-                    {/* Unit — dropdown of common units + remembered customs + add-your-own */}
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Unit</label>
-                        <select
-                            value={unitMode === 'custom' ? '__custom__' : unit}
-                            onChange={e => {
-                                if (e.target.value === '__custom__') { setUnitMode('custom'); setUnit(''); }
-                                else { setUnit(e.target.value); setUnitMode('pick'); }
-                            }}
-                            className={`w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white ${ring}`}
-                        >
-                            <option value="">Select unit…</option>
-                            {UNIT_GROUPS.map(g => (
-                                <optgroup key={g.label} label={g.label}>
-                                    {g.units.map(u => <option key={u} value={u}>{u}</option>)}
-                                </optgroup>
-                            ))}
-                            {customUnits.length > 0 && (
-                                <optgroup label="Your units">
-                                    {customUnits.map(u => <option key={u} value={u}>{u}</option>)}
-                                </optgroup>
-                            )}
-                            <option value="__custom__">＋ Add custom unit…</option>
-                        </select>
-                        {unitMode === 'custom' && (
-                            <div className="flex gap-2 mt-2">
-                                <input autoFocus value={unit} onChange={e => setUnit(e.target.value)}
-                                    onKeyDown={e => { if (e.key === 'Enter' && unit.trim()) { rememberUnit(unit); setUnitMode('pick'); } }}
-                                    placeholder="Type a unit, e.g. µS/cm"
-                                    className={`flex-1 p-2 border border-slate-300 rounded-lg text-sm ${ring}`} />
-                                <button onClick={() => { rememberUnit(unit); setUnitMode('pick'); }} disabled={!unit.trim()}
-                                    className="px-3 py-2 text-sm font-semibold text-white bg-relantern-500 hover:bg-relantern-600 disabled:opacity-50 rounded-lg">Add</button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Alarm bands */}
-                    <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Alarm bands {category === 'METER' && <span className="text-slate-400 normal-case font-normal">(optional for meters)</span>}</label>
-                            <span className="text-[10px] text-slate-400">low → high</span>
-                        </div>
-                        <div className="grid grid-cols-4 gap-2">
-                            {bandInput('Min Crit', 'text-red-600', minCritical, setMinCritical)}
-                            {bandInput('Min Warn', 'text-amber-600', minWarning, setMinWarning)}
-                            {bandInput('Max Warn', 'text-amber-600', maxWarning, setMaxWarning)}
-                            {bandInput('Max Crit', 'text-red-600', maxCritical, setMaxCritical)}
-                        </div>
-                        {!bandOrderOk && (
-                            <p className="text-[11px] text-red-600 mt-1.5 flex items-center gap-1"><AlertTriangle size={12} /> Bands must increase left to right (min critical ≤ min warning ≤ max warning ≤ max critical).</p>
-                        )}
-                        <p className="text-[11px] text-slate-400 mt-1.5">A reading outside the warning band raises a warning alarm; outside critical raises a critical alarm and can auto-raise corrective work.</p>
-                    </div>
-
-                    {/* Per-point cadence (0176) */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Monitoring frequency</label>
-                            <select value={freq} onChange={e => setFreq(e.target.value)}
-                                className={`w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white ${ring}`}>
-                                <option value="">Auto (from criticality)</option>
-                                <option value="1">Daily</option>
-                                <option value="7">Weekly</option>
-                                <option value="14">Fortnightly</option>
-                                <option value="30">Monthly</option>
-                                <option value="90">Quarterly</option>
-                                <option value="180">Half-yearly</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">P-F interval (days)</label>
-                            <input type="number" value={pf} onChange={e => setPf(e.target.value)} placeholder="optional"
-                                className={`w-full p-2.5 border border-slate-300 rounded-lg text-sm ${ring}`} />
-                        </div>
-                    </div>
-                    <p className="text-[11px] text-slate-400 -mt-1">Frequency drives the rounds "due" list. With no explicit frequency, a P-F interval sets it to half the P-F (RCM); otherwise the asset criticality does.</p>
-                </div>
-
-                <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2 flex-shrink-0">
-                    <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-                    <button onClick={submit} disabled={!canSave}
-                        className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-relantern-500 hover:bg-relantern-600 disabled:opacity-50 px-4 py-2 rounded-lg transition-colors">
-                        {saving ? <RefreshCcw size={14} className="animate-spin" /> : <Save size={14} />} Add reading point
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
