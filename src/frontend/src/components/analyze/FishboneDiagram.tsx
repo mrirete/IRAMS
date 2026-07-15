@@ -90,6 +90,10 @@ interface FishboneDiagramProps {
     nodes: RCANode[];
     setNodes: React.Dispatch<React.SetStateAction<RCANode[]>>;
     saving?: boolean;
+    /** Which pane(s) to show. The full-screen workspace flips between 'diagram' and
+     *  'causes' with a toggle so each gets the whole screen; the inline/desktop case
+     *  keeps 'both'. In 'causes' the entry list is full-width with larger text. */
+    view?: 'both' | 'diagram' | 'causes';
 }
 
 // ── Layout constants ────────────────────────────────────────
@@ -105,7 +109,19 @@ const SUB_BONE_LEN = 90;
 // ── Component ────────────────────────────────────────────────
 const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
     investigationId, problemStatement, nodes, setNodes, saving: _saving = false,
+    view = 'both',
 }) => {
+    // In the full-screen "Causes" view the entry list owns the whole screen, so the
+    // text steps up to comfortable reading/tap sizes. `both` (inline) keeps compact.
+    const big = view === 'causes';
+    const sz = {
+        catLabel: big ? 16 : 13,
+        catSub: big ? 12 : 10,
+        cause: big ? 15 : 12,
+        input: big ? 15 : 13,
+        addBtn: big ? 13 : 11,
+        pad: big ? '14px 18px' : '10px 16px',
+    };
     const [addingTo, setAddingTo] = useState<string | null>(null);
     const [newCauseText, setNewCauseText] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -324,15 +340,19 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                 inside a 360px phone, which squeezed the side panel (where you actually
                 TYPE the causes) down to nothing. Now: stacked on mobile, side-by-side
                 from lg. The diagram scrolls sideways in its own box; the page doesn't. */}
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px]" style={{
-                gap: 0,
-                border: '1px solid #e2e8f0',
-                borderRadius: 14,
-                overflow: 'hidden',
-                background: '#fff',
-                minHeight: 420,
-            }}>
+            <div
+                className={view === 'both' ? 'grid grid-cols-1 lg:grid-cols-[1fr_380px]' : 'block'}
+                style={{
+                    gap: 0,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 14,
+                    overflow: 'hidden',
+                    background: '#fff',
+                    minHeight: 420,
+                }}
+            >
                 {/* ─── LEFT: SVG Fishbone ─── */}
+                {view !== 'causes' && (
                 <div className="border-b lg:border-b-0 lg:border-r border-slate-200" style={{
                     background: '#f8fafc',
                     overflowX: 'auto',
@@ -513,11 +533,13 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                         </div>
                     )}
                 </div>
+                )}
 
                 {/* ─── RIGHT: Cause Entry Side Panel ─── */}
+                {view !== 'diagram' && (
                 <div ref={panelRef} style={{
                     overflowY: 'auto',
-                    maxHeight: 520,
+                    maxHeight: view === 'causes' ? undefined : 520,
                     background: '#fff',
                 }}>
                     {/* Panel header */}
@@ -558,7 +580,7 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                     onClick={() => handleCatClick(cat.key)}
                                     style={{
                                         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                        padding: '10px 16px', cursor: 'pointer',
+                                        padding: sz.pad, cursor: 'pointer',
                                         borderLeft: `4px solid ${isActive ? cat.color : 'transparent'}`,
                                         transition: 'all 0.15s',
                                     }}
@@ -566,14 +588,14 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                                         {/* Color dot */}
                                         <div style={{
-                                            width: 10, height: 10, borderRadius: '50%',
+                                            width: big ? 12 : 10, height: big ? 12 : 10, borderRadius: '50%',
                                             background: cat.color,
                                             boxShadow: isActive ? `0 0 0 3px ${cat.color}30` : 'none',
-                                            transition: 'box-shadow 0.15s',
+                                            transition: 'box-shadow 0.15s', flexShrink: 0,
                                         }} />
                                         <div>
-                                            <div style={{ fontSize: 13, fontWeight: 700, color: cat.color }}>{cat.label}</div>
-                                            <div style={{ fontSize: 10, color: '#94a3b8' }}>
+                                            <div style={{ fontSize: sz.catLabel, fontWeight: 700, color: cat.color }}>{cat.label}</div>
+                                            <div style={{ fontSize: sz.catSub, color: '#94a3b8' }}>
                                                 {cat.subtitle} · {causes.length} cause{causes.length !== 1 ? 's' : ''}
                                             </div>
                                         </div>
@@ -587,7 +609,7 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                         }}
                                         style={{
                                             display: 'flex', alignItems: 'center', gap: 4,
-                                            padding: '5px 12px', fontSize: 11, fontWeight: 700,
+                                            padding: big ? '8px 16px' : '5px 12px', fontSize: sz.addBtn, fontWeight: 700,
                                             background: isAdding ? '#f1f5f9' : `${cat.color}12`,
                                             color: isAdding ? '#64748b' : cat.color,
                                             border: `1px solid ${isAdding ? '#e2e8f0' : cat.color + '30'}`,
@@ -614,7 +636,7 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                                 placeholder={`Describe ${/^[aeiou]/i.test(cat.label) ? 'an' : 'a'} ${cat.label.toLowerCase()} cause…`}
                                                 autoFocus
                                                 style={{
-                                                    flex: 1, padding: '8px 12px', fontSize: 13,
+                                                    flex: 1, padding: big ? '11px 14px' : '8px 12px', fontSize: sz.input,
                                                     border: `2px solid ${cat.color}60`, borderRadius: 8,
                                                     outline: 'none', background: '#fff', color: '#1e293b',
                                                 }}
@@ -702,7 +724,7 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                                             <span
                                                                 onClick={() => { setEditingId(cause.id); setEditText(cause.description); }}
                                                                 style={{
-                                                                    fontSize: 12, color: isRoot ? cat.color : '#334155',
+                                                                    fontSize: sz.cause, color: isRoot ? cat.color : '#334155',
                                                                     fontWeight: isRoot ? 700 : 500,
                                                                     cursor: 'pointer', display: 'block',
                                                                     lineHeight: 1.5,
@@ -750,6 +772,7 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                         );
                     })}
                 </div>
+                )}
             </div>
         </div>
     );

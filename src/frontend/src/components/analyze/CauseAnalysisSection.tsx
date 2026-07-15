@@ -22,10 +22,12 @@ interface Props {
     nodes: RCANode[];
     setNodes: React.Dispatch<React.SetStateAction<RCANode[]>>;
     saving: boolean;
+    /** Fishbone only: which pane the full-screen workspace is showing. */
+    fishboneView?: 'both' | 'diagram' | 'causes';
 }
 
 const CauseAnalysisSection: React.FC<Props> = ({
-    method, investigationId, problemStatement, nodes, setNodes, saving,
+    method, investigationId, problemStatement, nodes, setNodes, saving, fishboneView = 'both',
 }) => {
     // ── Fishbone ─────────────────────────────────────────────
     if (method === 'fishbone') {
@@ -33,7 +35,8 @@ const CauseAnalysisSection: React.FC<Props> = ({
             <div style={{
                 background: '#fff', borderRadius: 10,
                 border: '1px solid #e2e8f0',
-                padding: 16, marginBottom: 16,
+                padding: fishboneView === 'both' ? 16 : 0,
+                marginBottom: 16,
             }}>
                 <FishboneDiagram
                     investigationId={investigationId}
@@ -41,6 +44,7 @@ const CauseAnalysisSection: React.FC<Props> = ({
                     nodes={nodes}
                     setNodes={setNodes}
                     saving={saving}
+                    view={fishboneView}
                 />
             </div>
         );

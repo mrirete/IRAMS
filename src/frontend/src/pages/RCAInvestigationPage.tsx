@@ -620,6 +620,9 @@ export function RCAInvestigationPage() {
 
     // The cause tool opens as a full-screen workspace (all four methods).
     const [causeFullscreen, setCauseFullscreen] = useState(false);
+    // Fishbone has two views that each want the whole screen — the entry list, and the
+    // diagram. One tap flips between them; state is shared so nothing is lost.
+    const [fishboneView, setFishboneView] = useState<'causes' | 'diagram'>('causes');
     // Esc closes it; and don't let the page behind scroll while it's open.
     useEffect(() => {
         if (!causeFullscreen) return;
@@ -821,7 +824,7 @@ export function RCAInvestigationPage() {
                                         <MoreHorizontal size={18} />
                                     </button>
                                     {invMenuOpen && (
-                                        <div className="absolute right-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-30 overflow-hidden py-1">
+                                        <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-1 sm:w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-40 overflow-hidden py-1">
                                             <button
                                                 onClick={() => { setInvMenuOpen(false); openDEModal(); }}
                                                 className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
@@ -2122,6 +2125,23 @@ export function RCAInvestigationPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                            {/* Fishbone: flip between the entry list and the diagram, each full-screen. */}
+                            {inv.method === 'fishbone' && (
+                                <div className="flex bg-slate-100 rounded-lg p-0.5">
+                                    <button
+                                        onClick={() => setFishboneView('causes')}
+                                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                            fishboneView === 'causes' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                                        }`}
+                                    >Causes</button>
+                                    <button
+                                        onClick={() => setFishboneView('diagram')}
+                                        className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                                            fishboneView === 'diagram' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500'
+                                        }`}
+                                    >Diagram</button>
+                                </div>
+                            )}
                             {/* Everything in here saves as you go — this button is just "I'm done looking". */}
                             <Button variant="secondary" onClick={() => setCauseFullscreen(false)}>
                                 <Minimize2 size={14} strokeWidth={2.5} />
@@ -2150,6 +2170,7 @@ export function RCAInvestigationPage() {
                                 nodes={scopedNodes}
                                 setNodes={setNodes}
                                 saving={saving}
+                                fishboneView={inv.method === 'fishbone' ? fishboneView : 'both'}
                             />
                         )}
                     </div>
