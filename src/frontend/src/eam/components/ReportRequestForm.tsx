@@ -372,7 +372,6 @@ export const ReportRequestForm: React.FC<{
                     <div className="relative">
                         <label className="text-xs font-semibold text-slate-600 mb-1 flex items-center gap-1">
                             <Package size={12} /> Asset or Location
-                            <span className="text-slate-400 font-normal ml-1">(optional)</span>
                         </label>
                         <div
                             onClick={() => setShowAssetPicker(v => !v)}
