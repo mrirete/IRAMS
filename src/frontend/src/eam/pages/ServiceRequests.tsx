@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-    Plus, Search, Filter, Clock, CheckCircle,
+    Plus, Search, Clock, CheckCircle,
     X, User, Camera, Zap, Trash2, Save,
     MoreHorizontal, QrCode, ChevronLeft, Bot, ShieldCheck, FileText, AlertOctagon, ChevronDown, ChevronRight, Mic, Package, MapPin, Edit3, Check
 } from 'lucide-react';
@@ -35,6 +35,91 @@ export const ServiceRequests: React.FC = () => {
     const [users, setUsers] = useState<any[]>([]);
     const [dictionaries, setDictionaries] = useState<any[]>([]);
 
+    // Search / filter / sort state — seeded from the URL so views are
+    // shareable and survive back-nav / refresh.
+    const [query, setQuery] = useState(() => searchParams.get('q') || '');
+    const [plantFilter, setPlantFilter] = useState(() => searchParams.get('plant') || 'ALL');
+    const [typeFilter, setTypeFilter] = useState(() => searchParams.get('type') || 'ALL');
+    const [sortBy, setSortBy] = useState<'date' | 'priority' | 'sla' | 'type'>(
+        () => (searchParams.get('sort') as any) || 'date'
+    );
+
+    // Code → human label for equipment type, resolved from the dictionaries.
+    // ASSET_CLASS wins over ASSET_TYPE over ASSET_CATEGORY on code collision.
+    const typeLabels = useMemo(() => {
+        const m = new Map<string, string>();
+        for (const t of ['ASSET_CLASS', 'ASSET_TYPE', 'ASSET_CATEGORY']) {
+            for (const d of dictionaries) {
+                if (d.type === t && d.active !== false && !m.has(d.code)) {
+                    m.set(d.code, d.description || d.code);
+                }
+            }
+        }
+        return m;
+    }, [dictionaries]);
+
+    // Join once: assetId → equipmentType (label). O(1) lookup instead of
+    // re-scanning the assets array for every request on every keystroke.
+    const assetMeta = useMemo(() => {
+        const map = new Map<string, { equipmentType: string }>();
+        for (const a of assets) {
+            const code = a.assetClass || a.assetType || a.category || '';
+            const equipmentType = (code && (typeLabels.get(code) || code)) || 'Uncategorized';
+            map.set(a.id, { equipmentType });
+        }
+        return map;
+    }, [assets, typeLabels]);
+
+    // Plant = first segment of the " > "-joined location path built by DataMapper.
+    const plantOf = (r: ServiceRequest) => (r.location || '').split(' > ')[0].trim() || 'Unassigned';
+    const typeOf = (r: ServiceRequest) =>
+        (r.assetId && assetMeta.get(r.assetId)?.equipmentType) || 'Uncategorized';
+
+    // Facet option lists, derived from the requests actually present.
+    const facets = useMemo(() => {
+        const plants = new Set<string>();
+        const types = new Set<string>();
+        for (const r of requests) { plants.add(plantOf(r)); types.add(typeOf(r)); }
+        return {
+            plants: [...plants].sort(),
+            types: [...types].sort(),
+        };
+    }, [requests, assetMeta]);
+
+    const PRIORITY_RANK: Record<string, number> = { EMERGENCY: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+    const visibleRequests = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        let list = requests.filter(r => {
+            if (plantFilter !== 'ALL' && plantOf(r) !== plantFilter) return false;
+            if (typeFilter !== 'ALL' && typeOf(r) !== typeFilter) return false;
+            if (q) {
+                const haystack = [
+                    r.requestNumber, r.title, r.description, r.assetName,
+                    r.location, r.requesterName, typeOf(r),
+                ].filter(Boolean).join(' ').toLowerCase();
+                if (!haystack.includes(q)) return false;
+            }
+            return true;
+        });
+        list = [...list].sort((a, b) => {
+            switch (sortBy) {
+                case 'priority':
+                    return (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9);
+                case 'sla':
+                    return new Date(a.slaDeadline).getTime() - new Date(b.slaDeadline).getTime();
+                case 'type':
+                    return typeOf(a).localeCompare(typeOf(b));
+                default:
+                    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+            }
+        });
+        return list;
+    }, [requests, query, plantFilter, typeFilter, sortBy, assetMeta]);
+
+    const isFiltered = query.trim() !== '' || plantFilter !== 'ALL' || typeFilter !== 'ALL';
+    const clearFilters = () => { setQuery(''); setPlantFilter('ALL'); setTypeFilter('ALL'); };
+
     // Polling / Real-time updates simulation
     const refreshData = async () => {
         const db = DatabaseService.getInstance();
@@ -61,9 +146,28 @@ export const ServiceRequests: React.FC = () => {
     useEffect(() => {
         if (searchParams.get('action') === 'create') {
             setIsCreating(true);
-            setSearchParams({}, { replace: true }); // Clean URL to prevent re-trigger on refresh
+            // Strip only the action param — keep any active filter params intact.
+            setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.delete('action');
+                return next;
+            }, { replace: true });
         }
     }, [searchParams, setSearchParams]);
+
+    // Reflect search / filter / sort into the URL (replace, defaults omitted).
+    useEffect(() => {
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            const setOrDel = (k: string, v: string, def: string) =>
+                v && v !== def ? next.set(k, v) : next.delete(k);
+            setOrDel('q', query.trim(), '');
+            setOrDel('plant', plantFilter, 'ALL');
+            setOrDel('type', typeFilter, 'ALL');
+            setOrDel('sort', sortBy, 'date');
+            return next;
+        }, { replace: true });
+    }, [query, plantFilter, typeFilter, sortBy, setSearchParams]);
 
     const handleStatusChange = async (id: string, newStatus: RequestStatus) => {
         try {
@@ -162,19 +266,81 @@ export const ServiceRequests: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Filters */}
-                <div className="mb-4 flex gap-2">
-                    <div className="relative flex-1">
+                {/* Search + facet filters + sort — all in-memory, no re-fetch */}
+                <div className="mb-4 space-y-2">
+                    <div className="relative">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
                         <input
                             type="text"
-                            placeholder="Search requests..."
-                            className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:outline-none"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            placeholder="Search by request #, asset, plant/system, or requester…"
+                            className="w-full pl-9 pr-8 py-2 border border-slate-300 rounded-lg text-sm focus:ring-1 focus:ring-primary-500 focus:outline-none"
                         />
+                        {query && (
+                            <button
+                                onClick={() => setQuery('')}
+                                className="absolute right-2 top-2 text-slate-400 hover:text-slate-600"
+                                aria-label="Clear search"
+                            >
+                                <X size={16} />
+                            </button>
+                        )}
                     </div>
-                    <button className="p-2 border border-slate-300 rounded-lg bg-white text-slate-600 hover:bg-slate-50">
-                        <Filter size={18} />
-                    </button>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                        {/* Plant / System */}
+                        <div className="relative">
+                            <MapPin size={13} className="absolute left-2 top-2.5 text-slate-400 pointer-events-none" />
+                            <select
+                                value={plantFilter}
+                                onChange={(e) => setPlantFilter(e.target.value)}
+                                className={`appearance-none pl-7 pr-7 py-1.5 border rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 focus:outline-none ${plantFilter !== 'ALL' ? 'border-primary-400 text-primary-700 font-medium' : 'border-slate-300 text-slate-600'}`}
+                            >
+                                <option value="ALL">All plants / systems</option>
+                                {facets.plants.map(p => <option key={p} value={p}>{p}</option>)}
+                            </select>
+                            <ChevronDown size={13} className="absolute right-2 top-2.5 text-slate-400 pointer-events-none" />
+                        </div>
+
+                        {/* Equipment Type */}
+                        <div className="relative">
+                            <Package size={13} className="absolute left-2 top-2.5 text-slate-400 pointer-events-none" />
+                            <select
+                                value={typeFilter}
+                                onChange={(e) => setTypeFilter(e.target.value)}
+                                className={`appearance-none pl-7 pr-7 py-1.5 border rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 focus:outline-none ${typeFilter !== 'ALL' ? 'border-primary-400 text-primary-700 font-medium' : 'border-slate-300 text-slate-600'}`}
+                            >
+                                <option value="ALL">All equipment types</option>
+                                {facets.types.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <ChevronDown size={13} className="absolute right-2 top-2.5 text-slate-400 pointer-events-none" />
+                        </div>
+
+                        {/* Sort */}
+                        <div className="relative">
+                            <select
+                                value={sortBy}
+                                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                                className="appearance-none pl-3 pr-7 py-1.5 border border-slate-300 rounded-lg text-xs bg-white text-slate-600 focus:ring-1 focus:ring-primary-500 focus:outline-none"
+                            >
+                                <option value="date">Sort: Newest</option>
+                                <option value="priority">Sort: Priority</option>
+                                <option value="sla">Sort: SLA due</option>
+                                <option value="type">Sort: Equipment type</option>
+                            </select>
+                            <ChevronDown size={13} className="absolute right-2 top-2.5 text-slate-400 pointer-events-none" />
+                        </div>
+
+                        {isFiltered && (
+                            <button
+                                onClick={clearFilters}
+                                className="flex items-center gap-1 px-2 py-1.5 text-xs text-slate-500 hover:text-slate-700"
+                            >
+                                <X size={13} /> Clear ({visibleRequests.length})
+                            </button>
+                        )}
+                    </div>
                 </div>
 
                 {/* Board */}
@@ -182,7 +348,7 @@ export const ServiceRequests: React.FC = () => {
                     {selectedRequest || isCreating ? (
                         // Compact List View when Detail is open
                         <div className="space-y-2">
-                            {requests.map(req => (
+                            {visibleRequests.map(req => (
                                 <div
                                     key={req.id}
                                     onClick={() => handleRequestClick(req)}
@@ -207,29 +373,29 @@ export const ServiceRequests: React.FC = () => {
                             {/* ═══ GAP-03: Mobile — Vertical Collapsible Groups ═══ */}
                             <div className="block sm:hidden space-y-2">
                                 <MobileRequestGroup
-                                    title="New" statuses={[RequestStatus.NEW]} requests={requests}
+                                    title="New" statuses={[RequestStatus.NEW]} requests={visibleRequests}
                                     onSelect={handleRequestClick} color="bg-slate-100" defaultOpen
                                 />
                                 <MobileRequestGroup
-                                    title="Under Review" statuses={[RequestStatus.REVIEW]} requests={requests}
+                                    title="Under Review" statuses={[RequestStatus.REVIEW]} requests={visibleRequests}
                                     onSelect={handleRequestClick} color="bg-blue-50"
                                 />
                                 <MobileRequestGroup
-                                    title="Authorized" statuses={[RequestStatus.AUTHORIZED]} requests={requests}
+                                    title="Authorized" statuses={[RequestStatus.AUTHORIZED]} requests={visibleRequests}
                                     onSelect={handleRequestClick} color="bg-blue-50"
                                 />
                                 <MobileRequestGroup
-                                    title="Approved & Converted" statuses={[RequestStatus.APPROVED, RequestStatus.CONVERTED]} requests={requests}
+                                    title="Approved & Converted" statuses={[RequestStatus.APPROVED, RequestStatus.CONVERTED]} requests={visibleRequests}
                                     onSelect={handleRequestClick} color="bg-green-50"
                                 />
                             </div>
 
                             {/* Desktop: Full Kanban Board (horizontal columns) */}
                             <div className="hidden sm:flex h-full gap-4 overflow-x-auto">
-                                <RequestColumn title="New" statuses={[RequestStatus.NEW]} requests={requests} onSelect={setSelectedRequest} color="bg-slate-100" />
-                                <RequestColumn title="Under Review" statuses={[RequestStatus.REVIEW]} requests={requests} onSelect={setSelectedRequest} color="bg-blue-50" />
-                                <RequestColumn title="Authorized" statuses={[RequestStatus.AUTHORIZED]} requests={requests} onSelect={setSelectedRequest} color="bg-blue-50" />
-                                <RequestColumn title="Approved & Converted" statuses={[RequestStatus.APPROVED, RequestStatus.CONVERTED]} requests={requests} onSelect={setSelectedRequest} color="bg-green-50" />
+                                <RequestColumn title="New" statuses={[RequestStatus.NEW]} requests={visibleRequests} onSelect={setSelectedRequest} color="bg-slate-100" />
+                                <RequestColumn title="Under Review" statuses={[RequestStatus.REVIEW]} requests={visibleRequests} onSelect={setSelectedRequest} color="bg-blue-50" />
+                                <RequestColumn title="Authorized" statuses={[RequestStatus.AUTHORIZED]} requests={visibleRequests} onSelect={setSelectedRequest} color="bg-blue-50" />
+                                <RequestColumn title="Approved & Converted" statuses={[RequestStatus.APPROVED, RequestStatus.CONVERTED]} requests={visibleRequests} onSelect={setSelectedRequest} color="bg-green-50" />
                             </div>
                         </>
                     )}
