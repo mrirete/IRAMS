@@ -8,12 +8,13 @@ import {
 import { FleetHealthMap } from './FleetHealthMap';
 import type { FleetAssetHealth, TwinState, SensorTrend } from '../../types/intelligence';
 import type { ConfidenceBand } from '../../eam/services/PredictionService';
+import { STALE_DAYS } from '../../config/predict';
 
 // ─────────────────────────────────────────────────────────
 //  Types
 // ─────────────────────────────────────────────────────────
 
-type OperatingState = 'RUNNING' | 'STANDBY' | 'TRIPPED' | 'OFFLINE' | 'UNKNOWN';
+type OperatingState = 'RUNNING' | 'STANDBY' | 'TRIPPED' | 'OFFLINE' | 'STALE' | 'UNKNOWN';
 
 interface PredictOverviewTabProps {
     /* Fleet */
@@ -95,6 +96,7 @@ const OP_STATE_CONFIG: Record<OperatingState, { label: string; color: string; bg
     STANDBY: { label: 'Standby', color: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200', dotColor: 'bg-amber-500', pulse: false },
     TRIPPED: { label: 'Tripped', color: 'text-red-700', bgColor: 'bg-red-50 border-red-200', dotColor: 'bg-red-500', pulse: true },
     OFFLINE: { label: 'Offline', color: 'text-slate-600', bgColor: 'bg-slate-50 border-slate-300', dotColor: 'bg-slate-400', pulse: false },
+    STALE: { label: 'Stale — reconnect', color: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200', dotColor: 'bg-amber-400', pulse: false },
     UNKNOWN: { label: 'Unknown', color: 'text-slate-500', bgColor: 'bg-slate-50 border-slate-200', dotColor: 'bg-slate-300', pulse: false },
 };
 
@@ -128,20 +130,36 @@ function decomposeHealthIndex(
         return rising * 8;
     };
 
+    // Deterministic per-sensor score — same transfer function as the twin
+    // engine (proximity to alarm midpoint, 100 − deviation×40). No jitter:
+    // a monitoring number must not change between renders of the same data.
+    const scoreSensor = (s: { current: number; alarm_high?: number; alarm_low?: number }): number | null => {
+        const hi = s.alarm_high, lo = s.alarm_low;
+        if (s.current == null || hi == null || lo == null || hi <= lo) return null;
+        const deviation = Math.abs(s.current - (hi + lo) / 2) / ((hi - lo) / 2);
+        return Math.max(0, Math.min(100, 100 - deviation * 40));
+    };
+    const categoryHealth = (list: typeof sensorValues): number => {
+        const scored = list.map(s => scoreSensor(s as { current: number; alarm_high?: number; alarm_low?: number })).filter((v): v is number => v != null);
+        // Fall back to the overall index when the category has no alarm bands.
+        const base = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : systemHealth;
+        return Math.max(0, Math.min(100, base - trendPenalty(list)));
+    };
+
     const results = [];
 
     if (vibSensors.length > 0) {
-        const mechHealth = Math.max(30, systemHealth - trendPenalty(vibSensors) + (Math.random() * 4 - 2));
+        const mechHealth = categoryHealth(vibSensors);
         results.push({ label: 'Mechanical', value: Math.round(mechHealth * 10) / 10, icon: <Activity size={12} />, color: mechHealth >= 80 ? 'text-emerald-600' : mechHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
     }
 
     if (tempSensors.length > 0) {
-        const thermalHealth = Math.max(35, systemHealth + 3 - trendPenalty(tempSensors) + (Math.random() * 3 - 1));
+        const thermalHealth = categoryHealth(tempSensors);
         results.push({ label: 'Thermal', value: Math.round(thermalHealth * 10) / 10, icon: <Thermometer size={12} />, color: thermalHealth >= 80 ? 'text-emerald-600' : thermalHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
     }
 
     if (perfSensors.length > 0) {
-        const perfHealth = Math.max(40, systemHealth + 5 - trendPenalty(perfSensors) + (Math.random() * 2 - 1));
+        const perfHealth = categoryHealth(perfSensors);
         results.push({ label: 'Performance', value: Math.round(perfHealth * 10) / 10, icon: <BarChart3 size={12} />, color: perfHealth >= 80 ? 'text-emerald-600' : perfHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
     }
 
@@ -182,7 +200,20 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     const [fleetExpanded, setFleetExpanded] = useState(true);
 
     const hasSensors = !!(twinHealth?.sensor_summary) || assetSensorTrends.length > 0;
-    const operatingState = useMemo(() => deriveOperatingState(assetSensorTrends, twinHealth), [assetSensorTrends, twinHealth]);
+
+    // Freshness gate: values derived from old data must not present as live.
+    const dataAgeDays = useMemo(() => {
+        if (!twinHealth?.updated_at) return null;
+        const age = Math.floor((Date.now() - new Date(twinHealth.updated_at).getTime()) / 86400000);
+        return Number.isFinite(age) ? age : null;
+    }, [twinHealth?.updated_at]);
+    const isStale = dataAgeDays != null && dataAgeDays > STALE_DAYS;
+
+    const operatingState = useMemo(() => {
+        const derived = deriveOperatingState(assetSensorTrends, twinHealth);
+        // Stale data can't substantiate ANY live operating state.
+        return isStale && derived !== 'UNKNOWN' ? 'STALE' : derived;
+    }, [assetSensorTrends, twinHealth, isStale]);
     const opConfig = OP_STATE_CONFIG[operatingState];
 
     // P(Failure) — only a real forecast when RUL data exists. Absence of data
@@ -193,6 +224,22 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
 
     // Health decomposition
     const healthSubs = useMemo(() => decomposeHealthIndex(systemHealth, assetSensorTrends, twinHealth), [systemHealth, assetSensorTrends, twinHealth]);
+
+    // Sensors trending toward trouble (elevated ISO zone, or rising inside a
+    // watch zone). Keeps the Risk Alerts card consistent with the "Watch"
+    // chips: "Watch" and "no active alerts — all clear" must never co-occur.
+    const watchCount = useMemo(() => {
+        const raw = assetSensorTrends.length > 0
+            ? assetSensorTrends
+            : Object.entries(twinHealth?.sensor_summary || {}).map(([tag, val]) => ({ tag, current: val as number, trend: 'stable' as const }));
+        return raw.filter(s => {
+            const z = getISOZone(s.tag, s.current);
+            if (!z) return false;
+            const elevated = z.zone === 'C' || z.zone === 'D' || z.zone === 'Alert' || z.zone === 'Danger';
+            const watchRising = (z.zone === 'B' || z.zone === 'Watch') && s.trend === 'rising';
+            return elevated || watchRising;
+        }).length;
+    }, [assetSensorTrends, twinHealth]);
 
     // RUL bands display
     const p50Band = rulConfidenceBands.find(b => b.percentile === 50);
@@ -252,8 +299,12 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                 <Gauge size={16} />
                             </div>
                             <div>
-                                <p className="text-sm font-semibold text-slate-800">Live Sensor Readings</p>
-                                <p className="text-[10px] text-slate-400">{selectedAssetName} — Real-time field instrument values</p>
+                                <p className="text-sm font-semibold text-slate-800">{isStale ? 'Sensor Readings' : 'Live Sensor Readings'}</p>
+                                <p className="text-[10px] text-slate-400">
+                                    {isStale
+                                        ? `${selectedAssetName} — last data ${dataAgeDays}d ago · reconnect the feed or log new readings`
+                                        : `${selectedAssetName} — Real-time field instrument values`}
+                                </p>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -266,7 +317,13 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                 const diffMs = Date.now() - new Date(twinHealth.updated_at).getTime();
                                 const diffMin = Math.floor(diffMs / 60000);
                                 const timeAgo = diffMin < 1 ? 'just now' : diffMin < 60 ? `${diffMin}m ago` : diffMin < 1440 ? `${Math.floor(diffMin / 60)}h ago` : `${Math.floor(diffMin / 1440)}d ago`;
-                                return (
+                                // Green heartbeat only while the data is actually fresh.
+                                return isStale ? (
+                                    <span className="text-[10px] text-amber-600 font-medium flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                        Stale — updated {timeAgo}
+                                    </span>
+                                ) : (
                                     <span className="text-[10px] text-slate-400 flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                         Updated {timeAgo}
@@ -430,13 +487,17 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                 <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 hover:shadow-sm hover:border-slate-300 transition-all cursor-default">
                     <div className="flex items-center justify-between mb-1">
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Risk Alerts</p>
-                        <div className={`p-1 rounded-md ${alertCount > 0 ? 'bg-red-50 text-red-500' : 'bg-slate-50 text-slate-400'}`}>
+                        <div className={`p-1 rounded-md ${alertCount > 0 ? 'bg-red-50 text-red-500' : watchCount > 0 ? 'bg-amber-50 text-amber-500' : 'bg-slate-50 text-slate-400'}`}>
                             <ShieldAlert size={12} />
                         </div>
                     </div>
                     <h2 className={`text-xl font-bold tabular-nums ${alertCount > 0 ? 'text-red-500' : 'text-slate-700'}`}>{alertCount}</h2>
-                    <p className="text-[9px] text-slate-400 mt-0.5">
-                        {alertCount === 0 ? 'No active alerts' : `${alertCount} breach${alertCount > 1 ? 'es' : ''}`}
+                    <p className={`text-[9px] mt-0.5 ${alertCount === 0 && watchCount > 0 ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                        {alertCount > 0
+                            ? `${alertCount} breach${alertCount > 1 ? 'es' : ''}`
+                            : watchCount > 0
+                                ? `${watchCount} sensor${watchCount > 1 ? 's' : ''} trending — watch`
+                                : 'No active alerts'}
                     </p>
                 </div>
 

@@ -258,6 +258,16 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
             </div>
             )}
 
+            {/* ═══ Sample-data ribbon — the mock fleet must never pass as real ═══ */}
+            {!hasRealData && (
+                <div className="mx-5 my-3 flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+                    <AlertTriangle size={13} className="text-amber-500 shrink-0" />
+                    <p className="text-[11px] text-amber-700 font-medium">
+                        Sample data — these are illustrative assets, not your equipment. Connect assets to see your real fleet.
+                    </p>
+                </div>
+            )}
+
             {/* ═══ Content: Grid or List ═══ */}
             {processed.length === 0 ? (
                 <div className="text-center py-16 px-5">

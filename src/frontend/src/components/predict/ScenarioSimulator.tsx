@@ -3,7 +3,10 @@ import { Sliders, Play, TrendingUp, TrendingDown, Minus, Cpu, DollarSign, Clock,
 import type { ScenarioInput, ScenarioOutput, ScenarioMetrics, GovernanceTier } from '../../types/intelligence';
 
 // ─────────────────────────────────────────────────────────
-//  Mock Scenario Engine (simulates backend Monte Carlo)
+//  Illustrative scenario estimate — linear slider penalties on a
+//  fixed baseline. NOT a simulation: no Monte Carlo runs here, and
+//  the UI must never claim otherwise. Phase 6 of the Predict plan
+//  wires this to eam/utils/monteCarloEngine.ts (the real engine).
 // ─────────────────────────────────────────────────────────
 
 function runMockScenario(input: ScenarioInput): ScenarioOutput {
@@ -61,7 +64,7 @@ function runMockScenario(input: ScenarioInput): ScenarioOutput {
         delta,
         recommendation,
         governance_tier: (input.load_factor > 1.2 || input.temp_delta_c > 25) ? 2 : 3 as GovernanceTier,
-        monte_carlo_runs: 5000,
+        // monte_carlo_runs deliberately omitted — nothing was simulated.
     };
 }
 
@@ -129,8 +132,8 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                         <Sliders size={20} />
                     </div>
                     <div className="text-left">
-                        <h3 className="text-base font-semibold text-slate-800">What-If Scenario Simulator</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Monte Carlo · {result ? `${result.monte_carlo_runs.toLocaleString()} runs` : 'Adjust parameters and run simulation'}</p>
+                        <h3 className="text-base font-semibold text-slate-800">What-If Scenario Explorer</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Illustrative estimate — directional only · Adjust parameters to explore trade-offs</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -206,11 +209,11 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                             {isRunning ? (
                                 <>
                                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    Running Monte Carlo…
+                                    Computing estimate…
                                 </>
                             ) : (
                                 <>
-                                    <Play size={14} /> Run Simulation
+                                    <Play size={14} /> Estimate Impact
                                 </>
                             )}
                         </button>
@@ -316,9 +319,9 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                             <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
                                 <div className="flex items-center gap-2 mb-2">
                                     <Cpu size={14} className="text-blue-400" />
-                                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">AI Recommendation</span>
+                                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">Recommendation — illustrative</span>
                                     <span className="text-[10px] font-mono bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-500 ml-auto">
-                                        T{result.governance_tier} · {result.monte_carlo_runs.toLocaleString()} runs
+                                        T{result.governance_tier} · estimate
                                     </span>
                                 </div>
                                 <p className="text-sm text-slate-700 leading-relaxed">{result.recommendation}</p>
