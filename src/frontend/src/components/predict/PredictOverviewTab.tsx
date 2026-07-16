@@ -9,6 +9,8 @@ import { FleetHealthMap } from './FleetHealthMap';
 import type { FleetAssetHealth, TwinState, SensorTrend } from '../../types/intelligence';
 import type { ConfidenceBand } from '../../eam/services/PredictionService';
 import { STALE_DAYS } from '../../config/predict';
+import { conditionalFailureProbability } from '../../eam/utils/weibull';
+import type { GroundedRul } from '../../lib/predict/groundedFit';
 
 // ─────────────────────────────────────────────────────────
 //  Types
@@ -36,6 +38,8 @@ interface PredictOverviewTabProps {
     rulConfidenceBands: ConfidenceBand[];
     distributionType: string | null;
     rulConfidence: number | null;
+    /** Grounded censored-Weibull fit from failure history (Phase 1) — null when insufficient. */
+    groundedFit?: GroundedRul | null;
 
     /* Sensors */
     twinHealth: TwinState | null;
@@ -100,15 +104,15 @@ const OP_STATE_CONFIG: Record<OperatingState, { label: string; color: string; bg
     UNKNOWN: { label: 'Unknown', color: 'text-slate-500', bgColor: 'bg-slate-50 border-slate-200', dotColor: 'bg-slate-300', pulse: false },
 };
 
-/** Calculate P(failure) in T days using Weibull approximation */
-function calcPFailure(rulDays: number | undefined, confidence: number | null, distributionType: string | null, horizon: number): number {
-    if (!rulDays || rulDays <= 0) return 99;
-    if (horizon >= rulDays) return 95;
-    // Simple Weibull CDF: F(t) = 1 - exp(-(t/eta)^beta)
-    const eta = rulDays; // characteristic life ≈ RUL
-    const beta = distributionType?.includes('weibull_2p') ? 2.5 : distributionType?.includes('weibull_3p') ? 3.0 : 2.0;
-    const pf = (1 - Math.exp(-Math.pow(horizon / eta, beta))) * 100;
-    return Math.round(Math.min(99, Math.max(1, pf)) * 10) / 10;
+/**
+ * P(failure) within `horizonDays`, from the grounded censored-Weibull fit:
+ * conditional survival 1 − R(age+h)/R(age). Returns null when no fit exists —
+ * the card shows "—" rather than a number invented from a hardcoded β.
+ */
+function calcPFailure(fit: GroundedRul | null | undefined, horizonDays: number): number | null {
+    if (!fit || !fit.beta || !fit.eta) return null;
+    const p = conditionalFailureProbability(fit.beta, fit.eta, fit.ageDays * 24, horizonDays * 24) * 100;
+    return Math.round(Math.min(99.9, Math.max(0, p)) * 10) / 10;
 }
 
 /** Decompose health index into sub-indices based on sensor categories */
@@ -193,8 +197,8 @@ function getISOZone(tag: string, value: number): { zone: string; color: string; 
 export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     selectedAssetId, selectedAssetName, onAssetSelect, fleetData, visibleFleetData, totalAssetCount, filterSlot,
     systemHealth, isHealthy, rulDays, alertCount,
-    rulConfidenceBands, distributionType, rulConfidence,
-    twinHealth, assetSensorTrends,
+    rulConfidenceBands, distributionType, rulConfidence: _rulConfidence,
+    groundedFit, twinHealth, assetSensorTrends,
     onInvestigate, onCreateWR, onSetup, hasData = true,
 }) => {
     const [fleetExpanded, setFleetExpanded] = useState(true);
@@ -216,11 +220,15 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     }, [assetSensorTrends, twinHealth, isStale]);
     const opConfig = OP_STATE_CONFIG[operatingState];
 
-    // P(Failure) — only a real forecast when RUL data exists. Absence of data
-    // must read as "—", never as a fabricated 99% failure probability.
-    const pfAvailable = hasData && !!rulDays && rulDays > 0;
-    const pf30 = useMemo(() => calcPFailure(rulDays, rulConfidence, distributionType, 30), [rulDays, rulConfidence, distributionType]);
-    const pf90 = useMemo(() => calcPFailure(rulDays, rulConfidence, distributionType, 90), [rulDays, rulConfidence, distributionType]);
+    // P(Failure) — only from a REAL fitted distribution (grounded censored
+    // Weibull). No fit → "—", never a number invented from a hardcoded β.
+    const pf30 = useMemo(() => calcPFailure(groundedFit, 30), [groundedFit]);
+    const pf90 = useMemo(() => calcPFailure(groundedFit, 90), [groundedFit]);
+    const pfAvailable = hasData && pf30 != null;
+    // Any RUL not backed by the live grounded fit is heuristic — including
+    // legacy rows persisted with a "weibull" label before the engine unification.
+    const isHeuristicRul = !groundedFit && rulDays != null && rulDays > 0;
+    void distributionType; // superseded by groundedFit for display decisions
 
     // Health decomposition
     const healthSubs = useMemo(() => decomposeHealthIndex(systemHealth, assetSensorTrends, twinHealth), [systemHealth, assetSensorTrends, twinHealth]);
@@ -513,15 +521,19 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                         <h2 className={`text-xl font-bold tabular-nums ${(rulDays || 0) < 90 ? 'text-red-500' : 'text-slate-800'}`}>{rulDays?.toFixed(0) || '--'}</h2>
                         <span className="text-[10px] text-slate-400">days</span>
                     </div>
+                    {/* Method tag — a fitted MRL and a heuristic must never look alike */}
+                    <p className={`text-[9px] mt-0.5 font-medium ${groundedFit ? 'text-primary-600' : isHeuristicRul ? 'text-amber-600' : 'text-slate-400'}`}>
+                        {groundedFit
+                            ? `Weibull MRL · β=${groundedFit.beta} · fitted`
+                            : isHeuristicRul ? 'Directional heuristic — not a fitted model' : rulDays ? 'Estimate' : ''}
+                    </p>
                     {/* Compact confidence bands inline */}
-                    {(p50Band || p80Band || p95Band) ? (
+                    {(p50Band || p80Band || p95Band) && (
                         <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center gap-2 flex-wrap">
                             {p50Band && <span className="text-[9px] text-slate-500 tabular-nums"><span className="text-slate-400">P50</span> {p50Band.lower_days}–{p50Band.upper_days}d</span>}
                             {p80Band && <span className="text-[9px] text-slate-400 tabular-nums"><span className="text-slate-300">P80</span> {p80Band.lower_days}–{p80Band.upper_days}d</span>}
                             {p95Band && <span className="text-[9px] text-slate-400 tabular-nums"><span className="text-slate-300">P95</span> {p95Band.lower_days}–{p95Band.upper_days}d</span>}
                         </div>
-                    ) : (
-                        <p className="text-[9px] text-slate-400 mt-0.5">Weibull forecast</p>
                     )}
                 </div>
 
@@ -553,7 +565,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                     ) : (
                         <>
                             <h2 className="text-xl font-bold text-slate-300">—</h2>
-                            <p className="text-[9px] text-slate-400 mt-0.5">Needs an RUL forecast first</p>
+                            <p className="text-[9px] text-slate-400 mt-0.5">Needs failure history (≥2 failures) for a fitted forecast</p>
                         </>
                     )}
                 </div>

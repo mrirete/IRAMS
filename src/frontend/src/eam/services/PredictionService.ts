@@ -5,6 +5,9 @@
  */
 import { supabase } from '../lib/supabase';
 import { buildSensorReading } from '../lib/sensorReading';
+import { failureIntervalsHours, isFailure } from './reliabilityMetrics';
+import { groundedRulFromHistory } from '../../lib/pmRecommendation';
+import { conditionalRemainingQuantileHours } from '../utils/weibull';
 
 // ─── Types ───────────────────────────────────────────────────
 export interface TwinState {
@@ -490,35 +493,77 @@ class PredictionService {
     }
 
     // ── RUL Analysis ───────────────────────────────────────
+    // Grounded-first (R-1/R-6): fit a censored Weibull to the asset's WO
+    // failure history and persist the conditional mean-residual-life RUL —
+    // the same math the Reliability Advisor shows. The health-index heuristic
+    // survives only as an explicitly tagged 'heuristic' fallback.
     private async _runRULAnalysis(assetId: string, _title: string): Promise<{ success: boolean; message: string }> {
-        // Get current twin state for health baseline
         const twin = await this.getTwinState(assetId);
         const sensors = await this.getSensorsForAsset(assetId);
 
+        // DQS impact: penalizes missing or flat sensors (both paths)
+        const flatSensors = sensors.filter(s => s.trend === 'stable').length;
+        const dqsImpact = Math.round(flatSensors * 0.015 * 100) / 100;
         const healthIndex = twin ? Number(twin.health_index) : 75;
-        const remainingHealth = healthIndex - 30; // failure threshold at 30
+        const govTier = healthIndex < 60 ? 2 : healthIndex < 80 ? 3 : 4;
 
-        // Weibull-inspired RUL estimation
-        // Higher health = more days remaining, with sensor trend acceleration
+        // ── Grounded path: WO failure history → censored Weibull → MRL ──
+        const { data: wos } = await supabase.from('work_orders')
+            .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
+            .eq('asset_id', assetId)
+            .order('created_at');
+        const rows = wos || [];
+        const intervals = failureIntervalsHours(rows);
+        const lastFail = rows.filter(isFailure)
+            .map((w: any) => new Date(w.closed_at || w.created_at).getTime())
+            .sort((a, b) => b - a)[0];
+        const suspensions: number[] = [];
+        if (lastFail) {
+            const h = Math.floor((Date.now() - lastFail) / 3600000);
+            if (h > 0) suspensions.push(h);
+        }
+        const grounded = groundedRulFromHistory(intervals, suspensions);
+
+        if (grounded.method === 'weibull-mrl' && grounded.rulDays != null && grounded.beta && grounded.eta) {
+            const ageH = grounded.ageDays * 24;
+            const q = (p: number) => Math.round(conditionalRemainingQuantileHours(grounded.beta!, grounded.eta!, ageH, p) / 24);
+            // Percentile bands = conditional remaining-life quantiles of the fit.
+            const bands = [
+                { percentile: 50, lower_days: q(0.25), upper_days: q(0.75), median_days: q(0.5) },
+                { percentile: 80, lower_days: q(0.10), upper_days: q(0.90), median_days: q(0.5) },
+                { percentile: 95, lower_days: q(0.025), upper_days: q(0.975), median_days: q(0.5) },
+            ];
+            // Confidence from regression fit quality (R² of the median-rank fit).
+            const confidence = Math.min(0.98, Math.max(0.50, grounded.fit?.r2 ?? 0.8));
+
+            const result = await this.upsertRULEstimate({
+                asset_id: assetId,
+                rul_days: grounded.rulDays,
+                confidence: Math.round(confidence * 100) / 100,
+                distribution_type: 'weibull_2p',
+                dqs_impact: dqsImpact,
+                governance_tier: govTier,
+                confidence_bands: bands,
+                computed_at: new Date().toISOString(),
+            });
+            if (!result) return { success: false, message: 'Failed to persist RUL estimate to database.' };
+            return {
+                success: true,
+                message: `RUL Forecast: ${grounded.rulDays.toFixed(0)} days — Weibull MRL (β=${grounded.beta}, η=${grounded.eta}h, R²=${grounded.fit?.r2 ?? '—'}) from ${grounded.fit?.nFailures ?? intervals.length} failures`,
+            };
+        }
+
+        // ── Fallback: health-index heuristic, honestly tagged ──
+        const remainingHealth = healthIndex - 30; // failure threshold at 30
         const risingSensors = sensors.filter(s => s.trend === 'rising').length;
         const trendPenalty = 1 - risingSensors * 0.08;
         const baseRUL = Math.max(15, remainingHealth * 4.5 * trendPenalty);
 
-        // Distribution type selection based on data characteristics
-        const distType = risingSensors >= 2 ? 'weibull_2p' : healthIndex < 70 ? 'weibull_3p' : 'lognormal';
-
-        // Confidence: higher with more sensor data, lower with high variance
+        // Confidence: higher with more sensor data
         const dataPoints = sensors.reduce((sum, s) => sum + (s.readings?.length || 0), 0);
         const confidence = Math.min(0.98, Math.max(0.60, 0.70 + dataPoints * 0.002));
 
-        // DQS impact: penalizes missing or flat sensors
-        const flatSensors = sensors.filter(s => s.trend === 'stable').length;
-        const dqsImpact = Math.round(flatSensors * 0.015 * 100) / 100;
-
-        // Governance tier based on health and confidence
-        const govTier = healthIndex < 60 ? 2 : healthIndex < 80 ? 3 : 4;
-
-        // Confidence bands
+        // Directional spread markers — NOT fitted percentiles (no distribution exists).
         const bands = [
             { percentile: 50, lower_days: Math.round(baseRUL * 0.85), upper_days: Math.round(baseRUL * 1.15), median_days: Math.round(baseRUL) },
             { percentile: 80, lower_days: Math.round(baseRUL * 0.70), upper_days: Math.round(baseRUL * 1.35), median_days: Math.round(baseRUL) },
@@ -529,14 +574,18 @@ class PredictionService {
             asset_id: assetId,
             rul_days: Math.round(baseRUL * 10) / 10,
             confidence: Math.round(confidence * 100) / 100,
-            distribution_type: distType,
+            distribution_type: 'heuristic',
             dqs_impact: dqsImpact,
             governance_tier: govTier,
             confidence_bands: bands,
+            computed_at: new Date().toISOString(),
         });
 
         if (!result) return { success: false, message: 'Failed to persist RUL estimate to database.' };
-        return { success: true, message: `RUL Forecast: ${baseRUL.toFixed(0)} days (${(confidence * 100).toFixed(0)}% confidence, ${distType})` };
+        return {
+            success: true,
+            message: `RUL Forecast: ${baseRUL.toFixed(0)} days — directional heuristic (needs ≥2 recorded failures for a fitted Weibull; ${intervals.length} on record)`,
+        };
     }
 
     // ── Alert Scan ─────────────────────────────────────────

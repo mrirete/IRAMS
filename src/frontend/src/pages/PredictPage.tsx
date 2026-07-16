@@ -15,6 +15,9 @@ import type { FleetAssetHealth } from '../types/intelligence';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 import { SetupJourney } from '../components/predict/SetupJourney';
 import { usePredictSetup } from '../hooks/usePredictSetup';
+import { fetchGroundedFit, type GroundedRul } from '../lib/predict/groundedFit';
+import { conditionalRemainingQuantileHours } from '../eam/utils/weibull';
+import type { RULEstimate } from '../types/intelligence';
 
 type ConditionAlarms = Awaited<ReturnType<DatabaseService['getAssetConditionAlarms']>>;
 
@@ -29,7 +32,7 @@ interface NewInsightForm {
 
 const INSIGHT_TYPES: { value: InsightType; label: string; description: string; icon: React.ReactNode; color: string }[] = [
     { value: 'digital_twin', label: 'Digital Twin Snapshot', description: 'Create a new health baseline for an asset digital twin with current sensor data', icon: <Cpu size={20} />, color: 'text-accent-cyan bg-accent-cyan/10 border-accent-cyan/30' },
-    { value: 'rul_analysis', label: 'RUL Forecast', description: 'Heuristic Remaining Useful Life estimate from health-index trend (experimental — for rigorous fits use Reliability Modelling)', icon: <Clock size={20} />, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
+    { value: 'rul_analysis', label: 'RUL Forecast', description: 'Remaining Useful Life — fitted censored Weibull (conditional MRL) when the asset has failure history; directional heuristic fallback otherwise', icon: <Clock size={20} />, color: 'text-blue-400 bg-blue-500/10 border-blue-500/30' },
     { value: 'alert_config', label: 'Prediction Alert Rule', description: 'Configure AI-driven alert thresholds for vibration, temperature, or flow anomalies', icon: <Zap size={20} />, color: 'text-yellow-500 bg-yellow-500/10 border-yellow-500/30' },
     { value: 'degradation_model', label: 'Degradation Model', description: 'Fit a degradation curve (corrosion / erosion / fatigue) to time-series failure data', icon: <BarChart2 size={20} />, color: 'text-red-400 bg-red-500/10 border-red-500/30' },
 ];
@@ -134,6 +137,44 @@ export const PredictPage: React.FC = () => {
     // the user picks the asset or system to study (or sets up new equipment).
 
     const { loading, twinHealth, rulEstimate, getAssetAlerts, getSensorTrends, refetchPredict } = useIntelligence(selectedAssetId);
+
+    // ── Phase 1 (one engine): the grounded censored-Weibull fit from WO failure
+    // history — the SAME fit the Reliability Advisor computes. When it exists it
+    // overrides the persisted heuristic everywhere (headline RUL, bands, chart,
+    // P-failure), so all Predict surfaces agree by construction.
+    const [grounded, setGrounded] = useState<GroundedRul | null>(null);
+    useEffect(() => {
+        if (!selectedAssetId) { setGrounded(null); return; }
+        let active = true;
+        fetchGroundedFit(selectedAssetId)
+            .then(g => { if (active) setGrounded(g); })
+            .catch(() => { if (active) setGrounded(null); });
+        return () => { active = false; };
+    }, [selectedAssetId]);
+
+    const groundedActive = !!grounded && grounded.method === 'weibull-mrl' && grounded.rulDays != null && !!grounded.beta && !!grounded.eta;
+
+    // Display estimate: grounded fit wins; heuristic estimate passes through
+    // unchanged (tagged by its distribution_type) when no fit exists.
+    const displayRul = useMemo<RULEstimate | null>(() => {
+        if (!groundedActive || !grounded) return rulEstimate;
+        const ageH = grounded.ageDays * 24;
+        const q = (p: number) => Math.round(conditionalRemainingQuantileHours(grounded.beta!, grounded.eta!, ageH, p) / 24);
+        return {
+            asset_id: selectedAssetId,
+            rul_days: grounded.rulDays!,
+            confidence: Math.min(0.98, Math.max(0.50, grounded.fit?.r2 ?? (rulEstimate?.confidence ?? 0.8))),
+            distribution_type: 'weibull_2p',
+            dqs_impact: rulEstimate?.dqs_impact ?? 0,
+            governance_tier: rulEstimate?.governance_tier ?? 3,
+            computed_at: rulEstimate?.computed_at ?? new Date().toISOString(),
+            confidence_bands: [
+                { percentile: 50, lower_days: q(0.25), upper_days: q(0.75), median_days: q(0.5) },
+                { percentile: 80, lower_days: q(0.10), upper_days: q(0.90), median_days: q(0.5) },
+                { percentile: 95, lower_days: q(0.025), upper_days: q(0.975), median_days: q(0.5) },
+            ],
+        } as RULEstimate;
+    }, [groundedActive, grounded, rulEstimate, selectedAssetId]);
 
     const selectedAsset = getAssetById(selectedAssetId);
     const assetAlerts = useMemo(() => getAssetAlerts(selectedAssetId), [getAssetAlerts, selectedAssetId]);
@@ -363,7 +404,7 @@ export const PredictPage: React.FC = () => {
                             <FileWarning size={11} /> Experimental
                         </span>
                     </div>
-                    <p className="text-slate-500 text-sm mt-1">Condition-based health monitoring & heuristic forecasts — directional triage, not a fitted reliability model</p>
+                    <p className="text-slate-500 text-sm mt-1">Condition-based health monitoring & failure forecasting — fitted Weibull RUL where failure history exists, directional heuristics otherwise</p>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -388,11 +429,11 @@ export const PredictPage: React.FC = () => {
             </div>
 
             {/* ═══ Experimental disclaimer — only once an asset's heuristics are on screen ═══ */}
-            {selectedAssetId && (
+            {selectedAssetId && !groundedActive && (
                 <div className="flex items-start gap-3 px-4 py-3 bg-amber-50 border border-amber-200 rounded-card text-sm">
                     <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                     <p className="text-amber-800 leading-relaxed">
-                        <strong>Experimental:</strong> Health Index and RUL here are <strong>heuristic estimates</strong> from condition trends — useful for triage, not for life decisions. For rigorous Weibull fits and Monte-Carlo availability analysis, use{' '}
+                        <strong>Directional only:</strong> this asset has no fitted life model yet — Health Index and RUL are <strong>heuristic estimates</strong> from condition trends, useful for triage but not for life decisions. A fitted Weibull RUL appears automatically once ≥2 failures are on record. For manual life-data studies and Monte-Carlo availability analysis, use{' '}
                         <a href="/reliability-modelling" className="font-semibold underline decoration-amber-400 underline-offset-2 hover:text-amber-900">Reliability Modelling</a>.
                     </p>
                 </div>
@@ -806,11 +847,12 @@ export const PredictPage: React.FC = () => {
                     }
                     systemHealth={systemHealth}
                     isHealthy={isHealthy}
-                    rulDays={rulEstimate?.rul_days}
+                    rulDays={displayRul?.rul_days}
                     alertCount={effectiveAlertCount}
-                    rulConfidenceBands={rulEstimate?.confidence_bands || []}
-                    distributionType={rulEstimate?.distribution_type || null}
-                    rulConfidence={rulEstimate?.confidence ?? null}
+                    rulConfidenceBands={displayRul?.confidence_bands || []}
+                    distributionType={displayRul?.distribution_type || null}
+                    rulConfidence={displayRul?.confidence ?? null}
+                    groundedFit={groundedActive ? grounded : null}
                     twinHealth={twinHealth}
                     assetSensorTrends={assetSensorTrends}
                     onInvestigate={() => window.location.href = '/analyze'}
@@ -823,7 +865,7 @@ export const PredictPage: React.FC = () => {
             {selectedAssetId && activeTab === 'twin' && (
                 <DigitalTwinTab
                     twinHealth={twinHealth}
-                    rulEstimate={rulEstimate}
+                    rulEstimate={displayRul}
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
                 />
@@ -831,8 +873,9 @@ export const PredictPage: React.FC = () => {
 
             {selectedAssetId && activeTab === 'rul' && (
                 <RULReliabilityTab
-                    rulEstimate={rulEstimate}
+                    rulEstimate={displayRul}
                     assetAlerts={assetAlerts}
+                    groundedFit={groundedActive ? grounded : null}
                 />
             )}
 

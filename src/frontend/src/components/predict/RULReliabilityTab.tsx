@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FileWarning, ShieldCheck, HelpCircle, CheckCircle2, XCircle, Wrench, BarChart3, Loader2 } from 'lucide-react';
 import { WeibullChart } from './WeibullChart';
 import type { RULEstimate, PredictionAlert } from '../../types/intelligence';
+import type { GroundedRul } from '../../lib/predict/groundedFit';
 
 interface FeedbackStats {
     actionable: number;
@@ -12,6 +13,8 @@ interface FeedbackStats {
 interface RULReliabilityTabProps {
     rulEstimate: RULEstimate | null;
     assetAlerts: PredictionAlert[];
+    /** Grounded censored-Weibull fit (Phase 1) — drives the survival curve & method note. */
+    groundedFit?: GroundedRul | null;
     /** Feedback stats for the current asset — drives precision display */
     feedbackStats?: FeedbackStats | null;
     /** Called when user marks an alert as Actionable or False Alarm */
@@ -23,7 +26,7 @@ interface RULReliabilityTabProps {
 }
 
 export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
-    rulEstimate, assetAlerts, feedbackStats, onAlertFeedback, onCreateWorkOrder, alertFeedbackMap = {},
+    rulEstimate, assetAlerts, groundedFit, feedbackStats, onAlertFeedback, onCreateWorkOrder, alertFeedbackMap = {},
 }) => {
     const [loadingFeedback, setLoadingFeedback] = useState<Record<string, boolean>>({});
     const [loadingWO, setLoadingWO] = useState<string | null>(null);
@@ -52,11 +55,16 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
                         <h3 className="text-base font-semibold text-slate-800 mb-2 flex items-center justify-between">
                             Remaining Useful Life
-                            <span className="text-xs font-normal text-slate-500 bg-slate-50 px-2 py-1 rounded">
-                                {rulEstimate?.distribution_type.replace('_', ' ').toUpperCase()}
+                            {/* No live fit → heuristic, whatever a legacy row's label claims */}
+                            <span className={`text-xs font-normal px-2 py-1 rounded ${groundedFit ? 'text-primary-700 bg-primary-50 border border-primary-100' : 'text-amber-700 bg-amber-50 border border-amber-200'}`}>
+                                {groundedFit ? 'WEIBULL MRL · FITTED' : 'HEURISTIC · DIRECTIONAL'}
                             </span>
                         </h3>
-                        <p className="text-xs text-slate-400 mb-4 leading-relaxed">Statistical estimate of how many days remain before this asset reaches functional failure. The confidence bands below show the range of possible outcomes.</p>
+                        <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+                            {groundedFit
+                                ? groundedFit.note
+                                : 'Directional estimate from the health-index trend — not a fitted life model. It becomes a fitted Weibull automatically once this asset has ≥2 recorded failures.'}
+                        </p>
 
                         <div className="flex items-baseline justify-center gap-1 my-6">
                             <span className={`text-5xl font-bold ${(rulEstimate?.rul_days || 0) < 90 ? 'text-red-400' : 'text-slate-800'}`}>
@@ -98,8 +106,8 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                             })}
                         </div>
 
-                        {/* Weibull Survival Curve */}
-                        <WeibullChart rulEstimate={rulEstimate} />
+                        {/* Weibull Survival Curve — plotted only from the grounded fit */}
+                        <WeibullChart rulEstimate={rulEstimate} groundedFit={groundedFit} />
                     </div>
                 </div>
 
