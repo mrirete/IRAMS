@@ -1,9 +1,101 @@
 import React, { useState } from 'react';
 import { Sliders, Play, TrendingUp, TrendingDown, Minus, Cpu, DollarSign, Clock, Activity, Shield, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import type { ScenarioInput, ScenarioOutput, ScenarioMetrics, GovernanceTier } from '../../types/intelligence';
+import type { GroundedRul } from '../../lib/predict/groundedFit';
+import { runMonteCarloSimulation } from '../../eam/utils/monteCarloEngine';
 
 // ─────────────────────────────────────────────────────────
-//  Mock Scenario Engine (simulates backend Monte Carlo)
+//  Two paths (Phase 6):
+//   REAL — when the asset has a fitted censored Weibull (grounded fit),
+//   scenarios run through eam/utils/monteCarloEngine.ts: Weibull TTF +
+//   lognormal TTR + PM renewal, baseline vs projected. Slider physics uses
+//   documented engineering rules of thumb (cited inline).
+//   ILLUSTRATIVE — no fit: the linear estimate below, honestly labelled.
+// ─────────────────────────────────────────────────────────
+
+const MC_RUNS = 2000;
+// Documented cost/repair assumptions shown in the results footnote.
+const ASSUME = { costPerFailure: 10000, pmCost: 1500, mttrHours: 8, ttrSigma: 0.6, pmDurationHours: 4 };
+
+/**
+ * Slider physics (rules of thumb, cited):
+ *  - load factor L: rolling-bearing life ∝ 1/L³ (ISO 281 cube law) → η/L³
+ *  - temp Δ: lubricant/insulation life halves per +10 °C (Arrhenius rule) → η·2^(−Δ/10)
+ */
+function adjustedEtaHours(etaHours: number, loadFactor: number, tempDeltaC: number): number {
+    return etaHours / Math.pow(Math.max(0.1, loadFactor), 3) * Math.pow(2, -tempDeltaC / 10);
+}
+
+function runRealScenario(input: ScenarioInput, fit: GroundedRul): ScenarioOutput {
+    const beta = fit.beta!;
+    const etaNominal = fit.eta!;
+    const base = {
+        beta,
+        muR: Math.log(ASSUME.mttrHours),
+        sigmaR: ASSUME.ttrSigma,
+        missionTime: 8760,
+        numRuns: MC_RUNS,
+        costPerFailure: ASSUME.costPerFailure,
+        pmCost: ASSUME.pmCost,
+        pmDuration: ASSUME.pmDurationHours,
+    };
+    // Baseline = nominal duty (load 1.0×, ΔT 0) at the default 180d PM.
+    const baseOut = runMonteCarloSimulation({ ...base, eta: etaNominal, pmInterval: 180 * 24 });
+    // Projected = slider duty + chosen PM interval.
+    const projOut = runMonteCarloSimulation({
+        ...base,
+        eta: adjustedEtaHours(etaNominal, input.load_factor, input.temp_delta_c),
+        pmInterval: input.pm_interval_days * 24,
+    });
+
+    const metrics = (o: ReturnType<typeof runMonteCarloSimulation>): ScenarioMetrics => {
+        const runs = o.pmRuns.length ? o.pmRuns : o.rtfRuns;
+        const p = o.pmPercentiles ?? o.rtfPercentiles;
+        const pFail = runs.filter(r => r.failures > 0).length / (runs.length || 1);
+        // Binomial 95% CI on P(≥1 failure) over the simulated year.
+        const se = Math.sqrt(Math.max(pFail * (1 - pFail), 1e-9) / (runs.length || 1));
+        return {
+            availability_pct: p.ao.p50,
+            mtbf_days: Math.round(p.mtbfSim / 24),
+            annual_cost_usd: p.cost.p50,
+            failure_probability_1yr: Math.round(pFail * 1000) / 1000,
+            confidence_interval: [Math.max(0, Math.round((pFail - 1.96 * se) * 1000) / 1000), Math.min(1, Math.round((pFail + 1.96 * se) * 1000) / 1000)],
+        };
+    };
+
+    const baseline = metrics(baseOut);
+    const projected = metrics(projOut);
+    const delta = {
+        availability: projected.availability_pct - baseline.availability_pct,
+        mtbf: projected.mtbf_days - baseline.mtbf_days,
+        cost: projected.annual_cost_usd - baseline.annual_cost_usd,
+        failure_prob: projected.failure_probability_1yr - baseline.failure_probability_1yr,
+    };
+
+    let recommendation = '';
+    if (delta.availability > 0.5) {
+        recommendation = `Simulated changes improve availability by +${delta.availability.toFixed(1)}pp and shift MTBF by ${delta.mtbf.toFixed(0)} days (fitted β=${beta}, η adjusted for duty). Cost delta $${Math.abs(delta.cost).toLocaleString()}/yr ${delta.cost < 0 ? 'saved' : 'added'}.`;
+    } else if (delta.availability < -0.5) {
+        recommendation = `Warning: simulated changes degrade availability by ${delta.availability.toFixed(1)}pp and raise P(failure, 1yr) by ${(delta.failure_prob * 100).toFixed(0)}pp. Revisit the PM interval or duty assumptions.`;
+    } else {
+        recommendation = `Marginal availability impact (${delta.availability >= 0 ? '+' : ''}${delta.availability.toFixed(1)}pp). Cost delta: ${delta.cost < 0 ? '−' : '+'}$${Math.abs(delta.cost).toLocaleString()}/yr. Judge whether the operational change is worth it.`;
+    }
+
+    return {
+        scenario: input,
+        baseline,
+        projected,
+        delta,
+        recommendation,
+        governance_tier: (input.load_factor > 1.2 || input.temp_delta_c > 25) ? 2 : 3 as GovernanceTier,
+        monte_carlo_runs: MC_RUNS,
+    };
+}
+
+// ─────────────────────────────────────────────────────────
+//  Illustrative fallback — linear slider penalties on a fixed
+//  baseline. NOT a simulation; only used (and labelled) when the
+//  asset has no fitted life model yet.
 // ─────────────────────────────────────────────────────────
 
 function runMockScenario(input: ScenarioInput): ScenarioOutput {
@@ -61,7 +153,7 @@ function runMockScenario(input: ScenarioInput): ScenarioOutput {
         delta,
         recommendation,
         governance_tier: (input.load_factor > 1.2 || input.temp_delta_c > 25) ? 2 : 3 as GovernanceTier,
-        monte_carlo_runs: 5000,
+        // monte_carlo_runs deliberately omitted — nothing was simulated.
     };
 }
 
@@ -72,9 +164,12 @@ function runMockScenario(input: ScenarioInput): ScenarioOutput {
 interface Props {
     assetId: string;
     assetName?: string;
+    /** fitted censored Weibull — presence switches to the REAL Monte Carlo path */
+    groundedFit?: GroundedRul | null;
 }
 
-export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
+export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, groundedFit }) => {
+    const hasFit = !!groundedFit && !!groundedFit.beta && !!groundedFit.eta;
     const [isExpanded, setIsExpanded] = useState(true);
     const [pmInterval, setPmInterval] = useState(180);
     const [loadFactor, setLoadFactor] = useState(1.0);
@@ -84,18 +179,24 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
 
     const handleRun = () => {
         setIsRunning(true);
-        // Simulate computation delay
+        const input: ScenarioInput = {
+            scenario_name: `What-If — ${assetName || assetId}`,
+            pm_interval_days: pmInterval,
+            load_factor: loadFactor,
+            temp_delta_c: tempDelta,
+            strategy: 'current_pm',
+        };
+        // Yield a frame so the spinner paints, then compute.
         setTimeout(() => {
-            const output = runMockScenario({
-                scenario_name: `What-If — ${assetName || assetId}`,
-                pm_interval_days: pmInterval,
-                load_factor: loadFactor,
-                temp_delta_c: tempDelta,
-                strategy: 'current_pm',
-            });
-            setResult(output);
-            setIsRunning(false);
-        }, 800);
+            try {
+                const output = hasFit && groundedFit
+                    ? runRealScenario(input, groundedFit)   // REAL Monte Carlo (fitted β/η)
+                    : runMockScenario(input);               // illustrative — labelled
+                setResult(output);
+            } finally {
+                setIsRunning(false);
+            }
+        }, 50);
     };
 
     const handleReset = () => {
@@ -129,8 +230,12 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                         <Sliders size={20} />
                     </div>
                     <div className="text-left">
-                        <h3 className="text-base font-semibold text-slate-800">What-If Scenario Simulator</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Monte Carlo · {result ? `${result.monte_carlo_runs.toLocaleString()} runs` : 'Adjust parameters and run simulation'}</p>
+                        <h3 className="text-base font-semibold text-slate-800">What-If Scenario Explorer</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                            {hasFit
+                                ? `Monte Carlo simulation — fitted β=${groundedFit!.beta}, η=${Math.round(groundedFit!.eta! / 24)}d · ${MC_RUNS.toLocaleString()} runs per scenario`
+                                : 'Illustrative estimate — directional only (a fitted life model enables real simulation) · Adjust parameters to explore trade-offs'}
+                        </p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -206,11 +311,11 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                             {isRunning ? (
                                 <>
                                     <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    Running Monte Carlo…
+                                    {hasFit ? 'Running Monte Carlo…' : 'Computing estimate…'}
                                 </>
                             ) : (
                                 <>
-                                    <Play size={14} /> Run Simulation
+                                    <Play size={14} /> {hasFit ? 'Run Simulation' : 'Estimate Impact'}
                                 </>
                             )}
                         </button>
@@ -316,12 +421,25 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName }) => {
                             <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
                                 <div className="flex items-center gap-2 mb-2">
                                     <Cpu size={14} className="text-blue-400" />
-                                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">AI Recommendation</span>
+                                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">
+                                        {result.monte_carlo_runs ? 'Recommendation — simulated' : 'Recommendation — illustrative'}
+                                    </span>
                                     <span className="text-[10px] font-mono bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-500 ml-auto">
-                                        T{result.governance_tier} · {result.monte_carlo_runs.toLocaleString()} runs
+                                        T{result.governance_tier} · {result.monte_carlo_runs ? `${result.monte_carlo_runs.toLocaleString()} runs` : 'estimate'}
                                     </span>
                                 </div>
                                 <p className="text-sm text-slate-700 leading-relaxed">{result.recommendation}</p>
+                                {result.monte_carlo_runs ? (
+                                    <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                                        Assumptions: baseline = nominal duty at 180d PM; load via ISO 281 cube law (η∝1/L³);
+                                        temperature via the 10 °C life-halving rule; MTTR ~{ASSUME.mttrHours}h lognormal;
+                                        failure ${ASSUME.costPerFailure.toLocaleString()} / PM ${ASSUME.pmCost.toLocaleString()}.
+                                    </p>
+                                ) : (
+                                    <p className="text-[10px] text-slate-400 mt-2">
+                                        Illustrative only — no fitted life model on this asset yet; numbers are directional.
+                                    </p>
+                                )}
                             </div>
                         </div>
                     )}

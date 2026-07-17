@@ -270,6 +270,16 @@ export const DetailsTab: React.FC<{
 };
 
 // --- PROPERTIES TAB ---
+// Attribute flags describe WHAT a contact is (drives labor/vendor/quals behavior).
+// Permissions (login / submit requests / log time) are NOT here — they live in the
+// role system (Admin › Users & Permissions), the single source of truth.
+type AttributeFlagKey = 'isLabour' | 'hasQualifications' | 'isVendor';
+const ATTRIBUTE_FLAGS: { key: AttributeFlagKey; label: string; description: string }[] = [
+    { key: 'isLabour', label: 'Is Labour', description: 'Schedulable internal labor — appears in assignment & capacity planning.' },
+    { key: 'isVendor', label: 'Is Vendor', description: 'External supplier — available in purchasing & inventory.' },
+    { key: 'hasQualifications', label: 'Has Qualifications', description: 'Tracks certifications — enables the Labor & Quals tabs.' },
+];
+
 export const PropertiesTab: React.FC<{ contact: Contact, users: User[], onChange: (c: Contact) => void }> = ({ contact, users, onChange }) => {
     const linkedUser = users.find((u: any) => u.contactId === contact.id || u.contact_id === contact.id);
     const { profile, role } = useAuth();
@@ -323,17 +333,26 @@ export const PropertiesTab: React.FC<{ contact: Contact, users: User[], onChange
             )}
 
             <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
-                <h3 className="font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">Settings & Flags</h3>
-                <div className="space-y-2">
-                    <div className="space-y-2">
-                        {Object.entries(contact.flags || {}).map(([key, val]) => (
-                            <label key={key} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-100">
-                                <span className="text-sm text-slate-700 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                                <input type="checkbox" checked={!!val} onChange={() => handleFlagToggle(key as any)} className="rounded text-blue-600" />
-                            </label>
-                        ))}
-                    </div>
+                <h3 className="font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">Roles & Attributes</h3>
+                <div className="space-y-1">
+                    {ATTRIBUTE_FLAGS.map(({ key, label, description }) => (
+                        <label key={key} className="flex items-start justify-between gap-3 p-2 hover:bg-slate-50 rounded cursor-pointer border border-transparent hover:border-slate-100">
+                            <span className="min-w-0">
+                                <span className="block text-sm text-slate-700">{label}</span>
+                                <span className="block text-xs text-slate-400">{description}</span>
+                            </span>
+                            <input
+                                type="checkbox"
+                                checked={!!contact.flags?.[key]}
+                                onChange={() => handleFlagToggle(key)}
+                                className="mt-0.5 flex-shrink-0 rounded text-blue-600"
+                            />
+                        </label>
+                    ))}
                 </div>
+                <p className="text-xs text-slate-400 border-t border-slate-100 pt-3">
+                    These describe what this contact <em>is</em>. System permissions — login, submitting requests, logging time — are governed by the person's role in <span className="font-medium text-slate-500">Admin › Users &amp; Permissions</span>.
+                </p>
             </div>
         </div>
     );
@@ -830,9 +849,64 @@ export const ChildrenTab: React.FC<{ contact: Contact, allContacts: Contact[], o
     );
 };
 
-// --- JOBS TAB (Placeholder) ---
-export const JobsTab: React.FC<{ contact: Contact }> = ({ contact }) => (
-    <div className="text-center py-10 text-slate-400 italic">No associated work orders found for this contact.</div>
-);
+// --- JOBS TAB ---
+// Work orders assigned to this contact (work_orders.assigned_to).
+const WO_STATUS_STYLES: Record<string, string> = {
+    OPEN: 'bg-blue-50 text-blue-700 border-blue-200',
+    IN_PROGRESS: 'bg-amber-50 text-amber-700 border-amber-200',
+    ON_HOLD: 'bg-slate-100 text-slate-600 border-slate-200',
+    COMPLETED: 'bg-green-50 text-green-700 border-green-200',
+    CLOSED: 'bg-green-50 text-green-700 border-green-200',
+    CANCELLED: 'bg-red-50 text-red-600 border-red-200',
+};
+
+export const JobsTab: React.FC<{ contact: Contact }> = ({ contact }) => {
+    const [jobs, setJobs] = useState<any[] | null>(null);
+
+    useEffect(() => {
+        let active = true;
+        setJobs(null);
+        DatabaseService.getInstance().getWorkOrdersByContactId(contact.id)
+            .then(rows => { if (active) setJobs(rows); });
+        return () => { active = false; };
+    }, [contact.id]);
+
+    if (jobs === null) {
+        return <div className="text-center py-10 text-slate-400 italic">Loading work orders…</div>;
+    }
+    if (jobs.length === 0) {
+        return <div className="text-center py-10 text-slate-400 italic">No work orders assigned to this contact.</div>;
+    }
+
+    return (
+        <div className="space-y-2">
+            {jobs.map(wo => {
+                const status = String(wo.status || 'OPEN').toUpperCase();
+                const badge = WO_STATUS_STYLES[status] || 'bg-slate-100 text-slate-600 border-slate-200';
+                return (
+                    <div key={wo.id} className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-sm font-medium text-slate-900 truncate">{wo.title || 'Untitled work order'}</div>
+                                <div className="text-xs text-slate-400 font-mono mt-0.5">{wo.wo_number || wo.id}</div>
+                            </div>
+                            <span className={`flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full border ${badge}`}>
+                                {status.replace(/_/g, ' ')}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                            {wo.type && <span className="inline-flex items-center gap-1"><AlertCircle size={12} /> {wo.type}</span>}
+                            {wo.due_date && (
+                                <span className="inline-flex items-center gap-1">
+                                    <Calendar size={12} /> Due {new Date(wo.due_date).toLocaleDateString()}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+};
 
 

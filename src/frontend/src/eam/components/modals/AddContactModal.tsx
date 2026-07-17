@@ -85,7 +85,6 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                     hourlyRate: 0, currency: 'USD',
                     address: { street: '', city: '', state: '', zip: '', country: formData.country || '' },
                     flags: {
-                        canLogin: false, canSubmitRequests: false, canLogTime: false,
                         isLabour: false, hasQualifications: false, isVendor: true,
                     },
                 } as Contact;
@@ -138,9 +137,6 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 hourlyRate: 85, currency: 'USD',
                 address: { street: '', city: '', state: '', zip: '', country: 'USA' },
                 flags: {
-                    canLogin: createUser || !!existingUser,
-                    canSubmitRequests: true,
-                    canLogTime: true,
                     isLabour: true,
                     hasQualifications: false,
                     isVendor: false

@@ -30,6 +30,8 @@ import { buildWorkOrder } from '../lib/workOrder';
 import { VALUATION_CODES, valuationByCode, VALUATION_TONE_CLASSES } from '../../lib/valuationCodes';
 import { AddReadingPointModal } from '../components/modals/AddReadingPointModal';
 import { saveReadings, withLastReadings, type BreachInfo } from '../services/readingEntry';
+import { suggestBandsFromReadings, MIN_BASELINE_READINGS } from '../../lib/predict/baselineLimits';
+import { limitSourceLabel } from '../../lib/predict/limitLibrary';
 
 // Structural hierarchy levels that never take readings — only maintainable items
 // (equipment + sub-components) do. Used to keep the Condition Data asset list from
@@ -281,6 +283,7 @@ export const Readings: React.FC = () => {
         assetId: string; name: string; category: 'METER' | 'CONDITION'; unit: string;
         minCritical?: number | null; minWarning?: number | null; maxWarning?: number | null; maxCritical?: number | null;
         monitoringFrequencyDays?: number | null; pfIntervalDays?: number | null;
+        limitSource?: string | null;
     }) => {
         if (!canCreate) {
             showToast('Access Denied: You do not have permission to add reading points.', 'error');
@@ -300,6 +303,7 @@ export const Readings: React.FC = () => {
             maxCritical: payload.maxCritical ?? null,
             monitoringFrequencyDays: payload.monitoringFrequencyDays ?? null,
             pfIntervalDays: payload.pfIntervalDays ?? null,
+            limitSource: payload.limitSource ?? null,
             active: true,
         };
         try {
@@ -476,6 +480,42 @@ export const Readings: React.FC = () => {
         }
 
         setLogs(updatedLogs);
+    };
+
+    // Learned-baseline limits (1.5.2): propose μ+2σ / μ+3σ from this point's own
+    // logged readings; the user approves before anything is written. Provenance
+    // becomes 'learned'.
+    const handleSuggestBands = async (def: ReadingDefinition) => {
+        const vals = logs
+            .filter(l => l.definitionId === def.id && l.isActive !== false)
+            .map(l => Number(l.value))
+            .filter(v => Number.isFinite(v));
+        const s = suggestBandsFromReadings(vals);
+        if (!s) {
+            showToast(`Needs at least ${MIN_BASELINE_READINGS} readings with some variation to learn limits (${vals.length} on record).`, 'warning');
+            return;
+        }
+        const ok = window.confirm(
+            `Suggested limits for "${def.name}" (${def.unit}):\n\n` +
+            `  Warn above: ${s.maxWarning}\n  Alert above: ${s.maxCritical}\n\n` +
+            `${s.rationale}\n\nApply these bands?`
+        );
+        if (!ok) return;
+        try {
+            await DatabaseService.getInstance().updateReadingDefinitionBands(def.id, {
+                minCritical: def.minCritical ?? null,
+                minWarning: def.minWarning ?? null,
+                maxWarning: s.maxWarning,
+                maxCritical: s.maxCritical,
+                limitSource: 'learned',
+            });
+            setDefinitions(prev => prev.map(d => d.id === def.id
+                ? { ...d, maxWarning: s.maxWarning, maxCritical: s.maxCritical, limitSource: 'learned' }
+                : d));
+            showToast(`Limits updated from ${s.n} readings — provenance: learned baseline.`, 'success');
+        } catch (e: any) {
+            showToast(`Could not update limits: ${e?.message || 'unknown error'}`, 'error');
+        }
     };
 
     const handleDeleteDefinition = async (id: string) => {
@@ -711,6 +751,8 @@ export const Readings: React.FC = () => {
                                     onMeterChange={handleMeterChange}
                                     onDelete={handleDeleteDefinition}
                                     onOpenAddPoint={setAddPointAssetId}
+                                    onSuggestBands={handleSuggestBands}
+                                    logCountByDef={logs.reduce<Record<string, number>>((m, l) => { if (l.isActive !== false) m[l.definitionId] = (m[l.definitionId] || 0) + 1; return m; }, {})}
                                     readingTypes={readingTypes}
                                 />
                             )}
@@ -1537,7 +1579,10 @@ const DefinitionsManager: React.FC<{
     onMeterChange: (id: string) => void;
     onDelete: (id: string) => void;
     onOpenAddPoint: (assetId: string) => void;
-}> = ({ definitions, assetId, readingTypes, onAdd, onMeterChange, onDelete, onOpenAddPoint }) => {
+    /** learned-baseline suggestion (1.5.2) — proposes bands from the point's own logs */
+    onSuggestBands?: (def: ReadingDefinition) => void;
+    logCountByDef?: Record<string, number>;
+}> = ({ definitions, assetId, readingTypes, onAdd, onMeterChange, onDelete, onOpenAddPoint, onSuggestBands, logCountByDef = {} }) => {
     const [isAddOpen, setIsAddOpen] = useState(false);
     const [selectedType, setSelectedType] = useState('');
 
@@ -1595,15 +1640,30 @@ const DefinitionsManager: React.FC<{
                 </div>
             )}
 
-            {definitions.map(def => (
+            {definitions.map(def => {
+                const hasBands = def.minCritical != null || def.minWarning != null || def.maxWarning != null || def.maxCritical != null;
+                const src = limitSourceLabel(def.limitSource);
+                const srcTone = src.tone === 'standard' ? 'bg-blue-50 text-blue-700 border-blue-200'
+                    : src.tone === 'learned' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : src.tone === 'template' ? 'bg-slate-50 text-slate-600 border-slate-200'
+                    : src.tone === 'manual' ? 'bg-slate-50 text-slate-500 border-slate-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200';
+                const canSuggest = def.category === 'CONDITION' && onSuggestBands && (logCountByDef[def.id] || 0) >= MIN_BASELINE_READINGS;
+                return (
                 <div key={def.id} className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
                     <div>
                         <div className="flex items-center gap-2 mb-1">
                             <h4 className="font-bold text-slate-900">{def.name}</h4>
                             {def.category === 'METER' ? <Clock size={14} className="text-blue-500" /> : <Activity size={14} className="text-blue-500" />}
+                            {/* Band provenance (1.5.3): every limit cites its source */}
+                            {hasBands && (
+                                <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${srcTone}`} title="Where these alarm bands came from">
+                                    {src.text}
+                                </span>
+                            )}
                         </div>
                         <div className="text-xs text-slate-500">
-                            Unit: {def.unit} | Limits: {def.minCritical || '-'} / {def.maxCritical || '-'}
+                            Unit: {def.unit} | Limits: {def.minCritical ?? '-'} <span className="text-amber-500">⚠{def.maxWarning ?? '-'}</span> / <span className="text-red-400">{def.maxCritical ?? '-'}</span>
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -1611,6 +1671,15 @@ const DefinitionsManager: React.FC<{
                             <div className="text-xs text-slate-400 uppercase">Current</div>
                             <div className="font-bold text-slate-900">{def.lastReadingValue ?? '-'} {def.unit}</div>
                         </div>
+                        {canSuggest && (
+                            <button
+                                onClick={() => onSuggestBands!(def)}
+                                className="px-3 py-1.5 border border-emerald-300 bg-emerald-50 rounded text-xs font-medium hover:bg-emerald-100 text-emerald-700"
+                                title={`Propose warning/critical limits from this point's ${logCountByDef[def.id]} logged readings (μ+2σ / μ+3σ) — you approve before anything changes`}
+                            >
+                                Suggest limits
+                            </button>
+                        )}
                         {def.category === 'METER' && (
                             <button
                                 onClick={() => onMeterChange(def.id)}
@@ -1624,7 +1693,8 @@ const DefinitionsManager: React.FC<{
                         <button onClick={() => onDelete(def.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={16} /></button>
                     </div>
                 </div>
-            ))}
+                );
+            })}
             {definitions.length === 0 && !isAddOpen && (
                 <div className="text-center py-8 text-slate-400 border border-dashed border-slate-200 rounded-lg">
                     No reading points defined for this asset. Add one to start tracking.

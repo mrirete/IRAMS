@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Activity, AlertTriangle, Clock, RefreshCcw, Save, X } from 'lucide-react';
 import { Asset } from '../../types';
 import { Button } from '../ui';
+import { resolveMachineClass, vibrationBands, isVibrationUnit, TEMPERATURE_BANDS, ISO20816_ZONES } from '../../../lib/predict/limitLibrary';
 
 // ── Reading Point editor ─────────────────────────────────────────────────────
 // A real measuring-point definition (SAP PM "measuring point" / Maximo "meter"):
@@ -22,6 +23,8 @@ export interface NewReadingPoint {
     maxCritical?: number | null;
     monitoringFrequencyDays?: number | null;
     pfIntervalDays?: number | null;
+    /** band provenance (0198): iso20816-<class> | template | learned | oem | manual */
+    limitSource?: string | null;
 }
 
 // Common engineering units, grouped, for the reading-point unit picker. Techs
@@ -39,10 +42,12 @@ const UNIT_GROUPS: { label: string; units: string[] }[] = [
 const ALL_PRESET_UNITS = new Set(UNIT_GROUPS.flatMap(g => g.units));
 
 // One-tap templates that prefill a whole point (name/type/unit/bands) — the big
-// time-saver for technicians configuring rounds.
-const QUICK_POINTS: { label: string; name: string; category: 'METER' | 'CONDITION'; unit: string; maxWarning?: string; maxCritical?: string }[] = [
-    { label: 'Vibration', name: 'Vibration', category: 'CONDITION', unit: 'mm/s', maxWarning: '4.5', maxCritical: '7.1' },
-    { label: 'Temperature', name: 'Temperature', category: 'CONDITION', unit: '°C', maxWarning: '80', maxCritical: '95' },
+// time-saver for technicians configuring rounds. Vibration bands are NOT static:
+// they resolve from the ISO 20816-3 machine class picked in the modal (the old
+// universal 4.5/7.1 was the large-machine boundary applied to everything).
+const QUICK_POINTS: { label: string; name: string; category: 'METER' | 'CONDITION'; unit: string; maxWarning?: string; maxCritical?: string; source?: string }[] = [
+    { label: 'Vibration', name: 'Vibration', category: 'CONDITION', unit: 'mm/s', source: 'iso20816' },
+    { label: 'Temperature', name: 'Temperature', category: 'CONDITION', unit: '°C', maxWarning: String(TEMPERATURE_BANDS.bearing.maxWarning), maxCritical: String(TEMPERATURE_BANDS.bearing.maxCritical), source: 'template' },
     { label: 'Pressure', name: 'Pressure', category: 'CONDITION', unit: 'bar' },
     { label: 'Oil level', name: 'Oil Level', category: 'CONDITION', unit: '%' },
     { label: 'Running hours', name: 'Running Hours', category: 'METER', unit: 'hours' },
@@ -63,6 +68,13 @@ export const AddReadingPointModal: React.FC<{
     const [freq, setFreq] = useState('');   // monitoring interval (days) — '' = auto from criticality
     const [pf, setPf] = useState('');        // P-F interval (days)
     const [saving, setSaving] = useState(false);
+    // Band provenance (1.5): the cited source of the current band values.
+    // Hand-editing any band voids the citation → 'manual'.
+    const [limitSource, setLimitSource] = useState<string | null>(null);
+    // ISO 20816-3 machine class for vibration bands (size × mounting).
+    const [over300kW, setOver300kW] = useState(false);
+    const [flexMount, setFlexMount] = useState(false);
+    const machineClass = resolveMachineClass(over300kW, flexMount);
     // Unit picker: preset dropdown + remembered custom units.
     const [customUnits, setCustomUnits] = useState<string[]>(() => {
         try { return JSON.parse(localStorage.getItem('readings.customUnits') || '[]'); } catch { return []; }
@@ -82,9 +94,29 @@ export const AddReadingPointModal: React.FC<{
 
     const applyTemplate = (t: typeof QUICK_POINTS[number]) => {
         setName(t.name); setCategory(t.category); setUnit(t.unit); setUnitMode('pick');
-        setMaxWarning(t.maxWarning ?? ''); setMaxCritical(t.maxCritical ?? '');
+        if (t.source === 'iso20816') {
+            const b = vibrationBands(machineClass);
+            setMaxWarning(String(b.maxWarning)); setMaxCritical(String(b.maxCritical));
+            setLimitSource(b.source);
+        } else {
+            setMaxWarning(t.maxWarning ?? ''); setMaxCritical(t.maxCritical ?? '');
+            setLimitSource(t.maxWarning || t.maxCritical ? (t.source ?? 'template') : null);
+        }
         setMinWarning(''); setMinCritical('');
     };
+
+    // Machine-class change re-cites ISO-sourced vibration bands in place.
+    const applyMachineClass = (big: boolean, flex: boolean) => {
+        setOver300kW(big); setFlexMount(flex);
+        if (limitSource?.startsWith('iso20816') || (isVibrationUnit(unit) && !maxCritical)) {
+            const b = vibrationBands(resolveMachineClass(big, flex));
+            setMaxWarning(String(b.maxWarning)); setMaxCritical(String(b.maxCritical));
+            setLimitSource(b.source);
+        }
+    };
+
+    // Hand-edits void the citation.
+    const editBand = (set: (v: string) => void) => (v: string) => { set(v); setLimitSource('manual'); };
 
     // Guard against crossed bands (min critical should be ≤ min warning ≤ max warning ≤ max critical).
     const bandOrderOk = (() => {
@@ -104,6 +136,7 @@ export const AddReadingPointModal: React.FC<{
             maxWarning: num(maxWarning), maxCritical: num(maxCritical),
             monitoringFrequencyDays: freq ? Number(freq) : null,
             pfIntervalDays: pf.trim() ? Number(pf) : null,
+            limitSource: [minCritical, minWarning, maxWarning, maxCritical].some(v => v.trim() !== '') ? (limitSource ?? 'manual') : null,
         });
         setSaving(false);
     };
@@ -208,14 +241,35 @@ export const AddReadingPointModal: React.FC<{
                             <label className="text-xs font-bold text-slate-500 uppercase tracking-wide">Alarm bands {category === 'METER' && <span className="text-slate-400 normal-case font-normal">(optional for meters)</span>}</label>
                             <span className="text-[10px] text-slate-400">low → high</span>
                         </div>
+                        {/* ISO 20816-3 machine class — shown for vibration points so the
+                            suggested bands match the machine, not a universal number */}
+                        {isVibrationUnit(unit) && (
+                            <div className="flex flex-wrap items-center gap-2 mb-2 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">ISO 20816-3</span>
+                                <div className="flex border border-slate-200 rounded-md overflow-hidden text-[11px]">
+                                    <button onClick={() => applyMachineClass(false, flexMount)} className={`px-2 py-1 font-semibold transition ${!over300kW ? 'bg-relantern-50 text-relantern-700' : 'bg-white text-slate-500'}`}>≤ 300 kW</button>
+                                    <button onClick={() => applyMachineClass(true, flexMount)} className={`px-2 py-1 font-semibold transition ${over300kW ? 'bg-relantern-50 text-relantern-700' : 'bg-white text-slate-500'}`}>&gt; 300 kW</button>
+                                </div>
+                                <div className="flex border border-slate-200 rounded-md overflow-hidden text-[11px]">
+                                    <button onClick={() => applyMachineClass(over300kW, false)} className={`px-2 py-1 font-semibold transition ${!flexMount ? 'bg-relantern-50 text-relantern-700' : 'bg-white text-slate-500'}`}>Rigid</button>
+                                    <button onClick={() => applyMachineClass(over300kW, true)} className={`px-2 py-1 font-semibold transition ${flexMount ? 'bg-relantern-50 text-relantern-700' : 'bg-white text-slate-500'}`}>Flexible</button>
+                                </div>
+                                <span className="text-[10px] text-slate-400">warn {ISO20816_ZONES[machineClass].bc} · crit {ISO20816_ZONES[machineClass].cd} mm/s</span>
+                            </div>
+                        )}
                         <div className="grid grid-cols-4 gap-2">
-                            {bandInput('Min Crit', 'text-red-600', minCritical, setMinCritical)}
-                            {bandInput('Min Warn', 'text-amber-600', minWarning, setMinWarning)}
-                            {bandInput('Max Warn', 'text-amber-600', maxWarning, setMaxWarning)}
-                            {bandInput('Max Crit', 'text-red-600', maxCritical, setMaxCritical)}
+                            {bandInput('Min Crit', 'text-red-600', minCritical, editBand(setMinCritical))}
+                            {bandInput('Min Warn', 'text-amber-600', minWarning, editBand(setMinWarning))}
+                            {bandInput('Max Warn', 'text-amber-600', maxWarning, editBand(setMaxWarning))}
+                            {bandInput('Max Crit', 'text-red-600', maxCritical, editBand(setMaxCritical))}
                         </div>
                         {!bandOrderOk && (
                             <p className="text-[11px] text-red-600 mt-1.5 flex items-center gap-1"><AlertTriangle size={12} /> Bands must increase left to right (min critical ≤ min warning ≤ max warning ≤ max critical).</p>
+                        )}
+                        {limitSource && limitSource !== 'manual' && (
+                            <p className="text-[11px] text-relantern-700 mt-1.5">
+                                Source: {limitSource.startsWith('iso20816') ? ISO20816_ZONES[machineClass].describe : 'class template (typical cited values)'} — editing a value marks it manual.
+                            </p>
                         )}
                         <p className="text-[11px] text-slate-400 mt-1.5">A reading outside the warning band raises a warning alarm; outside critical raises a critical alarm and can auto-raise corrective work.</p>
                     </div>

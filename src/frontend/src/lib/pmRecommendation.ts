@@ -60,6 +60,8 @@ export interface GroundedRul {
     eta: number | null;
     method: 'weibull-mrl' | 'insufficient';
     note: string;
+    /** the underlying censored fit (R², n, confidence bounds) — null when insufficient */
+    fit: WeibullFitResult | null;
 }
 
 export function groundedRulFromHistory(failureIntervalsHours: number[], suspensionsHours: number[]): GroundedRul {
@@ -67,7 +69,7 @@ export function groundedRulFromHistory(failureIntervalsHours: number[], suspensi
     const ageDays = Math.round(ageHours / 24);
     const fit = fitWeibull((failureIntervalsHours || []).filter(t => t > 0), suspensionsHours || []);
     if (!fit) {
-        return { rulDays: null, ageDays, beta: null, eta: null, method: 'insufficient', note: 'Not enough failure history for a data-grounded RUL — the heuristic estimate is directional only.' };
+        return { rulDays: null, ageDays, beta: null, eta: null, method: 'insufficient', note: 'Not enough failure history for a data-grounded RUL — the heuristic estimate is directional only.', fit: null };
     }
     const mrlHours = meanResidualLifeHours(fit.beta, fit.eta, ageHours);
     return {
@@ -77,6 +79,7 @@ export function groundedRulFromHistory(failureIntervalsHours: number[], suspensi
         eta: fit.eta,
         method: 'weibull-mrl',
         note: `Conditional mean residual life from a censored Weibull (β=${fit.beta}, η=${fit.eta}h), given ${ageDays}d since the last failure.`,
+        fit,
     };
 }
 

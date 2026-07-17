@@ -177,6 +177,36 @@ export function weibullBLife(beta: number, eta: number, pct: number): number {
  * MRL shrinks as age rises — an aging unit has less life left, exactly what a
  * PdM RUL should show. Returns 0 once survival is negligible.
  */
+/**
+ * Conditional probability of failure within the next `horizonHours`, GIVEN
+ * survival to `ageHours`:  P = 1 − R(age+h)/R(age). This is the correct
+ * "P(failure) in 30 days" for a unit already in service — the unconditional
+ * CDF ignores the age the unit has already survived.
+ */
+export function conditionalFailureProbability(beta: number, eta: number, ageHours: number, horizonHours: number): number {
+    if (!(beta > 0) || !(eta > 0) || !(horizonHours > 0)) return 0;
+    const R = (x: number) => Math.exp(-Math.pow(Math.max(0, x) / eta, beta));
+    const Rt = R(ageHours);
+    if (Rt <= 1e-12) return 1; // essentially certain to have failed already
+    return Math.min(1, Math.max(0, 1 - R(Math.max(0, ageHours) + horizonHours) / Rt));
+}
+
+/**
+ * Conditional remaining-life quantile: hours from `ageHours` until the
+ * conditional failure probability reaches `p` (0<p<1). Closed form from
+ * R(t)/R(age) = 1−p  →  t = η·(−ln((1−p)·R(age)))^{1/β}, remaining = t − age.
+ * Basis for RUL confidence bands (e.g. P50 band = q(0.25)…q(0.75)).
+ */
+export function conditionalRemainingQuantileHours(beta: number, eta: number, ageHours: number, p: number): number {
+    if (!(beta > 0) || !(eta > 0)) return 0;
+    const pc = Math.min(Math.max(p, 1e-9), 1 - 1e-9);
+    const age = Math.max(0, ageHours);
+    const RAge = Math.exp(-Math.pow(age / eta, beta));
+    if (RAge <= 1e-12) return 0;
+    const t = eta * Math.pow(-Math.log((1 - pc) * RAge), 1 / beta);
+    return Math.max(0, t - age);
+}
+
 export function meanResidualLifeHours(beta: number, eta: number, ageHours: number): number {
     if (!(beta > 0) || !(eta > 0)) return 0;
     const t = Math.max(0, ageHours);

@@ -1,198 +1,245 @@
-import { useState, useEffect } from 'react';
-import type { ConnectorHealth, AnyConnectorConfig, SyncMode } from '../types/connectors';
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../eam/lib/supabase';
+import type { ConnectorHealth, ConnectorSyncLog, AnyConnectorConfig, SyncMode, ConnectorStatus } from '../types/connectors';
 
-// --- MOCK DATA ---
-const MOCK_CONNECTORS: ConnectorHealth[] = [
-    {
-        connector_id: '11111111-1111-1111-1111-111111111111',
-        name: 'Primary ERP System',
-        type: 'rest_api',
-        status: 'running',
-        last_sync: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-        next_sync: new Date(Date.now() + 1000 * 60 * 45).toISOString(),
-        error_message: null,
-        records_synced: 124500,
-        dqs_score: 88.5,
-        overall_status: 'healthy'
-    },
-    {
-        connector_id: '22222222-2222-2222-2222-222222222222',
-        name: 'Legacy Historian',
-        type: 'historian',
-        status: 'stopped',
-        last_sync: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-        next_sync: null,
-        error_message: null,
-        records_synced: 89200,
-        dqs_score: 62.1,
-        overall_status: 'degraded'
-    },
-    {
-        connector_id: '33333333-3333-3333-3333-333333333333',
-        name: 'Sensor Gateway Broker',
-        type: 'mqtt',
-        status: 'error',
-        last_sync: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-        next_sync: new Date(Date.now() + 1000 * 60 * 5).toISOString(),
-        error_message: 'Connection reset by peer after 3000ms timeout.',
-        records_synced: 5120,
-        dqs_score: 45.0,
-        overall_status: 'error'
-    },
-    {
-        connector_id: '44444444-4444-4444-4444-444444444444',
-        name: 'Work Orders CMMS',
-        type: 'database',
-        status: 'running',
-        last_sync: new Date(Date.now() - 1000 * 60 * 60).toISOString(),
-        next_sync: new Date(Date.now() + 1000 * 60 * 120).toISOString(),
-        error_message: null,
-        records_synced: 67800,
-        dqs_score: 91.2,
-        overall_status: 'healthy'
-    },
-    {
-        connector_id: '55555555-5555-5555-5555-555555555555',
-        name: 'Nightly CSV Extract',
-        type: 'csv',
-        status: 'running',
-        last_sync: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-        next_sync: new Date(Date.now() + 1000 * 60 * 60 * 16).toISOString(),
-        error_message: null,
-        records_synced: 32100,
-        dqs_score: 74.8,
-        overall_status: 'degraded'
-    },
-    {
-        connector_id: '66666666-6666-6666-6666-666666666666',
-        name: 'SharePoint P&IDs',
-        type: 'document_store',
-        status: 'running',
-        last_sync: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-        next_sync: new Date(Date.now() + 1000 * 60 * 60 * 22).toISOString(),
-        error_message: null,
-        records_synced: 2450,
-        dqs_score: 82.3,
-        overall_status: 'healthy'
-    },
-    {
-        connector_id: '77777777-7777-7777-7777-777777777777',
-        name: 'Bonny Island Weather',
-        type: 'weather_api',
-        status: 'running',
-        last_sync: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
-        next_sync: new Date(Date.now() + 1000 * 60 * 30).toISOString(),
-        error_message: null,
-        records_synced: 18600,
-        dqs_score: 95.1,
-        overall_status: 'healthy'
+/**
+ * Connector Hub data layer — DB-backed (0202) after a long life as mock.
+ *
+ * Rows live in `connectors`; the sensor-sync edge function reads active
+ * REST connectors from the same table, pulls each source, and upserts
+ * ers_sensor_readings (the feed Predict and the twin read). `config` holds
+ * the sensor-sync shape (url/method/headers/root/map) plus `source` — the
+ * raw wizard fields — so the wizard can round-trip edits.
+ *
+ * No DQS scores are fabricated: dqs_score stays undefined until a real
+ * quality engine exists.
+ */
+
+interface ConnectorRow {
+    id: string;
+    name: string;
+    type: string;
+    is_active: boolean;
+    config: any;
+    sync_interval_seconds: number;
+    last_sync: string | null;
+    last_status: string | null;
+    last_error: string | null;
+    records_synced: number;
+    created_at: string;
+}
+
+function rowToHealth(row: ConnectorRow): ConnectorHealth {
+    const status: ConnectorStatus = !row.is_active ? 'stopped'
+        : row.last_status === 'error' ? 'error'
+            : 'running';
+    const nextSync = row.is_active && row.last_sync
+        ? new Date(new Date(row.last_sync).getTime() + (row.sync_interval_seconds || 3600) * 1000).toISOString()
+        : null;
+    return {
+        connector_id: row.id,
+        name: row.name,
+        type: row.type as ConnectorHealth['type'],
+        status,
+        last_sync: row.last_sync,
+        next_sync: nextSync,
+        error_message: row.last_error,
+        records_synced: Number(row.records_synced) || 0,
+        dqs_score: undefined,
+        overall_status: status === 'error' ? 'error' : row.last_status === 'ok' ? 'healthy' : undefined,
+    };
+}
+
+/** Wizard config → the `config` jsonb sensor-sync executes. */
+function buildSyncConfig(config: Partial<AnyConnectorConfig>): any {
+    const c = config as any;
+    if (config.type === 'rest_api') {
+        const headers: Record<string, string> = {};
+        if (c.auth_type === 'bearer' && c.auth_token) headers['Authorization'] = `Bearer ${c.auth_token}`;
+        if (c.auth_type === 'basic' && c.auth_user) headers['Authorization'] = `Basic ${btoa(`${c.auth_user}:${c.auth_pass || ''}`)}`;
+        return {
+            url: c.base_url,
+            method: 'GET',
+            headers,
+            root: c.records_path || undefined,
+            map: {
+                asset: c.map_asset || 'asset',
+                tag: c.map_tag || 'tag',
+                value: c.map_value || 'value',
+                unit: c.map_unit || undefined,
+                timestamp: c.map_timestamp || undefined,
+            },
+            source: config, // wizard fields, for round-trip editing
+        };
     }
-];
+    // Non-REST types are not executable yet — store the wizard fields only.
+    return { source: config };
+}
 
-const MOCK_CONFIGS: Record<string, AnyConnectorConfig> = {
-    '11111111-1111-1111-1111-111111111111': {
-        id: '11111111-1111-1111-1111-111111111111',
-        name: 'Primary ERP System',
-        type: 'rest_api',
-        is_active: true,
-        sync_interval_seconds: 3600,
-        retry_max_attempts: 5,
-        retry_backoff_base_seconds: 2,
-        dqs_record_type: 'asset',
-        dqs_asset_class: 'General',
-        base_url: 'https://api.sap.example.com/v1',
-        auth_type: 'bearer',
-        pagination_style: 'cursor',
-        rate_limit_rpm: 120
-    } as AnyConnectorConfig,
-};
+export interface ConnectorTestResult {
+    ok: boolean;
+    records: number;
+    error: string | null;
+    connectorId: string;
+}
 
-// --- HOOK ---
 export function useConnectors() {
     const [connectors, setConnectors] = useState<ConnectorHealth[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Fetch all connectors (Health overview)
-    useEffect(() => {
-        let isMounted = true;
-        const fetchConnectors = async () => {
-            setIsLoading(true);
-            try {
-                // TODO: Replace with Real API Call
-                // const res = await fetch('/api/v1/connectors/health');
-                // const data = await res.json();
-
-                // Simulate network delay
-                await new Promise(resolve => setTimeout(resolve, 600));
-
-                if (isMounted) {
-                    setConnectors(MOCK_CONNECTORS);
-                    setError(null);
-                }
-            } catch (err: any) {
-                if (isMounted) {
-                    setError(err.message || 'Failed to fetch connectors');
-                }
-            } finally {
-                if (isMounted) {
-                    setIsLoading(false);
-                }
-            }
-        };
-
-        fetchConnectors();
-        return () => { isMounted = false; };
-    }, []);
-
-    // Get specific connector config
-    const getConnectorConfig = async (id: string): Promise<AnyConnectorConfig | null> => {
-        setIsLoading(true);
+    const refresh = useCallback(async () => {
         try {
-            await new Promise(resolve => setTimeout(resolve, 300));
-            return MOCK_CONFIGS[id] || null;
+            const { data, error: err } = await supabase
+                .from('connectors').select('*').order('created_at', { ascending: false });
+            if (err) throw err;
+            setConnectors((data || []).map(rowToHealth));
+            setError(null);
+        } catch (e: any) {
+            // Pre-0202 database: show an empty hub, not a crash.
+            const msg = String(e?.message || e);
+            if (msg.includes('does not exist') || msg.includes('relation')) {
+                setConnectors([]);
+                setError(null);
+                console.warn('[useConnectors] connectors table missing — apply migration 0202.');
+            } else {
+                setError(msg);
+            }
         } finally {
             setIsLoading(false);
         }
-    };
+    }, []);
 
-    // Trigger a sync
-    const triggerSync = async (id: string, _mode: SyncMode = 'dry_run') => {
-        // TODO: Replace with Real API Call
-        setConnectors(prev => prev.map(c =>
-            c.connector_id === id
-                ? { ...c, status: 'starting' as const }
-                : c
-        ));
-    };
+    useEffect(() => { refresh(); }, [refresh]);
 
-    const registerConnector = async (config: AnyConnectorConfig) => {
-        // TODO: POST /api/v1/connectors/register/rest etc
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        console.log('Registered', config);
-
-        // Optimistically add to local state so the Hub shows it immediately
-        const newHealth: ConnectorHealth = {
-            connector_id: config.id || crypto.randomUUID(),
-            name: config.name,
+    /** Insert or update a connector row; returns its id. */
+    const saveConnector = useCallback(async (
+        config: Partial<AnyConnectorConfig>,
+        opts?: { id?: string; active?: boolean },
+    ): Promise<string> => {
+        const row = {
+            name: config.name || 'Unnamed connector',
             type: config.type,
-            status: 'stopped',
-            last_sync: null,
-            next_sync: null,
-            error_message: null,
-            records_synced: 0,
-            dqs_score: undefined,
-            overall_status: 'healthy',
+            is_active: opts?.active ?? false,
+            config: buildSyncConfig(config),
+            sync_interval_seconds: config.sync_interval_seconds || 3600,
+            updated_at: new Date().toISOString(),
         };
-        setConnectors(prev => [newHealth, ...prev]);
-    };
+        if (opts?.id) {
+            const { error: err } = await supabase.from('connectors').update(row).eq('id', opts.id);
+            if (err) throw err;
+            await refresh();
+            return opts.id;
+        }
+        const { data, error: err } = await supabase.from('connectors').insert(row).select('id').single();
+        if (err) throw err;
+        await refresh();
+        return data.id;
+    }, [refresh]);
+
+    /**
+     * Real connection test: save (or reuse) a draft row, then run sensor-sync
+     * against just that connector. The result is the actual pull — records
+     * upserted into ers_sensor_readings, or the real error message.
+     */
+    const testConnector = useCallback(async (
+        config: Partial<AnyConnectorConfig>,
+        draftId?: string,
+    ): Promise<ConnectorTestResult> => {
+        const id = await saveConnector(config, { id: draftId, active: false });
+        try {
+            const { data, error: err } = await supabase.functions.invoke('sensor-sync', {
+                body: { connectorId: id },
+            });
+            if (err) throw err;
+            const result = data?.results?.[0];
+            if (!result) return { ok: false, records: 0, error: 'sensor-sync ran but returned no result — is the connector saved?', connectorId: id };
+            return { ok: !!result.ok, records: Number(result.records) || 0, error: result.error || null, connectorId: id };
+        } catch (e: any) {
+            return { ok: false, records: 0, error: String(e?.message || e) + ' (is the sensor-sync edge function deployed?)', connectorId: id };
+        } finally {
+            refresh();
+        }
+    }, [saveConnector, refresh]);
+
+    /** Wizard finish: persist and activate. */
+    const registerConnector = useCallback(async (config: AnyConnectorConfig, draftId?: string) => {
+        await saveConnector(config, { id: draftId, active: true });
+    }, [saveConnector]);
+
+    /** On-demand sync of one connector via sensor-sync. */
+    const triggerSync = useCallback(async (id: string, _mode: SyncMode = 'incremental') => {
+        setConnectors(prev => prev.map(c => c.connector_id === id ? { ...c, status: 'starting' as const } : c));
+        try {
+            await supabase.functions.invoke('sensor-sync', { body: { connectorId: id } });
+        } catch (e) {
+            console.warn('[useConnectors] sync invoke failed (sensor-sync deployed?):', e);
+        }
+        await refresh();
+    }, [refresh]);
+
+    const setConnectorActive = useCallback(async (id: string, active: boolean) => {
+        const { error: err } = await supabase.from('connectors')
+            .update({ is_active: active, updated_at: new Date().toISOString() }).eq('id', id);
+        if (err) throw err;
+        await refresh();
+    }, [refresh]);
+
+    const deleteConnector = useCallback(async (id: string) => {
+        const { error: err } = await supabase.from('connectors').delete().eq('id', id);
+        if (err) throw err;
+        await refresh();
+    }, [refresh]);
+
+    /** Wizard fields for editing: `config.source`, falling back to the row basics. */
+    const getConnectorConfig = useCallback(async (id: string): Promise<AnyConnectorConfig | null> => {
+        const { data, error: err } = await supabase.from('connectors').select('*').eq('id', id).maybeSingle();
+        if (err || !data) return null;
+        return {
+            ...(data.config?.source || {}),
+            id: data.id,
+            name: data.name,
+            type: data.type,
+            is_active: data.is_active,
+            sync_interval_seconds: data.sync_interval_seconds,
+        } as AnyConnectorConfig;
+    }, []);
+
+    /** Real run history from connector_sync_logs (written by sensor-sync). */
+    const getSyncLogs = useCallback(async (connectorId: string, limit = 20): Promise<ConnectorSyncLog[]> => {
+        const { data, error: err } = await supabase
+            .from('connector_sync_logs').select('*')
+            .eq('connector_id', connectorId)
+            .order('started_at', { ascending: false })
+            .limit(limit);
+        if (err) return [];
+        return (data || []).map((r: any) => ({
+            id: r.id,
+            connector_id: r.connector_id,
+            mode: 'incremental' as SyncMode,
+            start_time: r.started_at,
+            end_time: r.finished_at,
+            status: r.status === 'ok' ? 'completed' as const : 'failed' as const,
+            records_processed: r.records || 0,
+            records_added: r.records || 0,
+            records_updated: 0,
+            records_failed: r.status === 'ok' ? 0 : 1,
+            error_message: r.status === 'ok' ? null : r.message,
+            average_dqs_score: null,
+        }));
+    }, []);
 
     return {
         connectors,
         isLoading,
         error,
+        refresh,
         getConnectorConfig,
+        getSyncLogs,
         triggerSync,
-        registerConnector
+        registerConnector,
+        testConnector,
+        setConnectorActive,
+        deleteConnector,
     };
 }

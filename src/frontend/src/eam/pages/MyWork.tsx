@@ -106,6 +106,14 @@ export const MyWork: React.FC = () => {
 
     useEffect(() => { load(); }, [load]);
 
+    // Assignments land while the tab is backgrounded — refresh silently
+    // whenever the window regains focus (data fetched only on mount before).
+    useEffect(() => {
+        const onFocus = () => load();
+        window.addEventListener('focus', onFocus);
+        return () => window.removeEventListener('focus', onFocus);
+    }, [load]);
+
     const grouped = useMemo(() => {
         const g: Record<Bucket, MyWO[]> = { overdue: [], today: [], week: [], later: [] };
         rows.forEach(r => g[bucketOf(r.due_date)].push(r));

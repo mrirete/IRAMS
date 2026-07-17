@@ -10,41 +10,42 @@ import {
     ReferenceLine
 } from 'recharts';
 import type { RULEstimate } from '../../types/intelligence';
+import type { GroundedRul } from '../../lib/predict/groundedFit';
+import { conditionalRemainingQuantileHours } from '../../eam/utils/weibull';
 
 // ─────────────────────────────────────────────────────────
-//  Weibull PDF/CDF Generator
+//  Conditional survival curve from the GROUNDED fit (R-1) —
+//  R(d) = R(age+d)/R(age) over remaining days d, using the
+//  fitted β/η. No fit → no curve (never a fabricated β).
 // ─────────────────────────────────────────────────────────
 
-function generateWeibullCurve(rul: RULEstimate) {
-    // Estimate Weibull parameters from RUL and confidence bands
-    const eta = rul.rul_days * 1.15;   // characteristic life (scale)
-    const beta = 2.5;                  // shape parameter (wear-out mode)
+function generateConditionalCurve(fit: GroundedRul) {
+    const beta = fit.beta!;
+    const etaDays = fit.eta! / 24;      // fit is in hours; chart in days
+    const ageDays = fit.ageDays;
 
-    const points = [];
-    const maxDays = Math.ceil(eta * 1.8);
+    const R = (t: number) => Math.exp(-Math.pow(Math.max(0, t) / etaDays, beta));
+    const RAge = R(ageDays);
+    if (RAge <= 1e-12) return [];
+
+    // Plot out to where the conditional failure probability reaches ~98%.
+    const maxDays = Math.max(10, Math.ceil(conditionalRemainingQuantileHours(beta, fit.eta!, ageDays * 24, 0.98) / 24));
     const step = Math.max(1, Math.floor(maxDays / 80));
 
-    for (let t = 0; t <= maxDays; t += step) {
-        const x = t / eta;
-        // Weibull PDF: (beta/eta) * (t/eta)^(beta-1) * exp(-(t/eta)^beta)
-        const pdf = t === 0
-            ? 0
-            : (beta / eta) * Math.pow(x, beta - 1) * Math.exp(-Math.pow(x, beta));
-
-        // Weibull CDF: 1 - exp(-(t/eta)^beta)
-        const cdf = 1 - Math.exp(-Math.pow(x, beta));
-
-        // Reliability = 1 - CDF
-        const reliability = 1 - cdf;
-
+    const points = [];
+    for (let d = 0; d <= maxDays; d += step) {
+        const reliability = R(ageDays + d) / RAge;          // conditional survival
+        const cdf = 1 - reliability;                         // conditional P(failure)
+        const t = ageDays + d;
+        // Conditional density f(d) = h(age+d)·Rcond(d), h(t) = (β/η)(t/η)^(β−1)
+        const hazard = t > 0 ? (beta / etaDays) * Math.pow(t / etaDays, beta - 1) : 0;
         points.push({
-            days: t,
-            pdf: pdf * 1000, // Scale for visibility
+            days: d,
+            pdf: hazard * reliability * 1000, // scaled for visibility
             cdf: cdf * 100,
             reliability: reliability * 100,
         });
     }
-
     return points;
 }
 
@@ -54,15 +55,34 @@ function generateWeibullCurve(rul: RULEstimate) {
 
 interface Props {
     rulEstimate: RULEstimate | null;
+    /** Grounded censored-Weibull fit — the ONLY source of a plotted curve. */
+    groundedFit?: GroundedRul | null;
 }
 
-export const WeibullChart: React.FC<Props> = ({ rulEstimate }) => {
+export const WeibullChart: React.FC<Props> = ({ rulEstimate, groundedFit }) => {
+    const hasFit = !!groundedFit && !!groundedFit.beta && !!groundedFit.eta;
     const data = useMemo(() => {
-        if (!rulEstimate) return [];
-        return generateWeibullCurve(rulEstimate);
-    }, [rulEstimate]);
+        if (!hasFit || !groundedFit) return [];
+        return generateConditionalCurve(groundedFit);
+    }, [hasFit, groundedFit]);
 
-    if (!rulEstimate || data.length === 0) return null;
+    // Honest empty state: without life data there is no distribution to draw.
+    if (!hasFit || data.length === 0) {
+        return (
+            <div className="mt-4 pt-4 border-t border-slate-200">
+                <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-3">Weibull Survival Curve</p>
+                <div className="border border-dashed border-slate-300 rounded-lg p-6 text-center">
+                    <p className="text-sm font-medium text-slate-500">No fitted curve yet</p>
+                    <p className="text-xs text-slate-400 mt-1.5 max-w-md mx-auto leading-relaxed">
+                        A survival curve needs a fitted life distribution — at least 2 recorded failures on this
+                        asset's work-order history. It appears automatically once corrective work orders exist.
+                        For manual life-data studies, use Reliability Modelling.
+                    </p>
+                </div>
+            </div>
+        );
+    }
+    if (!rulEstimate) return null;
 
     const CustomTooltip = ({ active, payload }: any) => {
         if (active && payload && payload.length) {
@@ -92,7 +112,12 @@ export const WeibullChart: React.FC<Props> = ({ rulEstimate }) => {
 
     return (
         <div className="mt-4 pt-4 border-t border-slate-200">
-            <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-3">Weibull Survival Curve</p>
+            <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">Weibull Survival Curve</p>
+                <span className="text-[10px] font-mono text-slate-400">
+                    fitted β={groundedFit!.beta} · η={Math.round(groundedFit!.eta! / 24)}d · conditional on {groundedFit!.ageDays}d age
+                </span>
+            </div>
             <div className="w-full">
                 <ResponsiveContainer width="100%" height={200}>
                     <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>

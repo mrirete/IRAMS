@@ -26,6 +26,7 @@ import { InventoryItemRecord } from '../schema';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import type { ImportType } from '../services/assetTemplates';
 import { useToast } from '../contexts/ToastContext';
+import { availableQty, fetchReservedByItem } from '../lib/atp';
 
 interface InventoryProps {
     onAnalyze: (context: string) => void;
@@ -2083,6 +2084,8 @@ export function Inventory({ onAnalyze }: InventoryProps) {
     const canDelete = permissions?.inventory?.delete === true;
     const { showToast } = useToast();
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
+    // ATP netting (0201): qty reserved by planned parts on open WOs, per item.
+    const [reservedByItem, setReservedByItem] = useState<Record<string, number>>({});
     const [stores, setStores] = useState<Store[]>([]);
     const [dictionaries, setDictionaries] = useState<any[]>([]); // Added dictionary state
     const [contacts, setContacts] = useState<Contact[]>([]);
@@ -2154,6 +2157,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                 setInventoryItems([]);
             } else {
                 setInventoryItems(items);
+                fetchReservedByItem(items.map(i => i.id)).then(setReservedByItem);
                 return items;
             }
         } catch (e) {
@@ -2279,14 +2283,18 @@ export function Inventory({ onAnalyze }: InventoryProps) {
             // Confirmed Save
             setInventoryItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
 
-            // Notification hook-in: Stock Low Check
-            if (updatedItem.totalQtyOnHand <= updatedItem.minLevel && updatedItem.minLevel > 0) {
-                const eventCode = updatedItem.totalQtyOnHand === 0 ? 'STOCK_OUT' : 'STOCK_LOW';
+            // Notification hook-in: Stock Low Check — netted against open-WO
+            // reservations (0201), so fully-committed stock alerts before the
+            // shelf is physically empty.
+            const availableNow = availableQty(updatedItem.totalQtyOnHand, reservedByItem[updatedItem.id] || 0);
+            if (availableNow <= updatedItem.minLevel && updatedItem.minLevel > 0) {
+                const eventCode = availableNow === 0 ? 'STOCK_OUT' : 'STOCK_LOW';
                 NotificationService.checkRules('inventory', eventCode, {
                     ...updatedItem,
                     itemCode: updatedItem.code,
                     itemDescription: updatedItem.description,
                     qtyOnHand: updatedItem.totalQtyOnHand,
+                    qtyAvailable: availableNow,
                     reorderPoint: updatedItem.minLevel
                 }, { currentUserId: profile?.id || 'SYSTEM' });
             }
@@ -2524,6 +2532,8 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         const stockTones: Record<string, Tone> = { OUT: 'danger', LOW: 'warning', OK: 'success' };
                         const stockLabels = { OUT: 'Out of Stock', LOW: 'Low Stock', OK: 'In Stock' };
                         const primaryLocation = item.stockLocations?.[0];
+                        const reserved = reservedByItem[item.id] || 0;
+                        const available = availableQty(item.totalQtyOnHand, reserved);
 
                         return (
                             <div
@@ -2568,6 +2578,11 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                                 <span className={`font-bold ${stockStatus === 'OUT' ? 'text-red-600' : stockStatus === 'LOW' ? 'text-amber-600' : 'text-green-600'}`}>
                                                     Qty: {item.totalQtyOnHand} {item.uom}
                                                 </span>
+                                                {reserved > 0 && (
+                                                    <span className={`font-bold ${available === 0 ? 'text-red-600' : 'text-amber-600'}`} title={`${reserved} reserved by open work orders`}>
+                                                        Avail: {available}
+                                                    </span>
+                                                )}
                                                 {primaryLocation && (
                                                     <span className="text-slate-400">
                                                         {primaryLocation.storeName}{primaryLocation.binLocation ? ` / ${primaryLocation.binLocation}` : ''}
@@ -2606,6 +2621,14 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                 <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${selectedItem.totalQtyOnHand === 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                                     {selectedItem.totalQtyOnHand} {selectedItem.uom}
                                 </span>
+                                {(reservedByItem[selectedItem.id] || 0) > 0 && (
+                                    <span
+                                        className={`text-xs font-bold px-2 py-0.5 rounded-full ${availableQty(selectedItem.totalQtyOnHand, reservedByItem[selectedItem.id]) === 0 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}
+                                        title={`${reservedByItem[selectedItem.id]} reserved by open work orders`}
+                                    >
+                                        Avail {availableQty(selectedItem.totalQtyOnHand, reservedByItem[selectedItem.id])}
+                                    </span>
+                                )}
                             </>
                         }
                         actions={

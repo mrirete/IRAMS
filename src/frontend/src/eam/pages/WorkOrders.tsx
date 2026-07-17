@@ -47,6 +47,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/DatabaseService';
 import { buildWorkOrder } from '../lib/workOrder';
 import { resolveLabourRate, labourRateSourceLabel } from '../lib/labourRate';
+import { issueWorkOrderParts } from '../lib/goodsIssue';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { ThreadPanel } from '../../components/messaging/ThreadPanel';
 import { aiEngine, type JSAHazardSuggestion } from '../services/AIAnalysisEngine';
@@ -1288,6 +1289,25 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     currentUserId: user?.id || 'SYSTEM',
                     previousEntity: { ...originalJob },
                 }).catch(console.error);
+            }
+
+            // ── Goods issue on completion (B2) ────────────────────────
+            // Reaching TECO consumes the planned parts: stock decrements per
+            // location (ISSUE transactions), part rows flip planned→issued,
+            // and the 0201 trigger releases their reservations. Idempotent —
+            // already-issued rows are skipped on any repeat transition.
+            const finishedStatuses = ['TECO', 'CLOSED', 'CANC', 'CANCELLED'];
+            if (updates.status && newStatus === WorkOrderStatus.TECO && !finishedStatuses.includes(previousStatus as string)) {
+                issueWorkOrderParts(updatedJob.id, (user as any)?.username || user?.id || 'SYSTEM')
+                    .then(r => {
+                        if (r.issuedParts > 0) {
+                            showToast(`Goods issue: ${r.issuedParts} part line${r.issuedParts === 1 ? '' : 's'} consumed from stores.`, 'success');
+                        }
+                        if (r.shortfalls.length > 0) {
+                            showToast(`Stores records short on ${r.shortfalls.map(s => `${s.description} (−${s.short})`).join(', ')} — reconcile stock.`, 'warning');
+                        }
+                    })
+                    .catch(e => console.warn('[GoodsIssue] failed (parts stay planned, retry by re-saving TECO):', e));
             }
 
             if (updates.assignedTo && previousAssignee !== newAssignee && newAssignee) {
@@ -3305,6 +3325,19 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     const [showParentPicker, setShowParentPicker] = useState(false);
     const [pickAssets, setPickAssets] = useState<any[]>([]);
     const [pickWOs, setPickWOs] = useState<any[]>([]);
+    const navigateToWo = useNavigate();
+
+    // D1: what did we learn last time — finished WOs on the same asset, most
+    // recent first, one click away (derived from the already-loaded WO list).
+    const pastWork = useMemo(() => {
+        if (!job.assetId) return [];
+        const finished = new Set(['TECO', 'CLOSED', 'CANC', 'CANCELLED', 'COMPLETED']);
+        const when = (w: any) => new Date(w.dueDate || w.due_date || w.createdAt || w.created_at || 0).getTime();
+        return (pickWOs as any[])
+            .filter(w => (w.assetId || w.asset_id) === job.assetId && w.id !== job.id && finished.has(String(w.status)))
+            .sort((a, b) => when(b) - when(a))
+            .slice(0, 4);
+    }, [pickWOs, job.assetId, job.id]);
     // Main Work Center (0178): active work groups for the header-level picker.
     const [detailWorkCenters, setDetailWorkCenters] = useState<{ id: string; code: string; name: string }[]>([]);
     useEffect(() => {
@@ -3467,6 +3500,33 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             <span className="whitespace-nowrap font-bold text-blue-600">{job.assetName}</span>
                         </div>
                     </div>
+
+                    {/* Past work on this asset — the knowledge-capture answer:
+                        what happened last time, with its discussion a click away */}
+                    {pastWork.length > 0 && (
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Past work on this asset</label>
+                            <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 bg-slate-50/50 overflow-hidden">
+                                {pastWork.map((w: any) => (
+                                    <button
+                                        key={w.id}
+                                        type="button"
+                                        onClick={() => navigateToWo(`/work-orders/${w.id}`)}
+                                        title="Open this past work order — its plan, findings and discussion"
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-blue-50 transition-colors"
+                                    >
+                                        <Clock size={12} className="text-slate-400 flex-shrink-0" />
+                                        <span className="text-xs font-mono font-bold text-slate-600 flex-shrink-0">{w.woNumber || w.wo_number || '—'}</span>
+                                        <span className="text-xs text-slate-600 truncate flex-1">{w.title}</span>
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 flex-shrink-0">{w.status}</span>
+                                        <span className="text-[10px] text-slate-400 flex-shrink-0">
+                                            {(() => { const d = w.dueDate || w.due_date || w.createdAt || w.created_at; return d ? new Date(d).toLocaleDateString() : ''; })()}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="md:col-span-2">
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Description</label>

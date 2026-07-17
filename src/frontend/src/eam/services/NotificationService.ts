@@ -1,6 +1,7 @@
 import { DatabaseService } from './DatabaseService';
 import { ModuleName } from '../types';
 import { supabase } from '../lib/supabase';
+import { buildEmailOutboxRows, EmailContent, EmailOutboxRow } from '../lib/notificationEmail';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -42,6 +43,66 @@ export class NotificationService {
         } catch { /* keep the original id */ }
         this.recipientUserIdCache.set(id, resolved);
         return resolved;
+    }
+
+    /** Cached global EMAIL kill-switch (Admin › Delivery Channels). */
+    private static emailChannelCheck: { active: boolean; at: number } | null = null;
+
+    private static async emailChannelActive(): Promise<boolean> {
+        const now = Date.now();
+        if (this.emailChannelCheck && now - this.emailChannelCheck.at < 60_000) {
+            return this.emailChannelCheck.active;
+        }
+        let active = false;
+        try {
+            const channels = await DatabaseService.getInstance().getNotificationChannels();
+            active = channels.some((c: any) => c.type === 'EMAIL' && (c.isActive || c.is_active));
+        } catch { active = false; }
+        this.emailChannelCheck = { active, at: now };
+        return active;
+    }
+
+    private static lastOutboxKick = 0;
+
+    /**
+     * Ask notify-dispatch to drain the outbox now. Fire-and-forget and
+     * debounced — an undeployed function or closed tab costs nothing, rows
+     * stay PENDING for the next kick (or a cron sweeper).
+     */
+    private static kickOutbox() {
+        const now = Date.now();
+        if (now - this.lastOutboxKick < 5_000) return;
+        this.lastOutboxKick = now;
+        try {
+            supabase.functions.invoke('notify-dispatch', { body: {} }).catch(() => { /* next kick retries */ });
+        } catch { /* functions API unavailable (tests) */ }
+    }
+
+    /**
+     * Queue rows for notify-dispatch to drain (0199).
+     * Safe pre-migration: a missing table just logs and reports false.
+     */
+    private static async enqueueEmailOutbox(rows: EmailOutboxRow[]): Promise<boolean> {
+        const { error } = await supabase.from('notification_outbox').insert(rows);
+        if (error) {
+            console.warn('[NotificationService] Email outbox enqueue failed (0199 applied?):', error.message);
+            return false;
+        }
+        return true;
+    }
+
+    /** Queue EMAIL deliveries for the given resolved user ids, if EMAIL is globally on. */
+    private static async queueEmails(recipientUserIds: string[], content: EmailContent) {
+        try {
+            if (!(await this.emailChannelActive())) return;
+            const rows = buildEmailOutboxRows(recipientUserIds, content);
+            if (!rows.length) return;
+            if (await this.enqueueEmailOutbox(rows)) {
+                this.kickOutbox();
+            }
+        } catch (e) {
+            console.warn('[NotificationService] Email enqueue skipped:', e);
+        }
     }
 
     /**
@@ -111,6 +172,17 @@ export class NotificationService {
             const db = DatabaseService.getInstance();
             const recipientId = await this.resolveRecipientUserId(params.recipientId);
             await db.createNotification({ ...params, recipientId });
+            // Direct notifications are the "someone must act" set (assignments,
+            // schedule changes, invitations) — mirror them to email when the
+            // global EMAIL channel is on.
+            await this.queueEmails([recipientId], {
+                title: params.title,
+                message: params.message,
+                severity: params.severity,
+                module: params.module,
+                entityNumber: params.entityNumber,
+                actionLink: params.actionLink,
+            });
         } catch (e) {
             console.error('[NotificationService] Error sending direct notification:', e);
         }
@@ -189,6 +261,8 @@ export class NotificationService {
         // Build notification content
         const entityNumber = entity.woNumber || entity.requestNumber || entity.poNumber || entity.pmCode || entity.itemCode || entity.definitionName || entity.assetCode || '';
         const entityType = this.inferEntityType(rule.module);
+        const wantEmail = activeChannels.includes('EMAIL');
+        const emailRecipientIds: string[] = [];
 
         for (const recipientId of recipients) {
             if (!recipientId) continue;
@@ -228,10 +302,12 @@ export class NotificationService {
                     continue;
                 }
 
-                // Standard internal user — create IN_APP notification
+                // Standard internal user
+                const resolvedUserId = await this.resolveRecipientUserId(recipientId);
+                if (wantEmail) emailRecipientIds.push(resolvedUserId);
                 if (activeChannels.includes('IN_APP')) {
                     await db.createNotification({
-                        recipientId: await this.resolveRecipientUserId(recipientId),
+                        recipientId: resolvedUserId,
                         title: rule.name,
                         message: rule.description || `${rule.name} triggered for ${entityNumber}`,
                         severity: rule.severity,
@@ -250,6 +326,19 @@ export class NotificationService {
             } catch (e) {
                 console.error(`[NotificationService] Failed to notify ${recipientId}:`, e);
             }
+        }
+
+        // Queue email deliveries in one batch insert (rule must carry EMAIL
+        // and the global channel must be on — both checked above).
+        if (wantEmail && emailRecipientIds.length > 0) {
+            await this.queueEmails(emailRecipientIds, {
+                title: rule.name,
+                message: rule.description || `${rule.name} triggered for ${entityNumber}`,
+                severity: rule.severity,
+                module: rule.module,
+                entityNumber,
+                actionLink: this.buildActionLink(rule.module, entity.id),
+            });
         }
 
         // Also log to notification_logs for audit trail

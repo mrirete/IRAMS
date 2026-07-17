@@ -24,42 +24,21 @@ const getTypeName = (type: ConnectorType) => {
     return names[type] || type;
 };
 
-// More comprehensive mock logs
-const generateMockLogs = (connectorId: string): ConnectorSyncLog[] => {
-    const logs: ConnectorSyncLog[] = [];
-    const now = Date.now();
-    for (let i = 0; i < 18; i++) {
-        const start = now - (i * 3600000 + Math.random() * 1800000);
-        const duration = 2000 + Math.random() * 45000;
-        const failed = Math.random() > 0.85 ? Math.floor(Math.random() * 5) : 0;
-        logs.push({
-            id: `log-${connectorId}-${i}`,
-            connector_id: connectorId,
-            start_time: new Date(start).toISOString(),
-            end_time: new Date(start + duration).toISOString(),
-            mode: i % 7 === 0 ? 'full' : 'incremental',
-            status: failed > 2 ? 'failed' : 'completed',
-            records_processed: Math.floor(Math.random() * 500) + 20,
-            records_added: Math.floor(Math.random() * 50),
-            records_updated: Math.floor(Math.random() * 400) + 20,
-            records_failed: failed,
-            error_message: failed > 2 ? 'Partial sync failure: 3 records rejected due to schema mismatch' : null,
-            average_dqs_score: 75 + Math.random() * 20,
-        });
-    }
-    return logs;
-};
 
 export const ConnectorDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { connectors, triggerSync } = useConnectors();
+    const { connectors, triggerSync, getSyncLogs } = useConnectors();
 
     const [connector, setConnector] = useState<ConnectorHealth | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
     const [activeTab, setActiveTab] = useState<DetailTab>('overview');
 
-    const mockLogs = useMemo(() => id ? generateMockLogs(id) : [], [id]);
+    // Real run history written by sensor-sync (connector_sync_logs, 0202).
+    const [logs, setLogs] = useState<ConnectorSyncLog[]>([]);
+    useEffect(() => {
+        if (id) getSyncLogs(id).then(setLogs);
+    }, [id, getSyncLogs]);
 
     useEffect(() => {
         if (id && connectors.length > 0) {
@@ -72,18 +51,19 @@ export const ConnectorDetail: React.FC = () => {
         if (!id) return;
         setIsSyncing(true);
         await triggerSync(id, 'incremental');
-        setTimeout(() => setIsSyncing(false), 2000);
+        if (id) getSyncLogs(id).then(setLogs);
+        setIsSyncing(false);
     };
 
     // Compute throughput from logs
     const throughput = useMemo(() => {
-        if (mockLogs.length === 0) return 0;
-        const totalRecords = mockLogs.reduce((sum, l) => sum + l.records_processed, 0);
-        const firstLog = mockLogs[mockLogs.length - 1];
-        const lastLog = mockLogs[0];
+        if (logs.length === 0) return 0;
+        const totalRecords = logs.reduce((sum, l) => sum + l.records_processed, 0);
+        const firstLog = logs[logs.length - 1];
+        const lastLog = logs[0];
         const hoursSpan = (new Date(lastLog.start_time).getTime() - new Date(firstLog.start_time).getTime()) / 3600000;
         return hoursSpan > 0 ? Math.round((totalRecords / hoursSpan) * 24) : totalRecords;
-    }, [mockLogs]);
+    }, [logs]);
 
     if (!connector) {
         return (
@@ -204,13 +184,13 @@ export const ConnectorDetail: React.FC = () => {
                         <DQSRadarChart health={connector} />
                     </div>
                     <div className="lg:col-span-2">
-                        <SyncHistoryTable logs={mockLogs.slice(0, 10)} />
+                        <SyncHistoryTable logs={logs.slice(0, 10)} />
                     </div>
                 </div>
             )}
 
             {activeTab === 'history' && (
-                <SyncHistoryTable logs={mockLogs} />
+                <SyncHistoryTable logs={logs} />
             )}
 
             {activeTab === 'mapping' && (

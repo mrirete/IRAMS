@@ -2,6 +2,8 @@ import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Wrench, Package, Plus, Boxes } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { useUnreadNotifications } from '../hooks/useUnreadNotifications';
 
 /**
  * MobileBottomNav — native-app style bottom tab bar for mobile viewports.
@@ -33,6 +35,10 @@ const RIGHT_ITEMS: NavItem[] = [
 export const MobileBottomNav: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
+    const { user } = useAuth() as any;
+    // Unread dot on Home — the bell lives in the top bar, but on mobile the
+    // bottom bar is what the thumb watches (comm-loop audit gap).
+    const { unreadCount } = useUnreadNotifications(user?.id);
 
     const isActive = (path: string) => {
         if (path === '/dashboard') return location.pathname === '/' || location.pathname.startsWith('/dashboard');
@@ -42,6 +48,7 @@ export const MobileBottomNav: React.FC = () => {
     const renderItem = (item: NavItem) => {
         const active = isActive(item.path);
         const Icon = item.icon;
+        const showDot = item.badge || (item.id === 'home' && unreadCount > 0);
         return (
             <button
                 key={item.id}
@@ -51,7 +58,7 @@ export const MobileBottomNav: React.FC = () => {
             >
                 <span className="nav-icon relative">
                     <Icon size={22} strokeWidth={active ? 2.4 : 1.6} />
-                    {item.badge && <span className="nav-badge-dot" />}
+                    {showDot && <span className="nav-badge-dot" />}
                 </span>
                 <span className={`text-[10px] leading-none ${active ? 'font-bold' : 'font-medium'}`}>{item.label}</span>
             </button>

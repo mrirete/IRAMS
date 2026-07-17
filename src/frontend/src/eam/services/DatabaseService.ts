@@ -140,9 +140,7 @@ export class DatabaseService {
                 currency: 'USD',
                 address: row.address || { street: '', city: '', state: '', zip: '' },
                 flags: {
-                    canLogin: true, // Derived or mapped? User relation implies this.
-                    canSubmitRequests: row.can_submit_requests || false,
-                    canLogTime: row.can_log_time || false,
+                    // Attribute flags only — permissions are resolved from the role system.
                     isLabour: row.is_employee || false,
                     hasQualifications: row.has_qualifications || false,
                     isVendor: row.is_vendor || false
@@ -184,9 +182,6 @@ export class DatabaseService {
             is_employee: contact.flags?.isLabour,
             is_vendor: contact.flags?.isVendor,
             organization_unit_id: contact.organizationUnitId,
-            // New Permission Flags
-            can_submit_requests: contact.flags?.canSubmitRequests,
-            can_log_time: contact.flags?.canLogTime,
             has_qualifications: contact.flags?.hasQualifications,
 
             hourly_rate: contact.hourlyRate,
@@ -235,9 +230,6 @@ export class DatabaseService {
             is_employee: contact.flags?.isLabour,
             is_vendor: contact.flags?.isVendor,
             organization_unit_id: contact.organizationUnitId,
-            // New Permission Flags
-            can_submit_requests: contact.flags?.canSubmitRequests,
-            can_log_time: contact.flags?.canLogTime,
             has_qualifications: contact.flags?.hasQualifications,
 
             hourly_rate: contact.hourlyRate,
@@ -1197,9 +1189,7 @@ export class DatabaseService {
             currency: 'USD',
             address: row.address || { street: '', city: '', state: '', zip: '' },
             flags: {
-                canLogin: true, // Derived or mapped? User relation implies this.
-                canSubmitRequests: row.can_submit_requests || false,
-                canLogTime: row.can_log_time || false,
+                // Attribute flags only — permissions are resolved from the role system.
                 isLabour: row.is_employee || false,
                 hasQualifications: row.has_qualifications || false,
                 isVendor: row.is_vendor || false
@@ -2151,7 +2141,9 @@ export class DatabaseService {
             maxWarning: row.max_warning,
             maxCritical: row.max_critical,
             monitoringFrequencyDays: row.monitoring_frequency_days ?? null,
-            pfIntervalDays: row.pf_interval_days ?? null
+            pfIntervalDays: row.pf_interval_days ?? null,
+            // Band provenance (0198). NULL/absent = legacy "unverified" band.
+            limitSource: row.limit_source ?? null
         }));
     }
 
@@ -2168,22 +2160,49 @@ export class DatabaseService {
             max_warning: def.maxWarning,
             max_critical: def.maxCritical,
             is_active: true,
-            // Per-point cadence (0176). Harmless when null; stripped on retry below
-            // if the migration hasn't been applied yet.
+            // Per-point cadence (0176) + band provenance (0198). Harmless when
+            // null; stripped on retry below if the migrations aren't applied yet.
             monitoring_frequency_days: def.monitoringFrequencyDays ?? null,
             pf_interval_days: def.pfIntervalDays ?? null,
+            limit_source: def.limitSource ?? null,
         };
 
         let { data, error } = await supabase.from('reading_definitions').insert(row).select().single();
-        // Graceful degradation: if 0176 isn't applied yet, the new columns don't
-        // exist — retry without them so the add-point flow still works.
-        if (error && /monitoring_frequency_days|pf_interval_days|PGRST204|column .* does not exist/i.test(error.message || '')) {
-            const { monitoring_frequency_days, pf_interval_days, ...legacy } = row;
+        // Graceful degradation: if 0176/0198 aren't applied yet, the new columns
+        // don't exist — retry without them so the add-point flow still works.
+        if (error && /monitoring_frequency_days|pf_interval_days|limit_source|PGRST204|column .* does not exist/i.test(error.message || '')) {
+            const { monitoring_frequency_days, pf_interval_days, limit_source, ...legacy } = row;
             ({ data, error } = await supabase.from('reading_definitions').insert(legacy).select().single());
         }
         if (error) throw new Error(error.message);
 
         return { ...def, id: data.id };
+    }
+
+    /**
+     * Update ONLY a definition's alarm bands + their provenance (Phase 1.5).
+     * Used by the learned-baseline "Suggest limits" flow and the threshold-
+     * adapter agent's approved proposals — both human-approved before writing.
+     */
+    public async updateReadingDefinitionBands(id: string, bands: {
+        minCritical?: number | null; minWarning?: number | null;
+        maxWarning?: number | null; maxCritical?: number | null;
+        limitSource?: string | null;
+    }): Promise<void> {
+        const row: any = {
+            min_critical: bands.minCritical ?? null,
+            min_warning: bands.minWarning ?? null,
+            max_warning: bands.maxWarning ?? null,
+            max_critical: bands.maxCritical ?? null,
+            limit_source: bands.limitSource ?? null,
+        };
+        let { error } = await supabase.from('reading_definitions').update(row).eq('id', id);
+        // Graceful degradation while 0198 is unapplied.
+        if (error && /limit_source|PGRST204|column .* does not exist/i.test(error.message || '')) {
+            const { limit_source, ...legacy } = row;
+            ({ error } = await supabase.from('reading_definitions').update(legacy).eq('id', id));
+        }
+        if (error) throw new Error(error.message);
     }
 
     public async deleteReadingDefinition(id: string): Promise<void> {
@@ -2441,6 +2460,23 @@ export class DatabaseService {
             .order('created_at', { ascending: false });
         if (error) {
             console.error('[DatabaseService] getWorkOrdersByAssetId error:', error);
+            return [];
+        }
+        return data || [];
+    }
+
+    /**
+     * Get all work orders assigned to a specific contact (the person's "Jobs").
+     * Matches on work_orders.assigned_to (FK -> contacts.id).
+     */
+    public async getWorkOrdersByContactId(contactId: string): Promise<WorkOrderRecord[]> {
+        const { data, error } = await supabase
+            .from('work_orders')
+            .select('*')
+            .eq('assigned_to', contactId)
+            .order('created_at', { ascending: false });
+        if (error) {
+            console.error('[DatabaseService] getWorkOrdersByContactId error:', error);
             return [];
         }
         return data || [];

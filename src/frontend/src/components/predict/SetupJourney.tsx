@@ -27,6 +27,7 @@ import { useAssetContext } from '../../contexts/AssetContext';
 import { useAuth } from '../../eam/contexts/AuthContext';
 import { useToast } from '../../eam/contexts/ToastContext';
 import { evaluateReading } from '../../lib/readingAlarm';
+import { resolveMachineClass, vibrationBands, ISO20816_ZONES } from '../../lib/predict/limitLibrary';
 import type { Asset } from '../../eam/types';
 
 // ─────────────────────────────────────────────────────────
@@ -40,50 +41,78 @@ interface PointDraft {
     category: 'CONDITION' | 'METER';
     /** "Alert below" — maps to minCritical (blank = no low alarm) */
     low: string;
+    /** "Warn above" — maps to maxWarning (blank = no warning band) */
+    highWarn: string;
     /** "Alert above" — maps to maxCritical (blank = no high alarm) */
     high: string;
+    /** band provenance — 'iso20816' rows are (re)resolved from the machine class */
+    source?: string;
 }
 
+// Vibration rows carry source 'iso20816' with EMPTY values — applyTemplate
+// resolves them from the chosen ISO 20816-3 machine class (size × mounting).
+// A single universal number here would be wrong: the old blanket 7.1 mm/s is
+// the LARGE-machine boundary, ~60% above what a medium machine should alarm at.
 const TEMPLATES: { key: string; label: string; hint: string; points: PointDraft[] }[] = [
     {
         key: 'pump', label: 'Pump', hint: 'vibration · pressure · temperature',
         points: [
-            { name: 'Bearing Vibration', unit: 'mm/s', category: 'CONDITION', low: '', high: '7.1' },
-            { name: 'Discharge Pressure', unit: 'bar', category: 'CONDITION', low: '', high: '' },
-            { name: 'Bearing Temperature', unit: '°C', category: 'CONDITION', low: '', high: '80' },
+            { name: 'Bearing Vibration', unit: 'mm/s', category: 'CONDITION', low: '', highWarn: '', high: '', source: 'iso20816' },
+            { name: 'Discharge Pressure', unit: 'bar', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Bearing Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '80', high: '95', source: 'template' },
         ],
     },
     {
         key: 'motor', label: 'Motor', hint: 'winding temp · vibration · current',
         points: [
-            { name: 'Winding Temperature', unit: '°C', category: 'CONDITION', low: '', high: '95' },
-            { name: 'Vibration', unit: 'mm/s', category: 'CONDITION', low: '', high: '7.1' },
-            { name: 'Running Current', unit: 'A', category: 'CONDITION', low: '', high: '' },
+            { name: 'Winding Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '95', high: '120', source: 'template' },
+            { name: 'Vibration', unit: 'mm/s', category: 'CONDITION', low: '', highWarn: '', high: '', source: 'iso20816' },
+            { name: 'Running Current', unit: 'A', category: 'CONDITION', low: '', highWarn: '', high: '' },
         ],
     },
     {
         key: 'vehicle', label: 'Truck / Vehicle', hint: 'engine temps · hours · odometer',
         points: [
-            { name: 'Engine Oil Temperature', unit: '°C', category: 'CONDITION', low: '', high: '110' },
-            { name: 'Coolant Temperature', unit: '°C', category: 'CONDITION', low: '', high: '105' },
-            { name: 'Engine Hours', unit: 'h', category: 'METER', low: '', high: '' },
-            { name: 'Odometer', unit: 'km', category: 'METER', low: '', high: '' },
+            { name: 'Engine Oil Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '105', high: '115', source: 'template' },
+            { name: 'Coolant Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '100', high: '108', source: 'template' },
+            { name: 'Engine Hours', unit: 'h', category: 'METER', low: '', highWarn: '', high: '' },
+            { name: 'Odometer', unit: 'km', category: 'METER', low: '', highWarn: '', high: '' },
         ],
     },
     {
         key: 'compressor', label: 'Compressor', hint: 'pressures · discharge temp · vibration',
         points: [
-            { name: 'Suction Pressure', unit: 'bar', category: 'CONDITION', low: '', high: '' },
-            { name: 'Discharge Temperature', unit: '°C', category: 'CONDITION', low: '', high: '135' },
-            { name: 'Vibration', unit: 'mm/s', category: 'CONDITION', low: '', high: '7.1' },
+            { name: 'Suction Pressure', unit: 'bar', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Discharge Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '120', high: '135', source: 'template' },
+            { name: 'Vibration', unit: 'mm/s', category: 'CONDITION', low: '', highWarn: '', high: '', source: 'iso20816' },
+        ],
+    },
+    {
+        // Static equipment (Phase 2.4): integrity-led — wall thickness drives the
+        // API 570 corrosion-rate / remaining-life math on the Digital Twin tab.
+        // "Alert below" on Wall Thickness = minimum required thickness (t-min).
+        key: 'exchanger', label: 'Heat exchanger / cooler', hint: 'wall thickness · in/out temps · ΔP',
+        points: [
+            { name: 'Wall Thickness', unit: 'mm', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Process Inlet Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Process Outlet Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Differential Pressure', unit: 'bar', category: 'CONDITION', low: '', highWarn: '', high: '' },
+        ],
+    },
+    {
+        key: 'vessel', label: 'Vessel / tank / piping', hint: 'wall thickness · pressure · temperature',
+        points: [
+            { name: 'Wall Thickness', unit: 'mm', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Operating Pressure', unit: 'bar', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '', high: '' },
         ],
     },
     {
         key: 'generic', label: 'Other equipment', hint: 'temperature · vibration · pressure',
         points: [
-            { name: 'Temperature', unit: '°C', category: 'CONDITION', low: '', high: '' },
-            { name: 'Vibration', unit: 'mm/s', category: 'CONDITION', low: '', high: '7.1' },
-            { name: 'Pressure', unit: 'bar', category: 'CONDITION', low: '', high: '' },
+            { name: 'Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Vibration', unit: 'mm/s', category: 'CONDITION', low: '', highWarn: '', high: '', source: 'iso20816' },
+            { name: 'Pressure', unit: 'bar', category: 'CONDITION', low: '', highWarn: '', high: '' },
         ],
     },
 ];
@@ -134,6 +163,11 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
     const [drafts, setDrafts] = useState<PointDraft[]>([]);
     const [existingPoints, setExistingPoints] = useState<any[]>([]);
     const [pointsLoading, setPointsLoading] = useState(false);
+    // ISO 20816-3 machine classification for vibration limits (1.5.1):
+    // two plain questions resolve the group instead of a wrong universal number.
+    const [over300kW, setOver300kW] = useState(false);
+    const [flexMount, setFlexMount] = useState(false);
+    const machineClass = resolveMachineClass(over300kW, flexMount);
 
     // Step 3: data route
     const [route, setRoute] = useState<'manual' | 'csv' | 'live' | null>(null);
@@ -240,15 +274,36 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
 
     // ── Step 2 actions ────────────────────────────────────
 
+    // Resolve an 'iso20816'-sourced draft's bands from the current machine class.
+    const resolveIsoDraft = (p: PointDraft): PointDraft => {
+        if (p.source !== 'iso20816' && !p.source?.startsWith('iso20816-')) return p;
+        const b = vibrationBands(machineClass);
+        return { ...p, highWarn: String(b.maxWarning), high: String(b.maxCritical), source: b.source };
+    };
+
     const applyTemplate = (key: string) => {
         const t = TEMPLATES.find(x => x.key === key);
         if (!t) return;
         setTemplateKey(key);
-        setDrafts(t.points.map(p => ({ ...p })));
+        setDrafts(t.points.map(p => resolveIsoDraft({ ...p })));
     };
 
+    // Machine-class change re-resolves ISO-sourced vibration drafts in place
+    // (names/units the user edited are preserved — only the cited bands move).
+    useEffect(() => {
+        setDrafts(prev => prev.some(d => d.source?.startsWith('iso20816'))
+            ? prev.map(resolveIsoDraft)
+            : prev);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [machineClass]);
+
     const updateDraft = (i: number, patch: Partial<PointDraft>) =>
-        setDrafts(prev => prev.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+        setDrafts(prev => prev.map((d, j) => {
+            if (j !== i) return d;
+            // Hand-editing a band voids its citation — provenance becomes manual.
+            const touchesBands = 'low' in patch || 'highWarn' in patch || 'high' in patch;
+            return { ...d, ...patch, ...(touchesBands && d.source ? { source: 'manual' } : {}) };
+        }));
 
     const createPoints = async () => {
         const valid = drafts.filter(d => d.name.trim());
@@ -268,7 +323,10 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
                     minCritical: d.low.trim() === '' ? null : Number(d.low),
                     maxCritical: d.high.trim() === '' ? null : Number(d.high),
                     minWarning: null,
-                    maxWarning: null,
+                    maxWarning: d.highWarn.trim() === '' ? null : Number(d.highWarn),
+                    // Provenance: cited source from the template/ISO resolution,
+                    // 'manual' when the user typed bands with no citation.
+                    limitSource: d.source ?? ((d.low.trim() || d.highWarn.trim() || d.high.trim()) ? 'manual' : null),
                     active: true,
                 });
                 createdDefs.push(def);
@@ -552,22 +610,44 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
                         ))}
                     </div>
 
+                    {/* ISO 20816-3 machine class — two plain questions set the vibration limits */}
+                    <div className="flex flex-wrap items-center justify-center gap-3 text-xs">
+                        <span className="text-slate-400">Vibration limits:</span>
+                        <div className="flex border border-slate-200 rounded-lg overflow-hidden">
+                            <button onClick={() => setOver300kW(false)} className={`px-2.5 py-1.5 font-semibold transition ${!over300kW ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>≤ 300 kW</button>
+                            <button onClick={() => setOver300kW(true)} className={`px-2.5 py-1.5 font-semibold transition ${over300kW ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>&gt; 300 kW</button>
+                        </div>
+                        <div className="flex border border-slate-200 rounded-lg overflow-hidden">
+                            <button onClick={() => setFlexMount(false)} className={`px-2.5 py-1.5 font-semibold transition ${!flexMount ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>Rigid mount</button>
+                            <button onClick={() => setFlexMount(true)} className={`px-2.5 py-1.5 font-semibold transition ${flexMount ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>Flexible mount</button>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                            → warn {vibrationBands(machineClass).maxWarning} · critical {vibrationBands(machineClass).maxCritical} mm/s
+                        </span>
+                    </div>
+
                     {drafts.length > 0 && (
                         <div className="bg-white border border-slate-200 rounded-xl p-4">
-                            <div className="grid grid-cols-[1fr_70px_90px_90px_28px] gap-2 items-center text-[10px] font-bold text-slate-400 uppercase tracking-wide px-1 mb-1.5">
-                                <span>Measurement</span><span>Unit</span><span>Alert below</span><span>Alert above</span><span />
+                            <div className="grid grid-cols-[1fr_60px_78px_78px_78px_28px] gap-2 items-center text-[10px] font-bold text-slate-400 uppercase tracking-wide px-1 mb-1.5">
+                                <span>Measurement</span><span>Unit</span><span>Alert below</span><span className="text-amber-500">Warn above</span><span className="text-red-400">Alert above</span><span />
                             </div>
                             {drafts.map((d, i) => (
-                                <div key={i} className="grid grid-cols-[1fr_70px_90px_90px_28px] gap-2 items-center mb-1.5">
+                                <div key={i} className="grid grid-cols-[1fr_60px_78px_78px_78px_28px] gap-2 items-center mb-1.5">
                                     <input value={d.name} onChange={e => updateDraft(i, { name: e.target.value })} className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm" />
                                     <input value={d.unit} onChange={e => updateDraft(i, { unit: e.target.value })} className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm" />
                                     <input value={d.low} onChange={e => updateDraft(i, { low: e.target.value })} placeholder="—" inputMode="decimal" className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center" />
+                                    <input value={d.highWarn} onChange={e => updateDraft(i, { highWarn: e.target.value })} placeholder="—" inputMode="decimal" className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center" />
                                     <input value={d.high} onChange={e => updateDraft(i, { high: e.target.value })} placeholder="—" inputMode="decimal" className="px-2 py-1.5 border border-slate-200 rounded-lg text-sm text-center" />
                                     <button onClick={() => setDrafts(prev => prev.filter((_, j) => j !== i))} className="text-slate-300 hover:text-red-400 transition"><Trash2 size={14} /></button>
                                 </div>
                             ))}
+                            {drafts.some(d => d.source?.startsWith('iso20816')) && (
+                                <p className="text-[10px] text-slate-400 mt-1 px-1">
+                                    Vibration bands: {ISO20816_ZONES[machineClass].describe} — warn at zone B/C, critical at C/D. Editing a value marks it manual.
+                                </p>
+                            )}
                             <div className="flex items-center justify-between mt-3">
-                                <button onClick={() => setDrafts(prev => [...prev, { name: '', unit: '', category: 'CONDITION', low: '', high: '' }])}
+                                <button onClick={() => setDrafts(prev => [...prev, { name: '', unit: '', category: 'CONDITION', low: '', highWarn: '', high: '' }])}
                                     className="text-xs font-semibold text-primary-600 hover:underline flex items-center gap-1"><Plus size={13} /> Add another</button>
                                 <button onClick={createPoints} disabled={saving}
                                     className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 text-white font-semibold rounded-lg text-sm transition-colors">

@@ -208,9 +208,8 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
             newContact.email = ''; // Clear email to avoid unique constraint
             newContact.organizationUnitIds = []; // Clear org units to start fresh
 
-            // Clear system access flags
+            // Clear virtual flag on the copy (login/access is governed by the role system, not the contact)
             if (newContact.flags) {
-                newContact.flags.canLogin = false;
                 newContact.flags.isVirtual = false;
             }
 
@@ -250,8 +249,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                     types: ['SYSTEM_USER'],
                     defaultType: 'SYSTEM_USER',
                     flags: {
-                        isVirtual: true,
-                        canLogin: true
+                        isVirtual: true
                     },
                     customFields: [],
                     address: { street: '', city: '', state: '', zip: '', country: '' }

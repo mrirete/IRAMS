@@ -25,6 +25,14 @@ export interface RESTConfig extends BaseConnectorConfig {
     auth_pass?: string;
     pagination_style: string;
     rate_limit_rpm: number;
+    /** Reading map — dotted JSON paths sensor-sync uses to turn the response
+     *  into (asset, tag, value) points. `records_path` locates the array. */
+    records_path?: string;
+    map_asset?: string;
+    map_tag?: string;
+    map_value?: string;
+    map_unit?: string;
+    map_timestamp?: string;
 }
 
 export interface OPCUAConfig extends BaseConnectorConfig {

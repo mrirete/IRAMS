@@ -8,12 +8,18 @@ import {
 import { FleetHealthMap } from './FleetHealthMap';
 import type { FleetAssetHealth, TwinState, SensorTrend } from '../../types/intelligence';
 import type { ConfidenceBand } from '../../eam/services/PredictionService';
+import { STALE_DAYS } from '../../config/predict';
+import { conditionalFailureProbability } from '../../eam/utils/weibull';
+import type { GroundedRul } from '../../lib/predict/groundedFit';
+import type { ClassResolution } from '../../lib/predict/equipmentClass';
+import { healthModelFor, sensorKind, type ClassHealthModel } from '../../lib/predict/healthModels';
+import type { RollupNode } from '../../lib/predict/rollup';
 
 // ─────────────────────────────────────────────────────────
 //  Types
 // ─────────────────────────────────────────────────────────
 
-type OperatingState = 'RUNNING' | 'STANDBY' | 'TRIPPED' | 'OFFLINE' | 'UNKNOWN';
+type OperatingState = 'RUNNING' | 'STANDBY' | 'TRIPPED' | 'OFFLINE' | 'STALE' | 'UNKNOWN';
 
 interface PredictOverviewTabProps {
     /* Fleet */
@@ -35,6 +41,12 @@ interface PredictOverviewTabProps {
     rulConfidenceBands: ConfidenceBand[];
     distributionType: string | null;
     rulConfidence: number | null;
+    /** Grounded censored-Weibull fit from failure history (Phase 1) — null when insufficient. */
+    groundedFit?: GroundedRul | null;
+    /** Equipment-class resolution (Phase 2) — drives the health model & ISO zoning. */
+    equipmentClass?: ClassResolution | null;
+    /** System/unit health roll-ups (Phase 4) — worst-first. */
+    rollups?: RollupNode[];
 
     /* Sensors */
     twinHealth: TwinState | null;
@@ -95,63 +107,83 @@ const OP_STATE_CONFIG: Record<OperatingState, { label: string; color: string; bg
     STANDBY: { label: 'Standby', color: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200', dotColor: 'bg-amber-500', pulse: false },
     TRIPPED: { label: 'Tripped', color: 'text-red-700', bgColor: 'bg-red-50 border-red-200', dotColor: 'bg-red-500', pulse: true },
     OFFLINE: { label: 'Offline', color: 'text-slate-600', bgColor: 'bg-slate-50 border-slate-300', dotColor: 'bg-slate-400', pulse: false },
+    STALE: { label: 'Stale — reconnect', color: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200', dotColor: 'bg-amber-400', pulse: false },
     UNKNOWN: { label: 'Unknown', color: 'text-slate-500', bgColor: 'bg-slate-50 border-slate-200', dotColor: 'bg-slate-300', pulse: false },
 };
 
-/** Calculate P(failure) in T days using Weibull approximation */
-function calcPFailure(rulDays: number | undefined, confidence: number | null, distributionType: string | null, horizon: number): number {
-    if (!rulDays || rulDays <= 0) return 99;
-    if (horizon >= rulDays) return 95;
-    // Simple Weibull CDF: F(t) = 1 - exp(-(t/eta)^beta)
-    const eta = rulDays; // characteristic life ≈ RUL
-    const beta = distributionType?.includes('weibull_2p') ? 2.5 : distributionType?.includes('weibull_3p') ? 3.0 : 2.0;
-    const pf = (1 - Math.exp(-Math.pow(horizon / eta, beta))) * 100;
-    return Math.round(Math.min(99, Math.max(1, pf)) * 10) / 10;
+/**
+ * P(failure) within `horizonDays`, from the grounded censored-Weibull fit:
+ * conditional survival 1 − R(age+h)/R(age). Returns null when no fit exists —
+ * the card shows "—" rather than a number invented from a hardcoded β.
+ */
+function calcPFailure(fit: GroundedRul | null | undefined, horizonDays: number): number | null {
+    if (!fit || !fit.beta || !fit.eta) return null;
+    const p = conditionalFailureProbability(fit.beta, fit.eta, fit.ageDays * 24, horizonDays * 24) * 100;
+    return Math.round(Math.min(99.9, Math.max(0, p)) * 10) / 10;
 }
 
-/** Decompose health index into sub-indices based on sensor categories */
+/** Sub-index icon by group label (class models define the groups). */
+const SUB_ICONS: Record<string, React.ReactNode> = {
+    Mechanical: <Activity size={12} />,
+    Thermal: <Thermometer size={12} />,
+    Performance: <BarChart3 size={12} />,
+    Integrity: <ShieldCheck size={12} />,
+    Process: <Gauge size={12} />,
+    Load: <Zap size={12} />,
+    Signal: <Gauge size={12} />,
+};
+
+/** Decompose health index into the CLASS MODEL's sub-index groups (Phase 2). */
 function decomposeHealthIndex(
     systemHealth: number,
     sensors: SensorTrend[],
-    twinHealth: TwinState | null
+    twinHealth: TwinState | null,
+    model: ClassHealthModel,
 ): { label: string; value: number; icon: React.ReactNode; color: string }[] {
     const sensorValues = sensors.length > 0 ? sensors : Object.entries(twinHealth?.sensor_summary || {}).map(([tag, val]) => ({ tag, current: val as number, trend: 'stable' as const, unit: '', readings: [] as number[] }));
     if (sensorValues.length === 0) return [];
-
-    // Group sensors by category
-    const vibSensors = sensorValues.filter(s => s.tag.toLowerCase().includes('vib'));
-    const tempSensors = sensorValues.filter(s => s.tag.toLowerCase().includes('temp') || s.tag.toLowerCase().includes('thermal'));
-    const perfSensors = sensorValues.filter(s => s.tag.toLowerCase().includes('flow') || s.tag.toLowerCase().includes('pressure'));
 
     const trendPenalty = (sensors: typeof sensorValues) => {
         const rising = sensors.filter(s => s.trend === 'rising').length;
         return rising * 8;
     };
 
-    const results = [];
+    // Deterministic per-sensor score — same transfer function as the twin
+    // engine (proximity to alarm midpoint, 100 − deviation×40). No jitter:
+    // a monitoring number must not change between renders of the same data.
+    const scoreSensor = (s: { current: number; alarm_high?: number; alarm_low?: number }): number | null => {
+        const hi = s.alarm_high, lo = s.alarm_low;
+        if (s.current == null || hi == null || lo == null || hi <= lo) return null;
+        const deviation = Math.abs(s.current - (hi + lo) / 2) / ((hi - lo) / 2);
+        return Math.max(0, Math.min(100, 100 - deviation * 40));
+    };
+    const categoryHealth = (list: typeof sensorValues): number => {
+        const scored = list.map(s => scoreSensor(s as { current: number; alarm_high?: number; alarm_low?: number })).filter((v): v is number => v != null);
+        // Fall back to the overall index when the category has no alarm bands.
+        const base = scored.length ? scored.reduce((a, b) => a + b, 0) / scored.length : systemHealth;
+        return Math.max(0, Math.min(100, base - trendPenalty(list)));
+    };
 
-    if (vibSensors.length > 0) {
-        const mechHealth = Math.max(30, systemHealth - trendPenalty(vibSensors) + (Math.random() * 4 - 2));
-        results.push({ label: 'Mechanical', value: Math.round(mechHealth * 10) / 10, icon: <Activity size={12} />, color: mechHealth >= 80 ? 'text-emerald-600' : mechHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
-    }
-
-    if (tempSensors.length > 0) {
-        const thermalHealth = Math.max(35, systemHealth + 3 - trendPenalty(tempSensors) + (Math.random() * 3 - 1));
-        results.push({ label: 'Thermal', value: Math.round(thermalHealth * 10) / 10, icon: <Thermometer size={12} />, color: thermalHealth >= 80 ? 'text-emerald-600' : thermalHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
-    }
-
-    if (perfSensors.length > 0) {
-        const perfHealth = Math.max(40, systemHealth + 5 - trendPenalty(perfSensors) + (Math.random() * 2 - 1));
-        results.push({ label: 'Performance', value: Math.round(perfHealth * 10) / 10, icon: <BarChart3 size={12} />, color: perfHealth >= 80 ? 'text-emerald-600' : perfHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
-    }
-
-    return results;
+    return model.subIndices.flatMap(group => {
+        const kinds = new Set(group.kinds);
+        const list = sensorValues.filter(s => kinds.has(sensorKind(s.tag)));
+        if (list.length === 0) return [];
+        const h = categoryHealth(list);
+        return [{
+            label: group.label,
+            value: Math.round(h * 10) / 10,
+            icon: SUB_ICONS[group.label] ?? <Gauge size={12} />,
+            color: h >= 80 ? 'text-emerald-600' : h >= 60 ? 'text-amber-500' : 'text-red-500',
+        }];
+    });
 }
 
-/** ISO 10816 vibration severity zones */
-function getISOZone(tag: string, value: number): { zone: string; color: string; bgColor: string } | null {
+/** ISO 10816 vibration severity zones — vibration zoning only for classes it applies to */
+function getISOZone(tag: string, value: number, vibZoning: boolean = true): { zone: string; color: string; bgColor: string } | null {
     const k = tag.toLowerCase();
     if (k.includes('vib')) {
+        // ISO 20816 severity is a ROTATING-machinery scale — suppress on static/electrical.
+        if (!vibZoning) return null;
         // ISO 10816-3 Class II (15-75 kW): Good <2.8, Acceptable <7.1, Alert <18, Danger >18
         if (value < 2.8) return { zone: 'A', color: 'text-emerald-600', bgColor: 'bg-emerald-50' };
         if (value < 7.1) return { zone: 'B', color: 'text-primary-600', bgColor: 'bg-primary-50' };
@@ -175,24 +207,60 @@ function getISOZone(tag: string, value: number): { zone: string; color: string; 
 export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     selectedAssetId, selectedAssetName, onAssetSelect, fleetData, visibleFleetData, totalAssetCount, filterSlot,
     systemHealth, isHealthy, rulDays, alertCount,
-    rulConfidenceBands, distributionType, rulConfidence,
-    twinHealth, assetSensorTrends,
+    rulConfidenceBands, distributionType, rulConfidence: _rulConfidence,
+    groundedFit, equipmentClass, rollups = [], twinHealth, assetSensorTrends,
     onInvestigate, onCreateWR, onSetup, hasData = true,
 }) => {
     const [fleetExpanded, setFleetExpanded] = useState(true);
 
     const hasSensors = !!(twinHealth?.sensor_summary) || assetSensorTrends.length > 0;
-    const operatingState = useMemo(() => deriveOperatingState(assetSensorTrends, twinHealth), [assetSensorTrends, twinHealth]);
+
+    // Class model (Phase 2): what drives health & whether ISO vib zoning applies.
+    const model = healthModelFor(equipmentClass?.cls ?? 'other');
+
+    // Freshness gate: values derived from old data must not present as live.
+    const dataAgeDays = useMemo(() => {
+        if (!twinHealth?.updated_at) return null;
+        const age = Math.floor((Date.now() - new Date(twinHealth.updated_at).getTime()) / 86400000);
+        return Number.isFinite(age) ? age : null;
+    }, [twinHealth?.updated_at]);
+    const isStale = dataAgeDays != null && dataAgeDays > STALE_DAYS;
+
+    const operatingState = useMemo(() => {
+        const derived = deriveOperatingState(assetSensorTrends, twinHealth);
+        // Stale data can't substantiate ANY live operating state.
+        return isStale && derived !== 'UNKNOWN' ? 'STALE' : derived;
+    }, [assetSensorTrends, twinHealth, isStale]);
     const opConfig = OP_STATE_CONFIG[operatingState];
 
-    // P(Failure) — only a real forecast when RUL data exists. Absence of data
-    // must read as "—", never as a fabricated 99% failure probability.
-    const pfAvailable = hasData && !!rulDays && rulDays > 0;
-    const pf30 = useMemo(() => calcPFailure(rulDays, rulConfidence, distributionType, 30), [rulDays, rulConfidence, distributionType]);
-    const pf90 = useMemo(() => calcPFailure(rulDays, rulConfidence, distributionType, 90), [rulDays, rulConfidence, distributionType]);
+    // P(Failure) — only from a REAL fitted distribution (grounded censored
+    // Weibull). No fit → "—", never a number invented from a hardcoded β.
+    const pf30 = useMemo(() => calcPFailure(groundedFit, 30), [groundedFit]);
+    const pf90 = useMemo(() => calcPFailure(groundedFit, 90), [groundedFit]);
+    const pfAvailable = hasData && pf30 != null;
+    // Any RUL not backed by the live grounded fit is heuristic — including
+    // legacy rows persisted with a "weibull" label before the engine unification.
+    const isHeuristicRul = !groundedFit && rulDays != null && rulDays > 0;
+    void distributionType; // superseded by groundedFit for display decisions
 
-    // Health decomposition
-    const healthSubs = useMemo(() => decomposeHealthIndex(systemHealth, assetSensorTrends, twinHealth), [systemHealth, assetSensorTrends, twinHealth]);
+    // Health decomposition — grouped per the class model's sub-indices
+    const healthSubs = useMemo(() => decomposeHealthIndex(systemHealth, assetSensorTrends, twinHealth, model), [systemHealth, assetSensorTrends, twinHealth, model]);
+
+    // Sensors trending toward trouble (elevated ISO zone, or rising inside a
+    // watch zone). Keeps the Risk Alerts card consistent with the "Watch"
+    // chips: "Watch" and "no active alerts — all clear" must never co-occur.
+    const watchCount = useMemo(() => {
+        const raw = assetSensorTrends.length > 0
+            ? assetSensorTrends
+            : Object.entries(twinHealth?.sensor_summary || {}).map(([tag, val]) => ({ tag, current: val as number, trend: 'stable' as const }));
+        return raw.filter(s => {
+            const z = getISOZone(s.tag, s.current, model.vibrationZoning);
+            if (!z) return false;
+            const elevated = z.zone === 'C' || z.zone === 'D' || z.zone === 'Alert' || z.zone === 'Danger';
+            const watchRising = (z.zone === 'B' || z.zone === 'Watch') && s.trend === 'rising';
+            return elevated || watchRising;
+        }).length;
+    }, [assetSensorTrends, twinHealth, model.vibrationZoning]);
 
     // RUL bands display
     const p50Band = rulConfidenceBands.find(b => b.percentile === 50);
@@ -220,6 +288,21 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                         <CircleDot size={10} />
                         {selectedAssetName} — Condition Overview
                     </p>
+
+                    {/* Equipment-class chip (Phase 2): which health model judges this
+                        asset, and whether the class was declared or inferred */}
+                    {equipmentClass && (
+                        <span
+                            title={`Health model: ${model.drivenBy}\nClass basis: ${equipmentClass.note}`}
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide ${equipmentClass.basis === 'declared'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : equipmentClass.basis === 'inferred'
+                                    ? 'bg-slate-50 text-slate-500 border-slate-200'
+                                    : 'bg-amber-50 text-amber-600 border-amber-200'}`}
+                        >
+                            {model.label}{equipmentClass.basis !== 'declared' ? ` · ${equipmentClass.basis}` : ''}
+                        </span>
+                    )}
                 </div>
 
                 {/* Action Buttons */}
@@ -252,8 +335,12 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                 <Gauge size={16} />
                             </div>
                             <div>
-                                <p className="text-sm font-semibold text-slate-800">Live Sensor Readings</p>
-                                <p className="text-[10px] text-slate-400">{selectedAssetName} — Real-time field instrument values</p>
+                                <p className="text-sm font-semibold text-slate-800">{isStale ? 'Sensor Readings' : 'Live Sensor Readings'}</p>
+                                <p className="text-[10px] text-slate-400">
+                                    {isStale
+                                        ? `${selectedAssetName} — last data ${dataAgeDays}d ago · reconnect the feed or log new readings`
+                                        : `${selectedAssetName} — Real-time field instrument values`}
+                                </p>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
@@ -266,7 +353,13 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                 const diffMs = Date.now() - new Date(twinHealth.updated_at).getTime();
                                 const diffMin = Math.floor(diffMs / 60000);
                                 const timeAgo = diffMin < 1 ? 'just now' : diffMin < 60 ? `${diffMin}m ago` : diffMin < 1440 ? `${Math.floor(diffMin / 60)}h ago` : `${Math.floor(diffMin / 1440)}d ago`;
-                                return (
+                                // Green heartbeat only while the data is actually fresh.
+                                return isStale ? (
+                                    <span className="text-[10px] text-amber-600 font-medium flex items-center gap-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                                        Stale — updated {timeAgo}
+                                    </span>
+                                ) : (
                                     <span className="text-[10px] text-slate-400 flex items-center gap-1">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                         Updated {timeAgo}
@@ -288,7 +381,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             const strokeColor = sensor.trend === 'rising' ? '#ef4444' : sensor.trend === 'falling' ? '#eab308' : '#06b6d4';
                             const hasSparkline = sensor.readings && sensor.readings.length > 0;
                             const gradientId = `sparkGrad-${idx}`;
-                            const isoZone = getISOZone(sensor.tag, sensor.current);
+                            const isoZone = getISOZone(sensor.tag, sensor.current, model.vibrationZoning);
 
                             let sparklinePath = '';
                             let fillPath = '';
@@ -430,13 +523,17 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                 <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5 hover:shadow-sm hover:border-slate-300 transition-all cursor-default">
                     <div className="flex items-center justify-between mb-1">
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Risk Alerts</p>
-                        <div className={`p-1 rounded-md ${alertCount > 0 ? 'bg-red-50 text-red-500' : 'bg-slate-50 text-slate-400'}`}>
+                        <div className={`p-1 rounded-md ${alertCount > 0 ? 'bg-red-50 text-red-500' : watchCount > 0 ? 'bg-amber-50 text-amber-500' : 'bg-slate-50 text-slate-400'}`}>
                             <ShieldAlert size={12} />
                         </div>
                     </div>
                     <h2 className={`text-xl font-bold tabular-nums ${alertCount > 0 ? 'text-red-500' : 'text-slate-700'}`}>{alertCount}</h2>
-                    <p className="text-[9px] text-slate-400 mt-0.5">
-                        {alertCount === 0 ? 'No active alerts' : `${alertCount} breach${alertCount > 1 ? 'es' : ''}`}
+                    <p className={`text-[9px] mt-0.5 ${alertCount === 0 && watchCount > 0 ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>
+                        {alertCount > 0
+                            ? `${alertCount} breach${alertCount > 1 ? 'es' : ''}`
+                            : watchCount > 0
+                                ? `${watchCount} sensor${watchCount > 1 ? 's' : ''} trending — watch`
+                                : 'No active alerts'}
                     </p>
                 </div>
 
@@ -452,15 +549,19 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                         <h2 className={`text-xl font-bold tabular-nums ${(rulDays || 0) < 90 ? 'text-red-500' : 'text-slate-800'}`}>{rulDays?.toFixed(0) || '--'}</h2>
                         <span className="text-[10px] text-slate-400">days</span>
                     </div>
+                    {/* Method tag — a fitted MRL and a heuristic must never look alike */}
+                    <p className={`text-[9px] mt-0.5 font-medium ${groundedFit ? 'text-primary-600' : isHeuristicRul ? 'text-amber-600' : 'text-slate-400'}`}>
+                        {groundedFit
+                            ? `Weibull MRL · β=${groundedFit.beta} · fitted`
+                            : isHeuristicRul ? 'Directional heuristic — not a fitted model' : rulDays ? 'Estimate' : ''}
+                    </p>
                     {/* Compact confidence bands inline */}
-                    {(p50Band || p80Band || p95Band) ? (
+                    {(p50Band || p80Band || p95Band) && (
                         <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex items-center gap-2 flex-wrap">
                             {p50Band && <span className="text-[9px] text-slate-500 tabular-nums"><span className="text-slate-400">P50</span> {p50Band.lower_days}–{p50Band.upper_days}d</span>}
                             {p80Band && <span className="text-[9px] text-slate-400 tabular-nums"><span className="text-slate-300">P80</span> {p80Band.lower_days}–{p80Band.upper_days}d</span>}
                             {p95Band && <span className="text-[9px] text-slate-400 tabular-nums"><span className="text-slate-300">P95</span> {p95Band.lower_days}–{p95Band.upper_days}d</span>}
                         </div>
-                    ) : (
-                        <p className="text-[9px] text-slate-400 mt-0.5">Weibull forecast</p>
                     )}
                 </div>
 
@@ -484,19 +585,71 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                     style={{ width: `${Math.min(100, pf30)}%` }}
                                 />
                             </div>
-                            <div className="mt-1 flex items-center justify-between">
-                                <span className="text-[9px] text-slate-400">90-day</span>
-                                <span className={`text-[9px] font-bold tabular-nums ${pf90 > 50 ? 'text-red-500' : pf90 > 20 ? 'text-amber-500' : 'text-emerald-600'}`}>{pf90.toFixed(1)}%</span>
-                            </div>
+                            {pf90 != null && (
+                                <div className="mt-1 flex items-center justify-between">
+                                    <span className="text-[9px] text-slate-400">90-day</span>
+                                    <span className={`text-[9px] font-bold tabular-nums ${pf90 > 50 ? 'text-red-500' : pf90 > 20 ? 'text-amber-500' : 'text-emerald-600'}`}>{pf90.toFixed(1)}%</span>
+                                </div>
+                            )}
                         </>
                     ) : (
                         <>
                             <h2 className="text-xl font-bold text-slate-300">—</h2>
-                            <p className="text-[9px] text-slate-400 mt-0.5">Needs an RUL forecast first</p>
+                            <p className="text-[9px] text-slate-400 mt-0.5">Needs failure history (≥2 failures) for a fitted forecast</p>
                         </>
                     )}
                 </div>
             </div>
+
+            {/* ═══ SECTION 3.5: SYSTEMS & UNITS — health roll-up (Phase 4) ═══ */}
+            {rollups.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                        <div className="p-1.5 bg-primary-50 rounded-lg text-primary-600 border border-primary-100">
+                            <CircleDot size={16} />
+                        </div>
+                        <div>
+                            <p className="text-sm font-semibold text-slate-800">Systems & Units</p>
+                            <p className="text-[10px] text-slate-400">
+                                Rolled up from monitored equipment (criticality-weighted, dragged toward the weakest link) — redundancy not modeled; for series/parallel use Reliability Modelling
+                            </p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {rollups.slice(0, 6).map(node => {
+                            const tone = node.health >= 80 ? 'text-emerald-600' : node.health >= 60 ? 'text-amber-500' : 'text-red-500';
+                            return (
+                                <div
+                                    key={node.id}
+                                    className="border border-slate-200 rounded-lg p-3 hover:border-slate-300 hover:shadow-sm transition-all"
+                                    title={`Top contributors to deficit:\n${node.offenders.map(o => ` · ${o.name} — ${o.health.toFixed(0)}/100 (crit ${o.criticality})`).join('\n')}`}
+                                >
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 uppercase">{node.level}</span>
+                                        <span className="text-[10px] text-slate-400">{node.monitored} monitored</span>
+                                    </div>
+                                    <p className="text-xs font-semibold text-slate-800 truncate">{node.name}</p>
+                                    <div className="flex items-baseline gap-1 mt-1">
+                                        <span className={`text-xl font-bold tabular-nums ${tone}`}>{node.health.toFixed(0)}</span>
+                                        <span className="text-[10px] text-slate-400">/ 100</span>
+                                    </div>
+                                    {/* Roll-DOWN: the responsible child, one click away */}
+                                    {node.worst && (
+                                        <button
+                                            onClick={() => onAssetSelect(node.worst!.id)}
+                                            className="mt-1.5 w-full text-left text-[10px] px-2 py-1 rounded bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:border-slate-300 transition-colors"
+                                        >
+                                            <span className="text-slate-400">worst: </span>
+                                            <span className="font-semibold text-slate-600">{node.worst.name}</span>
+                                            <span className={`font-bold ml-1 ${node.worst.health >= 80 ? 'text-emerald-600' : node.worst.health >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{node.worst.health.toFixed(0)}</span>
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* ═══ SECTION 4: FLEET HEALTH (collapsible) ═══ */}
             <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-sm">

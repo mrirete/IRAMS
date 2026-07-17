@@ -213,7 +213,8 @@ export interface ScenarioOutput {
     };
     recommendation: string;
     governance_tier: GovernanceTier;
-    monte_carlo_runs: number;
+    /** Set only when a real Monte Carlo simulation ran (absent for illustrative estimates). */
+    monte_carlo_runs?: number;
 }
 
 // ---------------------------------------------------------
