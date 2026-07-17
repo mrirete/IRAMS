@@ -153,6 +153,67 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                                     className={inputClass('rate_limit_rpm')} />
                             </div>
                         </div>
+
+                        {/* Reading map — how sensor-sync turns the JSON response
+                            into (asset, tag, value) points. Dotted paths. */}
+                        <h3 className="text-base font-semibold text-slate-800 border-b border-slate-200 pb-2 pt-2">Reading Map</h3>
+                        <p className="text-xs text-slate-500 -mt-2">Tell the sync worker where each reading's fields live in the response JSON (dotted paths). The asset field should hold your asset tag or id.</p>
+                        <div>
+                            <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                Records Path
+                                <Tooltip text="Dotted path to the ARRAY of readings in the response, e.g. 'data.items'. Leave empty if the response body is the array itself." />
+                            </label>
+                            <input type="text" name="records_path" value={config.records_path || ''} onChange={handleChange}
+                                placeholder="data.readings (optional)"
+                                className={inputClass('records_path')} />
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                            <div>
+                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                    Asset Field <span className="text-red-400 ml-0.5">*</span>
+                                    <Tooltip text="Field holding the asset tag or id each reading belongs to." />
+                                </label>
+                                <input type="text" name="map_asset" value={config.map_asset || ''} onChange={handleChange}
+                                    placeholder="asset" className={inputClass('map_asset')} />
+                                <FieldError error={errors.map_asset} />
+                            </div>
+                            <div>
+                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                    Tag Field <span className="text-red-400 ml-0.5">*</span>
+                                    <Tooltip text="Field naming the measurement, e.g. 'vibration_de' or 'discharge_pressure'." />
+                                </label>
+                                <input type="text" name="map_tag" value={config.map_tag || ''} onChange={handleChange}
+                                    placeholder="tag" className={inputClass('map_tag')} />
+                                <FieldError error={errors.map_tag} />
+                            </div>
+                            <div>
+                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                    Value Field <span className="text-red-400 ml-0.5">*</span>
+                                    <Tooltip text="Field holding the numeric reading value." />
+                                </label>
+                                <input type="text" name="map_value" value={config.map_value || ''} onChange={handleChange}
+                                    placeholder="value" className={inputClass('map_value')} />
+                                <FieldError error={errors.map_value} />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                    Unit Field
+                                    <Tooltip text="Optional field holding the engineering unit, e.g. 'mm/s'." />
+                                </label>
+                                <input type="text" name="map_unit" value={config.map_unit || ''} onChange={handleChange}
+                                    placeholder="unit (optional)" className={inputClass('map_unit')} />
+                            </div>
+                            <div>
+                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                    Timestamp Field
+                                    <Tooltip text="Optional field holding the reading time — used to order the series." />
+                                </label>
+                                <input type="text" name="map_timestamp" value={config.map_timestamp || ''} onChange={handleChange}
+                                    placeholder="timestamp (optional)" className={inputClass('map_timestamp')} />
+                            </div>
+                        </div>
                     </div>
                 );
             case 'database':

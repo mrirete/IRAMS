@@ -25,13 +25,17 @@ const getTypeIcon = (type: ConnectorType | null) => {
 
 export const ConnectorWizard: React.FC = () => {
     const navigate = useNavigate();
-    const { registerConnector } = useConnectors();
+    const { registerConnector, testConnector } = useConnectors();
 
     const [currentStep, setCurrentStep] = useState(0);
     const [selectedType, setSelectedType] = useState<ConnectorType | null>(null);
     const [config, setConfig] = useState<Partial<AnyConnectorConfig>>({});
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
+    // The test saves a real (inactive) connector row and runs sensor-sync on
+    // it — keep its id so retries and final activation reuse the same row.
+    const [draftId, setDraftId] = useState<string | undefined>(undefined);
+    const [testRecords, setTestRecords] = useState(0);
     const [testError, setTestError] = useState<string | null>(null);
     const [mapping, setMapping] = useState<Record<string, string>>({});
     const [isSaving, setIsSaving] = useState(false);
@@ -52,6 +56,9 @@ export const ConnectorWizard: React.FC = () => {
 
         if (selectedType === 'rest_api') {
             if (!(config as any).base_url?.trim()) errors.base_url = 'Base URL is required';
+            if (!(config as any).map_asset?.trim()) errors.map_asset = 'Asset field is required';
+            if (!(config as any).map_tag?.trim()) errors.map_tag = 'Tag field is required';
+            if (!(config as any).map_value?.trim()) errors.map_value = 'Value field is required';
         }
         if (selectedType === 'database') {
             if (!(config as any).connection_url?.trim()) errors.connection_url = 'Connection URL is required';
@@ -86,35 +93,46 @@ export const ConnectorWizard: React.FC = () => {
         }
 
         if (currentStep === 4) {
-            // Activate Step
+            // Activate Step — flips the (draft) row to is_active
             setIsSaving(true);
             const finalConfig = { ...config, type: selectedType } as AnyConnectorConfig;
-            await registerConnector(finalConfig);
+            await registerConnector(finalConfig, draftId);
             setIsSaving(false);
             navigate('/admin/connectors');
+            return;
+        }
+
+        // REST configures its reading map in step 1 — skip the (asset-schema)
+        // mapping step, which doesn't apply to sensor feeds.
+        if (currentStep === 2 && selectedType === 'rest_api') {
+            setCurrentStep(4);
             return;
         }
 
         setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
     };
 
+    /**
+     * Real end-to-end test: persist the config as an inactive connector and
+     * run the sensor-sync edge function against just that row. Success means
+     * readings actually landed in ers_sensor_readings.
+     */
     const runConnectionTest = async () => {
         setIsTesting(true);
         setTestResult(null);
         setTestError(null);
 
-        await new Promise(r => setTimeout(r, 2000));
+        const result = await testConnector({ ...config, type: selectedType! }, draftId);
+        setDraftId(result.connectorId);
 
-        // Simulate 80% success, 20% failure for realistic testing
-        const success = Math.random() > 0.2;
-
-        if (success) {
+        if (result.ok) {
             setTestResult('success');
+            setTestRecords(result.records);
             setIsTesting(false);
-            setTimeout(() => setCurrentStep(prev => prev + 1), 1000);
+            setTimeout(() => setCurrentStep(selectedType === 'rest_api' ? 4 : 3), 1200);
         } else {
             setTestResult('error');
-            setTestError(`ECONNREFUSED: Could not reach ${(config as any).base_url || (config as any).connection_url || 'endpoint'} — connection timed out after 30s. Verify credentials and ensure the endpoint is reachable from the ERS network.`);
+            setTestError(result.error || 'Unknown error');
             setIsTesting(false);
         }
     };
@@ -126,6 +144,11 @@ export const ConnectorWizard: React.FC = () => {
             if (currentStep === 2) {
                 setTestResult(null);
                 setTestError(null);
+            }
+            // REST skips the mapping step in both directions
+            if (currentStep === 4 && selectedType === 'rest_api') {
+                setCurrentStep(2);
+                return;
             }
             setCurrentStep(prev => Math.max(prev - 1, 0));
         }
@@ -188,10 +211,10 @@ export const ConnectorWizard: React.FC = () => {
                                             : 'Ready to Test'}
                             </h2>
                             <p className="text-slate-500 mt-2 text-sm font-medium">
-                                {isTesting ? `Reaching out to ${config.name || 'the system'} to verify credentials and endpoint.`
-                                    : testResult === 'success' ? 'We successfully authenticated and fetched schema metadata.'
-                                        : testResult === 'error' ? 'Could not establish a connection. Please review the error below.'
-                                            : 'Click "Test Now" to verify your configuration.'}
+                                {isTesting ? `Running a real pull from ${config.name || 'the source'} — readings land in the live sensor feed.`
+                                    : testResult === 'success' ? `Pulled ${testRecords} reading point${testRecords === 1 ? '' : 's'} into the sensor feed Predict reads.`
+                                        : testResult === 'error' ? 'The pull failed. Review the source\'s actual response below.'
+                                            : 'Test Now saves a draft and runs one real pull through the sensor-sync function.'}
                             </p>
                         </div>
 
@@ -222,7 +245,7 @@ export const ConnectorWizard: React.FC = () => {
                                     </button>
                                 </div>
                                 <button
-                                    onClick={() => { setTestResult(null); setTestError(null); setCurrentStep(3); }}
+                                    onClick={() => { setTestResult(null); setTestError(null); setCurrentStep(selectedType === 'rest_api' ? 4 : 3); }}
                                     className="block mx-auto text-xs text-slate-500 hover:text-slate-700 underline transition-colors font-medium"
                                 >
                                     Continue anyway (sync may fail)
@@ -264,8 +287,10 @@ export const ConnectorWizard: React.FC = () => {
                                 { label: 'Connector Name', value: config.name },
                                 { label: 'Type', value: selectedType?.replace('_', ' ')?.toUpperCase() },
                                 { label: 'Sync Interval', value: `${config.sync_interval_seconds || 3600}s` },
-                                { label: 'Fields Mapped', value: `${Object.keys(mapping).length} / ${mockInternalFields.length}` },
-                                { label: 'Connection Test', value: testResult === 'success' ? '✅ Passed' : '⚠️ Skipped / Failed' },
+                                selectedType === 'rest_api'
+                                    ? { label: 'Reading Map', value: `${(config as any).map_asset || 'asset'} / ${(config as any).map_tag || 'tag'} / ${(config as any).map_value || 'value'}` }
+                                    : { label: 'Fields Mapped', value: `${Object.keys(mapping).length} / ${mockInternalFields.length}` },
+                                { label: 'Connection Test', value: testResult === 'success' ? `✅ Passed (${testRecords} points)` : '⚠️ Skipped / Failed' },
                             ].map((row, i, arr) => (
                                 <div key={row.label} className={`flex justify-between items-center ${i < arr.length - 1 ? 'border-b border-slate-100 pb-4' : ''}`}>
                                     <span className="text-sm text-slate-500 font-semibold">{row.label}</span>
@@ -278,7 +303,7 @@ export const ConnectorWizard: React.FC = () => {
                             <CheckCircle2 className="text-emerald-600 shrink-0 mt-0.5" size={18} />
                             <div>
                                 <h4 className="text-sm font-bold text-emerald-700">Ready to activate</h4>
-                                <p className="text-sm text-emerald-600 mt-1">Upon activation, an initial FULL sync will be triggered, followed by incremental syncs. Data will immediately flow through the DQS engine.</p>
+                                <p className="text-sm text-emerald-600 mt-1">Activation enables this connector for sensor-sync runs (scheduled, or on demand via Sync Now on its card). Readings land in the live sensor feed that Predict and the digital twin read.</p>
                             </div>
                         </div>
                     </div>

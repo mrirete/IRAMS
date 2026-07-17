@@ -112,11 +112,11 @@ export const ConnectorHub: React.FC = () => {
                 </div>
             </div>
 
-            {/* Honesty banner — the configured feed cards below are demo data; the CSV
-                import is the one connector that actually writes real readings today. */}
-            <div className="flex items-start gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                <Info size={14} className="shrink-0 mt-0.5 text-amber-600" />
-                <span>The feed cards below are <strong>demo data</strong> (no live streaming connector runs in this deployment). <strong>Import Readings (CSV)</strong> is live — it writes real rows into the sensor feed that Predict reads.</span>
+            {/* Live routes today: REST API polling (sensor-sync) + CSV import.
+                MQTT/OPC-UA/historian stay honestly gated as Coming soon. */}
+            <div className="flex items-start gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+                <Info size={14} className="shrink-0 mt-0.5 text-blue-600" />
+                <span><strong>REST API polling</strong> and <strong>CSV import</strong> are live — both write real rows into the sensor feed that Predict reads. MQTT, OPC-UA, and historian connectors are coming soon.</span>
             </div>
 
             {/* High-Level System Stats */}
@@ -138,8 +138,14 @@ export const ConnectorHub: React.FC = () => {
                     <div>
                         <div className="text-xs text-slate-500 uppercase tracking-wider font-bold">System DQS</div>
                         <div className="flex items-baseline space-x-1">
-                            <span className={`text-xl font-black ${avgDqs >= 80 ? 'text-emerald-600' : avgDqs >= 60 ? 'text-amber-600' : 'text-red-600'}`}>{avgDqs.toFixed(1)}</span>
-                            <span className="text-xs text-slate-400">/ 100</span>
+                            {connectorsWithDqs.length === 0 ? (
+                                <span className="text-xl font-black text-slate-300" title="Data-quality scoring not yet computed for any feed">—</span>
+                            ) : (
+                                <>
+                                    <span className={`text-xl font-black ${avgDqs >= 80 ? 'text-emerald-600' : avgDqs >= 60 ? 'text-amber-600' : 'text-red-600'}`}>{avgDqs.toFixed(1)}</span>
+                                    <span className="text-xs text-slate-400">/ 100</span>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

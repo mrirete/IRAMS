@@ -92,6 +92,17 @@ One `notify-dispatch` Supabase Edge Function (pattern already established: `agen
 5. Edge functions are user-deployed (established pattern); A1 needs one new secret (mail API key).
 6. Nothing here touches the multi-site question — single-tenant-per-deployment decision (2026-07-04) stands; site-scoped RLS remains deferred.
 
+## Wave 1 status (2026-07-17)
+
+| Slice | Status | You must apply |
+|---|---|---|
+| A1 email delivery | ✅ committed d175a0f, **0199 applied** | `supabase functions deploy notify-dispatch` |
+| A2 realtime + badges | ✅ committed ee1f260 | migration **0200** (SQL editor) |
+| B1 ATP netting | ✅ committed 2854868 | migration **0201** (SQL editor) |
+| C1 Connector Hub live | ⬜ next | — |
+
+A2: bell is realtime (30s poll retired; focus + 2-min fallback until 0200 is applied), mobile Home dot, dashboard Alert Feed now shows real notifications with deep links, My Work refetches on focus. B1: `stock_reserved` materialized by trigger from planned parts on open WOs (mirrors `checkMaterialAvailability` semantics); Inventory shows Avail when stock is committed; STOCK_LOW/OUT fire on availability. Pre-migration databases degrade gracefully on both.
+
 ## A1 deploy runbook (email delivery — BUILT 2026-07-17)
 
 Code shipped: `0199_notification_outbox.sql`, `supabase/functions/notify-dispatch/index.ts`,

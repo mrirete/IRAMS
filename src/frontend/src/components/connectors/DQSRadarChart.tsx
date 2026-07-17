@@ -26,6 +26,17 @@ const angleToPoint = (angle: number, radius: number) => ({
 });
 
 export const DQSRadarChart: React.FC<Props> = ({ health }) => {
+    // No score → say so; the radar's per-dimension breakdown is illustrative
+    // and must not render as if a quality engine had scored this feed.
+    if (health.dqs_score == null) {
+        return (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 flex flex-col items-center justify-center text-center h-full min-h-[260px]">
+                <HelpCircle size={28} className="text-slate-300 mb-3" />
+                <h3 className="text-sm font-bold text-slate-700">Data Quality Score</h3>
+                <p className="text-xs text-slate-400 mt-2 max-w-[220px]">Not yet computed for this feed — DQS scoring arrives with the data-quality engine.</p>
+            </div>
+        );
+    }
     const dqs = health.dqs_score ?? 0;
     const dimensions = getDimensionScores(dqs);
     const n = dimensions.length;
