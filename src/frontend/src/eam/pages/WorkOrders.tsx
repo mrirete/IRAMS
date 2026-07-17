@@ -47,6 +47,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/DatabaseService';
 import { buildWorkOrder } from '../lib/workOrder';
 import { resolveLabourRate, labourRateSourceLabel } from '../lib/labourRate';
+import { issueWorkOrderParts } from '../lib/goodsIssue';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { ThreadPanel } from '../../components/messaging/ThreadPanel';
 import { aiEngine, type JSAHazardSuggestion } from '../services/AIAnalysisEngine';
@@ -1288,6 +1289,25 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     currentUserId: user?.id || 'SYSTEM',
                     previousEntity: { ...originalJob },
                 }).catch(console.error);
+            }
+
+            // ── Goods issue on completion (B2) ────────────────────────
+            // Reaching TECO consumes the planned parts: stock decrements per
+            // location (ISSUE transactions), part rows flip planned→issued,
+            // and the 0201 trigger releases their reservations. Idempotent —
+            // already-issued rows are skipped on any repeat transition.
+            const finishedStatuses = ['TECO', 'CLOSED', 'CANC', 'CANCELLED'];
+            if (updates.status && newStatus === WorkOrderStatus.TECO && !finishedStatuses.includes(previousStatus as string)) {
+                issueWorkOrderParts(updatedJob.id, (user as any)?.username || user?.id || 'SYSTEM')
+                    .then(r => {
+                        if (r.issuedParts > 0) {
+                            showToast(`Goods issue: ${r.issuedParts} part line${r.issuedParts === 1 ? '' : 's'} consumed from stores.`, 'success');
+                        }
+                        if (r.shortfalls.length > 0) {
+                            showToast(`Stores records short on ${r.shortfalls.map(s => `${s.description} (−${s.short})`).join(', ')} — reconcile stock.`, 'warning');
+                        }
+                    })
+                    .catch(e => console.warn('[GoodsIssue] failed (parts stay planned, retry by re-saving TECO):', e));
             }
 
             if (updates.assignedTo && previousAssignee !== newAssignee && newAssignee) {
