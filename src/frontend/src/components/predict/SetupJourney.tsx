@@ -88,6 +88,26 @@ const TEMPLATES: { key: string; label: string; hint: string; points: PointDraft[
         ],
     },
     {
+        // Static equipment (Phase 2.4): integrity-led — wall thickness drives the
+        // API 570 corrosion-rate / remaining-life math on the Digital Twin tab.
+        // "Alert below" on Wall Thickness = minimum required thickness (t-min).
+        key: 'exchanger', label: 'Heat exchanger / cooler', hint: 'wall thickness · in/out temps · ΔP',
+        points: [
+            { name: 'Wall Thickness', unit: 'mm', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Process Inlet Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Process Outlet Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Differential Pressure', unit: 'bar', category: 'CONDITION', low: '', highWarn: '', high: '' },
+        ],
+    },
+    {
+        key: 'vessel', label: 'Vessel / tank / piping', hint: 'wall thickness · pressure · temperature',
+        points: [
+            { name: 'Wall Thickness', unit: 'mm', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Operating Pressure', unit: 'bar', category: 'CONDITION', low: '', highWarn: '', high: '' },
+            { name: 'Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '', high: '' },
+        ],
+    },
+    {
         key: 'generic', label: 'Other equipment', hint: 'temperature · vibration · pressure',
         points: [
             { name: 'Temperature', unit: '°C', category: 'CONDITION', low: '', highWarn: '', high: '' },

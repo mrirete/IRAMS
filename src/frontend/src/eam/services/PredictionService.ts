@@ -8,6 +8,8 @@ import { buildSensorReading } from '../lib/sensorReading';
 import { failureIntervalsHours, isFailure } from './reliabilityMetrics';
 import { groundedRulFromHistory } from '../../lib/pmRecommendation';
 import { conditionalRemainingQuantileHours } from '../utils/weibull';
+import { resolveEquipmentClass } from '../../lib/predict/equipmentClass';
+import { healthModelFor, sensorKind } from '../../lib/predict/healthModels';
 
 // ─── Types ───────────────────────────────────────────────────
 export interface TwinState {
@@ -434,15 +436,24 @@ class PredictionService {
             return Math.max(0, Math.min(100, 100 - deviation * 40));
         });
 
-        // Weighted: vibration 35%, temperature 30%, pressure 20%, flow 15%
-        const weights: Record<string, number> = {
-            'Vibration': 0.35, 'Temperature': 0.30, 'Pressure': 0.20, 'Flow': 0.15,
-        };
+        // Class-aware weighting (Phase 2): a static cooler's health is driven by
+        // thickness/thermal/pressure, a rotating machine's by vibration — one
+        // universal blend was wrong for both. Class from the register (declared)
+        // or inferred from the name; 'other' keeps the legacy generic blend.
+        const { data: assetRow } = await supabase.from('assets')
+            .select('name, tag, asset_class, asset_category, asset_type_code')
+            .eq('id', assetId)
+            .maybeSingle();
+        const classRes = resolveEquipmentClass(assetRow ? {
+            name: assetRow.name, tag: assetRow.tag,
+            assetClass: assetRow.asset_class, assetCategory: assetRow.asset_category, assetType: assetRow.asset_type_code,
+        } : null);
+        const model = healthModelFor(classRes.cls);
+
         let totalWeight = 0;
         let weightedSum = 0;
         sensors.forEach((s, i) => {
-            const matchKey = Object.keys(weights).find(k => s.tag.startsWith(k));
-            const w = matchKey ? weights[matchKey] : 0.25;
+            const w = model.weights[sensorKind(s.tag)] ?? model.defaultWeight;
             weightedSum += sensorScores[i] * w;
             totalWeight += w;
         });
@@ -489,7 +500,7 @@ class PredictionService {
         });
 
         if (!result) return { success: false, message: 'Failed to persist twin state to database.' };
-        return { success: true, message: `Digital Twin updated — Health Index: ${healthIndex.toFixed(1)}/100 (from ${source})` };
+        return { success: true, message: `Digital Twin updated — Health Index: ${healthIndex.toFixed(1)}/100 (from ${source}, ${model.label.toLowerCase()} model${classRes.basis !== 'declared' ? ` · class ${classRes.basis}` : ''})` };
     }
 
     // ── RUL Analysis ───────────────────────────────────────

@@ -20,6 +20,9 @@ import { conditionalRemainingQuantileHours } from '../eam/utils/weibull';
 import type { RULEstimate } from '../types/intelligence';
 import { agentService } from '../eam/services/AgentService';
 import { AgentReviewPanel } from '../components/predict/AgentReviewPanel';
+import { resolveEquipmentClass } from '../lib/predict/equipmentClass';
+import { sensorKind } from '../lib/predict/healthModels';
+import { assessIntegrity, type IntegrityAssessment } from '../lib/predict/integrity';
 
 type ConditionAlarms = Awaited<ReturnType<DatabaseService['getAssetConditionAlarms']>>;
 
@@ -214,6 +217,43 @@ export const PredictPage: React.FC = () => {
     }, [groundedActive, grounded, rulEstimate, selectedAssetId]);
 
     const selectedAsset = getAssetById(selectedAssetId);
+
+    // ── Phase 2: equipment-class resolution (declared → inferred → default) ──
+    const classRes = useMemo(() => {
+        if (!selectedAssetId || !selectedAsset) return null;
+        const a = selectedAsset as any;
+        return resolveEquipmentClass({
+            name: a.name, tag: a.tag,
+            assetClass: a.assetClass, assetCategory: a.assetCategory, assetType: a.assetType,
+        });
+    }, [selectedAssetId, selectedAsset]);
+
+    // Static-equipment integrity (2.4): thickness readings → API 570 corrosion
+    // rate + remaining life to t-min. Only fetched for static assets.
+    const [integrity, setIntegrity] = useState<IntegrityAssessment | null>(null);
+    useEffect(() => {
+        setIntegrity(null);
+        if (!selectedAssetId || classRes?.cls !== 'static') return;
+        let active = true;
+        (async () => {
+            try {
+                const db = DatabaseService.getInstance();
+                const [defs, logs] = await Promise.all([
+                    db.getReadingDefinitions(selectedAssetId),
+                    db.getReadingLogs(selectedAssetId),
+                ]);
+                const thicknessDef = (defs || []).find((d: any) => sensorKind(d.name) === 'thickness' && d.isActive !== false);
+                if (!thicknessDef) return;
+                const points = (logs || [])
+                    .filter((l: any) => l.definitionId === thicknessDef.id && l.isActive !== false)
+                    .map((l: any) => ({ date: l.date || l.reading_date, value: Number(l.value) }));
+                const assessed = assessIntegrity(points, thicknessDef.minCritical ?? thicknessDef.minWarning ?? null);
+                if (active) setIntegrity(assessed);
+            } catch { if (active) setIntegrity(null); }
+        })();
+        return () => { active = false; };
+    }, [selectedAssetId, classRes?.cls]);
+
     const assetAlerts = useMemo(() => getAssetAlerts(selectedAssetId), [getAssetAlerts, selectedAssetId]);
     const assetSensorTrends = useMemo(() => getSensorTrends(selectedAssetId), [getSensorTrends, selectedAssetId]);
 
@@ -890,6 +930,7 @@ export const PredictPage: React.FC = () => {
                     distributionType={displayRul?.distribution_type || null}
                     rulConfidence={displayRul?.confidence ?? null}
                     groundedFit={groundedActive ? grounded : null}
+                    equipmentClass={classRes}
                     twinHealth={twinHealth}
                     assetSensorTrends={assetSensorTrends}
                     onInvestigate={() => window.location.href = '/analyze'}
@@ -905,6 +946,8 @@ export const PredictPage: React.FC = () => {
                     rulEstimate={displayRul}
                     selectedAssetId={selectedAssetId}
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
+                    equipmentClass={classRes}
+                    integrity={integrity}
                 />
             )}
 

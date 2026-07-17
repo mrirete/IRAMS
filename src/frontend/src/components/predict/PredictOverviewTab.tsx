@@ -11,6 +11,8 @@ import type { ConfidenceBand } from '../../eam/services/PredictionService';
 import { STALE_DAYS } from '../../config/predict';
 import { conditionalFailureProbability } from '../../eam/utils/weibull';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
+import type { ClassResolution } from '../../lib/predict/equipmentClass';
+import { healthModelFor, sensorKind, type ClassHealthModel } from '../../lib/predict/healthModels';
 
 // ─────────────────────────────────────────────────────────
 //  Types
@@ -40,6 +42,8 @@ interface PredictOverviewTabProps {
     rulConfidence: number | null;
     /** Grounded censored-Weibull fit from failure history (Phase 1) — null when insufficient. */
     groundedFit?: GroundedRul | null;
+    /** Equipment-class resolution (Phase 2) — drives the health model & ISO zoning. */
+    equipmentClass?: ClassResolution | null;
 
     /* Sensors */
     twinHealth: TwinState | null;
@@ -115,19 +119,26 @@ function calcPFailure(fit: GroundedRul | null | undefined, horizonDays: number):
     return Math.round(Math.min(99.9, Math.max(0, p)) * 10) / 10;
 }
 
-/** Decompose health index into sub-indices based on sensor categories */
+/** Sub-index icon by group label (class models define the groups). */
+const SUB_ICONS: Record<string, React.ReactNode> = {
+    Mechanical: <Activity size={12} />,
+    Thermal: <Thermometer size={12} />,
+    Performance: <BarChart3 size={12} />,
+    Integrity: <ShieldCheck size={12} />,
+    Process: <Gauge size={12} />,
+    Load: <Zap size={12} />,
+    Signal: <Gauge size={12} />,
+};
+
+/** Decompose health index into the CLASS MODEL's sub-index groups (Phase 2). */
 function decomposeHealthIndex(
     systemHealth: number,
     sensors: SensorTrend[],
-    twinHealth: TwinState | null
+    twinHealth: TwinState | null,
+    model: ClassHealthModel,
 ): { label: string; value: number; icon: React.ReactNode; color: string }[] {
     const sensorValues = sensors.length > 0 ? sensors : Object.entries(twinHealth?.sensor_summary || {}).map(([tag, val]) => ({ tag, current: val as number, trend: 'stable' as const, unit: '', readings: [] as number[] }));
     if (sensorValues.length === 0) return [];
-
-    // Group sensors by category
-    const vibSensors = sensorValues.filter(s => s.tag.toLowerCase().includes('vib'));
-    const tempSensors = sensorValues.filter(s => s.tag.toLowerCase().includes('temp') || s.tag.toLowerCase().includes('thermal'));
-    const perfSensors = sensorValues.filter(s => s.tag.toLowerCase().includes('flow') || s.tag.toLowerCase().includes('pressure'));
 
     const trendPenalty = (sensors: typeof sensorValues) => {
         const rising = sensors.filter(s => s.trend === 'rising').length;
@@ -150,30 +161,26 @@ function decomposeHealthIndex(
         return Math.max(0, Math.min(100, base - trendPenalty(list)));
     };
 
-    const results = [];
-
-    if (vibSensors.length > 0) {
-        const mechHealth = categoryHealth(vibSensors);
-        results.push({ label: 'Mechanical', value: Math.round(mechHealth * 10) / 10, icon: <Activity size={12} />, color: mechHealth >= 80 ? 'text-emerald-600' : mechHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
-    }
-
-    if (tempSensors.length > 0) {
-        const thermalHealth = categoryHealth(tempSensors);
-        results.push({ label: 'Thermal', value: Math.round(thermalHealth * 10) / 10, icon: <Thermometer size={12} />, color: thermalHealth >= 80 ? 'text-emerald-600' : thermalHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
-    }
-
-    if (perfSensors.length > 0) {
-        const perfHealth = categoryHealth(perfSensors);
-        results.push({ label: 'Performance', value: Math.round(perfHealth * 10) / 10, icon: <BarChart3 size={12} />, color: perfHealth >= 80 ? 'text-emerald-600' : perfHealth >= 60 ? 'text-amber-500' : 'text-red-500' });
-    }
-
-    return results;
+    return model.subIndices.flatMap(group => {
+        const kinds = new Set(group.kinds);
+        const list = sensorValues.filter(s => kinds.has(sensorKind(s.tag)));
+        if (list.length === 0) return [];
+        const h = categoryHealth(list);
+        return [{
+            label: group.label,
+            value: Math.round(h * 10) / 10,
+            icon: SUB_ICONS[group.label] ?? <Gauge size={12} />,
+            color: h >= 80 ? 'text-emerald-600' : h >= 60 ? 'text-amber-500' : 'text-red-500',
+        }];
+    });
 }
 
-/** ISO 10816 vibration severity zones */
-function getISOZone(tag: string, value: number): { zone: string; color: string; bgColor: string } | null {
+/** ISO 10816 vibration severity zones — vibration zoning only for classes it applies to */
+function getISOZone(tag: string, value: number, vibZoning: boolean = true): { zone: string; color: string; bgColor: string } | null {
     const k = tag.toLowerCase();
     if (k.includes('vib')) {
+        // ISO 20816 severity is a ROTATING-machinery scale — suppress on static/electrical.
+        if (!vibZoning) return null;
         // ISO 10816-3 Class II (15-75 kW): Good <2.8, Acceptable <7.1, Alert <18, Danger >18
         if (value < 2.8) return { zone: 'A', color: 'text-emerald-600', bgColor: 'bg-emerald-50' };
         if (value < 7.1) return { zone: 'B', color: 'text-primary-600', bgColor: 'bg-primary-50' };
@@ -198,12 +205,15 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     selectedAssetId, selectedAssetName, onAssetSelect, fleetData, visibleFleetData, totalAssetCount, filterSlot,
     systemHealth, isHealthy, rulDays, alertCount,
     rulConfidenceBands, distributionType, rulConfidence: _rulConfidence,
-    groundedFit, twinHealth, assetSensorTrends,
+    groundedFit, equipmentClass, twinHealth, assetSensorTrends,
     onInvestigate, onCreateWR, onSetup, hasData = true,
 }) => {
     const [fleetExpanded, setFleetExpanded] = useState(true);
 
     const hasSensors = !!(twinHealth?.sensor_summary) || assetSensorTrends.length > 0;
+
+    // Class model (Phase 2): what drives health & whether ISO vib zoning applies.
+    const model = healthModelFor(equipmentClass?.cls ?? 'other');
 
     // Freshness gate: values derived from old data must not present as live.
     const dataAgeDays = useMemo(() => {
@@ -230,8 +240,8 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
     const isHeuristicRul = !groundedFit && rulDays != null && rulDays > 0;
     void distributionType; // superseded by groundedFit for display decisions
 
-    // Health decomposition
-    const healthSubs = useMemo(() => decomposeHealthIndex(systemHealth, assetSensorTrends, twinHealth), [systemHealth, assetSensorTrends, twinHealth]);
+    // Health decomposition — grouped per the class model's sub-indices
+    const healthSubs = useMemo(() => decomposeHealthIndex(systemHealth, assetSensorTrends, twinHealth, model), [systemHealth, assetSensorTrends, twinHealth, model]);
 
     // Sensors trending toward trouble (elevated ISO zone, or rising inside a
     // watch zone). Keeps the Risk Alerts card consistent with the "Watch"
@@ -241,13 +251,13 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
             ? assetSensorTrends
             : Object.entries(twinHealth?.sensor_summary || {}).map(([tag, val]) => ({ tag, current: val as number, trend: 'stable' as const }));
         return raw.filter(s => {
-            const z = getISOZone(s.tag, s.current);
+            const z = getISOZone(s.tag, s.current, model.vibrationZoning);
             if (!z) return false;
             const elevated = z.zone === 'C' || z.zone === 'D' || z.zone === 'Alert' || z.zone === 'Danger';
             const watchRising = (z.zone === 'B' || z.zone === 'Watch') && s.trend === 'rising';
             return elevated || watchRising;
         }).length;
-    }, [assetSensorTrends, twinHealth]);
+    }, [assetSensorTrends, twinHealth, model.vibrationZoning]);
 
     // RUL bands display
     const p50Band = rulConfidenceBands.find(b => b.percentile === 50);
@@ -275,6 +285,21 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                         <CircleDot size={10} />
                         {selectedAssetName} — Condition Overview
                     </p>
+
+                    {/* Equipment-class chip (Phase 2): which health model judges this
+                        asset, and whether the class was declared or inferred */}
+                    {equipmentClass && (
+                        <span
+                            title={`Health model: ${model.drivenBy}\nClass basis: ${equipmentClass.note}`}
+                            className={`text-[9px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide ${equipmentClass.basis === 'declared'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : equipmentClass.basis === 'inferred'
+                                    ? 'bg-slate-50 text-slate-500 border-slate-200'
+                                    : 'bg-amber-50 text-amber-600 border-amber-200'}`}
+                        >
+                            {model.label}{equipmentClass.basis !== 'declared' ? ` · ${equipmentClass.basis}` : ''}
+                        </span>
+                    )}
                 </div>
 
                 {/* Action Buttons */}
@@ -353,7 +378,7 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                             const strokeColor = sensor.trend === 'rising' ? '#ef4444' : sensor.trend === 'falling' ? '#eab308' : '#06b6d4';
                             const hasSparkline = sensor.readings && sensor.readings.length > 0;
                             const gradientId = `sparkGrad-${idx}`;
-                            const isoZone = getISOZone(sensor.tag, sensor.current);
+                            const isoZone = getISOZone(sensor.tag, sensor.current, model.vibrationZoning);
 
                             let sparklinePath = '';
                             let fillPath = '';
