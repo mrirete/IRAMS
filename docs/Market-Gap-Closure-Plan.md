@@ -103,7 +103,18 @@ One `notify-dispatch` Supabase Edge Function (pattern already established: `agen
 
 **Wave 1 is code-complete.** A2: bell is realtime (30s poll retired; focus + 2-min fallback until 0200 is applied), mobile Home dot, dashboard Alert Feed shows real notifications with deep links, My Work refetches on focus. B1: `stock_reserved` materialized by trigger from planned parts on open WOs; Inventory shows Avail when stock is committed; STOCK_LOW/OUT fire on availability. C1: Connector Hub is DB-backed (0202 supersedes the empty 0177) — REST connectors execute through sensor-sync, Test Connection performs a genuine pull (draft row → sensor-sync → real points-landed count or the source's actual error), reading-map fields added to the REST form, non-executable types honestly gated Coming-soon, DQS shows "—" until a real quality engine exists. Optional: schedule sensor-sync with pg_cron for hands-off polling.
 
-Next: Wave 2 — server-side detect-sweep (pg_cron), WO Parts tab → goods issue → actual cost roll-up, webhook reading ingestion, past-work-on-asset surfacing.
+## Wave 2 progress (2026-07-17)
+
+| Slice | Status | You must apply |
+|---|---|---|
+| A3 detect-sweep (server-side escalations) | ✅ built | `supabase functions deploy detect-sweep`, then pg_cron schedule (snippet in function header) |
+| C2 ingest-readings (webhook push) | ✅ built | `supabase functions deploy ingest-readings --no-verify-jwt` + `supabase secrets set INGEST_API_KEY=<long random>` |
+| B2 WO Parts → goods issue → actual cost | ⬜ next | — |
+| D1 past-work-on-asset surfacing | ⬜ | — |
+
+A3: sweeps ALL users' breached escalation deadlines centrally (service role) — no open tab required; creates escalation copies (same title/level/dedup semantics as the client sweep, which stays as instant-feedback complement), and queues escalation EMAILs via the 0199 outbox when the channel is on. Role resolution is GLOBAL server-side (documented divergence from the client's org-walk); `__SUPERVISOR` resolves via contacts.parent_id. C2: any device/gateway that can POST JSON with an `x-api-key` header streams readings into `ers_sensor_readings` — push complement to sensor-sync's poll; appends to existing series (last 50), resolves assets by tag or id, reports unknown assets. Schedule both sweepers in pg_cron alongside sensor-sync and notify-dispatch for a fully hands-off loop.
+
+Remaining Wave 2: B2 parts-to-cost slice, D1 knowledge surfacing.
 
 ## A1 deploy runbook (email delivery — BUILT 2026-07-17)
 
