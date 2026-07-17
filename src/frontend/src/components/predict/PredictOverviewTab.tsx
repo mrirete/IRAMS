@@ -557,10 +557,12 @@ export const PredictOverviewTab: React.FC<PredictOverviewTabProps> = ({
                                     style={{ width: `${Math.min(100, pf30)}%` }}
                                 />
                             </div>
-                            <div className="mt-1 flex items-center justify-between">
-                                <span className="text-[9px] text-slate-400">90-day</span>
-                                <span className={`text-[9px] font-bold tabular-nums ${pf90 > 50 ? 'text-red-500' : pf90 > 20 ? 'text-amber-500' : 'text-emerald-600'}`}>{pf90.toFixed(1)}%</span>
-                            </div>
+                            {pf90 != null && (
+                                <div className="mt-1 flex items-center justify-between">
+                                    <span className="text-[9px] text-slate-400">90-day</span>
+                                    <span className={`text-[9px] font-bold tabular-nums ${pf90 > 50 ? 'text-red-500' : pf90 > 20 ? 'text-amber-500' : 'text-emerald-600'}`}>{pf90.toFixed(1)}%</span>
+                                </div>
+                            )}
                         </>
                     ) : (
                         <>
