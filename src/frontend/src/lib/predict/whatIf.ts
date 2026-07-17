@@ -257,6 +257,19 @@ function runOne(
     return { metrics, financials: financialsFrom(p.downtime.p50, p.failures.p50, p.cost.p50, econ) };
 }
 
+/**
+ * Simulate the NEXT 12 months at CURRENT duty (all parameters neutral) —
+ * the forward-looking half of the KPI Outlook (measured vs simulated).
+ */
+export function simulateCurrentDuty(
+    fit: GroundedRul,
+    cls: PredictEquipmentClass,
+    econ: EconomicInputs,
+): WhatIfScenarioResult {
+    const defs = whatIfParamsFor(cls);
+    return runOne(fit, defs, Object.fromEntries(defs.map(d => [d.key, d.neutral])), econ);
+}
+
 export interface WhatIfComparison {
     baseline: WhatIfScenarioResult;
     projected: WhatIfScenarioResult;

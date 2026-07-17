@@ -20,6 +20,7 @@ import { conditionalRemainingQuantileHours } from '../eam/utils/weibull';
 import type { RULEstimate } from '../types/intelligence';
 import { agentService } from '../eam/services/AgentService';
 import { AgentReviewPanel } from '../components/predict/AgentReviewPanel';
+import { KpiOutlook } from '../components/predict/KpiOutlook';
 import { resolveEquipmentClass } from '../lib/predict/equipmentClass';
 import { sensorKind } from '../lib/predict/healthModels';
 import { assessIntegrity, type IntegrityAssessment } from '../lib/predict/integrity';
@@ -988,6 +989,14 @@ export const PredictPage: React.FC = () => {
                         alertFeedbackMap={alertFeedbackMap}
                         onAlertFeedback={handleAlertFeedback}
                     />
+                    {/* Measure → Forecast bridge: SMRP + PSC KPIs, measured vs simulated */}
+                    <div className="mt-4">
+                        <KpiOutlook
+                            assetId={selectedAssetId}
+                            groundedFit={groundedActive ? grounded : null}
+                            equipmentClass={classRes}
+                        />
+                    </div>
                     {/* Threshold-adapter nudge: false-alarm feedback produced band proposals */}
                     {adapterNudge && (
                         <div className="mt-4 flex items-start gap-3 px-4 py-3 bg-primary-50 border border-primary-200 rounded-card text-sm">
