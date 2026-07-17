@@ -72,6 +72,13 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
         try {
             const ok = await predictionService.updateAgentActionStatus(action.id, 'approved', currentUser);
             if (ok) {
+                // Threshold proposals: approval APPLIES the bands (1.5.4 write-back)
+                // — sensor rows + matching reading definitions (provenance 'learned').
+                if (action.agent_type === 'threshold_adapter') {
+                    const proposals = (action.draft_payload as any)?.proposals || [];
+                    const { applied } = await predictionService.applyApprovedThresholds(action.asset_id, proposals);
+                    console.info(`[AgentReviewPanel] threshold approval applied ${applied} band update(s)`);
+                }
                 onActionApproved?.(action);
                 await fetchActions();
             }

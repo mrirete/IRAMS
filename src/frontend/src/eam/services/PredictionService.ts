@@ -816,6 +816,63 @@ class PredictionService {
         }
     }
 
+    /**
+     * Apply an APPROVED threshold-adapter proposal set (1.5.4 write-back) —
+     * called by AgentReviewPanel only after the human clicks Approve. Updates
+     * BOTH band stores: the online sensor rows (ers_sensor_readings) and any
+     * matching manual reading definitions (name === tag), whose provenance
+     * becomes 'learned'. An Approve that changes nothing would be a lie.
+     */
+    async applyApprovedThresholds(
+        assetId: string,
+        proposals: Array<{ tag: string; proposed_alarm_high: number | null; proposed_alarm_low: number | null; direction: string }>,
+    ): Promise<{ applied: number }> {
+        const active = (proposals || []).filter(p => p && p.direction !== 'no_change');
+        if (active.length === 0) return { applied: 0 };
+        let applied = 0;
+
+        // 1. Online sensor rows — the bands the alert scan reads directly.
+        const sensors = await this.getSensorReadings(assetId);
+        for (const p of active) {
+            const s = sensors.find(x => x.tag === p.tag);
+            if (!s) continue;
+            const { error } = await supabase.from('ers_sensor_readings')
+                .update({ alarm_high: p.proposed_alarm_high, alarm_low: p.proposed_alarm_low })
+                .eq('id', s.id);
+            if (!error) applied++;
+            else console.error('[applyApprovedThresholds] sensor update failed:', error);
+        }
+
+        // 2. Manual-bridge definitions — the bridge maps alarm_high from
+        //    max_critical ?? max_warning, so write back to whichever is set.
+        const { data: defs } = await supabase.from('reading_definitions')
+            .select('id, name, max_critical, max_warning, min_critical, min_warning')
+            .eq('asset_id', assetId)
+            .eq('is_active', true);
+        for (const p of active) {
+            const d = (defs || []).find((x: any) => x.name === p.tag);
+            if (!d) continue;
+            const row: any = { limit_source: 'learned' };
+            if (p.proposed_alarm_high != null) {
+                if (d.max_critical != null) row.max_critical = p.proposed_alarm_high;
+                else row.max_warning = p.proposed_alarm_high;
+            }
+            if (p.proposed_alarm_low != null) {
+                if (d.min_critical != null) row.min_critical = p.proposed_alarm_low;
+                else row.min_warning = p.proposed_alarm_low;
+            }
+            let { error } = await supabase.from('reading_definitions').update(row).eq('id', d.id);
+            // Graceful degradation while 0198 is unapplied.
+            if (error && /limit_source|PGRST204|column .* does not exist/i.test(error.message || '')) {
+                const { limit_source, ...legacy } = row;
+                ({ error } = await supabase.from('reading_definitions').update(legacy).eq('id', d.id));
+            }
+            if (!error) applied++;
+            else console.error('[applyApprovedThresholds] definition update failed:', error);
+        }
+        return { applied };
+    }
+
     async updateAgentActionStatus(
         actionId: string,
         status: 'approved' | 'rejected' | 'expired',
