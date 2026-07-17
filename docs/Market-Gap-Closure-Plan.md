@@ -107,10 +107,12 @@ One `notify-dispatch` Supabase Edge Function (pattern already established: `agen
 
 | Slice | Status | You must apply |
 |---|---|---|
-| A3 detect-sweep (server-side escalations) | ✅ built | `supabase functions deploy detect-sweep`, then pg_cron schedule (snippet in function header) |
-| C2 ingest-readings (webhook push) | ✅ built | `supabase functions deploy ingest-readings --no-verify-jwt` + `supabase secrets set INGEST_API_KEY=<long random>` |
-| B2 WO Parts → goods issue → actual cost | ⬜ next | — |
-| D1 past-work-on-asset surfacing | ⬜ | — |
+| A3 detect-sweep (server-side escalations) | ✅ f5dc1fd | `supabase functions deploy detect-sweep`, then pg_cron schedule (snippet in function header) |
+| C2 ingest-readings (webhook push) | ✅ f5dc1fd | `supabase functions deploy ingest-readings --no-verify-jwt` + `supabase secrets set INGEST_API_KEY=<long random>` |
+| B2 goods issue on TECO (parts consume stock, cost reflects it) | ✅ 42adb2d | — (uses existing tables) |
+| D1 past-work-on-asset in WO detail | ✅ 63937fc | — |
+
+**Wave 2 is code-complete.** B2: TECO consumes planned parts — per-location stock decrement (largest holding first, ISSUE transactions), parts flip planned→issued with `date_used`, the 0201 trigger releases reservations at the same moment, shortfalls floor at zero and get reported rather than inventing negative stock; the existing CostTab/getOrderActuals roll-up now reflects real consumption. D1: the WO detail lists the four most recent finished WOs on the same asset, deep-linked — the knowledge-capture surface. Deferred within D1 scope: similar-recent-requests on the Report form, knowledge-capture claim in the product description doc.
 
 A3: sweeps ALL users' breached escalation deadlines centrally (service role) — no open tab required; creates escalation copies (same title/level/dedup semantics as the client sweep, which stays as instant-feedback complement), and queues escalation EMAILs via the 0199 outbox when the channel is on. Role resolution is GLOBAL server-side (documented divergence from the client's org-walk); `__SUPERVISOR` resolves via contacts.parent_id. C2: any device/gateway that can POST JSON with an `x-api-key` header streams readings into `ers_sensor_readings` — push complement to sensor-sync's poll; appends to existing series (last 50), resolves assets by tag or id, reports unknown assets. Schedule both sweepers in pg_cron alongside sensor-sync and notify-dispatch for a fully hands-off loop.
 
