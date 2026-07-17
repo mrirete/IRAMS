@@ -96,12 +96,14 @@ One `notify-dispatch` Supabase Edge Function (pattern already established: `agen
 
 | Slice | Status | You must apply |
 |---|---|---|
-| A1 email delivery | ✅ committed d175a0f, **0199 applied** | `supabase functions deploy notify-dispatch` |
-| A2 realtime + badges | ✅ committed ee1f260 | migration **0200** (SQL editor) |
-| B1 ATP netting | ✅ committed 2854868 | migration **0201** (SQL editor) |
-| C1 Connector Hub live | ⬜ next | — |
+| A1 email delivery | ✅ d175a0f, **0199 applied** | `supabase functions deploy notify-dispatch` |
+| A2 realtime + badges | ✅ ee1f260 | migration **0200** (SQL editor) |
+| B1 ATP netting | ✅ 2854868 + 3867fec, **0201 applied** | — |
+| C1 Connector Hub live | ✅ 2b63088 | migration **0202** (SQL editor) + `supabase functions deploy sensor-sync` |
 
-A2: bell is realtime (30s poll retired; focus + 2-min fallback until 0200 is applied), mobile Home dot, dashboard Alert Feed now shows real notifications with deep links, My Work refetches on focus. B1: `stock_reserved` materialized by trigger from planned parts on open WOs (mirrors `checkMaterialAvailability` semantics); Inventory shows Avail when stock is committed; STOCK_LOW/OUT fire on availability. Pre-migration databases degrade gracefully on both.
+**Wave 1 is code-complete.** A2: bell is realtime (30s poll retired; focus + 2-min fallback until 0200 is applied), mobile Home dot, dashboard Alert Feed shows real notifications with deep links, My Work refetches on focus. B1: `stock_reserved` materialized by trigger from planned parts on open WOs; Inventory shows Avail when stock is committed; STOCK_LOW/OUT fire on availability. C1: Connector Hub is DB-backed (0202 supersedes the empty 0177) — REST connectors execute through sensor-sync, Test Connection performs a genuine pull (draft row → sensor-sync → real points-landed count or the source's actual error), reading-map fields added to the REST form, non-executable types honestly gated Coming-soon, DQS shows "—" until a real quality engine exists. Optional: schedule sensor-sync with pg_cron for hands-off polling.
+
+Next: Wave 2 — server-side detect-sweep (pg_cron), WO Parts tab → goods issue → actual cost roll-up, webhook reading ingestion, past-work-on-asset surfacing.
 
 ## A1 deploy runbook (email delivery — BUILT 2026-07-17)
 
