@@ -5,14 +5,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // These tests pin the resolution order: users.contact_id → contacts.user_id → passthrough.
 
 const fromMock = vi.fn();
+const invokeMock = vi.fn().mockResolvedValue({ data: {}, error: null });
 
 vi.mock('../lib/supabase', () => ({
-    supabase: { from: (table: string) => fromMock(table) },
+    supabase: {
+        from: (table: string) => fromMock(table),
+        functions: { invoke: (...args: unknown[]) => invokeMock(...args) },
+    },
 }));
 
 const createNotification = vi.fn().mockResolvedValue({});
+const getNotificationChannels = vi.fn().mockResolvedValue([]);
 vi.mock('./DatabaseService', () => ({
-    DatabaseService: { getInstance: () => ({ createNotification }) },
+    DatabaseService: { getInstance: () => ({ createNotification, getNotificationChannels }) },
 }));
 
 import { NotificationService } from './NotificationService';
@@ -31,9 +36,22 @@ const CONTACT_ID_2 = '66666666-7777-8888-9999-aaaaaaaaaaaa';
 const USER_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const PLAIN_USER_ID = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
 
+/** Insert mock for the notification_outbox table (0199). */
+const outboxInsert = vi.fn();
+
+/** fromMock impl that also answers for notification_outbox. */
+const tablesWithOutbox = (resolve: (table: string) => unknown) => (table: string) =>
+    table === 'notification_outbox' ? { insert: outboxInsert } : resolve(table);
+
 beforeEach(() => {
     fromMock.mockReset();
     createNotification.mockClear();
+    getNotificationChannels.mockClear().mockResolvedValue([]);
+    outboxInsert.mockClear().mockResolvedValue({ error: null });
+    invokeMock.mockClear();
+    // The kill-switch check and outbox kick are cached/debounced statics.
+    (NotificationService as any).emailChannelCheck = null;
+    (NotificationService as any).lastOutboxKick = 0;
 });
 
 describe('NotificationService.resolveRecipientUserId', () => {
@@ -91,6 +109,83 @@ describe('NotificationService.notify', () => {
 
         expect(createNotification).toHaveBeenCalledTimes(1);
         expect(createNotification.mock.calls[0][0].recipientId).toBe(USER_ID);
+    });
+});
+
+// EMAIL rows are queued in notification_outbox (0199) for the notify-dispatch
+// edge function to drain — gated on the global EMAIL channel kill-switch.
+describe('NotificationService email outbox', () => {
+    const notifyParams = {
+        recipientId: PLAIN_USER_ID,
+        title: 'New Assignment: WO-7',
+        message: 'You have been assigned a work order.',
+        severity: 'INFO' as const,
+        notificationType: 'ASSIGNMENT',
+        module: 'workOrders',
+        entityNumber: 'WO-7',
+        actionLink: '/work-orders',
+    };
+
+    it('does not enqueue when the EMAIL channel is globally off', async () => {
+        fromMock.mockImplementation(tablesWithOutbox(() => tableReturning(null)));
+        getNotificationChannels.mockResolvedValue([{ type: 'EMAIL', isActive: false }]);
+
+        await NotificationService.notify(notifyParams);
+
+        expect(createNotification).toHaveBeenCalledTimes(1);
+        expect(outboxInsert).not.toHaveBeenCalled();
+        expect(invokeMock).not.toHaveBeenCalled();
+    });
+
+    it('enqueues an outbox row and kicks notify-dispatch when EMAIL is on', async () => {
+        fromMock.mockImplementation(tablesWithOutbox(() => tableReturning(null)));
+        getNotificationChannels.mockResolvedValue([{ type: 'EMAIL', isActive: true }]);
+
+        await NotificationService.notify(notifyParams);
+
+        expect(outboxInsert).toHaveBeenCalledTimes(1);
+        const rows = outboxInsert.mock.calls[0][0];
+        expect(rows).toEqual([{
+            recipient_user_id: PLAIN_USER_ID,
+            subject: '[WO-7] New Assignment: WO-7',
+            message: 'You have been assigned a work order.',
+            severity: 'INFO',
+            module: 'workOrders',
+            entity_number: 'WO-7',
+            action_link: '/work-orders',
+        }]);
+        expect(invokeMock).toHaveBeenCalledWith('notify-dispatch', { body: {} });
+    });
+
+    it('addresses the email to the resolved user id, not the contact id', async () => {
+        fromMock.mockImplementation(tablesWithOutbox((table: string) =>
+            table === 'users' ? tableReturning({ id: USER_ID }) : tableReturning(null)));
+        getNotificationChannels.mockResolvedValue([{ type: 'EMAIL', isActive: true }]);
+
+        await NotificationService.notify({ ...notifyParams, recipientId: CONTACT_ID });
+
+        expect(outboxInsert.mock.calls[0][0][0].recipient_user_id).toBe(USER_ID);
+    });
+
+    it('drops mailbox-less recipients (SYSTEM) instead of enqueueing', async () => {
+        fromMock.mockImplementation(tablesWithOutbox(() => tableReturning(null)));
+        getNotificationChannels.mockResolvedValue([{ type: 'EMAIL', isActive: true }]);
+
+        await NotificationService.notify({ ...notifyParams, recipientId: 'SYSTEM' });
+
+        expect(createNotification).toHaveBeenCalledTimes(1);
+        expect(outboxInsert).not.toHaveBeenCalled();
+    });
+
+    it('still creates the in-app notification when enqueue fails (pre-0199 DB)', async () => {
+        fromMock.mockImplementation(tablesWithOutbox(() => tableReturning(null)));
+        getNotificationChannels.mockResolvedValue([{ type: 'EMAIL', isActive: true }]);
+        outboxInsert.mockResolvedValue({ error: { message: 'relation "notification_outbox" does not exist' } });
+
+        await NotificationService.notify(notifyParams);
+
+        expect(createNotification).toHaveBeenCalledTimes(1);
+        expect(invokeMock).not.toHaveBeenCalled();
     });
 });
 
