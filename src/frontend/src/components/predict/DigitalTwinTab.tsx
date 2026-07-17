@@ -6,6 +6,7 @@ import { VisionThermalFeed } from './VisionThermalFeed';
 import type { TwinState, RULEstimate } from '../../types/intelligence';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import type { IntegrityAssessment } from '../../lib/predict/integrity';
+import { screenRbi } from '../../lib/predict/rbi';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
@@ -16,11 +17,22 @@ interface DigitalTwinTabProps {
     equipmentClass?: ClassResolution | null;
     /** API 570 thickness assessment — static assets with ≥2 thickness readings */
     integrity?: IntegrityAssessment | null;
+    /** Asset criticality (A–E) — CoF proxy for the RBI screening (Phase 5) */
+    criticality?: string | null;
 }
 
+const RBI_BAND_TONE: Record<string, string> = {
+    High: 'bg-red-50 text-red-600 border-red-200',
+    'Medium-High': 'bg-amber-50 text-amber-700 border-amber-200',
+    Medium: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+    Low: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+};
+
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality,
 }) => {
+    // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
+    const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
 
@@ -68,6 +80,25 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                                 </div>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-3">{integrity.note} <span className="text-slate-400">({integrity.n} readings over {integrity.spanYears}y)</span></p>
+
+                            {/* ── RBI-lite risk screening (Phase 5) ── */}
+                            {rbi && (
+                                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-3 flex-wrap" title={rbi.note}>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Risk screening</span>
+                                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${RBI_BAND_TONE[rbi.band]}`}>
+                                        {rbi.band} · {rbi.cell}
+                                    </span>
+                                    <span className="text-[11px] text-slate-500">
+                                        PoF {rbi.pof}/5 (remaining life) × CoF {rbi.cof}/5 (criticality {(criticality || 'C').toUpperCase()})
+                                    </span>
+                                    {rbi.nextInspectionDate && (
+                                        <span className="text-[11px] text-slate-600 font-medium ml-auto">
+                                            Inspect by {new Date(rbi.nextInspectionDate).toLocaleDateString([], { year: 'numeric', month: 'short' })}
+                                        </span>
+                                    )}
+                                    <span className="w-full text-[10px] text-slate-400">Screening aid (API 580-inspired) — not a full API 581 damage-factor analysis.</span>
+                                </div>
+                            )}
                         </>
                     ) : (
                         <div className="border border-dashed border-slate-300 rounded-lg p-5 text-center">

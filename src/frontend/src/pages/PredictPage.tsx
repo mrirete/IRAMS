@@ -970,6 +970,7 @@ export const PredictPage: React.FC = () => {
                     selectedAssetName={selectedAsset?.name || selectedAssetId}
                     equipmentClass={classRes}
                     integrity={integrity}
+                    criticality={selectedAsset?.criticality}
                 />
             )}
 
