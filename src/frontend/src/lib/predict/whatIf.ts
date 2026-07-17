@@ -58,12 +58,14 @@ const PARAMS: Record<PredictEquipmentClass, WhatIfParamDef[]> = {
             note: 'ISO 281 cube law — rolling-bearing life ∝ 1/L³ (ball; rollers ~10/3). Applies when failures are load-driven.',
         },
         {
+            // Δ vs the asset's NORMAL duty (not absolute temperature) — a furnace
+            // at 400 °C absolute is baseline; +100 here means 100° hotter than usual.
             key: 'tempDelta', label: 'Temp Δ', unit: '°C',
-            min: -20, max: 60, step: 5, neutral: 0,
+            min: -20, max: 100, step: 5, neutral: 0,
             amberAbove: 20, redAbove: 40,
             etaFactor: v => Math.pow(2, -v / 10),
             format: v => `${v > 0 ? '+' : ''}${v}°C`,
-            note: 'Arrhenius rule of thumb — lubricant/insulation life halves per +10 °C.',
+            note: 'Arrhenius rule of thumb — lubricant/insulation life halves per +10 °C above normal duty.',
         },
     ],
     static: [
@@ -78,11 +80,11 @@ const PARAMS: Record<PredictEquipmentClass, WhatIfParamDef[]> = {
         },
         {
             key: 'tempDelta', label: 'Process temp Δ', unit: '°C',
-            min: -20, max: 60, step: 5, neutral: 0,
+            min: -20, max: 100, step: 5, neutral: 0,
             amberAbove: 25, redAbove: 50,
             etaFactor: v => Math.pow(2, -v / 25),
             format: v => `${v > 0 ? '+' : ''}${v}°C`,
-            note: 'Corrosion-rate Arrhenius rule of thumb — attack roughly doubles per +25 °C for many mechanisms.',
+            note: 'Corrosion-rate Arrhenius rule of thumb — attack roughly doubles per +25 °C above normal duty.',
         },
     ],
     electrical: [
@@ -127,14 +129,28 @@ const PARAMS: Record<PredictEquipmentClass, WhatIfParamDef[]> = {
         },
         {
             key: 'tempDelta', label: 'Temp Δ', unit: '°C',
-            min: -20, max: 60, step: 5, neutral: 0,
+            min: -20, max: 100, step: 5, neutral: 0,
             amberAbove: 20, redAbove: 40,
             etaFactor: v => Math.pow(2, -v / 10),
             format: v => `${v > 0 ? '+' : ''}${v}°C`,
-            note: 'Arrhenius 10 °C life-halving rule of thumb.',
+            note: 'Arrhenius 10 °C life-halving rule of thumb (Δ vs normal duty).',
         },
     ],
 };
+
+/** Common production units by industry — free text stays allowed. */
+export const PRODUCTION_UNITS: { group: string; units: string[] }[] = [
+    { group: 'Oil & Gas', units: ['bbl', 'm³', 'MMscf'] },
+    { group: 'Mining', units: ['t', 'oz', 'loads'] },
+    { group: 'Manufacturing', units: ['units', 'pieces', 'batches'] },
+    { group: 'Power / Utilities', units: ['MWh', 'ML'] },
+];
+
+/** Display helper: temperature deltas in the user's preferred unit (physics stays °C). */
+export function formatTempDelta(deltaC: number, unit: 'C' | 'F'): string {
+    const v = unit === 'F' ? Math.round(deltaC * 1.8) : deltaC;
+    return `${v > 0 ? '+' : ''}${v}°${unit}`;
+}
 
 export function whatIfParamsFor(cls: PredictEquipmentClass): WhatIfParamDef[] {
     return PARAMS[cls] ?? PARAMS.other;

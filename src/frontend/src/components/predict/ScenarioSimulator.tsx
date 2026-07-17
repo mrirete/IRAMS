@@ -4,7 +4,7 @@ import type { GroundedRul } from '../../lib/predict/groundedFit';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import {
     whatIfParamsFor, paramZone, runWhatIfComparison,
-    DEFAULT_ECON, MC_RUNS, MISSION_HOURS,
+    DEFAULT_ECON, MC_RUNS, MISSION_HOURS, PRODUCTION_UNITS, formatTempDelta,
     type EconomicInputs, type WhatIfScenarioResult, type WhatIfParamDef,
 } from '../../lib/predict/whatIf';
 
@@ -99,6 +99,15 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
     });
     const [result, setResult] = useState<UiResult | null>(null);
     const [isRunning, setIsRunning] = useState(false);
+    // Display preference only — the physics stays in °C deltas.
+    const [tempUnit, setTempUnit] = useState<'C' | 'F'>(() => {
+        try { return localStorage.getItem('predict.whatif.tempUnit') === 'F' ? 'F' : 'C'; } catch { return 'C'; }
+    });
+    const toggleTempUnit = () => setTempUnit(prev => {
+        const next = prev === 'C' ? 'F' : 'C';
+        try { localStorage.setItem('predict.whatif.tempUnit', next); } catch { /* ignore */ }
+        return next;
+    });
 
     // Class change re-seeds the slider set; economics persist per asset.
     useEffect(() => {
@@ -228,11 +237,21 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
                             const v = values[def.key] ?? def.neutral;
                             const zone = paramZone(def, v);
                             const valColor = zone === 'red' ? 'text-red-500' : zone === 'amber' ? 'text-amber-500' : 'text-accent-cyan';
+                            const isTemp = def.unit === '°C';
+                            const fmt = (x: number) => (isTemp ? formatTempDelta(x, tempUnit) : def.format(x));
                             return (
                                 <div key={def.key} title={def.note}>
                                     <div className="flex justify-between items-center mb-2">
-                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">{def.label}</label>
-                                        <span className={`text-sm font-mono font-bold ${valColor}`}>{def.format(v)}</span>
+                                        <span className="flex items-center gap-1.5">
+                                            <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">{def.label}</label>
+                                            {isTemp && (
+                                                <button onClick={toggleTempUnit} title="Toggle °C / °F display (physics stays in °C deltas)"
+                                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 transition-colors">
+                                                    °{tempUnit === 'C' ? 'C→F' : 'F→C'}
+                                                </button>
+                                            )}
+                                        </span>
+                                        <span className={`text-sm font-mono font-bold ${valColor}`}>{fmt(v)}</span>
                                     </div>
                                     <input
                                         type="range" min={def.min * 100} max={def.max * 100} step={def.step * 100} value={v * 100}
@@ -240,9 +259,9 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
                                         className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-accent-cyan"
                                     />
                                     <div className="flex justify-between text-[10px] text-brand-600 mt-1">
-                                        <span>{def.format(def.min)}</span>
+                                        <span>{fmt(def.min)}</span>
                                         <span className="text-slate-300 truncate px-2" >{def.note.split('—')[0].trim()}</span>
-                                        <span>{def.format(def.max)}</span>
+                                        <span>{fmt(def.max)}</span>
                                     </div>
                                 </div>
                             );
@@ -266,8 +285,22 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
                                 {econNum('Production rate (/day)', 'productionRate', 10)}
                                 <label className="block">
                                     <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Unit</span>
-                                    <input value={econ.productionUnit} onChange={e => setEconField('productionUnit', e.target.value)}
-                                        className="mt-1 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm" placeholder="bbl / t / MWh" />
+                                    <select
+                                        value={PRODUCTION_UNITS.some(g => g.units.includes(econ.productionUnit)) ? econ.productionUnit : '__custom__'}
+                                        onChange={e => { if (e.target.value !== '__custom__') setEconField('productionUnit', e.target.value); }}
+                                        className="mt-1 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm bg-white"
+                                    >
+                                        {PRODUCTION_UNITS.map(g => (
+                                            <optgroup key={g.group} label={g.group}>
+                                                {g.units.map(u => <option key={u} value={u}>{u}/day</option>)}
+                                            </optgroup>
+                                        ))}
+                                        <option value="__custom__">custom…</option>
+                                    </select>
+                                    {!PRODUCTION_UNITS.some(g => g.units.includes(econ.productionUnit)) && (
+                                        <input value={econ.productionUnit} onChange={e => setEconField('productionUnit', e.target.value)}
+                                            className="mt-1 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm" placeholder="your unit, e.g. pallets" />
+                                    )}
                                 </label>
                                 {econNum('Margin per unit', 'marginPerUnit', 1, '$')}
                                 {econNum('Cost per failure', 'costPerFailure', 500, '$')}
