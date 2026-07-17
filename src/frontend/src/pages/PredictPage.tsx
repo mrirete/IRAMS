@@ -23,6 +23,8 @@ import { AgentReviewPanel } from '../components/predict/AgentReviewPanel';
 import { resolveEquipmentClass } from '../lib/predict/equipmentClass';
 import { sensorKind } from '../lib/predict/healthModels';
 import { assessIntegrity, type IntegrityAssessment } from '../lib/predict/integrity';
+import { rollupHierarchy } from '../lib/predict/rollup';
+import { useAssetContext } from '../contexts/AssetContext';
 
 type ConditionAlarms = Awaited<ReturnType<DatabaseService['getAssetConditionAlarms']>>;
 
@@ -77,6 +79,8 @@ export const PredictPage: React.FC = () => {
     }, []);
 
     const { assetOptions, getAssetById, loading: assetsLoading } = useAssetLookup();
+    // Full register (all hierarchy levels) — the roll-up needs parent links.
+    const { assets: allRegisterAssets } = useAssetContext();
 
     // ── Setup Journey: first-timers land in the guide, not an empty dashboard ──
     const setup = usePredictSetup();
@@ -349,6 +353,23 @@ export const PredictPage: React.FC = () => {
     const visibleFleetData = useMemo(() => {
         return fleetData.filter(a => !hiddenFleetIds.has(a.asset_id));
     }, [fleetData, hiddenFleetIds]);
+
+    // ── Phase 4: system/unit roll-up from monitored equipment health ──
+    // AssetContext assets use the ISO-taxonomy shape: parent_id (snake) and
+    // lowercase taxonomy_level — normalize before rolling up.
+    const rollups = useMemo(() => {
+        if (fleetData.length === 0 || allRegisterAssets.length === 0) return [];
+        const healthById = new Map(fleetData.map(a => [a.asset_id, a.health_index]));
+        return rollupHierarchy(
+            allRegisterAssets.map((a: any) => ({
+                id: a.id, name: a.name,
+                parentId: a.parent_id ?? a.parentId,
+                hierarchyLevel: a.taxonomy_level ?? a.hierarchyLevel,
+                criticality: a.criticality,
+            })),
+            healthById,
+        );
+    }, [fleetData, allRegisterAssets]);
 
     const toggleAssetVisibility = (id: string) => {
         setHiddenFleetIds(prev => {
@@ -931,6 +952,7 @@ export const PredictPage: React.FC = () => {
                     rulConfidence={displayRul?.confidence ?? null}
                     groundedFit={groundedActive ? grounded : null}
                     equipmentClass={classRes}
+                    rollups={rollups}
                     twinHealth={twinHealth}
                     assetSensorTrends={assetSensorTrends}
                     onInvestigate={() => window.location.href = '/analyze'}
