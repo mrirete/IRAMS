@@ -39,7 +39,10 @@ BEGIN
                  FROM work_order_parts wop
                  JOIN work_orders wo ON wo.id = wop.wo_id
                 WHERE wop.item_id = i.id
-                  AND COALESCE(wo.status, '') NOT IN ('CLOSED', 'CANC', 'CANCELLED', 'TECO')
+                  -- status is enum wo_status: compare as text (NULL = open,
+                  -- matching the client-side derivation)
+                  AND (wo.status IS NULL
+                       OR wo.status::text NOT IN ('CLOSED', 'CANC', 'CANCELLED', 'TECO'))
            ), 0)
      WHERE i.id = ANY(v_item_ids) AND i.id IS NOT NULL;
 
@@ -66,5 +69,6 @@ UPDATE inventory_items i
              FROM work_order_parts wop
              JOIN work_orders wo ON wo.id = wop.wo_id
             WHERE wop.item_id = i.id
-              AND COALESCE(wo.status, '') NOT IN ('CLOSED', 'CANC', 'CANCELLED', 'TECO')
+              AND (wo.status IS NULL
+                   OR wo.status::text NOT IN ('CLOSED', 'CANC', 'CANCELLED', 'TECO'))
        ), 0);
