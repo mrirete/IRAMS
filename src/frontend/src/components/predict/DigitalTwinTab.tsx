@@ -22,6 +22,8 @@ interface DigitalTwinTabProps {
     criticality?: string | null;
     /** Grounded Weibull fit — enables the REAL Monte Carlo What-If (Phase 6) */
     groundedFit?: GroundedRul | null;
+    /** RBI → WM link: raise an inspection WO with the due date pre-filled. */
+    onScheduleInspection?: (args: { title: string; contextNote: string; dueDate: string }) => void;
 }
 
 const RBI_BAND_TONE: Record<string, string> = {
@@ -32,7 +34,7 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection,
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
@@ -95,8 +97,27 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                                         PoF {rbi.pof}/5 (remaining life) × CoF {rbi.cof}/5 (criticality {(criticality || 'C').toUpperCase()})
                                     </span>
                                     {rbi.nextInspectionDate && (
-                                        <span className="text-[11px] text-slate-600 font-medium ml-auto">
-                                            Inspect by {new Date(rbi.nextInspectionDate).toLocaleDateString([], { year: 'numeric', month: 'short' })}
+                                        <span className="flex items-center gap-2 ml-auto">
+                                            <span className="text-[11px] text-slate-600 font-medium">
+                                                Inspect by {new Date(rbi.nextInspectionDate).toLocaleDateString([], { year: 'numeric', month: 'short' })}
+                                            </span>
+                                            {onScheduleInspection && (
+                                                <button
+                                                    onClick={() => onScheduleInspection({
+                                                        title: `API 570 thickness inspection — ${selectedAssetName}`,
+                                                        contextNote:
+                                                            `RBI screening: ${rbi.band} (${rbi.cell}) — PoF ${rbi.pof}/5 from thickness-trend remaining life` +
+                                                            `${integrity?.remainingLifeYears != null ? ` (${integrity.remainingLifeYears}y to t-min)` : ''}, ` +
+                                                            `CoF ${rbi.cof}/5 from criticality ${(criticality || 'C').toUpperCase()}. ` +
+                                                            `Corrosion rate ${integrity?.governingPerYear ?? '—'}/yr (${integrity?.governingBasis ?? '—'}). ` +
+                                                            `Due ≤ half remaining life (API 570).`,
+                                                        dueDate: rbi.nextInspectionDate!,
+                                                    })}
+                                                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-primary-600 hover:bg-primary-500 text-white transition-colors"
+                                                >
+                                                    Schedule inspection
+                                                </button>
+                                            )}
                                         </span>
                                     )}
                                     <span className="w-full text-[10px] text-slate-400">Screening aid (API 580-inspired) — not a full API 581 damage-factor analysis.</span>

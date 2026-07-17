@@ -30,6 +30,10 @@ interface Props {
      *  link it back to their source record (e.g. RCA corrective action → WO). */
     onCreated?: (kind: RaiseKind, id: string | null) => void | Promise<void>;
     onClose: () => void;
+    /** Prefill (e.g. Predict RBI → inspection): title, WO work type, due date. */
+    initialTitle?: string;
+    initialWorkType?: string;
+    dueDate?: string;
 }
 
 const PRIORITIES = [{ v: 'LOW', l: 'Low' }, { v: 'MEDIUM', l: 'Medium' }, { v: 'HIGH', l: 'High' }];
@@ -38,7 +42,7 @@ const METER_UNITS = ['Hours', 'Km', 'Cycles', 'Starts'];
 const riskFor = (p: string) => (p === 'HIGH' ? 80 : p === 'MEDIUM' ? 50 : 20);
 const unitToDays: Record<string, number> = { Days: 1, Weeks: 7, Months: 30, Years: 365 };
 
-export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose }) => {
+export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate }) => {
     const { showToast } = useToast();
     const navigate = useNavigate();
     const [kind, setKind] = useState<RaiseKind>(initialKind);
@@ -46,10 +50,10 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
     const [err, setErr] = useState<string | null>(null);
 
     const ctx = contextNote ? `\n\n${contextNote}` : '';
-    const [title, setTitle] = useState(`${initialKind === 'PM' ? 'PM' : 'Corrective'} — ${asset.tag}`);
+    const [title, setTitle] = useState(initialTitle ?? `${initialKind === 'PM' ? 'PM' : 'Corrective'} — ${asset.tag}`);
     const [description, setDescription] = useState(`Raised from ${sourceLabel}.\nAsset: ${asset.tag} — ${asset.name}${ctx}`);
     const [priority, setPriority] = useState('MEDIUM');
-    const [workType, setWorkType] = useState('CM');
+    const [workType, setWorkType] = useState(initialWorkType || 'CM');
     const [faultType, setFaultType] = useState(faultTypes[0]?.id || ''); // dictionary UUID
     // PM-specific
     const [scheduleType, setScheduleType] = useState<'TIME' | 'READING'>('TIME');
@@ -76,6 +80,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 const wo = await db.createWorkOrder(buildWorkOrder({
                     title, description, assetId: asset.id, type: workType,
                     priorityCode: priority, status: 'OPEN', workCenterId: workCenterId || null,
+                    ...(dueDate ? { dueDate } : {}),
                 }), actor);
                 if (onCreated) await onCreated('WO', (wo as any)?.id ?? null);
                 showToast('Work order raised.', 'success');
@@ -214,6 +219,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                                     <option value="CM">CM — Corrective</option>
                                     <option value="PdM">PdM — Predictive</option>
                                     <option value="EM">EM — Emergency</option>
+                                    <option value="INSP">INSP — Inspection</option>
                                 </select>
                             </div>
                         )}

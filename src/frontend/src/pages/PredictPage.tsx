@@ -71,6 +71,8 @@ export const PredictPage: React.FC = () => {
     // ── Corrective Work Request Modal state ──
     const { profile } = useAuth();
     const [raiseOpen, setRaiseOpen] = useState(false);
+    // RBI → inspection WO prefill (Predict→WM link): title/context/due date.
+    const [inspectPrefill, setInspectPrefill] = useState<{ title: string; contextNote: string; dueDate: string } | null>(null);
     const [predictFaultTypes, setPredictFaultTypes] = useState<{ id: string; code: string; description: string }[]>([]);
     useEffect(() => {
         DatabaseService.getInstance().getDictionaries()
@@ -972,6 +974,7 @@ export const PredictPage: React.FC = () => {
                     integrity={integrity}
                     criticality={selectedAsset?.criticality}
                     groundedFit={groundedActive ? grounded : null}
+                    onScheduleInspection={setInspectPrefill}
                 />
             )}
 
@@ -1015,6 +1018,23 @@ export const PredictPage: React.FC = () => {
                     faultTypes={predictFaultTypes}
                     contextNote={`From Predict — Health ${systemHealth.toFixed(1)}/100 · RUL ${rulEstimate?.rul_days?.toFixed(0) || 'N/A'}d · Criticality ${critLevel || 'B'} · ${effectiveAlertCount} condition alarm(s).`}
                     onClose={() => setRaiseOpen(false)}
+                />
+            )}
+
+            {/* RBI → inspection WO (Predict→WM link): title/type/due date pre-filled */}
+            {inspectPrefill && selectedAssetId && (
+                <RaiseWorkModal
+                    asset={{ id: selectedAssetId, tag: selectedAsset?.tag || '', name: selectedAsset?.name || selectedAssetId, criticality: (critLevel as any) } as any}
+                    kind="WO"
+                    actor={profile?.username || profile?.fullName || 'user'}
+                    requesterId={profile?.id}
+                    sourceLabel="Predict · RBI screening"
+                    faultTypes={predictFaultTypes}
+                    initialTitle={inspectPrefill.title}
+                    initialWorkType="INSP"
+                    dueDate={inspectPrefill.dueDate}
+                    contextNote={inspectPrefill.contextNote}
+                    onClose={() => setInspectPrefill(null)}
                 />
             )}
 
