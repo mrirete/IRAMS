@@ -1738,9 +1738,6 @@ const UserPermissionManager: React.FC = () => {
                                                     currency: 'USD',
                                                     address: { street: '', city: '', state: '', zip: '', country: '' },
                                                     flags: {
-                                                        canLogin: true,
-                                                        canSubmitRequests: true,
-                                                        canLogTime: true,
                                                         isLabour: true,
                                                         hasQualifications: false,
                                                         isVendor: false

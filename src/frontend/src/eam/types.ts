@@ -1281,10 +1281,11 @@ export interface Contact {
   reportingTo?: string;
 
   // Meta
+  // Attribute flags — describe WHAT a contact is, not what they may do.
+  // Permissions (login / submit requests / log time) live in the role
+  // system (ROLE_PERMISSION_TEMPLATES + users.permission_overrides), which
+  // is the single authoritative source — do NOT reintroduce them here.
   flags?: {
-    canLogin?: boolean;
-    canSubmitRequests?: boolean;
-    canLogTime?: boolean;
     isLabour?: boolean;
     hasQualifications?: boolean;
     isVendor?: boolean;

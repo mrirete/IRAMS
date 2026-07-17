@@ -140,9 +140,7 @@ export class DatabaseService {
                 currency: 'USD',
                 address: row.address || { street: '', city: '', state: '', zip: '' },
                 flags: {
-                    canLogin: true, // Derived or mapped? User relation implies this.
-                    canSubmitRequests: row.can_submit_requests || false,
-                    canLogTime: row.can_log_time || false,
+                    // Attribute flags only — permissions are resolved from the role system.
                     isLabour: row.is_employee || false,
                     hasQualifications: row.has_qualifications || false,
                     isVendor: row.is_vendor || false
@@ -184,9 +182,6 @@ export class DatabaseService {
             is_employee: contact.flags?.isLabour,
             is_vendor: contact.flags?.isVendor,
             organization_unit_id: contact.organizationUnitId,
-            // New Permission Flags
-            can_submit_requests: contact.flags?.canSubmitRequests,
-            can_log_time: contact.flags?.canLogTime,
             has_qualifications: contact.flags?.hasQualifications,
 
             hourly_rate: contact.hourlyRate,
@@ -235,9 +230,6 @@ export class DatabaseService {
             is_employee: contact.flags?.isLabour,
             is_vendor: contact.flags?.isVendor,
             organization_unit_id: contact.organizationUnitId,
-            // New Permission Flags
-            can_submit_requests: contact.flags?.canSubmitRequests,
-            can_log_time: contact.flags?.canLogTime,
             has_qualifications: contact.flags?.hasQualifications,
 
             hourly_rate: contact.hourlyRate,
@@ -1197,9 +1189,7 @@ export class DatabaseService {
             currency: 'USD',
             address: row.address || { street: '', city: '', state: '', zip: '' },
             flags: {
-                canLogin: true, // Derived or mapped? User relation implies this.
-                canSubmitRequests: row.can_submit_requests || false,
-                canLogTime: row.can_log_time || false,
+                // Attribute flags only — permissions are resolved from the role system.
                 isLabour: row.is_employee || false,
                 hasQualifications: row.has_qualifications || false,
                 isVendor: row.is_vendor || false
@@ -2470,6 +2460,23 @@ export class DatabaseService {
             .order('created_at', { ascending: false });
         if (error) {
             console.error('[DatabaseService] getWorkOrdersByAssetId error:', error);
+            return [];
+        }
+        return data || [];
+    }
+
+    /**
+     * Get all work orders assigned to a specific contact (the person's "Jobs").
+     * Matches on work_orders.assigned_to (FK -> contacts.id).
+     */
+    public async getWorkOrdersByContactId(contactId: string): Promise<WorkOrderRecord[]> {
+        const { data, error } = await supabase
+            .from('work_orders')
+            .select('*')
+            .eq('assigned_to', contactId)
+            .order('created_at', { ascending: false });
+        if (error) {
+            console.error('[DatabaseService] getWorkOrdersByContactId error:', error);
             return [];
         }
         return data || [];
