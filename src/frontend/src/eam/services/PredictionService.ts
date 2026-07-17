@@ -10,6 +10,7 @@ import { groundedRulFromHistory } from '../../lib/pmRecommendation';
 import { conditionalRemainingQuantileHours } from '../utils/weibull';
 import { resolveEquipmentClass } from '../../lib/predict/equipmentClass';
 import { healthModelFor, sensorKind } from '../../lib/predict/healthModels';
+import { assessIntegrity } from '../../lib/predict/integrity';
 
 // ─── Types ───────────────────────────────────────────────────
 export interface TwinState {
@@ -685,55 +686,127 @@ class PredictionService {
     }
 
     // ── Degradation Model Update ───────────────────────────
+    // Phase 3 (data-grounded degradation): mechanisms come from DATA, not a
+    // health-band guess — the fitted censored Weibull (WO failure history) and
+    // the API 570 thickness trend (static equipment). Their failure projections
+    // are the SAME numbers the RUL tab and Integrity panel show, so degradation
+    // and RUL can never tell two different stories. When neither data source
+    // exists, the fallback is a single heuristic model explicitly tagged as
+    // directional (no invented wear rates).
     private async _runDegradationUpdate(assetId: string, _title: string): Promise<{ success: boolean; message: string }> {
         const twin = await this.getTwinState(assetId);
         if (!twin) {
             return { success: false, message: 'No digital twin found — run a Digital Twin Snapshot first.' };
         }
 
-        const healthIndex = Number(twin.health_index);
-        const existingModels = twin.degradation_models || [];
+        // Equipment class steers which physical mechanism applies.
+        const { data: assetRow } = await supabase.from('assets')
+            .select('name, tag, asset_class, asset_category, asset_type_code')
+            .eq('id', assetId)
+            .maybeSingle();
+        const classRes = resolveEquipmentClass(assetRow ? {
+            name: assetRow.name, tag: assetRow.tag,
+            assetClass: assetRow.asset_class, assetCategory: assetRow.asset_category, assetType: assetRow.asset_type_code,
+        } : null);
 
-        // If models exist, advance their damage percentage based on health
-        // If no models, infer a default degradation mechanism
-        let updatedModels: any[];
-        if (existingModels.length > 0) {
-            updatedModels = existingModels.map((m: any) => {
-                const advanceRate = healthIndex < 70 ? 2.5 : healthIndex < 85 ? 1.2 : 0.5;
-                const newDamage = Math.min(100, Number(m.current_damage_pct) + advanceRate);
-                const daysToFailure = Math.max(14, Math.round((100 - newDamage) / advanceRate * 30));
-                return {
-                    ...m,
-                    current_damage_pct: Math.round(newDamage * 10) / 10,
-                    projected_failure_date: new Date(Date.now() + daysToFailure * 86400000).toISOString(),
-                };
-            });
-        } else {
-            // Infer a default degradation model based on health range
-            const mechanism = healthIndex < 70 ? 'Bearing Wear' : healthIndex < 85 ? 'Seal Degradation' : 'General Wear';
-            const modelType = healthIndex < 70 ? 'L10 Lifetime' : healthIndex < 85 ? 'Linear Wear' : 'Linear';
-            const damagePct = Math.round((100 - healthIndex) * 0.7 * 10) / 10;
-            const daysToFailure = Math.max(30, Math.round(healthIndex * 3));
-            updatedModels = [{
-                mechanism,
-                model_type: modelType,
-                // Deterministic wear rate derived from the health deficit (not random):
-                // the further below 100 the health, the faster the modelled wear.
-                parameters: { wear_rate: Math.round((100 - healthIndex) * 0.0001 * 10000) / 10000 },
-                current_damage_pct: damagePct,
-                projected_failure_date: new Date(Date.now() + daysToFailure * 86400000).toISOString(),
-            }];
+        const models: any[] = [];
+        const r1 = (v: number) => Math.round(v * 10) / 10;
+
+        // ── A. STATIC: wall-loss corrosion from the thickness trend (API 570) ──
+        if (classRes.cls === 'static') {
+            const [defsRes, logsRes] = await Promise.all([
+                supabase.from('reading_definitions').select('*').eq('asset_id', assetId).eq('is_active', true),
+                supabase.from('reading_logs').select('*').eq('asset_id', assetId).order('reading_date', { ascending: true }),
+            ]);
+            const thicknessDef = (defsRes.data || []).find((d: any) => sensorKind(d.name) === 'thickness');
+            if (thicknessDef) {
+                const pts = (logsRes.data || [])
+                    .filter((l: any) => l.definition_id === thicknessDef.id && l.is_active !== false)
+                    .map((l: any) => ({ date: l.reading_date, value: Number(l.reading_value) }));
+                const integ = assessIntegrity(pts, thicknessDef.min_critical ?? thicknessDef.min_warning ?? null);
+                if (integ) {
+                    // Damage = corrodible allowance consumed (first reading → t-min).
+                    const firstVal = pts.length ? Math.max(...pts.map(p => p.value)) : integ.current;
+                    const damage = integ.tMin != null && firstVal > integ.tMin
+                        ? Math.min(100, Math.max(0, ((firstVal - integ.current) / (firstVal - integ.tMin)) * 100))
+                        : 0;
+                    models.push({
+                        mechanism: 'Wall loss / corrosion',
+                        model_type: 'API 570 thickness trend',
+                        parameters: {
+                            ltcr_per_year: integ.ltcrPerYear,
+                            stcr_per_year: integ.stcrPerYear,
+                            governing_per_year: integ.governingPerYear,
+                            t_min: integ.tMin ?? 0,
+                        },
+                        current_damage_pct: r1(damage),
+                        projected_failure_date: integ.remainingLifeYears != null
+                            ? new Date(Date.now() + integ.remainingLifeYears * 365.25 * 86400000).toISOString()
+                            : null,
+                    });
+                }
+            }
         }
 
-        const result = await this.upsertTwinState({
-            asset_id: assetId,
-            degradation_models: updatedModels,
-        });
+        // ── B. Fitted Weibull wear-out from WO failure history (R-1) ──
+        const { data: wos } = await supabase.from('work_orders')
+            .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
+            .eq('asset_id', assetId)
+            .order('created_at');
+        const rows = wos || [];
+        const intervals = failureIntervalsHours(rows);
+        const lastFail = rows.filter(isFailure)
+            .map((w: any) => new Date(w.closed_at || w.created_at).getTime())
+            .sort((a, b) => b - a)[0];
+        const suspensions: number[] = [];
+        if (lastFail) {
+            const h = Math.floor((Date.now() - lastFail) / 3600000);
+            if (h > 0) suspensions.push(h);
+        }
+        const grounded = groundedRulFromHistory(intervals, suspensions);
+        if (grounded.method === 'weibull-mrl' && grounded.rulDays != null && grounded.beta && grounded.eta) {
+            // Life consumed = age / (age + expected residual life).
+            const lifeConsumed = grounded.ageDays + grounded.rulDays > 0
+                ? (grounded.ageDays / (grounded.ageDays + grounded.rulDays)) * 100
+                : 0;
+            models.push({
+                mechanism: classRes.cls === 'rotating' ? 'Wear-out — bearings/seals (fitted)' : 'Wear-out (fitted from failure history)',
+                model_type: `Censored Weibull (β=${grounded.beta}, η=${grounded.eta}h)`,
+                parameters: { beta: grounded.beta, eta_hours: grounded.eta, age_days: grounded.ageDays, n_failures: grounded.fit?.nFailures ?? intervals.length },
+                current_damage_pct: r1(lifeConsumed),
+                // Same MRL the RUL tab shows — one number, by construction.
+                projected_failure_date: new Date(Date.now() + grounded.rulDays * 86400000).toISOString(),
+            });
+        }
 
-        if (!result) return { success: false, message: 'Failed to persist degradation models.' };
+        // ── C. Honest fallback: nothing data-grounded → tagged directional ──
+        if (models.length === 0) {
+            const healthIndex = Number(twin.health_index);
+            const est = await this.getRULEstimate(assetId);
+            const projDays = est?.rul_days ?? Math.max(30, Math.round(healthIndex * 3));
+            models.push({
+                mechanism: classRes.cls === 'static' ? 'General deterioration' : healthIndex < 70 ? 'Bearing wear (suspected)' : 'General wear',
+                model_type: 'Heuristic — health trend (directional, no life data yet)',
+                parameters: { health_index: healthIndex },
+                current_damage_pct: r1(Math.min(100, Math.max(0, 100 - healthIndex))),
+                projected_failure_date: new Date(Date.now() + projDays * 86400000).toISOString(),
+            });
+        }
+
+        // Direct UPDATE — the twin row exists (checked above); a partial upsert
+        // would trip NOT NULL columns on the insert path before conflict handling.
+        const { error: updErr } = await supabase.from('ers_twin_states')
+            .update({ degradation_models: models, updated_at: new Date().toISOString() })
+            .eq('asset_id', assetId);
+
+        if (updErr) {
+            console.error('[_runDegradationUpdate] persist failed:', updErr);
+            return { success: false, message: `Failed to persist degradation models: ${updErr.message}` };
+        }
+        const basis = models.map((m: any) => `${m.mechanism} (${m.model_type.split(' (')[0]})`).join(' · ');
         return {
             success: true,
-            message: `${updatedModels.length} degradation model${updatedModels.length > 1 ? 's' : ''} updated — max damage: ${Math.max(...updatedModels.map((m: any) => m.current_damage_pct)).toFixed(1)}%`,
+            message: `${models.length} degradation model${models.length > 1 ? 's' : ''} updated — ${basis}`,
         };
     }
 
