@@ -7,6 +7,7 @@ import type { TwinState, RULEstimate } from '../../types/intelligence';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import type { IntegrityAssessment } from '../../lib/predict/integrity';
 import { screenRbi } from '../../lib/predict/rbi';
+import type { GroundedRul } from '../../lib/predict/groundedFit';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
@@ -19,6 +20,8 @@ interface DigitalTwinTabProps {
     integrity?: IntegrityAssessment | null;
     /** Asset criticality (A–E) — CoF proxy for the RBI screening (Phase 5) */
     criticality?: string | null;
+    /** Grounded Weibull fit — enables the REAL Monte Carlo What-If (Phase 6) */
+    groundedFit?: GroundedRul | null;
 }
 
 const RBI_BAND_TONE: Record<string, string> = {
@@ -29,7 +32,7 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit,
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
@@ -173,8 +176,8 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                 </div>
             )}
 
-            {/* What-If Scenario Simulator */}
-            <ScenarioSimulator assetId={selectedAssetId} assetName={selectedAssetName} />
+            {/* What-If Scenario Explorer — real Monte Carlo when a fitted life model exists */}
+            <ScenarioSimulator assetId={selectedAssetId} assetName={selectedAssetName} groundedFit={groundedFit} />
 
             {/* Vision Thermal Anomalies Feed */}
             <VisionThermalFeed assetId={selectedAssetId} assetName={selectedAssetName} />

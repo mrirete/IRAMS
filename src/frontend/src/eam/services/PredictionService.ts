@@ -1,7 +1,27 @@
 /**
- * PredictionService — Supabase CRUD for ERS Predict domain
+ * PredictionService — Supabase CRUD + compute for the ERS Predict domain.
  *
  * Tables: ers_twin_states, ers_rul_estimates, ers_prediction_alerts, ers_sensor_readings
+ *
+ * ── ISO 13374 processing spine (Phase 6.2 — where each layer lives) ──
+ *  DA  Data Acquisition      getSensorReadings / getManualReadingsAsSensors /
+ *                            importSensorReadings (CSV) — online feed + rounds bridge
+ *  DM  Data Manipulation     sensorKind tagging (lib/predict/healthModels), trend
+ *                            derivation in the manual bridge; spectral features TBD
+ *  SD  State Detection       _runAlertScan — band breaches with ISA-18.2-lite dedup
+ *                            + persistence (one open alert per point)
+ *  HA  Health Assessment     _runDigitalTwinSnapshot — class-aware weighting
+ *                            (lib/predict/healthModels × lib/predict/equipmentClass),
+ *                            bands from lib/predict/limitLibrary provenance
+ *  PA  Prognostic Assessment _runRULAnalysis (censored Weibull MRL via eam/utils/
+ *                            weibull + lib/pmRecommendation), _runDegradationUpdate
+ *                            (fitted wear-out / API 570 corrosion via lib/predict/
+ *                            integrity), RBI screening (lib/predict/rbi)
+ *  AG  Advisory Generation   threshold_adapter proposals (AgentService → HITL
+ *                            AgentReviewPanel), alert→WO drafts, Create-WR actions
+ *
+ * Adding a new equipment class touches HA/PA config (healthModels, limitLibrary)
+ * only — the spine stays put.
  */
 import { supabase } from '../lib/supabase';
 import { buildSensorReading } from '../lib/sensorReading';

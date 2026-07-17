@@ -971,6 +971,7 @@ export const PredictPage: React.FC = () => {
                     equipmentClass={classRes}
                     integrity={integrity}
                     criticality={selectedAsset?.criticality}
+                    groundedFit={groundedActive ? grounded : null}
                 />
             )}
 
