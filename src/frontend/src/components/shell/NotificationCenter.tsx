@@ -6,6 +6,7 @@ import { NotificationService } from '../../eam/services/NotificationService';
 import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from '../../eam/contexts/ToastContext';
 import { notificationRoute, isApprovableRequest } from '../../lib/notificationNav';
+import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 
 // ─────────────────────────────────────────────────────────
 //  Helpers
@@ -50,7 +51,6 @@ function getTypeIcon(type: string): React.ReactNode {
 
 type TabFilter = 'all' | 'unread' | 'action';
 
-const POLL_INTERVAL_MS = 30_000; // 30 seconds
 const ESCALATION_SWEEP_MS = 5 * 60_000; // escalation deadlines are minutes-scale; 5 min is fine
 
 // ─────────────────────────────────────────────────────────
@@ -63,10 +63,11 @@ export const NotificationCenter: React.FC = () => {
 
     const [open, setOpen] = useState(false);
     const [notifications, setNotifications] = useState<any[]>([]);
-    const [unreadCount, setUnreadCount] = useState(0);
     const [tab, setTab] = useState<TabFilter>('all');
     const [loading, setLoading] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
+    const openRef = useRef(false);
+    openRef.current = open;
 
     // ── Fetch notifications ──────────────────────────────
     const fetchNotifications = useCallback(async () => {
@@ -80,24 +81,12 @@ export const NotificationCenter: React.FC = () => {
         }
     }, [userId]);
 
-    const fetchUnreadCount = useCallback(async () => {
-        if (!userId) return;
-        const db = DatabaseService.getInstance();
-        try {
-            const count = await db.getUnreadNotificationCount(userId);
-            setUnreadCount(count);
-        } catch (e) {
-            console.warn('[NotificationCenter] Error counting unread:', e);
-        }
-    }, [userId]);
-
-    // Initial load + polling
-    useEffect(() => {
-        fetchUnreadCount();
-
-        const interval = setInterval(fetchUnreadCount, POLL_INTERVAL_MS);
-        return () => clearInterval(interval);
-    }, [fetchUnreadCount]);
+    // Live count via realtime (0200) with focus/slow-poll fallback; a row
+    // change while the dropdown is open also refreshes the visible list.
+    const { unreadCount, setUnreadCount, refresh: fetchUnreadCount } = useUnreadNotifications(
+        userId,
+        () => { if (openRef.current) fetchNotifications(); },
+    );
 
     // Escalation sweep: my unattended notifications past their rule's deadline
     // escalate (same person / org-chart supervisor / role per the rule). Runs on
