@@ -50,9 +50,18 @@ export const isFailure = (r: any): boolean => {
   return CORRECTIVE_RE.test(t) || !!failureMode(r);
 };
 
-/** Column list a query must select for the engine to classify records. */
+/**
+ * Column list a query must select for the engine to classify records.
+ * KEEP THIS MATCHED TO THE LIVE work_orders SCHEMA: PostgREST rejects the
+ * ENTIRE select when any column is unknown (42703), which silently blanked
+ * every caller (Modelling auto-populate, toolkit, KPI outlook) while this
+ * listed `actual_duration`/`actual_hours` — neither exists on work_orders
+ * (actual_hours lives on job_tasks; actual_duration never shipped in any
+ * migration). repairHoursOf still reads those names defensively for callers
+ * that pass richer client-side records.
+ */
 export const FAILURE_QUERY_COLUMNS =
-  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration, actual_hours, wo_failure_data(failure_mode_code)';
+  'id, type, status, created_at, closed_at, actual_downtime_hrs, wo_failure_data(failure_mode_code)';
 
 /**
  * One derivation of the numbers the Modelling calculators auto-populate from an

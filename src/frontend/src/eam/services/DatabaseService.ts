@@ -2234,7 +2234,10 @@ export class DatabaseService {
             assetId: row.asset_id,
             readingTypeCode: row.reading_type_code,
             date: row.reading_date,
-            time: row.reading_time,
+            // Postgres TIME comes back 'HH:MM:SS' while the UI writes 'HH:MM' —
+            // normalize to 'HH:MM' so consumers can compose `${date}T${time}`
+            // timestamps (and display) without caring which shape arrived.
+            time: typeof row.reading_time === 'string' ? row.reading_time.slice(0, 5) : row.reading_time,
             value: row.reading_value,
             delta: row.delta,
             enteredBy: row.entered_by,
