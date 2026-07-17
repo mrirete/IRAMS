@@ -589,19 +589,47 @@ class PredictionService {
     }
 
     // ── Alert Scan ─────────────────────────────────────────
+    // ISA-18.2-lite hygiene (1.5.5): one OPEN alert per measurement point
+    // (re-scanning a breaching sensor must not stack duplicates), and a
+    // persistence check (the previous reading must also breach) so a value
+    // chattering around a limit doesn't fire on every oscillation.
     private async _runAlertScan(assetId: string, title: string): Promise<{ success: boolean; message: string }> {
         const sensors = await this.getSensorsForAsset(assetId);
         if (sensors.length === 0) {
             return { success: false, message: 'No sensor readings found — enter readings on Condition Data (Work Management), or connect an online sensor feed.' };
         }
 
+        // Tags that already have an unacknowledged alert — skip them (dedup).
+        const existing = await this.getAlerts(assetId);
+        const openTags = new Set(
+            existing.filter(a => !a.acknowledged)
+                .map(a => (a.title.split(': ').pop() || '').trim().toLowerCase())
+                .filter(Boolean),
+        );
+
         let alertsCreated = 0;
+        let suppressed = 0;
         for (const s of sensors) {
             if (s.current_value == null) continue;
 
             // Threshold breach: current value near or beyond alarm limits
-            const breachHigh = s.alarm_high != null && s.current_value >= s.alarm_high * 0.90;
-            const breachLow = s.alarm_low != null && s.current_value <= s.alarm_low * 1.10;
+            let breachHigh = s.alarm_high != null && s.current_value >= s.alarm_high * 0.90;
+            let breachLow = s.alarm_low != null && s.current_value <= s.alarm_low * 1.10;
+
+            // Persistence: with history, require the PREVIOUS reading to breach
+            // too (readings are stored oldest→newest; last = current).
+            const hist = s.readings || [];
+            const prev = hist.length >= 2 ? hist[hist.length - 2] : null;
+            if (prev != null) {
+                if (breachHigh && s.alarm_high != null && prev < s.alarm_high * 0.90) breachHigh = false;
+                if (breachLow && s.alarm_low != null && prev > s.alarm_low * 1.10) breachLow = false;
+            }
+
+            // Dedup: an open alert already covers this point.
+            if ((breachHigh || breachLow) && openTags.has(s.tag.trim().toLowerCase())) {
+                suppressed++;
+                continue;
+            }
 
             // Trend anomaly: rising trend combined with proximity to alarm
             const trendAnomaly = s.trend === 'rising' && breachHigh;
@@ -635,9 +663,14 @@ class PredictionService {
         }
 
         if (alertsCreated === 0) {
-            return { success: true, message: 'All sensors within normal limits — no alerts generated.' };
+            return {
+                success: true,
+                message: suppressed > 0
+                    ? `No new alerts — ${suppressed} breaching point${suppressed > 1 ? 's' : ''} already ha${suppressed > 1 ? 've' : 's'} an open alert (chatter guard).`
+                    : 'All sensors within normal limits — no alerts generated.',
+            };
         }
-        return { success: true, message: `${alertsCreated} prediction alert${alertsCreated > 1 ? 's' : ''} generated from threshold analysis.` };
+        return { success: true, message: `${alertsCreated} prediction alert${alertsCreated > 1 ? 's' : ''} generated from threshold analysis${suppressed > 0 ? ` (${suppressed} suppressed — already open)` : ''}.` };
     }
 
     // ── Degradation Model Update ───────────────────────────

@@ -18,6 +18,8 @@ import { usePredictSetup } from '../hooks/usePredictSetup';
 import { fetchGroundedFit, type GroundedRul } from '../lib/predict/groundedFit';
 import { conditionalRemainingQuantileHours } from '../eam/utils/weibull';
 import type { RULEstimate } from '../types/intelligence';
+import { agentService } from '../eam/services/AgentService';
+import { AgentReviewPanel } from '../components/predict/AgentReviewPanel';
 
 type ConditionAlarms = Awaited<ReturnType<DatabaseService['getAssetConditionAlarms']>>;
 
@@ -103,6 +105,41 @@ export const PredictPage: React.FC = () => {
     // #2: Reliability Advisor modal (grounded Weibull RUL lives in there now —
     // the old banner's inline grounded-RUL display went with the banner).
     const [advisorOpen, setAdvisorOpen] = useState(false);
+
+    // ── 1.5.4: alert feedback → threshold-adapter loop (HITL) ──
+    // Actionable/false-alarm feedback feeds the threshold_adapter agent, whose
+    // band proposals land in the review panel below — never auto-applied.
+    const [alertFeedbackMap, setAlertFeedbackMap] = useState<Record<string, 'actionable' | 'false_alarm'>>({});
+    const [feedbackStats, setFeedbackStats] = useState<{ actionable: number; falseAlarm: number; precision: number } | null>(null);
+    const [adapterNudge, setAdapterNudge] = useState<string | null>(null);
+    useEffect(() => {
+        setAlertFeedbackMap({});
+        setAdapterNudge(null);
+        if (!selectedAssetId) { setFeedbackStats(null); return; }
+        let active = true;
+        predictionService.getAlertFeedbackStats(selectedAssetId)
+            .then(s => { if (active) setFeedbackStats(s); })
+            .catch(() => { if (active) setFeedbackStats(null); });
+        return () => { active = false; };
+    }, [selectedAssetId]);
+
+    const handleAlertFeedback = async (alertId: string, type: 'actionable' | 'false_alarm') => {
+        if (!selectedAssetId) return;
+        const user = profile?.username || profile?.fullName || 'user';
+        const saved = await predictionService.submitAlertFeedback(alertId, selectedAssetId, type, user);
+        if (!saved) return;
+        setAlertFeedbackMap(prev => ({ ...prev, [alertId]: type }));
+        const stats = await predictionService.getAlertFeedbackStats(selectedAssetId);
+        setFeedbackStats(stats);
+        if (type === 'false_alarm') {
+            // Surface the (previously dormant) threshold adapter: enough feedback
+            // → band proposals, pending human review in the panel below.
+            try {
+                const res = await agentService.proposeThresholdAdjustments(selectedAssetId);
+                if (res.agentAction) setAdapterNudge(res.message);
+            } catch { /* advisory only — feedback itself already saved */ }
+        }
+    };
 
     // ── #3: REAL condition alarms from R-4 measurement-point bands (not synthetic) ──
     const [conditionAlarms, setConditionAlarms] = useState<ConditionAlarms | null>(null);
@@ -872,11 +909,32 @@ export const PredictPage: React.FC = () => {
             )}
 
             {selectedAssetId && activeTab === 'rul' && (
-                <RULReliabilityTab
-                    rulEstimate={displayRul}
-                    assetAlerts={assetAlerts}
-                    groundedFit={groundedActive ? grounded : null}
-                />
+                <>
+                    <RULReliabilityTab
+                        rulEstimate={displayRul}
+                        assetAlerts={assetAlerts}
+                        groundedFit={groundedActive ? grounded : null}
+                        feedbackStats={feedbackStats}
+                        alertFeedbackMap={alertFeedbackMap}
+                        onAlertFeedback={handleAlertFeedback}
+                    />
+                    {/* Threshold-adapter nudge: false-alarm feedback produced band proposals */}
+                    {adapterNudge && (
+                        <div className="mt-4 flex items-start gap-3 px-4 py-3 bg-primary-50 border border-primary-200 rounded-card text-sm">
+                            <Zap size={16} className="text-primary-600 shrink-0 mt-0.5" />
+                            <p className="text-primary-800 leading-relaxed">
+                                <strong>Threshold Agent:</strong> {adapterNudge} Review and approve in the panel below — nothing changes without your sign-off.
+                            </p>
+                        </div>
+                    )}
+                    {/* HITL review panel — WO drafts, RCA drafts, threshold proposals */}
+                    <div className="mt-4">
+                        <AgentReviewPanel
+                            assetId={selectedAssetId}
+                            currentUser={profile?.username || profile?.fullName || 'user'}
+                        />
+                    </div>
+                </>
             )}
 
             {/* Corrective work — unified Raise modal (Request / Work Order / PM) */}

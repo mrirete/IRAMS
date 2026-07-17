@@ -427,6 +427,10 @@ export interface ReadingDefinition {
   monitoringFrequencyDays?: number | null;
   pfIntervalDays?: number | null;
 
+  // Band provenance (0198): iso20816-<class> | template | learned | oem | manual.
+  // NULL/undefined = legacy band with no cited source ("unverified").
+  limitSource?: string | null;
+
   isActive: boolean;
   lastReadingValue?: number;
   lastReadingDate?: string;
