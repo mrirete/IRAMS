@@ -177,7 +177,7 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
             )}
 
             {/* What-If Scenario Explorer — real Monte Carlo when a fitted life model exists */}
-            <ScenarioSimulator assetId={selectedAssetId} assetName={selectedAssetName} groundedFit={groundedFit} />
+            <ScenarioSimulator assetId={selectedAssetId} assetName={selectedAssetName} groundedFit={groundedFit} equipmentClass={equipmentClass} />
 
             {/* Vision Thermal Anomalies Feed */}
             <VisionThermalFeed assetId={selectedAssetId} assetName={selectedAssetName} />

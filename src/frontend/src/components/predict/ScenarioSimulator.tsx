@@ -1,198 +1,134 @@
-import React, { useState } from 'react';
-import { Sliders, Play, TrendingUp, TrendingDown, Minus, Cpu, DollarSign, Clock, Activity, Shield, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
-import type { ScenarioInput, ScenarioOutput, ScenarioMetrics, GovernanceTier } from '../../types/intelligence';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Sliders, Play, TrendingUp, TrendingDown, Minus, Cpu, DollarSign, Clock, Activity, Shield, RotateCcw, ChevronDown, ChevronUp, AlertTriangle, Factory } from 'lucide-react';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
-import { runMonteCarloSimulation } from '../../eam/utils/monteCarloEngine';
+import type { ClassResolution } from '../../lib/predict/equipmentClass';
+import {
+    whatIfParamsFor, paramZone, runWhatIfComparison,
+    DEFAULT_ECON, MC_RUNS, MISSION_HOURS,
+    type EconomicInputs, type WhatIfScenarioResult, type WhatIfParamDef,
+} from '../../lib/predict/whatIf';
 
 // ─────────────────────────────────────────────────────────
-//  Two paths (Phase 6):
-//   REAL — when the asset has a fitted censored Weibull (grounded fit),
-//   scenarios run through eam/utils/monteCarloEngine.ts: Weibull TTF +
-//   lognormal TTR + PM renewal, baseline vs projected. Slider physics uses
-//   documented engineering rules of thumb (cited inline).
-//   ILLUSTRATIVE — no fit: the linear estimate below, honestly labelled.
+//  What-If Scenario Explorer (Phase 6 + financial extension)
+//   REAL — fitted assets simulate through the Monte Carlo engine with
+//   class-aware duty parameters (cited physics) and imperfect PM.
+//   ILLUSTRATIVE — unfitted assets get a linear estimate, labelled.
+//   Financials: downtime → lost production (units × margin) → net benefit.
 // ─────────────────────────────────────────────────────────
 
-const MC_RUNS = 2000;
-// Documented cost/repair assumptions shown in the results footnote.
-const ASSUME = { costPerFailure: 10000, pmCost: 1500, mttrHours: 8, ttrSigma: 0.6, pmDurationHours: 4 };
-
-/**
- * Slider physics (rules of thumb, cited):
- *  - load factor L: rolling-bearing life ∝ 1/L³ (ISO 281 cube law) → η/L³
- *  - temp Δ: lubricant/insulation life halves per +10 °C (Arrhenius rule) → η·2^(−Δ/10)
- */
-function adjustedEtaHours(etaHours: number, loadFactor: number, tempDeltaC: number): number {
-    return etaHours / Math.pow(Math.max(0.1, loadFactor), 3) * Math.pow(2, -tempDeltaC / 10);
+interface UiResult {
+    baseline: WhatIfScenarioResult;
+    projected: WhatIfScenarioResult;
+    netAnnualBenefit: number;
+    extrapolated: boolean;
+    /** null = illustrative (no simulation ran) */
+    runs: number | null;
+    recommendation: string;
 }
 
-function runRealScenario(input: ScenarioInput, fit: GroundedRul): ScenarioOutput {
-    const beta = fit.beta!;
-    const etaNominal = fit.eta!;
-    const base = {
-        beta,
-        muR: Math.log(ASSUME.mttrHours),
-        sigmaR: ASSUME.ttrSigma,
-        missionTime: 8760,
-        numRuns: MC_RUNS,
-        costPerFailure: ASSUME.costPerFailure,
-        pmCost: ASSUME.pmCost,
-        pmDuration: ASSUME.pmDurationHours,
-    };
-    // Baseline = nominal duty (load 1.0×, ΔT 0) at the default 180d PM.
-    const baseOut = runMonteCarloSimulation({ ...base, eta: etaNominal, pmInterval: 180 * 24 });
-    // Projected = slider duty + chosen PM interval.
-    const projOut = runMonteCarloSimulation({
-        ...base,
-        eta: adjustedEtaHours(etaNominal, input.load_factor, input.temp_delta_c),
-        pmInterval: input.pm_interval_days * 24,
-    });
-
-    const metrics = (o: ReturnType<typeof runMonteCarloSimulation>): ScenarioMetrics => {
-        const runs = o.pmRuns.length ? o.pmRuns : o.rtfRuns;
-        const p = o.pmPercentiles ?? o.rtfPercentiles;
-        const pFail = runs.filter(r => r.failures > 0).length / (runs.length || 1);
-        // Binomial 95% CI on P(≥1 failure) over the simulated year.
-        const se = Math.sqrt(Math.max(pFail * (1 - pFail), 1e-9) / (runs.length || 1));
+// Illustrative fallback — linear penalties on a fixed baseline. NOT a
+// simulation; only used (and labelled) when no fitted life model exists.
+function mockComparison(defs: WhatIfParamDef[], values: Record<string, number>, econ: EconomicInputs): UiResult {
+    const scenario = (vals: Record<string, number>): WhatIfScenarioResult => {
+        const pmFactor = (180 - (vals.pmInterval ?? 180)) / 365;
+        const stressDef = defs.find(d => d.key !== 'pmInterval' && d.key !== 'tempDelta');
+        const stress = stressDef ? (vals[stressDef.key] ?? stressDef.neutral) - stressDef.neutral : 0;
+        const temp = Math.max(0, (vals.tempDelta ?? 0) - 10) * 0.3;
+        const avail = Math.min(99.9, Math.max(80, 94.2 + pmFactor * 3.5 - stress * 15 * 0.2 - temp * 0.15));
+        const mtbfDays = Math.max(30, 185 + pmFactor * 40 - stress * 15 * 8 - temp * 3);
+        const cost = Math.max(20000, 142000 - pmFactor * 18000 + stress * 15 * 4500 + temp * 2200);
+        const pFail = Math.min(0.95, Math.max(0.02, 0.32 - pmFactor * 0.08 + stress * 15 * 0.03 + temp * 0.02));
+        const downtime = ((100 - avail) / 100) * MISSION_HOURS;
+        const lostUnits = econ.productionRate > 0 ? (downtime / 24) * econ.productionRate : 0;
+        const lostValue = lostUnits * (econ.marginPerUnit || 0);
         return {
-            availability_pct: p.ao.p50,
-            mtbf_days: Math.round(p.mtbfSim / 24),
-            annual_cost_usd: p.cost.p50,
-            failure_probability_1yr: Math.round(pFail * 1000) / 1000,
-            confidence_interval: [Math.max(0, Math.round((pFail - 1.96 * se) * 1000) / 1000), Math.min(1, Math.round((pFail + 1.96 * se) * 1000) / 1000)],
+            metrics: {
+                availability_pct: Math.round(avail * 100) / 100,
+                mtbf_days: Math.round(mtbfDays),
+                annual_cost_usd: Math.round(cost),
+                failure_probability_1yr: Math.round(pFail * 1000) / 1000,
+                confidence_interval: [Math.max(0.01, pFail - 0.08), Math.min(0.99, pFail + 0.09)],
+            },
+            financials: {
+                downtimeHours: Math.round(downtime * 10) / 10,
+                failuresPerYear: Math.round((365 / mtbfDays) * 10) / 10,
+                maintenanceCost: Math.round(cost),
+                lostProductionUnits: Math.round(lostUnits * 10) / 10,
+                lostProductionValue: Math.round(lostValue),
+                totalAnnualCost: Math.round(cost + lostValue),
+            },
         };
     };
-
-    const baseline = metrics(baseOut);
-    const projected = metrics(projOut);
-    const delta = {
-        availability: projected.availability_pct - baseline.availability_pct,
-        mtbf: projected.mtbf_days - baseline.mtbf_days,
-        cost: projected.annual_cost_usd - baseline.annual_cost_usd,
-        failure_prob: projected.failure_probability_1yr - baseline.failure_probability_1yr,
-    };
-
-    let recommendation = '';
-    if (delta.availability > 0.5) {
-        recommendation = `Simulated changes improve availability by +${delta.availability.toFixed(1)}pp and shift MTBF by ${delta.mtbf.toFixed(0)} days (fitted β=${beta}, η adjusted for duty). Cost delta $${Math.abs(delta.cost).toLocaleString()}/yr ${delta.cost < 0 ? 'saved' : 'added'}.`;
-    } else if (delta.availability < -0.5) {
-        recommendation = `Warning: simulated changes degrade availability by ${delta.availability.toFixed(1)}pp and raise P(failure, 1yr) by ${(delta.failure_prob * 100).toFixed(0)}pp. Revisit the PM interval or duty assumptions.`;
-    } else {
-        recommendation = `Marginal availability impact (${delta.availability >= 0 ? '+' : ''}${delta.availability.toFixed(1)}pp). Cost delta: ${delta.cost < 0 ? '−' : '+'}$${Math.abs(delta.cost).toLocaleString()}/yr. Judge whether the operational change is worth it.`;
-    }
-
+    const neutral = Object.fromEntries(defs.map(d => [d.key, d.neutral]));
+    const baseline = scenario(neutral);
+    const projected = scenario(values);
+    const net = baseline.financials.totalAnnualCost - projected.financials.totalAnnualCost;
     return {
-        scenario: input,
-        baseline,
-        projected,
-        delta,
-        recommendation,
-        governance_tier: (input.load_factor > 1.2 || input.temp_delta_c > 25) ? 2 : 3 as GovernanceTier,
-        monte_carlo_runs: MC_RUNS,
+        baseline, projected,
+        netAnnualBenefit: net,
+        extrapolated: defs.some(d => paramZone(d, values[d.key] ?? d.neutral) === 'red'),
+        runs: null,
+        recommendation: net > 1000
+            ? `Directional estimate: the change saves ~$${net.toLocaleString()}/yr all-in. Add failure history for a simulated answer.`
+            : net < -1000
+                ? `Directional estimate: the change costs ~$${Math.abs(net).toLocaleString()}/yr all-in. Add failure history for a simulated answer.`
+                : 'Directional estimate: marginal impact. Add failure history for a simulated answer.',
     };
 }
-
-// ─────────────────────────────────────────────────────────
-//  Illustrative fallback — linear slider penalties on a fixed
-//  baseline. NOT a simulation; only used (and labelled) when the
-//  asset has no fitted life model yet.
-// ─────────────────────────────────────────────────────────
-
-function runMockScenario(input: ScenarioInput): ScenarioOutput {
-    // Baseline metrics (current state)
-    const baseline: ScenarioMetrics = {
-        availability_pct: 94.2,
-        mtbf_days: 185,
-        annual_cost_usd: 142000,
-        failure_probability_1yr: 0.32,
-        confidence_interval: [0.24, 0.41],
-    };
-
-    // Calculate projected metrics based on slider inputs
-    const pmFactor = (180 - input.pm_interval_days) / 365;  // shorter interval = better
-    const loadPenalty = (input.load_factor - 1.0) * 15;      // overload = worse
-    const tempPenalty = Math.max(0, input.temp_delta_c - 10) * 0.3; // high temp = worse
-
-    const availDelta = pmFactor * 3.5 - loadPenalty * 0.2 - tempPenalty * 0.15;
-    const mtbfDelta = pmFactor * 40 - loadPenalty * 8 - tempPenalty * 3;
-    const costDelta = -pmFactor * 18000 + loadPenalty * 4500 + tempPenalty * 2200;
-    const failDelta = -pmFactor * 0.08 + loadPenalty * 0.03 + tempPenalty * 0.02;
-
-    const projected: ScenarioMetrics = {
-        availability_pct: Math.min(99.9, Math.max(80, baseline.availability_pct + availDelta)),
-        mtbf_days: Math.max(30, baseline.mtbf_days + mtbfDelta),
-        annual_cost_usd: Math.max(20000, baseline.annual_cost_usd + costDelta),
-        failure_probability_1yr: Math.min(0.95, Math.max(0.02, baseline.failure_probability_1yr + failDelta)),
-        confidence_interval: [
-            Math.max(0.01, baseline.failure_probability_1yr + failDelta - 0.08),
-            Math.min(0.99, baseline.failure_probability_1yr + failDelta + 0.09)
-        ],
-    };
-
-    const delta = {
-        availability: projected.availability_pct - baseline.availability_pct,
-        mtbf: projected.mtbf_days - baseline.mtbf_days,
-        cost: projected.annual_cost_usd - baseline.annual_cost_usd,
-        failure_prob: projected.failure_probability_1yr - baseline.failure_probability_1yr,
-    };
-
-    // Generate recommendation
-    let recommendation = '';
-    if (delta.availability > 1) {
-        recommendation = `Proposed changes improve availability by +${delta.availability.toFixed(1)}% and extend MTBF by ${delta.mtbf.toFixed(0)} days. The ${delta.cost < 0 ? 'cost reduction of $' + Math.abs(delta.cost).toLocaleString() : 'additional cost of $' + delta.cost.toLocaleString()} per year is ${delta.cost < 0 ? 'a net benefit' : 'justified by the reliability improvement'}. Recommended for implementation.`;
-    } else if (delta.availability < -1) {
-        recommendation = `Warning: Proposed changes degrade availability by ${delta.availability.toFixed(1)}%. The reduced PM frequency increases failure probability by ${(delta.failure_prob * 100).toFixed(1)}%. Consider reverting PM interval or reducing load factor.`;
-    } else {
-        recommendation = `Marginal impact on availability (${delta.availability > 0 ? '+' : ''}${delta.availability.toFixed(1)}%). Cost impact: ${delta.cost < 0 ? 'savings of $' : 'increase of $'}${Math.abs(delta.cost).toLocaleString()}/yr. Consider whether the operational changes justify the effort.`;
-    }
-
-    return {
-        scenario: input,
-        baseline,
-        projected,
-        delta,
-        recommendation,
-        governance_tier: (input.load_factor > 1.2 || input.temp_delta_c > 25) ? 2 : 3 as GovernanceTier,
-        // monte_carlo_runs deliberately omitted — nothing was simulated.
-    };
-}
-
-// ─────────────────────────────────────────────────────────
-//  Component
-// ─────────────────────────────────────────────────────────
 
 interface Props {
     assetId: string;
     assetName?: string;
     /** fitted censored Weibull — presence switches to the REAL Monte Carlo path */
     groundedFit?: GroundedRul | null;
+    /** equipment class — selects the duty parameters & their physics */
+    equipmentClass?: ClassResolution | null;
 }
 
-export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, groundedFit }) => {
+export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, groundedFit, equipmentClass }) => {
     const hasFit = !!groundedFit && !!groundedFit.beta && !!groundedFit.eta;
+    const cls = equipmentClass?.cls ?? 'other';
+    const defs = useMemo(() => whatIfParamsFor(cls), [cls]);
+
     const [isExpanded, setIsExpanded] = useState(true);
-    const [pmInterval, setPmInterval] = useState(180);
-    const [loadFactor, setLoadFactor] = useState(1.0);
-    const [tempDelta, setTempDelta] = useState(0);
-    const [result, setResult] = useState<ScenarioOutput | null>(null);
+    const [econOpen, setEconOpen] = useState(false);
+    const [values, setValues] = useState<Record<string, number>>(() => Object.fromEntries(defs.map(d => [d.key, d.neutral])));
+    const [econ, setEcon] = useState<EconomicInputs>(() => {
+        try { return { ...DEFAULT_ECON, ...JSON.parse(localStorage.getItem(`predict.whatif.${assetId}`) || '{}') }; }
+        catch { return DEFAULT_ECON; }
+    });
+    const [result, setResult] = useState<UiResult | null>(null);
     const [isRunning, setIsRunning] = useState(false);
+
+    // Class change re-seeds the slider set; economics persist per asset.
+    useEffect(() => {
+        setValues(Object.fromEntries(defs.map(d => [d.key, d.neutral])));
+        setResult(null);
+    }, [defs]);
+    useEffect(() => {
+        try { localStorage.setItem(`predict.whatif.${assetId}`, JSON.stringify(econ)); } catch { /* ignore */ }
+    }, [assetId, econ]);
+
+    const setValue = (key: string, v: number) => setValues(prev => ({ ...prev, [key]: v }));
+    const setEconField = (key: keyof EconomicInputs, v: number | string) => setEcon(prev => ({ ...prev, [key]: v }));
 
     const handleRun = () => {
         setIsRunning(true);
-        const input: ScenarioInput = {
-            scenario_name: `What-If — ${assetName || assetId}`,
-            pm_interval_days: pmInterval,
-            load_factor: loadFactor,
-            temp_delta_c: tempDelta,
-            strategy: 'current_pm',
-        };
-        // Yield a frame so the spinner paints, then compute.
         setTimeout(() => {
             try {
-                const output = hasFit && groundedFit
-                    ? runRealScenario(input, groundedFit)   // REAL Monte Carlo (fitted β/η)
-                    : runMockScenario(input);               // illustrative — labelled
-                setResult(output);
+                const out = hasFit && groundedFit
+                    ? (() => {
+                        const c = runWhatIfComparison(groundedFit, cls, values, econ);
+                        const dAvail = c.projected.metrics.availability_pct - c.baseline.metrics.availability_pct;
+                        const rec = c.netAnnualBenefit > 1000
+                            ? `Simulated (β=${groundedFit.beta}, η adjusted for duty): the change saves $${c.netAnnualBenefit.toLocaleString()}/yr all-in (maintenance + lost production), availability ${dAvail >= 0 ? '+' : ''}${dAvail.toFixed(2)}pp.`
+                            : c.netAnnualBenefit < -1000
+                                ? `Simulated: the change costs $${Math.abs(c.netAnnualBenefit).toLocaleString()}/yr all-in — availability ${dAvail >= 0 ? '+' : ''}${dAvail.toFixed(2)}pp doesn't pay for it. Revisit the PM interval or duty.`
+                                : `Simulated: financially marginal (${dAvail >= 0 ? '+' : ''}${dAvail.toFixed(2)}pp availability). Judge on operational grounds.`;
+                        return { ...c, recommendation: rec } as UiResult;
+                    })()
+                    : mockComparison(defs, values, econ);
+                setResult(out);
             } finally {
                 setIsRunning(false);
             }
@@ -200,23 +136,61 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
     };
 
     const handleReset = () => {
-        setPmInterval(180);
-        setLoadFactor(1.0);
-        setTempDelta(0);
+        setValues(Object.fromEntries(defs.map(d => [d.key, d.neutral])));
         setResult(null);
     };
 
-    const DeltaIndicator = ({ value, unit, invert = false }: { value: number; unit: string; invert?: boolean }) => {
+    const DeltaIndicator = ({ value, unit, invert = false, digits = 1 }: { value: number; unit: string; invert?: boolean; digits?: number }) => {
         const isPositive = invert ? value < 0 : value > 0;
         const color = isPositive ? 'text-accent-safe' : value === 0 ? 'text-slate-500' : 'text-red-400';
         const Icon = isPositive ? TrendingUp : value === 0 ? Minus : TrendingDown;
         return (
             <div className={`flex items-center gap-1 text-xs font-bold ${color}`}>
                 <Icon size={12} />
-                <span>{value > 0 ? '+' : ''}{unit === '$' ? '$' : ''}{unit === '$' ? Math.abs(value).toLocaleString() : typeof value === 'number' ? (unit === '%' ? value.toFixed(1) : value.toFixed(0)) : value}{unit !== '$' ? unit : ''}</span>
+                <span>{value > 0 ? '+' : value < 0 ? '−' : ''}{unit === '$' ? '$' : ''}{Math.abs(unit === '$' ? Math.round(value) : value).toLocaleString(undefined, { maximumFractionDigits: unit === '$' ? 0 : digits })}{unit !== '$' ? unit : ''}</span>
             </div>
         );
     };
+
+    const CompareCard = ({ icon, label, base, proj, delta, unit, invert, fmt }: {
+        icon: React.ReactNode; label: string; base: number; proj: number; delta: number; unit: string; invert?: boolean;
+        fmt: (v: number) => string;
+    }) => (
+        <div className="bg-slate-50 border border-slate-300 rounded-lg p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+                {icon}
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</span>
+            </div>
+            <div className="flex items-end justify-between">
+                <div><p className="text-xs text-slate-400">Baseline</p><p className="text-lg font-bold text-slate-600">{fmt(base)}</p></div>
+                <div className="text-right"><p className="text-xs text-slate-400">Projected</p><p className="text-lg font-bold text-slate-800">{fmt(proj)}</p></div>
+            </div>
+            <div className="mt-2 pt-2 border-t border-slate-200">
+                <DeltaIndicator value={delta} unit={unit} invert={invert} />
+            </div>
+        </div>
+    );
+
+    const econNum = (label: string, key: keyof EconomicInputs, step = 1, prefix = '') => (
+        <label className="block">
+            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</span>
+            <div className="relative mt-1">
+                {prefix && <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">{prefix}</span>}
+                <input
+                    type="number" step={step} value={econ[key] as number}
+                    onChange={e => setEconField(key, Number(e.target.value))}
+                    className={`w-full ${prefix ? 'pl-5' : 'pl-2'} pr-2 py-1.5 border border-slate-200 rounded-lg text-sm text-right tabular-nums`}
+                />
+            </div>
+        </label>
+    );
+
+    const fin = result ? {
+        dDowntime: result.projected.financials.downtimeHours - result.baseline.financials.downtimeHours,
+        dLostUnits: result.projected.financials.lostProductionUnits - result.baseline.financials.lostProductionUnits,
+        dLostValue: result.projected.financials.lostProductionValue - result.baseline.financials.lostProductionValue,
+    } : null;
+    const hasProduction = econ.productionRate > 0 && econ.marginPerUnit > 0;
 
     return (
         <div className="bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
@@ -226,22 +200,20 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
                 className="w-full p-5 flex items-center justify-between hover:bg-slate-100/30 transition-colors"
             >
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
-                        <Sliders size={20} />
-                    </div>
+                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400"><Sliders size={20} /></div>
                     <div className="text-left">
                         <h3 className="text-base font-semibold text-slate-800">What-If Scenario Explorer</h3>
                         <p className="text-xs text-slate-400 mt-0.5">
                             {hasFit
-                                ? `Monte Carlo simulation — fitted β=${groundedFit!.beta}, η=${Math.round(groundedFit!.eta! / 24)}d · ${MC_RUNS.toLocaleString()} runs per scenario`
-                                : 'Illustrative estimate — directional only (a fitted life model enables real simulation) · Adjust parameters to explore trade-offs'}
+                                ? `Monte Carlo simulation — fitted β=${groundedFit!.beta}, η=${Math.round(groundedFit!.eta! / 24)}d · ${MC_RUNS.toLocaleString()} runs per scenario · ${cls} duty model`
+                                : `Illustrative estimate — directional only (a fitted life model enables real simulation) · ${cls} duty model`}
                         </p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
                     {result && (
-                        <span className={`text-xs font-bold px-2 py-1 rounded-full border ${result.delta.availability > 0 ? 'bg-accent-safe/10 text-accent-safe border-accent-safe/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>
-                            {result.delta.availability > 0 ? '↑' : '↓'} {Math.abs(result.delta.availability).toFixed(1)}% avail.
+                        <span className={`text-xs font-bold px-2 py-1 rounded-full border ${result.netAnnualBenefit >= 0 ? 'bg-accent-safe/10 text-accent-safe border-accent-safe/30' : 'bg-red-500/10 text-red-400 border-red-500/30'}`}>
+                            {result.netAnnualBenefit >= 0 ? '↑ saves' : '↓ costs'} ${Math.abs(result.netAnnualBenefit).toLocaleString()}/yr
                         </span>
                     )}
                     {isExpanded ? <ChevronUp size={16} className="text-slate-500" /> : <ChevronDown size={16} className="text-slate-500" />}
@@ -250,195 +222,175 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
 
             {isExpanded && (
                 <div className="border-t border-slate-200 p-5 space-y-5 animate-in slide-in-from-top-2 duration-200">
-                    {/* Sliders */}
+                    {/* Class-aware duty sliders with envelope zones */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                        {/* PM Interval */}
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">PM Interval</label>
-                                <span className="text-sm font-mono text-accent-cyan font-bold">{pmInterval}d</span>
-                            </div>
-                            <input
-                                type="range" min={30} max={365} step={15} value={pmInterval}
-                                onChange={e => setPmInterval(Number(e.target.value))}
-                                className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-accent-cyan"
-                            />
-                            <div className="flex justify-between text-[10px] text-brand-600 mt-1">
-                                <span>30 days</span><span>365 days</span>
-                            </div>
-                        </div>
-
-                        {/* Load Factor */}
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Load Factor</label>
-                                <span className={`text-sm font-mono font-bold ${loadFactor > 1.2 ? 'text-red-400' : loadFactor > 1.0 ? 'text-yellow-500' : 'text-accent-cyan'}`}>{loadFactor.toFixed(2)}×</span>
-                            </div>
-                            <input
-                                type="range" min={50} max={150} step={5} value={loadFactor * 100}
-                                onChange={e => setLoadFactor(Number(e.target.value) / 100)}
-                                className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-accent-cyan"
-                            />
-                            <div className="flex justify-between text-[10px] text-brand-600 mt-1">
-                                <span>0.50×</span><span>1.50×</span>
-                            </div>
-                        </div>
-
-                        {/* Temperature Delta */}
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">Temp Δ</label>
-                                <span className={`text-sm font-mono font-bold ${tempDelta > 25 ? 'text-red-400' : tempDelta > 10 ? 'text-yellow-500' : 'text-accent-cyan'}`}>{tempDelta > 0 ? '+' : ''}{tempDelta}°C</span>
-                            </div>
-                            <input
-                                type="range" min={-20} max={40} step={5} value={tempDelta}
-                                onChange={e => setTempDelta(Number(e.target.value))}
-                                className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-accent-cyan"
-                            />
-                            <div className="flex justify-between text-[10px] text-brand-600 mt-1">
-                                <span>-20°C</span><span>+40°C</span>
-                            </div>
-                        </div>
+                        {defs.map(def => {
+                            const v = values[def.key] ?? def.neutral;
+                            const zone = paramZone(def, v);
+                            const valColor = zone === 'red' ? 'text-red-500' : zone === 'amber' ? 'text-amber-500' : 'text-accent-cyan';
+                            return (
+                                <div key={def.key} title={def.note}>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-xs font-bold text-slate-600 uppercase tracking-wider">{def.label}</label>
+                                        <span className={`text-sm font-mono font-bold ${valColor}`}>{def.format(v)}</span>
+                                    </div>
+                                    <input
+                                        type="range" min={def.min * 100} max={def.max * 100} step={def.step * 100} value={v * 100}
+                                        onChange={e => setValue(def.key, Number(e.target.value) / 100)}
+                                        className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-accent-cyan"
+                                    />
+                                    <div className="flex justify-between text-[10px] text-brand-600 mt-1">
+                                        <span>{def.format(def.min)}</span>
+                                        <span className="text-slate-300 truncate px-2" >{def.note.split('—')[0].trim()}</span>
+                                        <span>{def.format(def.max)}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-3">
+                    {/* Economics & assumptions */}
+                    <div className="border border-slate-200 rounded-lg">
+                        <button onClick={() => setEconOpen(!econOpen)} className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-slate-50 transition-colors">
+                            <Factory size={14} className="text-slate-400" />
+                            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Economics & assumptions</span>
+                            <span className="text-[10px] text-slate-400 ml-1">
+                                {hasProduction
+                                    ? `${econ.productionRate.toLocaleString()} ${econ.productionUnit}/day · $${econ.marginPerUnit}/${econ.productionUnit} margin`
+                                    : 'set production rate & margin to see production impact'}
+                            </span>
+                            {econOpen ? <ChevronUp size={14} className="ml-auto text-slate-400" /> : <ChevronDown size={14} className="ml-auto text-slate-400" />}
+                        </button>
+                        {econOpen && (
+                            <div className="px-4 pb-4 grid grid-cols-2 md:grid-cols-4 gap-3 border-t border-slate-100 pt-3">
+                                {econNum('Production rate (/day)', 'productionRate', 10)}
+                                <label className="block">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Unit</span>
+                                    <input value={econ.productionUnit} onChange={e => setEconField('productionUnit', e.target.value)}
+                                        className="mt-1 w-full px-2 py-1.5 border border-slate-200 rounded-lg text-sm" placeholder="bbl / t / MWh" />
+                                </label>
+                                {econNum('Margin per unit', 'marginPerUnit', 1, '$')}
+                                {econNum('Cost per failure', 'costPerFailure', 500, '$')}
+                                {econNum('Cost per PM', 'pmCost', 100, '$')}
+                                {econNum('MTTR (hours)', 'mttrHours', 1)}
+                                <label className="block col-span-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">PM effectiveness — {econ.pmEffectivenessPct}%</span>
+                                    <input type="range" min={50} max={100} step={5} value={econ.pmEffectivenessPct}
+                                        onChange={e => setEconField('pmEffectivenessPct', Number(e.target.value))}
+                                        className="mt-2 w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-accent-cyan" />
+                                    <span className="text-[10px] text-slate-400">imperfect maintenance: only this share of PMs truly renews (stretches the effective interval)</span>
+                                </label>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-3 flex-wrap">
                         <button
                             onClick={handleRun}
                             disabled={isRunning}
                             className="flex items-center gap-2 px-5 py-2.5 bg-blue-500 hover:bg-blue-400 disabled:opacity-50 text-white font-bold rounded-lg text-sm transition-all shadow-[0_0_20px_rgba(168,85,247,0.2)]"
                         >
                             {isRunning ? (
-                                <>
-                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    {hasFit ? 'Running Monte Carlo…' : 'Computing estimate…'}
-                                </>
+                                <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{hasFit ? 'Running Monte Carlo…' : 'Computing estimate…'}</>
                             ) : (
-                                <>
-                                    <Play size={14} /> {hasFit ? 'Run Simulation' : 'Estimate Impact'}
-                                </>
+                                <><Play size={14} /> {hasFit ? 'Run Simulation' : 'Estimate Impact'}</>
                             )}
                         </button>
-                        <button
-                            onClick={handleReset}
-                            className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-300 text-slate-600 hover:bg-slate-100 rounded-lg text-sm transition-colors"
-                        >
+                        <button onClick={handleReset} className="flex items-center gap-2 px-4 py-2 bg-slate-50 border border-slate-300 text-slate-600 hover:bg-slate-100 rounded-lg text-sm transition-colors">
                             <RotateCcw size={14} /> Reset
                         </button>
+                        {defs.some(d => paramZone(d, values[d.key] ?? d.neutral) !== 'ok') && (
+                            <span className="flex items-center gap-1.5 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
+                                <AlertTriangle size={12} />
+                                {defs.some(d => paramZone(d, values[d.key] ?? d.neutral) === 'red')
+                                    ? 'Outside validated duty envelope — results are extrapolation'
+                                    : 'Approaching duty envelope limits'}
+                            </span>
+                        )}
                     </div>
 
                     {/* Results */}
                     {result && (
                         <div className="space-y-4 animate-in fade-in duration-300">
-                            {/* Comparison Cards */}
+                            {/* Reliability comparison */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {/* Availability */}
-                                <div className="bg-slate-50 border border-slate-300 rounded-lg p-3">
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <Activity size={14} className="text-slate-400" />
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Availability</span>
-                                    </div>
-                                    <div className="flex items-end justify-between">
-                                        <div>
-                                            <p className="text-xs text-slate-400">Baseline</p>
-                                            <p className="text-lg font-bold text-slate-600">{result.baseline.availability_pct.toFixed(1)}%</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-xs text-slate-400">Projected</p>
-                                            <p className="text-lg font-bold text-slate-800">{result.projected.availability_pct.toFixed(1)}%</p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-2 pt-2 border-t border-brand-800">
-                                        <DeltaIndicator value={result.delta.availability} unit="%" />
-                                    </div>
-                                </div>
+                                <CompareCard icon={<Activity size={14} className="text-slate-400" />} label="Availability"
+                                    base={result.baseline.metrics.availability_pct} proj={result.projected.metrics.availability_pct}
+                                    delta={result.projected.metrics.availability_pct - result.baseline.metrics.availability_pct}
+                                    unit="%" fmt={v => `${v.toFixed(1)}%`} />
+                                <CompareCard icon={<Clock size={14} className="text-slate-400" />} label="MTBF"
+                                    base={result.baseline.metrics.mtbf_days} proj={result.projected.metrics.mtbf_days}
+                                    delta={result.projected.metrics.mtbf_days - result.baseline.metrics.mtbf_days}
+                                    unit=" days" digits={0} fmt={v => `${v.toFixed(0)}d`} />
+                                <CompareCard icon={<DollarSign size={14} className="text-slate-400" />} label="Maint. Cost"
+                                    base={result.baseline.metrics.annual_cost_usd} proj={result.projected.metrics.annual_cost_usd}
+                                    delta={result.projected.metrics.annual_cost_usd - result.baseline.metrics.annual_cost_usd}
+                                    unit="$" invert fmt={v => `$${(v / 1000).toFixed(0)}k`} />
+                                <CompareCard icon={<Shield size={14} className="text-slate-400" />} label="P(Failure) 1yr"
+                                    base={result.baseline.metrics.failure_probability_1yr * 100} proj={result.projected.metrics.failure_probability_1yr * 100}
+                                    delta={(result.projected.metrics.failure_probability_1yr - result.baseline.metrics.failure_probability_1yr) * 100}
+                                    unit="%" invert fmt={v => `${v.toFixed(0)}%`} />
+                            </div>
 
-                                {/* MTBF */}
-                                <div className="bg-slate-50 border border-slate-300 rounded-lg p-3">
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <Clock size={14} className="text-slate-400" />
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">MTBF</span>
-                                    </div>
-                                    <div className="flex items-end justify-between">
-                                        <div>
-                                            <p className="text-xs text-slate-400">Baseline</p>
-                                            <p className="text-lg font-bold text-slate-600">{result.baseline.mtbf_days}d</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-xs text-slate-400">Projected</p>
-                                            <p className="text-lg font-bold text-slate-800">{result.projected.mtbf_days.toFixed(0)}d</p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-2 pt-2 border-t border-brand-800">
-                                        <DeltaIndicator value={result.delta.mtbf} unit=" days" />
-                                    </div>
+                            {/* ── Financial impact ── */}
+                            <div className="border border-slate-200 rounded-lg p-4 bg-gradient-to-br from-emerald-50/40 to-white">
+                                <div className="flex items-center gap-2 mb-3">
+                                    <DollarSign size={14} className="text-emerald-600" />
+                                    <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Financial impact — all-in annual</span>
+                                    {result.extrapolated && (
+                                        <span className="text-[10px] font-semibold text-red-500">(extrapolated duty — treat with caution)</span>
+                                    )}
                                 </div>
-
-                                {/* Annual Cost */}
-                                <div className="bg-slate-50 border border-slate-300 rounded-lg p-3">
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <DollarSign size={14} className="text-slate-400" />
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Annual Cost</span>
-                                    </div>
-                                    <div className="flex items-end justify-between">
-                                        <div>
-                                            <p className="text-xs text-slate-400">Baseline</p>
-                                            <p className="text-lg font-bold text-slate-600">${(result.baseline.annual_cost_usd / 1000).toFixed(0)}k</p>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                    <CompareCard icon={<Clock size={14} className="text-slate-400" />} label="Downtime"
+                                        base={result.baseline.financials.downtimeHours} proj={result.projected.financials.downtimeHours}
+                                        delta={fin!.dDowntime} unit=" h" invert fmt={v => `${v.toFixed(0)}h`} />
+                                    {hasProduction ? (
+                                        <>
+                                            <CompareCard icon={<Factory size={14} className="text-slate-400" />} label={`Lost production (${econ.productionUnit})`}
+                                                base={result.baseline.financials.lostProductionUnits} proj={result.projected.financials.lostProductionUnits}
+                                                delta={fin!.dLostUnits} unit={` ${econ.productionUnit}`} invert digits={0} fmt={v => `${Math.round(v).toLocaleString()}`} />
+                                            <CompareCard icon={<DollarSign size={14} className="text-slate-400" />} label="Production value lost"
+                                                base={result.baseline.financials.lostProductionValue} proj={result.projected.financials.lostProductionValue}
+                                                delta={fin!.dLostValue} unit="$" invert fmt={v => `$${(v / 1000).toFixed(0)}k`} />
+                                        </>
+                                    ) : (
+                                        <div className="col-span-2 border border-dashed border-slate-300 rounded-lg p-3 text-center flex flex-col justify-center">
+                                            <p className="text-xs font-medium text-slate-500">Production impact not configured</p>
+                                            <p className="text-[10px] text-slate-400 mt-0.5">Set production rate & margin under Economics to see {`bbl/$`} gained</p>
                                         </div>
-                                        <div className="text-right">
-                                            <p className="text-xs text-slate-400">Projected</p>
-                                            <p className="text-lg font-bold text-slate-800">${(result.projected.annual_cost_usd / 1000).toFixed(0)}k</p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-2 pt-2 border-t border-brand-800">
-                                        <DeltaIndicator value={result.delta.cost} unit="$" invert />
-                                    </div>
-                                </div>
-
-                                {/* Failure Probability */}
-                                <div className="bg-slate-50 border border-slate-300 rounded-lg p-3">
-                                    <div className="flex items-center gap-1.5 mb-2">
-                                        <Shield size={14} className="text-slate-400" />
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">P(Failure)</span>
-                                    </div>
-                                    <div className="flex items-end justify-between">
-                                        <div>
-                                            <p className="text-xs text-slate-400">Baseline</p>
-                                            <p className="text-lg font-bold text-slate-600">{(result.baseline.failure_probability_1yr * 100).toFixed(0)}%</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-xs text-slate-400">Projected</p>
-                                            <p className="text-lg font-bold text-slate-800">{(result.projected.failure_probability_1yr * 100).toFixed(0)}%</p>
-                                        </div>
-                                    </div>
-                                    <div className="mt-2 pt-2 border-t border-brand-800">
-                                        <DeltaIndicator value={result.delta.failure_prob * 100} unit="%" invert />
+                                    )}
+                                    <div className={`rounded-lg p-3 border-2 ${result.netAnnualBenefit >= 0 ? 'border-emerald-300 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Net annual benefit</p>
+                                        <p className={`text-2xl font-bold tabular-nums ${result.netAnnualBenefit >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                            {result.netAnnualBenefit >= 0 ? '+' : '−'}${Math.abs(result.netAnnualBenefit).toLocaleString()}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">vs baseline · maintenance + lost production</p>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* AI Recommendation */}
+                            {/* Recommendation */}
                             <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
                                 <div className="flex items-center gap-2 mb-2">
                                     <Cpu size={14} className="text-blue-400" />
                                     <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">
-                                        {result.monte_carlo_runs ? 'Recommendation — simulated' : 'Recommendation — illustrative'}
+                                        {result.runs ? 'Recommendation — simulated' : 'Recommendation — illustrative'}
                                     </span>
                                     <span className="text-[10px] font-mono bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-500 ml-auto">
-                                        T{result.governance_tier} · {result.monte_carlo_runs ? `${result.monte_carlo_runs.toLocaleString()} runs` : 'estimate'}
+                                        {result.runs ? `${result.runs.toLocaleString()} runs` : 'estimate'}
                                     </span>
                                 </div>
                                 <p className="text-sm text-slate-700 leading-relaxed">{result.recommendation}</p>
-                                {result.monte_carlo_runs ? (
+                                {result.runs ? (
                                     <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-                                        Assumptions: baseline = nominal duty at 180d PM; load via ISO 281 cube law (η∝1/L³);
-                                        temperature via the 10 °C life-halving rule; MTTR ~{ASSUME.mttrHours}h lognormal;
-                                        failure ${ASSUME.costPerFailure.toLocaleString()} / PM ${ASSUME.pmCost.toLocaleString()}.
+                                        Assumptions: baseline = neutral duty at 180d PM, same economics; duty physics per the {cls} model (cited on each slider);
+                                        imperfect PM stretches the renewal interval by 1/effectiveness; MTTR {econ.mttrHours}h lognormal;
+                                        failure ${econ.costPerFailure.toLocaleString()} / PM ${econ.pmCost.toLocaleString()}.
                                     </p>
                                 ) : (
-                                    <p className="text-[10px] text-slate-400 mt-2">
-                                        Illustrative only — no fitted life model on this asset yet; numbers are directional.
-                                    </p>
+                                    <p className="text-[10px] text-slate-400 mt-2">Illustrative only — no fitted life model on this asset yet; numbers are directional.</p>
                                 )}
                             </div>
                         </div>
