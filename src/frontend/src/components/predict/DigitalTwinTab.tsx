@@ -8,6 +8,7 @@ import type { ClassResolution } from '../../lib/predict/equipmentClass';
 import type { IntegrityAssessment } from '../../lib/predict/integrity';
 import { screenRbi } from '../../lib/predict/rbi';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
+import { DisgPanel } from './DisgPanel';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
@@ -196,6 +197,9 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                     </div>
                 </div>
             )}
+
+            {/* D-I-S-G success trajectory (PSC) — life story + drift forecast */}
+            <DisgPanel assetId={selectedAssetId} assetName={selectedAssetName} groundedFit={groundedFit} />
 
             {/* What-If Scenario Explorer — real Monte Carlo when a fitted life model exists */}
             <ScenarioSimulator assetId={selectedAssetId} assetName={selectedAssetName} groundedFit={groundedFit} equipmentClass={equipmentClass} />

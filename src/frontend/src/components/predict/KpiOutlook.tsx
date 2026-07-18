@@ -17,6 +17,7 @@ import { DatabaseService } from '../../eam/services/DatabaseService';
 import { computeAssetReliability, FAILURE_QUERY_COLUMNS, isFailure } from '../../eam/services/reliabilityMetrics';
 import { computePSC, type PSCResult } from '../../lib/psc';
 import { simulateCurrentDuty, DEFAULT_ECON, MC_RUNS, type WhatIfScenarioResult } from '../../lib/predict/whatIf';
+import { assessDisg, type DisgAssessment } from '../../lib/predict/disg';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
 
@@ -42,6 +43,7 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
     const [measured, setMeasured] = useState<ReturnType<typeof computeAssetReliability> | null>(null);
     const [failures12, setFailures12] = useState(0);
     const [psc, setPsc] = useState<PSCResult | null>(null);
+    const [disg, setDisg] = useState<DisgAssessment | null>(null);
     const [sim, setSim] = useState<WhatIfScenarioResult | null>(null);
     // PQ / EE assumptions, persisted per asset. 0 = not set → OEE/OPE stay "—".
     const [assume, setAssume] = useState<{ pq: number; ee: number }>(() => {
@@ -81,19 +83,19 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                     return d && new Date(d).getTime() >= yearAgo;
                 }).length);
                 // PSC success layer: Golden Spot = the points' warning/critical bands.
-                setPsc(computePSC(
-                    (defs || []).map((d: any) => ({
-                        id: d.id, name: d.name,
-                        minWarning: d.minWarning, maxWarning: d.maxWarning,
-                        minCritical: d.minCritical, maxCritical: d.maxCritical,
-                    })),
-                    (logs || []).filter((l: any) => l.isActive !== false).map((l: any) => {
-                        // reading_time may arrive as 'HH:MM' or 'HH:MM:SS' — normalize.
-                        const t = (l.time || '00:00').length === 5 ? `${l.time || '00:00'}:00` : (l.time || '00:00:00');
-                        return { paramId: l.definitionId, at: `${l.date}T${t}`, value: Number(l.value) };
-                    }),
-                    Date.now(), 365,
-                ));
+                const gsParams = (defs || []).map((d: any) => ({
+                    id: d.id, name: d.name,
+                    minWarning: d.minWarning, maxWarning: d.maxWarning,
+                    minCritical: d.minCritical, maxCritical: d.maxCritical,
+                }));
+                const gsReadings = (logs || []).filter((l: any) => l.isActive !== false).map((l: any) => {
+                    // reading_time may arrive as 'HH:MM' or 'HH:MM:SS' — normalize.
+                    const t = (l.time || '00:00').length === 5 ? `${l.time || '00:00'}:00` : (l.time || '00:00:00');
+                    return { paramId: l.definitionId, at: `${l.date}T${t}`, value: Number(l.value) };
+                });
+                setPsc(computePSC(gsParams, gsReadings, Date.now(), 365));
+                // D-I-S-G drift forecast → predicted MTOP/SR for the Outlook column.
+                setDisg(assessDisg(gsParams, gsReadings, { fittedBeta: groundedFit?.beta ?? null }));
                 // Forward simulation at current duty (fitted assets only).
                 if (groundedFit?.beta && groundedFit?.eta) {
                     let econ = DEFAULT_ECON;
@@ -174,9 +176,9 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Measured 12mo</span>
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Outlook</span>
                         </div>
-                        <Row label="MTOP — mean time in Golden Spot" meas={psc?.mtopHours != null ? `${Math.round(psc.mtopHours)}h` : '—'} simv="—" note="MTOP forecasting needs a drift model (D-I-S-G) — roadmap" />
+                        <Row label="MTOP — mean time in Golden Spot" meas={psc?.mtopHours != null ? `${Math.round(psc.mtopHours)}h` : '—'} simv={disg?.predictedMtopHours != null ? `${Math.round(disg.predictedMtopHours)}h` : '—'} note={disg?.predictedMtopHours != null ? `D-I-S-G drift projection — limiting parameter: ${disg.limitingParam}` : 'Drift projection needs ≥8 readings per banded parameter with a real trend'} />
                         <Row label="MTTRg — mean restoration" meas={psc?.mttrgHours != null ? `${Math.round(psc.mttrgHours)}h` : '—'} simv="—" />
-                        <Row label="SR — success rate (Eq. 3)" meas={pct(psc?.successRate)} simv="—" />
+                        <Row label="SR — success rate (Eq. 3)" meas={pct(psc?.successRate)} simv={disg?.predictedSuccessRate != null ? `${disg.predictedSuccessRate}%` : '—'} note="Outlook SR = predicted MTOP with measured MTTRg (D-I-S-G)" />
                         <Row label="OEE outlook (Ao × PQ)" meas="—" simv={derived.oeeOutlook != null ? pct(derived.oeeOutlook) : '—'} chipSim="assumed" note="Simulated availability × your assumed PQ" />
                         <Row label="OPE (Eq. 4: SR × PQ × EE)" meas={derived.ope != null ? pct(derived.ope) : '—'} simv="—" chipMeas="assumed" note="Measured SR × assumed PQ × assumed EE — assumptions until production/quality feeds exist" />
                         <div className="px-3 py-2.5 bg-slate-50/60 border-t border-slate-100 flex items-center gap-3 flex-wrap">
