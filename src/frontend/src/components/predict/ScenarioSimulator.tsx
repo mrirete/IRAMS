@@ -83,9 +83,11 @@ interface Props {
     groundedFit?: GroundedRul | null;
     /** equipment class — selects the duty parameters & their physics */
     equipmentClass?: ClassResolution | null;
+    /** WM write-back: adopt the simulated PM interval as a real PM strategy. */
+    onAdoptPmInterval?: (args: { intervalDays: number; rationale: string }) => void;
 }
 
-export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, groundedFit, equipmentClass }) => {
+export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, groundedFit, equipmentClass, onAdoptPmInterval }) => {
     const hasFit = !!groundedFit && !!groundedFit.beta && !!groundedFit.eta;
     const cls = equipmentClass?.cls ?? 'other';
     const defs = useMemo(() => whatIfParamsFor(cls), [cls]);
@@ -416,6 +418,23 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
                                     </span>
                                 </div>
                                 <p className="text-sm text-slate-700 leading-relaxed">{result.recommendation}</p>
+                                {/* WM write-back: a simulated, beneficial PM interval becomes a real strategy */}
+                                {result.runs != null && onAdoptPmInterval && values.pmInterval != null && (
+                                    <button
+                                        onClick={() => onAdoptPmInterval({
+                                            intervalDays: values.pmInterval,
+                                            rationale:
+                                                `What-If simulation (${result.runs.toLocaleString()} runs, fitted β=${groundedFit?.beta}, η=${Math.round((groundedFit?.eta || 0) / 24)}d): ` +
+                                                `PM every ${values.pmInterval}d vs 180d baseline → net ${result.netAnnualBenefit >= 0 ? 'saving' : 'cost'} $${Math.abs(result.netAnnualBenefit).toLocaleString()}/yr, ` +
+                                                `availability ${result.projected.metrics.availability_pct.toFixed(1)}% vs ${result.baseline.metrics.availability_pct.toFixed(1)}%, ` +
+                                                `P(failure,1yr) ${(result.projected.metrics.failure_probability_1yr * 100).toFixed(0)}% vs ${(result.baseline.metrics.failure_probability_1yr * 100).toFixed(0)}%.` +
+                                                (result.extrapolated ? ' NOTE: duty outside validated envelope — extrapolated.' : ''),
+                                        })}
+                                        className="mt-3 inline-flex items-center gap-1.5 px-3.5 py-2 bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold rounded-lg transition-colors"
+                                    >
+                                        Adopt this PM interval ({values.pmInterval}d) → create PM strategy
+                                    </button>
+                                )}
                                 {result.runs ? (
                                     <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
                                         Assumptions: baseline = neutral duty at 180d PM, same economics; duty physics per the {cls} model (cited on each slider);

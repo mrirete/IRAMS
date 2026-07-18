@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { aiContextService } from '../services/AIContextService';
+import predictionService from '../services/PredictionService';
 import { useNavigate } from 'react-router-dom';
 import { MOCK_WORK_ORDERS, MOCK_CONTACTS, MOCK_ASSETS, MOCK_RECURRING_JOBS, MOCK_DICTIONARIES } from '../constants';
 import { WorkOrder, WorkOrderStatus, RecurringJob, Asset, DictionaryEntry, Contact } from '../types';
@@ -42,7 +43,8 @@ interface CalendarItem {
     assetName: string;
     date: string;
     priority: string;
-    type: 'WO' | 'PM';
+    /** RISK = predicted-failure marker from Predict (advisory, not draggable) */
+    type: 'WO' | 'PM' | 'RISK';
     status?: string;
     isFromPM?: boolean; // true if WO was generated from a recurring PM
     originalData?: any;
@@ -121,6 +123,9 @@ export const Scheduling: React.FC = () => {
     const [viewMode, setViewMode] = useState<ViewMode>('CALENDAR');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [showProjections, setShowProjections] = useState(true);
+    // Predict → scheduler horizon: predicted-failure markers from ers_rul_estimates
+    const [showRisk, setShowRisk] = useState(true);
+    const [riskItems, setRiskItems] = useState<CalendarItem[]>([]);
     const [calendarScale, setCalendarScale] = useState<CalendarScale>('MONTH');
     const [searchQuery, setSearchQuery] = useState('');
     const [backlogSearchQuery, setBacklogSearchQuery] = useState('');
@@ -478,6 +483,44 @@ export const Scheduling: React.FC = () => {
         return items;
     }, [recurringJobs, showProjections, liveAssetMap]);
 
+    // 1b. Predicted-failure markers (Predict → WM planning horizon): each RUL
+    // estimate anchors at its computed_at + rul_days. Advisory only — planners
+    // see the window and can drag PREVENTIVE work ahead of it, not the marker.
+    useEffect(() => {
+        if (!showRisk) { setRiskItems([]); return; }
+        let active = true;
+        (async () => {
+            try {
+                const ests = await predictionService.getRULEstimates();
+                if (!active) return;
+                const today = Date.now();
+                const horizonMs = today + 400 * 86400000;
+                const seen = new Set<string>();
+                const items: CalendarItem[] = [];
+                for (const e of (ests || [])) {
+                    if (seen.has(e.asset_id)) continue; // newest per asset (ordered desc)
+                    seen.add(e.asset_id);
+                    const anchor = new Date((e as any).computed_at || Date.now()).getTime();
+                    const failMs = anchor + Number(e.rul_days) * 86400000;
+                    if (!Number.isFinite(failMs) || failMs <= today || failMs > horizonMs) continue;
+                    const directional = e.distribution_type === 'heuristic';
+                    items.push({
+                        id: `RISK_${e.asset_id}`,
+                        displayId: 'RUL',
+                        title: `Predicted failure window — ${directional ? 'directional heuristic' : 'fitted Weibull MRL'}`,
+                        assetName: liveAssetMap[e.asset_id] || 'Asset',
+                        date: new Date(failMs).toISOString().split('T')[0],
+                        priority: 'HIGH',
+                        type: 'RISK',
+                        originalData: e,
+                    });
+                }
+                setRiskItems(items);
+            } catch { if (active) setRiskItems([]); }
+        })();
+        return () => { active = false; };
+    }, [showRisk, liveAssetMap]);
+
     // 2. Transform Existing Jobs to Calendar Items
     const workOrderItems = useMemo<CalendarItem[]>(() => {
         return jobs
@@ -498,7 +541,7 @@ export const Scheduling: React.FC = () => {
 
     // 3. Combined & Filtered
     const allItems = useMemo(() => {
-        const combined = [...workOrderItems, ...projections];
+        const combined = [...workOrderItems, ...projections, ...riskItems];
         if (!searchQuery.trim()) return combined;
         const q = searchQuery.toLowerCase();
         return combined.filter(item =>
@@ -511,6 +554,9 @@ export const Scheduling: React.FC = () => {
     // 4. Handle Drag & Drop Actions — synced to Supabase
     //    Phase 1: Status Gate + Frozen Zone + Auto SCHED transition
     const handleItemDrop = async (itemId: string, newDate: string, source: 'WO' | 'PM') => {
+        // RISK markers are advisory — never reschedulable (belt & braces; they
+        // also aren't draggable in the renderers).
+        if (source !== 'WO' && source !== 'PM') return;
         const db = DatabaseService.getInstance();
 
         if (source === 'WO') {
@@ -933,10 +979,20 @@ export const Scheduling: React.FC = () => {
                             <div className="flex items-center gap-3">
                                 <button
                                     onClick={() => setShowProjections(!showProjections)}
+                                    data-toggle="projections"
                                     className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showProjections ? 'bg-primary-50 text-primary-700 border-primary-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
                                 >
                                     {showProjections ? <Eye size={14} /> : <EyeOff size={14} />}
                                     {showProjections ? 'Hide Projections' : 'Show Projections'}
+                                </button>
+                                {/* Predict → planning horizon: predicted-failure markers */}
+                                <button
+                                    onClick={() => setShowRisk(!showRisk)}
+                                    title="Predicted failure windows from Predict (RUL) — advisory markers; schedule preventive work ahead of them"
+                                    className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2 border transition ${showRisk ? 'bg-amber-50 text-amber-700 border-amber-300' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                                >
+                                    <AlertTriangle size={14} />
+                                    {showRisk ? 'Predicted Failures: on' : 'Predicted Failures: off'}
                                 </button>
                             </div>
                         </div>
@@ -1198,6 +1254,8 @@ const CalendarView: React.FC<{
     const handleJobClick = (item: CalendarItem) => {
         if (item.type === 'WO') {
             navigate(`/work-orders/${item.id}`);
+        } else if (item.type === 'RISK') {
+            showToast(`${item.assetName}: predicted failure window from Predict (${item.title.split('— ')[1] || 'RUL'}). Advisory — schedule preventive work before this date, or review in Reliability Tier → Forecast · Predict.`, 'info');
         } else {
             showToast(`Projected Recurring Job: ${item.title}. Drag this item to a date to schedule it firmly.`, 'info');
         }
@@ -1218,26 +1276,28 @@ const CalendarView: React.FC<{
     // Render a calendar item chip
     const renderItem = (item: CalendarItem) => {
         const isPM = item.type === 'PM';
+        const isRisk = item.type === 'RISK';
         const pStyle = getPriorityStyle(item.priority, dictionaries);
 
         return (
             <div
                 key={item.id}
-                draggable
-                onDragStart={(e) => onDragStart(e, item.id, item.type)}
+                draggable={!isRisk}
+                onDragStart={(e) => { if (!isRisk) onDragStart(e, item.id, item.type as 'WO' | 'PM'); }}
                 onClick={(e) => { e.stopPropagation(); handleJobClick(item); }}
                 className={`text-[10px] px-1.5 py-1 rounded border cursor-pointer hover:shadow-md transition flex flex-col gap-0.5 ${isPM ? 'border-dashed opacity-80 hover:opacity-100 bg-white text-slate-500 border-slate-300 hover:border-blue-300 hover:text-blue-700' : ''
-                    }`}
-                style={!isPM ? {
+                    }${isRisk ? 'border-dashed bg-amber-50 text-amber-700 border-amber-300 hover:border-amber-400' : ''}`}
+                style={!isPM && !isRisk ? {
                     backgroundColor: pStyle.hex + '18',
                     color: pStyle.hex,
                     borderColor: pStyle.hex + '40',
                 } : undefined}
-                title={`${isPM ? 'Projected: ' : ''}${item.title} (${item.assetName}) [${item.priority}]`}
+                title={isRisk ? `${item.title} (${item.assetName}) — advisory from Predict; schedule preventive work before this window` : `${isPM ? 'Projected: ' : ''}${item.title} (${item.assetName}) [${item.priority}]`}
             >
                 <div className="flex items-center gap-1 truncate">
                     {isPM && <Repeat size={10} className="flex-shrink-0" />}
-                    {!isPM && item.isFromPM && <Repeat size={9} className="flex-shrink-0 opacity-60" />}
+                    {isRisk && <AlertTriangle size={10} className="flex-shrink-0" />}
+                    {!isPM && !isRisk && item.isFromPM && <Repeat size={9} className="flex-shrink-0 opacity-60" />}
                     <span className="font-bold">{item.displayId}</span>
                     <span className="opacity-75">·</span>
                     <span className="font-medium truncate">{item.assetName}</span>
@@ -1326,7 +1386,7 @@ const CalendarView: React.FC<{
                             <div
                                 key={item.id}
                                 draggable
-                                onDragStart={(e) => onDragStart(e, item.id, item.type)}
+                                onDragStart={(e) => onDragStart(e, item.id, item.type as 'WO' | 'PM')}
                                 onClick={() => handleJobClick(item)}
                                 className="bg-white p-3 rounded border shadow-sm cursor-grab active:cursor-grabbing hover:border-blue-400 group"
                                 style={{ borderLeftWidth: '3px', borderLeftColor: pStyle.hex }}
@@ -1556,19 +1616,21 @@ const DayGrid: React.FC<{
                 <div className="space-y-2">
                     {dayItems.map(item => {
                         const isPM = item.type === 'PM';
+                        const isRisk = item.type === 'RISK';
                         const pStyle = getPriorityStyle(item.priority, dictionaries);
                         return (
                             <div
                                 key={item.id}
                                 onClick={() => handleJobClick(item)}
                                 className="bg-white rounded-lg border border-slate-200 p-3 flex items-center gap-4 hover:shadow-md transition cursor-pointer group"
-                                style={{ borderLeftWidth: '4px', borderLeftColor: isPM ? '#A855F7' : pStyle.hex }}
+                                style={{ borderLeftWidth: '4px', borderLeftColor: isPM ? '#A855F7' : isRisk ? '#F59E0B' : pStyle.hex }}
                             >
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
                                         <span className="text-xs font-mono font-bold text-slate-500">{item.displayId}</span>
                                         {isPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full">PROJECTED PM</span>}
-                                        {!isPM && item.isFromPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Repeat size={8} />PM</span>}
+                                        {isRisk && <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><AlertTriangle size={8} />PREDICTED FAILURE</span>}
+                                        {!isPM && !isRisk && item.isFromPM && <span className="text-[9px] font-bold bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full flex items-center gap-0.5"><Repeat size={8} />PM</span>}
                                     </div>
                                     <div className="text-sm font-bold text-slate-900 truncate">{item.title}</div>
                                     <div className="text-xs text-slate-500 mt-0.5">{item.assetName}</div>

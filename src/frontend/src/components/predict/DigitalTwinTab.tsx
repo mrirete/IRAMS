@@ -25,6 +25,8 @@ interface DigitalTwinTabProps {
     groundedFit?: GroundedRul | null;
     /** RBI → WM link: raise an inspection WO with the due date pre-filled. */
     onScheduleInspection?: (args: { title: string; contextNote: string; dueDate: string }) => void;
+    /** What-If → WM link: adopt a simulated PM interval as a PM strategy. */
+    onAdoptPmInterval?: (args: { intervalDays: number; rationale: string }) => void;
 }
 
 const RBI_BAND_TONE: Record<string, string> = {
@@ -35,7 +37,7 @@ const RBI_BAND_TONE: Record<string, string> = {
 };
 
 export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
-    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection,
+    twinHealth, rulEstimate, selectedAssetId, selectedAssetName, equipmentClass, integrity, criticality, groundedFit, onScheduleInspection, onAdoptPmInterval,
 }) => {
     // RBI-lite (Phase 5): risk screening from measured wall loss × criticality.
     const rbi = equipmentClass?.cls === 'static' ? screenRbi(integrity, criticality) : null;
@@ -202,7 +204,7 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
             <DisgPanel assetId={selectedAssetId} assetName={selectedAssetName} groundedFit={groundedFit} />
 
             {/* What-If Scenario Explorer — real Monte Carlo when a fitted life model exists */}
-            <ScenarioSimulator assetId={selectedAssetId} assetName={selectedAssetName} groundedFit={groundedFit} equipmentClass={equipmentClass} />
+            <ScenarioSimulator assetId={selectedAssetId} assetName={selectedAssetName} groundedFit={groundedFit} equipmentClass={equipmentClass} onAdoptPmInterval={onAdoptPmInterval} />
 
             {/* Vision Thermal Anomalies Feed */}
             <VisionThermalFeed assetId={selectedAssetId} assetName={selectedAssetName} />

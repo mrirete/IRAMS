@@ -34,6 +34,8 @@ interface Props {
     initialTitle?: string;
     initialWorkType?: string;
     dueDate?: string;
+    /** Prefill for kind=PM (e.g. Predict What-If → adopt simulated interval). */
+    initialPmIntervalDays?: number;
 }
 
 const PRIORITIES = [{ v: 'LOW', l: 'Low' }, { v: 'MEDIUM', l: 'Medium' }, { v: 'HIGH', l: 'High' }];
@@ -42,7 +44,7 @@ const METER_UNITS = ['Hours', 'Km', 'Cycles', 'Starts'];
 const riskFor = (p: string) => (p === 'HIGH' ? 80 : p === 'MEDIUM' ? 50 : 20);
 const unitToDays: Record<string, number> = { Days: 1, Weeks: 7, Months: 30, Years: 365 };
 
-export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate }) => {
+export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, initialPmIntervalDays }) => {
     const { showToast } = useToast();
     const navigate = useNavigate();
     const [kind, setKind] = useState<RaiseKind>(initialKind);
@@ -57,8 +59,8 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
     const [faultType, setFaultType] = useState(faultTypes[0]?.id || ''); // dictionary UUID
     // PM-specific
     const [scheduleType, setScheduleType] = useState<'TIME' | 'READING'>('TIME');
-    const [interval, setInterval] = useState(1);
-    const [freqUnit, setFreqUnit] = useState('Months');
+    const [interval, setInterval] = useState(initialPmIntervalDays ?? 1);
+    const [freqUnit, setFreqUnit] = useState(initialPmIntervalDays != null ? 'Days' : 'Months');
     // Work group (responsible work center)
     const [workCenters, setWorkCenters] = useState<WorkCenter[]>([]);
     // Default the work group from the asset's responsible work centre (SAP-style).
