@@ -84,6 +84,9 @@ export const ReportRequestForm: React.FC<{
     const [selectedLocationId, setSelectedLocationId] = useState<string>('');
     const [showAssetPicker, setShowAssetPicker] = useState(false);
     const [assetSearch, setAssetSearch] = useState('');
+    // Narrow the equipment list to a location / system before searching — the field
+    // operator's mental model is "I'm at SYS-100-FEED, what's here", not free-text tag guessing.
+    const [filterLocationId, setFilterLocationId] = useState('');
     const [showAllSites, setShowAllSites] = useState(false); // F-012: cross-site override
     const [showScanner, setShowScanner] = useState(false);
     const [isLoadingAssets, setIsLoadingAssets] = useState(false);
@@ -142,7 +145,7 @@ export const ReportRequestForm: React.FC<{
 
     const reset = () => {
         setDesc(''); setIsBreakdown(false); setFiles([]);
-        setSelectedAsset(null); setSelectedLocationId(''); setAssetSearch('');
+        setSelectedAsset(null); setSelectedLocationId(''); setAssetSearch(''); setFilterLocationId('');
         setShowDetails(false); setFuncFailure(''); setCategory('GENERAL'); setWorkCenterId('');
     };
 
@@ -294,11 +297,23 @@ export const ReportRequestForm: React.FC<{
 
     const selectedLocation = scopedLocations.find(l => l.id === selectedLocationId);
     const searchTerm = assetSearch.toLowerCase();
+
+    // Location/system filter: when set, only equipment inside that subtree shows.
+    const filterScopeIds = filterLocationId ? getDescendantIds(filterLocationId) : null;
+    // Locations to offer, deepest-path first so systems read naturally. Ordered by their
+    // full path so the dropdown groups site → unit → system visually.
+    const locationOptions = scopedLocations
+        .map(l => ({ id: l.id, path: getLocationPath(l) }))
+        .sort((a, b) => a.path.localeCompare(b.path));
+
     const filteredEquipment = scopedAssets
-        .filter(a => !isLocationType(a) && (a.tag.toLowerCase().includes(searchTerm) || a.name.toLowerCase().includes(searchTerm)))
-        .slice(0, 8);
+        .filter(a => !isLocationType(a)
+            && (!filterScopeIds || filterScopeIds.has(a.id))
+            && (a.tag.toLowerCase().includes(searchTerm) || a.name.toLowerCase().includes(searchTerm)))
+        .slice(0, 12);
     const filteredLocations = scopedLocations
-        .filter(l => l.tag.toLowerCase().includes(searchTerm) || l.name.toLowerCase().includes(searchTerm))
+        .filter(l => (!filterScopeIds || filterScopeIds.has(l.id) || l.id === filterLocationId)
+            && (l.tag.toLowerCase().includes(searchTerm) || l.name.toLowerCase().includes(searchTerm)))
         .slice(0, 6);
 
     return createPortal(
@@ -441,14 +456,32 @@ export const ReportRequestForm: React.FC<{
                         {/* Dropdown */}
                         {showAssetPicker && (
                             <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-80 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-                                <div className="p-2 border-b border-slate-100">
+                                <div className="p-2 border-b border-slate-100 space-y-2">
+                                    {/* Location / system filter — pick where you are, then the list
+                                        below is only what's there. */}
+                                    <div className="relative">
+                                        <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none" />
+                                        <select
+                                            value={filterLocationId}
+                                            onChange={(e) => setFilterLocationId(e.target.value)}
+                                            className={`w-full appearance-none pl-9 pr-8 py-2.5 text-sm border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none cursor-pointer bg-white ${
+                                                filterLocationId ? 'border-emerald-300 text-emerald-800 font-medium' : 'border-slate-200 text-slate-500'
+                                            }`}
+                                        >
+                                            <option value="">All locations / systems</option>
+                                            {locationOptions.map(o => (
+                                                <option key={o.id} value={o.id}>{o.path}</option>
+                                            ))}
+                                        </select>
+                                        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                    </div>
                                     <div className="relative">
                                         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                                         <input
                                             type="text"
                                             value={assetSearch}
                                             onChange={(e) => setAssetSearch(e.target.value)}
-                                            placeholder="Search by tag, name, or location…"
+                                            placeholder={filterLocationId ? 'Search within this location…' : 'Search by tag, name, or location…'}
                                             className="w-full pl-9 pr-3 py-2.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                                             autoFocus
                                         />
