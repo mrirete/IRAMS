@@ -28,16 +28,18 @@ import { RCMStudyDashboard } from '../components/rcm/RCMStudyDashboard';
 import { RCMFunctionPanel } from '../components/rcm/RCMFunctionPanel';
 import { RCMDecisionWizard } from '../components/rcm/RCMDecisionWizard';
 import { RCMTaskMatrix } from '../components/rcm/RCMTaskMatrix';
+import { RCMEvidencePanel } from '../components/rcm/RCMEvidencePanel';
 import { CRIT_COLORS } from '../components/rcm/types';
 
 // ── Types ─────────────────────────────────────────────────
-type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks';
+type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
 
 const RCM_TABS: { id: RCMTab; label: string; icon: React.ReactNode; desc: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutList size={16} />, desc: 'Studies & overview' },
   { id: 'functions', label: 'Functions & Failures', icon: <Layers size={16} />, desc: 'Q1–Q5' },
   { id: 'decisions', label: 'Decision Logic', icon: <GitBranch size={16} />, desc: 'Q6–Q7' },
   { id: 'tasks', label: 'Task Output', icon: <Wrench size={16} />, desc: 'Recommendations' },
+  { id: 'evidence', label: 'Evidence', icon: <Layers size={16} />, desc: 'Study vs data' },
 ];
 
 // ── Main Page Component ───────────────────────────────────
@@ -624,6 +626,18 @@ export const RCMPage: React.FC = () => {
           onAIOptimize={handleAIOptimize}
           onCloseReport={() => setAiReport(null)}
         />
+      )}
+
+      {/* Living-RCM Evidence — the study checked against the asset's data */}
+      {activeTab === 'evidence' && selectedStudy && (
+        <RCMEvidencePanel
+          study={selectedStudy}
+          failureModes={failureModes}
+          decisions={decisionMap}
+        />
+      )}
+      {activeTab === 'evidence' && !selectedStudy && (
+        <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-sm text-slate-400">Select a study on the Dashboard first.</div>
       )}
 
       {/* ═══ New Study Modal ═══ */}
