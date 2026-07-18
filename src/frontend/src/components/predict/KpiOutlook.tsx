@@ -18,6 +18,10 @@ import { computeAssetReliability, FAILURE_QUERY_COLUMNS, isFailure } from '../..
 import { computePSC, type PSCResult } from '../../lib/psc';
 import { simulateCurrentDuty, DEFAULT_ECON, MC_RUNS, type WhatIfScenarioResult } from '../../lib/predict/whatIf';
 import { assessDisg, type DisgAssessment } from '../../lib/predict/disg';
+import { computeOeeClientSide, type OeeLegs } from '../../lib/predict/oee';
+
+/** Row shape shared by the compute_oee RPC and the client-side fallback. */
+type OeeRpcRow = Pick<OeeLegs, 'availability_pct' | 'performance_pct' | 'quality_pct' | 'oee_pct' | 'total_output' | 'planned_hrs'>;
 import type { GroundedRul } from '../../lib/predict/groundedFit';
 import type { ClassResolution } from '../../lib/predict/equipmentClass';
 
@@ -45,6 +49,9 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
     const [psc, setPsc] = useState<PSCResult | null>(null);
     const [disg, setDisg] = useState<DisgAssessment | null>(null);
     const [sim, setSim] = useState<WhatIfScenarioResult | null>(null);
+    // Measured OEE from the EXISTING 0105 production module (compute_oee RPC,
+    // fed by shift logs entered in Reports → OEE Dashboard). null = no logs.
+    const [oee, setOee] = useState<OeeRpcRow | null>(null);
     // PQ / EE assumptions, persisted per asset. 0 = not set → OEE/OPE stay "—".
     const [assume, setAssume] = useState<{ pq: number; ee: number }>(() => {
         try { return { pq: 0, ee: 0, ...JSON.parse(localStorage.getItem(`predict.outlook.${assetId}`) || '{}') }; }
@@ -60,10 +67,13 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
         (async () => {
             try {
                 const db = DatabaseService.getInstance();
-                const [woRes, defs, logs] = await Promise.all([
+                const from = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+                const to = new Date().toISOString().split('T')[0];
+                const [woRes, defs, logs, oeeRes] = await Promise.all([
                     supabase.from('work_orders').select(FAILURE_QUERY_COLUMNS).eq('asset_id', assetId),
                     db.getReadingDefinitions(assetId),
                     db.getReadingLogs(assetId),
+                    supabase.rpc('compute_oee', { p_asset_id: assetId, p_from: from, p_to: to }),
                 ]);
                 if (!active) return;
                 let rows = woRes.data || [];
@@ -96,6 +106,25 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                 setPsc(computePSC(gsParams, gsReadings, Date.now(), 365));
                 // D-I-S-G drift forecast → predicted MTOP/SR for the Outlook column.
                 setDisg(assessDisg(gsParams, gsReadings, { fittedBeta: groundedFit?.beta ?? null }));
+                // Measured OEE from the 0105 module. Primary: compute_oee RPC.
+                // Fallback: client-side over production_logs + config (the RPC
+                // 42P01s until migration 0203 pins its search_path).
+                let oeeRow = oeeRes.error ? null
+                    : ((oeeRes.data as OeeRpcRow[] | null)?.find(r => (r.total_output ?? 0) > 0 || (r.planned_hrs ?? 0) > 0) ?? null);
+                if (!oeeRow) {
+                    const [plRes, cfgRes] = await Promise.all([
+                        supabase.from('production_logs')
+                            .select('planned_run_time_min, actual_run_time_min, total_output, good_output')
+                            .eq('asset_id', assetId).gte('shift_date', from),
+                        supabase.from('asset_production_config')
+                            .select('design_capacity_per_hr').eq('asset_id', assetId).maybeSingle(),
+                    ]);
+                    if (!plRes.error && (plRes.data || []).length) {
+                        oeeRow = computeOeeClientSide(plRes.data as any, (cfgRes.data as any)?.design_capacity_per_hr ?? null);
+                    }
+                }
+                if (!active) return;
+                setOee(oeeRow);
                 // Forward simulation at current duty (fitted assets only).
                 if (groundedFit?.beta && groundedFit?.eta) {
                     let econ = DEFAULT_ECON;
@@ -111,17 +140,24 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
         return () => { active = false; };
     }, [assetId, groundedFit, equipmentClass?.cls]);
 
-    // OEE outlook (availability-driven) and OPE (PSC Eq. 4) from the assumptions.
+    // OEE outlook and OPE (PSC Eq. 4). MEASURED PQ (from the 0105 production
+    // module's P×Q) wins over the assumed input; the basis is reported.
     const derived = useMemo(() => {
-        const pq = assume.pq > 0 ? assume.pq / 100 : null;
+        const measuredPq = oee?.performance_pct != null && oee?.quality_pct != null
+            ? Math.min(1, Number(oee.performance_pct) / 100) * (Number(oee.quality_pct) / 100)
+            : null;
+        const assumedPq = assume.pq > 0 ? assume.pq / 100 : null;
+        const pq = measuredPq ?? assumedPq;
+        const pqBasis: 'measured' | 'assumed' | null = measuredPq != null ? 'measured' : assumedPq != null ? 'assumed' : null;
         const ee = assume.ee > 0 ? assume.ee / 100 : null;
         const aoSim = sim?.metrics.availability_pct ?? null;
         const sr = psc?.successRate ?? null;
         return {
             oeeOutlook: aoSim != null && pq != null ? aoSim * pq : null,
             ope: sr != null && pq != null && ee != null ? sr * pq * ee : null,
+            pqBasis,
         };
-    }, [assume, sim, psc]);
+    }, [assume, sim, psc, oee]);
 
     const Row = ({ label, meas, simv, chipMeas = 'measured', chipSim = 'simulated', note }: {
         label: string; meas: string; simv: string; chipMeas?: Chip; chipSim?: Chip; note?: string;
@@ -179,8 +215,18 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                         <Row label="MTOP — mean time in Golden Spot" meas={psc?.mtopHours != null ? `${Math.round(psc.mtopHours)}h` : '—'} simv={disg?.predictedMtopHours != null ? `${Math.round(disg.predictedMtopHours)}h` : '—'} note={disg?.predictedMtopHours != null ? `D-I-S-G drift projection — limiting parameter: ${disg.limitingParam}` : 'Drift projection needs ≥8 readings per banded parameter with a real trend'} />
                         <Row label="MTTRg — mean restoration" meas={psc?.mttrgHours != null ? `${Math.round(psc.mttrgHours)}h` : '—'} simv="—" />
                         <Row label="SR — success rate (Eq. 3)" meas={pct(psc?.successRate)} simv={disg?.predictedSuccessRate != null ? `${disg.predictedSuccessRate}%` : '—'} note="Outlook SR = predicted MTOP with measured MTTRg (D-I-S-G)" />
-                        <Row label="OEE outlook (Ao × PQ)" meas="—" simv={derived.oeeOutlook != null ? pct(derived.oeeOutlook) : '—'} chipSim="assumed" note="Simulated availability × your assumed PQ" />
-                        <Row label="OPE (Eq. 4: SR × PQ × EE)" meas={derived.ope != null ? pct(derived.ope) : '—'} simv="—" chipMeas="assumed" note="Measured SR × assumed PQ × assumed EE — assumptions until production/quality feeds exist" />
+                        <Row label="OEE (A × P × Q)"
+                            meas={oee?.oee_pct != null ? pct(Number(oee.oee_pct)) : '—'}
+                            simv={derived.oeeOutlook != null ? pct(derived.oeeOutlook) : '—'}
+                            chipSim={derived.pqBasis === 'measured' ? 'simulated' : 'assumed'}
+                            note={oee
+                                ? `Measured (ISO 22400-2, shift logs 90d): A ${pct(Number(oee.availability_pct))} × P ${pct(Number(oee.performance_pct))} × Q ${pct(Number(oee.quality_pct))}. Outlook = simulated Ao × ${derived.pqBasis} PQ.`
+                                : 'No shift logs yet — enter them in Reports → OEE Dashboard; outlook = simulated Ao × assumed PQ'} />
+                        <Row label="OPE (Eq. 4: SR × PQ × EE)"
+                            meas={derived.ope != null ? pct(derived.ope) : '—'}
+                            simv="—"
+                            chipMeas={derived.pqBasis === 'measured' ? 'measured' : 'assumed'}
+                            note={`Measured SR × ${derived.pqBasis ?? 'missing'} PQ × assumed EE${derived.pqBasis === 'measured' ? ' (PQ from production logs)' : ''}`} />
                         <div className="px-3 py-2.5 bg-slate-50/60 border-t border-slate-100 flex items-center gap-3 flex-wrap">
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Assumptions</span>
                             <label className="flex items-center gap-1.5 text-[11px] text-slate-500">
@@ -195,7 +241,13 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                                     onChange={e => setAssume(a => ({ ...a, ee: Number(e.target.value) }))}
                                     placeholder="—" className="w-16 px-1.5 py-1 border border-slate-200 rounded text-right tabular-nums" />
                             </label>
-                            <span className="text-[10px] text-slate-400">performance-quality & energy-effectiveness factors (PSC paper, Eq. 4)</span>
+                            <span className="text-[10px] text-slate-400">
+                                {derived.pqBasis === 'measured' ? 'PQ measured from shift logs — the input is a fallback; ' : ''}EE assumed until an energy feed exists (PSC Eq. 4)
+                            </span>
+                            {/* Entry lives in the existing 0105 OEE module — one entry UI, not two */}
+                            <a href="/reports" className="ml-auto text-[10px] font-bold px-2.5 py-1 rounded-lg bg-primary-600 hover:bg-primary-500 text-white transition-colors">
+                                Log production → Reports · OEE
+                            </a>
                         </div>
                     </div>
                 </div>
