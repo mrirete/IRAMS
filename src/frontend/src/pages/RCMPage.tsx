@@ -25,6 +25,7 @@ import { useAssetLookup } from '../hooks/useAssetLookup';
 
 // Sub-components
 import { RCMStudyDashboard } from '../components/rcm/RCMStudyDashboard';
+import { RCMStudyOverview } from '../components/rcm/RCMStudyOverview';
 import { RCMFunctionPanel } from '../components/rcm/RCMFunctionPanel';
 import { RCMDecisionWizard } from '../components/rcm/RCMDecisionWizard';
 import { RCMTaskMatrix } from '../components/rcm/RCMTaskMatrix';
@@ -35,7 +36,7 @@ import { CRIT_COLORS } from '../components/rcm/types';
 type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
 
 const RCM_TABS: { id: RCMTab; label: string; icon: React.ReactNode; desc: string }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: <LayoutList size={16} />, desc: 'Studies & overview' },
+  { id: 'dashboard', label: 'Overview', icon: <LayoutList size={16} />, desc: 'Study health' },
   { id: 'functions', label: 'Functions & Failures', icon: <Layers size={16} />, desc: 'Q1–Q5' },
   { id: 'decisions', label: 'Decision Logic', icon: <GitBranch size={16} />, desc: 'Q6–Q7' },
   { id: 'tasks', label: 'Task Output', icon: <Wrench size={16} />, desc: 'Recommendations' },
@@ -442,10 +443,25 @@ export const RCMPage: React.FC = () => {
 
   const handleGeneratePM = async () => {
     if (!selectedStudy) return;
+    if (!selectedStudy.asset_id) {
+      showToast('Link an asset to this study first (Edit Study → Asset ID)', 'error');
+      return;
+    }
     setAiLoading('pm');
     const count = await rcmService.generatePMSchedule(selectedStudy.id);
     setAiLoading(null);
-    if (count > 0) await loadStudyDetail(selectedStudy.id);
+    if (count > 0) {
+      showToast(`${count} PM task${count !== 1 ? 's' : ''} created in Work Management`);
+      await loadStudyDetail(selectedStudy.id);
+    } else {
+      showToast('No new PM tasks — decisions need a strategy first, or PMs already exist', 'error');
+    }
+  };
+
+  // Sticky-bar action: always lands on the Functions tab, then adds
+  const handleStickyAddFunction = () => {
+    setActiveTab('functions');
+    handleAddFunction();
   };
 
 
@@ -474,21 +490,21 @@ export const RCMPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
           {!selectedStudy && (
-            <>
-              <div className="relative">
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <div className="relative flex-1 md:flex-none min-w-0">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type="text" placeholder="Search studies..." value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 focus:border-accent-cyan placeholder:text-slate-400 w-64"
+                  className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 focus:border-accent-cyan placeholder:text-slate-400 w-full md:w-64"
                 />
               </div>
-              <button onClick={() => setShowNewStudy(true)} className="flex items-center gap-2 px-4 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)]">
-                <Plus size={16} /> New RCM Study
+              <button onClick={() => setShowNewStudy(true)} className="flex items-center gap-2 px-3 md:px-4 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] shrink-0">
+                <Plus size={16} /> <span className="hidden sm:inline">New RCM Study</span><span className="sm:hidden">New Study</span>
               </button>
-            </>
+            </div>
           )}
           {selectedStudy && (
             <>
@@ -503,17 +519,6 @@ export const RCMPage: React.FC = () => {
                 <option value="approved">Approved</option>
                 <option value="closed">Closed</option>
               </select>
-              {studyCollaborators.length > 0 && <AvatarStack collaborators={studyCollaborators} max={3} size="sm" />}
-              <button onClick={() => setShowTeamPanel(true)} className="relative flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-500 hover:from-primary-600 hover:to-primary-600 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/30 hover:scale-[1.02]" title="Invite people, teams, or departments">
-                {studyCollaborators.length === 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400" />
-                  </span>
-                )}
-                <Users size={14} />
-                <span>{studyCollaborators.length > 0 ? `Team (${studyCollaborators.length})` : 'Invite Team'}</span>
-              </button>
               <button onClick={() => handleOpenEditStudy(selectedStudy)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit study">
                 <Edit3 size={16} />
               </button>
@@ -524,6 +529,36 @@ export const RCMPage: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* ═══ Frozen Action Bar — pinned to the top while the study scrolls ═══ */}
+      {selectedStudy && (
+        <div className="sticky top-0 z-30 -mx-4 md:-mx-6 px-4 md:px-6 py-2 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/70 flex items-center gap-2">
+          <button
+            onClick={handleStickyAddFunction}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:border-accent-cyan hover:text-accent-cyan transition-colors shadow-sm shrink-0"
+          >
+            <Plus size={14} /> Add Function
+          </button>
+          <button
+            onClick={() => setShowTeamPanel(true)}
+            className="relative flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-primary-500 to-primary-500 hover:from-primary-600 hover:to-primary-600 text-white font-semibold rounded-lg text-xs transition-all shadow-md shadow-primary-500/25 shrink-0"
+            title="Invite people, teams, or departments"
+          >
+            {studyCollaborators.length === 0 && (
+              <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400" />
+              </span>
+            )}
+            <Users size={14} />
+            <span>{studyCollaborators.length > 0 ? `Team (${studyCollaborators.length})` : 'Invite Team'}</span>
+          </button>
+          {studyCollaborators.length > 0 && <AvatarStack collaborators={studyCollaborators} max={3} size="sm" />}
+          <span className="ml-auto text-[10px] text-slate-400 font-medium truncate hidden sm:block">
+            {selectedStudy.title}
+          </span>
+        </div>
+      )}
 
       {/* ═══ Tab Navigation (when study selected) ═══ */}
       {selectedStudy && (
@@ -567,6 +602,20 @@ export const RCMPage: React.FC = () => {
       )}
 
       {/* ═══ Tab Content ═══ */}
+
+      {/* Study Overview — the Dashboard tab inside a selected study */}
+      {activeTab === 'dashboard' && selectedStudy && (
+        <RCMStudyOverview
+          study={selectedStudy}
+          functions={functions}
+          failureModes={failureModes}
+          decisions={decisionMap}
+          taskSummaries={taskSummaries}
+          collaborators={studyCollaborators}
+          onNavigate={setActiveTab}
+          onInviteTeam={() => setShowTeamPanel(true)}
+        />
+      )}
 
       {/* Dashboard */}
       {(activeTab === 'dashboard' && !selectedStudy) && (

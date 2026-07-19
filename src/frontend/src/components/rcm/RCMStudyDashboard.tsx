@@ -11,26 +11,26 @@ import { AvatarStack } from '../analyze/CollaboratorPicker';
 import type { RCMDashboardProps, RCMStudy } from './types';
 import { STATUS_COLORS, CRIT_COLORS } from './types';
 
-// ── KPI Card ─────────────────────────────────────────────────
+// ── KPI Card — compact on mobile (2×2 chips), roomy on desktop ──
 const KPICard: React.FC<{
   label: string; value: number; icon: React.ReactNode;
   color: string; accentColor: string; trend?: string;
 }> = ({ label, value, icon, color, accentColor, trend }) => (
   <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-all group">
-    <div className="flex items-stretch">
+    <div className="flex items-stretch h-full">
       <div className="w-1 shrink-0" style={{ background: accentColor }} />
-      <div className="flex-1 p-5 flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
-          <p className="text-3xl font-bold text-slate-800 mt-1 tabular-nums">{value}</p>
+      <div className="flex-1 p-3 sm:p-5 flex items-center justify-between gap-2 min-w-0">
+        <div className="min-w-0">
+          <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-wider truncate">{label}</p>
+          <p className="text-xl sm:text-3xl font-bold text-slate-800 mt-0.5 sm:mt-1 tabular-nums">{value}</p>
           {trend && (
-            <p className="text-[10px] text-slate-400 mt-1 flex items-center gap-1">
+            <p className="hidden sm:flex text-[10px] text-slate-400 mt-1 items-center gap-1">
               <TrendingUp size={10} className="text-emerald-500" />
               {trend}
             </p>
           )}
         </div>
-        <div className={`p-3 rounded-xl ${color} transition-transform group-hover:scale-110`}>
+        <div className={`p-1.5 sm:p-3 rounded-lg sm:rounded-xl shrink-0 ${color} transition-transform group-hover:scale-110 [&>svg]:w-4 [&>svg]:h-4 sm:[&>svg]:w-5 sm:[&>svg]:h-5`}>
           {icon}
         </div>
       </div>
@@ -113,8 +113,8 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {/* KPI Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI Row — 2×2 compact grid on mobile, 4-up on desktop */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         {kpis.map((kpi, i) => (
           <KPICard key={i} {...kpi} />
         ))}

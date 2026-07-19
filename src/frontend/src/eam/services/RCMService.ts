@@ -237,6 +237,21 @@ async function callRCMGemini(prompt: string, temperature: number = 0.3): Promise
   }
 }
 
+// ─── Completion ──────────────────────────────────────────────
+
+/**
+ * Study completion %: 20% functions defined, 20% failure modes captured,
+ * 30% consequences classified (Q5), 30% strategies selected (Q6–Q7).
+ */
+export function computeCompletionPct(
+  fnCount: number, fmCount: number, decidedCount: number, strategyCount: number,
+): number {
+  if (fnCount === 0) return 0;
+  const decidedRatio = fmCount > 0 ? decidedCount / fmCount : 0;
+  const strategyRatio = fmCount > 0 ? strategyCount / fmCount : 0;
+  return Math.round(20 + (fmCount > 0 ? 20 : 0) + 30 * decidedRatio + 30 * strategyRatio);
+}
+
 // ─── Service ─────────────────────────────────────────────────
 
 class RCMServiceImpl {
@@ -249,7 +264,59 @@ class RCMServiceImpl {
       .select('*')
       .order('updated_at', { ascending: false });
     if (error) { console.error('[RCM] getStudies error:', error); return []; }
-    return (data || []) as RCMStudy[];
+    const studies = (data || []) as RCMStudy[];
+    if (studies.length === 0) return studies;
+
+    // Enrich with real completion % (three batched selects, aggregated client-side)
+    try {
+      const { data: fns } = await supabase
+        .from('ers_rcm_functions')
+        .select('id, study_id')
+        .in('study_id', studies.map(s => s.id));
+      const fnList = fns || [];
+      const fnToStudy = new Map(fnList.map(f => [f.id, f.study_id]));
+
+      let fmList: { id: string; function_id: string }[] = [];
+      if (fnList.length > 0) {
+        const { data: fms } = await supabase
+          .from('ers_rcm_failure_modes')
+          .select('id, function_id')
+          .in('function_id', fnList.map(f => f.id));
+        fmList = fms || [];
+      }
+      const fmToStudy = new Map(fmList.map(fm => [fm.id, fnToStudy.get(fm.function_id)]));
+
+      let decList: { failure_mode_id: string; consequence_code: string | null; recommended_strategy_code: string | null }[] = [];
+      if (fmList.length > 0) {
+        const { data: decs } = await supabase
+          .from('ers_rcm_decisions')
+          .select('failure_mode_id, consequence_code, recommended_strategy_code')
+          .in('failure_mode_id', fmList.map(fm => fm.id));
+        decList = decs || [];
+      }
+
+      const counts = new Map<string, { fn: number; fm: number; decided: number; strategy: number }>();
+      const bump = (studyId: string | undefined, key: 'fn' | 'fm' | 'decided' | 'strategy') => {
+        if (!studyId) return;
+        const c = counts.get(studyId) || { fn: 0, fm: 0, decided: 0, strategy: 0 };
+        c[key]++;
+        counts.set(studyId, c);
+      };
+      fnList.forEach(f => bump(f.study_id, 'fn'));
+      fmList.forEach(fm => bump(fmToStudy.get(fm.id), 'fm'));
+      decList.forEach(d => {
+        if (d.consequence_code) bump(fmToStudy.get(d.failure_mode_id), 'decided');
+        if (d.recommended_strategy_code) bump(fmToStudy.get(d.failure_mode_id), 'strategy');
+      });
+
+      studies.forEach(s => {
+        const c = counts.get(s.id) || { fn: 0, fm: 0, decided: 0, strategy: 0 };
+        s.completion_pct = computeCompletionPct(c.fn, c.fm, c.decided, c.strategy);
+      });
+    } catch (e) {
+      console.warn('[RCM] completion enrichment failed:', e);
+    }
+    return studies;
   }
 
   async getStudy(id: string): Promise<RCMStudy | null> {

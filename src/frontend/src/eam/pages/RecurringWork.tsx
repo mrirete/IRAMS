@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     Search, Plus, Filter, Save, Calendar, Clock, Gauge, FileText,
     Link as LinkIcon, Layers, Package, Users, ClipboardList,
@@ -62,7 +63,9 @@ export const RecurringWork: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
+    // Deep link (e.g. RCM task matrix → /recurring-work?q=RCM-xxxx) seeds the search box
+    const [urlParams] = useSearchParams();
+    const [searchQuery, setSearchQuery] = useState(urlParams.get('q') || '');
     const [deleting, setDeleting] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);

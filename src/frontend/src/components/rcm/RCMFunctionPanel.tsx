@@ -472,7 +472,7 @@ const FailureModeTreeNode: React.FC<{
 // ── Main Component ──────────────────────────────────────────
 export const RCMFunctionPanel: React.FC<RCMFunctionPanelProps> = ({
   study, functions, failureModes, decisions, aiLoading,
-  onAddFunction, onUpdateFunction, onDeleteFunction,
+  onUpdateFunction, onDeleteFunction,
   onAddFailureMode, onUpdateFailureMode, onDeleteFailureMode, onAISuggest,
   onUpdateDecision,
 }) => {
@@ -499,14 +499,8 @@ export const RCMFunctionPanel: React.FC<RCMFunctionPanelProps> = ({
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
-      {/* Actions Bar */}
+      {/* Actions Bar — Add Function lives in the frozen study bar above */}
       <div className="flex items-center gap-3 flex-wrap">
-        <button
-          onClick={onAddFunction}
-          className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:border-accent-cyan hover:text-accent-cyan transition-colors shadow-sm"
-        >
-          <Plus size={14} /> Add Function
-        </button>
         <button
           onClick={onAISuggest}
           disabled={aiLoading === 'suggest'}

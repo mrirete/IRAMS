@@ -2,9 +2,10 @@
  * RCMTaskMatrix — Premium task output grid with strategy distribution
  */
 import React, { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Wrench, Brain, RefreshCw, CheckCircle, X,
-  AlertTriangle, BarChart3,
+  AlertTriangle, BarChart3, ArrowUpRight,
 } from 'lucide-react';
 import type { RCMTaskMatrixProps } from './types';
 import { STRATEGY_LABELS } from './types';
@@ -30,6 +31,8 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
 
   const maxCount = Math.max(...stratDist.map(s => s.count), 1);
   const resolvedCount = taskSummaries.filter(t => t.recommended_strategy_code).length;
+  const pmCount = taskSummaries.filter(t => t.recurring_work_id).length;
+  const wmQuery = `RCM-${study.id.slice(0, 8)}`;
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
@@ -51,6 +54,14 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
           {aiLoading === 'optimize' ? <RefreshCw size={14} className="animate-spin" /> : <Brain size={14} />}
           AI Optimize Study
         </button>
+        {pmCount > 0 && (
+          <Link
+            to={`/recurring-work?q=${wmQuery}`}
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-sm font-medium text-emerald-700 hover:bg-emerald-100 transition-colors shadow-sm"
+          >
+            View {pmCount} PM{pmCount !== 1 ? 's' : ''} in Work Mgmt <ArrowUpRight size={13} />
+          </Link>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           <BarChart3 size={14} className="text-slate-400" />
           <span className="text-xs text-slate-500 font-medium">
@@ -132,7 +143,14 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
                     <td className="px-4 py-3 text-slate-500">{task.task_owner_craft || '—'}</td>
                     <td className="px-4 py-3 text-center">
                       {task.recurring_work_id ? (
-                        <CheckCircle size={14} className="text-emerald-500 mx-auto" />
+                        <Link
+                          to={`/recurring-work?q=${task.recurring_work_id}`}
+                          title={`Open ${task.recurring_work_id} in Work Management`}
+                          className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 hover:underline"
+                        >
+                          <CheckCircle size={14} />
+                          <ArrowUpRight size={10} />
+                        </Link>
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
