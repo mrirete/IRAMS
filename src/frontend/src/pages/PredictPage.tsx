@@ -24,7 +24,8 @@ import { KpiOutlook } from '../components/predict/KpiOutlook';
 import { resolveEquipmentClass } from '../lib/predict/equipmentClass';
 import { sensorKind } from '../lib/predict/healthModels';
 import { assessIntegrity, type IntegrityAssessment } from '../lib/predict/integrity';
-import { rollupHierarchy } from '../lib/predict/rollup';
+import { rollupHierarchy, redundancyGroupsFromRbdModels, type RedundancyGroup } from '../lib/predict/rollup';
+import analyzeService from '../eam/services/AnalyzeService';
 import { useAssetContext } from '../contexts/AssetContext';
 
 type ConditionAlarms = Awaited<ReturnType<DatabaseService['getAssetConditionAlarms']>>;
@@ -362,6 +363,15 @@ export const PredictPage: React.FC = () => {
     // ── Phase 4: system/unit roll-up from monitored equipment health ──
     // AssetContext assets use the ISO-taxonomy shape: parent_id (snake) and
     // lowercase taxonomy_level — normalize before rolling up.
+    // RBD-aware: parallel/standby groups from saved Reliability Modelling RBDs
+    // collapse redundant siblings so a healthy standby twin absorbs the drag.
+    const [redundancyGroups, setRedundancyGroups] = useState<RedundancyGroup[]>([]);
+    useEffect(() => {
+        analyzeService.getRBDModels()
+            .then(models => setRedundancyGroups(redundancyGroupsFromRbdModels(models as any)))
+            .catch(() => setRedundancyGroups([]));
+    }, []);
+
     const rollups = useMemo(() => {
         if (fleetData.length === 0 || allRegisterAssets.length === 0) return [];
         const healthById = new Map(fleetData.map(a => [a.asset_id, a.health_index]));
@@ -373,8 +383,9 @@ export const PredictPage: React.FC = () => {
                 criticality: a.criticality,
             })),
             healthById,
+            redundancyGroups,
         );
-    }, [fleetData, allRegisterAssets]);
+    }, [fleetData, allRegisterAssets, redundancyGroups]);
 
     const toggleAssetVisibility = (id: string) => {
         setHiddenFleetIds(prev => {
