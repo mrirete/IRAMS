@@ -465,6 +465,27 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         }
     }, []);
 
+    // ★ Study lifecycle (0204): status transition + findings summary. Approval
+    // stamps the approver; graceful toast if the migration isn't applied yet.
+    const handleUpdateStudy = useCallback(async (id: string, updates: { status: import('../../eam/services/AnalyzeService').ReliabilityStudyStatus; findings: string }) => {
+        const payload: Record<string, any> = { status: updates.status, findings: updates.findings || null };
+        const prev = savedStudies.find(s => s.id === id);
+        if (updates.status === 'approved' && prev?.status !== 'approved') {
+            payload.approved_by = currentAuthor;
+            payload.approved_at = new Date().toISOString();
+        }
+        const updated = await analyzeService.updateReliabilityStudy(id, payload);
+        if (updated) {
+            setSavedStudies(prevList => prevList.map(s => s.id === id ? updated : s));
+            setSaveToast(updates.status === 'approved' ? 'Study approved ✓' : 'Study updated ✓');
+            setTimeout(() => setSaveToast(null), 3000);
+            return true;
+        }
+        setSaveToast('Update failed — apply migration 0204 (study lifecycle), then retry');
+        setTimeout(() => setSaveToast(null), 5000);
+        return false;
+    }, [savedStudies, currentAuthor]);
+
     // ★ Close the loop: when a PM program is created from a fit, stamp linked_pm_id
     // on the loaded study — or auto-save a snapshot so the link is never lost.
     // This is what lights the "✓ PM" badge on the Metrics bad-actor list (0154).
@@ -593,6 +614,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                 studies={savedStudies}
                 loading={savedLoading}
                 onLoad={handleLoad}
+                onUpdateStudy={handleUpdateStudy}
             />
 
 

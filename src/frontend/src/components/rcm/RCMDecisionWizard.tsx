@@ -18,12 +18,15 @@ import { CONSEQUENCE_OPTIONS, STRATEGY_LABELS, parseConsequenceCodes, hasSafetyC
 
 // ── Main Component ──────────────────────────────────────────
 export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
-  study, failureModes, functions, decisions, aiLoading, onUpdateDecision, onAIRecommend,
+  study, failureModes, functions, decisions, aiLoading, lifeEvidence, onUpdateDecision, onAIRecommend,
 }) => {
   const [expandedFM, setExpandedFM] = useState<string | null>(
     failureModes.length > 0 ? failureModes[0].id : null
   );
   const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Bumped when "Use measured" is clicked, so ONLY then does the uncontrolled
+  // interval input remount and pick up the applied value.
+  const [evidenceApplied, setEvidenceApplied] = useState<Record<string, number>>({});
 
   const debouncedUpdate = useCallback((fmId: string, field: string, value: any) => {
     const key = `${fmId}-${field}`;
@@ -58,6 +61,24 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
 
+      {/* Measured life data — the Modelling lab's latest Weibull fit for this asset */}
+      {lifeEvidence && (
+        <div className="bg-white border border-primary-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 shadow-sm">
+          <span className="text-[10px] font-bold text-primary-700 uppercase tracking-wider">Measured life data</span>
+          <span className="text-xs text-slate-600">
+            β = <strong>{lifeEvidence.beta.toFixed(2)}</strong>
+            {lifeEvidence.beta > 1 ? ' (wear-out)' : lifeEvidence.beta < 1 ? ' (infant mortality)' : ' (random)'}
+            {' · '}η = <strong>{Math.round(lifeEvidence.eta).toLocaleString()} h</strong>
+            {' · '}B10 = <strong>{lifeEvidence.b10.toLocaleString()} h</strong>
+          </span>
+          <span className="text-xs text-emerald-700 font-semibold">
+            Suggested interval ≈ {lifeEvidence.interval.toLocaleString()} h
+          </span>
+          <span className="text-[10px] text-slate-400 ml-auto" title={lifeEvidence.source}>
+            from "{lifeEvidence.source.slice(0, 40)}{lifeEvidence.source.length > 40 ? '…' : ''}" · {new Date(lifeEvidence.date).toLocaleDateString()}
+          </span>
+        </div>
+      )}
 
       {/* Empty State */}
       {failureModes.length === 0 ? (
@@ -242,11 +263,29 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Interval</label>
                         <input
                           type="text"
+                          key={`${fm.id}-ev${evidenceApplied[fm.id] || 0}`}
                           defaultValue={decision?.task_interval || ''}
                           onChange={e => debouncedUpdate(fm.id, 'task_interval', e.target.value)}
                           placeholder="e.g. Every 3 months"
                           className="w-full mt-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:outline-none"
                         />
+                        {lifeEvidence && decision?.task_interval !== `${lifeEvidence.interval.toLocaleString()} h` && (
+                          <button
+                            onClick={() => {
+                              onUpdateDecision(fm.id, {
+                                task_interval: `${lifeEvidence.interval.toLocaleString()} h`,
+                                justification: decision?.justification
+                                  ? decision.justification
+                                  : `Interval from measured Weibull fit: β=${lifeEvidence.beta.toFixed(2)}, η=${Math.round(lifeEvidence.eta).toLocaleString()} h, B10=${lifeEvidence.b10.toLocaleString()} h ("${lifeEvidence.source}").`,
+                              });
+                              setEvidenceApplied(p => ({ ...p, [fm.id]: (p[fm.id] || 0) + 1 }));
+                            }}
+                            title={`Set interval from the measured fit — β=${lifeEvidence.beta.toFixed(2)}, η=${Math.round(lifeEvidence.eta).toLocaleString()} h`}
+                            className="mt-1 text-[10px] font-bold text-primary-600 hover:text-primary-700 hover:underline"
+                          >
+                            Use measured: {lifeEvidence.interval.toLocaleString()} h
+                          </button>
+                        )}
                       </div>
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Task Owner / Craft</label>

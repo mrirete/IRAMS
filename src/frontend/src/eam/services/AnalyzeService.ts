@@ -413,6 +413,10 @@ export interface DETask {
 export type ReliabilityAnalysisType = 'mtbf' | 'weibull' | 'availability' | 'spares' | 'maintainability' | 'montecarlo';
 
 // Reliability Study — parent container grouping an asset's analyses.
+// Lifecycle (0204): active → in_review → approved → archived, with a findings
+// summary as the study's deliverable and approval stamps for governance.
+export type ReliabilityStudyStatus = 'active' | 'in_review' | 'approved' | 'archived';
+
 export interface ReliabilityStudy {
     id: string;
     name: string;
@@ -420,7 +424,10 @@ export interface ReliabilityStudy {
     asset_tag: string | null;
     asset_name: string | null;
     description: string | null;
-    status: 'active' | 'archived';
+    status: ReliabilityStudyStatus;
+    findings?: string | null;
+    approved_by?: string | null;
+    approved_at?: string | null;
     created_by: string | null;
     created_at: string;
     updated_at: string;
@@ -711,7 +718,7 @@ class AnalyzeService {
     }
 
     async createReliabilityStudy(
-        study: Omit<ReliabilityStudy, 'id' | 'status' | 'created_at' | 'updated_at'> & { status?: 'active' | 'archived' }
+        study: Omit<ReliabilityStudy, 'id' | 'status' | 'created_at' | 'updated_at'> & { status?: ReliabilityStudyStatus }
     ): Promise<ReliabilityStudy | null> {
         try {
             const { data, error } = await supabase
@@ -729,7 +736,7 @@ class AnalyzeService {
 
     async updateReliabilityStudy(
         id: string,
-        updates: Partial<Pick<ReliabilityStudy, 'name' | 'description' | 'status'>>
+        updates: Partial<Pick<ReliabilityStudy, 'name' | 'description' | 'status' | 'findings' | 'approved_by' | 'approved_at'>>
     ): Promise<ReliabilityStudy | null> {
         try {
             const { data, error } = await supabase

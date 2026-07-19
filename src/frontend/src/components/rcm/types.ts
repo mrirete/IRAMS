@@ -121,12 +121,25 @@ export interface RCMFunctionPanelProps {
   onUpdateDecision: (failureModeId: string, updates: Partial<RCMDecision>) => void;
 }
 
+/** Measured life data from Reliability Modelling — the study's latest saved Weibull fit. */
+export interface RCMLifeEvidence {
+  beta: number;
+  eta: number;
+  b10: number;
+  interval: number;   // suggested PM interval, hours
+  r2?: number;
+  source: string;     // analysis title
+  date: string;       // ISO date of the fit
+}
+
 export interface RCMDecisionWizardProps {
   study: RCMStudy;
   failureModes: RCMFailureMode[];
   functions: RCMFunction[];
   decisions: Map<string, RCMDecision>;
   aiLoading: string | null;
+  /** Latest saved Weibull fit for the study's asset — drives measured-interval suggestions. */
+  lifeEvidence?: RCMLifeEvidence | null;
   onUpdateDecision: (failureModeId: string, updates: Partial<RCMDecision>) => void;
   onAIRecommend: (fm: RCMFailureMode) => void;
 }

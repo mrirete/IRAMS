@@ -102,11 +102,17 @@ export const AssetReliabilityStudiesCard: React.FC<Props> = ({ asset }) => {
                 <div className="divide-y divide-slate-50">
                     {current.slice(0, 5).map(a => {
                         const r = a.results || {};
+                        // RAM saves ao as a percent (97.3); RBD-style fractions (<1.5) are scaled.
+                        const aoPct = r.ao != null ? (Number(r.ao) > 1.5 ? Number(r.ao) : Number(r.ao) * 100) : null;
+                        const targetAo = a.inputs?.targetAo != null && a.inputs.targetAo !== '' ? Number(a.inputs.targetAo) : null;
                         const summary = a.analysis_type === 'weibull' && r.beta
                             ? `β=${Number(r.beta).toFixed(2)} · η=${Math.round(Number(r.eta || 0)).toLocaleString()}h`
                             : a.analysis_type === 'spares' && r.requiredSpares != null
                                 ? `${r.requiredSpares} spares recommended`
-                                : r.ao ? `Ao ${(Number(r.ao) * 100).toFixed(1)}%` : null;
+                                : aoPct != null
+                                    ? `Ao ${aoPct.toFixed(1)}%${targetAo ? ` ${aoPct >= targetAo ? '≥' : '<'} target ${targetAo}%` : ''}`
+                                    : null;
+                        const missedTarget = aoPct != null && targetAo != null && aoPct < targetAo;
                         return (
                             <div key={a.id} className="flex items-center gap-3 px-4 py-2.5">
                                 <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded shrink-0">
@@ -114,7 +120,7 @@ export const AssetReliabilityStudiesCard: React.FC<Props> = ({ asset }) => {
                                 </span>
                                 <div className="flex-1 min-w-0">
                                     <p className="text-xs font-medium text-slate-700 truncate">{a.title}</p>
-                                    <p className="text-[10px] text-slate-400">
+                                    <p className={`text-[10px] ${missedTarget ? 'text-amber-600 font-semibold' : 'text-slate-400'}`}>
                                         {summary ? `${summary} · ` : ''}{new Date(a.updated_at).toLocaleDateString()}
                                         {(a.version || 1) > 1 ? ` · v${a.version}` : ''}
                                     </p>

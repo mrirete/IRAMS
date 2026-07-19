@@ -19,7 +19,9 @@ import type {
   RCMTaskSummary,
 } from '../eam/services/RCMService';
 import { TeamPanel, AvatarStack } from '../components/analyze/CollaboratorPicker';
+import analyzeService from '../eam/services/AnalyzeService';
 import type { StudyCollaborator } from '../eam/services/AnalyzeService';
+import type { RCMLifeEvidence } from '../components/rcm/types';
 import { useAuth } from '../contexts/AuthContext';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 
@@ -112,6 +114,10 @@ export const RCMPage: React.FC = () => {
   const [showTeamPanel, setShowTeamPanel] = useState(false);
   const [studyCollaborators, setStudyCollaborators] = useState<StudyCollaborator[]>([]);
 
+  // Measured life data — latest saved Weibull fit for the study's asset, so the
+  // Decision Wizard suggests intervals from evidence, not guesswork.
+  const [lifeEvidence, setLifeEvidence] = useState<RCMLifeEvidence | null>(null);
+
   // ── Decision Map (memoized) ────────────────────────────
   const decisionMap = useMemo(() => new Map(decisions.map(d => [d.failure_mode_id, d])), [decisions]);
 
@@ -160,6 +166,27 @@ export const RCMPage: React.FC = () => {
     setDecisions(decs);
     const tasks = await rcmService.getTaskSummaries(id);
     setTaskSummaries(tasks);
+
+    // Pull the asset's latest saved Weibull fit from Reliability Modelling.
+    setLifeEvidence(null);
+    if (study.asset_id) {
+      const fits = await analyzeService.getReliabilityAnalyses(study.asset_id, 'weibull');
+      const latest = fits.find(f => f.results?.beta && f.results?.eta);
+      if (latest) {
+        const beta = Number(latest.results.beta);
+        const eta = Number(latest.results.eta);
+        const b10 = latest.results.b10 != null
+          ? Math.round(Number(latest.results.b10))
+          : Math.round(eta * Math.pow(-Math.log(0.9), 1 / beta));
+        setLifeEvidence({
+          beta, eta, b10,
+          interval: Math.round(eta * (beta > 3 ? 0.7 : beta > 2 ? 0.75 : 0.8)),
+          r2: latest.results.r2 != null ? Number(latest.results.r2) : undefined,
+          source: latest.title,
+          date: latest.updated_at,
+        });
+      }
+    }
   }, []);
 
   useEffect(() => { loadStudies(); }, [loadStudies]);
@@ -670,6 +697,7 @@ export const RCMPage: React.FC = () => {
           functions={functions}
           decisions={decisionMap}
           aiLoading={aiLoading}
+          lifeEvidence={lifeEvidence}
           onUpdateDecision={handleUpdateDecision}
           onAIRecommend={handleAIRecommend}
         />

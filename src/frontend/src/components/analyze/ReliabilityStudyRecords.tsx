@@ -12,9 +12,94 @@
 import React, { useMemo, useState } from 'react';
 import {
     History, Search, Clock, X, ChevronDown, ChevronUp, FolderOpen, ArrowUpDown, User, Layers, Wrench,
+    FileText, CheckCircle2,
 } from 'lucide-react';
 import { Button } from '../../eam/components/ui';
-import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy } from '../../eam/services/AnalyzeService';
+import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy, ReliabilityStudyStatus } from '../../eam/services/AnalyzeService';
+
+// ── Study lifecycle (0204) ────────────────────────────────────
+const STATUS_META: Record<ReliabilityStudyStatus, { label: string; cls: string }> = {
+    active:    { label: 'Active',    cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+    in_review: { label: 'In Review', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+    approved:  { label: 'Approved',  cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    archived:  { label: 'Archived',  cls: 'bg-slate-100 text-slate-500 border-slate-200' },
+};
+const STATUS_ORDER: ReliabilityStudyStatus[] = ['active', 'in_review', 'approved', 'archived'];
+
+// ── Findings / lifecycle modal — the study's deliverable ──────
+function StudyGovernanceModal({ study, onClose, onSave }: {
+    study: ReliabilityStudy;
+    onClose: () => void;
+    onSave: (updates: { status: ReliabilityStudyStatus; findings: string }) => Promise<boolean>;
+}) {
+    const [status, setStatus] = useState<ReliabilityStudyStatus>(study.status || 'active');
+    const [findings, setFindings] = useState(study.findings || '');
+    const [saving, setSaving] = useState(false);
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                <div className="flex items-start justify-between px-6 py-4 border-b border-slate-200">
+                    <div className="min-w-0">
+                        <h3 className="text-lg font-bold text-slate-800 truncate">{study.name}</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Study findings & lifecycle</p>
+                    </div>
+                    <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg shrink-0"><X size={18} /></button>
+                </div>
+                <div className="px-6 py-5 space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Status</label>
+                        <div className="flex flex-wrap gap-1.5">
+                            {STATUS_ORDER.map(s => (
+                                <button
+                                    key={s}
+                                    onClick={() => setStatus(s)}
+                                    className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all ${
+                                        status === s ? STATUS_META[s].cls + ' ring-2 ring-offset-1 ring-slate-300' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'
+                                    }`}
+                                >
+                                    {STATUS_META[s].label}
+                                </button>
+                            ))}
+                        </div>
+                        {study.status === 'approved' && study.approved_by && (
+                            <p className="text-[11px] text-emerald-600 mt-1.5 flex items-center gap-1">
+                                <CheckCircle2 size={11} /> Approved by {study.approved_by}
+                                {study.approved_at ? ` on ${fmtDate(study.approved_at)}` : ''}
+                            </p>
+                        )}
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Findings & recommendations</label>
+                        <textarea
+                            value={findings}
+                            onChange={e => setFindings(e.target.value)}
+                            rows={6}
+                            placeholder="What did this study conclude? Which failure pattern, which strategy, which actions were taken (PMs, spares levels, redesigns)…"
+                            className="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 resize-none"
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">The findings summary is the study's deliverable — what a reviewer reads before approving.</p>
+                    </div>
+                </div>
+                <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                    <button onClick={onClose} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">Cancel</button>
+                    <button
+                        onClick={async () => {
+                            setSaving(true);
+                            const ok = await onSave({ status, findings });
+                            setSaving(false);
+                            if (ok) onClose();
+                        }}
+                        disabled={saving}
+                        className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                    >
+                        {saving ? 'Saving…' : 'Save'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 const TYPE_LABELS: Record<string, string> = {
     mtbf: 'RAM / MTBF',
@@ -157,17 +242,20 @@ function StudyDetail({ versions, onClose, onLoad }: {
 }
 
 // ─── Main register panel ──────────────────────────────────────
-export function StudyRecordsPanel({ analyses, studies, loading, onLoad }: {
+export function StudyRecordsPanel({ analyses, studies, loading, onLoad, onUpdateStudy }: {
     analyses: ReliabilityAnalysis[];      // ALL versions across all lineages
     studies: ReliabilityStudy[];          // parent study containers
     loading: boolean;
     onLoad: (a: ReliabilityAnalysis) => void;
+    /** Lifecycle updates (status transition, findings). Absent = read-only register. */
+    onUpdateStudy?: (id: string, updates: { status: ReliabilityStudyStatus; findings: string }) => Promise<boolean>;
 }) {
     const [expanded, setExpanded] = useState(true);
     const [search, setSearch] = useState('');
     const [typeFilter, setTypeFilter] = useState<'all' | ReliabilityAnalysisType>('all');
     const [newestFirst, setNewestFirst] = useState(true);
     const [detailRoot, setDetailRoot] = useState<string | null>(null);
+    const [governStudy, setGovernStudy] = useState<ReliabilityStudy | null>(null);
 
     // Group all versions by lineage → { latest, versions[] }
     const lineages = useMemo(() => {
@@ -309,17 +397,34 @@ export function StudyRecordsPanel({ analyses, studies, loading, onLoad }: {
                             </div>
                         ) : (
                             <>
-                                {sections.studySections.map(({ study, lineages: rows }) => (
-                                    <div key={study.id}>
-                                        <div className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 border-y border-slate-100 sticky top-0 z-10">
-                                            <FolderOpen size={13} className="text-primary-500 shrink-0" />
-                                            <span className="text-xs font-bold text-slate-700 truncate">{study.name}</span>
-                                            {study.asset_tag && <span className="text-[10px] font-mono text-slate-400">{study.asset_tag}</span>}
-                                            <span className="text-[10px] text-slate-400 ml-auto shrink-0">{rows.length} {rows.length === 1 ? 'analysis' : 'analyses'}</span>
+                                {sections.studySections.map(({ study, lineages: rows }) => {
+                                    const meta = STATUS_META[study.status] || STATUS_META.active;
+                                    return (
+                                        <div key={study.id}>
+                                            <div className="flex items-center gap-2 px-4 py-1.5 bg-slate-50 border-y border-slate-100 sticky top-0 z-10">
+                                                <FolderOpen size={13} className="text-primary-500 shrink-0" />
+                                                <span className="text-xs font-bold text-slate-700 truncate">{study.name}</span>
+                                                {study.asset_tag && <span className="text-[10px] font-mono text-slate-400">{study.asset_tag}</span>}
+                                                {onUpdateStudy ? (
+                                                    <button
+                                                        onClick={() => setGovernStudy(study)}
+                                                        title="Study lifecycle & findings"
+                                                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 hover:opacity-80 transition-opacity ${meta.cls}`}
+                                                    >
+                                                        {meta.label}
+                                                    </button>
+                                                ) : (
+                                                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md border shrink-0 ${meta.cls}`}>{meta.label}</span>
+                                                )}
+                                                {study.findings && (
+                                                    <FileText size={11} className="text-slate-400 shrink-0" aria-label="Has findings summary" />
+                                                )}
+                                                <span className="text-[10px] text-slate-400 ml-auto shrink-0">{rows.length} {rows.length === 1 ? 'analysis' : 'analyses'}</span>
+                                            </div>
+                                            <div className="divide-y divide-slate-50">{rows.map(renderRow)}</div>
                                         </div>
-                                        <div className="divide-y divide-slate-50">{rows.map(renderRow)}</div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                                 {sections.ungrouped.length > 0 && (
                                     <div>
                                         {sections.studySections.length > 0 && (
@@ -337,6 +442,13 @@ export function StudyRecordsPanel({ analyses, studies, loading, onLoad }: {
             )}
 
             {detailVersions && <StudyDetail versions={detailVersions} onClose={() => setDetailRoot(null)} onLoad={onLoad} />}
+            {governStudy && onUpdateStudy && (
+                <StudyGovernanceModal
+                    study={governStudy}
+                    onClose={() => setGovernStudy(null)}
+                    onSave={updates => onUpdateStudy(governStudy.id, updates)}
+                />
+            )}
         </div>
     );
 }

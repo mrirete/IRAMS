@@ -94,6 +94,18 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
     const [uploading, setUploading] = useState(false);
     const [linkToast, setLinkToast] = useState<string | null>(null);
 
+    // ── Generate-from-hierarchy (skeleton from the asset register) ──
+    const [showGenModal, setShowGenModal] = useState(false);
+    const [genAssets, setGenAssets] = useState<{ id: string; tag: string; name: string; hierarchy_level: string; parent_id: string | null }[]>([]);
+    const [genSel, setGenSel] = useState('');
+    const [genBusy, setGenBusy] = useState(false);
+
+    useEffect(() => {
+        if (!showGenModal || genAssets.length > 0) return;
+        supabase.from('assets').select('id, tag, name, hierarchy_level, parent_id')
+            .then(({ data }) => setGenAssets((data || []) as any));
+    }, [showGenModal, genAssets.length]);
+
     // ── RBD Study Management (master-detail) ──
     const [studies, setStudies] = useState<RBDStudy[]>([]);
     const [activeStudy, setActiveStudy] = useState<RBDStudy | null>(null);
@@ -568,6 +580,52 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
         setLinkToast(msg);
         setTimeout(() => setLinkToast(null), 5000);
     }, [rbd]);
+
+    // ★ Generate an RBD skeleton from the asset hierarchy: pick a location node,
+    // build a series train from the equipment beneath it, and link every block
+    // to the register (measured MTBF/MTTR via the shared engine).
+    const GEN_LOC_LEVELS = ['SITE', 'AREA', 'UNIT', 'SYSTEM'];
+    const GEN_EQUIP_LEVELS = ['EQUIPMENT', 'COMPONENT'];
+
+    const generateFromHierarchy = useCallback(async () => {
+        const node = genAssets.find(a => a.id === genSel);
+        if (!node) return;
+        const childrenMap: Record<string, typeof genAssets> = {};
+        for (const a of genAssets) { const p = a.parent_id || ''; (childrenMap[p] = childrenMap[p] || []).push(a); }
+        const equip: typeof genAssets = [];
+        const stack = [...(childrenMap[node.id] || [])];
+        while (stack.length) {
+            const n = stack.pop()!;
+            if (GEN_EQUIP_LEVELS.includes(n.hierarchy_level)) equip.push(n);
+            const kids = childrenMap[n.id];
+            if (kids) stack.push(...kids);
+        }
+        if (equip.length === 0) {
+            setLinkToast(`No equipment found under ${node.tag || node.name}`);
+            setTimeout(() => setLinkToast(null), 4000);
+            return;
+        }
+        const capped = equip.slice(0, 12);
+        setGenBusy(true);
+        const stamp = Date.now();
+        const gid = `g${stamp}`;
+        const newBlocks: RBDBlock[] = capped.map((a, i) => ({
+            id: `b${stamp}-${i}`,
+            name: a.tag ? `${a.tag} — ${a.name}` : a.name,
+            failureRate: 1, mtbf: 8760, mttr: 24, config: 'series' as const, groupId: gid,
+        }));
+        rbd.set(prev => ({
+            blocks: [...prev.blocks, ...newBlocks],
+            groups: [...prev.groups, { id: gid, type: 'series' as const, label: `${node.tag || node.name} train`, blocks: newBlocks.map(b => b.id) }],
+        }));
+        for (let i = 0; i < capped.length; i++) {
+            await rbdLinkAsset(newBlocks[i].id, { id: capped[i].id, tag: capped[i].tag, name: capped[i].name });
+        }
+        setGenBusy(false);
+        setShowGenModal(false);
+        setLinkToast(`Generated ${newBlocks.length} block${newBlocks.length !== 1 ? 's' : ''} from ${node.tag || node.name}${equip.length > capped.length ? ` (first ${capped.length} of ${equip.length})` : ''} — MTBF/MTTR from the shared engine`);
+        setTimeout(() => setLinkToast(null), 6000);
+    }, [genAssets, genSel, rbd, rbdLinkAsset]);
 
     // ★ P1.3: Compute system-level metrics from RBD topology
     const systemMetrics = useMemo(() => {
@@ -1070,7 +1128,54 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-600 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
                             <Upload size={12} /> Import JSON
                         </button>
+                        <button onClick={() => setShowGenModal(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-50 text-primary-700 text-xs font-semibold rounded-lg border border-primary-200 hover:bg-primary-100 transition-colors"
+                            title="Build a series train from the equipment under a location, with measured MTBF/MTTR">
+                            <LayoutGrid size={12} /> From Hierarchy
+                        </button>
                     </div>
+
+                    {/* Generate-from-hierarchy modal */}
+                    {showGenModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4" onClick={() => !genBusy && setShowGenModal(false)}>
+                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md animate-in zoom-in duration-200" onClick={e => e.stopPropagation()}>
+                                <div className="px-6 py-4 border-b border-slate-200">
+                                    <h3 className="text-base font-bold text-slate-800">Generate from Asset Hierarchy</h3>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                        Builds a series train from the equipment under a location — every block linked to the register with measured MTBF/MTTR.
+                                    </p>
+                                </div>
+                                <div className="px-6 py-5">
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Location / system</label>
+                                    <select
+                                        value={genSel}
+                                        onChange={e => setGenSel(e.target.value)}
+                                        className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                    >
+                                        <option value="">— Select a node —</option>
+                                        {genAssets
+                                            .filter(a => GEN_LOC_LEVELS.includes(a.hierarchy_level))
+                                            .sort((a, b) => GEN_LOC_LEVELS.indexOf(a.hierarchy_level) - GEN_LOC_LEVELS.indexOf(b.hierarchy_level) || (a.tag || '').localeCompare(b.tag || ''))
+                                            .map(a => (
+                                                <option key={a.id} value={a.id}>
+                                                    {a.hierarchy_level} · {a.tag || '—'} — {a.name}
+                                                </option>
+                                            ))}
+                                    </select>
+                                    <p className="text-[10px] text-slate-400 mt-1.5">Adjust parallel/redundant paths afterwards — generation assumes series.</p>
+                                </div>
+                                <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
+                                    <button onClick={() => setShowGenModal(false)} disabled={genBusy}
+                                        className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-50">Cancel</button>
+                                    <button onClick={generateFromHierarchy} disabled={!genSel || genBusy}
+                                        className="flex items-center gap-1.5 px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-md hover:shadow-lg transition-all disabled:opacity-50">
+                                        {genBusy ? <Loader2 size={14} className="animate-spin" /> : <LayoutGrid size={14} />}
+                                        {genBusy ? 'Linking assets…' : 'Generate'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* P2.1: System Summary + Send to RAM */}
                     {rbdBlocks.length > 0 && (
