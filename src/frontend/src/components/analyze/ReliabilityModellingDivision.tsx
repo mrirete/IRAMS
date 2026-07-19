@@ -41,12 +41,14 @@ type CalcTab = 'ram' | 'weibull' | 'spares' | 'rbd' | 'montecarlo';
 
 // Each tool is labelled by the QUESTION it answers (purpose), not a lifecycle
 // phase — so the strip reads as a parallel palette, not a Model→…→Simulate pipeline.
-const CALC_TABS: { id: CalcTab; label: string; icon: React.ReactNode; purpose: string; desc: string; analysisType?: ReliabilityAnalysisType }[] = [
-    { id: 'rbd', label: 'Block Diagrams', icon: <Cpu size={14} />, purpose: 'System model', desc: 'Reliability Block Diagrams & P&ID system modelling' },
-    { id: 'ram', label: 'RAM Dashboard', icon: <Activity size={14} />, purpose: 'Reliability & availability', desc: 'Reliability, Availability & Maintainability — unified MTBF/MTTR/Ao analysis', analysisType: 'mtbf' },
-    { id: 'weibull', label: 'Weibull', icon: <TrendingUp size={14} />, purpose: 'Failure pattern & life', desc: 'Life data analysis — B-life values, failure pattern characterization', analysisType: 'weibull' },
-    { id: 'montecarlo', label: 'Monte Carlo', icon: <Dices size={14} />, purpose: 'Risk forecast', desc: 'Probabilistic lifecycle simulation — Weibull failures, PM optimization, P10/P50/P90 forecasting', analysisType: 'montecarlo' },
-    { id: 'spares', label: 'Spares Demand', icon: <Package size={14} />, purpose: 'Spares to stock', desc: 'Poisson-based spare parts stocking recommendation', analysisType: 'spares' },
+// `outcome` states the ACTION the tool's result becomes — the answer to
+// "why am I doing this?" shown on every card.
+const CALC_TABS: { id: CalcTab; label: string; icon: React.ReactNode; purpose: string; outcome: string; desc: string; analysisType?: ReliabilityAnalysisType }[] = [
+    { id: 'rbd', label: 'Block Diagrams', icon: <Cpu size={14} />, purpose: 'System model', outcome: '→ weakest-link ranking', desc: 'Reliability Block Diagrams & P&ID system modelling' },
+    { id: 'ram', label: 'RAM Dashboard', icon: <Activity size={14} />, purpose: 'Reliability & availability', outcome: '→ availability baseline', desc: 'Reliability, Availability & Maintainability — unified MTBF/MTTR/Ao analysis', analysisType: 'mtbf' },
+    { id: 'weibull', label: 'Weibull', icon: <TrendingUp size={14} />, purpose: 'Failure pattern & life', outcome: '→ PM program / RCM study', desc: 'Life data analysis — B-life values, failure pattern characterization', analysisType: 'weibull' },
+    { id: 'montecarlo', label: 'Monte Carlo', icon: <Dices size={14} />, purpose: 'Risk forecast', outcome: '→ PM interval decision', desc: 'Probabilistic lifecycle simulation — Weibull failures, PM optimization, P10/P50/P90 forecasting', analysisType: 'montecarlo' },
+    { id: 'spares', label: 'Spares Demand', icon: <Package size={14} />, purpose: 'Spares to stock', outcome: '→ inventory min level', desc: 'Poisson-based spare parts stocking recommendation', analysisType: 'spares' },
 ];
 
 // ─── Save Analysis Modal ──────────────────────────────────────
@@ -453,15 +455,49 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         setCurrentInputs(inputs);
         setCurrentResults(results);
         if (asset !== undefined) setCurrentAsset(asset);
-        // Auto-bridge β/η to Monte Carlo whenever Weibull fit updates
+        // Auto-bridge β/η (+ fit quality) to Monte Carlo whenever Weibull fit updates
         if (results?.beta && results?.eta) {
             setMcBridgeData(prev => {
                 // Only update if values actually changed
                 if (prev?.beta === results.beta && prev?.eta === results.eta) return prev;
-                return { beta: results.beta, eta: results.eta, dataStr: inputs?.dataStr };
+                return { beta: results.beta, eta: results.eta, r2: results.r2, dataStr: inputs?.dataStr };
             });
         }
     }, []);
+
+    // ★ Close the loop: when a PM program is created from a fit, stamp linked_pm_id
+    // on the loaded study — or auto-save a snapshot so the link is never lost.
+    // This is what lights the "✓ PM" badge on the Metrics bad-actor list (0154).
+    const handlePMCreated = useCallback(async (pmId: string, pmTitle: string) => {
+        if (activeAnalysisId) {
+            const updated = await analyzeService.linkPMToAnalysis(activeAnalysisId, pmId, pmTitle);
+            if (updated) {
+                setSavedAnalyses(prev => prev.map(a => a.id === updated.id ? updated : a));
+                setSaveToast(`PM "${pmTitle}" linked to this study ✓`);
+            }
+        } else if (currentAnalysisType) {
+            const saved = await analyzeService.saveReliabilityAnalysis({
+                study_id: null,
+                asset_id: currentAsset?.id || null,
+                asset_tag: currentAsset?.tag || null,
+                asset_name: currentAsset?.name || null,
+                analysis_type: currentAnalysisType,
+                title: `${currentAnalysisType.toUpperCase()} — basis for ${pmTitle}`,
+                inputs: currentInputs,
+                results: currentResults,
+                notes: `Auto-saved when PM program "${pmTitle}" was created from this analysis.`,
+                linked_pm_id: pmId,
+                linked_pm_title: pmTitle,
+                created_by: currentAuthor,
+            });
+            if (saved) {
+                setSavedAnalyses(prev => [saved, ...prev]);
+                setActiveAnalysisId(saved.id);
+                setSaveToast(`PM created — study auto-saved & linked ✓`);
+            }
+        }
+        setTimeout(() => setSaveToast(null), 4000);
+    }, [activeAnalysisId, currentAnalysisType, currentAsset, currentInputs, currentResults, currentAuthor]);
 
     // ★ P2.1 + P2.2: Cross-tab data bridges
     const [bridgeData, setBridgeData] = useState<{ inputs: Record<string, any>; results: Record<string, any> } | null>(null);
@@ -503,7 +539,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     const effectiveLoadedData = bridgeData || loadedData;
 
     // Monte Carlo bridge data (from Weibull tab)
-    const [mcBridgeData, setMcBridgeData] = useState<{ beta: number; eta: number; dataStr?: string } | null>(null);
+    const [mcBridgeData, setMcBridgeData] = useState<{ beta: number; eta: number; r2?: number; dataStr?: string } | null>(null);
 
     // P2.3: Weibull → Monte Carlo bridge
     const handleSendToMonteCarlo = useCallback((beta: number, eta: number, dataStr?: string) => {
@@ -583,6 +619,7 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
                                 <span className="flex flex-col leading-tight">
                                     <span className="font-semibold text-[13px] whitespace-nowrap">{tab.label}</span>
                                     <span className={`text-[10px] whitespace-nowrap ${active ? 'text-white/85' : 'text-slate-400'}`}>{tab.purpose}</span>
+                                    <span className={`text-[9px] font-semibold whitespace-nowrap ${active ? 'text-white/70' : 'text-emerald-600/80'}`}>{tab.outcome}</span>
                                 </span>
                             </button>
                         );
@@ -624,10 +661,10 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
 
             {/* Content */}
             {activeCalc === 'ram' && <RAMDashboardTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} onSendToSpares={handleSendToSpares} />}
-            {activeCalc === 'weibull' && <WeibullTab onStateChange={handleWeibullStateChange} loadedData={effectiveLoadedData} initialAsset={seed?.asset} />}
+            {activeCalc === 'weibull' && <WeibullTab onStateChange={handleWeibullStateChange} loadedData={effectiveLoadedData} initialAsset={seed?.asset} onPMCreated={handlePMCreated} />}
             {activeCalc === 'spares' && <SparesTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} />}
             {activeCalc === 'rbd' && <ReliabilityModelingTab onStateChange={handleStateChange} onSendToRAM={handleSendToRAM} />}
-            {activeCalc === 'montecarlo' && <MonteCarloSimTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} bridgeData={mcBridgeData} onSendToRAM={handleMCToRAM} />}
+            {activeCalc === 'montecarlo' && <MonteCarloSimTab onStateChange={handleStateChange} loadedData={effectiveLoadedData} bridgeData={mcBridgeData} onSendToRAM={handleMCToRAM} onPMCreated={handlePMCreated} />}
 
             {/* Save Modal */}
             <SaveAnalysisModal

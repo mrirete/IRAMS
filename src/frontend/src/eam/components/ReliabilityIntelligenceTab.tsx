@@ -32,6 +32,7 @@ import type {
 import { predictionService } from '../services/PredictionService';
 import { useNavigate } from 'react-router-dom';
 import { useLicense } from '../../contexts/LicenseContext';
+import AssetReliabilityStudiesCard from '../../components/analyze/AssetReliabilityStudiesCard';
 import { useRelantern } from '../contexts/RelanternContext';
 import { Sparkles } from 'lucide-react';
 
@@ -283,21 +284,26 @@ export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProp
         );
     }
 
-    // ── Empty State (no data) ────────────────────────────
+    // ── Empty State (no prediction data) ─────────────────
+    // The studies dossier still renders: manual reliability studies exist
+    // independently of the prediction backend.
     if (!health && !rul && !failure) {
         return (
-            <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
-                <Cpu size={48} className="mx-auto mb-4 text-slate-300" />
-                <h3 className="text-lg font-bold text-slate-700 mb-2">No Reliability Intelligence Available</h3>
-                <p className="text-sm text-slate-500 mb-4 max-w-md mx-auto">
-                    {error || 'Run a Digital Twin snapshot or RUL analysis from the Predictions module to generate intelligence for this asset.'}
-                </p>
-                {!ersApi.isConfigured && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 inline-block">
-                        <AlertTriangle size={12} className="inline mr-1" />
-                        Backend API not configured. Set <code className="bg-amber-100 px-1 rounded">VITE_ERS_API_URL</code> in Vercel environment variables.
-                    </div>
-                )}
+            <div className="space-y-4">
+                <AssetReliabilityStudiesCard asset={{ id: asset.id, tag: asset.tag, name: asset.name, criticality: asset.criticality }} />
+                <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
+                    <Cpu size={48} className="mx-auto mb-4 text-slate-300" />
+                    <h3 className="text-lg font-bold text-slate-700 mb-2">No Reliability Intelligence Available</h3>
+                    <p className="text-sm text-slate-500 mb-4 max-w-md mx-auto">
+                        {error || 'Run a Digital Twin snapshot or RUL analysis from the Predictions module to generate intelligence for this asset.'}
+                    </p>
+                    {!ersApi.isConfigured && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 inline-block">
+                            <AlertTriangle size={12} className="inline mr-1" />
+                            Backend API not configured. Set <code className="bg-amber-100 px-1 rounded">VITE_ERS_API_URL</code> in Vercel environment variables.
+                        </div>
+                    )}
+                </div>
             </div>
         );
     }
@@ -577,6 +583,9 @@ Type: ${asset.assetType || (asset as any).category || 'N/A'} | Criticality: ${as
                     />
                 </div>
             )}
+
+            {/* ── Reliability Studies Dossier — what Modelling knows about this asset ── */}
+            <AssetReliabilityStudiesCard asset={{ id: asset.id, tag: asset.tag, name: asset.name, criticality: asset.criticality }} />
 
             {/* ── API Source Indicator ─────────────────────────── */}
             <div className="text-[9px] text-slate-400 text-right flex items-center justify-end gap-2">

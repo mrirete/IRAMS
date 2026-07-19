@@ -80,11 +80,13 @@ function MCAssetSelector({ onSelect }: { onSelect: (a: AssetOption | null) => vo
 export interface MCTabProps {
     onStateChange?: (inputs: Record<string, any>, results: Record<string, any>, asset?: any) => void;
     loadedData?: { inputs: Record<string, any>; results: Record<string, any> } | null;
-    bridgeData?: { beta: number; eta: number; dataStr?: string } | null;
+    bridgeData?: { beta: number; eta: number; r2?: number; dataStr?: string } | null;
     onSendToRAM?: (mtbf: number, mttr: number, ao: number) => void;
+    /** Fired after a PM program is created from this simulation — lets the parent stamp linked_pm_id on the saved study. */
+    onPMCreated?: (pmId: string, pmTitle: string) => void;
 }
 
-export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSendToRAM }: MCTabProps) {
+export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSendToRAM, onPMCreated }: MCTabProps) {
     // ─── Inputs (default blank until Weibull bridge or EAM spool populates) ──
     const [beta, setBeta] = useState(bridgeData?.beta ?? 0);
     const [eta, setEta] = useState(bridgeData?.eta ?? 0);
@@ -97,6 +99,8 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
     const [pmInterval, setPmInterval] = useState(0);
     const [pmDuration, setPmDuration] = useState(8);
     const [bridgeApplied, setBridgeApplied] = useState(false);
+    // Fit quality of whatever produced β/η (bridge, spool, or CSV) — carried into the PM provenance.
+    const [fitR2, setFitR2] = useState(0);
 
     // ─── State ───────────────────────────────────────────────
     const [output, setOutput] = useState<MCOutput | null>(null);
@@ -117,6 +121,7 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
             if (lastBridgeRef.current !== key) {
                 setBeta(bridgeData.beta);
                 setEta(bridgeData.eta);
+                setFitR2(bridgeData.r2 ?? 0);
                 // Auto-set PM interval at 80% of η for wear-out (β > 1)
                 if (bridgeData.beta > 1 && bridgeData.eta > 0) {
                     setPmInterval(Math.round(bridgeData.eta * 0.8));
@@ -179,7 +184,7 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
             // Auto-fit Weibull if enough data
             if (ttfs.length >= 2) {
                 const wFit = fitWeibullFromTTFs(ttfs);
-                if (wFit) { setBeta(wFit.beta); setEta(wFit.eta); }
+                if (wFit) { setBeta(wFit.beta); setEta(wFit.eta); setFitR2(wFit.r2); }
             }
             // Auto-fit Lognormal if enough repair data
             if (repairs.length >= 2) {
@@ -203,7 +208,7 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
         const { ttfs, repairs, costs } = parseCSVData(text);
         if (ttfs.length >= 2) {
             const wFit = fitWeibullFromTTFs(ttfs);
-            if (wFit) { setBeta(wFit.beta); setEta(wFit.eta); }
+            if (wFit) { setBeta(wFit.beta); setEta(wFit.eta); setFitR2(wFit.r2); }
         }
         if (repairs.length >= 2) {
             const lFit = fitLognormalFromRepairs(repairs);
@@ -456,11 +461,12 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
                         <CreatePMFromWeibullModal
                             isOpen={showPMModal}
                             onClose={() => setShowPMModal(false)}
+                            onSuccess={(pmId, pmTitle) => { if (pmId) onPMCreated?.(pmId, pmTitle || 'PM program'); }}
                             data={{
                                 asset: { id: selectedAsset.id, tag: selectedAsset.tag, name: selectedAsset.name },
                                 beta,
                                 eta,
-                                r2: 0,
+                                r2: fitR2,
                                 b10: Math.round(eta * Math.pow(-Math.log(0.9), 1 / beta)),
                                 pmInterval: pmInterval > 0 ? pmInterval : Math.round(eta * 0.8),
                                 dataPoints: output.rtfRuns.length,

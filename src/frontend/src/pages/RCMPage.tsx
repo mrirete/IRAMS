@@ -48,9 +48,16 @@ export const RCMPage: React.FC = () => {
   const { studyId } = useParams<{ studyId?: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  // Drill-through seed (e.g. Metrics bad actor → RCM): open the New Study form
-  // pre-filled with the flagged asset. Applied once, then cleared from history.
-  const rcmSeed = (location.state as { seed?: { asset?: { id: string; name?: string; tag?: string } } } | null)?.seed ?? null;
+  // Drill-through seed (Metrics bad actor → RCM, or Weibull fit → RCM): open the
+  // New Study form pre-filled with the flagged asset — and, when the seed carries
+  // a Weibull fit, drop the life-data evidence into the operating context so the
+  // study (and the AI suggesters) start from the measured failure pattern.
+  const rcmSeed = (location.state as {
+    seed?: {
+      asset?: { id: string; name?: string; tag?: string };
+      weibull?: { beta: number; eta: number; b10: number; interval: number; r2?: number };
+    }
+  } | null)?.seed ?? null;
   const rcmSeedAppliedRef = useRef(false);
 
   // ── Auth & Asset Lookup ────────────────────────────────
@@ -164,9 +171,13 @@ export const RCMPage: React.FC = () => {
     rcmSeedAppliedRef.current = true;
     const a = rcmSeed.asset;
     const label = a.name || a.tag || 'Asset';
+    const w = rcmSeed.weibull;
+    const weibullContext = w
+      ? `Weibull evidence (Reliability Modelling): β=${w.beta} (${w.beta > 3 ? 'rapid wear-out' : w.beta > 1 ? 'wear-out' : w.beta < 1 ? 'infant mortality' : 'random'}), η=${Math.round(w.eta).toLocaleString()} h, B10=${w.b10.toLocaleString()} h. Suggested PM interval ≈ ${w.interval.toLocaleString()} h${w.r2 != null ? ` (fit R²=${w.r2.toFixed(2)})` : ''}.`
+      : '';
     setActiveTab('dashboard');
     if (hasAssetAccess) setAssetInputMode('search');
-    setNewStudyForm({ title: `RCM — ${label}`, asset_id: a.id, operating_context: '', study_type: 'classical' });
+    setNewStudyForm({ title: `RCM — ${label}`, asset_id: a.id, operating_context: weibullContext, study_type: 'classical' });
     setShowNewStudy(true);
     // Clear the seed from history so a refresh/back doesn't re-open the form.
     navigate('/rcm', { replace: true });

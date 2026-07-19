@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
     BarChart, Bar, AreaChart, Area, ScatterChart, Scatter, Cell, ReferenceLine
@@ -53,6 +54,8 @@ interface AssetOption { id: string; name: string; tag: string; criticality: stri
 export interface TabProps {
     onStateChange?: (inputs: Record<string, any>, results: Record<string, any>, asset?: { id: string; tag: string; name: string } | null) => void;
     loadedData?: { inputs: Record<string, any>; results: Record<string, any> } | null;
+    /** Fired after a PM program is created from this analysis — lets the parent stamp linked_pm_id on the saved study. */
+    onPMCreated?: (pmId: string, pmTitle: string) => void;
     /** P2.2: Bridge from RAM → Spares Demand — push MTBF to spares calculator */
     onSendToSpares?: (mtbf: number) => void;
     /** Seed the tab's asset once (e.g. from a Metrics bad-actor drill-through). */
@@ -878,7 +881,8 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
 // ═══════════════════════════════════════════════════════════════
 //  TAB 3: Weibull Analysis
 // ═══════════════════════════════════════════════════════════════
-export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps = {}) {
+export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreated }: TabProps = {}) {
+    const navigate = useNavigate();
     const [asset, setAsset] = useState<AssetOption | null>(null);
     const [dataStr, setDataStr] = useState('20, 42, 55, 73, 95, 101, 118, 139');
     // Right-censored units (suspensions): ages of units removed/still running
@@ -1210,13 +1214,37 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
                                         </p>
                                     </div>
                                 </div>
-                                <button
-                                    onClick={() => setShowPMModal(true)}
-                                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-sm font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
-                                >
-                                    <Wrench size={15} />
-                                    Create PM Program
-                                </button>
+                                <div className="flex flex-col gap-2 shrink-0">
+                                    <button
+                                        onClick={() => setShowPMModal(true)}
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-primary-500 to-primary-500 text-white text-sm font-bold rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
+                                    >
+                                        <Wrench size={15} />
+                                        Create PM Program
+                                    </button>
+                                    {pmAsset && (
+                                        <button
+                                            onClick={() => navigate('/rcm', {
+                                                state: {
+                                                    seed: {
+                                                        asset: { id: pmAsset.id, name: pmAsset.name, tag: pmAsset.tag },
+                                                        weibull: {
+                                                            beta: fit.beta,
+                                                            eta: fit.eta,
+                                                            b10: Math.round(weibullBLife(fit.beta, fit.eta, 10)),
+                                                            interval: Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8)),
+                                                            r2: fit.r2,
+                                                        },
+                                                    },
+                                                },
+                                            })}
+                                            title="Start an RCM study seeded with this asset and the fitted life data"
+                                            className="flex items-center justify-center gap-2 px-5 py-2 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded-xl hover:border-primary-300 hover:text-primary-600 transition-colors"
+                                        >
+                                            Send to RCM Study
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -1235,6 +1263,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset }: TabProps
                         <CreatePMFromWeibullModal
                             isOpen={showPMModal}
                             onClose={() => setShowPMModal(false)}
+                            onSuccess={(pmId, pmTitle) => { if (pmId) onPMCreated?.(pmId, pmTitle || 'PM program'); }}
                             data={{
                                 asset: pmAsset,
                                 beta: fit.beta,
@@ -1271,6 +1300,19 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
     const [mtbfVal, setMtbfVal] = useState('8760');
     const [interval, setInterval] = useState('2160');
     const [confidence, setConfidence] = useState('95');
+
+    // Result → Action: apply the stocking recommendation to an inventory item's min level
+    const [invItems, setInvItems] = useState<{ id: string; code: string; description: string; minLevel: number }[]>([]);
+    const [invSel, setInvSel] = useState('');
+    const [invApplying, setInvApplying] = useState(false);
+    const [invToast, setInvToast] = useState<string | null>(null);
+
+    useEffect(() => {
+        supabase.from('inventory_items').select('id, part_number, description, min_level').order('part_number')
+            .then(({ data }) => setInvItems((data || []).map((r: any) => ({
+                id: r.id, code: r.part_number || '—', description: r.description || '', minLevel: r.min_level || 0,
+            }))));
+    }, []);
 
     // Load saved analysis data
     useEffect(() => {
@@ -1369,6 +1411,48 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
                 <ResultCard label="Expected (λ)" value={result.lambda.toFixed(2)} unit="failures" color="blue" />
                 <ResultCard label={`Spares ${confidence}%`} value={result.requiredSpares} unit="units" color="green" />
                 <ResultCard label="Fail Rate" value={(failureRate * 1000).toFixed(3)} unit="/1000h" color="red" />
+            </div>
+
+            {/* Result → Action: stock the recommendation in Inventory */}
+            <div className="bg-white border border-emerald-200 rounded-xl p-3 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-emerald-800">
+                    <Package size={14} className="text-emerald-600" />
+                    Turn this into stock — set an item's minimum level to {result.requiredSpares}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <select value={invSel} onChange={e => setInvSel(e.target.value)}
+                        className="flex-1 min-w-0 p-2 border border-slate-200 rounded-lg text-sm bg-white">
+                        <option value="">— Select the spare part in Inventory —</option>
+                        {invItems.map(i => (
+                            <option key={i.id} value={i.id}>
+                                {i.code} — {i.description.slice(0, 60)} (min: {i.minLevel})
+                            </option>
+                        ))}
+                    </select>
+                    <button
+                        onClick={async () => {
+                            if (!invSel) return;
+                            setInvApplying(true);
+                            const { error } = await supabase.from('inventory_items')
+                                .update({ min_level: result.requiredSpares }).eq('id', invSel);
+                            setInvApplying(false);
+                            const item = invItems.find(i => i.id === invSel);
+                            if (!error) {
+                                setInvItems(prev => prev.map(i => i.id === invSel ? { ...i, minLevel: result.requiredSpares } : i));
+                                setInvToast(`Min level set to ${result.requiredSpares} on ${item?.code} ✓`);
+                            } else {
+                                setInvToast('Failed to update the inventory item');
+                            }
+                            setTimeout(() => setInvToast(null), 4000);
+                        }}
+                        disabled={!invSel || invApplying}
+                        className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors"
+                    >
+                        {invApplying ? <Loader2 size={13} className="animate-spin" /> : <ArrowRight size={13} />}
+                        Apply min level
+                    </button>
+                </div>
+                {invToast && <p className="text-[11px] font-medium text-emerald-700">{invToast}</p>}
             </div>
 
             {/* Probability Table */}

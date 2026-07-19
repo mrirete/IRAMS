@@ -21,6 +21,7 @@ import analyzeService from '../../eam/services/AnalyzeService';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 import { pdfToImageBlob } from '../../utils/pdfToImage';
 import { supabase } from '../../eam/lib/supabase';
+import { assetFailureBasis, FAILURE_QUERY_COLUMNS } from '../../eam/services/reliabilityMetrics';
 
 // ── Composite state for undo/redo ────────────────────────────
 interface RBDState { blocks: RBDBlock[]; groups: RBDGroup[] }
@@ -522,24 +523,27 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
             return;
         }
 
-        // Link: query WO history for actual MTBF/MTTR
+        // Link: derive MTBF/MTTR via the SHARED reliability engine (M1) — the same
+        // failure definition and basis Metrics and the RAM tab use, so the block's
+        // numbers reconcile across the tier instead of diverging.
         const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
         const { data: wos } = await supabase.from('work_orders')
-            .select('id, actual_hours')
+            .select(FAILURE_QUERY_COLUMNS)
             .eq('asset_id', asset.id)
-            .in('type', ['Corrective', 'CORRECTIVE', 'CM', 'Breakdown', 'Emergency'])
             .gte('created_at', yearAgo);
 
         let autoMtbf: number | undefined;
         let autoMttr: number | undefined;
         let woCount = 0;
 
-        if (wos && wos.length > 0) {
-            woCount = wos.length;
-            autoMtbf = Math.round(8760 / wos.length);
-            const repairs = wos.map(w => parseFloat(w.actual_hours) || 0).filter(h => h > 0);
-            if (repairs.length > 0) {
-                autoMttr = Math.round(repairs.reduce((a, b) => a + b, 0) / repairs.length);
+        const basis = assetFailureBasis(wos || []);
+        if (basis.failures > 0) {
+            woCount = basis.failures;
+            autoMtbf = basis.mtbfHours != null
+                ? Math.round(basis.mtbfHours)
+                : Math.round(basis.totalHours / basis.failures);
+            if (basis.repairHours.length > 0) {
+                autoMttr = Math.round(basis.repairHours.reduce((a, b) => a + b, 0) / basis.repairHours.length);
             }
         }
 
@@ -559,8 +563,8 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
         }));
 
         const msg = autoMtbf
-            ? `Linked to ${asset.tag || asset.name} — MTBF: ${autoMtbf.toLocaleString()}h, MTTR: ${autoMttr || '—'}h (from ${woCount} WOs)`
-            : `Linked to ${asset.tag || asset.name} — No corrective WOs found (using manual values)`;
+            ? `Linked to ${asset.tag || asset.name} — MTBF: ${autoMtbf.toLocaleString()}h, MTTR: ${autoMttr || '—'}h (from ${woCount} failures, shared engine)`
+            : `Linked to ${asset.tag || asset.name} — No failure history found (using manual values)`;
         setLinkToast(msg);
         setTimeout(() => setLinkToast(null), 5000);
     }, [rbd]);
