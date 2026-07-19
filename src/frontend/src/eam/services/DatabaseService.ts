@@ -2165,13 +2165,15 @@ export class DatabaseService {
             monitoring_frequency_days: def.monitoringFrequencyDays ?? null,
             pf_interval_days: def.pfIntervalDays ?? null,
             limit_source: def.limitSource ?? null,
+            // ISA-18.2 rationalization (0205)
+            operator_action: def.operatorAction ?? null,
         };
 
         let { data, error } = await supabase.from('reading_definitions').insert(row).select().single();
-        // Graceful degradation: if 0176/0198 aren't applied yet, the new columns
-        // don't exist — retry without them so the add-point flow still works.
-        if (error && /monitoring_frequency_days|pf_interval_days|limit_source|PGRST204|column .* does not exist/i.test(error.message || '')) {
-            const { monitoring_frequency_days, pf_interval_days, limit_source, ...legacy } = row;
+        // Graceful degradation: if 0176/0198/0205 aren't applied yet, the new
+        // columns don't exist — retry without them so add-point still works.
+        if (error && /monitoring_frequency_days|pf_interval_days|limit_source|operator_action|PGRST204|column .* does not exist/i.test(error.message || '')) {
+            const { monitoring_frequency_days, pf_interval_days, limit_source, operator_action, ...legacy } = row;
             ({ data, error } = await supabase.from('reading_definitions').insert(legacy).select().single());
         }
         if (error) throw new Error(error.message);

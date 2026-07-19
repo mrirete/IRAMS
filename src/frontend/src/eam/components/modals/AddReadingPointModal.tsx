@@ -25,6 +25,8 @@ export interface NewReadingPoint {
     pfIntervalDays?: number | null;
     /** band provenance (0198): iso20816-<class> | template | learned | oem | manual */
     limitSource?: string | null;
+    /** ISA-18.2 rationalization (0205): what the operator should DO when this point alarms */
+    operatorAction?: string | null;
 }
 
 // Common engineering units, grouped, for the reading-point unit picker. Techs
@@ -67,6 +69,7 @@ export const AddReadingPointModal: React.FC<{
     const [maxCritical, setMaxCritical] = useState('');
     const [freq, setFreq] = useState('');   // monitoring interval (days) — '' = auto from criticality
     const [pf, setPf] = useState('');        // P-F interval (days)
+    const [operatorAction, setOperatorAction] = useState('');  // ISA-18.2: response guidance carried onto alerts
     const [saving, setSaving] = useState(false);
     // Band provenance (1.5): the cited source of the current band values.
     // Hand-editing any band voids the citation → 'manual'.
@@ -137,6 +140,7 @@ export const AddReadingPointModal: React.FC<{
             monitoringFrequencyDays: freq ? Number(freq) : null,
             pfIntervalDays: pf.trim() ? Number(pf) : null,
             limitSource: [minCritical, minWarning, maxWarning, maxCritical].some(v => v.trim() !== '') ? (limitSource ?? 'manual') : null,
+            operatorAction: operatorAction.trim() || null,
         });
         setSaving(false);
     };
@@ -296,6 +300,15 @@ export const AddReadingPointModal: React.FC<{
                         </div>
                     </div>
                     <p className="text-[11px] text-slate-400 -mt-1">Frequency drives the rounds "due" list. With no explicit frequency, a P-F interval sets it to half the P-F (RCM); otherwise the asset criticality does.</p>
+
+                    {/* ISA-18.2 rationalization (0205): the operator response travels with every alert */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Operator action on alarm <span className="font-normal normal-case text-slate-400">(optional)</span></label>
+                        <textarea value={operatorAction} onChange={e => setOperatorAction(e.target.value)} rows={2}
+                            placeholder="e.g. Reduce load, check lube oil level, raise corrective WO if vibration persists"
+                            className={`w-full p-2.5 border border-slate-300 rounded-lg text-sm resize-none ${ring}`} />
+                        <p className="text-[11px] text-slate-400 mt-1">Shown on every alert raised from this point — the alarm tells people what to do, not just that something happened.</p>
+                    </div>
                 </div>
 
                 <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2 flex-shrink-0">

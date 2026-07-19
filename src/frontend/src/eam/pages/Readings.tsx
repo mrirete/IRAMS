@@ -284,6 +284,7 @@ export const Readings: React.FC = () => {
         minCritical?: number | null; minWarning?: number | null; maxWarning?: number | null; maxCritical?: number | null;
         monitoringFrequencyDays?: number | null; pfIntervalDays?: number | null;
         limitSource?: string | null;
+        operatorAction?: string | null;
     }) => {
         if (!canCreate) {
             showToast('Access Denied: You do not have permission to add reading points.', 'error');
@@ -304,6 +305,7 @@ export const Readings: React.FC = () => {
             monitoringFrequencyDays: payload.monitoringFrequencyDays ?? null,
             pfIntervalDays: payload.pfIntervalDays ?? null,
             limitSource: payload.limitSource ?? null,
+            operatorAction: payload.operatorAction ?? null,
             active: true,
         };
         try {

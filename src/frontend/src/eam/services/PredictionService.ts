@@ -108,6 +108,10 @@ export interface SensorReading {
     alarm_low: number | null;
     readings: number[];
     created_at: string;
+    /** ISA-18.2 rationalization (0205) — per-point alarm hygiene + guidance. */
+    alarm_deadband_pct?: number | null;
+    alarm_persistence?: number | null;
+    operator_action?: string | null;
 }
 
 // ─── Agentic Intelligence Types ──────────────────────────────
@@ -360,6 +364,10 @@ class PredictionService {
                 alarm_low: d.min_critical ?? d.min_warning ?? null,
                 readings: hist.slice(0, 20).map(h => Number(h.reading_value)).filter(v => !Number.isNaN(v)).reverse(),
                 created_at: latest?.reading_date || new Date().toISOString(),
+                // 0205 rationalization fields — undefined pre-migration (select *)
+                alarm_deadband_pct: d.alarm_deadband_pct ?? null,
+                alarm_persistence: d.alarm_persistence ?? null,
+                operator_action: d.operator_action ?? null,
             };
         }).filter(s => s.current_value != null);
     }
@@ -644,17 +652,26 @@ class PredictionService {
         for (const s of sensors) {
             if (s.current_value == null) continue;
 
-            // Threshold breach: current value near or beyond alarm limits
-            let breachHigh = s.alarm_high != null && s.current_value >= s.alarm_high * 0.90;
-            let breachLow = s.alarm_low != null && s.current_value <= s.alarm_low * 1.10;
+            // Threshold breach: current value near or beyond alarm limits.
+            // Approach margin (deadband) is per-point when rationalized (0205),
+            // engine default 10% otherwise; clamped to a sane 0–50%.
+            const deadband = Math.min(50, Math.max(0, s.alarm_deadband_pct ?? 10)) / 100;
+            const hiGate = s.alarm_high != null ? s.alarm_high * (1 - deadband) : null;
+            const loGate = s.alarm_low != null ? s.alarm_low * (1 + deadband) : null;
+            let breachHigh = hiGate != null && s.current_value >= hiGate;
+            let breachLow = loGate != null && s.current_value <= loGate;
 
-            // Persistence: with history, require the PREVIOUS reading to breach
-            // too (readings are stored oldest→newest; last = current).
+            // Persistence (ISA-18.2): require the last N consecutive readings to
+            // breach before firing (per-point when rationalized, default 2 —
+            // i.e. current + previous). Readings are stored oldest→newest.
+            const requireN = Math.min(10, Math.max(1, s.alarm_persistence ?? 2));
             const hist = s.readings || [];
-            const prev = hist.length >= 2 ? hist[hist.length - 2] : null;
-            if (prev != null) {
-                if (breachHigh && s.alarm_high != null && prev < s.alarm_high * 0.90) breachHigh = false;
-                if (breachLow && s.alarm_low != null && prev > s.alarm_low * 1.10) breachLow = false;
+            if (requireN > 1 && hist.length >= 2) {
+                // The window covers the N-1 readings before the current value.
+                const window = hist.slice(-requireN, -1);
+                const enough = window.length >= requireN - 1;
+                if (breachHigh && hiGate != null && (!enough || window.some(v => v < hiGate))) breachHigh = false;
+                if (breachLow && loGate != null && (!enough || window.some(v => v > loGate))) breachLow = false;
             }
 
             // Dedup: an open alert already covers this point.
@@ -673,11 +690,13 @@ class PredictionService {
                 const alertType: 'threshold_breach' | 'trend_deviation' | 'anomaly' =
                     breachHigh || breachLow ? 'threshold_breach' : trendAnomaly ? 'trend_deviation' : 'anomaly';
 
-                const description = breachHigh
+                let description = breachHigh
                     ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm high of ${s.alarm_high} ${s.unit}. Trend: ${s.trend}.`
                     : breachLow
                         ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm low of ${s.alarm_low} ${s.unit}. Trend: ${s.trend}.`
                         : `${s.tag} shows ${s.trend} trend with current value ${s.current_value} ${s.unit}.`;
+                // AG layer: carry the rationalized operator response onto the alert.
+                if (s.operator_action) description += ` Operator action: ${s.operator_action}`;
 
                 await this.createAlert({
                     alert_id: `alt-${Date.now()}-${s.tag.replace(/[^a-zA-Z0-9]/g, '')}`,
