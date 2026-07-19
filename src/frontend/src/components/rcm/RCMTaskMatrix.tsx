@@ -34,6 +34,12 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
   const pmCount = taskSummaries.filter(t => t.recurring_work_id).length;
   const wmQuery = `RCM-${study.id.slice(0, 8)}`;
 
+  // Corrective WO drill-through — seed asset only when it's a register UUID
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const assetSeed = study.asset_id && UUID_RE.test(study.asset_id) ? `&asset=${study.asset_id}` : '';
+  const raiseWOUrl = (desc: string) =>
+    `/work-orders?action=create&type=CM${assetSeed}&title=${encodeURIComponent(`Corrective — ${desc}`)}`;
+
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
       {/* Actions Bar */}
@@ -108,6 +114,7 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
                 <th className="text-left px-4 py-3 font-bold text-slate-400 uppercase tracking-wider">Interval</th>
                 <th className="text-left px-4 py-3 font-bold text-slate-400 uppercase tracking-wider">Owner</th>
                 <th className="text-center px-4 py-3 font-bold text-slate-400 uppercase tracking-wider">PM</th>
+                <th className="text-center px-4 py-3 font-bold text-slate-400 uppercase tracking-wider">WO</th>
               </tr>
             </thead>
             <tbody>
@@ -154,6 +161,16 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
                       ) : (
                         <span className="text-slate-300">—</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <Link
+                        to={raiseWOUrl(task.failure_mode_description)}
+                        title="Raise a corrective work order for this failure mode"
+                        className="inline-flex items-center gap-0.5 text-slate-400 hover:text-blue-600 transition-colors"
+                      >
+                        <Wrench size={13} />
+                        <ArrowUpRight size={10} />
+                      </Link>
                     </td>
                   </tr>
                 );

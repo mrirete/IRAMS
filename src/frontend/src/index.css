@@ -1223,6 +1223,12 @@ select {
    RCM Module — Premium Component Styles
    ═══════════════════════════════════════════════ */
 
+/* ── RCM tree indent — tighter on phones so nested nodes keep usable width ── */
+.rcm-accordion-body { --rcm-indent: 24px; }
+@media (max-width: 640px) {
+  .rcm-accordion-body { --rcm-indent: 12px; }
+}
+
 /* ── RCM Accordion ── */
 @keyframes rcm-accordion-open {
   from { opacity: 0; max-height: 0; transform: translateY(-4px); }

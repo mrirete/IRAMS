@@ -23,6 +23,7 @@ interface RCMStudyOverviewProps {
   collaborators: StudyCollaborator[];
   onNavigate: (tab: 'functions' | 'decisions' | 'tasks' | 'evidence') => void;
   onInviteTeam: () => void;
+  onEditStudy: () => void;
 }
 
 const StatChip: React.FC<{
@@ -44,7 +45,7 @@ const StatChip: React.FC<{
 
 export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
   study, functions, failureModes, decisions, taskSummaries, collaborators,
-  onNavigate, onInviteTeam,
+  onNavigate, onInviteTeam, onEditStudy,
 }) => {
   const decisionList = useMemo(() => Array.from(decisions.values()), [decisions]);
   const decidedCount = decisionList.filter(d => !!d.consequence_code).length;
@@ -80,9 +81,23 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
   }, [functions.length, fmCount, decidedCount, strategyCount, pmCount]);
 
   const wmQuery = `RCM-${study.id.slice(0, 8)}`;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const hasRegisteredAsset = !!study.asset_id && UUID_RE.test(study.asset_id);
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
+      {/* No-asset warning — Evidence + PM generation need a registered asset */}
+      {!study.asset_id && (
+        <button
+          onClick={onEditStudy}
+          className="w-full flex items-center gap-2.5 px-3.5 py-3 bg-amber-50 border border-amber-200 rounded-xl text-left hover:bg-amber-100/70 transition-colors"
+        >
+          <AlertTriangle size={16} className="text-amber-500 shrink-0" />
+          <span className="text-xs text-amber-800 min-w-0">
+            <strong>No asset linked.</strong> PM generation and the Evidence check need one — tap to edit the study and link an asset.
+          </span>
+        </button>
+      )}
       {/* Completion card */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
@@ -167,21 +182,30 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
               </p>
             </div>
           </div>
-          {pmCount > 0 ? (
+          <div className="flex items-center gap-2 shrink-0">
+            {pmCount > 0 ? (
+              <Link
+                to={`/recurring-work?q=${wmQuery}`}
+                className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+              >
+                View PMs <ArrowUpRight size={12} />
+              </Link>
+            ) : (
+              <button
+                onClick={() => onNavigate('tasks')}
+                className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                Task Output <ArrowRight size={12} />
+              </button>
+            )}
             <Link
-              to={`/recurring-work?q=${wmQuery}`}
-              className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors shrink-0"
+              to={`/work-orders?action=create&type=CM${hasRegisteredAsset ? `&asset=${study.asset_id}` : ''}&title=${encodeURIComponent(`Corrective — ${study.title}`)}`}
+              title="Raise a corrective work order against this asset"
+              className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
             >
-              View PMs <ArrowUpRight size={12} />
+              Raise WO <ArrowUpRight size={12} />
             </Link>
-          ) : (
-            <button
-              onClick={() => onNavigate('tasks')}
-              className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
-            >
-              Task Output <ArrowRight size={12} />
-            </button>
-          )}
+          </div>
         </div>
       </div>
 

@@ -14,9 +14,11 @@ interface CreateWorkOrderModalProps {
     onClose: () => void;
     onSave: () => void; // Parent should reload
     dictionaries?: any[];
+    /** Pre-fill fields when opened from a drill-through (e.g. RCM failure mode → corrective WO) */
+    initial?: { title?: string; assetId?: string; type?: string; priority?: string };
 }
 
-export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOpen, onClose, onSave, dictionaries: propDictionaries }) => {
+export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOpen, onClose, onSave, dictionaries: propDictionaries, initial }) => {
     const [assets, setAssets] = useState<Asset[]>([]);
     const [dictionaries, setDictionaries] = useState<any[]>(propDictionaries || []); // Store dictionaries
     const [loadingData, setLoadingData] = useState(false);
@@ -66,6 +68,20 @@ export const CreateWorkOrderModal: React.FC<CreateWorkOrderModalProps> = ({ isOp
             setDictionaries(propDictionaries);
         }
     }, [propDictionaries]);
+
+    // Apply drill-through seed each time the modal opens with one
+    useEffect(() => {
+        if (isOpen && initial) {
+            setFormData(f => ({
+                ...f,
+                title: initial.title ?? f.title,
+                assetId: initial.assetId ?? f.assetId,
+                type: initial.type ?? f.type,
+                priority: initial.priority ?? f.priority,
+            }));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

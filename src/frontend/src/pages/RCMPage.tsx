@@ -614,6 +614,7 @@ export const RCMPage: React.FC = () => {
           collaborators={studyCollaborators}
           onNavigate={setActiveTab}
           onInviteTeam={() => setShowTeamPanel(true)}
+          onEditStudy={() => handleOpenEditStudy(selectedStudy)}
         />
       )}
 

@@ -115,10 +115,17 @@ export const WorkOrders: React.FC = () => {
     const [isCreateOpen, setIsCreateOpen] = useState(false);
     const [isCreatePMOpen, setIsCreatePMOpen] = useState(false);
     const [searchParams, setSearchParams] = useSearchParams();
+    // Optional pre-fill for the Create WO modal (drill-throughs like RCM → corrective WO)
+    const [createSeed, setCreateSeed] = useState<{ title?: string; assetId?: string; type?: string } | null>(null);
 
-    // Auto-open Create WO modal when navigated with ?action=create (from Dashboard quick actions)
+    // Auto-open Create WO modal when navigated with ?action=create (Dashboard quick actions,
+    // RCM failure-mode drill-through). Optional seeds: &title=, &asset=, &type=.
     useEffect(() => {
         if (searchParams.get('action') === 'create') {
+            const title = searchParams.get('title') || undefined;
+            const assetId = searchParams.get('asset') || undefined;
+            const type = searchParams.get('type') || undefined;
+            setCreateSeed(title || assetId || type ? { title, assetId, type } : null);
             setIsCreateOpen(true);
             setSearchParams({}, { replace: true }); // Clean URL to prevent re-trigger on refresh
         }
@@ -311,9 +318,10 @@ export const WorkOrders: React.FC = () => {
         <div className="h-[calc(100vh-6rem)] w-full overflow-hidden">
             <CreateWorkOrderModal
                 isOpen={isCreateOpen}
-                onClose={() => setIsCreateOpen(false)}
+                onClose={() => { setIsCreateOpen(false); setCreateSeed(null); }}
                 onSave={handleJobCreated}
                 dictionaries={dictionaries}
+                initial={createSeed || undefined}
             />
             <CreatePMModal
                 isOpen={isCreatePMOpen}

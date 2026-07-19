@@ -54,39 +54,43 @@ const TreeNode: React.FC<{
   isLast: boolean;
   color: string;
   children: React.ReactNode;
-}> = ({ level, isLast, color, children }) => (
-  <div className="relative" style={{ paddingLeft: level > 0 ? `${level * 24}px` : 0 }}>
-    {/* Vertical line from parent */}
-    {level > 0 && (
-      <div
-        className="absolute top-0"
-        style={{
-          left: `${(level - 1) * 24 + 11}px`,
-          bottom: isLast ? '50%' : 0,
-          width: '2px',
-          background: color,
-          opacity: 0.55,
-        }}
-      />
-    )}
-    {/* Horizontal branch connector */}
-    {level > 0 && (
-      <div
-        className="absolute"
-        style={{
-          left: `${(level - 1) * 24 + 11}px`,
-          top: '50%',
-          width: '13px',
-          height: '2px',
-          background: color,
-          opacity: 0.55,
-          transform: 'translateY(-50%)',
-        }}
-      />
-    )}
-    {children}
-  </div>
-);
+}> = ({ level, isLast, color, children }) => {
+  // Indent scales via --rcm-indent (24px desktop, 12px on phones — see index.css)
+  const branchLeft = `calc(${level - 0.5} * var(--rcm-indent, 24px) - 1px)`;
+  return (
+    <div className="relative" style={{ paddingLeft: level > 0 ? `calc(${level} * var(--rcm-indent, 24px))` : 0 }}>
+      {/* Vertical line from parent */}
+      {level > 0 && (
+        <div
+          className="absolute top-0"
+          style={{
+            left: branchLeft,
+            bottom: isLast ? '50%' : 0,
+            width: '2px',
+            background: color,
+            opacity: 0.55,
+          }}
+        />
+      )}
+      {/* Horizontal branch connector */}
+      {level > 0 && (
+        <div
+          className="absolute"
+          style={{
+            left: branchLeft,
+            top: '50%',
+            width: 'calc(var(--rcm-indent, 24px) / 2 + 1px)',
+            height: '2px',
+            background: color,
+            opacity: 0.55,
+            transform: 'translateY(-50%)',
+          }}
+        />
+      )}
+      {children}
+    </div>
+  );
+};
 
 // ── Step Badge with color ──────────────────────────────────
 const StepBadge: React.FC<{ label: string; color: string; done?: boolean }> = ({ label, color, done }) => (
@@ -637,7 +641,7 @@ export const RCMFunctionPanel: React.FC<RCMFunctionPanelProps> = ({
                   )}
 
                   {/* Add Failure Mode button at tree bottom */}
-                  <div style={{ paddingLeft: '48px' }} className="mt-2">
+                  <div style={{ paddingLeft: 'calc(2 * var(--rcm-indent, 24px))' }} className="mt-2">
                     <button
                       onClick={() => onAddFailureMode(fn.id)}
                       className="text-xs text-accent-cyan hover:text-primary-400 font-semibold flex items-center gap-1.5 px-3 py-2 bg-accent-cyan/5 rounded-lg hover:bg-accent-cyan/10 transition-colors border border-dashed border-accent-cyan/30"

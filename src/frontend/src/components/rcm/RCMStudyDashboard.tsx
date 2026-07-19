@@ -71,6 +71,13 @@ const StudyCardMenu: React.FC<{
     >
       <MoreVertical size={14} />
     </button>
+    {/* Invisible backdrop — closes the menu on any outside tap */}
+    {open && (
+      <div
+        className="fixed inset-0 z-10"
+        onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      />
+    )}
     {open && (
       <div className="absolute right-0 top-8 z-20 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 w-40 animate-in fade-in zoom-in-95 duration-150">
         <button onClick={onOpen} className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
