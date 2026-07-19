@@ -7,7 +7,9 @@
  *  DA  Data Acquisition      getSensorReadings / getManualReadingsAsSensors /
  *                            importSensorReadings (CSV) — online feed + rounds bridge
  *  DM  Data Manipulation     sensorKind tagging (lib/predict/healthModels), trend
- *                            derivation in the manual bridge; spectral features TBD
+ *                            derivation in the manual bridge; spectral features
+ *                            (RMS/kurtosis/crest, FFT + envelope) via
+ *                            lib/predict/spectral on ers_waveforms captures (0206)
  *  SD  State Detection       _runAlertScan — band breaches with ISA-18.2-lite dedup
  *                            + persistence (one open alert per point)
  *  HA  Health Assessment     _runDigitalTwinSnapshot — class-aware weighting
@@ -112,6 +114,17 @@ export interface SensorReading {
     alarm_deadband_pct?: number | null;
     alarm_persistence?: number | null;
     operator_action?: string | null;
+}
+
+/** A stored vibration time-waveform + its computed spectral features (0206). */
+export interface WaveformCapture {
+    id: string;
+    asset_id: string;
+    tag: string;
+    sample_rate_hz: number;
+    rpm: number | null;
+    features: Record<string, any>;
+    captured_at: string;
 }
 
 // ─── Agentic Intelligence Types ──────────────────────────────
@@ -380,6 +393,44 @@ class PredictionService {
         const online = await this.getSensorReadings(assetId);
         if (online.length > 0) return online;
         return this.getManualReadingsAsSensors(assetId);
+    }
+
+    // ── Waveform captures (DM layer, 0206) ─────────────────
+    // Raw samples are kept only up to a cap; the computed spectral features
+    // (the DM layer's actual product) always persist.
+
+    async saveWaveform(rec: {
+        asset_id: string; tag: string; sample_rate_hz: number; rpm: number | null;
+        samples: number[] | null; features: Record<string, any>; created_by?: string | null;
+    }): Promise<WaveformCapture | null> {
+        const { data, error } = await supabase.from('ers_waveforms').insert({
+            asset_id: rec.asset_id,
+            tag: rec.tag,
+            sample_rate_hz: rec.sample_rate_hz,
+            rpm: rec.rpm,
+            samples: rec.samples && rec.samples.length <= 16384 ? rec.samples : null,
+            features: rec.features,
+            created_by: rec.created_by ?? null,
+        }).select('id, asset_id, tag, sample_rate_hz, rpm, features, captured_at').single();
+        if (error) {
+            // Graceful pre-0206: the table may not exist yet.
+            console.warn('[PredictionService.saveWaveform]', error.message);
+            return null;
+        }
+        return data as WaveformCapture;
+    }
+
+    async getWaveforms(assetId: string, limit = 10): Promise<WaveformCapture[]> {
+        const { data, error } = await supabase.from('ers_waveforms')
+            .select('id, asset_id, tag, sample_rate_hz, rpm, features, captured_at')
+            .eq('asset_id', assetId)
+            .order('captured_at', { ascending: false })
+            .limit(limit);
+        if (error) {
+            console.warn('[PredictionService.getWaveforms]', error.message);
+            return [];
+        }
+        return (data || []) as WaveformCapture[];
     }
 
     /**

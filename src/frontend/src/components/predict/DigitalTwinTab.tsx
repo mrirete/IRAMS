@@ -9,6 +9,7 @@ import type { IntegrityAssessment } from '../../lib/predict/integrity';
 import { screenRbi } from '../../lib/predict/rbi';
 import type { GroundedRul } from '../../lib/predict/groundedFit';
 import { DisgPanel } from './DisgPanel';
+import { SpectralAnalysisPanel } from './SpectralAnalysisPanel';
 
 interface DigitalTwinTabProps {
     twinHealth: TwinState | null;
@@ -139,6 +140,11 @@ export const DigitalTwinTab: React.FC<DigitalTwinTabProps> = ({
                     )}
                 </div>
             )}
+            {/* ═══ Spectral Analysis (ISO 13374 DM) — ROTATING equipment's counterpart to Integrity ═══ */}
+            {equipmentClass?.cls !== 'static' && (
+                <SpectralAnalysisPanel assetId={selectedAssetId} assetName={selectedAssetName} />
+            )}
+
             {/* Digital Twin Trajectory Chart */}
             <div className="bg-white border border-slate-200 rounded-xl shadow-lg flex flex-col">
                 <div className="p-5 border-b border-slate-200">
