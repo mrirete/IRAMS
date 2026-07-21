@@ -279,6 +279,7 @@ const TaskEditorModal: React.FC<{
     onClose: () => void;
     onSave: (task: LibraryTask, inventory: any[], roles: any[], files: any[]) => Promise<void>;
 }> = ({ task, onClose, onSave }) => {
+    const promptModal = usePrompt();
     // Local State
     const [formData, setFormData] = useState<LibraryTask>(task);
     // Separate state for relations because they might be complex

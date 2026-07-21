@@ -505,6 +505,7 @@ const WorkClassPill: React.FC<{ c: string }> = ({ c }) => {
 };
 
 const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => void, onCreate: () => void, dictionaries: DictionaryEntry[], assets?: any[], onBulkDelete?: (ids: string[]) => Promise<void>, initialSearch?: string, canCreate?: boolean, canDelete?: boolean }> = ({ jobs, onSelect, onCreate, dictionaries, assets = [], onBulkDelete, initialSearch = '', canCreate = true, canDelete = true }) => {
+    const promptModal = usePrompt();
     const [density, setDensity] = useState<Density>('compact');
     const [statusFilter, setStatusFilter] = useState<WorkOrderStatus | 'ALL'>('ALL');
     const [classFilter, setClassFilter] = useState<'ALL' | 'PROACTIVE' | 'REACTIVE'>('ALL');
@@ -1036,6 +1037,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const { showToast } = useToast();
     const { user } = useAuth();
     const navigate = useNavigate();
+    const promptModal = usePrompt();
     // Local state to manage edits during the session (e.g. adding failure data before completion)
     const [localJob, setLocalJob] = useState<WorkOrder>(job);
     const [activeTab, setActiveTab] = useState<TabId>('details');
@@ -4703,6 +4705,7 @@ const TaskEditor: React.FC<{
     execMode?: boolean;
 }> = ({ task, onChange, onDelete, onUpdateJob, jobContext, availableOrgUnits, availableUsers, contacts, dictionaries, workCenters, onConfirmed, editorTab, onTabChange, execMode = false }) => {
     const { showToast } = useToast();
+    const promptModal = usePrompt();
     // WM-2b: resolved costing rate for this operation = per-op override ?? work-center rate.
     const selectedWorkCenter = workCenters.find(w => w.id === task.workCenterId);
     const effectiveRate = task.plannedRate ?? selectedWorkCenter?.activityRate;
@@ -5984,6 +5987,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     const { user } = useAuth();
     const { showToast } = useToast();
     const confirm = useConfirm();
+    const promptModal = usePrompt();
     const [permits, setPermits] = useState<any[]>([]);
     const [showCreatePermit, setShowCreatePermit] = useState(false);
     const [expandedPermit, setExpandedPermit] = useState<string | null>(null);
@@ -6002,14 +6006,25 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     const [showTemplatePicker, setShowTemplatePicker] = useState(false);
     const [showTemplateSave, setShowTemplateSave] = useState(false);
     const [templateName, setTemplateName] = useState('');
-    const [savedTemplates, setSavedTemplates] = useState<{ name: string; hazards: any[] }[]>([]);
+    const [savedTemplates, setSavedTemplates] = useState<{ id?: string; name: string; hazards: any[] }[]>([]);
 
-    // Load saved JSA templates from localStorage
+    // Load the team-shared template library (0209). Templates written by this
+    // browser before the library existed are imported once from localStorage,
+    // then the key is cleared — existing shared names win over stale copies.
     useEffect(() => {
-        try {
-            const stored = localStorage.getItem('jsa_templates');
-            if (stored) setSavedTemplates(JSON.parse(stored));
-        } catch { /* ignore */ }
+        (async () => {
+            const db = DatabaseService.getInstance();
+            try {
+                const stored = localStorage.getItem('jsa_templates');
+                if (stored) {
+                    await db.importJSATemplates(JSON.parse(stored), user?.id);
+                    localStorage.removeItem('jsa_templates');
+                }
+            } catch { /* import failed (offline?) — keep localStorage for a later retry */ }
+            try {
+                setSavedTemplates(await db.getJSATemplates());
+            } catch { /* library unavailable — picker will show empty */ }
+        })();
     }, []);
 
     // Dictionary lookups
@@ -6191,15 +6206,24 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     };
 
     // --- JSA Template Library ---
-    const handleSaveTemplate = () => {
+    const handleSaveTemplate = async () => {
         if (!templateName.trim()) return;
-        const tpl = { name: templateName.trim(), hazards: (job.jsa!.hazards || []).map(h => ({ ...h, id: '' })) };
-        const updated = [...savedTemplates.filter(t => t.name !== tpl.name), tpl];
-        localStorage.setItem('jsa_templates', JSON.stringify(updated));
-        setSavedTemplates(updated);
-        setShowTemplateSave(false);
-        setTemplateName('');
-        showToast(`Template "${tpl.name}" saved`, 'success');
+        const name = templateName.trim();
+        // Strip per-instance fields: ids regenerate on load, sign-offs don't travel.
+        const hazards = (job.jsa!.hazards || []).map(h => {
+            const { id: _id, signoffBy: _sb, signoffDate: _sd, taskRefId: _tr, ...rest } = h as any;
+            return rest;
+        });
+        try {
+            const db = DatabaseService.getInstance();
+            await db.saveJSATemplate(name, hazards, user?.id);
+            setSavedTemplates(await db.getJSATemplates());
+            setShowTemplateSave(false);
+            setTemplateName('');
+            showToast(`Template "${name}" saved to the team library`, 'success');
+        } catch (e: any) {
+            showToast('Failed to save template: ' + (e.message || 'unknown error'), 'error');
+        }
     };
 
     const handleLoadTemplate = (tpl: { name: string; hazards: any[] }) => {
@@ -6214,10 +6238,22 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
         showToast(`Loaded ${newHazards.length} hazards from "${tpl.name}"`, 'success');
     };
 
-    const handleDeleteTemplate = (name: string) => {
-        const updated = savedTemplates.filter(t => t.name !== name);
-        localStorage.setItem('jsa_templates', JSON.stringify(updated));
-        setSavedTemplates(updated);
+    const handleDeleteTemplate = async (tpl: { id?: string; name: string }) => {
+        // Shared library — deleting removes it for the whole team, so confirm.
+        const ok = await confirm({
+            title: 'Delete Template',
+            message: `"${tpl.name}" will be removed from the team template library for everyone.`,
+            variant: 'danger',
+            confirmLabel: 'Delete',
+        });
+        if (!ok || !tpl.id) return;
+        try {
+            const db = DatabaseService.getInstance();
+            await db.deleteJSATemplate(tpl.id);
+            setSavedTemplates(await db.getJSATemplates());
+        } catch (e: any) {
+            showToast('Failed to delete template: ' + (e.message || 'unknown error'), 'error');
+        }
     };
 
     // --- Digital Signature ---
@@ -6464,7 +6500,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                                             </div>
                                             <div className="flex gap-2">
                                                 <button onClick={() => handleLoadTemplate(tpl)} className="px-3 py-1 text-xs font-bold bg-blue-600 text-white rounded hover:bg-primary-500 shadow-sm">Load</button>
-                                                <button onClick={() => handleDeleteTemplate(tpl.name)} className="text-xs text-slate-400 hover:text-red-500 px-2 py-1 rounded hover:bg-red-50">Delete</button>
+                                                <button onClick={() => handleDeleteTemplate(tpl)} className="text-xs text-slate-400 hover:text-red-500 px-2 py-1 rounded hover:bg-red-50">Delete</button>
                                             </div>
                                         </div>
                                     ))}
