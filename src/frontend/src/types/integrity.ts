@@ -31,6 +31,9 @@ export type CAStatus = 'open' | 'in_progress' | 'completed' | 'verified' | 'over
 // ── Core Entities ──
 
 /** Condition Monitoring Location */
+/** How the stored tmin_mm was derived (0213) */
+export type TminBasis = 'manual' | 'asme_viii' | 'b31_3';
+
 export interface CML {
     id: string;
     asset_id: string;
@@ -39,6 +42,15 @@ export interface CML {
     nominal_thickness_mm: number;
     tmin_mm: number;
     orientation: string; // e.g. "12 o'clock"
+    // ── Design basis (0213) — pressure/stress in MPa, dimensions in mm ──
+    tmin_basis?: TminBasis;
+    design_pressure_mpa?: number | null;
+    allowable_stress_mpa?: number | null;
+    joint_efficiency?: number | null;
+    inside_radius_mm?: number | null;      // vessels/tanks
+    outside_diameter_mm?: number | null;   // piping
+    y_coefficient?: number | null;         // B31.3 temperature coefficient
+    corrosion_allowance_mm?: number | null;
 }
 
 /** Ultrasonic Thickness Reading */

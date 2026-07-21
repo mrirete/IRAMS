@@ -110,6 +110,9 @@ export function useIntegrity() {
     }, [showToast]);
 
     // ── Mutators ──────────────────────────────────────────────────────
+    const addCML = useCallback((c: CML) =>
+        persistAdd(c, setCmls, p => integrityService.createCML(p), 'CML'), [persistAdd]);
+
     const addReading = useCallback((r: ThicknessReading) =>
         persistAdd(r, setReadings, p => integrityService.addThicknessReading(p), 'thickness reading'), [persistAdd]);
 
@@ -216,6 +219,7 @@ export function useIntegrity() {
         iowParameters,
         inspections: effectiveInspections,
         summary,
+        addCML,
         addReading,
         addRbiAssessment,
         addDamageMechanism,

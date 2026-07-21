@@ -50,6 +50,55 @@ export function nextInspectionInterval(remainingLifeYears: number, component?: C
     return Math.max(0, Math.min(remainingLifeYears / 2, codeMaxIntervalYears(component)));
 }
 
+// ── Pressure-design t-min & MAWP (0213) ──────────────────────────────
+// Units throughout: pressure & stress in MPa, dimensions & thickness in mm.
+
+/**
+ * ASME VIII Div 1 UG-27(c)(1) — cylindrical shell, circumferential stress:
+ *   t = P·R / (S·E − 0.6·P)
+ * Valid for t ≤ R/2 and P ≤ 0.385·S·E. Returns null outside validity or
+ * with non-positive inputs — the caller must fall back to a manual t-min.
+ */
+export function requiredThicknessVesselMm(pMPa: number, insideRadiusMm: number, sMPa: number, e: number): number | null {
+    if (pMPa <= 0 || insideRadiusMm <= 0 || sMPa <= 0 || e <= 0) return null;
+    if (pMPa > 0.385 * sMPa * e) return null;
+    const denom = sMPa * e - 0.6 * pMPa;
+    if (denom <= 0) return null;
+    const t = (pMPa * insideRadiusMm) / denom;
+    return t <= insideRadiusMm / 2 ? t : null;
+}
+
+/**
+ * ASME B31.3 §304.1.2 — straight pipe under internal pressure:
+ *   t = P·D / (2·(S·E + P·Y))
+ * D = outside diameter; Y defaults to 0.4 (ferritic steel ≤ 482 °C).
+ * Valid for t < D/6. Returns null outside validity.
+ */
+export function requiredThicknessPipeMm(pMPa: number, outsideDiameterMm: number, sMPa: number, e: number, y = 0.4): number | null {
+    if (pMPa <= 0 || outsideDiameterMm <= 0 || sMPa <= 0 || e <= 0) return null;
+    const t = (pMPa * outsideDiameterMm) / (2 * (sMPa * e + pMPa * y));
+    return t < outsideDiameterMm / 6 ? t : null;
+}
+
+/** ASME VIII Div 1 rearranged: MAWP = S·E·t / (R + 0.6·t) at thickness t. */
+export function mawpVesselMPa(tMm: number, insideRadiusMm: number, sMPa: number, e: number): number | null {
+    if (tMm <= 0 || insideRadiusMm <= 0 || sMPa <= 0 || e <= 0) return null;
+    return (sMPa * e * tMm) / (insideRadiusMm + 0.6 * tMm);
+}
+
+/** B31.3 rearranged: MAWP = 2·S·E·t / (D − 2·Y·t) at thickness t. */
+export function mawpPipeMPa(tMm: number, outsideDiameterMm: number, sMPa: number, e: number, y = 0.4): number | null {
+    if (tMm <= 0 || outsideDiameterMm <= 0 || sMPa <= 0 || e <= 0) return null;
+    const denom = outsideDiameterMm - 2 * y * tMm;
+    if (denom <= 0) return null;
+    return (2 * sMPa * e * tMm) / denom;
+}
+
+/** True when the component type is piping-family (B31.3 basis applies). */
+export function isPipingComponent(component: ComponentType): boolean {
+    return component.startsWith('piping') || component === 'weld';
+}
+
 export interface CMLAssessment {
     cml_id: string;
     asset_id: string;
