@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FileText, CheckCircle, AlertTriangle, Clock, Plus, X } from 'lucide-react';
 import { useSafety } from '../hooks/useSafety';
+import { PreviewBanner } from '../components/common/PreviewBanner';
 import type { RegulatoryRequirement, ComplianceStatus } from '../types/safety';
 
 export const RegulatoryPage: React.FC = () => {
@@ -35,6 +36,8 @@ export const RegulatoryPage: React.FC = () => {
                 <div><h1 className="text-2xl font-bold text-slate-800 tracking-tight">Regulatory Master List</h1><p className="text-slate-500 text-sm mt-1">Compliance requirements by authority and jurisdiction</p></div>
                 <button onClick={() => setShowNew(true)} className="btn-primary"><Plus size={16} className="mr-2" />Add Requirement</button>
             </div>
+
+            <PreviewBanner message="Preview — regulatory requirements shown are illustrative and new entries are not saved yet." />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Kpi label="Total Requirements" value={summary.total_requirements} icon={FileText} />

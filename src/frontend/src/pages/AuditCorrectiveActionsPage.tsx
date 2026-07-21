@@ -14,11 +14,12 @@
 
 import React, { useState } from 'react';
 import {
-    AlertTriangle, CheckCircle, Clock, Plus, Search, Filter,
+    AlertTriangle, CheckCircle, Clock, Search, Filter,
     ArrowRight, User, Calendar, Building2, MapPin, Eye,
     FileText, Target, Wrench, ChevronRight, MoreHorizontal,
     XCircle, Shield, TrendingUp, ClipboardCheck, Loader2
 } from 'lucide-react';
+import { PreviewBanner } from '../components/common/PreviewBanner';
 
 // ─── Types ───────────────────────────────────────────────────
 type CASeverity = 'critical' | 'major' | 'minor' | 'observation';
@@ -147,9 +148,10 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                     <h1 className="text-2xl font-black text-slate-800">Corrective Actions</h1>
                     <p className="text-sm text-slate-500 mt-1">ISO 55001 §10.1 — Nonconformity tracking, root cause, remediation & WO conversion</p>
                 </div>
-                <button className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
-                    <Plus size={18} /> Log Finding
-                </button>
+            </div>
+
+            <div className="mb-6">
+                <PreviewBanner message="Preview — corrective actions shown are illustrative; logging and work-order conversion are not wired yet." />
             </div>
 
             {/* KPI Bar */}
@@ -258,18 +260,6 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                                 </p>
                                             )}
                                         </div>
-                                    </div>
-
-                                    {/* Quick Actions */}
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button className="p-2 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="View Details">
-                                            <Eye size={16} />
-                                        </button>
-                                        {!action.workOrderId && action.status !== 'closed' && (
-                                            <button className="p-2 rounded-lg hover:bg-primary-50 text-slate-400 hover:text-primary-600 transition-colors" title="Convert to Work Order">
-                                                <Wrench size={16} />
-                                            </button>
-                                        )}
                                     </div>
                                 </div>
                             </div>

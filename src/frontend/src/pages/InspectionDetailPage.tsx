@@ -14,7 +14,7 @@ import { VisionCorrosionPanel } from '../components/integrity/VisionCorrosionPan
 import { getTemplateByCode } from '../eam/constants/inspectionTemplates';
 import { agentService } from '../eam/services/AgentService';
 import type {
-    InspectionEvent, InspectionFinding, InspectionNote,
+    InspectionFinding, InspectionNote,
     InspectionTeamMember, InspectionTeamRole, FindingSeverity,
     InspectionType, InspectionEventStatus
 } from '../types/integrity';
@@ -44,26 +44,37 @@ type ActivePanel = 'findings' | 'checklist' | 'notes' | 'team' | 'vision';
 const InspectionDetailPage: React.FC = () => {
     const { inspectionId } = useParams<{ inspectionId: string }>();
     const navigate = useNavigate();
-    const { inspections, damageMechanisms, cmls } = useIntegrity();
+    const { inspections, damageMechanisms, cmls, updateInspection } = useIntegrity();
 
-    // Find the inspection
-    const inspection = useMemo(() => inspections.find(i => i.id === inspectionId), [inspections, inspectionId]);
-
-    // Local editable copy
-    const [localInsp, setLocalInsp] = useState<InspectionEvent | null>(null);
-    React.useEffect(() => {
-        if (inspection && !localInsp) setLocalInsp({ ...inspection });
-    }, [inspection, localInsp]);
+    // The shared record IS the source of truth — every edit goes through
+    // updateInspection (optimistic + persisted + rollback on failure), so
+    // nothing entered here is lost on navigation or reload.
+    const localInsp = useMemo(() => inspections.find(i => i.id === inspectionId) ?? null, [inspections, inspectionId]);
 
     const [activePanel, setActivePanel] = useState<ActivePanel>('findings');
     const [showAddFinding, setShowAddFinding] = useState(false);
     const [newFindingDesc, setNewFindingDesc] = useState('');
     const [newFindingSeverity, setNewFindingSeverity] = useState<FindingSeverity>('moderate');
 
-    // Checklist responses
-    const [checklistResponses, setChecklistResponses] = useState<Record<string, string | number | boolean>>(
-        inspection?.checklist_responses || {}
-    );
+    // Checklist responses — kept local while typing, flushed to the record
+    // (and DB) on a short debounce so text fields don't write per keystroke.
+    const [checklistResponses, setChecklistResponses] = useState<Record<string, string | number | boolean>>({});
+    const [checklistDirty, setChecklistDirty] = useState(false);
+    const checklistHydrated = React.useRef(false);
+    React.useEffect(() => {
+        if (localInsp && !checklistHydrated.current) {
+            checklistHydrated.current = true;
+            setChecklistResponses(localInsp.checklist_responses || {});
+        }
+    }, [localInsp]);
+    React.useEffect(() => {
+        if (!checklistDirty || !localInsp) return;
+        const t = setTimeout(() => {
+            setChecklistDirty(false);
+            updateInspection(localInsp.id, { checklist_responses: checklistResponses });
+        }, 800);
+        return () => clearTimeout(t);
+    }, [checklistDirty, checklistResponses, localInsp, updateInspection]);
 
     // Get form template
     const template = useMemo(() => getTemplateByCode(localInsp?.governing_code || ''), [localInsp?.governing_code]);
@@ -82,25 +93,24 @@ const InspectionDetailPage: React.FC = () => {
 
     const isReadonly = localInsp?.status === 'completed' || localInsp?.status === 'cancelled';
 
-    // ── Handlers ──
+    // ── Handlers — every mutation persists via updateInspection ──
     const startInspection = useCallback(() => {
         if (!localInsp) return;
-        setLocalInsp({
-            ...localInsp,
+        updateInspection(localInsp.id, {
             status: 'in_progress',
             started_date: new Date().toISOString(),
         });
-    }, [localInsp]);
+    }, [localInsp, updateInspection]);
 
     const completeInspection = useCallback(() => {
         if (!localInsp) return;
-        setLocalInsp({
-            ...localInsp,
+        updateInspection(localInsp.id, {
             status: 'completed',
             completed_date: new Date().toISOString(),
             findings_count: localInsp.findings.length,
+            checklist_responses: checklistResponses,
         });
-    }, [localInsp]);
+    }, [localInsp, updateInspection, checklistResponses]);
 
     const addFinding = useCallback(() => {
         if (!localInsp || !newFindingDesc.trim()) return;
@@ -116,28 +126,26 @@ const InspectionDetailPage: React.FC = () => {
             created_by: localInsp.inspector,
             created_at: new Date().toISOString(),
         };
-        setLocalInsp({
-            ...localInsp,
+        updateInspection(localInsp.id, {
             findings: [...localInsp.findings, newFinding],
             findings_count: localInsp.findings.length + 1,
         });
         setNewFindingDesc('');
         setShowAddFinding(false);
-    }, [localInsp, newFindingDesc, newFindingSeverity]);
+    }, [localInsp, newFindingDesc, newFindingSeverity, updateInspection]);
 
     const updateFinding = useCallback((id: string, updates: Partial<InspectionFinding>) => {
         if (!localInsp) return;
-        setLocalInsp({
-            ...localInsp,
+        updateInspection(localInsp.id, {
             findings: localInsp.findings.map(f => f.id === id ? { ...f, ...updates } : f),
         });
-    }, [localInsp]);
+    }, [localInsp, updateInspection]);
 
     const deleteFinding = useCallback((id: string) => {
         if (!localInsp) return;
         const updated = localInsp.findings.filter(f => f.id !== id).map((f, i) => ({ ...f, sequence: i + 1 }));
-        setLocalInsp({ ...localInsp, findings: updated, findings_count: updated.length });
-    }, [localInsp]);
+        updateInspection(localInsp.id, { findings: updated, findings_count: updated.length });
+    }, [localInsp, updateInspection]);
 
     const addNote = useCallback((note: Omit<InspectionNote, 'id' | 'created_at'>) => {
         if (!localInsp) return;
@@ -146,8 +154,8 @@ const InspectionDetailPage: React.FC = () => {
             id: `note-${Date.now()}`,
             created_at: new Date().toISOString(),
         };
-        setLocalInsp({ ...localInsp, notes: [...localInsp.notes, newNote] });
-    }, [localInsp]);
+        updateInspection(localInsp.id, { notes: [...localInsp.notes, newNote] });
+    }, [localInsp, updateInspection]);
 
     const addTeamMember = useCallback((member: Omit<InspectionTeamMember, 'id' | 'added_at'>) => {
         if (!localInsp) return;
@@ -156,21 +164,20 @@ const InspectionDetailPage: React.FC = () => {
             id: `tm-${Date.now()}`,
             added_at: new Date().toISOString(),
         };
-        setLocalInsp({ ...localInsp, team: [...localInsp.team, newMember] });
-    }, [localInsp]);
+        updateInspection(localInsp.id, { team: [...localInsp.team, newMember] });
+    }, [localInsp, updateInspection]);
 
     const removeTeamMember = useCallback((id: string) => {
         if (!localInsp) return;
-        setLocalInsp({ ...localInsp, team: localInsp.team.filter(m => m.id !== id) });
-    }, [localInsp]);
+        updateInspection(localInsp.id, { team: localInsp.team.filter(m => m.id !== id) });
+    }, [localInsp, updateInspection]);
 
     const updateTeamRole = useCallback((id: string, role: InspectionTeamRole) => {
         if (!localInsp) return;
-        setLocalInsp({
-            ...localInsp,
+        updateInspection(localInsp.id, {
             team: localInsp.team.map(m => m.id === id ? { ...m, role } : m),
         });
-    }, [localInsp]);
+    }, [localInsp, updateInspection]);
 
     // ── Draft Work Request from Finding (HITL) ──
     const handleDraftWR = useCallback(async (finding: InspectionFinding) => {
@@ -200,7 +207,7 @@ const InspectionDetailPage: React.FC = () => {
     }, [localInsp]);
 
     // ── Not Found ──
-    if (!inspection || !localInsp) {
+    if (!localInsp) {
         return (
             <div className="flex items-center justify-center h-96">
                 <div className="text-center">
@@ -416,7 +423,7 @@ const InspectionDetailPage: React.FC = () => {
                     <InspectionFormRenderer
                         template={template}
                         responses={checklistResponses}
-                        onResponseChange={(fieldId, value) => setChecklistResponses(prev => ({ ...prev, [fieldId]: value }))}
+                        onResponseChange={(fieldId, value) => { setChecklistResponses(prev => ({ ...prev, [fieldId]: value })); setChecklistDirty(true); }}
                         readonly={isReadonly}
                     />
                 )}

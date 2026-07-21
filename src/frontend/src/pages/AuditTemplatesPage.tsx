@@ -15,11 +15,12 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    FileText, Plus, Search, Filter, Copy, Edit3, Trash2, Eye,
-    ChevronRight, ChevronDown, Clock, CheckCircle, Star, MoreHorizontal,
+    FileText, Search, Copy,
+    ChevronRight, ChevronDown, Clock, CheckCircle, Star,
     ClipboardCheck, Shield, Wrench, Leaf, Settings, Lock,
-    Download, Upload, Tag, ListChecks, PlayCircle
+    Download, Tag, ListChecks, PlayCircle
 } from 'lucide-react';
+import { PreviewBanner } from '../components/common/PreviewBanner';
 
 // ─── Template Types ──────────────────────────────────────────
 interface AuditTemplate {
@@ -211,14 +212,10 @@ export const AuditTemplatesPage: React.FC = () => {
                     <h1 className="text-2xl font-black text-slate-800">Audit Templates</h1>
                     <p className="text-sm text-slate-500 mt-1">Reusable checklists & assessment frameworks — ISO 55001, PSM, MI, Custom</p>
                 </div>
-                <div className="flex gap-2">
-                    <button className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition-colors">
-                        <Upload size={16} /> Import
-                    </button>
-                    <button className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
-                        <Plus size={18} /> New Template
-                    </button>
-                </div>
+            </div>
+
+            <div className="mb-6">
+                <PreviewBanner message="Preview — templates are built-in presets; duplicated or edited templates are not saved yet. Start Audit works and launches a real assessment." />
             </div>
 
             {/* KPI Bar */}
@@ -348,11 +345,6 @@ export const AuditTemplatesPage: React.FC = () => {
                                             <button onClick={() => handleDuplicate(t)} className="p-2 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="Duplicate">
                                                 <Copy size={16} />
                                             </button>
-                                            {!t.isSystem && (
-                                                <button className="p-2 rounded-lg hover:bg-amber-50 text-slate-400 hover:text-amber-600 transition-colors" title="Edit">
-                                                    <Edit3 size={16} />
-                                                </button>
-                                            )}
                                             <button onClick={() => handleExport(t)} className="p-2 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors" title="Export">
                                                 <Download size={16} />
                                             </button>

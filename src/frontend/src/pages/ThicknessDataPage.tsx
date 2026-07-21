@@ -4,23 +4,25 @@ import { useIntegrity } from '../hooks/useIntegrity';
 import type { ThicknessReading, UTMethod } from '../types/integrity';
 
 export const ThicknessDataPage: React.FC = () => {
-    const { cmls, readings, corrosionRates, summary, addReading } = useIntegrity();
+    const { cmls, readings, assessments, summary, addReading } = useIntegrity();
     const [showNew, setShowNew] = useState(false);
-    const [form, setForm] = useState({ cml_id: '', measured_thickness_mm: '', ut_method: 'ut_contact' as UTMethod, technician: '' });
+    const today = new Date().toISOString().slice(0, 10);
+    const [form, setForm] = useState({ cml_id: '', measured_thickness_mm: '', ut_method: 'ut_contact' as UTMethod, technician: '', reading_date: today });
 
     const handleSubmit = () => {
-        if (!form.cml_id || !form.measured_thickness_mm || !form.technician) return;
-        const r: ThicknessReading = { id: `r-${Date.now()}`, cml_id: form.cml_id, reading_date: new Date().toISOString(), measured_thickness_mm: parseFloat(form.measured_thickness_mm), ut_method: form.ut_method, technician: form.technician };
+        if (!form.cml_id || !form.measured_thickness_mm || !form.technician || !form.reading_date) return;
+        const r: ThicknessReading = { id: `r-${Date.now()}`, cml_id: form.cml_id, reading_date: new Date(form.reading_date).toISOString(), measured_thickness_mm: parseFloat(form.measured_thickness_mm), ut_method: form.ut_method, technician: form.technician };
         addReading(r);
-        setForm({ cml_id: '', measured_thickness_mm: '', ut_method: 'ut_contact', technician: '' });
+        setForm({ cml_id: '', measured_thickness_mm: '', ut_method: 'ut_contact', technician: '', reading_date: today });
         setShowNew(false);
     };
 
+    // Remaining life comes from the shared API-510 assessment engine (controlling
+    // rate = max(ST, LT)) so this page agrees with Corrosion Rates to the digit.
     const augmented = readings.map(r => {
         const cml = cmls.find(c => c.id === r.cml_id);
-        const cr = corrosionRates.find(c => c.cml_id === r.cml_id);
         const delta = cml ? r.measured_thickness_mm - cml.tmin_mm : 0;
-        const remainingLife = cr && cr.short_term_rate_mmpy > 0 ? delta / cr.short_term_rate_mmpy : null;
+        const remainingLife = assessments.get(r.cml_id)?.remaining_life_years ?? null;
         return { ...r, cml, delta, remainingLife };
     }).sort((a, b) => a.delta - b.delta);
 
@@ -91,13 +93,18 @@ export const ThicknessDataPage: React.FC = () => {
                                     </select>
                                 </div>
                             </div>
-                            <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Technician</label>
-                                <input type="text" value={form.technician} onChange={e => setForm(f => ({ ...f, technician: e.target.value }))} placeholder="e.g. D. Chen" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Reading Date</label>
+                                    <input type="date" value={form.reading_date} max={today} onChange={e => setForm(f => ({ ...f, reading_date: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
+                                </div>
+                                <div><label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Technician</label>
+                                    <input type="text" value={form.technician} onChange={e => setForm(f => ({ ...f, technician: e.target.value }))} placeholder="e.g. D. Chen" className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
+                                </div>
                             </div>
                         </div>
                         <div className="p-6 border-t border-slate-200 flex justify-end space-x-3">
                             <button onClick={() => setShowNew(false)} className="px-4 py-2.5 text-sm text-slate-500 hover:text-slate-700 transition-colors">Cancel</button>
-                            <button onClick={handleSubmit} disabled={!form.cml_id || !form.measured_thickness_mm || !form.technician} className="px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Record Reading</button>
+                            <button onClick={handleSubmit} disabled={!form.cml_id || !form.measured_thickness_mm || !form.technician || !form.reading_date} className="px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">Record Reading</button>
                         </div>
                     </div>
                 </div>

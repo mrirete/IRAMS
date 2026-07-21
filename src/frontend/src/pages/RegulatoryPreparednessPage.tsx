@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldCheck, AlertTriangle, Calendar, TrendingUp } from 'lucide-react';
 import { useSafety } from '../hooks/useSafety';
+import { PreviewBanner } from '../components/common/PreviewBanner';
 
 export const RegulatoryPreparednessPage: React.FC = () => {
     const { readinessScores, summary } = useSafety();
@@ -14,6 +15,8 @@ export const RegulatoryPreparednessPage: React.FC = () => {
     return (
         <div className="space-y-6 pb-20">
             <div><h1 className="text-2xl font-bold text-slate-800 tracking-tight">Regulatory Preparedness</h1><p className="text-slate-500 text-sm mt-1">Readiness scoring, gap analysis, and upcoming submission deadlines</p></div>
+
+            <PreviewBanner message="Preview — readiness data shown is illustrative." />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Kpi label="Overall Readiness" value={`${summary.overall_readiness_pct}%`} icon={ShieldCheck} color={summary.overall_readiness_pct >= 80 ? 'text-green-400' : 'text-yellow-400'} bg={summary.overall_readiness_pct >= 80 ? 'bg-green-500/10' : 'bg-yellow-500/10'} />

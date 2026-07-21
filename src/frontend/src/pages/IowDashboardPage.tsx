@@ -50,8 +50,6 @@ export const IowDashboardPage: React.FC = () => {
                         <div>
                             <p className="text-red-700 text-sm font-bold mb-1">⚠ {breachBanner.length} IOW Breach(es) Active</p>
                             {breachBanner.map(b => <p key={b.id} className="text-red-600 text-xs">{b.parameter_name} — {b.current_value} {b.unit} (limit: {b.high_limit ?? b.low_limit} {b.unit}) on {getAssetName(b.asset_id)}</p>)}
-                            <button className="mt-3 px-4 py-2 bg-red-100 text-red-700 border border-red-200 rounded-lg text-sm font-semibold hover:bg-red-200 transition-colors">Generate Emergency WO</button>
-                            <p className="text-red-400 text-[10px] mt-2 uppercase tracking-wider">Human-In-The-Loop: Action requires authorized operator approval</p>
                         </div>
                     </div>
                 </div>

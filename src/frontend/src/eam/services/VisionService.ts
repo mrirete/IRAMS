@@ -10,6 +10,7 @@
 
 import type { VisionResult, DroneSurvey, VisionSeverity, AnalysisType } from '../../types/strategy';
 import { MOCK_VISION, MOCK_DRONE } from '../../mockData/strategy';
+import { demoSeed } from '../../config/demoMode';
 import analyzeService from './AnalyzeService';
 
 // ─── Severity Score Mapping ─────────────────────────────────
@@ -40,16 +41,18 @@ class VisionService {
 
     private async ensureLoaded(): Promise<void> {
         if (this.loaded) return;
+        // Mock fallback only in DEMO_DATA mode — an empty or unreachable DB in
+        // production must yield honest empty states, not fabricated findings.
         try {
             const [dbVision, dbDrones] = await Promise.all([
                 analyzeService.getVisionResults(),
                 analyzeService.getDroneSurveys(),
             ]);
-            this.cachedResults = (dbVision.length > 0 ? dbVision : MOCK_VISION) as VisionResult[];
-            this.cachedDrones = (dbDrones.length > 0 ? dbDrones : MOCK_DRONE) as DroneSurvey[];
+            this.cachedResults = (dbVision.length > 0 ? dbVision : demoSeed(MOCK_VISION, [])) as VisionResult[];
+            this.cachedDrones = (dbDrones.length > 0 ? dbDrones : demoSeed(MOCK_DRONE, [])) as DroneSurvey[];
         } catch {
-            this.cachedResults = [...MOCK_VISION];
-            this.cachedDrones = [...MOCK_DRONE];
+            this.cachedResults = demoSeed([...MOCK_VISION], []);
+            this.cachedDrones = demoSeed([...MOCK_DRONE], []);
         }
         this.loaded = true;
     }

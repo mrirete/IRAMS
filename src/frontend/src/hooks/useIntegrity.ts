@@ -9,14 +9,28 @@ import {
     MOCK_DAMAGE_MECHS, MOCK_FFS, MOCK_IOW, MOCK_INSPECTIONS
 } from '../mockData/integrity';
 import integrityService from '../eam/services/IntegrityService';
-import { demoSeed } from '../config/demoMode';
+import { DEMO_DATA, demoSeed } from '../config/demoMode';
+import { useToast } from '../eam/contexts/ToastContext';
 import { assessAllCMLs, assessmentToCorrosionRate, type CMLAssessment } from '../eam/utils/integrityCalcs';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  HOOK — Supabase first; mock seed only in DEMO_DATA mode (empty otherwise)
+//
+//  Write contract: every mutation is optimistic (row appears immediately),
+//  awaits the Supabase write, and on failure ROLLS BACK and toasts. The DB
+//  generates ids — client-side temp ids never reach Postgres. In DEMO_DATA
+//  mode writes stay local-only (mock rows reference mock assets, so DB
+//  writes would only fail FK checks).
 // ═══════════════════════════════════════════════════════════════════════
 
+/** Strip fields the database generates before insert/update. */
+function dbPayload<T extends { id?: string; created_at?: string; updated_at?: string }>(row: T) {
+    const { id: _id, created_at: _c, updated_at: _u, ...rest } = row;
+    return rest;
+}
+
 export function useIntegrity() {
+    const { showToast } = useToast();
     const [cmls, setCmls] = useState<CML[]>(() => demoSeed(MOCK_CMLS, []));
     const [readings, setReadings] = useState<ThicknessReading[]>(() => demoSeed(MOCK_READINGS, []));
     const [corrosionRates, setCorrosionRates] = useState<CorrosionRate[]>(() => demoSeed(MOCK_CORROSION, []));
@@ -65,12 +79,6 @@ export function useIntegrity() {
                     }
                     if (allReadings.length > 0 && !cancelled) setReadings(allReadings);
                 }
-
-                console.log('[useIntegrity] Supabase data loaded', {
-                    cmls: dbCmls.length, corrosion: dbCorrosion.length,
-                    rbi: dbRbi.length, dm: dbDm.length, ffs: dbFfs.length,
-                    iow: dbIow.length, inspections: dbInspections.length,
-                });
             } catch (e) {
                 console.warn('[useIntegrity] Supabase unavailable, using mock data:', e);
             } finally {
@@ -80,42 +88,60 @@ export function useIntegrity() {
         return () => { cancelled = true; };
     }, []);
 
-    // ── Local mutators (immediate UI update) ──────────────────────────
-    const addReading = useCallback((r: ThicknessReading) => {
-        setReadings(prev => [r, ...prev]);
-        // Fire & forget Supabase write
-        integrityService.addThicknessReading(r as any).catch(() => { });
-    }, []);
+    /**
+     * Optimistic insert: show the row under its temp id, persist, then swap
+     * in the DB row (real UUID). On failure remove the temp row and toast.
+     */
+    const persistAdd = useCallback(async <T extends { id: string }>(
+        row: T,
+        setter: React.Dispatch<React.SetStateAction<T[]>>,
+        write: (payload: any) => Promise<{ id: string } | null>,
+        label: string,
+    ) => {
+        setter(prev => [row, ...prev]);
+        if (DEMO_DATA) return;
+        const saved = await write(dbPayload(row));
+        if (saved) {
+            setter(prev => prev.map(x => x.id === row.id ? { ...row, ...saved } : x));
+        } else {
+            setter(prev => prev.filter(x => x.id !== row.id));
+            showToast(`Couldn't save ${label} — the change was not stored. Check your connection and try again.`, 'error', 6000);
+        }
+    }, [showToast]);
 
-    const addRbiAssessment = useCallback((r: RBIAssessment) => {
-        setRbiAssessments(prev => [r, ...prev]);
-        integrityService.createRBIAssessment(r as any).catch(() => { });
-    }, []);
+    // ── Mutators ──────────────────────────────────────────────────────
+    const addReading = useCallback((r: ThicknessReading) =>
+        persistAdd(r, setReadings, p => integrityService.addThicknessReading(p), 'thickness reading'), [persistAdd]);
 
-    const addDamageMechanism = useCallback((dm: DamageMechanism) => {
-        setDamageMechanisms(prev => [dm, ...prev]);
-        integrityService.createDamageMechanism(dm as any).catch(() => { });
-    }, []);
+    const addRbiAssessment = useCallback((r: RBIAssessment) =>
+        persistAdd(r, setRbiAssessments, p => integrityService.createRBIAssessment(p), 'RBI assessment'), [persistAdd]);
 
-    const addFfsAssessment = useCallback((f: FFSAssessment) => {
-        setFfsAssessments(prev => [f, ...prev]);
-        integrityService.createFFSAssessment(f as any).catch(() => { });
-    }, []);
+    const addDamageMechanism = useCallback((dm: DamageMechanism) =>
+        persistAdd(dm, setDamageMechanisms, p => integrityService.createDamageMechanism(p), 'damage mechanism'), [persistAdd]);
 
-    const addIowParameter = useCallback((p: IOWParameter) => {
-        setIowParameters(prev => [p, ...prev]);
-        integrityService.createIOWParameter(p as any).catch(() => { });
-    }, []);
+    const addFfsAssessment = useCallback((f: FFSAssessment) =>
+        persistAdd(f, setFfsAssessments, p => integrityService.createFFSAssessment(p), 'FFS assessment'), [persistAdd]);
 
-    const addInspection = useCallback((i: InspectionEvent) => {
-        setInspections(prev => [i, ...prev]);
-        integrityService.createInspection(i as any).catch(() => { });
-    }, []);
+    const addIowParameter = useCallback((p: IOWParameter) =>
+        persistAdd(p, setIowParameters, x => integrityService.createIOWParameter(x), 'IOW parameter'), [persistAdd]);
 
-    const updateInspection = useCallback((id: string, updates: Partial<InspectionEvent>) => {
-        setInspections(prev => prev.map(i => i.id === id ? { ...i, ...updates } : i));
-        integrityService.updateInspection(id, updates as any).catch(() => { });
-    }, []);
+    const addInspection = useCallback((i: InspectionEvent) =>
+        persistAdd(i, setInspections, p => integrityService.createInspection(p), 'inspection'), [persistAdd]);
+
+    const updateInspection = useCallback(async (id: string, updates: Partial<InspectionEvent>) => {
+        let previous: InspectionEvent | undefined;
+        setInspections(prev => {
+            previous = prev.find(i => i.id === id);
+            return prev.map(i => i.id === id ? { ...i, ...updates } : i);
+        });
+        if (DEMO_DATA) return;
+        const saved = await integrityService.updateInspection(id, dbPayload(updates as any));
+        if (!saved && previous) {
+            const rollback = previous;
+            setInspections(prev => prev.map(i => i.id === id ? rollback : i));
+            showToast(`Couldn't save inspection changes — they were not stored. Check your connection and try again.`, 'error', 6000);
+        }
+    }, [showToast]);
 
     // ── API-510/570/653 assessments computed from thickness readings ──
     // Derive corrosion rate + remaining life from the raw readings (the data

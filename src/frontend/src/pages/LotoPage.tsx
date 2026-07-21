@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Lock, Shield, CheckCircle, Clock, FileText, XCircle, Plus, X } from 'lucide-react';
 import { useSafety } from '../hooks/useSafety';
 import { useAssetLookup } from '../hooks/useAssetLookup';
+import { PreviewBanner } from '../components/common/PreviewBanner';
 import type { LOTOPermit, IsolationType } from '../types/safety';
 
 export const LotoPage: React.FC = () => {
@@ -40,6 +41,8 @@ export const LotoPage: React.FC = () => {
                 <div><h1 className="text-2xl font-bold text-slate-800 tracking-tight">Lockout / Tagout</h1><p className="text-slate-500 text-sm mt-1">OSHA 1910.147 — Energy isolation permits and safe-to-work authorizations</p></div>
                 <button onClick={() => setShowNew(true)} className="btn-primary"><Plus size={16} className="mr-2" />New LOTO Permit</button>
             </div>
+
+            <PreviewBanner message="Preview — LOTO permits are not saved yet; drafts created here disappear on reload. Full isolation lifecycle (issue → verify → release) is on the roadmap." />
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Kpi label="Active Permits" value={summary.active_loto_permits} icon={Lock} color="text-green-400" bg="bg-green-500/10" />
@@ -93,9 +96,8 @@ export const LotoPage: React.FC = () => {
                         {selected.status === 'active' && (
                             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
                                 <p className="text-yellow-300 text-sm font-semibold mb-2">⚠ Gatekeeper Authorization Required</p>
-                                <p className="text-yellow-400/70 text-xs mb-3">Clearing this LOTO permit requires verification that all energy sources are de-isolated and safe-to-work conditions are restored.</p>
-                                <button className="px-4 py-2 bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 rounded-lg text-sm font-semibold hover:bg-yellow-500/30 transition-colors">Authorize Safe-to-Work Clearance</button>
-                                <p className="text-yellow-500/50 text-[10px] mt-2 uppercase tracking-wider">Human-In-The-Loop: Digital sign-off required</p>
+                                <p className="text-yellow-400/70 text-xs mb-2">Clearing this LOTO permit requires verification that all energy sources are de-isolated and safe-to-work conditions are restored.</p>
+                                <p className="text-yellow-500/50 text-[10px] uppercase tracking-wider">Human-In-The-Loop: Digital sign-off required</p>
                             </div>
                         )}
                     </div>

@@ -123,10 +123,6 @@ export const RbiPage: React.FC = () => {
                         <VisionCorrosionPanel
                             assetId={selected.asset_id}
                             assetName={getAssetName(selected.asset_id)}
-                            onLinkToCML={(finding) => {
-                                console.log('[RBI] Link Vision finding to CML:', finding.id, finding.image_name);
-                                // TODO: Open CML linkage modal when CML model is implemented
-                            }}
                         />
                     </div>
                 </div>

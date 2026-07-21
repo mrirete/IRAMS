@@ -13,11 +13,12 @@
 
 import React, { useState } from 'react';
 import {
-    Calendar, Plus, Search, Clock, MapPin, User, Building2,
+    Calendar, Search, Clock, MapPin, User, Building2,
     AlertTriangle, CheckCircle, ChevronLeft, ChevronRight,
     Filter, MoreHorizontal, FileText, RefreshCw, Repeat,
     Target, Bell
 } from 'lucide-react';
+import { PreviewBanner } from '../components/common/PreviewBanner';
 
 // ─── Types ───────────────────────────────────────────────────
 type AuditScheduleStatus = 'scheduled' | 'in_progress' | 'completed' | 'overdue' | 'cancelled';
@@ -120,9 +121,10 @@ export const AuditSchedulePage: React.FC = () => {
                     <h1 className="text-2xl font-black text-slate-800">Audit Schedule</h1>
                     <p className="text-sm text-slate-500 mt-1">ISO 55001 §9.2 — Audit Programme Planning, Scheduling & Tracking</p>
                 </div>
-                <button className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2">
-                    <Plus size={18} /> Schedule Audit
-                </button>
+            </div>
+
+            <div className="mb-6">
+                <PreviewBanner message="Preview — the audit schedule shown is illustrative and not yet connected to assessments." />
             </div>
 
             {/* KPI Bar */}
