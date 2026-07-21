@@ -300,6 +300,11 @@ export class DataMapper {
 
     static toDBJSAHazard(ui: JSAHazard, jsaId: string): any {
         return {
+            // Preserve the row id across saves so hazards upsert in place;
+            // rows born before client-side UUID ids (legacy "hz-…" placeholders)
+            // get a fresh one here.
+            id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(ui.id)
+                ? ui.id : crypto.randomUUID(),
             jsa_id: jsaId,
             hazard: ui.hazard,
             consequence: ui.consequence ?? null,

@@ -1351,6 +1351,41 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         }
     }, [dictionaries, user, showToast]);
 
+    // ── Scoped JSA persist: safety-tab edits only touch the jsa tables.
+    // The full-WO path rewrites the whole order (and delete-reinserts child
+    // rows) on every save, so routing a hazard-description keystroke through
+    // it was slow and widened the concurrency window. Used only when nothing
+    // but the JSA is pending in the debounce window. ──
+    const persistJsaOnly = useCallback(async (updatedJob: WorkOrder, jsa: JobJSA) => {
+        if (!updatedJob.id) return;
+        setIsSaving(true);
+        try {
+            const { queued } = await offlineQueue.run(
+                'saveJsa',
+                { woId: updatedJob.id, jsa, actor: user?.id || 'unknown' },
+                `JSA for WO ${updatedJob.woNumber || updatedJob.id}`,
+            );
+            if (queued) {
+                showToast('Saved offline — the safety assessment will sync when you reconnect.', 'info');
+                return;
+            }
+            // First save creates the assessment row; adopt its real id so the
+            // permits section can attach without a full refetch.
+            if (!isRealJsaId(jsa.id)) {
+                const created = await DatabaseService.getInstance().getJSA(updatedJob.id);
+                if (created?.id) {
+                    setLocalJob(prev => prev.jsa ? { ...prev, jsa: { ...prev.jsa, id: created.id } } : prev);
+                }
+            }
+            showToast('Safety assessment saved', 'success');
+        } catch (e) {
+            console.error('[persistJsaOnly] failed:', e);
+            showToast('Failed to save safety assessment', 'error');
+        } finally {
+            setIsSaving(false);
+        }
+    }, [user, showToast]);
+
     // ── Debounced updateJob: local state updates instantly, DB save is debounced ──
     const updateJob = async (updates: Partial<WorkOrder>, force = false) => {
         if (!localJob.id) return;
@@ -1402,7 +1437,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         saveTimerRef.current = setTimeout(async () => {
             saveTimerRef.current = null;
             pendingUpdatesRef.current = {}; // reset accumulated updates
-            await persistToDb(snapshot, originalSnapshot, accumulatedUpdates);
+            const pendingKeys = Object.keys(accumulatedUpdates);
+            if (pendingKeys.length === 1 && pendingKeys[0] === 'jsa' && accumulatedUpdates.jsa) {
+                await persistJsaOnly(snapshot, accumulatedUpdates.jsa);
+            } else {
+                await persistToDb(snapshot, originalSnapshot, accumulatedUpdates);
+            }
         }, DEBOUNCE_MS);
     };
 
@@ -6045,7 +6085,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
 
     const addHazard = () => {
         const newHazard: JobHazard = {
-            id: `hz-${Date.now()}`,
+            id: crypto.randomUUID(), // stable — doubles as the DB row id (upsert)
             hazard: '',
             consequence: 1,
             likelihood: 1,
@@ -6135,7 +6175,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
 
     const acceptSuggestion = (s: JSAHazardSuggestion) => {
         const newHazard: JobHazard = {
-            id: `hz-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            id: crypto.randomUUID(),
             hazard: s.hazard,
             consequence: s.consequence,
             likelihood: s.likelihood,
@@ -6164,7 +6204,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     const handleLoadTemplate = (tpl: { name: string; hazards: any[] }) => {
         const newHazards = tpl.hazards.map(h => ({
             ...h,
-            id: `hz-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            id: crypto.randomUUID(),
             riskScore: (h.consequence || 1) * (h.likelihood || 1),
             riskLevel: getWORiskLevel((h.consequence || 1) * (h.likelihood || 1)),
         }));

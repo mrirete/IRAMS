@@ -82,7 +82,7 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                 // the minimal set the failure math needs; MTTR then shows "—".
                 if (woRes.error) {
                     const fb = await supabase.from('work_orders')
-                        .select('id, type, status, created_at, closed_at, wo_failure_data(failure_mode_code)')
+                        .select('id, type, status, created_at, closed_at, actual_downtime_hrs, wo_failure_data(failure_mode_code)')
                         .eq('asset_id', assetId);
                     rows = fb.data || [];
                 }

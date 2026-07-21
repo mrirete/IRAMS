@@ -5275,7 +5275,7 @@ export class DatabaseService {
     }
 
     // --- JSA ---
-    public async updateJobJSA(woId: string, jsa: JobJSA, actor: string) {
+    public async updateJobJSA(woId: string, jsa: JobJSA, actor: string): Promise<string | undefined> {
         // 1. Find existing JSA or Create
         const { data: existing } = await supabase.from('jsa_assessments').select('id').eq('wo_id', woId).maybeSingle();
 
@@ -5291,20 +5291,25 @@ export class DatabaseService {
             jsaId = data.id;
         }
 
-        // 2. Hazards
-        // Replace strategy: Delete all for this JSA, insert new.
-        // Skip rows the user hasn't described yet — a freshly clicked
-        // "+ Hazard" would otherwise persist as a blank hazard forever.
+        // 2. Hazards — upsert by stable client-generated id, then remove the
+        // rows the user deleted. Preserves row ids across saves (the old
+        // delete-all-and-reinsert regenerated every id) and converges when the
+        // offline queue replays the same payload. Rows the user hasn't
+        // described yet are skipped, not persisted blank.
         if (jsaId && jsa.hazards) {
-            await supabase.from('jsa_hazards').delete().eq('jsa_id', jsaId);
-            const dbHazards = jsa.hazards
+            const rows = jsa.hazards
                 .filter(h => (h.hazard || '').trim() || (h.controls || '').trim())
                 .map(h => DataMapper.toDBJSAHazard(h, jsaId!));
-            if (dbHazards.length > 0) {
-                const { error: hErr } = await supabase.from('jsa_hazards').insert(dbHazards);
+            let del = supabase.from('jsa_hazards').delete().eq('jsa_id', jsaId);
+            if (rows.length > 0) del = del.not('id', 'in', `(${rows.map(r => r.id).join(',')})`);
+            const { error: dErr } = await del;
+            if (dErr) throw dErr;
+            if (rows.length > 0) {
+                const { error: hErr } = await supabase.from('jsa_hazards').upsert(rows);
                 if (hErr) throw hErr;
             }
         }
+        return jsaId;
     }
 
     // --- PTW (PERMIT TO WORK) ---

@@ -174,7 +174,7 @@ export const NotificationConfig: React.FC = () => {
     };
 
     const handleDeleteRule = async (id: string) => {
-        if (confirm('Delete this notification rule? This action cannot be undone.')) {
+        if (await confirm('Delete this notification rule? This action cannot be undone.')) {
             try {
                 await DatabaseService.getInstance().deleteNotificationRule(id);
                 // Close editor if the deleted rule was being edited

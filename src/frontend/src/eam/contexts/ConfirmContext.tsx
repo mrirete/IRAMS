@@ -27,9 +27,10 @@ export type PromptFunction = (
     defaultValue?: string
 ) => Promise<string | null>;
 
-export type ConfirmFunction = (options: ConfirmOptions) => Promise<boolean>;
+export type ConfirmFunction = (optionsOrMessage: ConfirmOptions | string) => Promise<boolean>;
 
-export interface ConfirmContextCallable extends ConfirmFunction {
+export interface ConfirmContextCallable {
+    (optionsOrMessage: ConfirmOptions | string): Promise<boolean>;
     confirm: ConfirmFunction;
     prompt: PromptFunction;
 }
@@ -51,10 +52,14 @@ export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const promptResolveRef = useRef<((value: string | null) => void) | null>(null);
 
     // ── Confirm Handler ──
-    const confirm = useCallback((options: ConfirmOptions): Promise<boolean> => {
+    const confirm = useCallback((optionsOrMessage: ConfirmOptions | string): Promise<boolean> => {
+        const opts: ConfirmOptions = typeof optionsOrMessage === 'string'
+            ? { title: 'Confirm Action', message: optionsOrMessage, variant: 'warning' }
+            : optionsOrMessage;
+
         return new Promise<boolean>((resolve) => {
             confirmResolveRef.current = resolve;
-            setConfirmState({ ...options, open: true });
+            setConfirmState({ ...opts, open: true });
         });
     }, []);
 
@@ -143,14 +148,11 @@ export const useConfirm = (): ConfirmContextCallable => {
         throw new Error('useConfirm must be used within a ConfirmProvider');
     }
 
-    const callable = useCallback((options: ConfirmOptions) => {
-        return context.confirm(options);
-    }, [context]) as ConfirmContextCallable;
+    const fn = (optionsOrMessage: ConfirmOptions | string) => context.confirm(optionsOrMessage);
+    fn.confirm = context.confirm;
+    fn.prompt = context.prompt;
 
-    callable.confirm = context.confirm;
-    callable.prompt = context.prompt;
-
-    return callable;
+    return fn as ConfirmContextCallable;
 };
 
 export const usePrompt = (): PromptFunction => {

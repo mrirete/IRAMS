@@ -163,9 +163,9 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
         );
     };
 
-    const CompareCard = ({ icon, label, base, proj, delta, unit, invert, fmt }: {
+    const CompareCard = ({ icon, label, base, proj, delta, unit, invert, digits, fmt }: {
         icon: React.ReactNode; label: string; base: number; proj: number; delta: number; unit: string; invert?: boolean;
-        fmt: (v: number) => string;
+        digits?: number; fmt: (v: number) => string;
     }) => (
         <div className="bg-slate-50 border border-slate-300 rounded-lg p-3">
             <div className="flex items-center gap-1.5 mb-2">
@@ -424,7 +424,7 @@ export const ScenarioSimulator: React.FC<Props> = ({ assetId, assetName, grounde
                                         onClick={() => onAdoptPmInterval({
                                             intervalDays: values.pmInterval,
                                             rationale:
-                                                `What-If simulation (${result.runs.toLocaleString()} runs, fitted β=${groundedFit?.beta}, η=${Math.round((groundedFit?.eta || 0) / 24)}d): ` +
+                                                `What-If simulation (${(result.runs ?? 0).toLocaleString()} runs, fitted β=${groundedFit?.beta}, η=${Math.round((groundedFit?.eta || 0) / 24)}d): ` +
                                                 `PM every ${values.pmInterval}d vs 180d baseline → net ${result.netAnnualBenefit >= 0 ? 'saving' : 'cost'} $${Math.abs(result.netAnnualBenefit).toLocaleString()}/yr, ` +
                                                 `availability ${result.projected.metrics.availability_pct.toFixed(1)}% vs ${result.baseline.metrics.availability_pct.toFixed(1)}%, ` +
                                                 `P(failure,1yr) ${(result.projected.metrics.failure_probability_1yr * 100).toFixed(0)}% vs ${(result.baseline.metrics.failure_probability_1yr * 100).toFixed(0)}%.` +

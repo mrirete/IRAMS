@@ -28,6 +28,12 @@ export interface SaveWorkOrderPayload {
     actor: string;
 }
 
+export interface SaveJsaPayload {
+    woId: string;
+    jsa: Parameters<DatabaseService['updateJobJSA']>[1];
+    actor: string;
+}
+
 let initialised = false;
 
 export function initOfflineExecutors() {
@@ -61,6 +67,14 @@ export function initOfflineExecutors() {
     offlineQueue.register('saveWorkOrder', async (payload) => {
         const { id, updates, actor } = payload as SaveWorkOrderPayload;
         await DatabaseService.getInstance().updateWorkOrder(id, updates, actor);
+    });
+
+    // Scoped JSA save — safety-tab edits persist to the jsa tables only, without
+    // rewriting the rest of the work order. Idempotent: the assessment is keyed
+    // by wo_id and hazards upsert on stable client-generated ids.
+    offlineQueue.register('saveJsa', async (payload) => {
+        const { woId, jsa, actor } = payload as SaveJsaPayload;
+        await DatabaseService.getInstance().updateJobJSA(woId, jsa, actor);
     });
 
     // Contextual message send (thread chat). The row carries a client-generated
