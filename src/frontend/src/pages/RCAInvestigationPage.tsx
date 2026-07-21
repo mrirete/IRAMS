@@ -762,8 +762,11 @@ export function RCAInvestigationPage() {
                 
                 {/* Header — sticks to the top. An RCA is a team exercise and the page is long;
                     Invite has to be reachable from wherever you are in it, not just from the
-                    top of a six-step scroll. */}
-                <div className="sticky top-0 z-20 -mx-4 sm:-mx-6 md:-mx-8 px-4 sm:px-6 md:px-8 pt-1 pb-4 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/80
+                    top of a six-step scroll. The negative top/x offsets cancel BOTH this
+                    page's padding AND the AppLayout <main> padding (p-4 md:p-6) — sticky
+                    pins at the scroll container's content box, so without them the band
+                    floats 16/24px down and content peeks out above it. */}
+                <div className="sticky -top-4 md:-top-6 z-20 -mx-8 sm:-mx-10 md:-mx-14 px-8 sm:px-10 md:px-14 pt-1 pb-4 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/80
                                 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="flex flex-col gap-2">
                         {/* Breadcrumb, not a single back-step: an investigation is two levels

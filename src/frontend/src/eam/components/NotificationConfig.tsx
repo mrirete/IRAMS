@@ -9,9 +9,11 @@ import { MOCK_NOTIFICATION_RULES, MOCK_DICTIONARIES } from '../constants';
 import { NotificationRule, NotificationSeverity, NotificationChannel, ModuleName, NotificationChannelConfig, MessageTemplate, NotificationLog } from '../types';
 import { NOTIFICATION_EVENTS } from '../lib/notificationEvents';
 import { DatabaseService } from '../services/DatabaseService';
+import { useConfirm } from '../contexts/ConfirmContext';
 import { useEffect } from 'react';
 
 export const NotificationConfig: React.FC = () => {
+    const confirm = useConfirm();
     const [rules, setRules] = useState<NotificationRule[]>([]);
     const [dictionaries, setDictionaries] = useState<any[]>([]);
     const [contacts, setContacts] = useState<any[]>([]);
@@ -86,7 +88,14 @@ export const NotificationConfig: React.FC = () => {
     };
 
     const handleSimulateSend = async (channelType: string = 'EMAIL') => {
-        const recipient = prompt(`Enter recipient for ${channelType} test:`, 'test@user.com');
+        const recipient = await confirm.prompt({
+            title: `Test ${channelType} Notification`,
+            message: `Enter target recipient address or phone for ${channelType} test:`,
+            defaultValue: 'test@user.com',
+            placeholder: 'Recipient address...',
+            confirmLabel: 'Send Test',
+            icon: <Send size={20} className="text-indigo-600" />
+        });
         if (!recipient) return;
         await DatabaseService.getInstance().logNotificationAudit(
             recipient, channelType,

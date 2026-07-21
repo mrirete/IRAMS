@@ -9,12 +9,14 @@ import { LibraryTask, DictionaryEntry, InventoryItem, InstructionBlock } from '.
 import { ProcedureBuilder } from '../../components/ProcedureBuilder';
 
 import { useAuth } from '../../contexts/AuthContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 
 // Reusing types from parent if possible, but defining local props
 interface TaskLibraryManagerProps { }
 
 export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     const { permissions, user } = useAuth();
+    const confirm = useConfirm();
     const [tasks, setTasks] = useState<LibraryTask[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -516,8 +518,15 @@ const TaskEditorModal: React.FC<{
                             <h4 className="font-bold text-sm text-slate-700 flex items-center gap-2"><FileText size={14} /> Attachments & Media</h4>
                             <button
                                 type="button"
-                                onClick={() => {
-                                    const url = prompt("Enter File URL (mock upload):", "https://example.com/manual.pdf");
+                                onClick={async () => {
+                                    const url = await confirm.prompt({
+                                        title: 'Add Document or Media Link',
+                                        message: 'Enter direct URL to technical document or manual:',
+                                        defaultValue: 'https://example.com/manual.pdf',
+                                        placeholder: 'https://...',
+                                        confirmLabel: 'Attach File',
+                                        icon: <FileText size={20} className="text-blue-600" />
+                                    });
                                     if (url) {
                                         const name = url.split('/').pop() || 'file';
                                         setLocalFiles([...localFiles, {

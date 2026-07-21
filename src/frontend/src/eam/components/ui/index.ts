@@ -33,3 +33,6 @@ export { ScrollTabStrip } from './ScrollTabStrip';
 export type { ScrollTabStripProps } from './ScrollTabStrip';
 export { ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps, ConfirmVariant } from './ConfirmDialog';
+export { PromptDialog } from './PromptDialog';
+export type { PromptDialogProps } from './PromptDialog';
+

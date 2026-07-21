@@ -1,23 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
 import { ConfirmDialog, type ConfirmVariant } from '../components/ui/ConfirmDialog';
-
-/**
- * ConfirmContext — imperative `confirm()` as a hook.
- *
- * Usage:
- *   const confirm = useConfirm();
- *
- *   const handleDelete = async () => {
- *       const ok = await confirm({
- *           title: 'Delete Task',
- *           message: 'This task and all its data will be permanently removed.',
- *           variant: 'danger',
- *           confirmLabel: 'Delete',
- *       });
- *       if (!ok) return;
- *       // proceed with deletion…
- *   };
- */
+import { PromptDialog } from '../components/ui/PromptDialog';
 
 export interface ConfirmOptions {
     title: string;
@@ -27,56 +10,153 @@ export interface ConfirmOptions {
     cancelLabel?: string;
 }
 
+export interface PromptOptions {
+    title: string;
+    message?: string;
+    defaultValue?: string;
+    placeholder?: string;
+    icon?: React.ReactNode;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    inputType?: 'text' | 'textarea' | 'number';
+    validation?: (value: string) => string | null | undefined;
+}
+
+export type PromptFunction = (
+    optionsOrTitle: PromptOptions | string,
+    defaultValue?: string
+) => Promise<string | null>;
+
+export type ConfirmFunction = (options: ConfirmOptions) => Promise<boolean>;
+
+export interface ConfirmContextCallable extends ConfirmFunction {
+    confirm: ConfirmFunction;
+    prompt: PromptFunction;
+}
+
 interface ConfirmContextType {
-    confirm: (options: ConfirmOptions) => Promise<boolean>;
+    confirm: ConfirmFunction;
+    prompt: PromptFunction;
 }
 
 const ConfirmContext = createContext<ConfirmContextType | undefined>(undefined);
 
 export const ConfirmProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [state, setState] = useState<(ConfirmOptions & { open: boolean }) | null>(null);
-    const resolveRef = useRef<((value: boolean) => void) | null>(null);
+    // Confirmation Modal State
+    const [confirmState, setConfirmState] = useState<(ConfirmOptions & { open: boolean }) | null>(null);
+    const confirmResolveRef = useRef<((value: boolean) => void) | null>(null);
 
+    // Prompt Modal State
+    const [promptState, setPromptState] = useState<(PromptOptions & { open: boolean }) | null>(null);
+    const promptResolveRef = useRef<((value: string | null) => void) | null>(null);
+
+    // ── Confirm Handler ──
     const confirm = useCallback((options: ConfirmOptions): Promise<boolean> => {
         return new Promise<boolean>((resolve) => {
-            resolveRef.current = resolve;
-            setState({ ...options, open: true });
+            confirmResolveRef.current = resolve;
+            setConfirmState({ ...options, open: true });
         });
     }, []);
 
-    const handleConfirm = useCallback(() => {
-        resolveRef.current?.(true);
-        resolveRef.current = null;
-        setState(null);
+    const handleConfirmOk = useCallback(() => {
+        confirmResolveRef.current?.(true);
+        confirmResolveRef.current = null;
+        setConfirmState(null);
     }, []);
 
-    const handleCancel = useCallback(() => {
-        resolveRef.current?.(false);
-        resolveRef.current = null;
-        setState(null);
+    const handleConfirmCancel = useCallback(() => {
+        confirmResolveRef.current?.(false);
+        confirmResolveRef.current = null;
+        setConfirmState(null);
     }, []);
+
+    // ── Prompt Handler ──
+    const prompt = useCallback((
+        optionsOrTitle: PromptOptions | string,
+        defaultValue?: string
+    ): Promise<string | null> => {
+        const opts: PromptOptions = typeof optionsOrTitle === 'string'
+            ? { title: optionsOrTitle, defaultValue: defaultValue ?? '' }
+            : optionsOrTitle;
+
+        return new Promise<string | null>((resolve) => {
+            promptResolveRef.current = resolve;
+            setPromptState({ ...opts, open: true });
+        });
+    }, []);
+
+    const handlePromptOk = useCallback((val: string) => {
+        promptResolveRef.current?.(val);
+        promptResolveRef.current = null;
+        setPromptState(null);
+    }, []);
+
+    const handlePromptCancel = useCallback(() => {
+        promptResolveRef.current?.(null);
+        promptResolveRef.current = null;
+        setPromptState(null);
+    }, []);
+
+    const contextValue = useMemo(() => ({
+        confirm,
+        prompt
+    }), [confirm, prompt]);
 
     return (
-        <ConfirmContext.Provider value={{ confirm }}>
+        <ConfirmContext.Provider value={contextValue}>
             {children}
+
+            {/* Confirmation Dialog */}
             <ConfirmDialog
-                open={!!state?.open}
-                onConfirm={handleConfirm}
-                onCancel={handleCancel}
-                title={state?.title ?? ''}
-                message={state?.message ?? ''}
-                variant={state?.variant ?? 'danger'}
-                confirmLabel={state?.confirmLabel ?? 'Confirm'}
-                cancelLabel={state?.cancelLabel ?? 'Cancel'}
+                open={!!confirmState?.open}
+                onConfirm={handleConfirmOk}
+                onCancel={handleConfirmCancel}
+                title={confirmState?.title ?? ''}
+                message={confirmState?.message ?? ''}
+                variant={confirmState?.variant ?? 'danger'}
+                confirmLabel={confirmState?.confirmLabel ?? 'Confirm'}
+                cancelLabel={confirmState?.cancelLabel ?? 'Cancel'}
+            />
+
+            {/* Prompt Dialog */}
+            <PromptDialog
+                open={!!promptState?.open}
+                onConfirm={handlePromptOk}
+                onCancel={handlePromptCancel}
+                title={promptState?.title ?? ''}
+                message={promptState?.message}
+                defaultValue={promptState?.defaultValue}
+                placeholder={promptState?.placeholder}
+                icon={promptState?.icon}
+                confirmLabel={promptState?.confirmLabel ?? 'Save'}
+                cancelLabel={promptState?.cancelLabel ?? 'Cancel'}
+                inputType={promptState?.inputType ?? 'text'}
+                validation={promptState?.validation}
             />
         </ConfirmContext.Provider>
     );
 };
 
-export const useConfirm = (): ConfirmContextType['confirm'] => {
+export const useConfirm = (): ConfirmContextCallable => {
     const context = useContext(ConfirmContext);
     if (!context) {
         throw new Error('useConfirm must be used within a ConfirmProvider');
     }
-    return context.confirm;
+
+    const callable = useCallback((options: ConfirmOptions) => {
+        return context.confirm(options);
+    }, [context]) as ConfirmContextCallable;
+
+    callable.confirm = context.confirm;
+    callable.prompt = context.prompt;
+
+    return callable;
+};
+
+export const usePrompt = (): PromptFunction => {
+    const context = useContext(ConfirmContext);
+    if (!context) {
+        throw new Error('usePrompt must be used within a ConfirmProvider');
+    }
+    return context.prompt;
 };

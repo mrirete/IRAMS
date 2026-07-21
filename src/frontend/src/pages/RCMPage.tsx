@@ -570,7 +570,7 @@ export const RCMPage: React.FC = () => {
 
       {/* ═══ Frozen Action Bar — pinned to the top while the study scrolls ═══ */}
       {selectedStudy && (
-        <div className="sticky top-0 z-30 -mx-4 md:-mx-6 px-4 md:px-6 py-2 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/70 flex items-center gap-2">
+        <div className="sticky -top-4 md:-top-6 z-30 -mx-4 md:-mx-6 px-4 md:px-6 py-2 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/70 flex items-center gap-2">
           <button
             onClick={handleStickyAddFunction}
             className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:border-accent-cyan hover:text-accent-cyan transition-colors shadow-sm shrink-0"

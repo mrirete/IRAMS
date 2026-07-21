@@ -32,7 +32,7 @@ import {
     TrendingUp,
     ShieldCheck,
     Printer, Copy, ChevronLeft, Download, GitPullRequest,
-    Shield, Box, Paperclip, AlertOctagon, Book, Package, Info, Bell, Send, Layers, Eye, Repeat,
+    Shield, Box, Paperclip, AlertOctagon, Book, Bookmark, Package, Info, Bell, Send, Layers, Eye, Repeat,
     DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2, Check, Factory
 } from 'lucide-react';
 import { InventoryPicker } from '../components/pickers/InventoryPicker';
@@ -82,6 +82,7 @@ export const WorkOrders: React.FC = () => {
     const { jobId } = useParams();
     const navigate = useNavigate();
     const { showToast } = useToast(); // Added toast hook
+    const confirm = useConfirm();
     const { permissions, profile: woProfile, dataScope } = useAuth();
     // ═══ RBAC Permission Extraction (ISO 27001 / NIST CSF) ═══
     const canCreate = permissions?.workOrders?.create === true;
@@ -561,8 +562,14 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
         localStorage.setItem('irams_wo_sort_field', v.sortField);
         localStorage.setItem('irams_wo_sort_asc', String(v.sortAsc));
     };
-    const saveCurrentView = () => {
-        const name = window.prompt('Save this filter + sort as a view named:');
+    const saveCurrentView = async () => {
+        const name = await confirm.prompt({
+            title: 'Save Custom View',
+            message: 'Enter a name for this saved filter & sort configuration:',
+            placeholder: 'e.g. High Priority Backlog',
+            confirmLabel: 'Save View',
+            icon: <Bookmark size={20} className="text-indigo-600" />
+        });
         if (!name || !name.trim()) return;
         const v: WOView = { id: 'u-' + Date.now(), name: name.trim(), statusFilter, classFilter, backlogOnly, sortField, sortAsc };
         const next = [...userViews, v];
@@ -1710,7 +1717,14 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     </button>
                     <button
                         onClick={async () => {
-                            const name = prompt("Enter a name for this new Library Template:", localJob.title);
+                            const name = await confirm.prompt({
+                                title: 'Save as Library Template',
+                                message: 'Enter a descriptive title for this new standard library template:',
+                                defaultValue: localJob.title,
+                                placeholder: 'Template title...',
+                                confirmLabel: 'Create Template',
+                                icon: <Book size={20} className="text-indigo-600" />
+                            });
                             if (name) {
                                 try {
                                     const mappedInstructions = localJob.tasks?.map(t => ({ id: 'new', stepNumber: t.sequence, description: t.description, type: 'TEXT', required: false })) || [];
@@ -4665,7 +4679,15 @@ const TaskEditor: React.FC<{
     const [isPartPickerOpen, setIsPartPickerOpen] = useState(false);
 
     const handleReturnToStores = async (part: JobInventory) => {
-        const qtyStr = window.prompt(`Return "${part.description}" to Stores.\nEnter quantity to return:`, "1");
+        const qtyStr = await confirm.prompt({
+            title: 'Return to Stores',
+            message: `Return "${part.description || 'part'}" to warehouse inventory:`,
+            defaultValue: '1',
+            inputType: 'number',
+            placeholder: 'Quantity...',
+            confirmLabel: 'Return Item',
+            icon: <Package size={20} className="text-amber-600" />
+        });
         if (!qtyStr) return;
         const returnedQty = parseFloat(qtyStr);
         if (isNaN(returnedQty) || returnedQty <= 0) {
@@ -6227,8 +6249,19 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
 
     const handleApprovalDecision = async (approvalId: string, decision: 'APPROVED' | 'REJECTED') => {
         if (!user?.id) return;
-        const comments = decision === 'REJECTED' ? prompt('Reason for rejection:') : '';
-        if (decision === 'REJECTED' && !comments) return;
+        let comments = '';
+        if (decision === 'REJECTED') {
+            const result = await confirm.prompt({
+                title: 'Reject Permit Request',
+                message: 'Please provide a mandatory reason for rejecting this permit request:',
+                placeholder: 'Reason for rejection...',
+                inputType: 'textarea',
+                confirmLabel: 'Reject Permit',
+                icon: <AlertTriangle size={20} className="text-red-600" />
+            });
+            if (!result || !result.trim()) return;
+            comments = result.trim();
+        }
         try {
             const db = DatabaseService.getInstance();
             await db.recordApprovalDecision(approvalId, decision, comments || '', user.id);
@@ -6253,11 +6286,18 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
 
     const handleReturnPermit = async (permitId: string) => {
         if (!user?.id) return;
-        const notes = prompt('Return notes (de-isolation confirmed):');
-        if (!notes) return;
+        const notes = await confirm.prompt({
+            title: 'Return Work Permit',
+            message: 'Enter return notes and confirm de-isolation completion:',
+            placeholder: 'e.g. Work complete, area cleaned, de-isolation verified.',
+            inputType: 'textarea',
+            confirmLabel: 'Return Permit',
+            icon: <ShieldCheck size={20} className="text-emerald-600" />
+        });
+        if (!notes || !notes.trim()) return;
         try {
             const db = DatabaseService.getInstance();
-            await db.returnPermit(permitId, notes, user.id);
+            await db.returnPermit(permitId, notes.trim(), user.id);
             showToast('Permit returned', 'success');
             await loadPermits();
         } catch (e: any) {

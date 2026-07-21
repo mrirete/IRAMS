@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, Factory, RotateCcw } from 'lucide-react';
+import { X, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, Factory, RotateCcw, Layers } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 interface OrgLevel {
     id?: string;
@@ -47,6 +48,7 @@ export const OrgLevelSettingsModal: React.FC<OrgLevelSettingsModalProps> = ({
     onSave,
     levels: initialLevels
 }) => {
+    const confirm = useConfirm();
     const [levels, setLevels] = useState<OrgLevel[]>([]);
     const [saving, setSaving] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -57,14 +59,26 @@ export const OrgLevelSettingsModal: React.FC<OrgLevelSettingsModalProps> = ({
         }
     }, [isOpen, initialLevels]);
 
-    const handleAddLevel = () => {
+    const handleAddLevel = async () => {
         const newOrder = levels.length + 1;
-        // Prompt user for a meaningful code and name
-        const name = prompt('Level name (e.g., Region, Section, Crew):');
+        const name = await confirm.prompt({
+            title: 'Add Organization Level',
+            message: 'Enter display name for new level (e.g., Region, Section, Crew):',
+            placeholder: 'e.g. Region',
+            confirmLabel: 'Next',
+            icon: <Layers size={20} className="text-indigo-600" />
+        });
         if (!name || !name.trim()) return;
 
         const suggestedCode = name.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_');
-        const code = prompt(`Level code (uppercase, no spaces):`, suggestedCode);
+        const code = await confirm.prompt({
+            title: 'Level Code',
+            message: 'Enter code identifier (uppercase, no spaces):',
+            defaultValue: suggestedCode,
+            placeholder: 'e.g. REGION',
+            confirmLabel: 'Add Level',
+            icon: <Layers size={20} className="text-indigo-600" />
+        });
         if (!code || !code.trim()) return;
 
         const newLevel: OrgLevel = {

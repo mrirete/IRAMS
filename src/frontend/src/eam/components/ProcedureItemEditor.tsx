@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from '../contexts/ConfirmContext';
 
 interface ProcedureItemEditorProps {
     block: InstructionBlock;
@@ -24,6 +25,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
     const deviceInputRef = React.useRef<HTMLInputElement>(null);
     const cameraInputRef = React.useRef<HTMLInputElement>(null);
     const { showToast } = useToast();
+    const confirm = useConfirm();
 
     const getIcon = () => {
         switch (block.type) {
@@ -76,8 +78,15 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
         onChange({ media: [...(block.media || []), newMedia] });
     };
 
-    const handleAddMedia = (type: 'LINK' | 'IMAGE') => {
-        const url = prompt(type === 'LINK' ? 'Enter URL:' : 'Enter Image URL:');
+    const handleAddMedia = async (type: 'LINK' | 'IMAGE') => {
+        const isLink = type === 'LINK';
+        const url = await confirm.prompt({
+            title: isLink ? 'Add Web Reference Link' : 'Add Image URL',
+            message: isLink ? 'Enter web address (URL) for reference document:' : 'Enter URL to external reference image:',
+            placeholder: 'https://...',
+            confirmLabel: 'Add Attachment',
+            icon: isLink ? <LinkIcon size={20} className="text-indigo-600" /> : <ImageIcon size={20} className="text-indigo-600" />
+        });
         if (!url) return;
         addMediaEntry(type, url);
     };
