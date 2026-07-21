@@ -5293,9 +5293,13 @@ export class DatabaseService {
 
         // 2. Hazards
         // Replace strategy: Delete all for this JSA, insert new.
+        // Skip rows the user hasn't described yet — a freshly clicked
+        // "+ Hazard" would otherwise persist as a blank hazard forever.
         if (jsaId && jsa.hazards) {
             await supabase.from('jsa_hazards').delete().eq('jsa_id', jsaId);
-            const dbHazards = jsa.hazards.map(h => DataMapper.toDBJSAHazard(h, jsaId!));
+            const dbHazards = jsa.hazards
+                .filter(h => (h.hazard || '').trim() || (h.controls || '').trim())
+                .map(h => DataMapper.toDBJSAHazard(h, jsaId!));
             if (dbHazards.length > 0) {
                 const { error: hErr } = await supabase.from('jsa_hazards').insert(dbHazards);
                 if (hErr) throw hErr;

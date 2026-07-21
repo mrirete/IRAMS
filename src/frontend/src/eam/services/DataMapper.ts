@@ -250,23 +250,41 @@ export class DataMapper {
         };
     }
 
+    private static jsaRiskLevel(score: number): JSAHazard['riskLevel'] {
+        return score >= 20 ? 'Critical' : score >= 15 ? 'High' : score >= 8 ? 'Medium' : 'Low';
+    }
+
     static toUIJSAHazard(record: any): JSAHazard {
-        const consequence = record.consequence ?? 1;
-        const likelihood = record.likelihood ?? 1;
-        const score = consequence * likelihood;
+        // Rows saved before 0208 only carry the combined risk_score (TEXT);
+        // leave the factors undefined rather than fabricating a 1×1.
+        const storedScore = Number(record.risk_score);
+        const consequence = record.consequence ?? undefined;
+        const likelihood = record.likelihood ?? undefined;
+        const score = consequence && likelihood
+            ? consequence * likelihood
+            : (Number.isFinite(storedScore) ? storedScore : 1);
+        const residualConsequence = record.residual_consequence ?? undefined;
+        const residualLikelihood = record.residual_likelihood ?? undefined;
+        const residualScore = residualConsequence && residualLikelihood
+            ? residualConsequence * residualLikelihood
+            : undefined;
         return {
             id: record.id,
             hazard: record.hazard,
-            consequence,
-            likelihood,
-            riskScore: record.risk_score ?? score,
-            riskLevel: score >= 20 ? 'Critical' : score >= 12 ? 'High' : score >= 6 ? 'Medium' : 'Low',
+            consequence: consequence as number,
+            likelihood: likelihood as number,
+            riskScore: score,
+            riskLevel: DataMapper.jsaRiskLevel(score),
             controlHierarchy: record.control_hierarchy || [],
             controls: record.controls,
+            residualConsequence,
+            residualLikelihood,
+            residualRiskScore: residualScore,
+            residualRiskLevel: residualScore !== undefined ? DataMapper.jsaRiskLevel(residualScore) : undefined,
             taskRefId: record.task_ref_id,
-            signoffRequired: record.signoff_required,
-            signoffBy: record.signoff_by,
-            signoffDate: record.signoff_date
+            signoffRequired: record.signoff_required ?? undefined,
+            signoffBy: record.signoff_by ?? undefined,
+            signoffDate: record.signoff_date ?? undefined
         };
     }
 
@@ -284,9 +302,17 @@ export class DataMapper {
         return {
             jsa_id: jsaId,
             hazard: ui.hazard,
+            consequence: ui.consequence ?? null,
+            likelihood: ui.likelihood ?? null,
             risk_score: ui.riskScore,
+            control_hierarchy: ui.controlHierarchy || [],
             controls: ui.controls,
-            task_ref_id: ui.taskRefId
+            residual_consequence: ui.residualConsequence ?? null,
+            residual_likelihood: ui.residualLikelihood ?? null,
+            signoff_required: ui.signoffRequired ?? null,
+            signoff_by: ui.signoffBy ?? null,
+            signoff_date: ui.signoffDate ?? null,
+            task_ref_id: ui.taskRefId ?? null
         };
     }
 

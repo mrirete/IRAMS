@@ -17,65 +17,6 @@ interface ProcedureItemEditorProps {
     onAddSibling?: () => void;
 }
 
-/** Collapsible observation field — hidden until technician clicks to add */
-const TextObservationField: React.FC<{ value: string; onChange: (val: string) => void }> = ({ value, onChange }) => {
-    const [isOpen, setIsOpen] = React.useState(!!value);
-    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-
-    React.useEffect(() => {
-        if (isOpen && textareaRef.current && !value) {
-            textareaRef.current.focus();
-        }
-    }, [isOpen]);
-
-    // Remove ONLY the observation — the instruction block itself stays.
-    const removeObservation = () => { onChange(''); setIsOpen(false); };
-
-    if (!isOpen) {
-        return (
-            <button
-                onClick={() => setIsOpen(true)}
-                className="mt-2 w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-slate-400 hover:text-amber-600 border border-dashed border-slate-200 hover:border-amber-300 rounded-lg bg-slate-50/50 hover:bg-amber-50/50 transition-all"
-            >
-                <PenTool size={12} />
-                Add observation / note…
-            </button>
-        );
-    }
-
-    // Distinct, clearly-labelled secondary note so it's never confused with the
-    // instruction above it — and removable on its own.
-    return (
-        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/40 p-2">
-            <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-700 flex items-center gap-1">
-                    <PenTool size={10} /> Observation
-                </span>
-                <button
-                    onClick={removeObservation}
-                    title="Remove this observation (keeps the instruction)"
-                    className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5"
-                >
-                    <X size={11} /> Remove
-                </button>
-            </div>
-            {/* Compact: stays one line high and grows only with the content typed */}
-            <textarea
-                ref={textareaRef}
-                value={value}
-                onChange={(e) => {
-                    onChange(e.target.value);
-                    e.target.style.height = 'auto';
-                    e.target.style.height = e.target.scrollHeight + 'px';
-                }}
-                placeholder="Operator note / observation recorded during the job…"
-                className="w-full border border-amber-200 rounded-lg bg-white text-slate-700 text-xs px-3 py-2 resize-none overflow-hidden focus:ring-1 focus:ring-amber-400 focus:border-amber-400"
-                rows={1}
-            />
-        </div>
-    );
-};
-
 export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block, onChange, onDelete, onDuplicate, onAddSibling }) => {
     const [showMenu, setShowMenu] = React.useState(false);
     const [showImageMenu, setShowImageMenu] = React.useState(false);
@@ -201,10 +142,12 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
 
             case 'TEXT':
                 return (
-                    <TextObservationField
-                        value={block.valueString || ''}
-                        onChange={(val) => onChange({ valueString: val })}
-                    />
+                    <div className="mt-2 p-3 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50">
+                        <div className="flex items-center gap-2 text-slate-400">
+                            <FileText size={14} />
+                            <span className="text-xs">Technician writes their response here</span>
+                        </div>
+                    </div>
                 );
 
             case 'NUMBER':

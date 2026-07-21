@@ -88,6 +88,8 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
 
     const confirm = useConfirm();
     const [showAddMenu, setShowAddMenu] = useState(false);
+    // Mobile: the add section is a collapsed dropdown so the step stays calm
+    const [mobileAddOpen, setMobileAddOpen] = useState(false);
 
     // DnD Sensors
     const sensors = useSensors(
@@ -122,6 +124,7 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
         };
         onChange([...instructions, newBlock]);
         setShowAddMenu(false);
+        setMobileAddOpen(false);
     };
 
     const updateBlock = (id: string, updates: Partial<InstructionBlock>) => {
@@ -225,7 +228,7 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
                     )}
                     {instructions.length === 0 && mode === 'EDIT' && (
                         <div className="text-center text-slate-400 py-8 italic border-2 border-dashed border-slate-100 rounded-lg">
-                            No instructions yet — pick a type from the Add panel to create the first one.
+                            No instructions yet — tap Add instruction to create the first one.
                         </div>
                     )}
                 </div>
@@ -272,39 +275,53 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
                 )}
             </div>
 
-            {/* Mobile quick-add — the rail is hidden, use a compact bottom bar */}
+            {/* Mobile quick-add — collapsed dropdown so the step stays calm until needed */}
             {mode === 'EDIT' && !readOnly && (
-                <div className="sm:hidden border-t border-dashed border-slate-200 pt-3">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] text-blue-600 uppercase font-bold tracking-wider flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> Add instruction
+                <div className="sm:hidden pt-1">
+                    <button
+                        onClick={() => { setMobileAddOpen(v => !v); if (mobileAddOpen) setShowAddMenu(false); }}
+                        aria-expanded={mobileAddOpen}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-colors ${
+                            mobileAddOpen
+                                ? 'border-blue-300 bg-blue-50/60'
+                                : 'border-dashed border-slate-300 bg-slate-50/50 active:bg-slate-100'
+                        }`}
+                    >
+                        <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-2 text-blue-600">
+                            <Plus size={14} /> Add instruction
                         </span>
-                        <button
-                            onClick={() => setShowAddMenu(!showAddMenu)}
-                            className={`text-[11px] px-2.5 py-1 rounded-lg flex items-center gap-1 font-semibold transition-colors ${showAddMenu ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                        >
-                            <Plus size={11} /> All types {showAddMenu ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                        {QUICK_TYPES.map(qt => {
-                            const tool = BLOCK_TYPES.find(t => t.type === qt)!;
-                            const style = CATEGORY_STYLES[tool.category];
-                            return (
-                                <button
-                                    key={qt}
-                                    onClick={() => addBlock(qt)}
-                                    className="group flex items-center gap-2 p-2 bg-white border border-slate-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all text-left"
-                                    title={`Add a ${tool.label} block`}
-                                >
-                                    <span className={`p-1.5 rounded-md transition-colors ${style.chip}`}>
-                                        <tool.icon size={14} />
-                                    </span>
-                                    <span className="text-xs font-medium text-slate-700 group-hover:text-blue-900 truncate">{tool.label}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                        {mobileAddOpen ? <ChevronUp size={15} className="text-blue-500" /> : <ChevronDown size={15} className="text-slate-400" />}
+                    </button>
+
+                    {mobileAddOpen && (
+                        <div className="mt-2 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                            <div className="grid grid-cols-2 gap-2">
+                                {QUICK_TYPES.map(qt => {
+                                    const tool = BLOCK_TYPES.find(t => t.type === qt)!;
+                                    const style = CATEGORY_STYLES[tool.category];
+                                    return (
+                                        <button
+                                            key={qt}
+                                            onClick={() => addBlock(qt)}
+                                            className="group flex items-center gap-2 p-2.5 bg-white border border-slate-200 rounded-lg active:scale-[0.98] hover:border-blue-300 hover:shadow-sm transition-all text-left"
+                                            title={`Add a ${tool.label} block`}
+                                        >
+                                            <span className={`p-1.5 rounded-md transition-colors ${style.chip}`}>
+                                                <tool.icon size={14} />
+                                            </span>
+                                            <span className="text-xs font-medium text-slate-700 group-hover:text-blue-900 truncate">{tool.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            <button
+                                onClick={() => setShowAddMenu(!showAddMenu)}
+                                className={`w-full text-[11px] px-2.5 py-2 rounded-lg flex items-center justify-center gap-1 font-semibold transition-colors ${showAddMenu ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                            >
+                                All types {showAddMenu ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -312,8 +329,8 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
             {mode === 'EDIT' && !readOnly && showAddMenu && (
                 <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
                     {CATEGORIES.map(cat => (
-                        <div key={cat} className="flex items-start gap-3">
-                            <span className="w-20 shrink-0 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5 mt-2">
+                        <div key={cat} className="flex flex-col sm:flex-row items-start gap-1 sm:gap-3">
+                            <span className="sm:w-20 shrink-0 text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5 sm:mt-2">
                                 <span className={`w-1.5 h-1.5 rounded-full inline-block ${CATEGORY_STYLES[cat].dot}`} /> {cat}
                             </span>
                             <div className="flex flex-wrap gap-1.5 flex-1">
