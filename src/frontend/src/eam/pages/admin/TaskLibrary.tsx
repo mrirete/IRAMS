@@ -9,7 +9,7 @@ import { LibraryTask, DictionaryEntry, InventoryItem, InstructionBlock } from '.
 import { ProcedureBuilder } from '../../components/ProcedureBuilder';
 
 import { useAuth } from '../../contexts/AuthContext';
-import { useConfirm } from '../../contexts/ConfirmContext';
+import { useConfirm, usePrompt } from '../../contexts/ConfirmContext';
 
 // Reusing types from parent if possible, but defining local props
 interface TaskLibraryManagerProps { }
@@ -17,6 +17,7 @@ interface TaskLibraryManagerProps { }
 export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     const { permissions, user } = useAuth();
     const confirm = useConfirm();
+    const promptModal = usePrompt();
     const [tasks, setTasks] = useState<LibraryTask[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -519,7 +520,7 @@ const TaskEditorModal: React.FC<{
                             <button
                                 type="button"
                                 onClick={async () => {
-                                    const url = await confirm.prompt({
+                                    const url = await promptModal({
                                         title: 'Add Document or Media Link',
                                         message: 'Enter direct URL to technical document or manual:',
                                         defaultValue: 'https://example.com/manual.pdf',

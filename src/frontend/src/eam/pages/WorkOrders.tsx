@@ -41,7 +41,7 @@ import { MOCK_WORK_ORDERS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_RECURRING_JOBS }
 import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, OrderActuals, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
 import { LoadingState } from '../components/ui';
 import { useToast } from '../contexts/ToastContext';
-import { useConfirm } from '../contexts/ConfirmContext';
+import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 
 import { DatabaseService } from '../services/DatabaseService';
@@ -83,6 +83,7 @@ export const WorkOrders: React.FC = () => {
     const navigate = useNavigate();
     const { showToast } = useToast(); // Added toast hook
     const confirm = useConfirm();
+    const promptModal = usePrompt();
     const { permissions, profile: woProfile, dataScope } = useAuth();
     // ═══ RBAC Permission Extraction (ISO 27001 / NIST CSF) ═══
     const canCreate = permissions?.workOrders?.create === true;
@@ -563,7 +564,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
         localStorage.setItem('irams_wo_sort_asc', String(v.sortAsc));
     };
     const saveCurrentView = async () => {
-        const name = await confirm.prompt({
+        const name = await promptModal({
             title: 'Save Custom View',
             message: 'Enter a name for this saved filter & sort configuration:',
             placeholder: 'e.g. High Priority Backlog',
@@ -1757,7 +1758,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     </button>
                     <button
                         onClick={async () => {
-                            const name = await confirm.prompt({
+                            const name = await promptModal({
                                 title: 'Save as Library Template',
                                 message: 'Enter a descriptive title for this new standard library template:',
                                 defaultValue: localJob.title,
@@ -4719,7 +4720,7 @@ const TaskEditor: React.FC<{
     const [isPartPickerOpen, setIsPartPickerOpen] = useState(false);
 
     const handleReturnToStores = async (part: JobInventory) => {
-        const qtyStr = await confirm.prompt({
+        const qtyStr = await promptModal({
             title: 'Return to Stores',
             message: `Return "${part.description || 'part'}" to warehouse inventory:`,
             defaultValue: '1',
@@ -6291,7 +6292,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
         if (!user?.id) return;
         let comments = '';
         if (decision === 'REJECTED') {
-            const result = await confirm.prompt({
+            const result = await promptModal({
                 title: 'Reject Permit Request',
                 message: 'Please provide a mandatory reason for rejecting this permit request:',
                 placeholder: 'Reason for rejection...',
@@ -6326,7 +6327,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
 
     const handleReturnPermit = async (permitId: string) => {
         if (!user?.id) return;
-        const notes = await confirm.prompt({
+        const notes = await promptModal({
             title: 'Return Work Permit',
             message: 'Enter return notes and confirm de-isolation completion:',
             placeholder: 'e.g. Work complete, area cleaned, de-isolation verified.',

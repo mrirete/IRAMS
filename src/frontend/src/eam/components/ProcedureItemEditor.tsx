@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
 import { useToast } from '../contexts/ToastContext';
-import { useConfirm } from '../contexts/ConfirmContext';
+import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 
 interface ProcedureItemEditorProps {
     block: InstructionBlock;
@@ -26,6 +26,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
     const cameraInputRef = React.useRef<HTMLInputElement>(null);
     const { showToast } = useToast();
     const confirm = useConfirm();
+    const promptModal = usePrompt();
 
     const getIcon = () => {
         switch (block.type) {
@@ -80,7 +81,7 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
 
     const handleAddMedia = async (type: 'LINK' | 'IMAGE') => {
         const isLink = type === 'LINK';
-        const url = await confirm.prompt({
+        const url = await promptModal({
             title: isLink ? 'Add Web Reference Link' : 'Add Image URL',
             message: isLink ? 'Enter web address (URL) for reference document:' : 'Enter URL to external reference image:',
             placeholder: 'https://...',

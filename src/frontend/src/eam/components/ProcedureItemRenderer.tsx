@@ -5,7 +5,7 @@ import {
     CheckCircle, XCircle, Activity, Lock, Link as LinkIcon,
     Image as ImageIcon, ExternalLink
 } from 'lucide-react';
-import { useConfirm } from '../contexts/ConfirmContext';
+import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 interface ProcedureItemRendererProps {
     block: InstructionBlock;
     onChange: (updates: Partial<InstructionBlock>) => void;
@@ -14,6 +14,7 @@ interface ProcedureItemRendererProps {
 
 export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ block, onChange, readOnly }) => {
     const confirm = useConfirm();
+    const promptModal = usePrompt();
 
     // Helper: Condition Reading Validation
     const handleConditionChange = (val: number) => {
@@ -338,7 +339,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                             <button
                                 className="w-full p-4 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center gap-2 hover:bg-slate-50 hover:border-blue-300 transition-colors"
                                 onClick={async () => {
-                                    const url = await confirm.prompt({
+                                    const url = await promptModal({
                                         title: 'Add Photo or Evidence File',
                                         message: 'Enter URL or file path for inspection evidence:',
                                         placeholder: 'https://...',

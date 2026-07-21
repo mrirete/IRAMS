@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, Factory, RotateCcw, Layers } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
-import { useConfirm } from '../contexts/ConfirmContext';
+import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 
 interface OrgLevel {
     id?: string;
@@ -49,6 +49,7 @@ export const OrgLevelSettingsModal: React.FC<OrgLevelSettingsModalProps> = ({
     levels: initialLevels
 }) => {
     const confirm = useConfirm();
+    const promptModal = usePrompt();
     const [levels, setLevels] = useState<OrgLevel[]>([]);
     const [saving, setSaving] = useState(false);
     const [syncing, setSyncing] = useState(false);
@@ -61,7 +62,7 @@ export const OrgLevelSettingsModal: React.FC<OrgLevelSettingsModalProps> = ({
 
     const handleAddLevel = async () => {
         const newOrder = levels.length + 1;
-        const name = await confirm.prompt({
+        const name = await promptModal({
             title: 'Add Organization Level',
             message: 'Enter display name for new level (e.g., Region, Section, Crew):',
             placeholder: 'e.g. Region',
@@ -71,7 +72,7 @@ export const OrgLevelSettingsModal: React.FC<OrgLevelSettingsModalProps> = ({
         if (!name || !name.trim()) return;
 
         const suggestedCode = name.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_').replace(/_+/g, '_');
-        const code = await confirm.prompt({
+        const code = await promptModal({
             title: 'Level Code',
             message: 'Enter code identifier (uppercase, no spaces):',
             defaultValue: suggestedCode,
