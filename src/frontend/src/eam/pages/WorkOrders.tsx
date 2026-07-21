@@ -32,11 +32,11 @@ import {
     TrendingUp,
     ShieldCheck,
     Printer, Copy, ChevronLeft, Download, GitPullRequest,
-    BarChart3, Shield, Box, Paperclip, AlertOctagon, Book, Package, Info, Bell, Send, Layers, Eye, Repeat,
+    Shield, Box, Paperclip, AlertOctagon, Book, Package, Info, Bell, Send, Layers, Eye, Repeat,
     DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2, Check, Factory
 } from 'lucide-react';
 import { InventoryPicker } from '../components/pickers/InventoryPicker';
-import { FinOpsService, type CostAllocation, type AssetFinancial, type WarrantyCheckResult, type CostAnomalyResult } from '../services/FinOpsService';
+import { FinOpsService, type CostAllocation, type WarrantyCheckResult, type CostAnomalyResult } from '../services/FinOpsService';
 import { MOCK_WORK_ORDERS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_RECURRING_JOBS } from '../constants';
 import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, OrderActuals, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
 import { LoadingState } from '../components/ui';
@@ -229,12 +229,7 @@ export const WorkOrders: React.FC = () => {
                             const mappedJSA: JobJSA | undefined = jsaRecord ? {
                                 id: jsaRecord.id || `jsa-${jobId}`,
                                 status: jsaRecord.status || 'DRAFT',
-                                hazards: (jsaRecord.jsa_hazards || []).map((h: any) => ({
-                                    id: h.id,
-                                    hazard: h.hazard,
-                                    riskScore: h.risk_score,
-                                    controls: h.controls
-                                })),
+                                hazards: (jsaRecord.jsa_hazards || []).map((h: any) => DataMapper.toUIJSAHazard(h)),
                                 permits: jsaRecord.permits || [],
                                 signoffs: jsaRecord.signoffs || []
                             } : undefined;
@@ -1081,14 +1076,24 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     // Debounce refs for auto-save
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingUpdatesRef = useRef<Partial<WorkOrder>>({});
+    const localJobIdRef = useRef<string | undefined>(undefined);
     // Bumped on every local edit. The post-save refetch only re-syncs state if this
     // hasn't changed during the save round-trip — otherwise the refetch would
     // overwrite keystrokes typed while saving (the "letters disappear" bug).
     const editVersionRef = useRef(0);
 
-    // Update local job if props change (e.g. navigation between jobs)
+    // Update local job if props change (e.g. navigation between jobs, or the
+    // deep-link's background detail fetch completing). Skip while the user has
+    // unsaved edits on the SAME job — a late-arriving refetch would silently
+    // clobber them (verified: JSA hazard edits made during the deep-link load
+    // were lost and only the pristine hazard reached the DB).
     useEffect(() => {
-        setLocalJob(job);
+        const hasPendingEdits =
+            saveTimerRef.current !== null || Object.keys(pendingUpdatesRef.current).length > 0;
+        if (job.id !== localJobIdRef.current || !hasPendingEdits) {
+            setLocalJob(job);
+        }
+        localJobIdRef.current = job.id;
     }, [job]);
 
     // Cleanup debounce timer on unmount
@@ -1213,12 +1218,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 const mappedJSA: JobJSA | undefined = jsaRecord ? {
                     id: jsaRecord.id,
                     status: jsaRecord.status || 'DRAFT',
-                    hazards: (jsaRecord.jsa_hazards || []).map((h: any) => ({
-                        id: h.id,
-                        hazard: h.hazard,
-                        riskScore: h.risk_score,
-                        controls: h.controls
-                    })),
+                    hazards: (jsaRecord.jsa_hazards || []).map((h: any) => DataMapper.toUIJSAHazard(h)),
                     permits: jsaRecord.permits || [],
                     signoffs: jsaRecord.signoffs || []
                 } : undefined;
@@ -1393,6 +1393,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         const accumulatedUpdates = { ...pendingUpdatesRef.current };
 
         saveTimerRef.current = setTimeout(async () => {
+            saveTimerRef.current = null;
             pendingUpdatesRef.current = {}; // reset accumulated updates
             await persistToDb(snapshot, originalSnapshot, accumulatedUpdates);
         }, DEBOUNCE_MS);
@@ -3953,205 +3954,6 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     );
 };
 
-const MetricsTab: React.FC<{ job: WorkOrder, users: any[], contacts: any[] }> = ({ job, users, contacts }) => {
-    const [allocations, setAllocations] = useState<CostAllocation[]>([]);
-    const [financials, setFinancials] = useState<AssetFinancial | null>(null);
-    const [warrantyCheck, setWarrantyCheck] = useState<WarrantyCheckResult | null>(null);
-    const [anomaly, setAnomaly] = useState<CostAnomalyResult | null>(null);
-    const [loading, setLoading] = useState(true);
-
-    // Helper to resolve user name
-    const getUserName = (userIdOrName: string) => {
-        if (!userIdOrName) return 'Unknown';
-        const user = users.find(u => u.id === userIdOrName || u.username === userIdOrName);
-        if (user && user.contactId) {
-            const contact = contacts.find(c => c.id === user.contactId);
-            if (contact) return `${contact.firstName} ${contact.lastName}`;
-            return user.username;
-        }
-        return userIdOrName;
-    };
-
-    // Calculate Costs & Fetch Data
-    const estLaborCost = (job.labor || []).reduce((acc, l) => acc + (l.estDuration * l.estRate), 0);
-    const estMaterialCost = (job.inventory || []).reduce((acc, i) => acc + (i.estQty * i.estUnitCost), 0);
-    const totalEstCost = estLaborCost + estMaterialCost;
-
-    const actualLaborCost = (job.labor || []).reduce((acc, l) => acc + ((l.actualDuration || 0) * (l.actualRate || l.estRate)), 0);
-    const actualMaterialCost = (job.inventory || []).reduce((acc, i) => acc + ((i.actualQty || 0) * (i.actualUnitCost || i.estUnitCost)), 0);
-    const totalActualCost = actualLaborCost + actualMaterialCost;
-
-    const costPct = totalEstCost > 0 ? Math.min(100, (totalActualCost / totalEstCost) * 100) : 0;
-    const durationPct = job.estDuration > 0 ? Math.min(100, (job.actualDuration / job.estDuration) * 100) : 0;
-
-    useEffect(() => {
-        const loadMetrics = async () => {
-            setLoading(true);
-            try {
-                const results = await Promise.all([
-                    FinOpsService.getCostAllocations(job.id),
-                    job.assetId ? FinOpsService.checkWarrantyStatus(job.assetId) : Promise.resolve(null),
-                    job.assetId ? FinOpsService.detectCostAnomaly(job.assetId, job.type, totalEstCost) : Promise.resolve(null),
-                    // If job is closed, we rely on frozen actualCost. If open, we calculate live.
-                ]);
-
-                setAllocations(results[0]);
-                setWarrantyCheck(results[1]);
-                setAnomaly(results[2]);
-            } catch (error) {
-                console.error("Failed to load financial metrics", error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        if (job.id) {
-            loadMetrics();
-        }
-    }, [job.id, job.assetId, totalEstCost]);
-
-    return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 animate-in fade-in duration-300 lg:min-h-[600px]">
-            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm space-y-3 md:space-y-4">
-                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3">Financial Performance</h3>
-
-                {/* Frozen Cost Warning */}
-                {job.status === 'CLOSED' && (
-                    <div className="bg-slate-100 border border-slate-300 p-2.5 rounded flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-1.5">
-                            <Lock size={14} className="text-slate-500" />
-                            <span className="font-bold text-slate-700">Costs Frozen (Closed)</span>
-                        </div>
-                        <div className="font-mono font-bold text-sm md:text-base">${(job.actualCost || totalActualCost).toFixed(2)}</div>
-                    </div>
-                )}
-
-                {/* Anomaly Detection */}
-                {anomaly?.isAnomaly && (
-                    <div className={`p-2.5 rounded border flex items-start gap-2 text-xs ${anomaly.severity === 'HIGH' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
-                        <TrendingUp size={14} className="mt-0.5" />
-                        <div>
-                            <span className="font-bold block uppercase text-[10px] mb-1">Cost Anomaly Detected</span>
-                            <p>{anomaly.message}</p>
-                        </div>
-                    </div>
-                )}
-
-                {/* Warranty Alert */}
-                {warrantyCheck?.underWarranty && (
-                    <div className="bg-green-50 border border-green-200 p-2.5 rounded flex items-start gap-2 text-xs text-green-800">
-                        <ShieldCheck size={14} className="mt-0.5" />
-                        <div>
-                            <span className="font-bold block uppercase text-[10px] mb-1">Asset Under Warranty</span>
-                            <p>{warrantyCheck.message}</p>
-                            <div className="mt-1.5 text-[11px] bg-white border border-green-200 p-1.5 rounded">
-                                Policy: {warrantyCheck.warranty?.warrantyType} (Ends: {warrantyCheck.warranty?.endDate})
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-
-                {/* Cost Progress */}
-                <div>
-                    <div className="flex justify-between text-xs mb-1">
-                        <span className="font-medium text-slate-700">Budget Consumption</span>
-                        <span className={`font-bold ${costPct > 100 ? 'text-red-600' : 'text-green-600'}`}>{costPct.toFixed(0)}%</span>
-                    </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2.5">
-                        <div className={`h-2.5 rounded-full ${costPct > 100 ? 'bg-red-500' : 'bg-green-600'}`} style={{ width: `${Math.min(100, costPct)}%` }}></div>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-slate-500 mt-1">
-                        <span>Actual: ${totalActualCost.toFixed(2)}</span>
-                        <span>Est: ${totalEstCost.toFixed(2)}</span>
-                    </div>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded border border-slate-200">
-                    <h4 className="text-[10px] font-bold text-slate-700 uppercase mb-2">Detailed Breakdown</h4>
-                    <div className="space-y-1 text-xs text-slate-600">
-                        <div className="flex justify-between border-b border-slate-100 pb-1">
-                            <span>Labor</span>
-                            <div className="text-right">
-                                <span className="block font-medium">${actualLaborCost.toFixed(2)}</span>
-                                <span className="text-[10px] text-slate-400">Est: ${estLaborCost.toFixed(2)}</span>
-                            </div>
-                        </div>
-                        <div className="flex justify-between border-b border-slate-100 pb-1 pt-1">
-                            <span>Materials & Parts</span>
-                            <div className="text-right">
-                                <span className="block font-medium">${actualMaterialCost.toFixed(2)}</span>
-                                <span className="text-[10px] text-slate-400">Est: ${estMaterialCost.toFixed(2)}</span>
-                            </div>
-                        </div>
-                        <div className="flex justify-between pt-2 font-bold text-slate-900 text-xs md:text-sm">
-                            <span>Total Cost</span>
-                            <span>${totalActualCost.toFixed(2)}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm space-y-3">
-                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3">Audit & Allocation</h3>
-
-                {/* Cost Allocations Table */}
-                <div>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost Centre Allocations</h4>
-                    {allocations.length > 0 ? (
-                        <div className="text-xs border border-slate-200 rounded overflow-hidden">
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50 font-bold text-slate-600">
-                                    <tr>
-                                        <th className="p-2 border-b">Type</th>
-                                        <th className="p-2 border-b">Cost Centre</th>
-                                        <th className="p-2 border-b text-right">Amount</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {allocations.map(a => (
-                                        <tr key={a.id} className="border-b last:border-0 hover:bg-slate-50">
-                                            <td className="p-2">{a.costType}</td>
-                                            <td className="p-2 font-mono">{a.costCenterId || '-'}</td>
-                                            <td className="p-2 text-right">${a.amount.toFixed(2)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    ) : (
-                        <div className="text-xs text-slate-400 italic p-2 border border-dashed rounded text-center">
-                            No posted allocations yet.
-                        </div>
-                    )}
-                </div>
-
-                <div className="mt-4 pt-3 border-t border-slate-100">
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Notes</label>
-                    <textarea
-                        className="w-full h-20 text-sm border border-slate-300 rounded-lg bg-white p-2 resize-none focus:ring-1 focus:ring-primary-500"
-                        placeholder="..."
-                    />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-2.5 rounded">
-                    <div>
-                        <span className="block text-[10px] font-bold text-slate-500 uppercase">Created By</span>
-                        <div className="font-medium text-slate-900">
-                            {getUserName(job.createdById)}
-                        </div>
-                        <div className="text-xs text-slate-400">{job.dateCreated}</div>
-                    </div>
-                    <div>
-                        <span className="block text-[10px] font-bold text-slate-500 uppercase">Last Printed</span>
-                        <div className="font-medium text-slate-900">-</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
 // --- COST TAB (WM-2 → FI-1): planned vs actual labour, per operation, with the
 //     settlement receiver each rolls up to. The visible payoff of the
 //     order-to-cost spine — confirm time on an operation, watch its actual
@@ -4207,6 +4009,30 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
     const actualLabour = actuals?.labourCost ?? rows.reduce((s, r) => s + r.actualCost, 0);
     const partsCost = actuals?.partsCost ?? 0;
     const anyWorkCenters = rows.some(r => r.wcLabel !== '—');
+    const plannedParts = (job.inventory || []).reduce((s, i) => s + ((i.estQty || 0) * (i.estUnitCost || 0)), 0);
+    const plannedTotal = plannedLabour + plannedParts;
+
+    // Financial intelligence (moved here from the Resources tab so money lives in one place):
+    // cost anomaly vs asset history, warranty flag, posted cost-centre allocations.
+    const [allocations, setAllocations] = useState<CostAllocation[]>([]);
+    const [warrantyCheck, setWarrantyCheck] = useState<WarrantyCheckResult | null>(null);
+    const [anomaly, setAnomaly] = useState<CostAnomalyResult | null>(null);
+
+    useEffect(() => {
+        if (!job.id || job.id.startsWith('new-')) return;
+        let active = true;
+        Promise.all([
+            FinOpsService.getCostAllocations(job.id),
+            job.assetId ? FinOpsService.checkWarrantyStatus(job.assetId) : Promise.resolve(null),
+            job.assetId ? FinOpsService.detectCostAnomaly(job.assetId, job.type, plannedTotal) : Promise.resolve(null),
+        ]).then(([alloc, warranty, anom]) => {
+            if (!active) return;
+            setAllocations(alloc);
+            setWarrantyCheck(warranty);
+            setAnomaly(anom);
+        }).catch(() => { /* advisory only — never block the cost roll-up */ });
+        return () => { active = false; };
+    }, [job.id, job.assetId, job.type, plannedTotal]);
 
     const SummaryCard = ({ label, planned, actual }: { label: string; planned: number; actual: number }) => {
         const variance = actual - planned;
@@ -4236,7 +4062,38 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                 <DollarSign size={16} className="text-slate-400" />
                 <h3 className="text-sm font-bold text-slate-700">Operation Cost &amp; Settlement</h3>
                 <span className="text-[11px] text-slate-400">planned vs confirmed-actual labour · SAP order-to-cost</span>
+                {job.status === 'CLOSED' && (
+                    <span className="ml-auto text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
+                        <Lock size={10} /> Costs Frozen
+                    </span>
+                )}
             </div>
+
+            {(anomaly?.isAnomaly || warrantyCheck?.underWarranty) && (
+                <div className="space-y-2">
+                    {anomaly?.isAnomaly && (
+                        <div className={`p-2.5 rounded border flex items-start gap-2 text-xs ${anomaly.severity === 'HIGH' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+                            <TrendingUp size={14} className="mt-0.5 shrink-0" />
+                            <div>
+                                <span className="font-bold block uppercase text-[10px] mb-0.5">Cost Anomaly Detected</span>
+                                <p>{anomaly.message}</p>
+                            </div>
+                        </div>
+                    )}
+                    {warrantyCheck?.underWarranty && (
+                        <div className="bg-green-50 border border-green-200 p-2.5 rounded flex items-start gap-2 text-xs text-green-800">
+                            <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+                            <div>
+                                <span className="font-bold block uppercase text-[10px] mb-0.5">Asset Under Warranty</span>
+                                <p>{warrantyCheck.message}</p>
+                                <div className="mt-1 text-[11px] bg-white border border-green-200 p-1.5 rounded">
+                                    Policy: {warrantyCheck.warranty?.warrantyType} (Ends: {warrantyCheck.warranty?.endDate})
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {loading ? (
                 <LoadingState label="Loading cost roll-up…" className="h-40" />
@@ -4251,13 +4108,16 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                         <SummaryCard label="Labour" planned={plannedLabour} actual={actualLabour} />
                         <div className="bg-white border border-slate-200 rounded-card p-4">
                             <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Parts</div>
-                            <div className="mt-1 text-2xl font-bold text-slate-800 tabular-nums">{money(partsCost)}</div>
-                            <div className="mt-1 text-xs text-slate-400">issued to this order</div>
+                            <div className="mt-1 flex items-baseline gap-2">
+                                <span className="text-2xl font-bold text-slate-800 tabular-nums">{money(partsCost)}</span>
+                                <span className="text-xs text-slate-400">issued</span>
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500 tabular-nums">Plan {money(plannedParts)}</div>
                         </div>
                         <div className="bg-primary-50 border border-primary-200 rounded-card p-4">
                             <div className="text-[11px] uppercase font-semibold tracking-wide text-primary-700">Total actual</div>
                             <div className="mt-1 text-2xl font-bold text-primary-700 tabular-nums">{money(actualLabour + partsCost)}</div>
-                            <div className="mt-1 text-xs text-primary-600/70">labour + parts · settlement basis</div>
+                            <div className="mt-1 text-xs text-primary-600/70 tabular-nums">Plan {money(plannedTotal)} · labour + parts · settlement basis</div>
                         </div>
                     </div>
 
@@ -4299,6 +4159,59 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                             </table>
                         </div>
                     </div>
+                    {(job as any).scope === 'PROJECT' && (() => {
+                        const spent = actualLabour + partsCost;
+                        const budget = (job as any).budgetApproved || plannedTotal || 1;
+                        const pct = Math.min(100, (spent / budget) * 100);
+                        return (
+                            <div className="bg-blue-50 border border-blue-100 rounded-card p-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Briefcase size={13} className="text-blue-500" />
+                                    <span className="text-[10px] font-bold text-blue-600 uppercase">Project Budget Envelope</span>
+                                </div>
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[10px] text-blue-500">Approved Budget</span>
+                                    <span className="text-xs font-bold text-blue-700 tabular-nums">{money((job as any).budgetApproved || 0)}</span>
+                                </div>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-[10px] text-blue-500">Spent to Date</span>
+                                    <span className="text-xs font-bold text-blue-700 tabular-nums">{money(spent)}</span>
+                                </div>
+                                <div className="w-full bg-white rounded-full h-2 overflow-hidden border border-blue-100">
+                                    <div className={`h-full rounded-full transition-all duration-500 ${spent > budget ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${pct}%` }} />
+                                </div>
+                                <div className="flex justify-between items-center mt-1">
+                                    <span className="text-[10px] text-blue-400">{Math.round((spent / budget) * 100)}% consumed</span>
+                                    <span className="text-[10px] font-medium text-blue-600 tabular-nums">{money(budget - spent)} remaining</span>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {allocations.length > 0 && (
+                        <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
+                            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">Cost Centre Allocations</div>
+                            <table className="w-full text-left text-xs">
+                                <thead className="bg-slate-50 font-bold text-slate-600">
+                                    <tr>
+                                        <th className="p-2 border-b">Type</th>
+                                        <th className="p-2 border-b">Cost Centre</th>
+                                        <th className="p-2 border-b text-right">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {allocations.map(a => (
+                                        <tr key={a.id} className="border-b last:border-0 hover:bg-slate-50">
+                                            <td className="p-2">{a.costType}</td>
+                                            <td className="p-2 font-mono">{a.costCenterId || '-'}</td>
+                                            <td className="p-2 text-right tabular-nums">${a.amount.toFixed(2)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+
                     <p className="text-[11px] text-slate-400">
                         Actuals roll up from time confirmations posted on the Tasks tab (Do-work mode). Each confirmation is valued at its posted rate (person → craft → work centre, snapshotted at posting); the operation's planned/work-centre rate applies only to rows posted without one.
                     </p>
@@ -4589,7 +4502,7 @@ const TasksTab: React.FC<{
 
             {/* Step popup — centered modal (MaintainX procedure-style: bold header, scrollable body) */}
             {expandedTask && (
-                <div className="fixed inset-0 z-50 flex items-stretch sm:items-center justify-center sm:p-6">
+                <div className="fixed inset-0 z-[60] flex items-stretch sm:items-center justify-center sm:p-6">
                     <div
                         className="absolute inset-0 bg-black/50 animate-in fade-in duration-200"
                         onClick={() => setExpandedTaskId(null)}
@@ -4676,8 +4589,11 @@ const TasksTab: React.FC<{
                                 execMode={execMode}
                             />
                         </div>
-                        {/* Footer — persist & exit actions */}
-                        <div className="flex items-center gap-2 px-3 sm:px-5 py-3 bg-white border-t border-slate-200 shrink-0">
+                        {/* Footer — persist & exit actions (safe-area padded: the modal covers the bottom nav) */}
+                        <div
+                            className="flex items-center gap-2 px-3 sm:px-5 py-3 bg-white border-t border-slate-200 shrink-0"
+                            style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+                        >
                             <button
                                 onClick={() => deleteTask(expandedTask.id)}
                                 className="flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 px-2.5 py-2 rounded-lg transition-colors"
@@ -5402,6 +5318,7 @@ const TaskEditor: React.FC<{
                             </button>
                             <button
                                 onClick={openLibraryPicker}
+                                title="Import from task library"
                                 className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
                             >
                                 <Book size={12} />
@@ -5410,18 +5327,10 @@ const TaskEditor: React.FC<{
                         </div>
                     </div>
 
-                    <div className="p-2 sm:p-3">
-                        <ProcedureBuilder
-                            instructions={task.instructions || []}
-                            onChange={(blocks) => onChange({ instructions: blocks })}
-                            readOnly={(jobContext.status as string) === 'COMPLETED'}
-                            mode={((jobContext.status as string) === 'COMPLETED' || execMode) ? 'EXECUTE' : 'EDIT'}
-                        />
-                    </div>
-
-                    {/* Collapsible Observations Section */}
+                    {/* Collapsible Observations — directly under its toggle, above the builder,
+                        so it never reads as a stray second notes section below the add palette */}
                     {showObservations && (
-                        <div className="border-t border-slate-100 px-3 py-3 bg-slate-50">
+                        <div className="border-b border-slate-100 px-3 py-3 bg-slate-50">
                             <label className="text-xs font-bold text-slate-600 uppercase mb-2 block flex items-center gap-1">
                                 <FileText size={12} />
                                 Observations & Notes
@@ -5466,6 +5375,15 @@ const TaskEditor: React.FC<{
                             </div>
                         </div>
                     )}
+
+                    <div className="p-2 sm:p-3">
+                        <ProcedureBuilder
+                            instructions={task.instructions || []}
+                            onChange={(blocks) => onChange({ instructions: blocks })}
+                            readOnly={(jobContext.status as string) === 'COMPLETED'}
+                            mode={((jobContext.status as string) === 'COMPLETED' || execMode) ? 'EXECUTE' : 'EDIT'}
+                        />
+                    </div>
                 </div>
 
                 {/* Compact Project Scheduling (Only for PROJECT scope) */}
@@ -5993,6 +5911,12 @@ const TaskEditor: React.FC<{
 };
 
 
+// A freshly initialized JSA has no DB row yet — its id is empty (or a legacy
+// "jsa-<timestamp>" placeholder) until the first debounced save round-trips.
+// Permit queries hit a UUID column and 400 on anything else.
+const isRealJsaId = (id?: string): id is string =>
+    !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
 const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void; dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
     const { user } = useAuth();
     const { showToast } = useToast();
@@ -6038,17 +5962,18 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
 
     // Load permits when JSA exists
     useEffect(() => {
-        if (job.jsa?.id) {
+        if (isRealJsaId(job.jsa?.id)) {
             loadPermits();
         }
     }, [job.jsa?.id]);
 
     const loadPermits = async () => {
-        if (!job.jsa?.id) return;
+        const jsaId = job.jsa?.id;
+        if (!isRealJsaId(jsaId)) return;
         setLoadingPermits(true);
         try {
             const db = DatabaseService.getInstance();
-            const data = await db.getPermitsByJSA(job.jsa.id);
+            const data = await db.getPermitsByJSA(jsaId);
             setPermits(data);
         } catch (e) {
             console.error('Failed to load permits:', e);
@@ -6057,13 +5982,37 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
         }
     };
 
-    // Initialize JSA if missing
+    // Initialize JSA if missing. An assessment may already exist server-side
+    // (deep-link detail fetch still in flight, or another session created it) —
+    // hydrate from the DB instead of starting a blank JSA whose next save
+    // would wipe the stored hazards.
+    const handleInitJSA = async () => {
+        try {
+            const existing = await DatabaseService.getInstance().getJSA(job.id);
+            if (existing) {
+                onUpdate({
+                    jsa: {
+                        id: existing.id,
+                        status: existing.status || 'DRAFT',
+                        hazards: (existing.hazards || []).map((h: any) => DataMapper.toUIJSAHazard(h)),
+                        permits: existing.permits || [],
+                        signoffs: existing.signoffs || [],
+                    }
+                });
+                return;
+            }
+        } catch { /* no assessment yet — start fresh */ }
+        // No real id until the first save round-trips; the permit actions
+        // guard on isRealJsaId until then.
+        onUpdate({ jsa: { id: '', status: 'DRAFT', permits: [], hazards: [], signoffs: [] } });
+    };
+
     if (!job.jsa) {
         return (
             <div className="p-8 text-center text-slate-400">
                 <p className="mb-4">No Job Safety Analysis initialized for this job.</p>
                 <button
-                    onClick={() => onUpdate({ jsa: { id: `jsa-${Date.now()}`, status: 'DRAFT', permits: [], hazards: [], signoffs: [] } })}
+                    onClick={handleInitJSA}
                     className="bg-primary-600 text-white px-4 py-2 rounded hover:bg-primary-500"
                 >
                     Init JSA
@@ -6245,10 +6194,14 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     };
 
     const handleCreatePermit = async () => {
-        if (!job.jsa?.id || !user?.id) return;
+        if (!user?.id) return;
+        if (!isRealJsaId(job.jsa?.id)) {
+            showToast('The JSA is still saving — try again in a few seconds.', 'info');
+            return;
+        }
         try {
             const db = DatabaseService.getInstance();
-            const created = await db.createPermit(newPermit, job.jsa.id, user.id);
+            const created = await db.createPermit(newPermit, job.jsa!.id, user.id);
             if (created) {
                 showToast(`Permit ${created.permitNumber} created`, 'success');
                 setShowCreatePermit(false);
@@ -7114,7 +7067,7 @@ const ResourcesTab: React.FC<{
 
     // --- LABOR AGGREGATION (from tasks + standalone labor records) ---
     const labourSummary = useMemo(() => {
-        const entries: { userId: string; userName: string; craft: string; taskName: string; taskId: string; estHours: number; actHours: number; estRate: number; actRate: number; isPlanning: boolean }[] = [];
+        const entries: { userId: string; userName: string; craft: string; taskName: string; taskId: string; estHours: number; actHours: number; isPlanning: boolean }[] = [];
 
         // 1. From task assignments (actual user assignments)
         (job.tasks || []).forEach(task => {
@@ -7129,8 +7082,6 @@ const ResourcesTab: React.FC<{
                     taskId: task.id,
                     estHours: task.estHours || 0,
                     actHours: task.actualHours || 0,
-                    estRate: 0,
-                    actRate: 0,
                     isPlanning: false,
                 });
             });
@@ -7153,8 +7104,6 @@ const ResourcesTab: React.FC<{
                 taskId: l.jobTaskId || '',
                 estHours: l.estDuration || 0,
                 actHours: l.actualDuration || l.estDuration || 0,
-                estRate: l.estRate || 0,
-                actRate: l.actualRate || l.estRate || 0,
                 isPlanning: !hasRealPerson,
             });
         });
@@ -7173,14 +7122,11 @@ const ResourcesTab: React.FC<{
                 uom: part.uom || 'EA',
                 estQty: part.estQty || 0,
                 actQty: part.actualQty ?? part.estQty ?? 0,
-                estUnitCost: part.estUnitCost || 0,
-                actUnitCost: part.actualUnitCost ?? part.estUnitCost ?? 0,
-                costCenter: part.costCenter || job.costCenter || '�',
                 taskName: taskRef ? (taskRef.description || `Task ${taskRef.sequence}`) : 'Unassigned',
                 taskId: part.jobTaskId || '',
             };
         });
-    }, [job.tasks, job.inventory, job.costCenter]);
+    }, [job.tasks, job.inventory]);
 
     // --- KPI CALCULATIONS ---
     const assignedPeople = labourSummary.filter(l => !l.isPlanning);
@@ -7189,39 +7135,6 @@ const ResourcesTab: React.FC<{
     const unfilledRoles = planningRoles.length;
     const totalEstHours = labourSummary.reduce((s, l) => s + l.estHours, 0);
     const totalActHours = labourSummary.reduce((s, l) => s + l.actHours, 0);
-
-    const totalEstLaborCost = labourSummary.reduce((s, l) => s + (l.estHours * l.estRate), 0);
-    const totalActLaborCost = labourSummary.reduce((s, l) => s + (l.actHours * (l.actRate || l.estRate)), 0);
-
-    const totalEstPartsCost = partsSummary.reduce((s, p) => s + (p.estQty * p.estUnitCost), 0);
-    const totalActPartsCost = partsSummary.reduce((s, p) => s + (p.actQty * p.actUnitCost), 0);
-
-    const totalEstCost = totalEstLaborCost + totalEstPartsCost;
-    const totalActCost = totalActLaborCost + totalActPartsCost;
-    const costVariance = totalEstCost > 0 ? ((totalActCost - totalEstCost) / totalEstCost * 100) : 0;
-
-    // --- FINANCIAL DATA (merged from MetricsTab) ---
-    const [allocations, setAllocations] = useState<CostAllocation[]>([]);
-    const [warrantyCheck, setWarrantyCheck] = useState<WarrantyCheckResult | null>(null);
-    const [anomaly, setAnomaly] = useState<CostAnomalyResult | null>(null);
-
-    useEffect(() => {
-        const loadFinancials = async () => {
-            try {
-                const results = await Promise.all([
-                    FinOpsService.getCostAllocations(job.id),
-                    job.assetId ? FinOpsService.checkWarrantyStatus(job.assetId) : Promise.resolve(null),
-                    job.assetId ? FinOpsService.detectCostAnomaly(job.assetId, job.type, totalEstCost) : Promise.resolve(null),
-                ]);
-                setAllocations(results[0]);
-                setWarrantyCheck(results[1]);
-                setAnomaly(results[2]);
-            } catch (error) {
-                console.error("Failed to load financial metrics", error);
-            }
-        };
-        if (job.id) loadFinancials();
-    }, [job.id, job.assetId, totalEstCost]);
 
     // --- GROUPING ---
     const labourByPerson = useMemo(() => {
@@ -7245,26 +7158,10 @@ const ResourcesTab: React.FC<{
         return Array.from(map.entries());
     }, [partsSummary]);
 
-    // Progress bar helper
-    const ProgressBar = ({ planned, actual, color }: { planned: number; actual: number; color: string }) => {
-        const pct = planned > 0 ? Math.min((actual / planned) * 100, 150) : 0;
-        const over = pct > 100;
-        return (
-            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                <div
-                    className={`h-full rounded-full transition-all duration-500 ${over ? 'bg-red-500' : color}`}
-                    style={{ width: `${Math.min(pct, 100)}%` }}
-                />
-            </div>
-        );
-    };
-
-    const fmtCost = (n: number) => n > 0 ? `$${n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : '$0';
-
     return (
         <div className="space-y-3 md:space-y-4 animate-in fade-in duration-300">
             {/* KPI Stats Header */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
+            <div className="grid grid-cols-3 gap-2 md:gap-3">
                 <div className="bg-gradient-to-br from-blue-50 to-blue-50 border border-blue-100 rounded-lg p-3 text-center">
                     <div className="text-xl md:text-2xl font-black text-blue-700">{uniquePeople}{unfilledRoles > 0 && <span className="text-xs font-medium text-amber-500 ml-1">+{unfilledRoles} open</span>}</div>
                     <div className="text-[10px] text-blue-500 font-bold uppercase mt-0.5">Assigned</div>
@@ -7276,16 +7173,6 @@ const ResourcesTab: React.FC<{
                 <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-lg p-3 text-center">
                     <div className="text-xl md:text-2xl font-black text-amber-700">{partsSummary.length}</div>
                     <div className="text-[10px] text-amber-500 font-bold uppercase mt-0.5">Part Lines</div>
-                </div>
-                <div className={`bg-gradient-to-br border rounded-lg p-3 text-center ${costVariance > 10 ? 'from-red-50 to-red-50 border-red-200' : costVariance > 0 ? 'from-amber-50 to-yellow-50 border-amber-100' : 'from-slate-50 to-slate-50 border-slate-200'}`}>
-                    <div className={`text-xl md:text-2xl font-black ${costVariance > 10 ? 'text-red-700' : costVariance > 0 ? 'text-amber-700' : 'text-slate-700'}`}>
-                        {fmtCost(totalActCost)}
-                    </div>
-                    <div className="text-[10px] font-bold uppercase mt-0.5">
-                        <span className={costVariance > 10 ? 'text-red-500' : costVariance > 0 ? 'text-amber-500' : 'text-slate-500'}>
-                            Total Actual {costVariance !== 0 && `(${costVariance > 0 ? '+' : ''}${costVariance.toFixed(0)}%)`}
-                        </span>
-                    </div>
                 </div>
             </div>
 
@@ -7311,9 +7198,7 @@ const ResourcesTab: React.FC<{
                                     <th className="text-left px-2 py-2 hidden sm:table-cell">Craft</th>
                                     <th className="text-left px-2 py-2 hidden md:table-cell">Task</th>
                                     <th className="text-right px-2 py-2 w-16">Plan H</th>
-                                    <th className="text-right px-2 py-2 w-16">Act. H</th>
-                                    <th className="text-right px-2 py-2 w-20 hidden sm:table-cell">Plan $</th>
-                                    <th className="text-right px-3 py-2 w-20 hidden sm:table-cell">Act. $</th>
+                                    <th className="text-right px-3 py-2 w-16">Act. H</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
@@ -7345,14 +7230,8 @@ const ResourcesTab: React.FC<{
                                                     )}
                                                 </td>
                                                 <td className="px-2 py-2 text-right font-medium text-slate-600">{entry.estHours.toFixed(1)}</td>
-                                                <td className={`px-2 py-2 text-right font-bold ${entry.actHours > entry.estHours ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                <td className={`px-3 py-2 text-right font-bold ${entry.actHours > entry.estHours ? 'text-red-600' : 'text-emerald-600'}`}>
                                                     {entry.actHours.toFixed(1)}
-                                                </td>
-                                                <td className="px-2 py-2 text-right text-slate-500 hidden sm:table-cell">
-                                                    {fmtCost(entry.estHours * entry.estRate)}
-                                                </td>
-                                                <td className={`px-3 py-2 text-right font-medium hidden sm:table-cell ${(entry.actHours * (entry.actRate || entry.estRate)) > (entry.estHours * entry.estRate) ? 'text-red-600' : 'text-slate-700'}`}>
-                                                    {fmtCost(entry.actHours * (entry.actRate || entry.estRate))}
                                                 </td>
                                             </tr>
                                         ))}
@@ -7365,9 +7244,7 @@ const ResourcesTab: React.FC<{
                                     <td className="hidden sm:table-cell"></td>
                                     <td className="hidden md:table-cell"></td>
                                     <td className="px-2 py-2 text-right text-slate-600">{totalEstHours.toFixed(1)}</td>
-                                    <td className={`px-2 py-2 text-right ${totalActHours > totalEstHours ? 'text-red-600' : 'text-emerald-600'}`}>{totalActHours.toFixed(1)}</td>
-                                    <td className="px-2 py-2 text-right text-slate-600 hidden sm:table-cell">{fmtCost(totalEstLaborCost)}</td>
-                                    <td className={`px-3 py-2 text-right hidden sm:table-cell ${totalActLaborCost > totalEstLaborCost ? 'text-red-600' : 'text-slate-700'}`}>{fmtCost(totalActLaborCost)}</td>
+                                    <td className={`px-3 py-2 text-right ${totalActHours > totalEstHours ? 'text-red-600' : 'text-emerald-600'}`}>{totalActHours.toFixed(1)}</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -7397,9 +7274,7 @@ const ResourcesTab: React.FC<{
                                     <th className="text-center px-2 py-2 w-12">UOM</th>
                                     <th className="text-left px-2 py-2 hidden md:table-cell">Task</th>
                                     <th className="text-right px-2 py-2 w-14">Plan Q</th>
-                                    <th className="text-right px-2 py-2 w-14">Act. Q</th>
-                                    <th className="text-right px-2 py-2 w-20 hidden sm:table-cell">Plan $</th>
-                                    <th className="text-right px-3 py-2 w-20 hidden sm:table-cell">Act. $</th>
+                                    <th className="text-right px-3 py-2 w-14">Act. Q</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-50">
@@ -7424,14 +7299,8 @@ const ResourcesTab: React.FC<{
                                                     )}
                                                 </td>
                                                 <td className="px-2 py-2 text-right font-medium text-slate-600">{part.estQty}</td>
-                                                <td className={`px-2 py-2 text-right font-bold ${part.actQty > part.estQty ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                <td className={`px-3 py-2 text-right font-bold ${part.actQty > part.estQty ? 'text-red-600' : 'text-emerald-600'}`}>
                                                     {part.actQty}
-                                                </td>
-                                                <td className="px-2 py-2 text-right text-slate-500 hidden sm:table-cell">
-                                                    {fmtCost(part.estQty * part.estUnitCost)}
-                                                </td>
-                                                <td className={`px-3 py-2 text-right font-medium hidden sm:table-cell ${(part.actQty * part.actUnitCost) > (part.estQty * part.estUnitCost) ? 'text-red-600' : 'text-slate-700'}`}>
-                                                    {fmtCost(part.actQty * part.actUnitCost)}
                                                 </td>
                                             </tr>
                                         ))}
@@ -7444,9 +7313,7 @@ const ResourcesTab: React.FC<{
                                     <td></td>
                                     <td className="hidden md:table-cell"></td>
                                     <td className="px-2 py-2 text-right text-slate-600">{partsSummary.reduce((s, p) => s + p.estQty, 0)}</td>
-                                    <td className="px-2 py-2 text-right text-emerald-600">{partsSummary.reduce((s, p) => s + p.actQty, 0)}</td>
-                                    <td className="px-2 py-2 text-right text-slate-600 hidden sm:table-cell">{fmtCost(totalEstPartsCost)}</td>
-                                    <td className={`px-3 py-2 text-right hidden sm:table-cell ${totalActPartsCost > totalEstPartsCost ? 'text-red-600' : 'text-slate-700'}`}>{fmtCost(totalActPartsCost)}</td>
+                                    <td className="px-3 py-2 text-right text-emerald-600">{partsSummary.reduce((s, p) => s + p.actQty, 0)}</td>
                                 </tr>
                             </tfoot>
                         </table>
@@ -7454,181 +7321,12 @@ const ResourcesTab: React.FC<{
                 )}
             </div>
 
-            {/* Cost Roll-Up Card */}
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-                <div className="px-3 py-2.5 md:px-4 md:py-3 bg-slate-50 border-b border-slate-200">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-xs md:text-sm">
-                        <DollarSign size={14} className="text-green-600" /> Cost Roll-Up
-                    </h3>
-                </div>
-                <div className="p-3 md:p-4 space-y-3">
-                    {/* Labor Cost Bar */}
-                    <div>
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase">Labor</span>
-                            <span className="text-[10px] text-slate-500">
-                                {fmtCost(totalActLaborCost)} / {fmtCost(totalEstLaborCost)}
-                            </span>
-                        </div>
-                        <ProgressBar planned={totalEstLaborCost} actual={totalActLaborCost} color="bg-blue-500" />
-                    </div>
-
-                    {/* Material Cost Bar */}
-                    <div>
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase">Materials</span>
-                            <span className="text-[10px] text-slate-500">
-                                {fmtCost(totalActPartsCost)} / {fmtCost(totalEstPartsCost)}
-                            </span>
-                        </div>
-                        <ProgressBar planned={totalEstPartsCost} actual={totalActPartsCost} color="bg-amber-500" />
-                    </div>
-
-                    {/* Total */}
-                    <div className="pt-2 border-t border-slate-100">
-                        <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs font-bold text-slate-700 uppercase">Total</span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-xs font-bold text-slate-800">{fmtCost(totalActCost)} / {fmtCost(totalEstCost)}</span>
-                                {costVariance !== 0 && (
-                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${costVariance > 10 ? 'bg-red-100 text-red-700' : costVariance > 0 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
-                                        {costVariance > 0 ? '+' : ''}{costVariance.toFixed(0)}%
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                        <ProgressBar planned={totalEstCost} actual={totalActCost} color="bg-emerald-500" />
-                    </div>
-
-                    {/* Project Budget Envelope (only for PROJECT scope) */}
-                    {(job as any).scope === 'PROJECT' && (
-                        <div className="mt-3 pt-3 border-t border-dashed border-slate-200">
-                            <div className="flex items-center gap-2 mb-2">
-                                <Briefcase size={13} className="text-blue-500" />
-                                <span className="text-[10px] font-bold text-blue-600 uppercase">Project Budget Envelope</span>
-                            </div>
-                            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-                                <div className="flex justify-between items-center mb-1">
-                                    <span className="text-[10px] text-blue-500">Approved Budget</span>
-                                    <span className="text-xs font-bold text-blue-700">{fmtCost((job as any).budgetApproved || 0)}</span>
-                                </div>
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-[10px] text-blue-500">Spent to Date</span>
-                                    <span className="text-xs font-bold text-blue-700">{fmtCost(totalActCost)}</span>
-                                </div>
-                                <ProgressBar
-                                    planned={(job as any).budgetApproved || totalEstCost || 1}
-                                    actual={totalActCost}
-                                    color="bg-blue-500"
-                                />
-                                <div className="flex justify-between items-center mt-1">
-                                    <span className="text-[10px] text-blue-400">
-                                        {(((job as any).budgetApproved || totalEstCost) > 0
-                                            ? (totalActCost / ((job as any).budgetApproved || totalEstCost) * 100).toFixed(0)
-                                            : 0)}% consumed
-                                    </span>
-                                    <span className="text-[10px] font-medium text-blue-600">
-                                        {fmtCost(((job as any).budgetApproved || totalEstCost) - totalActCost)} remaining
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            {/* Financial Intelligence (merged from Metrics) */}
-            <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-                <div className="px-3 py-2.5 md:px-4 md:py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2 text-xs md:text-sm">
-                        <BarChart3 size={14} className="text-blue-600" /> Financial Performance
-                    </h3>
-                    {job.status === 'CLOSED' && (
-                        <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
-                            <Lock size={10} /> Costs Frozen
-                        </span>
-                    )}
-                </div>
-                <div className="p-3 md:p-4 space-y-3">
-                    {/* Alerts Row */}
-                    {(anomaly?.isAnomaly || warrantyCheck?.underWarranty) && (
-                        <div className="space-y-2">
-                            {anomaly?.isAnomaly && (
-                                <div className={`p-2.5 rounded border flex items-start gap-2 text-xs ${anomaly.severity === 'HIGH' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
-                                    <TrendingUp size={14} className="mt-0.5 shrink-0" />
-                                    <div>
-                                        <span className="font-bold block uppercase text-[10px] mb-0.5">Cost Anomaly Detected</span>
-                                        <p>{anomaly.message}</p>
-                                    </div>
-                                </div>
-                            )}
-                            {warrantyCheck?.underWarranty && (
-                                <div className="bg-green-50 border border-green-200 p-2.5 rounded flex items-start gap-2 text-xs text-green-800">
-                                    <ShieldCheck size={14} className="mt-0.5 shrink-0" />
-                                    <div>
-                                        <span className="font-bold block uppercase text-[10px] mb-0.5">Asset Under Warranty</span>
-                                        <p>{warrantyCheck.message}</p>
-                                        <div className="mt-1 text-[11px] bg-white border border-green-200 p-1.5 rounded">
-                                            Policy: {warrantyCheck.warranty?.warrantyType} (Ends: {warrantyCheck.warranty?.endDate})
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Budget Consumption */}
-                    <div>
-                        <div className="flex justify-between text-xs mb-1">
-                            <span className="font-medium text-slate-700">Budget Consumption</span>
-                            <span className={`font-bold ${(totalEstCost > 0 ? (totalActCost / totalEstCost * 100) : 0) > 100 ? 'text-red-600' : 'text-green-600'}`}>
-                                {totalEstCost > 0 ? (totalActCost / totalEstCost * 100).toFixed(0) : 0}%
-                            </span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-2.5">
-                            <div className={`h-2.5 rounded-full transition-all duration-500 ${totalActCost > totalEstCost ? 'bg-red-500' : 'bg-green-600'}`} style={{ width: `${Math.min(100, totalEstCost > 0 ? (totalActCost / totalEstCost * 100) : 0)}%` }}></div>
-                        </div>
-                        <div className="flex justify-between text-[11px] text-slate-500 mt-1">
-                            <span>Actual: {fmtCost(totalActCost)}</span>
-                            <span>Est: {fmtCost(totalEstCost)}</span>
-                        </div>
-                    </div>
-
-                    {/* Cost Centre Allocations */}
-                    {allocations.length > 0 && (
-                        <div className="pt-2 border-t border-slate-100">
-                            <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">Cost Centre Allocations</h4>
-                            <div className="text-xs border border-slate-200 rounded overflow-hidden">
-                                <table className="w-full text-left">
-                                    <thead className="bg-slate-50 font-bold text-slate-600">
-                                        <tr>
-                                            <th className="p-2 border-b">Type</th>
-                                            <th className="p-2 border-b">Cost Centre</th>
-                                            <th className="p-2 border-b text-right">Amount</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {allocations.map(a => (
-                                            <tr key={a.id} className="border-b last:border-0 hover:bg-slate-50">
-                                                <td className="p-2">{a.costType}</td>
-                                                <td className="p-2 font-mono">{a.costCenterId || '-'}</td>
-                                                <td className="p-2 text-right">${a.amount.toFixed(2)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            </div>
-
             {/* Info Notice */}
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 flex items-start gap-2">
                 <Info size={14} className="text-blue-500 mt-0.5 shrink-0" />
                 <div className="text-[10px] text-blue-700">
                     <strong>Resource management is task-based.</strong> To add or edit labour assignments and parts, go to the <strong>Tasks</strong> tab and expand a task.
-                    This view provides a consolidated summary across all tasks.
+                    This view summarises people, hours, and materials across all tasks — costs and settlement live on the <strong>Cost</strong> tab.
                 </div>
             </div>
         </div>
