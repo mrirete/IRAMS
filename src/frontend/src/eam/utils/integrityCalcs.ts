@@ -17,7 +17,8 @@ import type { CML, ThicknessReading, CorrosionRate, ComponentType } from '../../
 const MS_PER_YEAR = 365.25 * 24 * 60 * 60 * 1000;
 
 /** Code-mandated maximum inspection interval (years) by component type. */
-function codeMaxIntervalYears(component: ComponentType): number {
+function codeMaxIntervalYears(component?: ComponentType): number {
+    if (!component) return 10;                                             // unknown → generic API 510 max
     if (component.startsWith('piping') || component === 'weld') return 5;   // API 570
     if (component.startsWith('tank')) return 10;                            // API 653 (external)
     return 10;                                                             // API 510 pressure vessels
@@ -25,6 +26,29 @@ function codeMaxIntervalYears(component: ComponentType): number {
 
 /** Cap used when corrosion is negligible/non-measurable (avoids Infinity in the UI). */
 export const REMAINING_LIFE_CAP_YEARS = 99;
+
+/** Controlling (governing) rate — max(ST, LT, 0), the API conservative practice. */
+export function controllingRate(shortTermRate: number, longTermRate: number): number {
+    return Math.max(shortTermRate, longTermRate, 0);
+}
+
+/**
+ * Remaining life = (t_actual − t_min) / rate [API 510 §7.1.1.1], capped at
+ * REMAINING_LIFE_CAP_YEARS. 0 at/below t-min; cap when the rate is ≤ 0.
+ */
+export function remainingLife(tActual: number, tMin: number, ratePerYear: number): number {
+    if (tActual <= tMin) return 0;
+    if (ratePerYear <= 0) return REMAINING_LIFE_CAP_YEARS;
+    return Math.min((tActual - tMin) / ratePerYear, REMAINING_LIFE_CAP_YEARS);
+}
+
+/**
+ * Half-remaining-life inspection interval, capped at the component's code
+ * maximum (generic 10-yr API 510 cap when the component type is unknown).
+ */
+export function nextInspectionInterval(remainingLifeYears: number, component?: ComponentType): number {
+    return Math.max(0, Math.min(remainingLifeYears / 2, codeMaxIntervalYears(component)));
+}
 
 export interface CMLAssessment {
     cml_id: string;
@@ -76,19 +100,10 @@ export function assessCML(cml: CML, readings: ThicknessReading[]): CMLAssessment
     const longTerm = ltYears > 0 ? (tFirst - tActual) / ltYears : 0;
     const shortTerm = stYears > 0 ? (tPrev - tActual) / stYears : 0;
 
-    const controlling = Math.max(shortTerm, longTerm, 0);
+    const controlling = controllingRate(shortTerm, longTerm);
     const belowTmin = tActual <= cml.tmin_mm;
-
-    let remainingLife: number | null;
-    if (belowTmin) {
-        remainingLife = 0;
-    } else if (controlling <= 0) {
-        remainingLife = REMAINING_LIFE_CAP_YEARS; // no measurable loss
-    } else {
-        remainingLife = Math.min((tActual - cml.tmin_mm) / controlling, REMAINING_LIFE_CAP_YEARS);
-    }
-
-    const intervalYears = Math.max(0, Math.min((remainingLife ?? 0) / 2, codeMaxIntervalYears(cml.component_type)));
+    const remLife = remainingLife(tActual, cml.tmin_mm, controlling);
+    const intervalYears = nextInspectionInterval(remLife, cml.component_type);
     const dueDate = new Date(new Date(last.reading_date).getTime() + intervalYears * MS_PER_YEAR);
 
     // Accelerating = short-term materially exceeds long-term (matches the 2× UI threshold)
@@ -102,7 +117,7 @@ export function assessCML(cml: CML, readings: ThicknessReading[]): CMLAssessment
         long_term_rate_mmpy: round(Math.max(0, longTerm), 4),
         controlling_rate_mmpy: round(controlling, 4),
         is_accelerating: isAccelerating,
-        remaining_life_years: remainingLife === null ? null : round(remainingLife, 1),
+        remaining_life_years: round(remLife, 1),
         below_tmin: belowTmin,
         next_inspection_interval_years: round(intervalYears, 1),
         next_inspection_due: dueDate.toISOString(),

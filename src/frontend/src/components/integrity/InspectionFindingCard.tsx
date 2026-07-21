@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
     AlertTriangle, Trash2, ChevronDown, ChevronUp, Wrench, Camera,
-    Shield, MapPin, Gauge, FileText, MoreVertical, X, Loader2, CheckCircle2
+    Shield, MapPin, Gauge, FileText, MoreVertical, X, Loader2, CheckCircle2,
+    ExternalLink
 } from 'lucide-react';
 import type {
     InspectionFinding, FindingSeverity, FindingStatus,
@@ -44,10 +46,10 @@ interface InspectionFindingCardProps {
 export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
     finding, damageMechanisms, cmls, onUpdate, onDelete, onDraftWR, readonly,
 }) => {
+    const navigate = useNavigate();
     const [expanded, setExpanded] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
     const [draftingWR, setDraftingWR] = useState(false);
-    const [wrDrafted, setWrDrafted] = useState(false);
     const sev = SEVERITY_CONFIG[finding.severity];
     const stat = STATUS_CONFIG[finding.status];
 
@@ -281,27 +283,31 @@ export const InspectionFindingCard: React.FC<InspectionFindingCardProps> = ({
                                     />
                                     Action Required
                                 </label>
-                                {finding.action_required && (
+                                {finding.action_required && (finding.work_request_id ? (
+                                    <button
+                                        onClick={() => navigate(`/work-orders/${finding.work_request_id}`)}
+                                        className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg border text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100 transition-colors"
+                                        title={`Open work order ${finding.work_request_id}`}
+                                    >
+                                        <CheckCircle2 size={11} /> WO Raised <ExternalLink size={10} />
+                                    </button>
+                                ) : (
                                     <button
                                         onClick={async () => {
-                                            if (!onDraftWR || draftingWR || wrDrafted) return;
+                                            if (!onDraftWR || draftingWR) return;
                                             setDraftingWR(true);
                                             try {
                                                 await onDraftWR(finding);
-                                                setWrDrafted(true);
-                                                onUpdate(finding.id, { status: 'actioned' });
-                                                setTimeout(() => setWrDrafted(false), 3000);
                                             } catch { /* handled upstream */ }
                                             setDraftingWR(false);
                                         }}
-                                        disabled={draftingWR || wrDrafted || !onDraftWR}
-                                        className={`flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-all ${wrDrafted ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100'} disabled:opacity-50`}
+                                        disabled={draftingWR || !onDraftWR}
+                                        className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-all text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100 disabled:opacity-50"
                                     >
-                                        {draftingWR ? <><Loader2 size={11} className="animate-spin" /> Drafting…</>
-                                            : wrDrafted ? <><CheckCircle2 size={11} /> WR Drafted</>
-                                            : <><Wrench size={11} /> Draft WR</>}
+                                        {draftingWR ? <><Loader2 size={11} className="animate-spin" /> Raising…</>
+                                            : <><Wrench size={11} /> Raise WO</>}
                                     </button>
-                                )}
+                                ))}
                             </div>
 
                             {confirmDelete ? (

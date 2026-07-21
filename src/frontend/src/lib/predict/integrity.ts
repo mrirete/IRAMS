@@ -8,7 +8,13 @@
  *   governing rate = the HIGHER of the two (API 570 rule)
  *   remaining life = (current − t_min) / governing rate
  *   next inspection ≤ half the remaining life (API 570 interval rule)
+ *
+ * The rate/life/interval formulas delegate to the shared engine in
+ * eam/utils/integrityCalcs — one source of math, so this module always agrees
+ * with the Integrity pages (incl. the 99-yr life cap and the generic 10-yr
+ * API 510 interval cap).
  */
+import { controllingRate, remainingLife as sharedRemainingLife, nextInspectionInterval } from '../../eam/utils/integrityCalcs';
 
 export interface ThicknessPoint {
     /** ISO date of the reading */
@@ -60,13 +66,13 @@ export function assessIntegrity(points: ThicknessPoint[], tMin: number | null | 
     const stcr = stcrSpan > 0 ? Math.max(0, (prev.value - last.value) / stcrSpan) : 0;
 
     // Governing rate: the more conservative (higher) of long- and short-term.
-    const governing = Math.max(ltcr, stcr);
+    const governing = controllingRate(stcr, ltcr);
     const governingBasis: 'LTCR' | 'STCR' = stcr > ltcr ? 'STCR' : 'LTCR';
 
     const t = tMin != null && Number.isFinite(tMin) ? Number(tMin) : null;
     let remainingLifeYears: number | null = null;
     if (t != null && governing > 0) {
-        remainingLifeYears = Math.max(0, (last.value - t) / governing);
+        remainingLifeYears = sharedRemainingLife(last.value, t, governing);
     }
 
     const note = governing <= 0
@@ -83,7 +89,7 @@ export function assessIntegrity(points: ThicknessPoint[], tMin: number | null | 
         governingPerYear: r3(governing),
         governingBasis,
         remainingLifeYears: remainingLifeYears != null ? r2(remainingLifeYears) : null,
-        nextInspectionYears: remainingLifeYears != null ? r2(remainingLifeYears / 2) : null,
+        nextInspectionYears: remainingLifeYears != null ? r2(nextInspectionInterval(remainingLifeYears)) : null,
         n: pts.length,
         spanYears: r2(spanYears),
         note,

@@ -12,7 +12,9 @@ import { InspectionTeamPanel } from '../components/integrity/InspectionTeamPanel
 import { InspectionFormRenderer } from '../components/integrity/InspectionFormRenderer';
 import { VisionCorrosionPanel } from '../components/integrity/VisionCorrosionPanel';
 import { getTemplateByCode } from '../eam/constants/inspectionTemplates';
-import { agentService } from '../eam/services/AgentService';
+import { DatabaseService } from '../eam/services/DatabaseService';
+import { buildWorkOrder } from '../eam/lib/workOrder';
+import { useToast } from '../eam/contexts/ToastContext';
 import type {
     InspectionFinding, InspectionNote,
     InspectionTeamMember, InspectionTeamRole, FindingSeverity,
@@ -45,6 +47,7 @@ const InspectionDetailPage: React.FC = () => {
     const { inspectionId } = useParams<{ inspectionId: string }>();
     const navigate = useNavigate();
     const { inspections, damageMechanisms, cmls, updateInspection } = useIntegrity();
+    const { showToast } = useToast();
 
     // The shared record IS the source of truth — every edit goes through
     // updateInspection (optimistic + persisted + rollback on failure), so
@@ -179,32 +182,39 @@ const InspectionDetailPage: React.FC = () => {
         });
     }, [localInsp, updateInspection]);
 
-    // ── Draft Work Request from Finding (HITL) ──
+    // ── Raise a REAL corrective work order from a finding ──
+    // The WO id is stored on the finding (work_request_id) and the finding is
+    // marked actioned in the same persisted update, so traceability survives
+    // reload. Failures toast and leave the finding untouched.
     const handleDraftWR = useCallback(async (finding: InspectionFinding) => {
         if (!localInsp) return;
-        const result = await agentService.draftWorkOrderFromInspectionFinding(
-            {
-                id: finding.id,
-                description: finding.description,
-                severity: finding.severity,
-                nde_method: finding.nde_method,
-                damage_mechanism_id: finding.damage_mechanism_id,
-                cml_id: finding.cml_id,
-            },
-            {
-                inspectionId: localInsp.id,
-                inspectionType: localInsp.inspection_type,
-                governingCode: localInsp.governing_code,
+        const priority = finding.severity === 'critical' || finding.severity === 'major' ? 'HIGH'
+            : finding.severity === 'moderate' ? 'MEDIUM' : 'LOW';
+        try {
+            const wo = await DatabaseService.getInstance().createWorkOrder(buildWorkOrder({
+                title: `Corrective — ${localInsp.asset_name || localInsp.asset_id}: ${finding.description.slice(0, 60)}`,
+                description: `Raised from ${localInsp.inspection_type} inspection finding #${finding.sequence} (${finding.severity})`
+                    + `${localInsp.governing_code ? ` under ${localInsp.governing_code}` : ''}.\n\n${finding.description}`
+                    + `${finding.recommendation ? `\n\nRecommendation: ${finding.recommendation}` : ''}`
+                    + `${finding.cml_number ? `\nCML: ${finding.cml_number}` : ''}`,
                 assetId: localInsp.asset_id,
-            },
-            {
-                assetName: localInsp.asset_name || localInsp.asset_id,
-            },
-        );
-        if (!result.success) {
-            console.error('Draft WR failed:', result.message);
+                type: 'CM',
+                priorityCode: priority,
+                status: 'OPEN',
+            }), localInsp.inspector || 'inspection');
+            if (!wo?.id) throw new Error('Work order creation returned no id');
+            updateInspection(localInsp.id, {
+                findings: localInsp.findings.map(f => f.id === finding.id
+                    ? { ...f, work_request_id: wo.id as string, status: 'actioned' as const }
+                    : f),
+            });
+            showToast(`Work order ${wo.wo_number || ''} raised from finding #${finding.sequence}.`, 'success');
+        } catch (e) {
+            console.error('Raise WO from finding failed:', e);
+            showToast('Couldn\'t raise the work order — nothing was changed. Check your connection and try again.', 'error', 6000);
+            throw e;
         }
-    }, [localInsp]);
+    }, [localInsp, updateInspection, showToast]);
 
     // ── Not Found ──
     if (!localInsp) {

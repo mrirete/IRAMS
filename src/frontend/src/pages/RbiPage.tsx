@@ -3,10 +3,10 @@ import { Shield, AlertTriangle, CheckCircle, Clock, Plus, X } from 'lucide-react
 import { useIntegrity } from '../hooks/useIntegrity';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import { VisionCorrosionPanel } from '../components/integrity/VisionCorrosionPanel';
-import type { RBIAssessment, GoverningCode } from '../types/integrity';
+import type { RBIAssessment, GoverningCode, InspectionEvent } from '../types/integrity';
 
 export const RbiPage: React.FC = () => {
-    const { rbiAssessments, summary, addRbiAssessment } = useIntegrity();
+    const { rbiAssessments, summary, addRbiAssessment, addInspection } = useIntegrity();
     const { assetOptions, getAssetName } = useAssetLookup();
     const [selected, setSelected] = useState<RBIAssessment | null>(null);
     const [showNew, setShowNew] = useState(false);
@@ -26,6 +26,25 @@ export const RbiPage: React.FC = () => {
             assessor: form.assessor, assessed_date: new Date().toISOString(),
         };
         addRbiAssessment(a);
+        // Close the loop: the RBI interval drives the inspection schedule.
+        const insp: InspectionEvent = {
+            id: `insp-${Date.now()}`,
+            asset_id: a.asset_id,
+            asset_name: getAssetName(a.asset_id),
+            inspection_type: 'UT',
+            governing_code: a.governing_code as GoverningCode,
+            scheduled_date: a.next_inspection_due!,
+            status: 'scheduled',
+            approval_mode: 'simple',
+            findings_count: 0,
+            inspector: a.assessor!,
+            description: `RBI-driven inspection — ${a.risk_rank} risk (PoF ${a.pof_score}, CoF ${a.cof_score}), ${a.next_inspection_interval_months}-month interval.`,
+            team: [],
+            findings: [],
+            notes: [],
+            checklist_responses: {},
+        };
+        addInspection(insp);
         setForm({ asset_id: '', governing_code: 'API 510', pof_score: '3', cof_score: 'C', assessor: '' });
         setShowNew(false);
     };
