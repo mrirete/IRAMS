@@ -470,9 +470,13 @@ export class DataMapper {
             timeDueFinish = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
         }
 
-        // Format WO number: DB stores integer, display as WO-XXXX
+        // Format WO number: legacy rows store an integer (display as WO-XXXX);
+        // newer paths (buildWorkOrder, generate_wo_number RPC) store the full
+        // "WO-…" string — don't double the prefix.
         const woNum = record.wo_number;
-        const formattedWoNumber = woNum ? `WO-${String(woNum).padStart(4, '0')}` : record.id;
+        const formattedWoNumber = !woNum ? record.id
+            : String(woNum).toUpperCase().startsWith('WO-') ? String(woNum)
+            : `WO-${String(woNum).padStart(4, '0')}`;
 
         // Map JSA from joined jsa_assessments relation
         const rawJsa = record.jsa_assessments;

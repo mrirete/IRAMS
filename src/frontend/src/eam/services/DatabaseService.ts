@@ -356,6 +356,26 @@ export class DatabaseService {
         return this.uploadFile(file, 'work-order-docs', 'wo_doc_');
     }
 
+    /**
+     * JSA sign-off signature → storage instead of base64-in-JSONB. Every
+     * capture gets a fresh path: the bucket's RLS allows INSERT but 403s an
+     * overwrite (x-upsert on an existing object), so paths are never reused.
+     * The object behind the signature being replaced is removed best-effort.
+     */
+    public async uploadJSASignature(woId: string, role: string, dataUrl: string, previousUrl?: string): Promise<string> {
+        const blob = await (await fetch(dataUrl)).blob();
+        const path = `jsa_sig_${woId}_${role.replace(/\W+/g, '_')}_${Date.now()}.png`;
+        const { error } = await supabase.storage.from('work-order-docs')
+            .upload(path, blob, { contentType: 'image/png' });
+        if (error) throw error;
+        if (previousUrl && previousUrl.includes('/work-order-docs/')) {
+            const prev = previousUrl.split('/work-order-docs/')[1]?.split('?')[0];
+            if (prev) void supabase.storage.from('work-order-docs').remove([prev]);
+        }
+        const { data } = supabase.storage.from('work-order-docs').getPublicUrl(path);
+        return data.publicUrl;
+    }
+
     public async deleteContact(contactId: string): Promise<void> {
         // Validate UUID to prevent "invalid input syntax" error
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -4585,6 +4605,40 @@ export class DatabaseService {
         return this.getJSA(jsa.wo_id);
     }
 
+    // --- JSA TEMPLATE LIBRARY (team-shared, 0209) ---
+
+    public async getJSATemplates(): Promise<{ id: string; name: string; hazards: any[] }[]> {
+        const { data, error } = await supabase.from('jsa_templates').select('id, name, hazards').order('name');
+        if (error) { console.error('[getJSATemplates]', error); return []; }
+        return data || [];
+    }
+
+    /** Upsert by name — saving under an existing name replaces that template. */
+    public async saveJSATemplate(name: string, hazards: any[], actor?: string): Promise<void> {
+        const { error } = await supabase.from('jsa_templates')
+            .upsert({ name, hazards, created_by: actor || null }, { onConflict: 'name' });
+        if (error) throw error;
+    }
+
+    public async deleteJSATemplate(id: string): Promise<void> {
+        const { error } = await supabase.from('jsa_templates').delete().eq('id', id);
+        if (error) throw error;
+    }
+
+    /** One-time import of a browser's legacy localStorage templates. Existing
+     *  shared names win (ignoreDuplicates) so a stale local copy can't clobber
+     *  what a teammate already published. */
+    public async importJSATemplates(templates: { name: string; hazards: any[] }[], actor?: string): Promise<void> {
+        if (!templates?.length) return;
+        const rows = templates
+            .filter(t => t && typeof t.name === 'string' && t.name.trim())
+            .map(t => ({ name: t.name, hazards: t.hazards || [], created_by: actor || null }));
+        if (!rows.length) return;
+        const { error } = await supabase.from('jsa_templates')
+            .upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
+        if (error) throw error;
+    }
+
 
     // --- TASK LIBRARY ---
 
@@ -5277,26 +5331,29 @@ export class DatabaseService {
     // --- JSA ---
     public async updateJobJSA(woId: string, jsa: JobJSA, actor: string): Promise<string | undefined> {
         // 1. Find existing JSA or Create
-        const { data: existing } = await supabase.from('jsa_assessments').select('id').eq('wo_id', woId).maybeSingle();
+        const { data: existing } = await supabase.from('jsa_assessments').select('id, status').eq('wo_id', woId).maybeSingle();
 
         const dbJSA = DataMapper.toDBJobJSA(jsa, woId);
         let jsaId = existing?.id;
 
-        if (existing) {
-            const { error } = await supabase.from('jsa_assessments').update(dbJSA).eq('id', existing.id);
-            if (error) throw error;
-        } else {
-            const { data, error } = await supabase.from('jsa_assessments').insert({ ...dbJSA, created_by: actor }).select().single();
-            if (error) throw error;
-            jsaId = data.id;
-        }
+        // The 0210 restrictive policy blocks hazard writes while the stored
+        // status is AUTHORIZED. So order matters: when locking (payload says
+        // AUTHORIZED) write hazards first, status last; when unlocking or
+        // staying unlocked, write status first so the hazards can follow.
+        const locking = jsa.status === 'AUTHORIZED';
 
-        // 2. Hazards — upsert by stable client-generated id, then remove the
+        const writeAssessment = async () => {
+            const { error } = await supabase.from('jsa_assessments').update(dbJSA).eq('id', existing!.id);
+            if (error) throw error;
+        };
+
+        // Hazards — upsert by stable client-generated id, then remove the
         // rows the user deleted. Preserves row ids across saves (the old
         // delete-all-and-reinsert regenerated every id) and converges when the
         // offline queue replays the same payload. Rows the user hasn't
         // described yet are skipped, not persisted blank.
-        if (jsaId && jsa.hazards) {
+        const writeHazards = async () => {
+            if (!jsaId || !jsa.hazards) return;
             const rows = jsa.hazards
                 .filter(h => (h.hazard || '').trim() || (h.controls || '').trim())
                 .map(h => DataMapper.toDBJSAHazard(h, jsaId!));
@@ -5308,6 +5365,21 @@ export class DatabaseService {
                 const { error: hErr } = await supabase.from('jsa_hazards').upsert(rows);
                 if (hErr) throw hErr;
             }
+        };
+
+        if (existing) {
+            if (locking) {
+                await writeHazards();
+                await writeAssessment();
+            } else {
+                await writeAssessment();
+                await writeHazards();
+            }
+        } else {
+            const { data, error } = await supabase.from('jsa_assessments').insert({ ...dbJSA, created_by: actor }).select().single();
+            if (error) throw error;
+            jsaId = data.id;
+            await writeHazards();
         }
         return jsaId;
     }

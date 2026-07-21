@@ -5983,6 +5983,9 @@ const TaskEditor: React.FC<{
 const isRealJsaId = (id?: string): id is string =>
     !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 
+// All three must sign before work starts; 3/3 signed = JSA AUTHORIZED.
+const JSA_SIGNOFF_ROLES = ['Worker', 'Supervisor', 'HSE Officer'] as const;
+
 const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void; dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
     const { user } = useAuth();
     const { showToast } = useToast();
@@ -6099,7 +6102,20 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
         );
     }
 
+    const isAuthorized = job.jsa.status === 'AUTHORIZED';
+    // Central gate for anything that mutates hazards. The 0210 restrictive
+    // policy blocks these writes server-side anyway — catching it here tells
+    // the user why, before the optimistic UI diverges from the DB.
+    const guardAuthorized = (): boolean => {
+        if (isAuthorized) {
+            showToast('JSA is authorized — hazards are locked. Remove a sign-off to make changes.', 'warning');
+            return true;
+        }
+        return false;
+    };
+
     const addHazard = () => {
+        if (guardAuthorized()) return;
         const newHazard: JobHazard = {
             id: crypto.randomUUID(), // stable — doubles as the DB row id (upsert)
             hazard: '',
@@ -6144,6 +6160,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     };
 
     const updateHazard = (id: string, field: keyof JobHazard, value: any) => {
+        if (guardAuthorized()) return;
         const newHazards = (job.jsa!.hazards || []).map(h => {
             if (h.id !== id) return h;
             const updated = { ...h, [field]: value };
@@ -6171,12 +6188,28 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     const handleAISuggest = async () => {
         setAiSuggesting(true);
         try {
+            // Pull real asset context — the WO object only carries assetId, so
+            // the prompt used to say "Not specified" for every asset field.
+            let assetCtx: { assetName?: string; assetType?: string; equipmentClass?: string } = {};
+            if (job.assetId) {
+                try {
+                    const assets = await DatabaseService.getInstance().getAssets();
+                    const a: any = assets.find((x: any) => x.id === job.assetId);
+                    if (a) {
+                        assetCtx = {
+                            assetName: [[a.tag, a.name].filter(Boolean).join(' — '),
+                                [a.manufacturer, a.model].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+                            assetType: a.assetType || a.category || '',
+                            equipmentClass: [a.assetClass || a.assetCategory, a.criticality ? `criticality ${a.criticality}` : '']
+                                .filter(Boolean).join(', '),
+                        };
+                    }
+                } catch { /* suggestions still work, just less specific */ }
+            }
             const result = await aiEngine.suggestJSAHazards({
                 workDescription: job.description || job.title || '',
-                assetName: (job as any).assetName || '',
-                assetType: (job as any).assetType || '',
-                workType: (job as any).workType || job.type,
-                location: (job as any).locationName || '',
+                workType: job.type,
+                ...assetCtx,
             });
             setAiSuggestions(result.hazards || []);
             if ((result.hazards || []).length === 0) {
@@ -6190,6 +6223,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     };
 
     const acceptSuggestion = (s: JSAHazardSuggestion) => {
+        if (guardAuthorized()) return;
         const newHazard: JobHazard = {
             id: crypto.randomUUID(),
             hazard: s.hazard,
@@ -6227,6 +6261,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     };
 
     const handleLoadTemplate = (tpl: { name: string; hazards: any[] }) => {
+        if (guardAuthorized()) return;
         const newHazards = tpl.hazards.map(h => ({
             ...h,
             id: crypto.randomUUID(),
@@ -6257,17 +6292,33 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     };
 
     // --- Digital Signature ---
-    const handleSignoff = (role: string, signatureDataUrl: string) => {
+    const handleSignoff = async (role: string, signatureDataUrl: string) => {
+        // Signatures go to storage; the JSONB keeps only the URL. If the upload
+        // fails (offline plant floor), fall back to the inline data URL so the
+        // sign-off is never lost.
+        let signatureRef = signatureDataUrl;
+        if (signatureDataUrl.startsWith('data:')) {
+            try {
+                const prev = (job.jsa!.signoffs || []).find(s => s.role === role)?.signatureDataUrl;
+                signatureRef = await DatabaseService.getInstance().uploadJSASignature(
+                    job.id, role, signatureDataUrl, prev && prev.startsWith('http') ? prev : undefined);
+            } catch { /* keep the data URL */ }
+        }
         const signoffs = [...(job.jsa!.signoffs || [])];
         const existingIdx = signoffs.findIndex(s => s.role === role);
-        if (signatureDataUrl) {
-            const entry = { userId: user?.id || '', role, signedAt: new Date().toISOString(), status: 'Signed' as const, signatureDataUrl };
+        if (signatureRef) {
+            const entry = { userId: user?.id || '', role, signedAt: new Date().toISOString(), status: 'Signed' as const, signatureDataUrl: signatureRef };
             if (existingIdx >= 0) signoffs[existingIdx] = entry;
             else signoffs.push(entry);
         } else {
             if (existingIdx >= 0) signoffs[existingIdx] = { ...signoffs[existingIdx], status: 'Pending' as any, signatureDataUrl: '' };
         }
-        onUpdate({ jsa: { ...job.jsa!, signoffs } });
+        // Authorization is derived, not a separate button: all three roles
+        // signed → AUTHORIZED (hazards lock server-side per 0210); removing
+        // any signature withdraws it.
+        const allSigned = JSA_SIGNOFF_ROLES.every(r => signoffs.find(s => s.role === r)?.status === 'Signed');
+        onUpdate({ jsa: { ...job.jsa!, signoffs, status: allSigned ? 'AUTHORIZED' : 'DRAFT' } });
+        if (allSigned) showToast('All sign-offs captured — JSA authorized. Hazards are now locked.', 'success');
     };
 
     const toggleControl = (id: string, control: string) => {
@@ -6281,6 +6332,7 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
     };
 
     const deleteHazard = async (id: string) => {
+        if (guardAuthorized()) return;
         const ok = await confirm({
             title: 'Remove Hazard',
             message: 'This hazard entry and its risk assessment will be removed from the JSA.',
@@ -6441,6 +6493,9 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                             <p className="text-xs text-slate-500">5�5 Risk Matrix � Hierarchy of Controls � ISO 31000 / ISO 45001</p>
                         </div>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{(job.jsa.hazards || []).length}</span>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${isAuthorized ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {isAuthorized ? '🔒 AUTHORIZED' : job.jsa.status || 'DRAFT'}
+                        </span>
                     </div>
                     <div className="flex items-center gap-2">
                         <button
@@ -7127,14 +7182,14 @@ const JSATab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => vo
                         <PenTool size={20} className="text-blue-600" />
                         <h3 className="font-bold text-slate-800">Digital Sign-offs</h3>
                         <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                            {(job.jsa.signoffs || []).filter(s => s.status === 'Signed').length}/{['Worker', 'Supervisor', 'HSE Officer'].length}
+                            {(job.jsa.signoffs || []).filter(s => s.status === 'Signed').length}/{JSA_SIGNOFF_ROLES.length}
                         </span>
                     </div>
                 </summary>
                 <div className="mt-2 bg-white border border-slate-200 rounded-lg p-5">
                     <p className="text-[10px] text-slate-500 uppercase font-bold mb-4">All personnel must sign below before commencing work</p>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {['Worker', 'Supervisor', 'HSE Officer'].map(role => {
+                        {JSA_SIGNOFF_ROLES.map(role => {
                             const signoff = (job.jsa!.signoffs || []).find(s => s.role === role);
                             const isSigned = signoff?.status === 'Signed' && signoff?.signatureDataUrl;
                             return (
