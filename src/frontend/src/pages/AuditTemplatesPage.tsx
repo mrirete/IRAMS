@@ -15,7 +15,7 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    FileText, Search, Copy,
+    FileText, Search,
     ChevronRight, ChevronDown, Clock, CheckCircle, Star,
     ClipboardCheck, Shield, Wrench, Leaf, Settings, Lock,
     Download, Tag, ListChecks, PlayCircle
@@ -139,7 +139,7 @@ const SEED_TEMPLATES: AuditTemplate[] = [
 
 export const AuditTemplatesPage: React.FC = () => {
     const navigate = useNavigate();
-    const [templates, setTemplates] = useState<AuditTemplate[]>(SEED_TEMPLATES);
+    const [templates] = useState<AuditTemplate[]>(SEED_TEMPLATES);
     const [search, setSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState<string>('');
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
@@ -174,24 +174,6 @@ export const AuditTemplatesPage: React.FC = () => {
         });
     }, [navigate]);
 
-    /** Duplicate: clone template into local state with new ID */
-    const handleDuplicate = useCallback((template: AuditTemplate) => {
-        const nextNum = templates.length + 1;
-        const cloned: AuditTemplate = {
-            ...template,
-            id: `TPL-${String(nextNum).padStart(3, '0')}`,
-            name: `${template.name} (Copy)`,
-            version: '1.0',
-            status: 'draft',
-            isSystem: false,
-            usageCount: 0,
-            lastModified: new Date().toISOString().slice(0, 10),
-            createdBy: 'Current User',
-        };
-        setTemplates(prev => [...prev, cloned]);
-        setExpandedId(cloned.id);
-    }, [templates.length]);
-
     /** Export: download template definition as JSON */
     const handleExport = useCallback((template: AuditTemplate) => {
         const payload = JSON.stringify(template, null, 2);
@@ -215,7 +197,7 @@ export const AuditTemplatesPage: React.FC = () => {
             </div>
 
             <div className="mb-6">
-                <PreviewBanner message="Preview — templates are built-in presets; duplicated or edited templates are not saved yet. Start Audit works and launches a real assessment." />
+                <PreviewBanner message="Built-in preset templates — Start Audit launches a real assessment. Custom template authoring (duplicate/edit) is on the roadmap." />
             </div>
 
             {/* KPI Bar */}
@@ -342,9 +324,6 @@ export const AuditTemplatesPage: React.FC = () => {
                                             <button onClick={() => handleStartAudit(t)} className={`p-2 rounded-lg hover:${cat.bg} text-slate-400 ${cat.color.replace('text-', 'hover:text-')} transition-colors`} title="Start Audit">
                                                 <PlayCircle size={16} />
                                             </button>
-                                            <button onClick={() => handleDuplicate(t)} className="p-2 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors" title="Duplicate">
-                                                <Copy size={16} />
-                                            </button>
                                             <button onClick={() => handleExport(t)} className="p-2 rounded-lg hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 transition-colors" title="Export">
                                                 <Download size={16} />
                                             </button>
@@ -393,9 +372,6 @@ export const AuditTemplatesPage: React.FC = () => {
                                         <div className="flex items-center gap-3 mt-5 pt-4 border-t border-slate-200/60">
                                             <button onClick={() => handleStartAudit(t)} className="px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-lg text-sm flex items-center gap-2 hover:shadow-lg hover:scale-[1.02] transition-all">
                                                 <PlayCircle size={16} /> Start Audit
-                                            </button>
-                                            <button onClick={() => handleDuplicate(t)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition-colors">
-                                                <Copy size={14} /> Duplicate
                                             </button>
                                             <button onClick={() => handleExport(t)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition-colors">
                                                 <Download size={14} /> Export

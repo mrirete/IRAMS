@@ -143,6 +143,19 @@ export function useIntegrity() {
         }
     }, [showToast]);
 
+    // ── Overdue derivation ────────────────────────────────────────────
+    // 'overdue' is computed from the schedule, not trusted as a stored
+    // status — a scheduled inspection whose date has passed shows overdue
+    // everywhere without any background job mutating rows.
+    const effectiveInspections = useMemo<InspectionEvent[]>(() => {
+        const now = Date.now();
+        return inspections.map(i =>
+            i.status === 'scheduled' && new Date(i.scheduled_date).getTime() < now
+                ? { ...i, status: 'overdue' as const }
+                : i
+        );
+    }, [inspections]);
+
     // ── API-510/570/653 assessments computed from thickness readings ──
     // Derive corrosion rate + remaining life from the raw readings (the data
     // inspectors actually capture) rather than trusting pre-stored rates.
@@ -185,11 +198,11 @@ export function useIntegrity() {
             ffs_failed: ffsAssessments.filter(f => f.status === 'failed').length,
             iow_total: iowParameters.length,
             iow_breach_count: iowParameters.filter(i => i.breach_status === 'breach').length,
-            inspections_scheduled: inspections.filter(i => i.status === 'scheduled').length,
-            inspections_overdue: inspections.filter(i => i.status === 'overdue').length,
-            inspections_completed_ytd: inspections.filter(i => i.status === 'completed').length,
+            inspections_scheduled: effectiveInspections.filter(i => i.status === 'scheduled').length,
+            inspections_overdue: effectiveInspections.filter(i => i.status === 'overdue').length,
+            inspections_completed_ytd: effectiveInspections.filter(i => i.status === 'completed').length,
         };
-    }, [cmls, assessments, effectiveCorrosionRates, rbiAssessments, damageMechanisms, ffsAssessments, iowParameters, inspections]);
+    }, [cmls, assessments, effectiveCorrosionRates, rbiAssessments, damageMechanisms, ffsAssessments, iowParameters, effectiveInspections]);
 
     return {
         loading,
@@ -201,7 +214,7 @@ export function useIntegrity() {
         damageMechanisms,
         ffsAssessments,
         iowParameters,
-        inspections,
+        inspections: effectiveInspections,
         summary,
         addReading,
         addRbiAssessment,

@@ -5,8 +5,32 @@ import { useAssetLookup } from '../hooks/useAssetLookup';
 import { VisionCorrosionPanel } from '../components/integrity/VisionCorrosionPanel';
 import type { RBIAssessment, GoverningCode, InspectionEvent } from '../types/integrity';
 
+/** Build the RBI-driven inspection for an assessment (due date clamped to today+). */
+function rbiInspection(a: RBIAssessment, assetName: string): InspectionEvent {
+    const due = a.next_inspection_due && new Date(a.next_inspection_due).getTime() > Date.now()
+        ? a.next_inspection_due
+        : new Date().toISOString();
+    return {
+        id: `insp-${Date.now()}`,
+        asset_id: a.asset_id,
+        asset_name: assetName,
+        inspection_type: 'UT',
+        governing_code: a.governing_code as GoverningCode,
+        scheduled_date: due,
+        status: 'scheduled',
+        approval_mode: 'simple',
+        findings_count: 0,
+        inspector: a.assessor || 'TBD',
+        description: `RBI-driven inspection — ${a.risk_rank} risk (PoF ${a.pof_score}, CoF ${a.cof_score}), ${a.next_inspection_interval_months}-month interval.`,
+        team: [],
+        findings: [],
+        notes: [],
+        checklist_responses: {},
+    };
+}
+
 export const RbiPage: React.FC = () => {
-    const { rbiAssessments, summary, addRbiAssessment, addInspection } = useIntegrity();
+    const { rbiAssessments, summary, addRbiAssessment, addInspection, inspections } = useIntegrity();
     const { assetOptions, getAssetName } = useAssetLookup();
     const [selected, setSelected] = useState<RBIAssessment | null>(null);
     const [showNew, setShowNew] = useState(false);
@@ -27,24 +51,7 @@ export const RbiPage: React.FC = () => {
         };
         addRbiAssessment(a);
         // Close the loop: the RBI interval drives the inspection schedule.
-        const insp: InspectionEvent = {
-            id: `insp-${Date.now()}`,
-            asset_id: a.asset_id,
-            asset_name: getAssetName(a.asset_id),
-            inspection_type: 'UT',
-            governing_code: a.governing_code as GoverningCode,
-            scheduled_date: a.next_inspection_due!,
-            status: 'scheduled',
-            approval_mode: 'simple',
-            findings_count: 0,
-            inspector: a.assessor!,
-            description: `RBI-driven inspection — ${a.risk_rank} risk (PoF ${a.pof_score}, CoF ${a.cof_score}), ${a.next_inspection_interval_months}-month interval.`,
-            team: [],
-            findings: [],
-            notes: [],
-            checklist_responses: {},
-        };
-        addInspection(insp);
+        addInspection(rbiInspection(a, getAssetName(a.asset_id)));
         setForm({ asset_id: '', governing_code: 'API 510', pof_score: '3', cof_score: 'C', assessor: '' });
         setShowNew(false);
     };
@@ -137,6 +144,16 @@ export const RbiPage: React.FC = () => {
                         <Stat label="Next Inspection Due" value={new Date(selected.next_inspection_due).toLocaleDateString()} />
                         <Stat label="Assessed By" value={selected.assessor} />
                         <Stat label="Assessment Date" value={new Date(selected.assessed_date).toLocaleDateString()} />
+
+                        {/* Interval → schedule: offer to book the inspection if none is upcoming */}
+                        {!inspections.some(i => i.asset_id === selected.asset_id && (i.status === 'scheduled' || i.status === 'overdue' || i.status === 'in_progress')) && (
+                            <button
+                                onClick={() => addInspection(rbiInspection(selected, getAssetName(selected.asset_id)))}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors"
+                            >
+                                <Clock size={14} /> Schedule Inspection ({new Date(selected.next_inspection_due).getTime() > Date.now() ? new Date(selected.next_inspection_due).toLocaleDateString() : 'today'})
+                            </button>
+                        )}
 
                         {/* Vision Corrosion Findings — Cross-Module Integration */}
                         <VisionCorrosionPanel
