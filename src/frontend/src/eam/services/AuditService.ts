@@ -369,6 +369,16 @@ export class AuditService {
     //  CORRECTIVE ACTIONS
     // ═════════════════════════════════════════════════════════════════
 
+    /** All corrective actions across audits — standalone rows (no finding) included. */
+    async getAllCorrectiveActions(): Promise<AuditCorrectiveAction[]> {
+        const { data, error } = await supabase
+            .from('audit_corrective_actions')
+            .select('*')
+            .order('created_at', { ascending: false });
+        if (error) { console.error('getAllCAs:', error); return []; }
+        return data || [];
+    }
+
     async createCorrectiveAction(ca: Omit<AuditCorrectiveAction, 'id' | 'created_at'>): Promise<AuditCorrectiveAction | null> {
         const { data, error } = await supabase
             .from('audit_corrective_actions')
@@ -377,9 +387,20 @@ export class AuditService {
             .single();
         if (error) { console.error('createCA:', error); return null; }
 
-        // Update finding CA counts
-        await this.refreshFindingCACounts(ca.finding_id);
+        // Update finding CA counts (standalone CAs have no finding)
+        if (ca.finding_id) await this.refreshFindingCACounts(ca.finding_id);
         return data;
+    }
+
+    /** CA → WO pipeline: record the raised work order on the corrective action. */
+    async linkCAToWorkOrder(id: string, woId: string, woNumber: string): Promise<boolean> {
+        const { error } = await supabase.from('audit_corrective_actions').update({
+            wo_id: woId,
+            wo_number: woNumber,
+            updated_at: new Date().toISOString(),
+        }).eq('id', id);
+        if (error) console.error('linkCAToWorkOrder:', error);
+        return !error;
     }
 
     async updateCAStatus(id: string, status: AuditCAStatus, notes?: string): Promise<boolean> {

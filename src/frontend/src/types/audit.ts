@@ -170,7 +170,8 @@ export interface AuditFindingRecord {
 
 export interface AuditCorrectiveAction {
     id: string;
-    finding_id: string;
+    /** null for standalone CAs logged outside an audit finding (0211) */
+    finding_id: string | null;
     ca_number: string;
     action_type: CAType;
     description: string;
