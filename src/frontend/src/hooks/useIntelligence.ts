@@ -108,6 +108,8 @@ function normalizeAlert(db: DbAlert): PredictionAlert {
         dqs_impact: Number(db.dqs_impact ?? 0),
         governance_tier: (db.governance_tier ?? 3) as GovernanceTier,
         created_at: db.created_at,
+        diagnosis: db.diagnosis ?? null,
+        failure_mode_code: db.failure_mode_code ?? null,
     };
 }
 

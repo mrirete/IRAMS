@@ -10,15 +10,17 @@
  * when an online waveform feed lands, it writes the same table and this
  * panel needs nothing new.
  */
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
     ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
-import { AudioWaveform, Play, Save, Clock, FlaskConical } from 'lucide-react';
+import { AudioWaveform, Play, Save, Clock, FlaskConical, Cog, X } from 'lucide-react';
 import {
     analyzeWaveform, parseWaveformText, decimateForPlot, demoBearingSignal,
     type SpectralAnalysis,
 } from '../../lib/predict/spectral';
+import { faultFrequencies, type BearingSpec } from '../../lib/predict/bearingFaults';
+import { BEARING_CATALOG } from '../../lib/predict/bearingCatalog';
 import { predictionService, type WaveformCapture } from '../../eam/services/PredictionService';
 
 interface Props {
@@ -58,6 +60,114 @@ const SpectrumChart: React.FC<{ data: { freqHz: number; amp: number }[]; color: 
     </div>
 );
 
+/**
+ * Compact bearing-spec manager: pick from the seed catalog or enter the
+ * BPFO/BPFI orders straight from the manufacturer datasheet. Specs persist
+ * per asset (assets.properties.predict.bearings) and turn envelope tones
+ * into named-race findings.
+ */
+const BearingManager: React.FC<{ bearings: BearingSpec[]; onChange: (next: BearingSpec[]) => void }> = ({ bearings, onChange }) => {
+    const [catalogSel, setCatalogSel] = useState(BEARING_CATALOG[0].designation);
+    const [position, setPosition] = useState('DE');
+    const [dsName, setDsName] = useState('');
+    const [dsBpfo, setDsBpfo] = useState('');
+    const [dsBpfi, setDsBpfi] = useState('');
+
+    const addFromCatalog = () => {
+        const entry = BEARING_CATALOG.find(e => e.designation === catalogSel);
+        if (!entry) return;
+        onChange([...bearings, { ...entry.spec, position: position.trim() || undefined }]);
+    };
+
+    const addFromDatasheet = () => {
+        const bpfo = Number(dsBpfo), bpfi = Number(dsBpfi);
+        if (!dsName.trim() || !(bpfo > 0) || !(bpfi > 0)) return;
+        onChange([...bearings, {
+            designation: dsName.trim(),
+            position: position.trim() || undefined,
+            orders: { bpfo, bpfi },
+            source: 'datasheet',
+        }]);
+        setDsName(''); setDsBpfo(''); setDsBpfi('');
+    };
+
+    return (
+        <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-3">
+            <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bearing specs — enables named BPFO/BPFI/BSF/FTF findings</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                    Best source is the manufacturer datasheet (fault orders × running speed). Catalog entries marked
+                    approximate use ball count only — their matches read as hints, not verdicts.
+                </p>
+            </div>
+
+            {bearings.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                    {bearings.map((b, i) => {
+                        const f = faultFrequencies(b, 1);   // shaftHz=1 → hz equals orders
+                        return (
+                            <span key={i} className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded-md text-[11px]">
+                                <span className="font-semibold text-slate-700">{b.designation || 'bearing'}</span>
+                                {b.position && <span className="text-slate-400">{b.position}</span>}
+                                {f && <span className="font-mono text-slate-500">BPFO {f.orders.bpfo}× · BPFI {f.orders.bpfi}×</span>}
+                                {(b.source === 'approximate' || f?.basis === 'approximate') && (
+                                    <span className="px-1 py-0.5 bg-amber-50 border border-amber-200 text-amber-700 rounded text-[9px] font-bold">APPROX</span>
+                                )}
+                                <button onClick={() => onChange(bearings.filter((_, j) => j !== i))}
+                                    className="text-slate-300 hover:text-red-500" title="Remove">
+                                    <X size={11} />
+                                </button>
+                            </span>
+                        );
+                    })}
+                </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <div className="flex items-end gap-1.5">
+                    <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">From catalog</label>
+                        <select value={catalogSel} onChange={e => setCatalogSel(e.target.value)}
+                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:border-primary-400 focus:outline-none">
+                            {BEARING_CATALOG.map(e => <option key={e.designation} value={e.designation}>{e.label}</option>)}
+                        </select>
+                    </div>
+                    <div className="w-20">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Position</label>
+                        <input value={position} onChange={e => setPosition(e.target.value)} placeholder="DE"
+                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs focus:border-primary-400 focus:outline-none" />
+                    </div>
+                    <button onClick={addFromCatalog}
+                        className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-xs font-bold rounded-lg transition-colors">
+                        Add
+                    </button>
+                </div>
+                <div className="flex items-end gap-1.5">
+                    <div className="flex-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">From datasheet (orders ×RPM)</label>
+                        <input value={dsName} onChange={e => setDsName(e.target.value)} placeholder="designation, e.g. 6309"
+                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs focus:border-primary-400 focus:outline-none" />
+                    </div>
+                    <div className="w-16">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">BPFO</label>
+                        <input value={dsBpfo} onChange={e => setDsBpfo(e.target.value)} placeholder="3.05" type="number"
+                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs focus:border-primary-400 focus:outline-none" />
+                    </div>
+                    <div className="w-16">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">BPFI</label>
+                        <input value={dsBpfi} onChange={e => setDsBpfi(e.target.value)} placeholder="4.95" type="number"
+                            className="w-full mt-1 p-1.5 border border-slate-200 rounded-lg text-xs focus:border-primary-400 focus:outline-none" />
+                    </div>
+                    <button onClick={addFromDatasheet} disabled={!dsName.trim() || !Number(dsBpfo) || !Number(dsBpfi)}
+                        className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 disabled:opacity-40 text-white text-xs font-bold rounded-lg transition-colors">
+                        Add
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, currentUser }) => {
     const [rawText, setRawText] = useState('');
     const [fs, setFs] = useState('5120');
@@ -70,12 +180,36 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
     const [saving, setSaving] = useState(false);
     const [savedMsg, setSavedMsg] = useState<string | null>(null);
     const [history, setHistory] = useState<WaveformCapture[] | null>(null);
+    const [bearings, setBearings] = useState<BearingSpec[]>([]);
+    const [showBearings, setShowBearings] = useState(false);
+
+    // Asset Predict config: default RPM from the nameplate, bearing specs for
+    // named-race matching (assets.properties.predict).
+    useEffect(() => {
+        let alive = true;
+        predictionService.getAssetPredictConfig(assetId).then(cfg => {
+            if (!alive) return;
+            setBearings(cfg.bearings ?? []);
+            if (cfg.rated_rpm) setRpm(prev => (prev.trim() ? prev : String(cfg.rated_rpm)));
+        });
+        return () => { alive = false; };
+    }, [assetId]);
+
+    const persistConfig = async (next: BearingSpec[]) => {
+        setBearings(next);
+        const cfg = await predictionService.getAssetPredictConfig(assetId);
+        await predictionService.saveAssetPredictConfig(assetId, {
+            ...cfg,
+            bearings: next,
+            rated_rpm: rpm.trim() ? Number(rpm) : cfg.rated_rpm ?? null,
+        });
+    };
 
     const run = (values: number[], demo: boolean) => {
         setError(null);
         setSavedMsg(null);
         try {
-            const a = analyzeWaveform(values, Number(fs), rpm.trim() ? Number(rpm) : null);
+            const a = analyzeWaveform(values, Number(fs), rpm.trim() ? Number(rpm) : null, bearings);
             setSamples(values);
             setAnalysis(a);
             setIsDemo(demo);
@@ -107,6 +241,8 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                 specPeaks: analysis.specPeaks,
                 envPeaks: analysis.envPeaks,
                 diagnosis: analysis.diagnosis,
+                bearingFaults: analysis.bearingFaults,
+                bearingMatches: analysis.bearingMatches,
             },
             created_by: currentUser ?? null,
         });
@@ -180,6 +316,11 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                     className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-600 text-xs font-medium rounded-lg hover:bg-slate-50 transition-colors">
                     <Clock size={13} /> History
                 </button>
+                <button onClick={() => setShowBearings(v => !v)}
+                    className={`flex items-center gap-1.5 px-3 py-2 border text-xs font-medium rounded-lg transition-colors ${showBearings ? 'bg-primary-50 border-primary-200 text-primary-700' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                    title="Bearing specs enable named BPFO/BPFI/BSF/FTF matching of envelope tones">
+                    <Cog size={13} /> Bearings ({bearings.length})
+                </button>
                 {analysis && !isDemo && (
                     <button onClick={handleSave} disabled={saving}
                         className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors ml-auto">
@@ -187,6 +328,10 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                     </button>
                 )}
             </div>
+
+            {showBearings && (
+                <BearingManager bearings={bearings} onChange={persistConfig} />
+            )}
 
             {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
             {savedMsg && <p className="text-xs text-emerald-700 mt-2">{savedMsg}</p>}
@@ -233,6 +378,24 @@ export const SpectralAnalysisPanel: React.FC<Props> = ({ assetId, assetName, cur
                             </div>
                         ))}
                     </div>
+
+                    {/* Expected bearing defect frequencies at this shaft speed */}
+                    {analysis.bearingFaults.length > 0 && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px]">
+                            <p className="font-bold text-slate-500 uppercase tracking-wider text-[10px] mb-1.5">
+                                Expected defect frequencies @ {analysis.rpm} RPM
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                                {analysis.bearingFaults.map((f, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-white border border-slate-200 rounded-md font-mono">
+                                        {[f.designation, f.position].filter(Boolean).join(' ')}: BPFO {f.hz.bpfo} · BPFI {f.hz.bpfi}
+                                        {f.hz.bsf != null ? ` · BSF ${f.hz.bsf}` : ''}{f.hz.ftf != null ? ` · FTF ${f.hz.ftf}` : ''} Hz
+                                        {f.basis === 'approximate' ? ' (approx)' : ''}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Diagnosis */}
                     <div className="space-y-2">

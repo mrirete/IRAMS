@@ -4,6 +4,7 @@ import {
     ChevronDown, ChevronRight, Clock, AlertTriangle, Loader2, Sparkles, Eye
 } from 'lucide-react';
 import { predictionService } from '../../eam/services/PredictionService';
+import { agentService } from '../../eam/services/AgentService';
 import type { AgentAction, AgentActionStatus } from '../../eam/services/PredictionService';
 
 // ─── Props ───────────────────────────────────────────────────
@@ -24,6 +25,7 @@ const TABS = [
     { key: 'all', label: 'All Drafts', icon: Bot },
     { key: 'alert_to_wo', label: 'WO Drafts', icon: Wrench },
     { key: 'vision_to_wo', label: 'Vision WO', icon: Eye },
+    { key: 'inspection_to_wo', label: 'Inspection WO', icon: AlertTriangle },
     { key: 'bad_actor_rca', label: 'RCA Drafts', icon: Search },
     { key: 'threshold_adapter', label: 'Thresholds', icon: BarChart3 },
 ] as const;
@@ -40,6 +42,7 @@ const STATUS_STYLES: Record<AgentActionStatus, { bg: string; text: string; label
 const AGENT_BADGES: Record<string, { icon: typeof Bot; color: string; label: string }> = {
     alert_to_wo: { icon: Wrench, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'WO Agent' },
     vision_to_wo: { icon: Eye, color: 'text-primary-600 bg-primary-50 border-primary-200', label: 'Vision Agent' },
+    inspection_to_wo: { icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 border-amber-200', label: 'Inspection Agent' },
     bad_actor_rca: { icon: Search, color: 'text-blue-600 bg-blue-50 border-blue-200', label: 'RCA Agent' },
     threshold_adapter: { icon: BarChart3, color: 'text-primary-600 bg-primary-50 border-primary-200', label: 'Threshold Agent' },
 };
@@ -55,6 +58,7 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [rejectNotes, setRejectNotes] = useState<Record<string, string>>({});
+    const [approveErrors, setApproveErrors] = useState<Record<string, string>>({});
 
     const fetchActions = useCallback(async () => {
         setLoading(true);
@@ -69,8 +73,16 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
 
     const handleApprove = async (action: AgentAction) => {
         setProcessingId(action.id);
+        setApproveErrors(prev => ({ ...prev, [action.id]: '' }));
         try {
-            const ok = await predictionService.updateAgentActionStatus(action.id, 'approved', currentUser);
+            // WR drafts: create the real work order FIRST — if creation fails
+            // the draft stays pending_review instead of approved-but-lost.
+            let notes: string | undefined;
+            if (action.action_type === 'wr_draft') {
+                const wo = await agentService.createWorkOrderFromDraft(action, currentUser);
+                notes = `Created ${(wo as any)?.wo_number || wo?.id}`;
+            }
+            const ok = await predictionService.updateAgentActionStatus(action.id, 'approved', currentUser, notes);
             if (ok) {
                 // Threshold proposals: approval APPLIES the bands (1.5.4 write-back)
                 // — sensor rows + matching reading definitions (provenance 'learned').
@@ -82,6 +94,8 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
                 onActionApproved?.(action);
                 await fetchActions();
             }
+        } catch (e: any) {
+            setApproveErrors(prev => ({ ...prev, [action.id]: e?.message || 'Failed to create the work order — the draft is still pending.' }));
         } finally { setProcessingId(null); }
     };
 
@@ -215,6 +229,23 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
                                                     <div className="flex justify-between"><span className="text-slate-400">Est. Hours:</span> <span>{payload.estimated_hours}h</span></div>
                                                     {payload.suggested_failure_mode && <div className="flex justify-between"><span className="text-slate-400">Failure Mode:</span> <span className="font-mono text-[10px]">{payload.suggested_failure_mode}</span></div>}
                                                     <p className="text-xs text-slate-500 mt-2 bg-white p-2 rounded border border-slate-100 leading-relaxed">{payload.description}</p>
+                                                    {/* WHY: deterministic diagnosis behind this draft (0215) */}
+                                                    {(payload.diagnosis?.hypotheses?.length ?? 0) > 0 && (
+                                                        <div className="mt-2 bg-white p-2 rounded border border-slate-100">
+                                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Diagnosis evidence (rules engine)</p>
+                                                            {payload.diagnosis.hypotheses.slice(0, 3).map((h: any, i: number) => (
+                                                                <div key={i} className="mb-1 last:mb-0">
+                                                                    <p className="text-[11px] text-slate-600">
+                                                                        <span className="font-mono font-bold">{h.failure_mode_code}</span> {h.failure_mode_label}
+                                                                        <span className="text-slate-400"> · {Math.round((h.confidence ?? 0) * 100)}% · {h.basis === 'deterministic-rule' ? 'rule' : 'screening'}</span>
+                                                                    </p>
+                                                                    {(h.evidence ?? []).slice(0, 2).map((e: any, j: number) => (
+                                                                        <p key={j} className="text-[10px] text-slate-400 pl-2 leading-snug">· {e.summary}</p>
+                                                                    ))}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                             {action.action_type === 'rca_draft' && (
@@ -270,6 +301,11 @@ export const AgentReviewPanel: React.FC<AgentReviewPanelProps> = ({
                                                         Reject
                                                     </button>
                                                 </div>
+                                                {approveErrors[action.id] && (
+                                                    <div className="flex items-start gap-1.5 px-2.5 py-2 bg-red-50 border border-red-200 rounded-lg text-[11px] text-red-600">
+                                                        <AlertTriangle size={12} className="shrink-0 mt-0.5" /> {approveErrors[action.id]}
+                                                    </div>
+                                                )}
                                                 <input
                                                     type="text"
                                                     placeholder="Rejection reason (required for Criticality A)..."

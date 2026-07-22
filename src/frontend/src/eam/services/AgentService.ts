@@ -22,6 +22,9 @@
 
 import { predictionService } from './PredictionService';
 import { aiEngine } from './AIAnalysisEngine';
+import { DatabaseService } from './DatabaseService';
+import { buildWorkOrder } from '../lib/workOrder';
+import integrityService from './IntegrityService';
 import type { PredictionAlert, AgentAction } from './PredictionService';
 import type {
     WorkRequestDraft, BadActorRCASummary,
@@ -199,6 +202,9 @@ class AgentService {
                 assetCriticality: assetContext.assetCriticality,
                 assetType: assetContext.assetType,
                 confidence: alert.confidence || undefined,
+                // Grounding (0215): the LLM narrates the rules-engine hypotheses
+                // instead of inferring failure modes from scratch.
+                diagnosis: alert.diagnosis ?? null,
             });
 
             // 2. Calculate RPN for governance escalation
@@ -216,7 +222,8 @@ class AgentService {
                 trigger_id: alert.alert_id,
                 asset_id: alert.asset_id,
                 action_type: 'wr_draft',
-                draft_payload: { ...draft, rpn, source_alert: alert.alert_id },
+                // diagnosis rides along so AgentReviewPanel can show WHY, not just the RPN
+                draft_payload: { ...draft, rpn, source_alert: alert.alert_id, diagnosis: alert.diagnosis ?? null },
                 status: 'pending_review',
             });
 
@@ -557,6 +564,48 @@ class AgentService {
             console.error('[AgentService.draftWorkOrderFromInspectionFinding]', e);
             return { success: false, agentAction: null, draft: null, message: e.message || 'Agent failed' };
         }
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  Draft approval → real Work Order (loop closure)
+    // ══════════════════════════════════════════════════════════
+
+    /**
+     * Turn an approved wr_draft agent action into a real work_orders row.
+     * Until this runs, a draft is only an audit-trail entry — the review UI
+     * must call it AT approval time, before flipping the action's status,
+     * so a failed creation leaves the draft pending instead of approved-but-lost.
+     * If the draft originated from an inspection finding, the source inspection
+     * is stamped with the new WO id (ers_inspections.work_order_id).
+     */
+    async createWorkOrderFromDraft(action: AgentAction, actor: string): Promise<{ id: string; wo_number?: string }> {
+        const p = action.draft_payload || {};
+        if (!action.asset_id || action.asset_id === 'unknown') {
+            throw new Error('This draft is not linked to a valid asset — raise the work order manually from the asset instead.');
+        }
+        const priorityCode: Record<string, string> = { emergency: 'EMERGENCY', urgent: 'HIGH', routine: 'MEDIUM' };
+        const provenance = [
+            `Created from AI draft (${action.agent_type}), approved by ${actor}.`,
+            p.source_inspection_id ? `Source inspection: ${p.source_inspection_id}` : null,
+            p.source_finding_id ? `Source finding: ${p.source_finding_id}` : null,
+            p.governing_code ? `Governing code: ${p.governing_code}` : null,
+            p.rpn != null ? `RPN: ${p.rpn}` : null,
+        ].filter(Boolean).join('\n');
+
+        const wo = await DatabaseService.getInstance().createWorkOrder(buildWorkOrder({
+            title: p.title || `Agent draft — ${action.trigger_id}`,
+            description: p.description ? `${p.description}\n\n${provenance}` : provenance,
+            assetId: action.asset_id,
+            type: p.work_type || 'CM',
+            priorityCode: priorityCode[p.priority] || 'MEDIUM',
+            status: 'OPEN',
+            ...(p.estimated_hours != null ? { estDuration: Number(p.estimated_hours) || undefined } : {}),
+        }), actor);
+
+        if (p.source_inspection_id && wo?.id) {
+            await integrityService.updateInspection(p.source_inspection_id, { work_order_id: wo.id } as any);
+        }
+        return wo;
     }
 
     // ══════════════════════════════════════════════════════════

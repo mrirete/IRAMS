@@ -33,6 +33,11 @@ import { conditionalRemainingQuantileHours } from '../utils/weibull';
 import { resolveEquipmentClass } from '../../lib/predict/equipmentClass';
 import { healthModelFor, sensorKind } from '../../lib/predict/healthModels';
 import { assessIntegrity } from '../../lib/predict/integrity';
+import type { BearingSpec, BearingToneMatch } from '../../lib/predict/bearingFaults';
+import {
+    diagnoseEvidence,
+    type DiagnosisResult, type SensorEvidence, type SpectralEvidence, type AssetPriors,
+} from '../../lib/predict/diagnosisRules';
 
 // ─── Types ───────────────────────────────────────────────────
 export interface TwinState {
@@ -97,6 +102,10 @@ export interface PredictionAlert {
     acknowledged_by: string | null;
     acknowledged_at: string | null;
     created_at: string;
+    /** Diagnosis layer (0215): ranked failure-mode hypotheses + evidence (diagnosis-rules-v1). */
+    diagnosis?: DiagnosisResult | null;
+    /** Top hypothesis — denormalized for filtering (reference_codes FAILURE_MODE). */
+    failure_mode_code?: string | null;
 }
 
 export interface SensorReading {
@@ -114,6 +123,12 @@ export interface SensorReading {
     alarm_deadband_pct?: number | null;
     alarm_persistence?: number | null;
     operator_action?: string | null;
+}
+
+/** Stored under assets.properties.predict (0005 JSONB — no schema change). */
+export interface AssetPredictConfig {
+    rated_rpm?: number | null;
+    bearings?: BearingSpec[];
 }
 
 /** A stored vibration time-waveform + its computed spectral features (0206). */
@@ -420,6 +435,31 @@ class PredictionService {
         return data as WaveformCapture;
     }
 
+    /**
+     * Per-asset Predict config (rated RPM, bearing specs) — lives under
+     * assets.properties.predict so no schema change is needed. Read-modify-write
+     * on save so other properties keys are preserved.
+     */
+    async getAssetPredictConfig(assetId: string): Promise<AssetPredictConfig> {
+        const { data, error } = await supabase.from('assets')
+            .select('properties').eq('id', assetId).maybeSingle();
+        if (error || !data) return {};
+        return ((data.properties as Record<string, any> | null)?.predict ?? {}) as AssetPredictConfig;
+    }
+
+    async saveAssetPredictConfig(assetId: string, cfg: AssetPredictConfig): Promise<boolean> {
+        const { data, error } = await supabase.from('assets')
+            .select('properties').eq('id', assetId).maybeSingle();
+        if (error) {
+            console.warn('[PredictionService.saveAssetPredictConfig]', error.message);
+            return false;
+        }
+        const properties = { ...((data?.properties as Record<string, any>) || {}), predict: cfg };
+        const { error: upErr } = await supabase.from('assets').update({ properties }).eq('id', assetId);
+        if (upErr) console.warn('[PredictionService.saveAssetPredictConfig]', upErr.message);
+        return !upErr;
+    }
+
     async getWaveforms(assetId: string, limit = 10): Promise<WaveformCapture[]> {
         const { data, error } = await supabase.from('ers_waveforms')
             .select('id, asset_id, tag, sample_rate_hz, rpm, features, captured_at')
@@ -698,8 +738,8 @@ class PredictionService {
                 .filter(Boolean),
         );
 
-        let alertsCreated = 0;
         let suppressed = 0;
+        const fired: { s: SensorReading; breachHigh: boolean; breachLow: boolean; trendAnomaly: boolean }[] = [];
         for (const s of sensors) {
             if (s.current_value == null) continue;
 
@@ -734,34 +774,44 @@ class PredictionService {
             // Trend anomaly: rising trend combined with proximity to alarm
             const trendAnomaly = s.trend === 'rising' && breachHigh;
 
-            if (breachHigh || breachLow || trendAnomaly) {
-                const severity: 'low' | 'medium' | 'high' | 'critical' = breachHigh && trendAnomaly
-                    ? 'high' : breachHigh || breachLow ? 'medium' : 'low';
+            if (breachHigh || breachLow || trendAnomaly) fired.push({ s, breachHigh, breachLow, trendAnomaly });
+        }
 
-                const alertType: 'threshold_breach' | 'trend_deviation' | 'anomaly' =
-                    breachHigh || breachLow ? 'threshold_breach' : trendAnomaly ? 'trend_deviation' : 'anomaly';
+        // Diagnosis layer (0215): ONE evidence bundle across all firing points —
+        // cross-signal rules (bearing temp + vibration → LUB) need the full
+        // picture, and every alert from this scan shares the same plant state.
+        const diagnosis = fired.length > 0 ? await this._diagnoseFiring(assetId, fired) : null;
 
-                let description = breachHigh
-                    ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm high of ${s.alarm_high} ${s.unit}. Trend: ${s.trend}.`
-                    : breachLow
-                        ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm low of ${s.alarm_low} ${s.unit}. Trend: ${s.trend}.`
-                        : `${s.tag} shows ${s.trend} trend with current value ${s.current_value} ${s.unit}.`;
-                // AG layer: carry the rationalized operator response onto the alert.
-                if (s.operator_action) description += ` Operator action: ${s.operator_action}`;
+        let alertsCreated = 0;
+        for (const { s, breachHigh, breachLow, trendAnomaly } of fired) {
+            const severity: 'low' | 'medium' | 'high' | 'critical' = breachHigh && trendAnomaly
+                ? 'high' : breachHigh || breachLow ? 'medium' : 'low';
 
-                await this.createAlert({
-                    alert_id: `alt-${Date.now()}-${s.tag.replace(/[^a-zA-Z0-9]/g, '')}`,
-                    asset_id: assetId,
-                    alert_type: alertType,
-                    severity,
-                    title: `${title || 'Alert'}: ${s.tag}`,
-                    description,
-                    confidence: severity === 'high' ? 0.92 : severity === 'medium' ? 0.82 : 0.70,
-                    dqs_impact: 0.02,
-                    governance_tier: severity === 'high' ? 2 : 3,
-                });
-                alertsCreated++;
-            }
+            const alertType: 'threshold_breach' | 'trend_deviation' | 'anomaly' =
+                breachHigh || breachLow ? 'threshold_breach' : trendAnomaly ? 'trend_deviation' : 'anomaly';
+
+            let description = breachHigh
+                ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm high of ${s.alarm_high} ${s.unit}. Trend: ${s.trend}.`
+                : breachLow
+                    ? `${s.tag} at ${s.current_value} ${s.unit} — approaching alarm low of ${s.alarm_low} ${s.unit}. Trend: ${s.trend}.`
+                    : `${s.tag} shows ${s.trend} trend with current value ${s.current_value} ${s.unit}.`;
+            // AG layer: carry the rationalized operator response onto the alert.
+            if (s.operator_action) description += ` Operator action: ${s.operator_action}`;
+
+            await this.createAlert({
+                alert_id: `alt-${Date.now()}-${s.tag.replace(/[^a-zA-Z0-9]/g, '')}`,
+                asset_id: assetId,
+                alert_type: alertType,
+                severity,
+                title: `${title || 'Alert'}: ${s.tag}`,
+                description,
+                confidence: severity === 'high' ? 0.92 : severity === 'medium' ? 0.82 : 0.70,
+                dqs_impact: 0.02,
+                governance_tier: severity === 'high' ? 2 : 3,
+                diagnosis,
+                failure_mode_code: diagnosis?.hypotheses[0]?.failure_mode_code ?? null,
+            });
+            alertsCreated++;
         }
 
         if (alertsCreated === 0) {
@@ -773,6 +823,90 @@ class PredictionService {
             };
         }
         return { success: true, message: `${alertsCreated} prediction alert${alertsCreated > 1 ? 's' : ''} generated from threshold analysis${suppressed > 0 ? ` (${suppressed} suppressed — already open)` : ''}.` };
+    }
+
+    /**
+     * Diagnosis layer (gap-closeout slice 3): assemble the evidence bundle for
+     * lib/predict/diagnosisRules — firing sensors, the latest spectral capture
+     * (0206), and the asset's documented priors (RCM failure modes, FMEA text,
+     * confirmed WO failure history). Every lookup is best-effort: a missing
+     * table or empty set means fewer evidence items, never a failed scan.
+     */
+    private async _diagnoseFiring(
+        assetId: string,
+        fired: { s: SensorReading; breachHigh: boolean; breachLow: boolean; trendAnomaly: boolean }[],
+    ): Promise<DiagnosisResult | null> {
+        const { data: assetRow } = await supabase.from('assets')
+            .select('name, tag, asset_class, asset_category, asset_type_code')
+            .eq('id', assetId)
+            .maybeSingle();
+        const cls = resolveEquipmentClass(assetRow ? {
+            name: assetRow.name, tag: assetRow.tag,
+            assetClass: assetRow.asset_class, assetCategory: assetRow.asset_category, assetType: assetRow.asset_type_code,
+        } : null).cls;
+
+        const sensors: SensorEvidence[] = fired.map(({ s, breachHigh, breachLow }) => ({
+            tag: s.tag,
+            kind: sensorKind(s.tag),
+            direction: breachHigh ? 'high' : breachLow ? 'low' : 'rising',
+            value: s.current_value,
+            limit: breachHigh ? s.alarm_high : breachLow ? s.alarm_low : null,
+            unit: s.unit,
+        }));
+
+        // Latest waveform capture → spectral evidence (flags derived from the
+        // same persisted features the panel computed).
+        let spectral: SpectralEvidence | null = null;
+        const caps = await this.getWaveforms(assetId, 1);
+        if (caps.length > 0) {
+            const f = caps[0].features || {};
+            const findings: { label?: string }[] = f.diagnosis?.findings ?? [];
+            const has = (needle: string) => findings.some(x => String(x.label ?? '').includes(needle));
+            spectral = {
+                impulsive: (f.time?.kurtosis ?? 0) > 4 || (f.time?.crest ?? 0) > 5,
+                oneTimesDominant: has('1× dominant'),
+                twoTimesElevated: has('2×'),
+                bearingMatches: (f.bearingMatches ?? []) as BearingToneMatch[],
+            };
+        }
+
+        const priors: AssetPriors = {};
+        try {
+            const { data } = await supabase.from('ers_rcm_failure_modes')
+                .select('failure_mode_code, rpn, historical_wo_count, ers_rcm_functions!inner(ers_rcm_studies!inner(asset_id))')
+                .eq('ers_rcm_functions.ers_rcm_studies.asset_id', assetId)
+                .limit(50);
+            const modes = (data || []).filter((r: any) => r.failure_mode_code);
+            if (modes.length > 0) {
+                priors.rcmModes = modes.map((r: any) => ({
+                    code: r.failure_mode_code, rpn: r.rpn, woCount: r.historical_wo_count,
+                }));
+            }
+        } catch { /* RCM study absent for this asset */ }
+        try {
+            const { data } = await supabase.from('ers_fmea_items')
+                .select('failure_mode, ers_fmea_worksheets!inner(asset_id)')
+                .eq('ers_fmea_worksheets.asset_id', assetId)
+                .limit(100);
+            const texts = (data || []).map((r: any) => r.failure_mode).filter(Boolean);
+            if (texts.length > 0) priors.fmeaModes = texts;
+        } catch { /* no FMEA worksheet */ }
+        try {
+            const { data } = await supabase.from('wo_failure_data')
+                .select('failure_mode_code, work_orders!inner(asset_id)')
+                .eq('work_orders.asset_id', assetId)
+                .limit(200);
+            const counts: Record<string, number> = {};
+            for (const r of data || []) {
+                if ((r as any).failure_mode_code) {
+                    counts[(r as any).failure_mode_code] = (counts[(r as any).failure_mode_code] ?? 0) + 1;
+                }
+            }
+            if (Object.keys(counts).length > 0) priors.historyCodes = counts;
+        } catch { /* no coded failure history */ }
+
+        const result = diagnoseEvidence({ equipmentClass: cls, sensors, spectral, priors });
+        return result.hypotheses.length > 0 ? result : null;
     }
 
     // ── Degradation Model Update ───────────────────────────

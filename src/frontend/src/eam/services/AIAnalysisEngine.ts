@@ -10,6 +10,7 @@
  */
 import { RELANTERN_SYSTEM_INSTRUCTION } from '../constants';
 import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
+import type { DiagnosisResult } from '../../lib/predict/diagnosisRules';
 
 // ── AI Client Initialization ─────────────────────────────────
 // SECURITY: When the proxy is configured, NEVER initialize the direct client.
@@ -807,7 +808,24 @@ Respond as JSON:
         assetCriticality?: string;
         assetType?: string;
         confidence?: number;
+        /** Deterministic diagnosis (diagnosis-rules-v1) — when present the LLM narrates it, never invents codes. */
+        diagnosis?: DiagnosisResult | null;
     }): Promise<WorkRequestDraft> {
+        // Grounding (gap-closeout slice 4): the rules engine's ranked hypotheses
+        // are the source of truth; Gemini selects and narrates from them.
+        const topHypothesis = context.diagnosis?.hypotheses?.[0];
+        const diagnosisSection = context.diagnosis?.hypotheses?.length
+            ? `
+Deterministic Diagnosis (rules engine — ranked failure-mode hypotheses with evidence):
+${context.diagnosis.hypotheses.map((h, i) =>
+                `${i + 1}. [${h.failure_mode_code}] ${h.failure_mode_label} — confidence ${(h.confidence * 100).toFixed(0)}% (${h.basis})
+   Evidence: ${h.evidence.map(e => e.summary).join('; ')}
+   Recommended action: ${h.recommended_action}`).join('\n')}
+
+IMPORTANT: suggested_failure_mode MUST be one of the codes listed above (prefer the top-ranked unless the evidence clearly favors another). Base the description and inspection scope on the cited evidence — do not invent failure modes or evidence.`
+            : `
+No deterministic diagnosis is available for this alert — suggest failure mode and cause codes per ISO 14224 from the alert context, and say they are unconfirmed.`;
+
         const prompt = `You are an ISO 55000 maintenance planner. A predictive alert has been raised. Draft a Work Request.
 
 Alert Context:
@@ -821,10 +839,11 @@ Asset Context:
 - Name: ${context.assetName} (Tag: ${context.assetTag || 'N/A'})
 - Criticality: ${context.assetCriticality || 'B'}
 - Type: ${context.assetType || 'Equipment'}
+${diagnosisSection}
 
 Draft a Work Request with:
 1. A clear, actionable title (max 80 chars)
-2. A detailed description including the alert context and recommended inspection scope
+2. A detailed description including the alert context, the diagnostic evidence, and recommended inspection scope
 3. Suggested work type (PM, CM, PdM, EM)
 4. Priority (routine, urgent, emergency) based on criticality × severity
 5. Suggested failure mode and cause codes per ISO 14224
@@ -844,15 +863,20 @@ Respond as JSON:
 }`;
 
         const raw = await callGemini(prompt);
+        // Fallback = top deterministic hypothesis verbatim: works with no API key.
         return parseJSON<WorkRequestDraft>(raw, {
             title: `Investigate: ${context.alertTitle}`,
-            description: context.alertDescription || '',
+            description: topHypothesis
+                ? `${context.alertDescription || ''}\n\nProbable cause (rules engine): [${topHypothesis.failure_mode_code}] ${topHypothesis.failure_mode_label} — ${(topHypothesis.confidence * 100).toFixed(0)}%. Evidence: ${topHypothesis.evidence.map(e => e.summary).join('; ')}. ${topHypothesis.recommended_action}`
+                : context.alertDescription || '',
             work_type: 'PdM',
             priority: 'urgent',
-            suggested_failure_mode: '',
+            suggested_failure_mode: topHypothesis?.failure_mode_code ?? '',
             suggested_failure_cause: '',
             estimated_hours: 4,
-            rpn_rationale: 'Default — manual assessment required',
+            rpn_rationale: topHypothesis
+                ? `Top hypothesis ${topHypothesis.failure_mode_code} @ ${(topHypothesis.confidence * 100).toFixed(0)}% (${topHypothesis.basis})`
+                : 'Default — manual assessment required',
             recommended_craft: 'Mechanical',
         });
     }

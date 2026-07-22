@@ -169,6 +169,32 @@ export const RULReliabilityTab: React.FC<RULReliabilityTabProps> = ({
                                             </p>
                                             <p className="text-xs text-slate-500 mt-1 mb-2 leading-relaxed">{alert.description}</p>
 
+                                            {/* Probable causes — diagnosis layer (0215), ranked with evidence */}
+                                            {(alert.diagnosis?.hypotheses?.length ?? 0) > 0 && (
+                                                <div className="mb-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Probable causes</p>
+                                                    <div className="space-y-1.5">
+                                                        {alert.diagnosis!.hypotheses.slice(0, 3).map(h => (
+                                                            <div key={h.failure_mode_code}>
+                                                                <div className="flex items-center gap-1.5 text-[11px]">
+                                                                    <span className="font-mono font-bold text-slate-600">{h.failure_mode_code}</span>
+                                                                    <span className="text-slate-600 truncate">{h.failure_mode_label}</span>
+                                                                    <span className={`px-1 py-0.5 rounded border text-[8px] font-bold shrink-0 ${h.basis === 'deterministic-rule' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-slate-100 border-slate-200 text-slate-500'}`}
+                                                                        title={h.basis === 'deterministic-rule' ? 'Specific signature matched a rule' : 'Coarse association — screening only'}>
+                                                                        {h.basis === 'deterministic-rule' ? 'RULE' : 'SCREEN'}
+                                                                    </span>
+                                                                    <span className="ml-auto font-bold tabular-nums text-slate-500 shrink-0">{Math.round(h.confidence * 100)}%</span>
+                                                                </div>
+                                                                {h.evidence.slice(0, 2).map((e, j) => (
+                                                                    <p key={j} className="text-[10px] text-slate-400 pl-1 leading-snug">· {e.summary}</p>
+                                                                ))}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <p className="text-[9px] text-slate-300 mt-1.5">diagnosis-rules-v1 · deterministic — confirm before intervening</p>
+                                                </div>
+                                            )}
+
                                             {/* Metadata badges */}
                                             <div className="flex flex-wrap gap-1.5 text-[10px] font-medium mb-2">
                                                 <span className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-brand-300">

@@ -8,10 +8,16 @@
  * modulation. Diagnosis rules are ISO 13373-style *screening* heuristics —
  * every finding says so; none replaces an analyst.
  *
- * Bearing fault frequencies (BPFO/BPFI/BSF/FTF) need bearing geometry we do
- * not have — envelope tones are therefore reported as frequencies + shaft
- * orders, not named races.
+ * Bearing fault frequencies (BPFO/BPFI/BSF/FTF): when the asset carries
+ * bearing specs (assets.properties.predict.bearings), envelope tones are
+ * matched against computed defect frequencies and findings name the race
+ * (see bearingFaults.ts). Without specs, tones are reported as frequencies +
+ * shaft orders, as before.
  */
+import {
+    faultFrequencies, matchEnvelopeTones,
+    type BearingSpec, type BearingFaultFrequencies, type BearingToneMatch,
+} from './bearingFaults';
 
 // ─── FFT (iterative radix-2, in-place) ───────────────────────
 
@@ -208,8 +214,10 @@ export function diagnose(args: {
     specPeaks: SpectralPeak[];
     envPeaks: SpectralPeak[];
     rpm?: number | null;
+    /** named-race matches from bearingFaults.matchEnvelopeTones, when specs exist */
+    bearingMatches?: BearingToneMatch[];
 }): SpectralDiagnosis {
-    const { time, specPeaks, envPeaks, rpm } = args;
+    const { time, specPeaks, envPeaks, rpm, bearingMatches = [] } = args;
     const findings: SpectralFinding[] = [];
     const runHz = rpm ? rpm / 60 : null;
 
@@ -235,11 +243,38 @@ export function diagnose(args: {
 
     // Impulsiveness + envelope tones away from low shaft orders → bearing candidate
     const impulsive = time.kurtosis > 4 || time.crest > 5;
+
+    // Named-race matches (bearing specs available) take precedence over the
+    // generic candidate: one finding per race, strongest evidence first.
+    const seenRaces = new Set<string>();
+    for (const m of bearingMatches) {
+        if (seenRaces.has(m.race)) continue;
+        seenRaces.add(m.race);
+        const where = [m.designation, m.position].filter(Boolean).join(', ');
+        const approx = m.basis === 'approximate';
+        const harm = m.harmonic > 1 ? ` (${m.harmonic}× harmonic)` : '';
+        const sb = m.sidebands ? ' with 1×-shaft sidebands — inner-race modulation pattern' : '';
+        findings.push({
+            label: approx
+                ? `Envelope tone near approximate ${m.raceLabel} order — bearing defect hint`
+                : `Envelope tone matches ${m.raceLabel}${where ? ` — ${where}` : ''}`,
+            detail: `Demodulated tone at ${m.peakHz} Hz vs expected ${m.expectedHz} Hz${harm} (${(m.deviationFrac * 100).toFixed(1)}% off)${sb}. ` +
+                (approx
+                    ? 'Orders estimated from ball count only — confirm against the datasheet BPFO/BPFI before condemning.'
+                    : impulsive
+                        ? `Impulsive time signal (kurtosis ${time.kurtosis}, crest ${time.crest}) supports a developing ${m.raceLabel} defect.`
+                        : 'Signal is not yet impulsive — possible early-stage defect or lubrication issue; trend this tone.'),
+            tone: impulsive && !approx ? 'investigate' : 'watch',
+        });
+    }
+
     const bearingTones = envPeaks.filter(p => {
         if (!runHz) return true;
         return !near(p.freqHz, runHz) && !near(p.freqHz, 2 * runHz) && !near(p.freqHz, 3 * runHz);
     });
-    if (impulsive && bearingTones.length > 0) {
+    if (seenRaces.size > 0) {
+        // named findings above already cover the bearing story for this capture
+    } else if (impulsive && bearingTones.length > 0) {
         const t = bearingTones[0];
         findings.push({
             label: 'Impulsive signal + envelope tone — rolling-element bearing defect candidate',
@@ -281,9 +316,18 @@ export interface SpectralAnalysis {
     diagnosis: SpectralDiagnosis;
     sampleRateHz: number;
     rpm: number | null;
+    /** computed defect frequencies for the asset's bearing specs (when given + RPM known) */
+    bearingFaults: BearingFaultFrequencies[];
+    /** envelope tones that landed on a computed defect frequency */
+    bearingMatches: BearingToneMatch[];
 }
 
-export function analyzeWaveform(samples: number[], sampleRateHz: number, rpm?: number | null): SpectralAnalysis {
+export function analyzeWaveform(
+    samples: number[],
+    sampleRateHz: number,
+    rpm?: number | null,
+    bearings?: BearingSpec[],
+): SpectralAnalysis {
     const clean = samples.filter(v => Number.isFinite(v)).slice(0, MAX_SAMPLES);
     if (clean.length < 64) throw new Error(`Need at least 64 samples (got ${clean.length}).`);
     if (!(sampleRateHz > 0)) throw new Error('Sample rate must be > 0 Hz.');
@@ -293,8 +337,18 @@ export function analyzeWaveform(samples: number[], sampleRateHz: number, rpm?: n
     const specPeaks = findPeaks(spectrum, { rpm });
     // Envelope spectrum: ignore the sub-1 Hz region (envelope DC leakage)
     const envPeaks = findPeaks(envelope, { rpm, minFreqHz: 1 });
-    const diagnosis = diagnose({ time, specPeaks, envPeaks, rpm });
-    return { time, spectrum, envelope, specPeaks, envPeaks, diagnosis, sampleRateHz, rpm: rpm ?? null };
+    const shaftHz = rpm ? rpm / 60 : null;
+    const bearingFaults = (bearings ?? [])
+        .map(b => faultFrequencies(b, shaftHz))
+        .filter((f): f is BearingFaultFrequencies => f != null);
+    const bearingMatches = bearingFaults.length > 0
+        ? matchEnvelopeTones(envPeaks, bearingFaults, shaftHz)
+        : [];
+    const diagnosis = diagnose({ time, specPeaks, envPeaks, rpm, bearingMatches });
+    return {
+        time, spectrum, envelope, specPeaks, envPeaks, diagnosis,
+        sampleRateHz, rpm: rpm ?? null, bearingFaults, bearingMatches,
+    };
 }
 
 /** Max-hold decimation for plotting — preserves peaks at ~maxPoints bins. */

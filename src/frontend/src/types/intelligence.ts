@@ -66,6 +66,9 @@ export interface PredictionAlert {
     dqs_impact: number;
     governance_tier: GovernanceTier;
     created_at: string;
+    /** Diagnosis layer (0215): ranked failure-mode hypotheses with evidence. */
+    diagnosis?: import('../lib/predict/diagnosisRules').DiagnosisResult | null;
+    failure_mode_code?: string | null;
 }
 
 export interface SystemTopologyNode {
