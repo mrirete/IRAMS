@@ -84,19 +84,16 @@ const RCMPage = lazyWithReload(() => import('./pages/RCMPage').then(m => ({ defa
 // Comply pages (ERS-unique)
 const LotoPage = lazyWithReload(() => import('./pages/LotoPage').then(m => ({ default: m.LotoPage })));
 const PsmPage = lazyWithReload(() => import('./pages/PsmPage').then(m => ({ default: m.PsmPage })));
-const RbiPage = lazyWithReload(() => import('./pages/RbiPage').then(m => ({ default: m.RbiPage })));
 const RegulatoryPage = lazyWithReload(() => import('./pages/RegulatoryPage').then(m => ({ default: m.RegulatoryPage })));
 const InspectionSchedulePage = lazyWithReload(() => import('./pages/InspectionSchedulePage').then(m => ({ default: m.InspectionSchedulePage })));
-const ThicknessDataPage = lazyWithReload(() => import('./pages/ThicknessDataPage').then(m => ({ default: m.ThicknessDataPage })));
-const CorrosionRatesPage = lazyWithReload(() => import('./pages/CorrosionRatesPage').then(m => ({ default: m.CorrosionRatesPage })));
-const DamageMechanismsPage = lazyWithReload(() => import('./pages/DamageMechanismsPage').then(m => ({ default: m.DamageMechanismsPage })));
-const FfsPage = lazyWithReload(() => import('./pages/FfsPage').then(m => ({ default: m.FfsPage })));
-const IowDashboardPage = lazyWithReload(() => import('./pages/IowDashboardPage').then(m => ({ default: m.IowDashboardPage })));
+// Mechanical Integrity loop steps (each wraps two former flat pages as tabs)
+const ComplyAssessPage = lazyWithReload(() => import('./pages/IntegrityLoopPages').then(m => ({ default: m.ComplyAssessPage })));
+const ComplyMeasurePage = lazyWithReload(() => import('./pages/IntegrityLoopPages').then(m => ({ default: m.ComplyMeasurePage })));
+const ComplyEvaluatePage = lazyWithReload(() => import('./pages/IntegrityLoopPages').then(m => ({ default: m.ComplyEvaluatePage })));
 const AuditsPage = lazyWithReload(() => import('./pages/AuditsPage').then(m => ({ default: m.AuditsPage })));
 const AuditTemplatesPage = lazyWithReload(() => import('./pages/AuditTemplatesPage').then(m => ({ default: m.AuditTemplatesPage })));
 const AuditSchedulePage = lazyWithReload(() => import('./pages/AuditSchedulePage').then(m => ({ default: m.AuditSchedulePage })));
 const AuditCorrectiveActionsPage = lazyWithReload(() => import('./pages/AuditCorrectiveActionsPage').then(m => ({ default: m.AuditCorrectiveActionsPage })));
-const RegulatoryPreparednessPage = lazyWithReload(() => import('./pages/RegulatoryPreparednessPage').then(m => ({ default: m.RegulatoryPreparednessPage })));
 const InspectionDetailPage = lazyWithReload(() => import('./pages/InspectionDetailPage'));
 
 // ── Loading Fallback (route chunks) ─────────────────────
@@ -197,24 +194,29 @@ function App() {
                                 <Route path="/rcm/:studyId" element={<Gated moduleId="predict"><RCMPage /></Gated>} />
 
 
-                                {/* Integrity / Comply tier */}
-                                <Route path="/comply/loto" element={<Gated moduleId="comply"><LotoPage /></Gated>} />
-                                <Route path="/comply/psm" element={<Gated moduleId="comply"><PsmPage /></Gated>} />
-                                <Route path="/comply/rbi" element={<Gated moduleId="comply"><RbiPage /></Gated>} />
-                                <Route path="/comply/regulatory" element={<Gated moduleId="comply"><RegulatoryPage /></Gated>} />
+                                {/* Mechanical Integrity — the loop: Assess → Plan → Measure → Evaluate */}
+                                <Route path="/comply/assess" element={<Gated moduleId="comply"><ComplyAssessPage /></Gated>} />
                                 <Route path="/comply/inspection-schedule" element={<Gated moduleId="comply"><InspectionSchedulePage /></Gated>} />
                                 <Route path="/comply/inspections/:inspectionId" element={<Gated moduleId="comply"><PermissionGate module="integrity"><InspectionDetailPage /></PermissionGate></Gated>} />
-                                <Route path="/comply/thickness-data" element={<Gated moduleId="comply"><ThicknessDataPage /></Gated>} />
-                                <Route path="/comply/corrosion-rates" element={<Gated moduleId="comply"><CorrosionRatesPage /></Gated>} />
-                                <Route path="/comply/damage-mechanisms" element={<Gated moduleId="comply"><DamageMechanismsPage /></Gated>} />
-                                <Route path="/comply/ffs" element={<Gated moduleId="comply"><FfsPage /></Gated>} />
-                                <Route path="/comply/iow-dashboard" element={<Gated moduleId="comply"><IowDashboardPage /></Gated>} />
-                                {/* Audits — Standalone Module (entry-level client system) */}
+                                <Route path="/comply/measure" element={<Gated moduleId="comply"><ComplyMeasurePage /></Gated>} />
+                                <Route path="/comply/evaluate" element={<Gated moduleId="comply"><ComplyEvaluatePage /></Gated>} />
+                                {/* Legacy integrity paths → loop steps (?tab= picks the view) */}
+                                <Route path="/comply/rbi" element={<Navigate to="/comply/assess" replace />} />
+                                <Route path="/comply/damage-mechanisms" element={<Navigate to="/comply/assess?tab=dm" replace />} />
+                                <Route path="/comply/corrosion-rates" element={<Navigate to="/comply/measure" replace />} />
+                                <Route path="/comply/thickness-data" element={<Navigate to="/comply/measure?tab=readings" replace />} />
+                                <Route path="/comply/ffs" element={<Navigate to="/comply/evaluate" replace />} />
+                                <Route path="/comply/iow-dashboard" element={<Navigate to="/comply/evaluate?tab=iow" replace />} />
+                                <Route path="/comply/regulatory-preparedness" element={<Navigate to="/comply/regulatory" replace />} />
+                                {/* Process Safety */}
+                                <Route path="/comply/psm" element={<Gated moduleId="safety"><PsmPage /></Gated>} />
+                                <Route path="/comply/loto" element={<Gated moduleId="safety"><LotoPage /></Gated>} />
+                                {/* Compliance & Audits */}
                                 <Route path="/audits" element={<Gated moduleId="audits"><PermissionGate module="audits"><AuditsPage /></PermissionGate></Gated>} />
                                 <Route path="/audits/templates" element={<Gated moduleId="audits"><PermissionGate module="audits"><AuditTemplatesPage /></PermissionGate></Gated>} />
                                 <Route path="/audits/schedule" element={<Gated moduleId="audits"><PermissionGate module="audits"><AuditSchedulePage /></PermissionGate></Gated>} />
                                 <Route path="/audits/corrective-actions" element={<Gated moduleId="audits"><PermissionGate module="audits"><AuditCorrectiveActionsPage /></PermissionGate></Gated>} />
-                                <Route path="/comply/regulatory-preparedness" element={<Gated moduleId="comply"><RegulatoryPreparednessPage /></Gated>} />
+                                <Route path="/comply/regulatory" element={<Gated moduleId="audits"><RegulatoryPage /></Gated>} />
 
                                 {/* Intelligence tier (deferred — launchReady: false) */}
                                 <Route path="/vision" element={<Gated moduleId="vision"><VisionPage /></Gated>} />

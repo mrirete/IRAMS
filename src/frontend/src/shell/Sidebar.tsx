@@ -41,17 +41,14 @@ const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
     // ── Sustainability Suite ──
     '/sustain': 'sustain',
     // ── Integrity Suite (dedicated permission key) ──
-    '/comply/loto': 'integrity',
-    '/comply/psm': 'integrity',
-    '/comply/rbi': 'integrity',
-    '/comply/regulatory': 'integrity',
+    // Mechanical Integrity loop steps + Process Safety share the key.
+    '/comply/assess': 'integrity',
     '/comply/inspection-schedule': 'integrity',
-    '/comply/thickness-data': 'integrity',
-    '/comply/corrosion-rates': 'integrity',
-    '/comply/damage-mechanisms': 'integrity',
-    '/comply/ffs': 'integrity',
-    '/comply/iow-dashboard': 'integrity',
-    '/comply/regulatory-preparedness': 'integrity',
+    '/comply/measure': 'integrity',
+    '/comply/evaluate': 'integrity',
+    '/comply/psm': 'integrity',
+    '/comply/loto': 'integrity',
+    '/comply/regulatory': 'integrity',
     // ── Audits Suite (standalone module) ──
     '/audits': 'audits',
     '/audits/templates': 'audits',

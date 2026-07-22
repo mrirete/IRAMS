@@ -8,7 +8,7 @@
 import {
     Home, Wrench, Package,
     ShieldCheck, RefreshCcw, Users, DollarSign, Shield,
-    FileBarChart, ClipboardCheck,
+    FileBarChart, ClipboardCheck, HardHat,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -22,7 +22,8 @@ export type ModuleId =
     | 'predict'     // ML Predictions
     | 'analyze'     // RCA, Bad Actors
     | 'plan'        // PM Planning & Scheduling
-    | 'comply'      // RBI, PSM, LOTO, Inspections
+    | 'comply'      // Mechanical Integrity — RBI, Inspections, Thickness, FFS/IOW
+    | 'safety'      // Process Safety — PSM, LOTO
     | 'audits'      // Standalone Audit Management (entry-level client system)
     | 'vision'      // Computer Vision / AR
     | 'sustain'     // Sustainability / ESG
@@ -141,39 +142,45 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     },
 
     {
-        id: 'comply', label: 'Integrity',
-        description: 'RBI, PSM, LOTO, Inspections, Corrosion Management',
+        id: 'comply', label: 'Mechanical Integrity',
+        description: 'The fixed-equipment integrity loop — Assess (RBI/damage), Plan (inspections), Measure (thickness/corrosion), Evaluate (FFS/IOW)',
         tier: 'integrity', icon: ShieldCheck, path: null,
+        // Ordered as the integrity loop so the tier reads as one workflow.
         children: [
-            { id: 'loto', label: 'LOTO', path: '/comply/loto' },
-            { id: 'psm', label: 'PSM', path: '/comply/psm' },
-            { id: 'rbi', label: 'RBI', path: '/comply/rbi' },
-            { id: 'reg', label: 'Regulatory', path: '/comply/regulatory' },
-            { id: 'sched', label: 'Inspection Schedule', path: '/comply/inspection-schedule' },
-            { id: 'thick', label: 'Thickness Data', path: '/comply/thickness-data' },
-            { id: 'corr', label: 'Corrosion Rates', path: '/comply/corrosion-rates' },
-            { id: 'dm', label: 'Damage Mechanisms', path: '/comply/damage-mechanisms' },
-            { id: 'ffs', label: 'FFS', path: '/comply/ffs' },
-            { id: 'iow', label: 'IOW Dashboard', path: '/comply/iow-dashboard' },
-            { id: 'regprep', label: 'Regulatory Preparedness', path: '/comply/regulatory-preparedness' },
+            { id: 'mi-assess', label: 'Assess · Risk & Damage', path: '/comply/assess' },
+            { id: 'sched', label: 'Plan · Inspections', path: '/comply/inspection-schedule' },
+            { id: 'mi-measure', label: 'Measure · Thickness & Corrosion', path: '/comply/measure' },
+            { id: 'mi-evaluate', label: 'Evaluate · FFS & IOW', path: '/comply/evaluate' },
         ],
-        routes: ['/comply/loto', '/comply/psm', '/comply/rbi', '/comply/regulatory',
-            '/comply/inspection-schedule', '/comply/thickness-data', '/comply/corrosion-rates',
-            '/comply/damage-mechanisms', '/comply/ffs', '/comply/iow-dashboard',
-            '/comply/regulatory-preparedness'],
+        // Legacy paths stay listed so gating still resolves their redirects.
+        routes: ['/comply/assess', '/comply/inspection-schedule', '/comply/measure', '/comply/evaluate',
+            '/comply/rbi', '/comply/thickness-data', '/comply/corrosion-rates',
+            '/comply/damage-mechanisms', '/comply/ffs', '/comply/iow-dashboard'],
         dependencies: ['core'], section: 'ers',
     },
     {
-        id: 'audits', label: 'Audits',
-        description: 'ISO 55001 Audit Management — Assessments, Templates, Scheduling, Corrective Actions',
+        id: 'safety', label: 'Process Safety',
+        description: 'PSM studies (HAZOP/LOPA/SIL/PSSR) and LOTO permit lifecycle',
+        tier: 'integrity', icon: HardHat, path: null,
+        children: [
+            { id: 'psm', label: 'PSM', path: '/comply/psm' },
+            { id: 'loto', label: 'LOTO', path: '/comply/loto' },
+        ],
+        routes: ['/comply/psm', '/comply/loto'],
+        dependencies: ['core'], section: 'ers',
+    },
+    {
+        id: 'audits', label: 'Compliance & Audits',
+        description: 'ISO 55001 Audit Management — Assessments, Templates, Scheduling, Corrective Actions, Regulatory',
         tier: 'integrity', icon: ClipboardCheck, path: null,
         children: [
             { id: 'audit-assessments', label: 'Assessments', path: '/audits' },
             { id: 'audit-templates', label: 'Templates', path: '/audits/templates' },
             { id: 'audit-schedule', label: 'Schedule', path: '/audits/schedule' },
             { id: 'audit-ca', label: 'Corrective Actions', path: '/audits/corrective-actions' },
+            { id: 'reg', label: 'Regulatory (preview)', path: '/comply/regulatory' },
         ],
-        routes: ['/audits', '/audits/templates', '/audits/schedule', '/audits/corrective-actions'],
+        routes: ['/audits', '/audits/templates', '/audits/schedule', '/audits/corrective-actions', '/comply/regulatory'],
         dependencies: ['core'], section: 'ers',
     },
     {
