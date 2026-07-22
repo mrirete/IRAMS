@@ -16,7 +16,7 @@
  * recipient; '__SUPERVISOR' → the contact's parent contact, else same.
  *
  * Schedule (SQL editor, after enabling pg_cron + pg_net):
- *   select cron.schedule('detect-sweep', '*/5 * * * *',
+ *   select cron.schedule('detect-sweep', '0-59/5 * * * *',   -- every 5 min ("star-slash-5" would end this comment)
  *     $$select net.http_post(
  *         url    := '<SUPABASE_URL>/functions/v1/detect-sweep',
  *         headers:= '{"Authorization":"Bearer <ANON_KEY>","Content-Type":"application/json"}'::jsonb,

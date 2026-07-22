@@ -27,6 +27,7 @@ import { exportAssetsToXLSX, exportAssetsToCSV } from '../services/assetTemplate
 
 import { AddManufacturerModal } from '../components/modals/AddManufacturerModal';
 import { SearchableDropdown } from '../components/ui/SearchableDropdown';
+import { ModernSelect } from '../components/ui/ModernSelect';
 import { FinancialsTab } from '../components/FinancialsTab';
 import { FinOpsService } from '../services/FinOpsService';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
@@ -3368,15 +3369,17 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     {/* Level selector — drives object class, numbering & field visibility (F-010) */}
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Level <span className="text-red-500">*</span></label>
-                        <select
-                            className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white"
+                        <ModernSelect
                             value={formData.assetType || ''}
-                            onChange={(e) => setFormData({ ...formData, assetType: e.target.value })}
-                        >
-                            {availableLevels.map(l => (
-                                <option key={l.code} value={l.code}>L{l.isoLevel} · {l.label}</option>
-                            ))}
-                        </select>
+                            onChange={(val) => setFormData({ ...formData, assetType: val })}
+                            options={availableLevels.map(l => ({
+                                value: l.code,
+                                label: `L${l.isoLevel} · ${l.label}`,
+                                description: `${l.objectClass === 'FLOC' ? 'Functional Location' : 'Equipment'} · ISO 14224 Level ${l.isoLevel}`,
+                                badge: `L${l.isoLevel}`,
+                                badgeColor: l.objectClass === 'FLOC' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }))}
+                        />
                         <p className="text-[10px] mt-1">
                             {selLevel ? (
                                 <>
@@ -3391,27 +3394,17 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Criticality {!criticalityOptional && <span className="text-red-500">*</span>}</label>
-                            <select
-                                className={`w-full p-2 border rounded-lg text-sm bg-white ${!formData.criticality ? 'border-slate-300 text-slate-400' : 'border-slate-300 text-slate-800'}`}
+                            <ModernSelect
+                                placeholder={criticalityOptional ? 'Optional at this level' : 'Select Criticality...'}
                                 value={formData.criticality || ''}
-                                onChange={(e) => handleCriticalityChange(e.target.value)}
-                            >
-                                <option value="">{criticalityOptional ? 'Optional at this level' : 'Select Criticality...'}</option>
-                                {dictionaries.filter(d => d.type === 'CRITICALITY' && d.active)
-                                    .sort((a, b) => (a.sequence || 99) - (b.sequence || 99))
-                                    .map(d => (
-                                        <option key={d.id} value={d.code}>{d.code} — {d.description}</option>
-                                    ))
-                                }
-                                {dictionaries.filter(d => d.type === 'CRITICALITY' && d.active).length === 0 && (
-                                    <>
-                                        <option value="A">A — Safety Critical</option>
-                                        <option value="B">B — Production Critical</option>
-                                        <option value="C">C — General</option>
-                                        <option value="D">D — Low / Run-to-Failure</option>
-                                    </>
-                                )}
-                            </select>
+                                onChange={(val) => handleCriticalityChange(val)}
+                                options={[
+                                    { value: 'A', label: 'A — Safety Critical', description: 'Mandatory PTW & LOTO. Strict ISO 14224 failure coding.', badge: 'SAFETY CRITICAL', badgeColor: 'bg-red-100 text-red-700 border-red-200' },
+                                    { value: 'B', label: 'B — Production Critical', description: 'Major throughput impact. Priority B scheduling.', badge: 'PROD CRITICAL', badgeColor: 'bg-amber-100 text-amber-700 border-amber-200' },
+                                    { value: 'C', label: 'C — General', description: 'Standard plant equipment.', badge: 'GENERAL', badgeColor: 'bg-blue-100 text-blue-700 border-blue-200' },
+                                    { value: 'D', label: 'D — Low / Run-to-Failure', description: 'Low impact / non-critical asset.', badge: 'RUN-TO-FAILURE', badgeColor: 'bg-slate-100 text-slate-700 border-slate-200' },
+                                ]}
+                            />
                         </div>
 
                         <div>

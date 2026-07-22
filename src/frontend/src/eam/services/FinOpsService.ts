@@ -438,7 +438,7 @@ class FinOpsServiceClass {
     async getRecentTransactions(limit = 10): Promise<(CostAllocation & { workOrderCode?: string; description?: string })[]> {
         const { data, error } = await supabase
             .from('cost_allocations')
-            .select('*, work_orders(job_id, description)')
+            .select('*, work_orders(wo_number, description)')
             .order('posting_date', { ascending: false })
             .limit(limit);
 
@@ -446,7 +446,7 @@ class FinOpsServiceClass {
 
         return (data || []).map(row => ({
             ...this.mapCostAllocation(row),
-            workOrderCode: row.work_orders?.job_id,
+            workOrderCode: row.work_orders?.wo_number,
             description: row.work_orders?.description
         }));
     }
@@ -689,12 +689,12 @@ class FinOpsServiceClass {
         // Get historical costs for similar work on this asset
         const { data: historicalWOs } = await supabase
             .from('work_orders')
-            .select('id, actual_cost')
+            .select('id, total_actual_cost')
             .eq('asset_id', assetId)
-            .eq('work_type', workType)
+            .eq('type', workType)
             .eq('status', 'CLOSED')
-            .not('actual_cost', 'is', null)
-            .order('closed_date', { ascending: false })
+            .not('total_actual_cost', 'is', null)
+            .order('closed_at', { ascending: false })
             .limit(10);
 
         if (!historicalWOs || historicalWOs.length < 3) {
@@ -708,7 +708,7 @@ class FinOpsServiceClass {
             };
         }
 
-        const costs = historicalWOs.map(wo => wo.actual_cost);
+        const costs = historicalWOs.map(wo => Number(wo.total_actual_cost) || 0);
         const avg = costs.reduce((a, b) => a + b, 0) / costs.length;
         const variance = ((estimatedCost - avg) / avg) * 100;
 
@@ -1272,8 +1272,8 @@ class FinOpsServiceClass {
                     asset_financials!inner (
                         asset_id,
                         assets!inner (
-                            costCenter,
-                            department
+                            cost_center_id,
+                            cost_centers ( code, name )
                         )
                     )
                 )
@@ -1287,7 +1287,7 @@ class FinOpsServiceClass {
         const resultMap = new Map<string, any>();
 
         data.forEach((row: any) => {
-            const costCenter = row.depreciation_books?.asset_financials?.assets?.costCenter || 'Unassigned';
+            const costCenter = row.depreciation_books?.asset_financials?.assets?.cost_centers?.name || 'Unassigned';
             const period = row.period;
             const amount = Number(row.depreciation_amount) || 0;
 
@@ -1915,10 +1915,10 @@ class FinOpsServiceClass {
         if (!costCenterId && wo.asset_id) {
             const { data: asset } = await supabase
                 .from('assets')
-                .select('cost_center')
+                .select('cost_center_id')
                 .eq('id', wo.asset_id)
                 .single();
-            costCenterId = asset?.cost_center;
+            costCenterId = asset?.cost_center_id;
         }
 
         if (!costCenterId) {

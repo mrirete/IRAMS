@@ -69,7 +69,7 @@ import { useRelantern } from '../contexts/RelanternContext';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { DensityToggle, type Density } from '../components/ui/DensityToggle';
-import { Button, Badge, StatusPill, PriorityPill, Modal, DataList, type DataColumn } from '../components/ui';
+import { Button, Badge, StatusPill, PriorityPill, Modal, DataList, ModernSelect, type DataColumn } from '../components/ui';
 import { supabase } from '../lib/supabase';
 import ersApi from '../services/ERSApiClient';
 import { JSATab, isRealJsaId } from '../components/JSATab';
@@ -1944,29 +1944,33 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                         <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Required Failure Coding (ISO 14224)</span>
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Failure Mode *</label>
-                                            <select
-                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                            <ModernSelect
+                                                placeholder="-- Select Failure Mode --"
                                                 value={modalFailureMode}
-                                                onChange={e => setModalFailureMode(e.target.value)}
-                                            >
-                                                <option value="">-- Select Failure Mode --</option>
-                                                {allFailureModes.map(fm => (
-                                                    <option key={fm.id} value={fm.code}>{fm.description} ({fm.code})</option>
-                                                ))}
-                                            </select>
+                                                onChange={val => setModalFailureMode(val)}
+                                                options={allFailureModes.map(fm => ({
+                                                    value: fm.code,
+                                                    label: `${fm.description} (${fm.code})`,
+                                                    badge: fm.code,
+                                                    badgeColor: 'bg-red-50 text-red-700 border-red-200'
+                                                }))}
+                                                size="sm"
+                                            />
                                         </div>
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Failure Cause (Optional)</label>
-                                            <select
-                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                            <ModernSelect
+                                                placeholder="-- Select Failure Cause --"
                                                 value={modalFailureCause}
-                                                onChange={e => setModalFailureCause(e.target.value)}
-                                            >
-                                                <option value="">-- Select Failure Cause --</option>
-                                                {allFailureCauses.map(fc => (
-                                                    <option key={fc.id} value={fc.code}>{fc.description} ({fc.code})</option>
-                                                ))}
-                                            </select>
+                                                onChange={val => setModalFailureCause(val)}
+                                                options={allFailureCauses.map(fc => ({
+                                                    value: fc.code,
+                                                    label: `${fc.description} (${fc.code})`,
+                                                    badge: fc.code,
+                                                    badgeColor: 'bg-amber-50 text-amber-700 border-amber-200'
+                                                }))}
+                                                size="sm"
+                                            />
                                         </div>
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Remedy / Action Taken (Optional)</label>

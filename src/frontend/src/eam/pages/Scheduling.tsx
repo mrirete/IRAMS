@@ -342,20 +342,6 @@ export const Scheduling: React.FC = () => {
                 const dbPMs = await db.getPMs();
 
                 if (dbPMs.length > 0) {
-                    // Fetch assigned assets per PM for last_completed dates
-                    let assignedAssetsMap: Record<string, any[]> = {};
-                    try {
-                        const { data: rwa } = await (await import('../lib/supabase')).supabase
-                            .from('recurring_work_assigned_assets')
-                            .select('*');
-                        if (rwa) {
-                            rwa.forEach((row: any) => {
-                                if (!assignedAssetsMap[row.recurring_work_id]) assignedAssetsMap[row.recurring_work_id] = [];
-                                assignedAssetsMap[row.recurring_work_id].push(row);
-                            });
-                        }
-                    } catch { /* will use PM-level asset_id fallback */ }
-
                     // Fetch assets for name resolution
                     let assetMap: Record<string, string> = {};
                     try {
@@ -366,15 +352,16 @@ export const Scheduling: React.FC = () => {
                     const mappedPMs: RecurringJob[] = dbPMs
                         .filter((pm: any) => pm.active !== false)
                         .map((pm: any) => {
-                            // Build assignedAssets from the join table, or fallback to PM-level asset_id
-                            const rwaEntries = assignedAssetsMap[pm.id] || [];
+                            // Build assignedAssets from the per-asset JSONB store
+                            // (recurring_work.assigned_assets), or fallback to PM-level asset_id
+                            const jsonbEntries: any[] = Array.isArray(pm.assigned_assets) ? pm.assigned_assets : [];
                             let assignedAssets: any[];
 
-                            if (rwaEntries.length > 0) {
-                                assignedAssets = rwaEntries.map((rwa: any) => ({
-                                    assetId: rwa.asset_id,
-                                    lastCompletedDate: rwa.last_completed || '',
-                                    lastReadingValue: rwa.last_reading_value || 0,
+                            if (jsonbEntries.length > 0) {
+                                assignedAssets = jsonbEntries.map((a: any) => ({
+                                    assetId: a.assetId,
+                                    lastCompletedDate: a.lastCompletedDate || '',
+                                    lastReadingValue: a.lastReadingValue || 0,
                                 }));
                             } else if (pm.asset_id) {
                                 assignedAssets = [{ assetId: pm.asset_id, lastCompletedDate: '', lastReadingValue: 0 }];

@@ -35,4 +35,7 @@ export { ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps, ConfirmVariant } from './ConfirmDialog';
 export { PromptDialog } from './PromptDialog';
 export type { PromptDialogProps } from './PromptDialog';
+export { ModernSelect } from './ModernSelect';
+export type { ModernSelectProps, SelectOption } from './ModernSelect';
+
 

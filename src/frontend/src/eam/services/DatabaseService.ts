@@ -4512,33 +4512,24 @@ export class DatabaseService {
             }).eq('id', pmId);
         }
 
-        // 8. Update per-asset last_completed in recurring_work_assigned_assets
+        // 8. Stamp per-asset completion into recurring_work.assigned_assets (JSONB —
+        //    the per-asset store; there is no recurring_work_assigned_assets table).
+        //    lastCompletedDate always; for a meter-driven generation also stamp
+        //    lastReadingValue as the baseline the next due is computed from, so the
+        //    PM isn't re-fired on the next reading.
         const targetAssetId = assetId || pm.asset_id;
         if (targetAssetId) {
             try {
-                await supabase.from('recurring_work_assigned_assets').update({
-                    last_completed: new Date().toISOString().split('T')[0],
-                }).eq('recurring_work_id', pmId).eq('asset_id', targetAssetId);
-                console.log(`[generateWOFromPM] Updated last_completed for asset ${targetAssetId}`);
-            } catch (e) {
-                console.warn('[generateWOFromPM] Could not update per-asset last_completed:', e);
-            }
-        }
-
-        // 8b. Meter-based completion: stamp the meter value at this service into the
-        //     per-asset baseline (recurring_work.assigned_assets[].lastReadingValue) so
-        //     the next due is computed from here — not re-fired on the next reading.
-        if (meterReading != null && targetAssetId) {
-            try {
                 const existing: any[] = Array.isArray(pm.assigned_assets) ? [...pm.assigned_assets] : [];
                 const idx = existing.findIndex((a: any) => a.assetId === targetAssetId);
-                const stamp = { assetId: targetAssetId, lastReadingValue: meterReading, lastCompletedDate: new Date().toISOString().split('T')[0] };
+                const stamp: any = { assetId: targetAssetId, lastCompletedDate: new Date().toISOString().split('T')[0] };
+                if (meterReading != null) stamp.lastReadingValue = meterReading;
                 if (idx >= 0) existing[idx] = { ...existing[idx], ...stamp };
                 else existing.push(stamp);
                 await supabase.from('recurring_work').update({ assigned_assets: existing }).eq('id', pmId);
-                console.log(`[generateWOFromPM] Stamped meter baseline ${meterReading} for asset ${targetAssetId}`);
+                console.log(`[generateWOFromPM] Stamped per-asset completion for ${targetAssetId}${meterReading != null ? ` (meter baseline ${meterReading})` : ''}`);
             } catch (e) {
-                console.warn('[generateWOFromPM] Could not stamp meter baseline:', e);
+                console.warn('[generateWOFromPM] Could not stamp per-asset completion:', e);
             }
         }
 

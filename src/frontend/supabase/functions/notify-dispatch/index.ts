@@ -5,7 +5,7 @@
  * The app enqueues rows client-side (NotificationService → notification_outbox)
  * and invokes this function fire-and-forget; rows a closed tab leaves behind
  * are picked up by the next invocation. Optionally schedule a pg_cron sweeper:
- *   select cron.schedule('notify-dispatch-sweep', '*/5 * * * *',
+ *   select cron.schedule('notify-dispatch-sweep', '0-59/5 * * * *',   -- every 5 min ("star-slash-5" would end this comment)
  *     $$select net.http_post(
  *         url    := '<SUPABASE_URL>/functions/v1/notify-dispatch',
  *         headers:= '{"Authorization":"Bearer <ANON_KEY>","Content-Type":"application/json"}'::jsonb,

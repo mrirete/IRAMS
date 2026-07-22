@@ -33,7 +33,8 @@ describe('amplitudeSpectrum', () => {
     });
 
     it('separates two tones', () => {
-        const x = sine(50, 2).map((v, i) => v + sine(120, 1)[i]);
+        const tone120 = sine(120, 1);
+        const x = sine(50, 2).map((v, i) => v + tone120[i]);
         const peaks = findPeaks(amplitudeSpectrum(x, FS));
         const freqs = peaks.map(p => p.freqHz).sort((a, b) => a - b);
         expect(freqs.some(f => Math.abs(f - 50) < 2)).toBe(true);
