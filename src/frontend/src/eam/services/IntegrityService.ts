@@ -320,7 +320,15 @@ class IntegrityService {
             if (status) query = query.eq('status', status);
             const { data, error } = await query.order('scheduled_date', { ascending: true });
             if (error) { console.error('IntegrityService.getInspections:', error); throw error; }
-            return (data || []) as InspectionEvent[];
+            // Normalize execution fields: rows written before 0209 (or by other
+            // clients) may lack them, and the detail page dereferences them.
+            return (data || []).map(r => ({
+                ...r,
+                findings: r.findings ?? [],
+                notes: r.notes ?? [],
+                team: r.team ?? [],
+                checklist_responses: r.checklist_responses ?? {},
+            })) as InspectionEvent[];
         } catch (e) {
             console.error('Error fetching inspections:', e);
             return [];

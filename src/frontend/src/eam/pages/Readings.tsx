@@ -1800,7 +1800,7 @@ const RelatedWork: React.FC<{
                                 <div className="flex-1 min-w-0">
                                     <div className="text-sm font-semibold text-slate-800 truncate">{w.title || w.wo_number}</div>
                                     <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
-                                        <span className="font-mono">WO-{w.wo_number}</span>
+                                        <span className="font-mono">{String(w.wo_number || '').toUpperCase().startsWith('WO-') ? w.wo_number : `WO-${w.wo_number}`}</span>
                                         {w.type && <span>· {w.type}</span>}
                                         {w.due_date && <span>· due {String(w.due_date).slice(0, 10)}</span>}
                                     </div>
