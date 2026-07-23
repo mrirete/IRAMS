@@ -261,18 +261,33 @@ interface DivisionProps {
     onContextChange?: (context: {
         asset: { id: string; tag: string; name: string } | null;
         results: Record<string, any>;
-        activeTab: CalcTab;
+        activeTab: CalcTab | null;
     }) => void;
     /** Drill-through seed (e.g. Metrics bad actor → Fit Weibull): opens a tab with an asset pre-selected. */
     seed?: { asset: { id: string; name: string; tag: string; criticality: string } | null; tab?: CalcTab } | null;
+    /**
+     * Full-page tool mode (URL-controlled by the page): null renders the
+     * launcher overview (study records + tool cards); a tool id renders that
+     * tool as its own page with a back link. Omit both props for the legacy
+     * always-inline behavior.
+     */
+    tool?: CalcTab | null;
+    onToolChange?: (t: CalcTab | null) => void;
 }
 
-export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange, seed }) => {
+export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContextChange, seed, tool, onToolChange }) => {
     const { profile, user } = useAuth();
     // Human-readable author stamped on saved studies (falls back gracefully).
     const currentAuthor = profile?.username || profile?.fullName || user?.email || null;
 
-    const [activeCalc, setActiveCalc] = useState<CalcTab>('ram');
+    // Controlled (URL) when onToolChange is provided; internal state otherwise.
+    const [internalCalc, setInternalCalc] = useState<CalcTab | null>('ram');
+    const controlled = onToolChange !== undefined;
+    const activeCalc: CalcTab | null = controlled ? (tool ?? null) : internalCalc;
+    const openTool = useCallback((t: CalcTab | null) => {
+        if (controlled) onToolChange!(t);
+        else setInternalCalc(t);
+    }, [controlled, onToolChange]);
 
     // Apply a drill-through seed once: open the requested tab (default Weibull).
     // The seeded asset is passed to the tab, which auto-pulls WO failures and fits.
@@ -280,8 +295,8 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     useEffect(() => {
         if (seedAppliedRef.current || !seed) return;
         seedAppliedRef.current = true;
-        setActiveCalc(seed.tab || 'weibull');
-    }, [seed]);
+        openTool(seed.tab || 'weibull');
+    }, [seed, openTool]);
 
 
     // Saved analyses state
@@ -416,14 +431,14 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     const [loadedData, setLoadedData] = useState<{ inputs: Record<string, any>; results: Record<string, any> } | null>(null);
 
     const handleLoad = useCallback((analysis: ReliabilityAnalysis) => {
-        // Switch to the correct tab
+        // Switch to the correct tool page
         const tab = CALC_TABS.find(t => t.analysisType === analysis.analysis_type);
-        if (tab) setActiveCalc(tab.id);
+        if (tab) openTool(tab.id);
         setActiveAnalysisId(analysis.id);
         setLoadedData({ inputs: analysis.inputs, results: analysis.results });
         setSaveToast(`Loaded: ${analysis.title}`);
         setTimeout(() => setSaveToast(null), 3000);
-    }, []);
+    }, [openTool]);
 
     const handleEdit = useCallback((analysis: ReliabilityAnalysis) => {
         setEditingAnalysis(analysis);
@@ -486,6 +501,28 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         return false;
     }, [savedStudies, currentAuthor]);
 
+    // ★ New Study button (launcher): create the container up-front — analyses
+    // saved later group under it via the Save dialog's study picker.
+    const handleCreateStudy = useCallback(async (name: string, description: string) => {
+        const created = await analyzeService.createReliabilityStudy({
+            name,
+            asset_id: null,
+            asset_tag: null,
+            asset_name: null,
+            description: description || null,
+            created_by: currentAuthor,
+        });
+        if (created) {
+            setSavedStudies(prev => [created, ...prev]);
+            setSaveToast(`Study "${name}" created — save any analysis into it ✓`);
+            setTimeout(() => setSaveToast(null), 4000);
+            return true;
+        }
+        setSaveToast('Could not create the study — check your connection and retry');
+        setTimeout(() => setSaveToast(null), 4000);
+        return false;
+    }, [currentAuthor]);
+
     // ★ Close the loop: when a PM program is created from a fit, stamp linked_pm_id
     // on the loaded study — or auto-save a snapshot so the link is never lost.
     // This is what lights the "✓ PM" badge on the Metrics bad-actor list (0154).
@@ -535,11 +572,11 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             targetAo: String(Math.round(systemAo * 100)),
         };
         setBridgeData({ inputs: ramInputs, results: {} });
-        setActiveCalc('ram');
+        openTool('ram');
         setActiveAnalysisId(null);
         setSaveToast(`[U+1F4CA] RAM Dashboard pre-populated — System MTBF: ${Math.round(systemMtbf).toLocaleString()}h`);
         setTimeout(() => setSaveToast(null), 4000);
-    }, []);
+    }, [openTool]);
 
     // P2.2: RAM → Spares Demand bridge
     const handleSendToSpares = useCallback((mtbf: number) => {
@@ -550,11 +587,11 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             confidence: '95',
         };
         setBridgeData({ inputs: sparesInputs, results: {} });
-        setActiveCalc('spares');
+        openTool('spares');
         setActiveAnalysisId(null);
         setSaveToast(`[U+1F4E6] Spares Demand pre-populated — MTBF: ${Math.round(mtbf).toLocaleString()}h`);
         setTimeout(() => setSaveToast(null), 4000);
-    }, []);
+    }, [openTool]);
 
     // Resolve which loaded data to use: bridge data takes precedence
     const effectiveLoadedData = bridgeData || loadedData;
@@ -565,11 +602,11 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
     // P2.3: Weibull → Monte Carlo bridge
     const handleSendToMonteCarlo = useCallback((beta: number, eta: number, dataStr?: string) => {
         setMcBridgeData({ beta, eta, dataStr });
-        setActiveCalc('montecarlo');
+        openTool('montecarlo');
         setActiveAnalysisId(null);
         setSaveToast(`🎲 Monte Carlo pre-populated — β=${beta}, η=${eta.toLocaleString()}h`);
         setTimeout(() => setSaveToast(null), 4000);
-    }, []);
+    }, [openTool]);
 
     // P2.4: Monte Carlo → RAM bridge (reuse existing handleSendToRAM)
     const handleMCToRAM = useCallback((mtbf: number, mttr: number, ao: number) => {
@@ -582,20 +619,20 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
             targetAo: String(Math.round(ao * 100)),
         };
         setBridgeData({ inputs: ramInputs, results: {} });
-        setActiveCalc('ram');
+        openTool('ram');
         setActiveAnalysisId(null);
         setSaveToast(`📊 RAM Dashboard pre-populated — Simulated MTBF: ${Math.round(mtbf).toLocaleString()}h`);
         setTimeout(() => setSaveToast(null), 4000);
-    }, []);
+    }, [openTool]);
 
-    // Clear general bridge data when user manually switches tabs, but KEEP mcBridgeData
-    const handleTabSwitch = useCallback((tabId: CalcTab) => {
-        setActiveCalc(tabId);
+    // Clear general bridge data when user manually switches tools, but KEEP mcBridgeData
+    const handleTabSwitch = useCallback((tabId: CalcTab | null) => {
+        openTool(tabId);
         setActiveAnalysisId(null);
         setLoadedData(null);
         setBridgeData(null);
-        // mcBridgeData intentionally NOT cleared — persists across tab navigation
-    }, []);
+        // mcBridgeData intentionally NOT cleared — persists across tool navigation
+    }, [openTool]);
 
     // Propagate context to parent for cross-module navigation
     useEffect(() => {
@@ -606,60 +643,95 @@ export const ReliabilityModellingDivision: React.FC<DivisionProps> = ({ onContex
         });
     }, [currentAsset, currentResults, activeCalc, onContextChange]);
 
+    const focusTab = activeCalc ? CALC_TABS.find(t => t.id === activeCalc) ?? null : null;
+
     return (
         <div className="space-y-4">
-            {/* Study Records — consolidated dated register of every saved study */}
-            <StudyRecordsPanel
-                analyses={savedAnalyses}
-                studies={savedStudies}
-                loading={savedLoading}
-                onLoad={handleLoad}
-                onUpdateStudy={handleUpdateStudy}
-            />
+            {/* ── Launcher overview (no tool open): study records + tool cards.
+                Each tool opens as its OWN page (?tool=…) — the records register
+                never competes with a running analysis for screen space. ── */}
+            {!focusTab && (
+                <>
+                    <StudyRecordsPanel
+                        analyses={savedAnalyses}
+                        studies={savedStudies}
+                        loading={savedLoading}
+                        onLoad={handleLoad}
+                        onUpdateStudy={handleUpdateStudy}
+                        onCreateStudy={handleCreateStudy}
+                    />
 
+                    {/* Tools — a palette, not a pipeline: open any, in any order */}
+                    <div>
+                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Analysis tools</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+                            {CALC_TABS.map(tab => (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => handleTabSwitch(tab.id)}
+                                    title={tab.desc}
+                                    className="group flex items-start gap-3 p-4 rounded-xl border bg-white border-slate-200 text-slate-700 text-left transition-all hover:border-primary-300 hover:bg-primary-50/40 hover:shadow-md"
+                                >
+                                    <span className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-slate-100 text-slate-500 transition-colors group-hover:bg-white group-hover:text-primary-600">
+                                        {tab.icon}
+                                    </span>
+                                    <span className="flex flex-col leading-tight min-w-0">
+                                        <span className="font-semibold text-sm">{tab.label}</span>
+                                        <span className="text-[11px] text-slate-400 mt-0.5">{tab.purpose}</span>
+                                        <span className="text-[10px] font-semibold text-emerald-600/80 mt-1">{tab.outcome}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
 
-            {/* Calculator tools — a palette, not a pipeline. Each tool is a card
-                labelled by the question it answers; open any, in any order. */}
-            <div className="flex flex-wrap items-center gap-2">
-                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-                    {CALC_TABS.map(tab => {
-                        const active = activeCalc === tab.id;
-                        return (
-                            <button
-                                key={tab.id}
-                                onClick={() => handleTabSwitch(tab.id)}
-                                title={tab.desc}
-                                aria-pressed={active}
-                                className={`group flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all ${active
-                                    ? 'bg-primary-600 border-primary-600 text-white shadow-md shadow-primary-500/25'
-                                    : 'bg-white border-slate-200 text-slate-700 hover:border-primary-300 hover:bg-primary-50/40 hover:shadow-sm'
-                                    }`}
-                            >
-                                <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors ${active ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-primary-600'}`}>
-                                    {tab.icon}
-                                </span>
-                                <span className="flex flex-col leading-tight">
-                                    <span className="font-semibold text-[13px] whitespace-nowrap">{tab.label}</span>
-                                    <span className={`text-[10px] whitespace-nowrap ${active ? 'text-white/85' : 'text-slate-400'}`}>{tab.purpose}</span>
-                                    <span className={`text-[9px] font-semibold whitespace-nowrap ${active ? 'text-white/70' : 'text-emerald-600/80'}`}>{tab.outcome}</span>
-                                </span>
-                            </button>
-                        );
-                    })}
-                </div>
-
-                {/* Save button — always visible, pinned outside scroll horizon */}
-                {currentAnalysisType && (
+            {/* ── Focus mode: the selected tool IS the page — slim switch bar,
+                back link to the launcher, Save pinned right ── */}
+            {focusTab && (
+                <div className="flex flex-wrap items-center gap-2">
                     <button
-                        onClick={() => { setEditingAnalysis(null); setShowSaveModal(true); }}
-                        title={activeAnalysisId ? 'Save the current state as a new dated version' : 'Save this study'}
-                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-sm hover:shadow-md transition-all"
+                        onClick={() => handleTabSwitch(null)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl border bg-white border-slate-200 text-slate-500 text-xs font-semibold hover:border-primary-300 hover:text-primary-600 transition-all"
+                        title="Back to study records & all tools"
                     >
-                        <Save size={13} />
-                        <span className="hidden sm:inline">{activeAnalysisId ? 'Save version' : 'Save'}</span>
+                        ← All tools
                     </button>
-                )}
-            </div>
+                    <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+                        {CALC_TABS.map(tab => {
+                            const active = activeCalc === tab.id;
+                            return (
+                                <button
+                                    key={tab.id}
+                                    onClick={() => handleTabSwitch(tab.id)}
+                                    title={tab.desc}
+                                    aria-pressed={active}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${active
+                                        ? 'bg-primary-600 border-primary-600 text-white shadow-sm'
+                                        : 'bg-white border-slate-200 text-slate-500 hover:border-primary-300 hover:text-primary-600'
+                                        }`}
+                                >
+                                    {tab.icon}
+                                    <span className="whitespace-nowrap">{tab.label}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    {/* Save button — always visible, pinned outside scroll horizon */}
+                    {currentAnalysisType && (
+                        <button
+                            onClick={() => { setEditingAnalysis(null); setShowSaveModal(true); }}
+                            title={activeAnalysisId ? 'Save the current state as a new dated version' : 'Save this study'}
+                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-gradient-to-r from-primary-500 to-primary-500 rounded-lg shadow-sm hover:shadow-md transition-all"
+                        >
+                            <Save size={13} />
+                            <span className="hidden sm:inline">{activeAnalysisId ? 'Save version' : 'Save'}</span>
+                        </button>
+                    )}
+                </div>
+            )}
 
             {/* Toast notification */}
             {saveToast && (

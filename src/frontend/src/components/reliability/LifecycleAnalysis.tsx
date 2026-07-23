@@ -32,6 +32,12 @@ interface LifecycleAnalysisProps {
     assetTag?: string;
     /** Optional callback to open the PM creation modal from the Weibull tab */
     onCreatePM?: () => void;
+    /**
+     * Optional R(t) chart to host behind an h(t)/R(t) toggle — both curves are
+     * views of the same fitted β/η, so they share ONE card instead of stacking
+     * two full-width chart cards on the page.
+     */
+    reliabilityChart?: React.ReactNode;
 }
 
 // ─── Zone Classification ──────────────────────────────────────
@@ -123,9 +129,9 @@ function classifyZone(beta: number): ZoneInfo {
             beta > 3 ? 'Severe end-of-life degradation' : 'Progressive mechanical wear',
         ],
         strategy: [
-            `Schedule PM replacement at ~${beta > 3 ? '70' : '80'}% of characteristic life (η)`,
-            'Use B10 life for safety-critical replacement intervals',
-            beta > 3 ? 'Evaluate CAPEX replacement if repair costs > 60% of new unit' : 'Optimize PM interval using cost-risk trade-off',
+            'Schedule age-based replacement at the B10 life (10% failed) — tighten to B5/B1 for safety-critical service',
+            'For on-condition tasks, set the INSPECTION interval from the P-F curve (≤ ½ P-F interval), not from this fit',
+            beta > 3 ? 'Evaluate CAPEX replacement if repair costs > 60% of new unit' : 'Optimize the replacement age with a cost-risk trade-off when Cp/Cf is known',
             'Track degradation trends via inspection and CBM data',
         ],
         pmEffectiveness: beta > 3
@@ -193,20 +199,19 @@ const HazardTooltip = ({ active, payload }: any) => {
 // ═══════════════════════════════════════════════════════════════
 //  MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════════
-const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, assetTag, onCreatePM }) => {
+const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, assetTag, onCreatePM, reliabilityChart }) => {
     const [showDetails, setShowDetails] = useState(false);
+    const [view, setView] = useState<'hazard' | 'reliability'>('hazard');
     const zone = useMemo(() => classifyZone(beta), [beta]);
     const data = useMemo(() => generateHazardData(beta, eta), [beta, eta]);
+    const showingReliability = view === 'reliability' && !!reliabilityChart;
 
     // Key reference points from the data
     const b10 = useMemo(() => Math.round(weibullBLife(beta, eta, 10)), [beta, eta]);
 
-    // Optimal PM interval recommendation
-    const pmInterval = useMemo(() => {
-        if (beta <= 1) return null;
-        const factor = beta > 3 ? 0.7 : beta > 2 ? 0.75 : 0.8;
-        return Math.round(eta * factor);
-    }, [beta, eta]);
+    // Recommended replacement age = B10 (target-reliability basis, same as
+    // recommendPM). The old "% of η" factor was a screening heuristic only.
+    const pmInterval = useMemo(() => (beta <= 1 ? null : b10), [beta, b10]);
 
     // Format the hazard rate value for display
     const formatH = (val: number) => {
@@ -228,13 +233,26 @@ const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, as
                     <div>
                         <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                             <Zap size={16} className="text-blue-500" />
-                            Lifecycle Analysis — Hazard Rate h(t)
+                            {showingReliability ? 'Reliability R(t)' : 'Lifecycle Analysis — Hazard Rate h(t)'}
                         </h4>
                         <p className="text-[11px] text-slate-400 mt-0.5">
-                            h(t) = (β/η) × (t/η)<sup>β−1</sup> · Calculated from your failure data · ISO 14224
+                            {showingReliability
+                                ? <>R(t) = e<sup>−(t/η)^β</sup> · Probability of surviving to time t · same fitted β/η</>
+                                : <>h(t) = (β/η) × (t/η)<sup>β−1</sup> · Calculated from your failure data · ISO 14224</>}
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
+                        {/* One card, two views of the same fit — no stacked chart cards */}
+                        {reliabilityChart && (
+                            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+                                {([['hazard', 'h(t) Hazard'], ['reliability', 'R(t) Reliability']] as const).map(([v, label]) => (
+                                    <button key={v} onClick={() => setView(v)}
+                                        className={`px-2.5 py-1 text-[10px] font-bold transition-colors ${view === v ? 'bg-primary-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}>
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         {assetTag && (
                             <span className="text-[10px] font-mono font-bold px-2 py-1 bg-slate-100 text-slate-500 rounded-md border border-slate-200">
                                 {assetTag}
@@ -248,7 +266,13 @@ const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, as
                 </div>
             </div>
 
-            {/* ── Zone Legend Bar ──────────────────────── */}
+            {/* ── R(t) view: hosted chart replaces the hazard block ── */}
+            {showingReliability && (
+                <div className="px-4 pb-4">{reliabilityChart}</div>
+            )}
+
+            {/* ── h(t) view: zone legend bar + hazard chart ── */}
+            {!showingReliability && (<>
             <div className="mx-6 mb-3 flex rounded-xl overflow-hidden border border-slate-200" style={{ height: 36 }}>
                 {[
                     { pct: '20%', label: 'Infant Mortality', sub: 'β < 1', bg: 'linear-gradient(135deg, #fef3c7, #fde68a)', color: '#92400e', active: zone.zone === 1 },
@@ -328,7 +352,7 @@ const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, as
                             }}
                         />
 
-                        {/* B10 Life reference line */}
+                        {/* B10 Life reference line — also the recommended PM age when β > 1 */}
                         <ReferenceLine
                             x={b10}
                             stroke="#059669"
@@ -336,29 +360,12 @@ const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, as
                             strokeDasharray="4 3"
                             label={{
                                 position: 'top',
-                                value: `B10 = ${b10} hrs`,
+                                value: pmInterval ? `B10 · PM = ${b10} hrs` : `B10 = ${b10} hrs`,
                                 fill: '#059669',
                                 fontSize: 10,
                                 fontWeight: 600,
                             }}
                         />
-
-                        {/* PM Interval line (if applicable) */}
-                        {pmInterval && (
-                            <ReferenceLine
-                                x={pmInterval}
-                                stroke="#0ea5e9"
-                                strokeWidth={1.5}
-                                strokeDasharray="3 3"
-                                label={{
-                                    position: 'insideTopRight',
-                                    value: `PM @ ${pmInterval} hrs`,
-                                    fill: '#0284c7',
-                                    fontSize: 10,
-                                    fontWeight: 600,
-                                }}
-                            />
-                        )}
                     </AreaChart>
                 </ResponsiveContainer>
 
@@ -371,18 +378,12 @@ const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, as
                     </span>
                     <span className="flex items-center gap-1.5">
                         <span className="w-3 h-0.5 bg-emerald-500 rounded-full inline-block" style={{ borderTop: '2px dashed #059669' }} />
-                        <span>B10 = {b10} hrs</span>
+                        <span>B10 = {b10} hrs{pmInterval ? ' · recommended PM age' : ''}</span>
                         <span className="text-slate-400">(h = {formatH(hAtB10)}/hr)</span>
                     </span>
-                    {pmInterval && (
-                        <span className="flex items-center gap-1.5">
-                            <span className="w-3 h-0.5 bg-sky-500 rounded-full inline-block" style={{ borderTop: '2px dashed #0ea5e9' }} />
-                            <span>PM @ {pmInterval} hrs</span>
-                            <span className="text-slate-400">({Math.round(pmInterval / eta * 100)}% of η)</span>
-                        </span>
-                    )}
                 </div>
             </div>
+            </>)}
 
             {/* ── Active Zone Indicator Card ──────────── */}
             <div className={`mx-6 mb-4 p-4 rounded-xl border-2 ${zone.borderColor} ${zone.bgColor} transition-all duration-300`}>
@@ -412,8 +413,8 @@ const LifecycleAnalysis: React.FC<LifecycleAnalysisProps> = ({ beta, eta, r2, as
                             <div className="mt-1.5 flex items-center gap-1.5">
                                 <TrendingUp size={12} className="text-slate-400" />
                                 <span className="text-[11px] text-slate-600">
-                                    Recommended PM interval: <strong className="text-slate-800">{pmInterval.toLocaleString()} hrs</strong>
-                                    <span className="text-slate-400 ml-1">({Math.round(pmInterval / eta * 100)}% of η)</span>
+                                    Recommended replacement age: <strong className="text-slate-800">{pmInterval.toLocaleString()} hrs</strong>
+                                    <span className="text-slate-400 ml-1">(B10 — 10% would have failed by then; on-condition inspection intervals come from the P-F curve, ≤ ½ P-F)</span>
                                 </span>
                             </div>
                         )}

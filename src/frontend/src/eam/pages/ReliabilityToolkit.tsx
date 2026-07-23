@@ -889,7 +889,6 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
     // unfailed. Auto-populated with the running time since the last failure.
     const [suspStr, setSuspStr] = useState('');
     const [loading, setLoading] = useState(false);
-    const [showRtFt, setShowRtFt] = useState(false);
     const [showPMModal, setShowPMModal] = useState(false);
 
     // Population mode — pool failures across a group of assets (scoped by functional
@@ -1132,61 +1131,6 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
 
 
 
-                    {/* B-Life Table */}
-                    <div className="bg-white border border-slate-200 rounded-xl p-3">
-                        <h4 className="text-xs font-bold text-slate-800 mb-2">B-Life Values</h4>
-                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-                            {[1, 5, 10, 50, 63.2].map(pct => (
-                                <div key={pct} className="text-center p-1.5 bg-slate-50 rounded-lg">
-                                    <p className="text-[9px] text-slate-500">B{pct}%</p>
-                                    <p className="text-xs font-bold text-slate-900">{Math.round(weibullBLife(fit.beta, fit.eta, pct))}h</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Reliability curve R(t) — single annotated line, collapsible */}
-                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-                        <button
-                            type="button"
-                            onClick={() => setShowRtFt(prev => !prev)}
-                            className="w-full flex items-center justify-between px-6 py-3.5 hover:bg-slate-50/60 transition-colors"
-                        >
-                            <span className="text-sm font-bold text-slate-500 flex items-center gap-2">
-                                <Activity size={14} className="text-emerald-400" />
-                                Reliability R(t)
-                                <span className="text-[10px] font-normal text-slate-400 ml-1">Probability of surviving to time t</span>
-                            </span>
-                            {showRtFt
-                                ? <ChevronUp size={16} className="text-slate-400" />
-                                : <ChevronDown size={16} className="text-slate-400" />}
-                        </button>
-                        {showRtFt && (
-                            <div className="px-6 pb-6">
-                                <ResponsiveContainer width="100%" height={200}>
-                                    <LineChart data={fit.plotData}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                        <XAxis dataKey="t" label={{ value: 'Time (hours)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
-                                        <YAxis label={{ value: 'Reliability %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} domain={[0, 100]} />
-                                        <Tooltip formatter={(v: any) => `${Math.round(v)}%`} />
-                                        <Line type="monotone" dataKey="reliability" stroke="#10b981" strokeWidth={2.5} name="Reliability R(t)" dot={false} />
-                                        {/* B10 — 90% surviving */}
-                                        <ReferenceLine x={Math.round(weibullBLife(fit.beta, fit.eta, 10))} stroke="#059669" strokeDasharray="4 3"
-                                            label={{ value: 'B10', position: 'top', fill: '#059669', fontSize: 10, fontWeight: 700 }} />
-                                        {/* η — characteristic life (63.2% failed) */}
-                                        <ReferenceLine x={Math.round(fit.eta)} stroke="#8b5cf6" strokeDasharray="6 4"
-                                            label={{ value: 'η', position: 'top', fill: '#7c3aed', fontSize: 11, fontWeight: 700 }} />
-                                        {/* Recommended PM interval (wear-out only) */}
-                                        {fit.beta > 1 && (
-                                            <ReferenceLine x={Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8))} stroke="#0ea5e9" strokeDasharray="3 3"
-                                                label={{ value: 'PM', position: 'top', fill: '#0284c7', fontSize: 10, fontWeight: 700 }} />
-                                        )}
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </div>
-                        )}
-                    </div>
-
                     {/* ── PM Recommendation Panel ────────────── */}
                     {fit.beta > 1 && asset && (
                         <div className="bg-gradient-to-r from-primary-50 via-primary-50 to-sky-50 border-2 border-primary-200 rounded-2xl p-5">
@@ -1205,12 +1149,18 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                                             </span>
                                         </h5>
                                         <p className="text-xs text-slate-600 mt-1.5 leading-relaxed max-w-xl">
-                                            Based on β = {fit.beta} and η = {fit.eta.toLocaleString()} hrs, schedule PM replacement every{' '}
+                                            Based on β = {fit.beta} and η = {fit.eta.toLocaleString()} hrs, schedule age-based replacement every{' '}
                                             <strong className="text-primary-700">
-                                                {Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8)).toLocaleString()} hours
+                                                {Math.round(weibullBLife(fit.beta, fit.eta, 10)).toLocaleString()} hours
                                             </strong>{' '}
-                                            ({Math.round((fit.beta > 3 ? 70 : fit.beta > 2 ? 75 : 80))}% of η) to maintain ≥{Math.round((fit.beta > 3 ? 70 : fit.beta > 2 ? 75 : 80))}% reliability.
-                                            B10 safety lower-bound: {Math.round(weibullBLife(fit.beta, fit.eta, 10)).toLocaleString()} hrs.
+                                            — the B10 life: the age by which 10% of units would fail, so renewing here keeps ~90% out of the
+                                            failure tail (target-reliability age replacement, same basis as the PM agent).
+                                        </p>
+                                        <p className="text-[11px] text-slate-500 mt-2 leading-relaxed max-w-xl bg-white/60 border border-primary-100 rounded-lg px-2.5 py-1.5">
+                                            <strong>Different question, different basis:</strong> this is a hard-time replacement age from life data.
+                                            For on-condition tasks (vibration, thermography, oil analysis) the <em>inspection</em> interval comes from
+                                            the P-F curve — at most ½ the P-F interval, so degradation is detected with time left to act (RCM II).
+                                            The P-F interval is a property of the failure mode and monitoring tech, not of this Weibull fit.
                                         </p>
                                     </div>
                                 </div>
@@ -1232,7 +1182,8 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                                                             beta: fit.beta,
                                                             eta: fit.eta,
                                                             b10: Math.round(weibullBLife(fit.beta, fit.eta, 10)),
-                                                            interval: Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8)),
+                                                            // Age-replacement basis = B10 (target reliability), matching recommendPM
+                                                            interval: Math.round(weibullBLife(fit.beta, fit.eta, 10)),
                                                             r2: fit.r2,
                                                         },
                                                     },
@@ -1249,13 +1200,34 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                         </div>
                     )}
 
-                    {/* ── Lifecycle Analysis — Hazard Rate h(t) ────── */}
+                    {/* ── Weibull curves: ONE card, h(t)/R(t) toggle — both are views
+                        of the same fitted β/η, so they don't stack as two charts ── */}
                     <LifecycleAnalysis
                         beta={fit.beta}
                         eta={fit.eta}
                         r2={fit.r2}
                         assetTag={classActive ? scopeLabel : asset?.tag}
                         onCreatePM={pmAsset ? () => setShowPMModal(true) : undefined}
+                        reliabilityChart={
+                            <ResponsiveContainer width="100%" height={280}>
+                                <LineChart data={fit.plotData} margin={{ top: 15, right: 25, left: 5, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                    <XAxis dataKey="t" label={{ value: 'Time (hours)', position: 'insideBottom', offset: -5 }} tick={{ fontSize: 11 }} />
+                                    <YAxis label={{ value: 'Reliability %', angle: -90, position: 'insideLeft' }} tick={{ fontSize: 11 }} domain={[0, 100]} />
+                                    <Tooltip formatter={(v: any) => `${Math.round(v)}%`} />
+                                    <Line type="monotone" dataKey="reliability" stroke="#10b981" strokeWidth={2.5} name="Reliability R(t)" dot={false} />
+                                    {/* B10 — 90% surviving; ALSO the recommended PM age (target-reliability basis) */}
+                                    <ReferenceLine x={Math.round(weibullBLife(fit.beta, fit.eta, 10))} stroke="#059669" strokeDasharray="4 3"
+                                        label={{ value: fit.beta > 1 ? 'B10 · PM' : 'B10', position: 'top', fill: '#059669', fontSize: 10, fontWeight: 700 }} />
+                                    {/* B50 — median life */}
+                                    <ReferenceLine x={Math.round(weibullBLife(fit.beta, fit.eta, 50))} stroke="#f59e0b" strokeDasharray="4 3"
+                                        label={{ value: 'B50', position: 'top', fill: '#d97706', fontSize: 10, fontWeight: 600 }} />
+                                    {/* η — characteristic life (63.2% failed) */}
+                                    <ReferenceLine x={Math.round(fit.eta)} stroke="#8b5cf6" strokeDasharray="6 4"
+                                        label={{ value: 'η · B63.2', position: 'top', fill: '#7c3aed', fontSize: 11, fontWeight: 700 }} />
+                                </LineChart>
+                            </ResponsiveContainer>
+                        }
                     />
 
                     {/* ── PM Creation Modal ─────────────────── */}
@@ -1270,7 +1242,8 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
                                 eta: fit.eta,
                                 r2: fit.r2,
                                 b10: Math.round(weibullBLife(fit.beta, fit.eta, 10)),
-                                pmInterval: Math.round(fit.eta * (fit.beta > 3 ? 0.7 : fit.beta > 2 ? 0.75 : 0.8)),
+                                // Age-replacement basis = B10 (target reliability), matching recommendPM
+                                pmInterval: Math.round(weibullBLife(fit.beta, fit.eta, 10)),
                                 dataPoints: failureTimes.length,
                                 className: classActive ? scopeLabel : undefined,
                                 classAssets: classActive ? classAssets : undefined,

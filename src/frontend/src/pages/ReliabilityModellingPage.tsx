@@ -12,7 +12,7 @@
  * enabling direct RCA/Defect Elimination workflow initialization.
  */
 import React, { useState, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Cpu, ArrowRight, Search } from 'lucide-react';
 import ReliabilityModellingDivision from '../components/analyze/ReliabilityModellingDivision';
 
@@ -22,10 +22,13 @@ interface ModellingSeed {
     tab?: 'ram' | 'weibull' | 'spares' | 'rbd' | 'montecarlo';
 }
 
+const TOOL_IDS = ['ram', 'weibull', 'spares', 'rbd', 'montecarlo'] as const;
+type ToolId = typeof TOOL_IDS[number];
+
 interface ModellingContext {
     asset: { id: string; tag: string; name: string } | null;
     results: Record<string, any>;
-    activeTab: string;
+    activeTab: string | null;
 }
 
 const ReliabilityModellingPage: React.FC = () => {
@@ -33,6 +36,15 @@ const ReliabilityModellingPage: React.FC = () => {
     const location = useLocation();
     const seed = (location.state as { seed?: ModellingSeed } | null)?.seed ?? null;
     const [context, setContext] = useState<ModellingContext | null>(null);
+
+    // Full-page tool mode (?tool=weibull): each tool is its own page —
+    // the bare route is a launcher (study records + tool cards).
+    const [searchParams, setSearchParams] = useSearchParams();
+    const toolParam = searchParams.get('tool');
+    const tool: ToolId | null = TOOL_IDS.includes(toolParam as ToolId) ? (toolParam as ToolId) : null;
+    const handleToolChange = useCallback((t: ToolId | null) => {
+        setSearchParams(t ? { tool: t } : {}, { replace: false });
+    }, [setSearchParams]);
 
     const handleContextChange = useCallback((ctx: ModellingContext) => {
         setContext(ctx);
@@ -96,7 +108,12 @@ const ReliabilityModellingPage: React.FC = () => {
             </div>
 
             {/* ── Division Content ────────────────────────────── */}
-            <ReliabilityModellingDivision onContextChange={handleContextChange} seed={seed} />
+            <ReliabilityModellingDivision
+                onContextChange={handleContextChange}
+                seed={seed}
+                tool={tool}
+                onToolChange={handleToolChange}
+            />
         </div>
     );
 };
