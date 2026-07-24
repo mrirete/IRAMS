@@ -36,6 +36,10 @@ export interface StepCompletionData {
     hasProblemStatement: boolean;
     has5W2H: boolean;        // at least 2 of 5W2H fields filled
     evidenceCount: number;
+    /** At least one item graded fact or inference — the data-quality ladder's
+     *  "target for FACTS". A pile of opinions/hearsay doesn't complete Collect.
+     *  Undefined (callers predating 0217) falls back to count-only. */
+    hasVerifiedEvidence?: boolean;
     hasRootCause: boolean;
     actionCount: number;
     allActionsAssigned: boolean;
@@ -45,7 +49,7 @@ export interface StepCompletionData {
 export function getStepCompletion(data: StepCompletionData): boolean[] {
     return [
         data.hasProblemStatement && data.has5W2H,                // Step 1: Define
-        data.evidenceCount > 0,                                   // Step 2: Collect
+        data.evidenceCount > 0 && (data.hasVerifiedEvidence ?? true), // Step 2: Collect
         data.hasRootCause,                                        // Step 3: Identify
         data.actionCount > 0,                                     // Step 4: Develop
         data.actionCount > 0 && data.allActionsAssigned,         // Step 5: Implement

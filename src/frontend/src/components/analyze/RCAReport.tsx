@@ -8,8 +8,9 @@ import React, { useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, AlertTriangle, Shield, Tag } from 'lucide-react';
 import {
-    analyzeService, type RCAInvestigation, type RCANode, type RCAEvidence,
-    type RCACorrectiveAction, type RCABarrier
+    analyzeService, evidenceGradeDef, bestEvidenceGrade, nodeConfidence,
+    type RCAInvestigation, type RCANode, type RCAEvidence,
+    type RCACorrectiveAction, type RCABarrier, type RCANodeEvidenceLink,
 } from '../../eam/services/AnalyzeService';
 
 const RCAReport: React.FC = () => {
@@ -22,6 +23,7 @@ const RCAReport: React.FC = () => {
     const [evidence, setEvidence] = useState<RCAEvidence[]>([]);
     const [actions, setActions] = useState<RCACorrectiveAction[]>([]);
     const [barriers, setBarriers] = useState<RCABarrier[]>([]);
+    const [links, setLinks] = useState<RCANodeEvidenceLink[]>([]);
     const [loading, setLoading] = useState(true);
 
     React.useEffect(() => {
@@ -35,17 +37,19 @@ const RCAReport: React.FC = () => {
         try {
             const invs = await analyzeService.getRCAInvestigations();
             const inv = invs.find(i => i.id === investigationId) || null;
-            const [n, e, a, b] = await Promise.all([
+            const [n, e, a, b, l] = await Promise.all([
                 analyzeService.getRCANodes(investigationId),
                 analyzeService.getRCAEvidence(investigationId),
                 analyzeService.getRCACorrectiveActions(investigationId),
                 analyzeService.getRCABarriers(investigationId),
+                analyzeService.getNodeEvidenceLinks(investigationId),
             ]);
             setInvestigation(inv);
             setNodes(n);
             setEvidence(e);
             setActions(a);
             setBarriers(b);
+            setLinks(l);
         } catch (err) {
             console.error('Failed to load RCA data:', err);
         }
@@ -215,26 +219,40 @@ const RCAReport: React.FC = () => {
                                 <tr>
                                     <th style={styles.th}>Type</th>
                                     <th style={styles.th}>Title</th>
+                                    <th style={styles.th}>Data Quality</th>
                                     <th style={styles.th}>Source</th>
                                     <th style={styles.th}>Collected</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {evidence.map(ev => (
-                                    <tr key={ev.id}>
-                                        <td style={styles.td}>
-                                            <span style={{
-                                                background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8',
-                                                fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
-                                            }}>
-                                                {ev.evidence_type}
-                                            </span>
-                                        </td>
-                                        <td style={styles.td}>{ev.title}</td>
-                                        <td style={styles.td}>{(ev as any).source || 'Field'}</td>
-                                        <td style={styles.td}>{new Date(ev.created_at).toLocaleDateString()}</td>
-                                    </tr>
-                                ))}
+                                {evidence.map(ev => {
+                                    const grade = evidenceGradeDef(ev.quality_grade);
+                                    return (
+                                        <tr key={ev.id}>
+                                            <td style={styles.td}>
+                                                <span style={{
+                                                    background: 'rgba(99, 102, 241, 0.15)', color: '#818cf8',
+                                                    fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4,
+                                                }}>
+                                                    {ev.evidence_type}
+                                                </span>
+                                            </td>
+                                            <td style={styles.td}>{ev.title}</td>
+                                            <td style={styles.td}>
+                                                <span style={{
+                                                    fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
+                                                    textTransform: 'uppercase',
+                                                    background: grade ? `${grade.color}26` : 'rgba(148,163,184,0.15)',
+                                                    color: grade ? grade.color : '#94a3b8',
+                                                }}>
+                                                    {grade?.label ?? 'Ungraded'}
+                                                </span>
+                                            </td>
+                                            <td style={styles.td}>{(ev as any).source || 'Field'}</td>
+                                            <td style={styles.td}>{new Date(ev.created_at).toLocaleDateString()}</td>
+                                        </tr>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     ) : (
@@ -275,10 +293,61 @@ const RCAReport: React.FC = () => {
                                                 ISO 14224: {rc.cause_code}
                                             </span>
                                         )}
+                                        {/* Confidence from cited evidence grades */}
+                                        {(() => {
+                                            const conf = nodeConfidence(rc.id, evidence, links);
+                                            return (
+                                                <span style={{
+                                                    marginLeft: 'auto', fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                                                    padding: '2px 8px', borderRadius: 10,
+                                                    background: `${conf.color}26`, color: conf.color,
+                                                }}>
+                                                    {conf.label} · {conf.score}%
+                                                </span>
+                                            );
+                                        })()}
                                     </div>
                                     <p style={{ fontSize: 13, color: '#e2e8f0', margin: 0, lineHeight: 1.5 }}>
                                         {rc.description}
                                     </p>
+                                    {/* Supporting evidence — what makes this claim defendable at review */}
+                                    {(() => {
+                                        const own = links.filter(l => l.node_id === rc.id);
+                                        const byId = new Map(evidence.map(e => [e.id, e]));
+                                        const cited = own
+                                            .map(l => ({ link: l, ev: byId.get(l.evidence_id) }))
+                                            .filter(x => x.ev) as { link: RCANodeEvidenceLink; ev: RCAEvidence }[];
+                                        const supporting = cited.filter(x => x.link.relation === 'supports');
+                                        const best = bestEvidenceGrade(supporting.map(x => x.ev));
+                                        if (cited.length === 0) return (
+                                            <p style={{ fontSize: 10, color: '#fbbf24', margin: '6px 0 0', fontWeight: 600 }}>
+                                                ⚠ No evidence cited — this conclusion is an assumption.
+                                            </p>
+                                        );
+                                        return (
+                                            <div style={{ marginTop: 8 }}>
+                                                <div style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>
+                                                    Supporting evidence ({supporting.length}{best ? ` · best grade: ${best.label}` : ''})
+                                                </div>
+                                                {cited.map(({ link, ev }) => {
+                                                    const grade = evidenceGradeDef(ev.quality_grade);
+                                                    return (
+                                                        <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#cbd5e1', padding: '2px 0' }}>
+                                                            <span style={{
+                                                                fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', flexShrink: 0,
+                                                                padding: '1px 5px', borderRadius: 3,
+                                                                background: link.relation === 'refutes' ? 'rgba(239,68,68,0.2)' : (grade ? `${grade.color}26` : 'rgba(148,163,184,0.15)'),
+                                                                color: link.relation === 'refutes' ? '#fca5a5' : (grade?.color ?? '#94a3b8'),
+                                                            }}>
+                                                                {link.relation === 'refutes' ? 'refutes' : (grade?.label.split(' ')[0] ?? 'ungraded')}
+                                                            </span>
+                                                            {ev.title}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
                             ))}
                         </div>

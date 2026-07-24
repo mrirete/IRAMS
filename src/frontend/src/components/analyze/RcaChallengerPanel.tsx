@@ -16,9 +16,13 @@ interface RcaChallengerPanelProps {
     initialText?: string;
     /** Pre-fill the asset tag for evidence-grounded critique. */
     assetTag?: string;
+    /** When set, the agent reads the live investigation — cause chain with
+     *  evidenced/assumed status, evidence pool with quality grades, citations —
+     *  instead of judging pasted text alone. */
+    investigationId?: string;
 }
 
-export const RcaChallengerPanel: React.FC<RcaChallengerPanelProps> = ({ initialText = '', assetTag }) => {
+export const RcaChallengerPanel: React.FC<RcaChallengerPanelProps> = ({ initialText = '', assetTag, investigationId }) => {
     const [text, setText] = useState(initialText);
     const [tag, setTag] = useState(assetTag || '');
     const [loading, setLoading] = useState(false);
@@ -29,7 +33,10 @@ export const RcaChallengerPanel: React.FC<RcaChallengerPanelProps> = ({ initialT
         if (!text.trim()) return;
         setLoading(true); setError(null); setRes(null);
         try {
-            setRes(await runRcaChallenger(text.trim(), tag.trim() || undefined));
+            const payload = investigationId
+                ? `Investigation id: ${investigationId}\n\n${text.trim()}`
+                : text.trim();
+            setRes(await runRcaChallenger(payload, tag.trim() || undefined));
         } catch (e: any) {
             console.error('[RcaChallenger]', e);
             setError(friendlyAIError(e));

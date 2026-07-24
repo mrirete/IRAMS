@@ -8,7 +8,7 @@
  *   otherwise               → null (5-Why rendered by FiveWhySection)
  */
 import React from 'react';
-import type { RCANode } from '../../eam/services/AnalyzeService';
+import type { RCANode, RCAEvidence, RCANodeEvidenceLink } from '../../eam/services/AnalyzeService';
 import analyzeService from '../../eam/services/AnalyzeService';
 import FishboneDiagram from './FishboneDiagram';
 import FaultTree, { type FaultTreeEvent } from './FaultTree';
@@ -24,10 +24,17 @@ interface Props {
     saving: boolean;
     /** Fishbone only: which pane the full-screen workspace is showing. */
     fishboneView?: 'both' | 'diagram' | 'causes';
+    /** Evidence pool + node↔evidence citations (0217) — enables the per-cause
+     *  evidence chips in the Fishbone/Logic Tree entry lists. */
+    evidence?: RCAEvidence[];
+    setEvidence?: React.Dispatch<React.SetStateAction<RCAEvidence[]>>;
+    links?: RCANodeEvidenceLink[];
+    setLinks?: React.Dispatch<React.SetStateAction<RCANodeEvidenceLink[]>>;
 }
 
 const CauseAnalysisSection: React.FC<Props> = ({
     method, investigationId, problemStatement, nodes, setNodes, saving, fishboneView = 'both',
+    evidence, setEvidence, links, setLinks,
 }) => {
     // ── Fishbone ─────────────────────────────────────────────
     if (method === 'fishbone') {
@@ -45,6 +52,10 @@ const CauseAnalysisSection: React.FC<Props> = ({
                     setNodes={setNodes}
                     saving={saving}
                     view={fishboneView}
+                    evidence={evidence}
+                    setEvidence={setEvidence}
+                    links={links}
+                    setLinks={setLinks}
                 />
             </div>
         );
@@ -72,10 +83,7 @@ const CauseAnalysisSection: React.FC<Props> = ({
                     : n.is_root_cause ? 'basic' as const
                     : 'intermediate' as const,
                 probability: n.is_root_cause ? (n.cause_code ? parseFloat(n.cause_code) || 0.01 : 0.01) : undefined,
-                gateType: isTop ? 'OR' as const
-                    : (n.evidence_notes === 'AND' || n.evidence_notes === 'OR')
-                        ? n.evidence_notes as 'AND' | 'OR'
-                        : undefined,
+                gateType: isTop ? 'OR' as const : (n.gate_type ?? undefined),
                 parentId: isTop ? null : (parentValid ? n.parent_id : topId),
             };
         });
@@ -138,7 +146,8 @@ const CauseAnalysisSection: React.FC<Props> = ({
                                 is_root_cause: false,
                                 cause_category: null as any,
                                 cause_code: null,
-                                evidence_notes: 'OR',
+                                evidence_notes: null,
+                                gate_type: 'OR',
                             });
                             if (topNode) {
                                 setNodes(prev => [...prev, topNode]);
@@ -157,7 +166,8 @@ const CauseAnalysisSection: React.FC<Props> = ({
                             is_root_cause: type === 'basic',
                             cause_category: null as any,
                             cause_code: type === 'basic' ? '0.01' : null,
-                            evidence_notes: gateType ?? null,
+                            evidence_notes: null,
+                            gate_type: gateType ?? null,
                         });
                         if (node) {
                             setNodes(prev => [...prev, node]);
@@ -213,6 +223,10 @@ const CauseAnalysisSection: React.FC<Props> = ({
                     nodes={nodes}
                     setNodes={setNodes}
                     saving={saving}
+                    evidence={evidence}
+                    setEvidence={setEvidence}
+                    links={links}
+                    setLinks={setLinks}
                 />
             </div>
         );

@@ -733,8 +733,10 @@ const getInvestigation: AgentTool = {
       ctx.db.from("ers_rca_nodes")
         .select("id, parent_id, node_type, description, depth, is_root_cause, cause_category, evidence_notes")
         .eq("investigation_id", id).order("depth").order("created_at"),
+      // NB: the column is `content`, not `description` — selecting the wrong
+      // name failed the whole query and the copilot saw zero evidence.
       ctx.db.from("ers_rca_evidence")
-        .select("evidence_type, title, description, event_timestamp")
+        .select("id, evidence_type, title, content, quality_grade, event_timestamp")
         .eq("investigation_id", id).limit(50),
       ctx.db.from("ers_rca_corrective_actions")
         .select("action_description, action_type, cause_category, status, work_order_id")
@@ -747,12 +749,32 @@ const getInvestigation: AgentTool = {
     const asset = (assetQ as { data: { id: string; tag: string; name: string; criticality: string | null } | null }).data;
     ctx.sources.push({ kind: "rca_investigation", ref: inv.id, label: `RCA "${inv.title}"` });
 
+    // Node ↔ evidence citations (0217): which claims are evidenced vs assumed.
+    const nodeIds = (nodesQ.data ?? []).map((n: { id: string }) => n.id);
+    const linksQ = nodeIds.length > 0
+      ? await ctx.db.from("ers_rca_node_evidence")
+          .select("node_id, evidence_id, relation")
+          .in("node_id", nodeIds)
+      : { data: [] as { node_id: string; evidence_id: string; relation: string }[] };
+    const linksByNode = new Map<string, { evidence_id: string; relation: string }[]>();
+    for (const l of linksQ.data ?? []) {
+      const arr = linksByNode.get(l.node_id) ?? [];
+      arr.push({ evidence_id: l.evidence_id, relation: l.relation });
+      linksByNode.set(l.node_id, arr);
+    }
+    const nodes = (nodesQ.data ?? []).map((n: Record<string, unknown>) => ({
+      ...n,
+      cited_evidence: linksByNode.get(n.id as string) ?? [],
+      evidence_status: (linksByNode.get(n.id as string) ?? []).some(l => l.relation === "supports")
+        ? "evidenced" : "assumed",
+    }));
+
     return {
       data: {
         found: true,
         investigation: inv,
         asset,
-        nodes: nodesQ.data ?? [],
+        nodes,
         evidence: evidenceQ.data ?? [],
         corrective_actions: actionsQ.data ?? [],
       },

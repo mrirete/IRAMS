@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
 import {
     Edit3, Trash2, X, Check, Plus, Target, Search,
-    AlertCircle, RefreshCw,
+    AlertCircle, AlertTriangle, RefreshCw,
 } from 'lucide-react';
-import analyzeService from '../../eam/services/AnalyzeService';
-import type { RCANode } from '../../eam/services/AnalyzeService';
+import analyzeService, { nodeConfidence } from '../../eam/services/AnalyzeService';
+import type { RCANode, RCAEvidence, RCANodeEvidenceLink } from '../../eam/services/AnalyzeService';
+import NodeEvidenceChip, { nodeSupport } from './NodeEvidenceChip';
 
 // ── Validate Chain – "Therefore" Reverse Test ───────────────
-const ValidateChainPanel: React.FC<{ nodes: RCANode[] }> = ({ nodes }) => {
+const ValidateChainPanel: React.FC<{
+    nodes: RCANode[];
+    evidence: RCAEvidence[];
+    links: RCANodeEvidenceLink[];
+}> = ({ nodes, evidence, links }) => {
     const [expanded, setExpanded] = useState(false);
 
     // Build the forward chain: Problem → Whys → Root Cause
@@ -47,12 +52,14 @@ const ValidateChainPanel: React.FC<{ nodes: RCANode[] }> = ({ nodes }) => {
             {expanded && (
                 <div style={{ padding: '0 12px 14px', borderTop: '1px solid #c7d2fe' }}>
                     <div style={{ fontSize: 11, color: '#6366f1', marginTop: 10, marginBottom: 12, fontStyle: 'italic' }}>
-                        Read top-to-bottom: does each "therefore" connection make logical sense?
+                        Read top-to-bottom: does each "therefore" connection make logical sense — and does it cite evidence?
                     </div>
                     {reversed.map((node, idx) => {
                         const label = node.is_root_cause || node.node_type === 'root_cause' ? '★ ROOT CAUSE'
                             : node.node_type === 'problem' ? 'PROBLEM'
                             : `WHY ${orderedNodes.indexOf(node)}`;
+                        const support = nodeSupport(node.id, evidence, links);
+                        const isProblem = node.node_type === 'problem';
                         return (
                             <React.Fragment key={node.id}>
                                 <div style={{
@@ -68,9 +75,23 @@ const ValidateChainPanel: React.FC<{ nodes: RCANode[] }> = ({ nodes }) => {
                                     }}>
                                         {label}
                                     </span>
-                                    <span style={{ fontSize: 12, color: '#334155', lineHeight: 1.4 }}>
+                                    <span style={{ fontSize: 12, color: '#334155', lineHeight: 1.4, flex: 1 }}>
                                         {node.description}
                                     </span>
+                                    {/* The problem statement is the observation itself; every claim
+                                        below it either cites evidence or is flagged assumed. */}
+                                    {!isProblem && (
+                                        <span style={{
+                                            fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', flexShrink: 0,
+                                            padding: '2px 6px', borderRadius: 8,
+                                            background: support.supports.length > 0 ? (support.best?.bg ?? '#f1f5f9') : '#fffbeb',
+                                            color: support.supports.length > 0 ? (support.best?.color ?? '#64748b') : '#b45309',
+                                        }}>
+                                            {support.supports.length > 0
+                                                ? `✓ ${support.best?.label.split(' ')[0] ?? 'evidence'}`
+                                                : '⚠ assumed'}
+                                        </span>
+                                    )}
                                 </div>
                                 {idx < reversed.length - 1 && (
                                     <div style={{
@@ -85,14 +106,30 @@ const ValidateChainPanel: React.FC<{ nodes: RCANode[] }> = ({ nodes }) => {
                         );
                     })}
 
-                    <div style={{
-                        marginTop: 12, padding: '8px 10px', borderRadius: 6,
-                        background: '#f0fdf4', border: '1px solid #bbf7d0',
-                        fontSize: 11, color: '#166534', display: 'flex', alignItems: 'center', gap: 6,
-                    }}>
-                        <Check size={14} color="#16a34a" />
-                        If each step reads logically, the root cause chain is validated.
-                    </div>
+                    {(() => {
+                        const assumed = reversed.filter(n =>
+                            n.node_type !== 'problem' && nodeSupport(n.id, evidence, links).supports.length === 0).length;
+                        return assumed > 0 ? (
+                            <div style={{
+                                marginTop: 12, padding: '8px 10px', borderRadius: 6,
+                                background: '#fffbeb', border: '1px solid #fde68a',
+                                fontSize: 11, color: '#92400e', display: 'flex', alignItems: 'center', gap: 6,
+                            }}>
+                                <AlertTriangle size={14} color="#d97706" />
+                                {assumed} step{assumed > 1 ? 's are' : ' is'} assumed with no cited evidence —
+                                verify with higher-quality data before closing this chain.
+                            </div>
+                        ) : (
+                            <div style={{
+                                marginTop: 12, padding: '8px 10px', borderRadius: 6,
+                                background: '#f0fdf4', border: '1px solid #bbf7d0',
+                                fontSize: 11, color: '#166534', display: 'flex', alignItems: 'center', gap: 6,
+                            }}>
+                                <Check size={14} color="#16a34a" />
+                                Every step reads logically and cites evidence — the root cause chain is validated.
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
         </div>
@@ -108,6 +145,11 @@ interface FiveWhySectionProps {
     };
     nodes: RCANode[];
     setNodes: React.Dispatch<React.SetStateAction<RCANode[]>>;
+    /** The investigation's evidence pool + node↔evidence citations (0217). */
+    evidence: RCAEvidence[];
+    setEvidence: React.Dispatch<React.SetStateAction<RCAEvidence[]>>;
+    links: RCANodeEvidenceLink[];
+    setLinks: React.Dispatch<React.SetStateAction<RCANodeEvidenceLink[]>>;
     /** Take the user to the method gate. The escalation hint below told them to switch
      *  method and then gave them no way to do it — the gate is far up the page. */
     onEscalate?: () => void;
@@ -118,6 +160,10 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
     selectedRca,
     nodes,
     setNodes,
+    evidence,
+    setEvidence,
+    links,
+    setLinks,
     onEscalate,
 }) => {
     // Local editing / input state
@@ -125,6 +171,10 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
     const [editingNodeText, setEditingNodeText] = useState('');
     const [deletingNodeId, setDeletingNodeId] = useState<string | null>(null);
     const [whyInput, setWhyInput] = useState('');
+    // Root-cause soft gate: 'new' = typed fresh from the input (no evidence can be
+    // linked yet), otherwise the id of the existing why being promoted with weak
+    // support. Warns in the ladder's terms; never blocks.
+    const [rootCauseWarn, setRootCauseWarn] = useState<'new' | string | null>(null);
 
     // ── Pre-compute ─────────────────────────────────────────
     const whyNodes = nodes.filter(n => n.node_type === 'why' || n.node_type === 'root_cause');
@@ -147,6 +197,63 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
         : hasRootCause
         ? 'Root cause identified — add corrective actions'
         : guidedPrompts[Math.min(nextDepth, 5)] || `Why ${nextDepth}? Continue drilling down...`;
+
+    // ── Root-cause support check (data-quality ladder) ───────
+    // A root cause backed by nothing is an assumption; backed only by graded
+    // opinions/hearsay it needs verification. Ungraded items pass — the gate
+    // targets the clearest failures, it doesn't nag legacy data.
+    const rootCauseSupportIssue = (nodeId: string): string | null => {
+        const s = nodeSupport(nodeId, evidence, links);
+        if (s.supports.length === 0)
+            return 'No evidence is cited for this claim — right now it is an assumption.';
+        const graded = s.supports.filter(e => e.quality_grade);
+        if (graded.length > 0 && !graded.some(e => e.quality_grade === 'fact' || e.quality_grade === 'inference'))
+            return 'This claim is backed only by opinions or hearsay — verify it with higher-quality data (facts).';
+        return null;
+    };
+
+    const createRootCauseFromInput = async () => {
+        if (!whyInput.trim()) return;
+        const desc = whyInput.trim();
+        const node = await analyzeService.createRCANode({
+            investigation_id: selectedRca.id,
+            parent_id: null,
+            node_type: 'root_cause',
+            description: desc,
+            depth: nextDepth,
+            is_root_cause: true,
+            cause_category: null as any,
+            cause_code: null,
+            evidence_notes: null,
+        });
+        if (node) {
+            setNodes(n => [...n, node]);
+            setWhyInput('');
+            setRootCauseWarn(null);
+            await analyzeService.updateRCAInvestigation(selectedRca.id, {
+                root_cause_summary: desc,
+                status: 'in_progress',
+            });
+        }
+    };
+
+    const promoteNodeToRootCause = async (node: RCANode) => {
+        const updated = await analyzeService.updateRCANode(node.id, {
+            is_root_cause: true,
+            node_type: 'root_cause',
+        });
+        if (updated) {
+            setNodes(ns => ns.map(n => n.id === node.id
+                ? { ...n, is_root_cause: true, node_type: 'root_cause' }
+                : n
+            ));
+            setRootCauseWarn(null);
+            await analyzeService.updateRCAInvestigation(selectedRca.id, {
+                root_cause_summary: node.description,
+                status: 'in_progress',
+            });
+        }
+    };
 
     // ── Render ───────────────────────────────────────────────
     return (
@@ -247,28 +354,11 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
 
                             {hasProblem && whyCount >= 1 && (
                                 <button
-                                    onClick={async () => {
+                                    onClick={() => {
                                         if (!whyInput.trim()) return;
-                                        const desc = whyInput.trim();
-                                        const node = await analyzeService.createRCANode({
-                                            investigation_id: selectedRca.id,
-                                            parent_id: null,
-                                            node_type: 'root_cause',
-                                            description: desc,
-                                            depth: nextDepth,
-                                            is_root_cause: true,
-                                            cause_category: null as any,
-                                            cause_code: null,
-                                            evidence_notes: null,
-                                        });
-                                        if (node) {
-                                            setNodes(n => [...n, node]);
-                                            setWhyInput('');
-                                            await analyzeService.updateRCAInvestigation(selectedRca.id, {
-                                                root_cause_summary: desc,
-                                                status: 'in_progress',
-                                            });
-                                        }
+                                        // A fresh-typed root cause can't have citations yet —
+                                        // pause at exactly the moment the claim is made.
+                                        setRootCauseWarn('new');
                                     }}
                                     style={{
                                         display: 'flex', alignItems: 'center', gap: 4, padding: '6px 14px',
@@ -281,6 +371,33 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
                                 </button>
                             )}
                         </div>
+
+                        {/* Soft gate — the claim is being made with no cited evidence */}
+                        {rootCauseWarn === 'new' && (
+                            <div style={{
+                                marginTop: 8, padding: 10, borderRadius: 8,
+                                background: '#fffbeb', border: '1px solid #fde68a',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                    <AlertTriangle size={14} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                                    <div style={{ fontSize: 11.5, color: '#78350f', lineHeight: 1.5 }}>
+                                        <strong>What proves this is the root cause?</strong> No evidence is cited yet —
+                                        a root cause without facts behind it is an opinion. Mark it, then cite the
+                                        evidence on the node's <em>Assumed</em> chip; or collect the data first.
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
+                                    <button onClick={() => setRootCauseWarn(null)}
+                                        style={{ padding: '5px 11px', fontSize: 11, color: '#64748b', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
+                                        Collect evidence first
+                                    </button>
+                                    <button onClick={createRootCauseFromInput}
+                                        style={{ padding: '5px 11px', fontSize: 11, fontWeight: 700, color: '#fff', background: '#dc2626', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                                        Mark anyway — I'll cite it
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </>
                 )}
             </div>
@@ -291,14 +408,30 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
                     marginTop: 14, padding: 12, borderRadius: 8,
                     background: '#fef2f2', border: '1px solid #fecaca',
                 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Root Cause Summary</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Root Cause Summary</div>
+                        {/* Confidence from citations — the weakest root cause carries it */}
+                        {(() => {
+                            const rcNode = nodes.find(n => n.is_root_cause || n.node_type === 'root_cause');
+                            if (!rcNode) return null;
+                            const conf = nodeConfidence(rcNode.id, evidence, links);
+                            return (
+                                <span style={{
+                                    marginLeft: 'auto', fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                                    padding: '2px 8px', borderRadius: 10, background: conf.bg, color: conf.color,
+                                }} title={`Evidence confidence ${conf.score}% — from cited evidence grades`}>
+                                    {conf.label} · {conf.score}%
+                                </span>
+                            );
+                        })()}
+                    </div>
                     <p style={{ fontSize: 13, color: '#7f1d1d', margin: 0, lineHeight: 1.5 }}>{selectedRca.root_cause_summary}</p>
                 </div>
             )}
 
             {/* ── Validate Chain (Therefore Reverse Test) ── */}
             {hasRootCause && nodes.length >= 2 && (
-                <ValidateChainPanel nodes={nodes} />
+                <ValidateChainPanel nodes={nodes} evidence={evidence} links={links} />
             )}
 
             {/* ── Escalation hint — offer to switch to Fishbone/FTA ── */}
@@ -470,25 +603,26 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
                                     onMouseLeave={(e) => (e.currentTarget.style.borderBottomColor = 'transparent')}
                                     title="Click to edit"
                                 >{node.description}</p>
-                                <div style={{ display: 'flex', gap: 2, flexShrink: 0, marginTop: 4 }}>
+                                <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0, marginTop: 4 }}>
+                                    {/* Evidence citation — every claim either cites or reads "Assumed" */}
+                                    {isWhy && (
+                                        <NodeEvidenceChip
+                                            investigationId={selectedRca.id}
+                                            nodeId={node.id}
+                                            evidence={evidence}
+                                            links={links}
+                                            setLinks={setLinks}
+                                            setEvidence={setEvidence}
+                                        />
+                                    )}
                                     {/* Mark as Root Cause — only on the last (newest) Why node */}
                                     {isWhy && !node.is_root_cause && !nodes.some(n => n.is_root_cause) && node.id === lastWhyNodeId && (
                                         <button
-                                            onClick={async () => {
-                                                const updated = await analyzeService.updateRCANode(node.id, {
-                                                    is_root_cause: true,
-                                                    node_type: 'root_cause',
-                                                });
-                                                if (updated) {
-                                                    setNodes(ns => ns.map(n => n.id === node.id
-                                                        ? { ...n, is_root_cause: true, node_type: 'root_cause' }
-                                                        : n
-                                                    ));
-                                                    await analyzeService.updateRCAInvestigation(selectedRca.id, {
-                                                        root_cause_summary: node.description,
-                                                        status: 'in_progress',
-                                                    });
-                                                }
+                                            onClick={() => {
+                                                // Soft gate: promote directly only when the claim
+                                                // already cites solid evidence.
+                                                if (rootCauseSupportIssue(node.id)) setRootCauseWarn(node.id);
+                                                else promoteNodeToRootCause(node);
                                             }}
                                             style={{
                                                 background: 'none', border: 'none', color: '#f59e0b',
@@ -546,6 +680,33 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
                                         title="Delete"
                                     >
                                         <Trash2 size={12} />
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Soft gate — promoting this why with weak support */}
+                        {rootCauseWarn === node.id && (
+                            <div style={{
+                                marginTop: 6, padding: 10, borderRadius: 8,
+                                background: '#fffbeb', border: '1px solid #fde68a',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                    <AlertTriangle size={14} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }} />
+                                    <div style={{ fontSize: 11.5, color: '#78350f', lineHeight: 1.5 }}>
+                                        <strong>Not verified yet.</strong>{' '}
+                                        {rootCauseSupportIssue(node.id)}{' '}
+                                        Cite it via the node's evidence chip before closing the analysis.
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 8 }}>
+                                    <button onClick={() => setRootCauseWarn(null)}
+                                        style={{ padding: '5px 11px', fontSize: 11, color: '#64748b', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}>
+                                        Verify first
+                                    </button>
+                                    <button onClick={() => promoteNodeToRootCause(node)}
+                                        style={{ padding: '5px 11px', fontSize: 11, fontWeight: 700, color: '#fff', background: '#dc2626', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                                        Mark anyway
                                     </button>
                                 </div>
                             </div>

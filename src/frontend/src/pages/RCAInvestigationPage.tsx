@@ -13,7 +13,9 @@ import { Drawer, Button, Field, Input, Select, Textarea } from '../eam/component
 import RCAStepGuide from '../components/analyze/RCAStepGuide';
 import { getStepCompletion } from '../components/analyze/RCAStepIndicator';
 import { friendlyAIError } from '../eam/lib/aiError';
-import { analyzeService, scopeNodesToMethod, rcaMethodLabel, rcaMethodColor } from '../eam/services/AnalyzeService';
+import { analyzeService, scopeNodesToMethod, rcaMethodLabel, rcaMethodColor, EVIDENCE_GRADES, bestEvidenceGrade, nodeConfidence, rootCauseConfidence, confidenceFromScore } from '../eam/services/AnalyzeService';
+import { EvidenceGradeBadge } from '../components/analyze/RCAEvidencePanel';
+import { nodeSupport } from '../components/analyze/NodeEvidenceChip';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { RaiseWorkModal } from '../eam/components/RaiseWorkModal';
 import { ImageGallery } from '../eam/components/ui/ImageGallery';
@@ -31,7 +33,7 @@ import type { RCAMethodRecommendation } from '../eam/services/AIAnalysisEngine';
 import type {
     RCAInvestigation, RCANode, RCAEvidence, RCACorrectiveAction,
     RCABarrier, RCATeamMember, RCAAuditLog, RCACauseTaxonomy,
-    StudyCollaborator,
+    StudyCollaborator, RCANodeEvidenceLink, EvidenceQualityGrade,
 } from '../eam/services/AnalyzeService';
 
 // ── Step definitions ─────────────────────────────────────────
@@ -103,6 +105,8 @@ export function RCAInvestigationPage() {
     const [inv, setInv] = useState<RCAInvestigation | null>(null);
     const [nodes, setNodes] = useState<RCANode[]>([]);
     const [evidence, setEvidence] = useState<RCAEvidence[]>([]);
+    // Node ↔ evidence links (0217) — what makes each cause claim citable.
+    const [evLinks, setEvLinks] = useState<RCANodeEvidenceLink[]>([]);
     const [actions, setActions] = useState<RCACorrectiveAction[]>([]);
     const [barriers, setBarriers] = useState<RCABarrier[]>([]);
     // Barrier analysis is standard RCA (defense-in-depth) but optional noise for
@@ -161,6 +165,7 @@ export function RCAInvestigationPage() {
         estimatedSavings: 0,
         implementationCost: 0,
         priority: 'high' as 'critical' | 'high' | 'medium' | 'low',
+        evidenceConfidence: null as number | null,
     });
 
     // Draft state for new investigations
@@ -216,7 +221,7 @@ export function RCAInvestigationPage() {
     const fetchAll = useCallback(async (id: string) => {
         setLoading(true);
         try {
-            const [invData, nodesData, evData, actData, barData, teamData, logData, taxData] = await Promise.all([
+            const [invData, nodesData, evData, actData, barData, teamData, logData, taxData, linkData] = await Promise.all([
                 analyzeService.getRCAInvestigations().then(list => list.find(r => r.id === id) || null),
                 analyzeService.getRCANodes(id),
                 analyzeService.getRCAEvidence(id),
@@ -225,6 +230,7 @@ export function RCAInvestigationPage() {
                 analyzeService.getRCATeamMembers(id),
                 analyzeService.getRCAAuditLog(id),
                 analyzeService.getCauseTaxonomy(),
+                analyzeService.getNodeEvidenceLinks(id),
             ]);
             if (invData) {
                 setInv(invData);
@@ -246,7 +252,7 @@ export function RCAInvestigationPage() {
             }
             setNodes(nodesData); setEvidence(evData); setActions(actData);
             setBarriers(barData); setTeam(teamData); setAuditLog(logData);
-            setTaxonomy(taxData);
+            setTaxonomy(taxData); setEvLinks(linkData);
         } catch (e) { console.error('Failed to load RCA:', e); }
         setLoading(false);
     }, []);
@@ -517,6 +523,9 @@ export function RCAInvestigationPage() {
         const howMuch = (inv?.event_how_much as any) || draft.event_how_much;
         const annualCost = Number(howMuch?.cost || 0);
 
+        // Evidence confidence: the weakest root cause carries the verdict.
+        const conf = rootCauseConfidence(rootCauseNodes.map(n => n.id), evidence, evLinks);
+
         setDeDraft({
             title: `Defect Elimination: ${inv?.title || draft.title}`,
             rootCauseSummary,
@@ -525,9 +534,10 @@ export function RCAInvestigationPage() {
             estimatedSavings: Math.round(annualCost * 0.75),
             implementationCost: 0,
             priority: annualCost > 100000 ? 'critical' : annualCost > 50000 ? 'high' : 'medium',
+            evidenceConfidence: conf?.score ?? null,
         });
         setShowDEModal(true);
-    }, [inv, draft, nodes, actions]);
+    }, [inv, draft, nodes, actions, evidence, evLinks]);
 
     const handleCreateDETask = useCallback(async () => {
         setDeCreating(true);
@@ -550,6 +560,7 @@ export function RCAInvestigationPage() {
                 implementation_cost: deDraft.implementationCost,
                 payback_months: payback,
                 root_cause_summary: deDraft.rootCauseSummary,
+                evidence_confidence: deDraft.evidenceConfidence,
                 proposed_solution: deDraft.proposedSolution,
                 rca_id: inv?.id || null,
                 created_by: null,
@@ -599,6 +610,7 @@ export function RCAInvestigationPage() {
     const [newEvTitle, setNewEvTitle] = useState('');
     const [newEvContent, setNewEvContent] = useState('');
     const [newEvType, setNewEvType] = useState<string>('note');
+    const [newEvGrade, setNewEvGrade] = useState<EvidenceQualityGrade | null>(null);
 
     const addEvidence = async () => {
         if (!inv || !newEvTitle.trim()) return;
@@ -606,8 +618,9 @@ export function RCAInvestigationPage() {
             investigation_id: inv.id, evidence_type: newEvType as any,
             title: newEvTitle.trim(), content: newEvContent || null,
             linked_entity_id: null, event_timestamp: null, uploaded_by: null,
+            quality_grade: newEvGrade,
         });
-        if (ev) { setEvidence(e => [...e, ev]); setNewEvTitle(''); setNewEvContent(''); setAddEvidenceOpen(false); }
+        if (ev) { setEvidence(e => [...e, ev]); setNewEvTitle(''); setNewEvContent(''); setNewEvGrade(null); setAddEvidenceOpen(false); }
     };
 
     // ── Corrective Action management ─────────────────────────
@@ -719,12 +732,16 @@ export function RCAInvestigationPage() {
             (draft.event_how_much?.cost || draft.event_how_much?.downtime_hrs) ? 'x' : '',
         ].filter(v => !!v && String(v).trim()).length >= 2,
         evidenceCount: evidence.length,
+        // "Target for FACTS": a pile of opinions/hearsay doesn't complete Collect.
+        // Ungraded legacy items still pass, so old investigations don't regress.
+        hasVerifiedEvidence: evidence.some(e =>
+            !e.quality_grade || e.quality_grade === 'fact' || e.quality_grade === 'inference'),
         hasRootCause: scopeNodesToMethod(nodes, inv?.method)
             .some(n => n.is_root_cause || n.node_type === 'root_cause'),
         actionCount: actions.length,
         allActionsAssigned: actions.length > 0 && actions.every(a => !!a.assigned_to),
         effectivenessReviewed: !!inv?.effectiveness_status && inv.effectiveness_status !== 'pending',
-    }), [inv, draft, evidence.length, nodes, actions]);
+    }), [inv, draft, evidence, nodes, actions]);
 
     if (loading) {
         return (
@@ -1212,6 +1229,7 @@ export function RCAInvestigationPage() {
                                     <div key={ev.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100/50 transition-all">
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className="text-[9px] font-extrabold px-2 py-0.5 rounded border border-blue-200 bg-blue-50 text-blue-700 tracking-wide uppercase">{ev.evidence_type}</span>
+                                            <EvidenceGradeBadge grade={ev.quality_grade} />
                                             <span className="text-sm text-slate-800 font-bold">{ev.title}</span>
                                             {ev.content && <span className="text-xs text-slate-500 font-medium">— {ev.content}</span>}
                                         </div>
@@ -1398,7 +1416,37 @@ export function RCAInvestigationPage() {
                                                     {(n.is_root_cause || n.node_type === 'root_cause')
                                                         ? <Target size={14} className="text-rose-500 mt-0.5 shrink-0" />
                                                         : <Circle size={8} className="text-slate-300 mt-1.5 shrink-0" />}
-                                                    <span className="min-w-0">{n.description}</span>
+                                                    <span className="min-w-0 flex-1">{n.description}</span>
+                                                    {/* Evidence support at a glance — the Collect step made visible.
+                                                        Root causes carry the full confidence verdict. */}
+                                                    {(() => {
+                                                        if (n.is_root_cause || n.node_type === 'root_cause') {
+                                                            const conf = nodeConfidence(n.id, evidence, evLinks);
+                                                            return (
+                                                                <span
+                                                                    className="shrink-0 text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full mt-0.5"
+                                                                    style={{ background: conf.bg, color: conf.color }}
+                                                                    title={`Evidence confidence ${conf.score}% — from cited evidence grades`}
+                                                                >
+                                                                    {conf.label} · {conf.score}%
+                                                                </span>
+                                                            );
+                                                        }
+                                                        const s = nodeSupport(n.id, evidence, evLinks);
+                                                        return (
+                                                            <span
+                                                                className="shrink-0 text-[9px] font-extrabold uppercase tracking-wide px-1.5 py-0.5 rounded-full mt-0.5"
+                                                                style={s.supports.length > 0
+                                                                    ? { background: s.best?.bg ?? '#f1f5f9', color: s.best?.color ?? '#64748b' }
+                                                                    : { background: '#fffbeb', color: '#b45309' }}
+                                                                title={s.supports.length > 0
+                                                                    ? `${s.supports.length} evidence item(s), best grade: ${s.best?.label ?? 'ungraded'}`
+                                                                    : 'No evidence cited — assumed'}
+                                                            >
+                                                                {s.supports.length > 0 ? `${s.supports.length} ev` : 'assumed'}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                     {(n.is_root_cause || n.node_type === 'root_cause') && (
                                                         <span className="ml-auto text-[9px] font-extrabold uppercase tracking-wider text-rose-500 shrink-0">
                                                             Root cause
@@ -1622,6 +1670,7 @@ export function RCAInvestigationPage() {
                                 })(),
                             ].filter(Boolean).join('\n\n')}
                             assetTag={allHierarchyAssets.find(a => a.id === (inv.asset_id || draft.asset_id))?.tag || ''}
+                            investigationId={inv.id}
                         />
                     </div>
                 )}
@@ -1976,8 +2025,19 @@ export function RCAInvestigationPage() {
                                         <div>
                                             <label className="block text-[10px] font-extrabold uppercase tracking-wider text-rose-500 mb-1 flex items-center gap-1.5">
                                                 <AlertTriangle size={11} strokeWidth={2.5} /> Root Cause Summary
+                                                {/* Evidence confidence — inherited from the RCA's citations */}
+                                                {deDraft.evidenceConfidence != null && (() => {
+                                                    const c = confidenceFromScore(deDraft.evidenceConfidence);
+                                                    return (
+                                                        <span className="ml-auto normal-case tracking-normal text-[9px] font-extrabold px-2 py-0.5 rounded-full"
+                                                            style={{ background: c.bg, color: c.color }}
+                                                            title="From the root cause's cited evidence grades — the weakest root cause carries the verdict">
+                                                            Evidence: {c.label} · {c.score}%
+                                                        </span>
+                                                    );
+                                                })()}
                                             </label>
-                                            <textarea 
+                                            <textarea
                                                 value={deDraft.rootCauseSummary}
                                                 onChange={e => setDeDraft(d => ({ ...d, rootCauseSummary: e.target.value }))}
                                                 rows={3}
@@ -2159,6 +2219,10 @@ export function RCAInvestigationPage() {
                                 selectedRca={{ id: inv.id, method: inv.method, root_cause_summary: inv.root_cause_summary }}
                                 nodes={scopedNodes}
                                 setNodes={setNodes}
+                                evidence={evidence}
+                                setEvidence={setEvidence}
+                                links={evLinks}
+                                setLinks={setEvLinks}
                                 onEscalate={() => {
                                     setCauseFullscreen(false);
                                     setTimeout(() => methodGateRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
@@ -2174,6 +2238,10 @@ export function RCAInvestigationPage() {
                                 setNodes={setNodes}
                                 saving={saving}
                                 fishboneView={inv.method === 'fishbone' ? fishboneView : 'both'}
+                                evidence={evidence}
+                                setEvidence={setEvidence}
+                                links={evLinks}
+                                setLinks={setEvLinks}
                             />
                         )}
                     </div>
@@ -2222,6 +2290,29 @@ export function RCAInvestigationPage() {
                             value={newEvContent}
                             onChange={e => setNewEvContent(e.target.value)}
                         />
+                    </Field>
+                    <Field label="Data quality" hint="Grade what this datum actually is — target for facts, verify opinions with higher-quality data">
+                        <div className="space-y-1.5">
+                            {EVIDENCE_GRADES.map(g => {
+                                const selected = newEvGrade === g.value;
+                                return (
+                                    <button
+                                        key={g.value}
+                                        type="button"
+                                        onClick={() => setNewEvGrade(selected ? null : g.value)}
+                                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-all"
+                                        style={{
+                                            background: selected ? g.bg : '#fff',
+                                            borderColor: selected ? `${g.color}60` : '#e2e8f0',
+                                        }}
+                                    >
+                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: g.color, opacity: selected ? 1 : 0.4 }} />
+                                        <span className="text-xs font-bold min-w-[96px]" style={{ color: selected ? g.color : '#475569' }}>{g.label}</span>
+                                        <span className="text-[11px] leading-snug" style={{ color: selected ? g.color : '#94a3b8' }}>{g.caption}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </Field>
                 </div>
             </Drawer>

@@ -9,7 +9,8 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Plus, Trash2, Target, Check, X, Edit3, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import analyzeService from '../../eam/services/AnalyzeService';
-import type { RCANode } from '../../eam/services/AnalyzeService';
+import type { RCANode, RCAEvidence, RCANodeEvidenceLink } from '../../eam/services/AnalyzeService';
+import NodeEvidenceChip from './NodeEvidenceChip';
 
 // ── Fishbone Framework Definitions ──────────────────────────
 type FishboneFramework = '6Ms' | '4Ms' | '4Ps' | '4Ss';
@@ -94,6 +95,12 @@ interface FishboneDiagramProps {
      *  'causes' with a toggle so each gets the whole screen; the inline/desktop case
      *  keeps 'both'. In 'causes' the entry list is full-width with larger text. */
     view?: 'both' | 'diagram' | 'causes';
+    /** Evidence pool + citations (0217). When present, each cause row gets an
+     *  evidence chip; absent, the list renders as before. */
+    evidence?: RCAEvidence[];
+    setEvidence?: React.Dispatch<React.SetStateAction<RCAEvidence[]>>;
+    links?: RCANodeEvidenceLink[];
+    setLinks?: React.Dispatch<React.SetStateAction<RCANodeEvidenceLink[]>>;
 }
 
 // ── Layout constants ────────────────────────────────────────
@@ -110,6 +117,7 @@ const SUB_BONE_LEN = 90;
 const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
     investigationId, problemStatement, nodes, setNodes, saving: _saving = false,
     view = 'both',
+    evidence, setEvidence, links, setLinks,
 }) => {
     // In the full-screen "Causes" view the entry list owns the whole screen, so the
     // text steps up to comfortable reading/tap sizes. `both` (inline) keeps compact.
@@ -738,7 +746,17 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
 
                                                     {/* Action buttons */}
                                                     {!isEditing && !isDeleting && (
-                                                        <div style={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                                                        <div style={{ display: 'flex', gap: 3, alignItems: 'center', flexShrink: 0 }}>
+                                                            {evidence && links && setLinks && setEvidence && (
+                                                                <NodeEvidenceChip
+                                                                    investigationId={investigationId}
+                                                                    nodeId={cause.id}
+                                                                    evidence={evidence}
+                                                                    links={links}
+                                                                    setLinks={setLinks}
+                                                                    setEvidence={setEvidence}
+                                                                />
+                                                            )}
                                                             <button onClick={() => handleToggleRoot(cause)} disabled={busyOp}
                                                                 style={{ background: 'none', border: 'none', padding: 3, cursor: 'pointer', color: isRoot ? cat.color : '#d4d4d8', display: 'flex', borderRadius: 4 }}
                                                                 title={isRoot ? 'Unmark Root Cause' : 'Mark as Root Cause'}>

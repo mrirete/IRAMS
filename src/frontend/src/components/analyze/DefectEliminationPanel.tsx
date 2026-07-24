@@ -17,6 +17,7 @@ import {
     Calendar, ExternalLink, Users, UserPlus, RotateCcw
 } from 'lucide-react';
 import { type ParetoResult } from '../../eam/services/AnalyzeService';
+import { confidenceFromScore } from '../../eam/services/AnalyzeService';
 import type { StudyCollaborator } from '../../eam/services/AnalyzeService';
 import { aiEngine, type DefectPattern, type EliminationPlanDraft } from '../../eam/services/AIAnalysisEngine';
 import { TeamPanel, AvatarStack } from './CollaboratorPicker';
@@ -35,6 +36,8 @@ export interface DefectEliminationTask {
     rootCauseSummary: string;
     proposedSolution: string;
     rcaId?: string;
+    /** 0–100 from the source RCA's cited evidence grades (0218). Null/undefined = unknown. */
+    evidenceConfidence?: number | null;
     collaborators?: StudyCollaborator[];
     createdAt: string;
 }
@@ -358,6 +361,18 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
                                             padding: '3px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700,
                                             background: sm.bg, color: sm.color, border: `1px solid ${sm.color}40`,
                                         }}>{sm.icon} {sm.label}</span>
+                                        {/* Evidence confidence inherited from the source RCA (0218) */}
+                                        {task.evidenceConfidence != null && (() => {
+                                            const c = confidenceFromScore(task.evidenceConfidence);
+                                            return (
+                                                <span style={{
+                                                    padding: '3px 10px', borderRadius: 10, fontSize: 11, fontWeight: 700,
+                                                    background: c.bg, color: c.color, border: `1px solid ${c.color}35`,
+                                                }} title={`Root-cause evidence confidence ${c.score}% — from cited evidence grades in the RCA`}>
+                                                    {c.label} · {c.score}%
+                                                </span>
+                                            );
+                                        })()}
                                         {task.collaborators && task.collaborators.length > 0 && (
                                             <AvatarStack collaborators={task.collaborators} max={3} size="sm" />
                                         )}
@@ -642,6 +657,17 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
                                         }}>
                                             {PRIORITY_LABELS[selectedTask.priority]}
                                         </span>
+                                        {selectedTask.evidenceConfidence != null && (() => {
+                                            const c = confidenceFromScore(selectedTask.evidenceConfidence);
+                                            return (
+                                                <span style={{
+                                                    padding: '5px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+                                                    background: c.bg, color: c.color, border: `1px solid ${c.color}35`,
+                                                }} title={`Root-cause evidence confidence ${c.score}% — from cited evidence grades in the RCA`}>
+                                                    Evidence: {c.label} · {c.score}%
+                                                </span>
+                                            );
+                                        })()}
                                         <span style={{ fontSize: 13, color: TEXT_BRIGHT, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                                             <Activity size={13} color={TEXT_MUTED} />
                                             {selectedTask.assetName}

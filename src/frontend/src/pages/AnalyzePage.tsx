@@ -399,6 +399,7 @@ export const AnalyzePage: React.FC = () => {
                 implementationCost: Number(t.implementation_cost), paybackMonths: Number(t.payback_months),
                 rootCauseSummary: t.root_cause_summary, proposedSolution: t.proposed_solution,
                 rcaId: t.rca_id ?? undefined, collaborators: t.collaborators ?? [], createdAt: t.created_at,
+                evidenceConfidence: t.evidence_confidence ?? null,
             })));
         }).catch(err => {
             console.error('[AnalyzePage] Failed to load DE tasks:', err);

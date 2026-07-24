@@ -11,7 +11,8 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { Plus, Trash2, Target, Check, X, Edit3, AlertCircle, AlertTriangle, ShieldAlert } from 'lucide-react';
 import analyzeService from '../../eam/services/AnalyzeService';
-import type { RCANode } from '../../eam/services/AnalyzeService';
+import type { RCANode, RCAEvidence, RCANodeEvidenceLink } from '../../eam/services/AnalyzeService';
+import NodeEvidenceChip from './NodeEvidenceChip';
 
 // ── Branch Definitions ──────────────────────────────────────
 const LOGIC_BRANCHES = [
@@ -57,6 +58,12 @@ interface LogicTreeDiagramProps {
     nodes: RCANode[];
     setNodes: React.Dispatch<React.SetStateAction<RCANode[]>>;
     saving?: boolean;
+    /** Evidence pool + citations (0217). When present, each cause row gets an
+     *  evidence chip; absent, the list renders as before. */
+    evidence?: RCAEvidence[];
+    setEvidence?: React.Dispatch<React.SetStateAction<RCAEvidence[]>>;
+    links?: RCANodeEvidenceLink[];
+    setLinks?: React.Dispatch<React.SetStateAction<RCANodeEvidenceLink[]>>;
 }
 
 // ── Component ───────────────────────────────────────────────
@@ -66,6 +73,7 @@ const LogicTreeDiagram: React.FC<LogicTreeDiagramProps> = ({
     nodes,
     setNodes,
     saving: _saving = false,
+    evidence, setEvidence, links, setLinks,
 }) => {
     const [addingTo, setAddingTo] = useState<string | null>(null);
     const [newCauseText, setNewCauseText] = useState('');
@@ -474,7 +482,17 @@ const LogicTreeDiagram: React.FC<LogicTreeDiagramProps> = ({
 
                                             {/* Actions */}
                                             {!isEditing && !isDeleting && (
-                                                <div className="flex gap-0.5 shrink-0 mt-0.5">
+                                                <div className="flex gap-0.5 items-center shrink-0 mt-0.5">
+                                                    {evidence && links && setLinks && setEvidence && (
+                                                        <NodeEvidenceChip
+                                                            investigationId={investigationId}
+                                                            nodeId={cause.id}
+                                                            evidence={evidence}
+                                                            links={links}
+                                                            setLinks={setLinks}
+                                                            setEvidence={setEvidence}
+                                                        />
+                                                    )}
                                                     <button onClick={() => handleToggleRoot(cause)} disabled={busyOp}
                                                         className="p-1 rounded transition-colors cursor-pointer"
                                                         style={{ color: isRoot ? branch.color : '#d4d4d8' }}

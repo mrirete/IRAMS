@@ -17,18 +17,34 @@ import {
     Plus, X, Trash2, Upload,
     ChevronDown, ChevronRight,
 } from 'lucide-react';
-import analyzeService from '../../eam/services/AnalyzeService';
-import type { RCAEvidence } from '../../eam/services/AnalyzeService';
+import analyzeService, { EVIDENCE_GRADES, evidenceGradeDef } from '../../eam/services/AnalyzeService';
+import type { RCAEvidence, EvidenceQualityGrade } from '../../eam/services/AnalyzeService';
 
 // ── Evidence type configuration ─────────────────────────────
+// Keys must match the DB CHECK on ers_rca_evidence.evidence_type —
+// 'timeline' and 'interview' used to violate it and every add failed silently.
 const EVIDENCE_TYPES = [
-    { key: 'note',        label: 'Note',        icon: <MessageSquare size={12} />, color: '#d97706', bg: '#fef3c7' },
-    { key: 'photo',       label: 'Photo',       icon: <Camera size={12} />,        color: '#1d4ed8', bg: '#dbeafe' },
-    { key: 'document',    label: 'Document',    icon: <FileText size={12} />,      color: '#7c3aed', bg: '#f3e8ff' },
-    { key: 'interview',   label: 'Interview',   icon: <MessageSquare size={12} />, color: '#059669', bg: '#d1fae5' },
-    { key: 'sensor_data', label: 'Sensor Data', icon: <Activity size={12} />,      color: '#dc2626', bg: '#fee2e2' },
-    { key: 'timeline',    label: 'Timeline',    icon: <Clock size={12} />,         color: '#6366f1', bg: '#e0e7ff' },
+    { key: 'note',           label: 'Note',        icon: <MessageSquare size={12} />, color: '#d97706', bg: '#fef3c7' },
+    { key: 'photo',          label: 'Photo',       icon: <Camera size={12} />,        color: '#1d4ed8', bg: '#dbeafe' },
+    { key: 'document',       label: 'Document',    icon: <FileText size={12} />,      color: '#7c3aed', bg: '#f3e8ff' },
+    { key: 'interview',      label: 'Interview',   icon: <MessageSquare size={12} />, color: '#059669', bg: '#d1fae5' },
+    { key: 'sensor_data',    label: 'Sensor Data', icon: <Activity size={12} />,      color: '#dc2626', bg: '#fee2e2' },
+    { key: 'timeline_event', label: 'Timeline',    icon: <Clock size={12} />,         color: '#6366f1', bg: '#e0e7ff' },
 ] as const;
+
+/** Small colored pill showing an item's data-quality grade (gray "Ungraded" when null). */
+export const EvidenceGradeBadge: React.FC<{ grade: EvidenceQualityGrade | null | undefined; size?: number }> = ({ grade, size = 9 }) => {
+    const def = evidenceGradeDef(grade);
+    return (
+        <span style={{
+            fontSize: size, fontWeight: 700, textTransform: 'uppercase',
+            padding: '2px 6px', borderRadius: 3, flexShrink: 0,
+            background: def?.bg ?? '#f1f5f9', color: def?.color ?? '#94a3b8',
+        }}>
+            {def?.label ?? 'Ungraded'}
+        </span>
+    );
+};
 
 // ── Data collection checklist (domain.md Step 2) ────────────
 const CHECKLIST_ITEMS = [
@@ -53,6 +69,7 @@ const RCAEvidencePanel: React.FC<RCAEvidencePanelProps> = ({
 }) => {
     const [showAddForm, setShowAddForm] = useState(false);
     const [newType, setNewType] = useState<string>('note');
+    const [newGrade, setNewGrade] = useState<EvidenceQualityGrade | null>(null);
     const [newTitle, setNewTitle] = useState('');
     const [newContent, setNewContent] = useState('');
     const [creating, setCreating] = useState(false);
@@ -75,18 +92,20 @@ const RCAEvidencePanel: React.FC<RCAEvidencePanelProps> = ({
                 linked_entity_id: null,
                 event_timestamp: new Date().toISOString(),
                 uploaded_by: null,
+                quality_grade: newGrade,
             });
             if (result) {
                 setEvidence(prev => [...prev, result]);
                 setNewTitle('');
                 setNewContent('');
+                setNewGrade(null);
                 setShowAddForm(false);
             }
         } catch (err) {
             console.error('[RCAEvidencePanel] Create error:', err);
         }
         setCreating(false);
-    }, [investigationId, newType, newTitle, newContent, setEvidence]);
+    }, [investigationId, newType, newGrade, newTitle, newContent, setEvidence]);
 
     // ── Delete evidence ─────────────────────────────────────
     const handleDelete = useCallback(async (id: string) => {
@@ -173,7 +192,22 @@ const RCAEvidencePanel: React.FC<RCAEvidencePanelProps> = ({
                     <span style={{ fontSize: 11, fontWeight: 700, color: '#4338ca', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                         Evidence & Observations
                     </span>
-                    <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 'auto' }}>
+                    <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {/* Quality mix — the ladder at a glance */}
+                        {EVIDENCE_GRADES.map(g => {
+                            const n = evidence.filter(e => e.quality_grade === g.value).length;
+                            return n > 0 ? (
+                                <span key={g.value} title={g.label}
+                                    style={{ fontSize: 10, fontWeight: 700, color: g.color, background: g.bg, padding: '1px 6px', borderRadius: 8 }}>
+                                    {g.label.split(' ')[0]} · {n}
+                                </span>
+                            ) : null;
+                        })}
+                        {evidence.some(e => !e.quality_grade) && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', background: '#f1f5f9', padding: '1px 6px', borderRadius: 8 }}>
+                                {evidence.filter(e => !e.quality_grade).length} ungraded
+                            </span>
+                        )}
                         {evidence.length} items
                     </span>
                     <button
@@ -212,6 +246,35 @@ const RCAEvidencePanel: React.FC<RCAEvidencePanelProps> = ({
                                     {t.icon} {t.label}
                                 </button>
                             ))}
+                        </div>
+                        {/* Data-quality ladder — grade what this datum actually is.
+                            Facts at the top, hearsay at the bottom; ungraded items
+                            never count toward completing the Collect step. */}
+                        <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>
+                                Data Quality — target for facts
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                {EVIDENCE_GRADES.map(g => {
+                                    const selected = newGrade === g.value;
+                                    return (
+                                        <button key={g.value}
+                                            onClick={() => setNewGrade(selected ? null : g.value)}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: 8,
+                                                padding: '5px 10px', textAlign: 'left',
+                                                background: selected ? g.bg : '#fff',
+                                                border: `1px solid ${selected ? g.color + '60' : '#e2e8f0'}`,
+                                                borderRadius: 6, cursor: 'pointer',
+                                            }}
+                                        >
+                                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: g.color, flexShrink: 0, opacity: selected ? 1 : 0.45 }} />
+                                            <span style={{ fontSize: 11, fontWeight: 700, color: selected ? g.color : '#475569', minWidth: 92 }}>{g.label}</span>
+                                            <span style={{ fontSize: 10, color: selected ? g.color : '#94a3b8', lineHeight: 1.3 }}>{g.caption}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
                         <input
                             value={newTitle}
@@ -276,13 +339,16 @@ const RCAEvidencePanel: React.FC<RCAEvidencePanelProps> = ({
                                 padding: '8px 10px', background: '#f8fafc', borderRadius: 6,
                                 border: '1px solid #e2e8f0',
                             }}>
-                                <span style={{
-                                    fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
-                                    padding: '2px 6px', borderRadius: 3, flexShrink: 0, marginTop: 2,
-                                    background: config.bg, color: config.color,
-                                }}>
-                                    {config.label}
-                                </span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flexShrink: 0, marginTop: 2, alignItems: 'flex-start' }}>
+                                    <span style={{
+                                        fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                                        padding: '2px 6px', borderRadius: 3,
+                                        background: config.bg, color: config.color,
+                                    }}>
+                                        {config.label}
+                                    </span>
+                                    <EvidenceGradeBadge grade={ev.quality_grade} />
+                                </div>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: 12, color: '#334155', fontWeight: 500 }}>{ev.title}</div>
                                     {(ev as any).content && (

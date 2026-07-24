@@ -132,6 +132,9 @@ export interface RCANode {
     // ISO 14224 taxonomy code
     cause_code: string | null;
     evidence_notes: string | null;
+    // Fault-tree AND/OR gate (0217). Lived in evidence_notes before that,
+    // which poisoned the one field meant for evidence backing.
+    gate_type: 'AND' | 'OR' | null;
     // Which analysis method authored this node (0196). Every editor reads only its
     // own nodes — otherwise a fishbone's 6M category rows resurface as fault-tree
     // gate events and as phantom "WHY" steps. Stamped by DB trigger if omitted.
@@ -226,13 +229,119 @@ export interface BadActorEntry {
 export interface RCAEvidence {
     id: string;
     investigation_id: string;
-    evidence_type: 'photo' | 'document' | 'work_order' | 'fmea' | 'sensor_data' | 'note' | 'timeline_event';
+    evidence_type: 'photo' | 'document' | 'work_order' | 'fmea' | 'sensor_data' | 'note' | 'timeline_event' | 'interview';
     title: string;
     content: string | null;
     linked_entity_id: string | null;
     event_timestamp: string | null;
     uploaded_by: string | null;
+    // Data-quality ladder band (0217). NULL = ungraded (legacy items).
+    quality_grade: EvidenceQualityGrade | null;
     created_at: string;
+}
+
+// ─── Evidence quality ladder — the single source of truth ─────
+// The classic cause-verification data-quality ladder (Facts → Fantasies),
+// compressed to four bands a field user can pick under time pressure.
+// rank: higher = stronger. Used to color node badges by their BEST support.
+
+export type EvidenceQualityGrade = 'fact' | 'inference' | 'opinion' | 'hearsay';
+
+export interface EvidenceGradeDef {
+    value: EvidenceQualityGrade;
+    label: string;
+    caption: string;
+    color: string;
+    bg: string;
+    rank: number;
+}
+
+export const EVIDENCE_GRADES: EvidenceGradeDef[] = [
+    { value: 'fact',      label: 'Fact',               caption: 'Direct evidence — measurements, photos, logs',          color: '#15803d', bg: '#dcfce7', rank: 4 },
+    { value: 'inference', label: 'Inference',          caption: 'Logical conclusion or testable hypothesis from facts',  color: '#a16207', bg: '#fef9c3', rank: 3 },
+    { value: 'opinion',   label: 'Opinion / Belief',   caption: 'Expert judgment or assumption — verify with facts',     color: '#c2410c', bg: '#ffedd5', rank: 2 },
+    { value: 'hearsay',   label: 'Hearsay / Guess',    caption: 'Distorted 2nd-hand info or guessing — weakest support', color: '#b91c1c', bg: '#fee2e2', rank: 1 },
+];
+
+export const evidenceGradeDef = (grade: string | null | undefined): EvidenceGradeDef | null =>
+    EVIDENCE_GRADES.find(g => g.value === grade) ?? null;
+
+/** Strongest grade among a set of evidence items (null when empty/all ungraded). */
+export const bestEvidenceGrade = (items: { quality_grade: EvidenceQualityGrade | null }[]): EvidenceGradeDef | null =>
+    items.reduce<EvidenceGradeDef | null>((best, it) => {
+        const def = evidenceGradeDef(it.quality_grade);
+        return def && (!best || def.rank > best.rank) ? def : best;
+    }, null);
+
+// Node ↔ evidence link (0217) — how a cause claim cites its support.
+export interface RCANodeEvidenceLink {
+    id: string;
+    node_id: string;
+    evidence_id: string;
+    relation: 'supports' | 'refutes';
+    created_at: string;
+}
+
+// ─── Root-cause confidence (0218) ──────────────────────────────
+// One explainable number per root cause, derived from what it cites on the
+// data-quality ladder. Deliberately coarse: base score from the BEST
+// supporting grade, a small bonus for corroboration, a penalty per refuting
+// item. Multiple root causes → the weakest link carries the verdict.
+
+export interface RootCauseConfidence {
+    score: number;                                              // 0–100
+    band: 'verified' | 'probable' | 'tentative' | 'unverified';
+    label: string;
+    color: string;
+    bg: string;
+}
+
+const CONFIDENCE_BANDS: Record<RootCauseConfidence['band'], { label: string; color: string; bg: string }> = {
+    verified:   { label: 'Verified',   color: '#15803d', bg: '#dcfce7' },
+    probable:   { label: 'Probable',   color: '#a16207', bg: '#fef9c3' },
+    tentative:  { label: 'Tentative',  color: '#c2410c', bg: '#ffedd5' },
+    unverified: { label: 'Unverified', color: '#b91c1c', bg: '#fee2e2' },
+};
+
+const GRADE_BASE_SCORE: Record<EvidenceQualityGrade, number> = {
+    fact: 90, inference: 70, opinion: 45, hearsay: 25,
+};
+
+/** Map a stored 0–100 score back to its display band (also used by the DE board). */
+export function confidenceFromScore(score: number): RootCauseConfidence {
+    const band: RootCauseConfidence['band'] =
+        score >= 80 ? 'verified' : score >= 60 ? 'probable' : score >= 35 ? 'tentative' : 'unverified';
+    return { score, band, ...CONFIDENCE_BANDS[band] };
+}
+
+/** Confidence for ONE cause node from its citations. */
+export function nodeConfidence(
+    nodeId: string,
+    evidence: { id: string; quality_grade: EvidenceQualityGrade | null }[],
+    links: { node_id: string; evidence_id: string; relation: 'supports' | 'refutes' }[],
+): RootCauseConfidence {
+    const byId = new Map(evidence.map(e => [e.id, e]));
+    const own = links.filter(l => l.node_id === nodeId);
+    const supports = own.filter(l => l.relation === 'supports').map(l => byId.get(l.evidence_id)).filter(Boolean) as typeof evidence;
+    const refuteCount = own.filter(l => l.relation === 'refutes').length;
+
+    if (supports.length === 0) return confidenceFromScore(10);
+    // Ungraded counts as a middling 55 — unknown, not zero.
+    const base = Math.max(...supports.map(e => e.quality_grade ? GRADE_BASE_SCORE[e.quality_grade] : 55));
+    const corroboration = Math.min((supports.length - 1) * 5, 10);
+    const score = Math.min(95, Math.max(5, base + corroboration - refuteCount * 15));
+    return confidenceFromScore(score);
+}
+
+/** Confidence for a SET of root-cause nodes: the weakest link carries it. */
+export function rootCauseConfidence(
+    nodeIds: string[],
+    evidence: { id: string; quality_grade: EvidenceQualityGrade | null }[],
+    links: { node_id: string; evidence_id: string; relation: 'supports' | 'refutes' }[],
+): RootCauseConfidence | null {
+    if (nodeIds.length === 0) return null;
+    const scores = nodeIds.map(id => nodeConfidence(id, evidence, links));
+    return scores.reduce((worst, c) => (c.score < worst.score ? c : worst));
 }
 
 // RCA Corrective Actions (Step 4)
@@ -403,6 +512,8 @@ export interface DETask {
     root_cause_summary: string;
     proposed_solution: string;
     rca_id: string | null;
+    /** 0–100, from the RCA root cause's cited evidence grades (0218). NULL = unknown. */
+    evidence_confidence?: number | null;
     collaborators?: StudyCollaborator[];  // Team members JSONB
     created_by: string | null;
     created_at: string;
@@ -1024,7 +1135,7 @@ class AnalyzeService {
     }
 
     /** `method` may be omitted — a DB trigger stamps it from the parent investigation. */
-    async createRCANode(node: Omit<RCANode, 'id' | 'created_at' | 'method'> & { method?: RCAMethod | null }): Promise<RCANode | null> {
+    async createRCANode(node: Omit<RCANode, 'id' | 'created_at' | 'method' | 'gate_type'> & { method?: RCAMethod | null; gate_type?: 'AND' | 'OR' | null }): Promise<RCANode | null> {
         try {
             const { data, error } = await supabase.from('ers_rca_nodes').insert(node).select().single();
             if (error) { console.error('AnalyzeService.createRCANode:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
@@ -1112,7 +1223,7 @@ class AnalyzeService {
         }
     }
 
-    async addRCAEvidence(evidence: Omit<RCAEvidence, 'id' | 'created_at'>): Promise<RCAEvidence | null> {
+    async addRCAEvidence(evidence: Omit<RCAEvidence, 'id' | 'created_at' | 'quality_grade'> & { quality_grade?: EvidenceQualityGrade | null }): Promise<RCAEvidence | null> {
         try {
             const { data, error } = await supabase.from('ers_rca_evidence').insert(evidence).select().single();
             if (error) { console.error('AnalyzeService.addRCAEvidence:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
@@ -1130,6 +1241,49 @@ class AnalyzeService {
             return true;
         } catch (e) {
             console.error('Error deleting RCA evidence:', e);
+            return false;
+        }
+    }
+
+    // ── RCA node ↔ evidence links (0217) ─────────────────────
+
+    /** All links for one investigation in a single query (filtered through the node FK). */
+    async getNodeEvidenceLinks(investigationId: string): Promise<RCANodeEvidenceLink[]> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_rca_node_evidence')
+                .select('id, node_id, evidence_id, relation, created_at, node:ers_rca_nodes!inner(investigation_id)')
+                .eq('node.investigation_id', investigationId);
+            if (error) { console.error('AnalyzeService.getNodeEvidenceLinks:', error); throw error; }
+            return (data || []).map(({ node: _node, ...link }: any) => link) as RCANodeEvidenceLink[];
+        } catch (e) {
+            console.error('Error fetching node-evidence links:', e);
+            return [];
+        }
+    }
+
+    async linkNodeEvidence(nodeId: string, evidenceId: string, relation: 'supports' | 'refutes' = 'supports'): Promise<RCANodeEvidenceLink | null> {
+        try {
+            const { data, error } = await supabase
+                .from('ers_rca_node_evidence')
+                .upsert({ node_id: nodeId, evidence_id: evidenceId, relation }, { onConflict: 'node_id,evidence_id' })
+                .select('id, node_id, evidence_id, relation, created_at')
+                .single();
+            if (error) { console.error('AnalyzeService.linkNodeEvidence:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
+            return data as RCANodeEvidenceLink;
+        } catch (e) {
+            console.error('Error linking evidence to node:', e);
+            return null;
+        }
+    }
+
+    async unlinkNodeEvidence(linkId: string): Promise<boolean> {
+        try {
+            const { error } = await supabase.from('ers_rca_node_evidence').delete().eq('id', linkId);
+            if (error) { console.error('AnalyzeService.unlinkNodeEvidence:', error); notifyError('Something went wrong — please retry (details in the console).'); throw error; }
+            return true;
+        } catch (e) {
+            console.error('Error unlinking evidence:', e);
             return false;
         }
     }

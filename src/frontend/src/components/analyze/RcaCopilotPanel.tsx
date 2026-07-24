@@ -19,7 +19,13 @@ import { analyzeService, type RCAInvestigation, type RCANode } from '../../eam/s
 // ── Proposal shapes the agent may emit ─────────────────────────
 interface WhyChainProposal {
     type: 'why_chain';
-    nodes: { description: string; category: 'physical' | 'human' | 'latent'; is_root_cause?: boolean }[];
+    nodes: {
+        description: string;
+        category: 'physical' | 'human' | 'latent';
+        is_root_cause?: boolean;
+        /** Evidence items (by id) that support this claim — applied as citations. */
+        evidence_ids?: string[];
+    }[];
 }
 interface ActionsProposal {
     type: 'corrective_actions';
@@ -135,6 +141,13 @@ export const RcaCopilotPanel: React.FC<Props> = ({ inv, nodes, onApplied, onClos
                         cause_category: (n.category || null) as any,
                         cause_code: null, evidence_notes: null,
                     });
+                    // Cite the evidence the agent grounded this claim in, so the
+                    // chain lands evidenced rather than assumed.
+                    if (created && n.evidence_ids?.length) {
+                        for (const evId of n.evidence_ids) {
+                            await analyzeService.linkNodeEvidence(created.id, evId, 'supports');
+                        }
+                    }
                     parentId = created?.id ?? parentId;
                     depth++;
                 }
