@@ -172,3 +172,14 @@ export function runWeibullAnalyst(assetTag: string): Promise<AgentRunResponse> {
 export function runSpecialist(query: string, history: AgentTurn[] = []): Promise<AgentRunResponse> {
     return runAgent('specialist_supervisor', query, history);
 }
+
+/**
+ * Manual Reader — answers equipment questions from the organisation's own
+ * indexed OEM manuals and SOPs, citing document and page. Advisory only.
+ */
+export function runManualReader(question: string, assetTag?: string): Promise<AgentRunResponse> {
+    const query = assetTag
+        ? `${question}\n\n(The asset in question is ${assetTag}.)`
+        : question;
+    return runAgent('manual_reader', query);
+}

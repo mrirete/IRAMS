@@ -138,6 +138,15 @@ GRANT EXECUTE ON FUNCTION execute_readonly_sql(TEXT) TO service_role;
 
 -- ── 4. RAG Document Chunks (OEM Manual Storage) ────────────────────
 
+-- pgvector must exist before the VECTOR(768) column below. Added
+-- retroactively (2026-07-25): this file is NOT transaction-wrapped and the
+-- Supabase SQL editor runs statement-by-statement, so on the original apply
+-- the CREATE TABLE died here with "type vector does not exist" and every
+-- statement after it was skipped — ers_rag_documents never existed. Migration
+-- 0222 repairs the deployed database; this line keeps a FRESH project (each
+-- new tenant runs these migrations from 0000) from hitting the same wall.
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+
 CREATE TABLE IF NOT EXISTS ers_rag_documents (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     source          TEXT NOT NULL,

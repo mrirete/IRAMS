@@ -134,8 +134,9 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'specialist-import', label: 'Import CMMS Data', path: '/specialist/import' },
             { id: 'specialist-assessment', label: 'Assessment Report', path: '/specialist/assessment' },
             { id: 'specialist-deliver', label: 'Deliver Work', path: '/specialist/deliver' },
+            { id: 'specialist-manuals', label: 'Manuals', path: '/specialist/manuals' },
         ],
-        routes: ['/specialist', '/specialist/import', '/specialist/assessment', '/specialist/deliver'],
+        routes: ['/specialist', '/specialist/import', '/specialist/assessment', '/specialist/deliver', '/specialist/manuals'],
         dependencies: ['core'], section: 'ers', launchReady: true,
     },
     {

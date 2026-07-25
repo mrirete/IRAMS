@@ -966,7 +966,90 @@ const draftPmInterval: AgentTool = {
   },
 };
 
+// ── search_manuals ───────────────────────────────────────────────────────
+// Retrieval over indexed OEM manuals / SOPs (0222). Ranked Postgres
+// full-text via the search_manual_chunks RPC, which runs SECURITY INVOKER so
+// the caller's RLS applies. Every passage carries its source and page, so the
+// agent can cite "page 47" rather than assert from general knowledge.
+const searchManuals: AgentTool = {
+  name: "search_manuals",
+  description:
+    "Search the organisation's own indexed OEM manuals, SOPs and procedures for passages relevant to a question (torque specs, clearances, lubrication intervals, commissioning steps, alarm meanings). Returns ranked excerpts with their document name and page number for citation. Use this whenever a question could be settled by the equipment's documentation instead of general knowledge.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "What to look for, in the words a manual would use (e.g. 'mechanical seal flush plan', 'bearing axial clearance').",
+      },
+      asset_tag: {
+        type: "string",
+        description: "Restrict to manuals indexed against this asset tag. Omit to search all documents.",
+      },
+      limit: { type: "integer", description: "Max passages to return (default 8, max 25)." },
+    },
+    required: ["query"],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const query = String(args?.query ?? "").trim();
+    if (!query) {
+      return { data: { passages: [] }, sources: [], warnings: ["No query supplied."] };
+    }
+    const limit = Number.isFinite(args?.limit) ? Math.max(1, Math.min(25, args.limit)) : 8;
+    const assetTag = typeof args?.asset_tag === "string" && args.asset_tag.trim()
+      ? args.asset_tag.trim()
+      : null;
+
+    const { data, error } = await ctx.db.rpc("search_manual_chunks", {
+      q: query,
+      asset: assetTag,
+      max_results: limit,
+    });
+    if (error) {
+      // Pre-0222 databases have no RPC — say so plainly rather than failing the run.
+      return {
+        data: { passages: [], indexed: false },
+        sources: [],
+        warnings: [`Manual search is unavailable (${error.message}). No manuals may be indexed yet.`],
+      };
+    }
+
+    const rows = (data ?? []) as Record<string, unknown>[];
+    const passages = rows.map((r) => ({
+      document: r.source,
+      page: r.page_number,
+      document_type: r.document_type,
+      asset_tag: r.asset_tag,
+      relevance: Math.round(Number(r.score ?? 0) * 1000) / 1000,
+      text: r.chunk_text,
+    }));
+    for (const p of passages) {
+      ctx.sources.push({
+        kind: "manual",
+        ref: String(p.document),
+        label: p.page ? `${p.document} p.${p.page}` : String(p.document),
+      });
+    }
+
+    return {
+      data: {
+        query,
+        asset_tag: assetTag,
+        passage_count: passages.length,
+        passages,
+        retrieval: "Ranked full-text search (ts_rank_cd) over indexed manual chunks.",
+      },
+      sources: [{ kind: "manual", ref: query, label: `${passages.length} manual passage(s)` }],
+      warnings: passages.length === 0
+        ? ["No indexed manual matched. Either the wording differs from the document's, or that manual has not been indexed yet — advise the user to add it under Specialist → Manuals."]
+        : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
+  [searchManuals.name]: searchManuals,
   [analyzeWeibull.name]: analyzeWeibull,
   [draftPmInterval.name]: draftPmInterval,
   [rankBadActors.name]: rankBadActors,
