@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Lock, Database, X, Flame } from 'lucide-reac
 import { MODULE_REGISTRY, type ModuleDefinition, type SidebarChild } from '../config/moduleRegistry';
 import { useLicense } from '../contexts/LicenseContext';
 import { useAuth } from '../eam/contexts/AuthContext';
+import { useEdition } from '../lib/useEdition';
 import type { ModuleName } from '../eam/types';
 
 /**
@@ -29,6 +30,10 @@ const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
     '/notifications': 'notifications',
     '/finops': 'finops',
     '/reports': 'analytics',
+    // ── Reliability Specialist (hero product — reliability permission) ──
+    '/specialist': 'reliability',
+    '/specialist/import': 'reliability',
+    '/specialist/assessment': 'reliability',
     // ── Reliability Suite (dedicated permission key) ──
     '/reliability-metrics': 'reliability',
     '/predict': 'reliability',
@@ -76,6 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     const location = useLocation();
     const { isModuleEnabled } = useLicense();
     const { permissions, role, loading: authLoading } = useAuth();
+    const { edition } = useEdition();
 
     // ── Admin-tier roles bypass the license gate (always see all modules) ──
     const isAdminTier = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
@@ -115,6 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
      * section is hidden even if individual children might pass.
      */
     const MODULE_ID_TO_PERM_KEY: Partial<Record<string, ModuleName>> = {
+        'specialist': 'reliability', // Reliability Specialist → reliability permission
         'predict': 'reliability',    // Reliability Tier → reliability permission
         'comply': 'integrity',       // Integrity → integrity permission
         'audits': 'audits',          // Audit Suite → audits permission
@@ -128,9 +135,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
         return permissions[permKey]?.view === true;
     };
 
-    // ── Module filtering: License gate → Module RBAC gate → Child RBAC gate ──
+    // ── Module filtering: Edition gate → License gate → Module RBAC gate → Child RBAC gate ──
     const visibleModules = useMemo(() => {
         return MODULE_REGISTRY.filter(m => {
+            // 0. Edition gate (strategy §5.2): Specialist edition hides the EAM
+            //    section (except Core: Home/Assets/Admin stay — they are the
+            //    platform basics the Specialist's data lives in).
+            if (edition === 'specialist' && m.section === 'eam' && m.id !== 'core') return false;
+
             // 1. License/package check (admin-tier roles bypass this gate)
             if (!isAdminTier && !isModuleEnabled(m.id)) return false;
 
@@ -156,7 +168,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
             return true;
         });
-    }, [permissions, authLoading, isModuleEnabled, isAdminTier]);
+    }, [permissions, authLoading, isModuleEnabled, isAdminTier, edition]);
 
     // ── Blue active highlight for active, crisp slate for inactive ──
     const activeBgStyle: React.CSSProperties = {

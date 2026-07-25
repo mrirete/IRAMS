@@ -3,6 +3,7 @@ import { lazyWithReload, prefetchRegisteredRoutes } from './lib/lazyWithReload';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider, ProtectedRoute, useAuth } from './contexts/AuthContext';
+import { useEdition } from './lib/useEdition';
 import { ToastProvider } from './eam/contexts/ToastContext';
 import { ConfirmProvider } from './eam/contexts/ConfirmContext';
 import { SettingsProvider } from './contexts/SettingsContext';
@@ -28,6 +29,9 @@ const WorkCentersPage = lazyWithReload(() => import('./pages/WorkCentersPage').t
 const CompaniesPage = lazyWithReload(() => import('./pages/CompaniesPage').then(m => ({ default: m.CompaniesPage })));
 const AdminActivityPage = lazyWithReload(() => import('./pages/admin/AdminActivityPage').then(m => ({ default: m.AdminActivityPage })));
 const InvitationsPage = lazyWithReload(() => import('./pages/admin/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
+const SpecialistWorkspacePage = lazyWithReload(() => import('./pages/specialist/SpecialistWorkspacePage').then(m => ({ default: m.SpecialistWorkspacePage })));
+const ImportWizardPage = lazyWithReload(() => import('./pages/specialist/ImportWizardPage').then(m => ({ default: m.ImportWizardPage })));
+const AssessmentReportPage = lazyWithReload(() => import('./pages/specialist/AssessmentReportPage').then(m => ({ default: m.AssessmentReportPage })));
 
 // ── React Query Client ──────────────────────────────────
 const queryClient = new QueryClient({
@@ -112,7 +116,10 @@ const Gated = ({ moduleId, children }: { moduleId: string; children: React.React
 const FIELD_ROLES = new Set(['TECHNICIAN']);
 const RoleLanding = () => {
   const { role } = useAuth();
+  const { edition, loaded } = useEdition();
   if (role && FIELD_ROLES.has(role.toUpperCase())) return <Navigate to="/my-work" replace />;
+  // Specialist edition: the workspace IS home (strategy §5.2).
+  if (loaded && edition === 'specialist') return <Navigate to="/specialist" replace />;
   return <PermissionGate module="dashboard"><EamDashboard /></PermissionGate>;
 };
 
@@ -182,6 +189,9 @@ function App() {
                                 {/* ERS-UNIQUE PAGES (Intelligence/Reliability) */}
                                 {/* ═══════════════════════════════════════════ */}
                                 {/* Reliability tier */}
+                                <Route path="/specialist" element={<Gated moduleId="specialist"><SpecialistWorkspacePage /></Gated>} />
+                                <Route path="/specialist/import" element={<Gated moduleId="specialist"><ImportWizardPage /></Gated>} />
+                                <Route path="/specialist/assessment" element={<Gated moduleId="specialist"><AssessmentReportPage /></Gated>} />
                                 <Route path="/predict" element={<Gated moduleId="predict"><PredictPage /></Gated>} />
                                 <Route path="/reliability" element={<Gated moduleId="predict"><ReliabilityHomePage /></Gated>} />
                                 <Route path="/reliability-metrics" element={<Gated moduleId="predict"><ReliabilityMetricsPage /></Gated>} />

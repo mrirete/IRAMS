@@ -122,3 +122,34 @@ export function runWarrantyRecovery(assetTag?: string): Promise<AgentRunResponse
         : 'Scan the fleet for recoverable warranty spend and recommend the highest-value claims.';
     return runAgent('warranty_recovery', query);
 }
+
+/**
+ * CMMS Analyst — proposes a column mapping for a foreign CMMS export
+ * (Specialist Phase 1). The payload carries headers + sample rows; the answer
+ * contains a ```import-mapping``` fenced block parsed by
+ * lib/importPipeline.parseMappingProposal. Advisory: a human confirms the
+ * mapping in the wizard before anything is staged.
+ */
+export function runCmmsAnalyst(payload: {
+    file_name: string;
+    source_hint?: string;
+    headers: string[];
+    sample_rows: unknown[][];
+}): Promise<AgentRunResponse> {
+    const query =
+        `Propose an import mapping for this CMMS export.\n` +
+        `\`\`\`json\n${JSON.stringify(payload)}\n\`\`\``;
+    return runAgent('cmms_analyst', query);
+}
+
+/**
+ * Assessment Narrator — writes the executive summary over findings computed
+ * deterministically by the app (bad actors, Weibull, PM waste, warranty,
+ * integrity, data quality). Numbers in, prose out — never the reverse.
+ */
+export function runAssessmentNarrator(findings: Record<string, unknown>): Promise<AgentRunResponse> {
+    const query =
+        `Write the executive summary for this reliability assessment.\n` +
+        `\`\`\`json\n${JSON.stringify(findings)}\n\`\`\``;
+    return runAgent('assessment_narrator', query);
+}

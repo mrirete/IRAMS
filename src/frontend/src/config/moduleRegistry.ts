@@ -8,7 +8,7 @@
 import {
     Home, Wrench, Package,
     ShieldCheck, RefreshCcw, Users, DollarSign, Shield,
-    FileBarChart, ClipboardCheck, HardHat,
+    FileBarChart, ClipboardCheck, HardHat, BrainCircuit,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -16,6 +16,7 @@ import type { LucideIcon } from 'lucide-react';
 
 export type ModuleId =
     | 'core'        // Always on — Home, Assets, Admin
+    | 'specialist'  // Reliability Specialist — workspace, CMMS import, assessment (the hero product)
     | 'work'        // Work Orders + Service Requests
     | 'inventory'   // Inventory + BOM + PO
     | 'people'      // People, Contacts, OrgChart, Vendors
@@ -123,6 +124,18 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         ],
         routes: ['/contacts', '/vendors'],
         dependencies: ['core'], section: 'eam',
+    },
+    {
+        id: 'specialist', label: 'Reliability Specialist',
+        description: 'Your AI reliability engineer — workspace, CMMS data import, assessment report',
+        tier: 'intelligence', icon: BrainCircuit, path: null,
+        children: [
+            { id: 'specialist-home', label: 'Workspace', path: '/specialist' },
+            { id: 'specialist-import', label: 'Import CMMS Data', path: '/specialist/import' },
+            { id: 'specialist-assessment', label: 'Assessment Report', path: '/specialist/assessment' },
+        ],
+        routes: ['/specialist', '/specialist/import', '/specialist/assessment'],
+        dependencies: ['core'], section: 'ers', launchReady: true,
     },
     {
         id: 'predict', label: 'Reliability Tier',
