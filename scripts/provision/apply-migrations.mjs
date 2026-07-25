@@ -67,11 +67,16 @@ function parseArgs(argv) {
         command: '--status',
         projectRef: process.env.SUPABASE_PROJECT_REF ?? '',
         allowDuplicates: false,
+        continueOnError: false,
     };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === '--project-ref') args.projectRef = argv[++i] ?? '';
         else if (a === '--allow-duplicates') args.allowDuplicates = true;
+        // Diagnostic only: keep going after a failure to enumerate EVERY broken
+        // migration in one pass. Never use for real provisioning — later files
+        // run against a schema missing whatever the failed ones should have made.
+        else if (a === '--continue-on-error') args.continueOnError = true;
         else if (['--status', '--dry-run', '--apply', '--baseline'].includes(a)) args.command = a;
         else if (a === '--help' || a === '-h') args.command = '--help';
     }
@@ -156,7 +161,7 @@ function reportBlockers(plan, { forExecution, allowDuplicates }) {
 }
 
 async function main() {
-    const { command, projectRef, allowDuplicates } = parseArgs(process.argv.slice(2));
+    const { command, projectRef, allowDuplicates, continueOnError } = parseArgs(process.argv.slice(2));
 
     if (command === '--help') {
         console.log(await readFile(fileURLToPath(import.meta.url), 'utf8').then((s) => s.split('*/')[0]));
@@ -228,6 +233,7 @@ async function main() {
     await runSql(projectRef, token, LEDGER_DDL);
 
     let applied = 0;
+    const failures = [];
     for (const m of plan.pending) {
         const sql = contents[m.file];
         const mode = transactionMode(sql);
@@ -242,14 +248,31 @@ async function main() {
             console.log('ok');
         } catch (e) {
             console.log('FAILED');
-            console.error(`\n✖ ${m.file} failed and was rolled back${mode === 'unwrapped' ? ' — EXCEPT: this file ran unwrapped, so inspect the schema before retrying' : ''}.`);
-            console.error(`  ${e.message}`);
-            console.error(`\nApplied ${applied} migration(s) before stopping. Fix the file and re-run --apply to continue from here.`);
-            process.exitCode = 1;
-            return;
+            // A failed migration is NOT recorded in the ledger — it stays
+            // pending so a fixed version applies on the next run.
+            failures.push({ file: m.file, mode, error: e.message });
+            if (!continueOnError) {
+                console.error(`\n✖ ${m.file} failed and was rolled back${mode === 'unwrapped' ? ' — EXCEPT: this file ran unwrapped, so inspect the schema before retrying' : ''}.`);
+                console.error(`  ${e.message}`);
+                console.error(`\nApplied ${applied} migration(s) before stopping. Fix the file and re-run --apply to continue from here.`);
+                process.exitCode = 1;
+                return;
+            }
         }
     }
+
     console.log(`\n✔ Applied ${applied} migration(s).`);
+    if (failures.length) {
+        console.error(`\n✖ ${failures.length} migration(s) FAILED and remain pending:`);
+        for (const f of failures) {
+            const firstLine = String(f.error).split('\n').find((l) => /ERROR|error/.test(l)) ?? String(f.error).split('\n')[0];
+            console.error(`    ${f.file}`);
+            console.error(`      ${firstLine.trim().slice(0, 160)}`);
+        }
+        console.error('\n  Note: with --continue-on-error, later migrations ran against a schema missing');
+        console.error('  whatever the failed ones should have created, so some of these are knock-on effects.');
+        process.exitCode = 1;
+    }
 }
 
 main().catch((e) => {

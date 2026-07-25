@@ -147,12 +147,53 @@ Caveat: baselining asserts the schema already matches. That project has known hi
 
 ---
 
-## 6. Known issues
+## 6. ⛔ BLOCKER — the migration history is not replayable
+
+**Tested 2026-07-25 on a throwaway project (created, replayed, deleted).** Result: of 230 migrations, **187 applied and 43 failed**. §3.2 as written cannot yet provision a real customer.
+
+Reproduce with:
+
+```bash
+node scripts/provision/apply-migrations.mjs --project-ref <scratch> --apply --allow-duplicates --continue-on-error
+```
+
+`--continue-on-error` is **diagnostic only** — it keeps going so one pass enumerates every break. Never use it for real provisioning.
+
+### 6.1 Root causes (the rest are knock-on)
+
+| # | Migration | Failure | Class |
+|---|---|---|---|
+| 1 | `0114_create_audit_logs.sql` | `syntax error at or near "br"` — **the file's entire content is the two characters `br`** | **Corrupted file.** Cascades to 0118, 0121, 0130, 0158 → then 0157, 0160, 0162, 0165, 0167 → **0171**, which defines `public.is_admin()`, cascading again to 0173, 0175, 0183, 0186, 0190, 0191, 0219, 0221, 0222. One lost file accounts for roughly half the failures. |
+| 2 | `0047_seed_reference_data.sql` | `relation "reference_codes" does not exist` | Numbered before the migration that creates the table. Cascades to 0049, 0050, 0054, 0060, 0061, 0062, 0064. |
+| 3 | `0025_add_rca_collaborators.sql` | `relation "ers_rca_investigations" does not exist` | Numbered ~130 files before its dependency. |
+| 4 | `0026_create_jsa_tables.sql` | `function moddatetime() does not exist` | Extension never enabled — **the same class of bug as `0149`/pgvector.** Cascades to 0051. |
+| 5 | `0044_add_finops_tables.sql` | `function update_modified_column() does not exist` | Helper function never defined. |
+| 6 | `0029_add_cost_center_cols.sql` | `relation "cost_centers" does not exist` | Ordering. |
+| 7 | `0086_seed_manufacturers.sql` | `column "default_role" of relation "contacts" does not exist` | Ordering. |
+| 8 | `0027_populate_dictionary_hierarchy.sql` | HTML gateway error, not SQL | Needs investigation (file is only 2 KB, so not size). |
+| 9 | `0201_atp_reservation_netting.sql` | `column wop.quantity does not exist` | Ordering. |
+| 10 | `0216_schema_drift_repair.sql` | FK violation on `warranties` | Seed-data ordering. |
+
+The **23 duplicate migration numbers** (0001, 0002, 0003, 0022, 0025, 0026, 0029, 0031, 0032, 0033, 0036, 0037, 0038, 0049, 0050, 0051, 0052, 0053, 0072, 0073, 0074, 0102, 0141 — 0141 has four files) are a real hazard but were **not** the main cause; ordering and the corrupted file were.
+
+### 6.2 Recommended fix — squash to a baseline schema
+
+Repairing 230 files of history is the losing option: each fix needs a fresh replay to verify, and the archaeology never ends. The standard answer is to **squash**:
+
+1. `pg_dump --schema-only` the known-good origin project → commit as `supabase/baseline/schema.sql`.
+2. New tenant = create project → load `schema.sql` → `--baseline` the runner → apply only migrations added *after* the dump.
+3. Existing migrations stay in the repo as history and are never replayed.
+
+**This needs one thing this environment lacks: Docker** (the Supabase CLI runs `pg_dump` in a container) **or the origin project's database password** for a direct `pg_dump`. Provide either and the squash is a short job.
+
+Interim: nothing blocks the existing project or ongoing development — the runner applies new migrations incrementally today (0223 went in that way). The blocker is specifically **new-tenant provisioning**.
+
+### 6.3 Other issues
 
 | Issue | Impact | Status |
 |---|---|---|
-| **23 duplicate migration numbers** (0001, 0002, 0003, 0022, 0025, 0026, 0029, 0031, 0032, 0033, 0036, 0037, 0038, 0049, 0050, 0051, 0052, 0053, 0072, 0073, 0074, 0102, 0141) | Replay order on a fresh project is filename-decided and may not match the original apply order | Runner blocks `--apply` when any are pending. **Prove a scratch replay before the first customer.** |
-| Migrations not wrapped in transactions | A mid-file failure half-applies (this is how `0149` lost `ers_rag_documents`) | Runner auto-wraps; `--dry-run` shows the mode per file |
+| Migrations not wrapped in transactions | A mid-file failure half-applies (how `0149` lost `ers_rag_documents`) | Runner auto-wraps; `--dry-run` shows the mode per file |
+| `0177_connectors.sql` is empty by design, `0114` is empty by accident | Two files lost content; only one was noticed at the time | 0114 must be reconstructed or superseded |
 | `0071` header references a historical project ref | Cosmetic — a comment only | No action |
 
 ---
