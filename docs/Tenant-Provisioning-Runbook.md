@@ -45,19 +45,42 @@ $env:SUPABASE_ACCESS_TOKEN = "sbp_..."
 
 Create it in the Supabase dashboard (or Management API). Record the **project ref** and the database password.
 
-### 3.2 Apply the schema
+### 3.2 Load the baseline schema and reference data
+
+**Do not replay migration history** — it does not work (§6). New tenants load a baseline generated from the known-good origin project:
 
 ```bash
-# See what would run, and how each file will be executed
-node scripts/provision/apply-migrations.mjs --project-ref <ref> --dry-run
+# 1. Schema — 150 tables, 489 indexes, 472 policies, 37 functions, 6 views…
+node scripts/provision/load-baseline.mjs --project-ref <ref> \
+     --file src/frontend/supabase/baseline/schema.sql
 
-# Apply everything, in order, stopping at the first failure
-node scripts/provision/apply-migrations.mjs --project-ref <ref> --apply
+# 2. Reference data — codes, dictionaries, config, audit templates (448 rows)
+node scripts/provision/load-baseline.mjs --project-ref <ref> \
+     --file src/frontend/supabase/baseline/seed.sql
+
+# 3. Record history so FUTURE migrations apply incrementally
+node scripts/provision/apply-migrations.mjs --project-ref <ref> --baseline
+
+# 4. Confirm
+node scripts/provision/load-baseline.mjs --project-ref <ref> --census
 ```
 
-The runner keeps a ledger (`public.schema_migrations`) in the target project, wraps each migration in a transaction unless the file manages its own (or contains something Postgres refuses to run in one), and records a checksum so a later edit to an applied migration is caught rather than silently re-run.
+Step 3 matters: `--baseline` marks every existing migration as applied without running it, so a migration added tomorrow applies to this tenant with a plain `--apply`.
 
-> ⚠️ **Before the first real customer, prove the replay on a scratch project.** The repo has **23 duplicate migration numbers** (see §6). On a fresh project their order is decided by filename, which may not match the order they were originally applied. The runner refuses `--apply` when duplicates are *pending* until you pass `--allow-duplicates` — do that only after a scratch replay has succeeded.
+**Verified 2026-07-25** by loading into a throwaway project and comparing against the origin: all ten catalog counts matched, and six structural fingerprints (columns with types and defaults, constraint definitions, index definitions, policy predicates, function signatures, every enum label) matched exactly. Reference data matched row-for-row across all 15 tables, with zero rows in `assets`, `work_orders`, `users`, `contacts`, `audit_logs` or any operational table.
+
+### 3.2a Refreshing the baseline
+
+Regenerate whenever the origin schema changes materially:
+
+```bash
+node scripts/provision/export-schema.mjs --project-ref hacrebcfvyqdnjvilhqc
+node scripts/provision/export-seed.mjs   --project-ref hacrebcfvyqdnjvilhqc
+```
+
+`export-seed.mjs` carries an explicit allowlist of reference tables. **Anything not on that list is never exported** — adding a table means asserting it holds no customer data. `schema_migrations` is deliberately excluded, since each project owns its own ledger.
+
+Seed loading suppresses triggers (`session_replication_role = replica`), so the audit trigger does not record the seeding itself and a new tenant opens with an empty `audit_logs`.
 
 ### 3.3 Function secrets
 
@@ -147,7 +170,9 @@ Caveat: baselining asserts the schema already matches. That project has known hi
 
 ---
 
-## 6. ⛔ BLOCKER — the migration history is not replayable
+## 6. Why history is not replayed (RESOLVED — kept as the record)
+
+> **Status: no longer a blocker.** §3.2 provisions from a verified baseline instead. This section documents what the replay test found, so the decision isn't re-litigated and the underlying repo issues stay visible.
 
 **Tested 2026-07-25 on a throwaway project (created, replayed, deleted).** Result: of 230 migrations, **187 applied and 43 failed**. §3.2 as written cannot yet provision a real customer.
 
@@ -176,17 +201,19 @@ node scripts/provision/apply-migrations.mjs --project-ref <scratch> --apply --al
 
 The **23 duplicate migration numbers** (0001, 0002, 0003, 0022, 0025, 0026, 0029, 0031, 0032, 0033, 0036, 0037, 0038, 0049, 0050, 0051, 0052, 0053, 0072, 0073, 0074, 0102, 0141 — 0141 has four files) are a real hazard but were **not** the main cause; ordering and the corrupted file were.
 
-### 6.2 Recommended fix — squash to a baseline schema
+### 6.2 The fix that shipped — squash to a verified baseline
 
-Repairing 230 files of history is the losing option: each fix needs a fresh replay to verify, and the archaeology never ends. The standard answer is to **squash**:
+Repairing 230 files of history was the losing option: each fix needs a fresh replay to verify, and the archaeology never ends. History is now squashed into a baseline instead (§3.2).
 
-1. `pg_dump --schema-only` the known-good origin project → commit as `supabase/baseline/schema.sql`.
-2. New tenant = create project → load `schema.sql` → `--baseline` the runner → apply only migrations added *after* the dump.
-3. Existing migrations stay in the repo as history and are never replayed.
+`supabase db dump` runs `pg_dump` inside Docker, which wasn't available, so `export-schema.mjs` asks Postgres to emit its own DDL over the Management API — `pg_get_functiondef`, `pg_get_indexdef`, `pg_get_constraintdef`, `pg_get_triggerdef`, `pg_get_viewdef`, plus catalog reads for tables, enums, RLS and grants. Emission order mirrors pg_dump (extensions → types → sequences → functions → tables → constraints → indexes → views → triggers → RLS → grants) with `check_function_bodies = off` so functions can be created before the tables they reference.
 
-**This needs one thing this environment lacks: Docker** (the Supabase CLI runs `pg_dump` in a container) **or the origin project's database password** for a direct `pg_dump`. Provide either and the squash is a short job.
+Because it is hand-rolled rather than `pg_dump`, it is **verified rather than trusted**: load it into a scratch project and compare fingerprints against the origin (§3.2). Re-run that check after any baseline refresh.
 
-Interim: nothing blocks the existing project or ongoing development — the runner applies new migrations incrementally today (0223 went in that way). The blocker is specifically **new-tenant provisioning**.
+### 6.2a Repairs made anyway
+
+- **`0114_create_audit_logs.sql` reconstructed** from the live schema. It is no longer a two-character file, so a subset replay of history no longer detonates at the root of the largest cascade.
+
+Remaining root causes (0047, 0025, 0026, 0044, 0029, 0086, 0027, 0201, 0216) are **not** fixed. They are harmless now — history is never replayed — but they are why a partial replay still cannot be trusted.
 
 ### 6.3 Other issues
 
