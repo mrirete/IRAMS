@@ -34,6 +34,7 @@ const ROUTE_TO_PERMISSION: Record<string, ModuleName> = {
     '/specialist': 'reliability',
     '/specialist/import': 'reliability',
     '/specialist/assessment': 'reliability',
+    '/specialist/deliver': 'reliability',
     // ── Reliability Suite (dedicated permission key) ──
     '/reliability-metrics': 'reliability',
     '/predict': 'reliability',

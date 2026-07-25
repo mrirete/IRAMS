@@ -32,6 +32,7 @@ const InvitationsPage = lazyWithReload(() => import('./pages/admin/InvitationsPa
 const SpecialistWorkspacePage = lazyWithReload(() => import('./pages/specialist/SpecialistWorkspacePage').then(m => ({ default: m.SpecialistWorkspacePage })));
 const ImportWizardPage = lazyWithReload(() => import('./pages/specialist/ImportWizardPage').then(m => ({ default: m.ImportWizardPage })));
 const AssessmentReportPage = lazyWithReload(() => import('./pages/specialist/AssessmentReportPage').then(m => ({ default: m.AssessmentReportPage })));
+const DeliverWorkPage = lazyWithReload(() => import('./pages/specialist/DeliverWorkPage').then(m => ({ default: m.DeliverWorkPage })));
 
 // ── React Query Client ──────────────────────────────────
 const queryClient = new QueryClient({
@@ -192,6 +193,7 @@ function App() {
                                 <Route path="/specialist" element={<Gated moduleId="specialist"><SpecialistWorkspacePage /></Gated>} />
                                 <Route path="/specialist/import" element={<Gated moduleId="specialist"><ImportWizardPage /></Gated>} />
                                 <Route path="/specialist/assessment" element={<Gated moduleId="specialist"><AssessmentReportPage /></Gated>} />
+                                <Route path="/specialist/deliver" element={<Gated moduleId="specialist"><DeliverWorkPage /></Gated>} />
                                 <Route path="/predict" element={<Gated moduleId="predict"><PredictPage /></Gated>} />
                                 <Route path="/reliability" element={<Gated moduleId="predict"><ReliabilityHomePage /></Gated>} />
                                 <Route path="/reliability-metrics" element={<Gated moduleId="predict"><ReliabilityMetricsPage /></Gated>} />

@@ -12,6 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Sparkles, Send, Loader2, ClipboardList, ScrollText, UploadCloud,
     BarChart2, RefreshCw, ChevronRight, X, BrainCircuit, Activity, BadgeDollarSign,
+    Check,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -45,6 +46,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
     // ── proposals ──
     const [proposals, setProposals] = useState<AgentAction[]>([]);
     const [dismissing, setDismissing] = useState<string | null>(null);
+    const [approving, setApproving] = useState<string | null>(null);
 
     // ── work log ──
     const [log, setLog] = useState<AuditRow[]>([]);
@@ -129,6 +131,22 @@ export const SpecialistWorkspacePage: React.FC = () => {
         }
     };
 
+    /**
+     * Approve = the human decision the whole governance model rests on. It marks
+     * the proposal approved; delivering it to the customer's CMMS happens on the
+     * Deliver page, which re-checks approval server-side before any egress.
+     */
+    const approve = async (id: string) => {
+        setApproving(id);
+        try {
+            await predictionService.updateAgentActionStatus(id, 'approved', user?.username || user?.id || 'workspace', 'Approved in Specialist workspace');
+            setProposals((p) => p.filter((x) => x.id !== id));
+            void loadAll();
+        } finally {
+            setApproving(null);
+        }
+    };
+
     const briefingText = briefingLive ?? briefing?.response_text ?? null;
     const briefingWhen = briefingLive ? 'just now' : briefing ? new Date(briefing.created_at).toLocaleString() : null;
 
@@ -181,10 +199,16 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     </section>
 
                     <section className="rounded-2xl border border-slate-200 bg-white p-5">
-                        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-3">
-                            <ClipboardList size={15} className="text-amber-500" /> Proposals awaiting your review
-                            {proposals.length > 0 && <span className="text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5">{proposals.length}</span>}
-                        </h2>
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
+                                <ClipboardList size={15} className="text-amber-500" /> Proposals awaiting your review
+                                {proposals.length > 0 && <span className="text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5">{proposals.length}</span>}
+                            </h2>
+                            <button onClick={() => navigate('/specialist/deliver')}
+                                className="flex items-center gap-1.5 text-xs font-semibold text-violet-600 hover:text-violet-800">
+                                <Send size={12} /> Deliver approved work
+                            </button>
+                        </div>
                         {proposals.length === 0
                             ? <p className="text-sm text-slate-400 italic">Nothing pending. Proposals drafted by any agent land here for a human decision.</p>
                             : <div className="divide-y divide-slate-100">
@@ -201,8 +225,14 @@ export const SpecialistWorkspacePage: React.FC = () => {
                                                 </div>
                                             </div>
                                             <button onClick={() => navigate(home.path)}
-                                                className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-800">
-                                                Review in {home.label} <ChevronRight size={13} />
+                                                title={`Open the full context in ${home.label}`}
+                                                className="hidden sm:flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
+                                                {home.label} <ChevronRight size={13} />
+                                            </button>
+                                            <button onClick={() => void approve(p.id)} disabled={approving === p.id}
+                                                title="Approve — queues this for delivery to your CMMS"
+                                                className="flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2.5 py-1.5 disabled:opacity-50">
+                                                {approving === p.id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Approve
                                             </button>
                                             <button onClick={() => void dismiss(p.id)} disabled={dismissing === p.id}
                                                 title="Dismiss proposal" className="text-slate-300 hover:text-rose-500 disabled:opacity-50">
