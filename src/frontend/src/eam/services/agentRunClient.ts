@@ -153,3 +153,22 @@ export function runAssessmentNarrator(findings: Record<string, unknown>): Promis
         `\`\`\`json\n${JSON.stringify(findings)}\n\`\`\``;
     return runAgent('assessment_narrator', query);
 }
+
+/**
+ * Weibull Analyst — censored Weibull fit + PM-interval recommendation for one
+ * asset (Tier 2: may queue a draft_pm_interval proposal for human review).
+ */
+export function runWeibullAnalyst(assetTag: string): Promise<AgentRunResponse> {
+    return runAgent(
+        'weibull_analyst',
+        `Characterise the failure behaviour of asset ${assetTag} and recommend a statistically defensible PM basis.`,
+    );
+}
+
+/**
+ * The Specialist (supervisor) — the workspace conversation partner. Full read
+ * toolkit; chains tools for end-to-end asset workups. Advisory only.
+ */
+export function runSpecialist(query: string, history: AgentTurn[] = []): Promise<AgentRunResponse> {
+    return runAgent('specialist_supervisor', query, history);
+}

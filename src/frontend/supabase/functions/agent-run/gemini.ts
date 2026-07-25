@@ -48,8 +48,9 @@ export async function runToolLoop(
   ];
   let tokensUsed = 0;
   const toolCalls: string[] = [];
+  const maxTurns = agent.maxTurns ?? MAX_TURNS;
 
-  for (let turn = 0; turn < MAX_TURNS; turn++) {
+  for (let turn = 0; turn < maxTurns; turn++) {
     const body = {
       systemInstruction: { parts: [{ text: agent.systemPrompt }] },
       contents,

@@ -66,4 +66,6 @@ export interface AgentDefinition {
   tools: AgentTool[];
   maxTier: GovernanceTier;
   module: string; // for the audit log
+  /** Tool-loop turn budget (default 6). The supervisor's end-to-end workups need more. */
+  maxTurns?: number;
 }

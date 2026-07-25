@@ -11,11 +11,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Sparkles, Send, Loader2, ClipboardList, ScrollText, UploadCloud,
-    BarChart2, RefreshCw, ChevronRight, X, BrainCircuit,
+    BarChart2, RefreshCw, ChevronRight, X, BrainCircuit, Activity, BadgeDollarSign,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
-import { runAgent, runReliabilityDigest, type AgentTurn } from '../../eam/services/agentRunClient';
+import { useSettings } from '../../contexts/SettingsContext';
+import AdvisoryAgentPanel from '../../eam/components/ui/AdvisoryAgentPanel';
+import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, type AgentTurn } from '../../eam/services/agentRunClient';
 import { predictionService, type AgentAction } from '../../eam/services/PredictionService';
 
 interface AuditRow {
@@ -33,6 +35,7 @@ const PROPOSAL_HOMES: Record<string, { label: string; path: string }> = {
 export const SpecialistWorkspacePage: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
+    const { formatCurrency } = useSettings();
 
     // ── briefing ──
     const [briefing, setBriefing] = useState<AuditRow | null>(null);
@@ -45,6 +48,9 @@ export const SpecialistWorkspacePage: React.FC = () => {
 
     // ── work log ──
     const [log, setLog] = useState<AuditRow[]>([]);
+
+    // ── value ledger (v1: proposal-based) ──
+    const [ledger, setLedger] = useState<{ approved: number; pending: number; valueIdentified: number } | null>(null);
 
     // ── chat ──
     const [msgs, setMsgs] = useState<AgentTurn[]>([]);
@@ -59,12 +65,26 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 .eq('action_type', 'agent_run')
                 .order('created_at', { ascending: false })
                 .limit(15),
-            predictionService.getAgentActions(undefined, 'pending_review'),
+            predictionService.getAgentActions(),
         ]);
         const rows = (logQ.data ?? []) as AuditRow[];
         setLog(rows);
         setBriefing(rows.find((r) => r.context_type === 'reliability_digest') ?? null);
-        setProposals(actionsQ);
+        setProposals(actionsQ.filter((a) => a.status === 'pending_review'));
+
+        // Value ledger v1: what the Specialist's proposals identified in money.
+        // estimated_savings (DE tasks) preferred; annual_cost as the stake proxy.
+        const draftValue = (a: AgentAction): number => {
+            const p = (a.draft_payload ?? {}) as Record<string, unknown>;
+            return Number(p.estimated_savings) || Number(p.annual_cost) || 0;
+        };
+        setLedger({
+            approved: actionsQ.filter((a) => a.status === 'approved').length,
+            pending: actionsQ.filter((a) => a.status === 'pending_review').length,
+            valueIdentified: actionsQ
+                .filter((a) => a.status === 'approved' || a.status === 'pending_review')
+                .reduce((s, a) => s + draftValue(a), 0),
+        });
     };
     useEffect(() => { void loadAll(); }, []);
 
@@ -89,7 +109,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
         setMsgs((m) => [...m, { role: 'user', text }]);
         setChatBusy(true);
         try {
-            const res = await runAgent('reliability_digest', text, history);
+            const res = await runSpecialist(text, history);
             setMsgs((m) => [...m, { role: 'model', text: res.answer }]);
         } catch (e) {
             setMsgs((m) => [...m, { role: 'model', text: `I hit an error: ${e instanceof Error ? e.message : String(e)}` }]);
@@ -193,10 +213,46 @@ export const SpecialistWorkspacePage: React.FC = () => {
                                 })}
                             </div>}
                     </section>
+
+                    {/* Weibull Analyst — Tier-2: proposals it drafts land in the queue above */}
+                    <AdvisoryAgentPanel
+                        title="Weibull Analyst"
+                        subtitle="Censored Weibull fit + statistically defensible PM basis for one asset — drafts land in the proposals queue"
+                        icon={<Activity size={16} />}
+                        accent="violet"
+                        runLabel="Analyse asset"
+                        inputPlaceholder="Asset tag, e.g. P-101"
+                        onRun={(input) => runWeibullAnalyst(input.trim())}
+                    />
                 </div>
 
-                {/* ── Right: chat + work log ── */}
+                {/* ── Right: ledger + chat + work log ── */}
                 <div className="space-y-5">
+                    {/* Value ledger v1 — the Specialist's running performance review */}
+                    <section className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4">
+                        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-2">
+                            <BadgeDollarSign size={15} className="text-emerald-600" /> Value ledger
+                        </h2>
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                            <div>
+                                <div className="text-lg font-bold text-emerald-700">{ledger ? formatCurrency(ledger.valueIdentified) : '—'}</div>
+                                <div className="text-[10px] text-slate-500">value identified</div>
+                            </div>
+                            <div>
+                                <div className="text-lg font-bold text-slate-700">{ledger?.approved ?? '—'}</div>
+                                <div className="text-[10px] text-slate-500">proposals approved</div>
+                            </div>
+                            <div>
+                                <div className="text-lg font-bold text-slate-700">{ledger?.pending ?? '—'}</div>
+                                <div className="text-[10px] text-slate-500">awaiting review</div>
+                            </div>
+                        </div>
+                        <button onClick={() => navigate('/specialist/assessment')}
+                            className="mt-3 w-full text-center text-[11px] font-semibold text-emerald-700 hover:text-emerald-900">
+                            Full assessment report →
+                        </button>
+                    </section>
+
                     <section className="rounded-2xl border border-slate-200 bg-white flex flex-col h-96">
                         <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 p-4 pb-2">
                             <Sparkles size={15} className="text-violet-600" /> Ask the Specialist

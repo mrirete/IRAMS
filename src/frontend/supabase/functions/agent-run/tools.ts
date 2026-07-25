@@ -783,7 +783,192 @@ const getInvestigation: AgentTool = {
   },
 };
 
+// ── analyze_weibull ──────────────────────────────────────────────────────
+// Censored 2-parameter Weibull on an asset's corrective-failure history.
+// Faithful server-side mirror of eam/utils/weibull.ts fitWeibull(): Johnson
+// adjusted ranks (suspensions shift later failures), Benard's median rank,
+// OLS on ln(t) vs ln(-ln(1-F)). Confidence bounds omitted (jstat-free).
+function fitWeibullServer(
+  failures: number[],
+  suspensions: number[],
+): { beta: number; eta: number; r2: number; n: number; nSusp: number } | null {
+  const f = failures.filter((t) => Number.isFinite(t) && t > 0);
+  const s = suspensions.filter((t) => Number.isFinite(t) && t > 0);
+  if (f.length < 2) return null;
+  const units = [
+    ...f.map((time) => ({ time, censored: false })),
+    ...s.map((time) => ({ time, censored: true })),
+  ].sort((a, b) => a.time - b.time || Number(a.censored) - Number(b.censored));
+  const N = units.length;
+  let prev = 0;
+  const pts: { x: number; y: number }[] = [];
+  units.forEach((u, idx) => {
+    if (u.censored) return;
+    const k = idx + 1;
+    prev += (N + 1 - prev) / (2 + N - k); // Johnson adjusted rank
+    const F = (prev - 0.3) / (N + 0.4);   // Benard's approximation
+    pts.push({ x: Math.log(u.time), y: Math.log(-Math.log(1 - F)) });
+  });
+  const r = pts.length;
+  const xMean = pts.reduce((a, p) => a + p.x, 0) / r;
+  const yMean = pts.reduce((a, p) => a + p.y, 0) / r;
+  const sxx = pts.reduce((a, p) => a + (p.x - xMean) ** 2, 0);
+  const sxy = pts.reduce((a, p) => a + (p.x - xMean) * (p.y - yMean), 0);
+  if (sxx <= 0) return null;
+  const beta = sxy / sxx;
+  if (!(beta > 0)) return null;
+  const intercept = yMean - beta * xMean;
+  const eta = Math.exp(-intercept / beta);
+  const ssRes = pts.reduce((a, p) => a + (p.y - (beta * p.x + intercept)) ** 2, 0);
+  const ssTot = pts.reduce((a, p) => a + (p.y - yMean) ** 2, 0);
+  return { beta, eta, r2: ssTot > 0 ? 1 - ssRes / ssTot : 1, n: r, nSusp: s.length };
+}
+const bLife = (beta: number, eta: number, pct: number) =>
+  eta * Math.pow(-Math.log(1 - pct / 100), 1 / beta);
+
+const analyzeWeibull: AgentTool = {
+  name: "analyze_weibull",
+  description:
+    "Fit a censored 2-parameter Weibull to an asset's corrective-failure history (inter-failure days; time since last failure enters as a suspension). Returns beta, eta, R², B10/B50 lives, the failure-pattern reading (wear-out / random / infant mortality), and the asset's current active PM programs for comparison. Needs >=3 corrective failures. ALWAYS call this before recommending any PM interval.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: { type: "string", description: "Asset tag (e.g. P-101)." },
+      asset_id: { type: "string", description: "Asset UUID (if known)." },
+    },
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    let assetId: string | null = args?.asset_id ?? null;
+    let assetTag: string | null = args?.asset_tag ?? null;
+    if (!assetId && assetTag) {
+      const { data: a } = await ctx.db.from("assets").select("id, tag").ilike("tag", assetTag).limit(1);
+      if (a && a[0]) { assetId = a[0].id; assetTag = a[0].tag; }
+    }
+    if (!assetId) {
+      return { data: { error: "No matching asset found" }, sources: [], warnings: ["Provide a valid asset_tag or asset_id."] };
+    }
+
+    const { data: wos, error } = await ctx.db
+      .from("work_orders")
+      .select("created_at, type, wo_failure_data(failure_mode_code)")
+      .eq("asset_id", assetId)
+      .order("created_at", { ascending: true })
+      .limit(2000);
+    if (error) throw new Error(`work_orders query failed: ${error.message}`);
+
+    const failureTimes = (wos ?? [])
+      .filter((w: Record<string, unknown>) => String(w.type ?? "").toUpperCase() === "CM" || w.wo_failure_data)
+      .map((w: Record<string, unknown>) => new Date(String(w.created_at)).getTime())
+      .sort((a: number, b: number) => a - b);
+
+    const DAY = 86400_000;
+    const intervals: number[] = [];
+    for (let i = 1; i < failureTimes.length; i++) {
+      const d = (failureTimes[i] - failureTimes[i - 1]) / DAY;
+      if (d > 0.25) intervals.push(d); // ignore same-day duplicate WOs
+    }
+    const sinceLast = failureTimes.length
+      ? (Date.now() - failureTimes[failureTimes.length - 1]) / DAY
+      : 0;
+
+    if (intervals.length < 2) {
+      return {
+        data: { asset_tag: assetTag, failure_count: failureTimes.length, fit: null },
+        sources: [{ kind: "work_orders", ref: assetId, label: `${failureTimes.length} failure events` }],
+        warnings: ["Fewer than 3 corrective failures — a Weibull fit would not be statistically meaningful. Recommend collecting more history or condition monitoring."],
+      };
+    }
+
+    const fit = fitWeibullServer(intervals, sinceLast > 1 ? [sinceLast] : []);
+    if (!fit) {
+      return { data: { asset_tag: assetTag, fit: null }, sources: [], warnings: ["Degenerate life data — could not fit."] };
+    }
+
+    const { data: pms } = await ctx.db
+      .from("recurring_work")
+      .select("code, title, frequency_interval, frequency_unit, job_type")
+      .eq("asset_id", String(assetId))
+      .eq("active", true)
+      .limit(20);
+
+    const pattern = fit.beta > 1.5 ? "wear_out" : fit.beta > 0.95 ? "random" : "infant_mortality";
+    ctx.sources.push({ kind: "work_orders", ref: assetId, label: `Weibull fit on ${fit.n} intervals for ${assetTag}` });
+    return {
+      data: {
+        asset_id: assetId,
+        asset_tag: assetTag,
+        fit: {
+          beta: Math.round(fit.beta * 100) / 100,
+          eta_days: Math.round(fit.eta),
+          r2: Math.round(fit.r2 * 100) / 100,
+          n_intervals: fit.n,
+          censored: fit.nSusp > 0,
+          b10_days: Math.round(bLife(fit.beta, fit.eta, 10)),
+          b50_days: Math.round(bLife(fit.beta, fit.eta, 50)),
+          pattern,
+          pattern_guidance: pattern === "wear_out"
+            ? "Failure probability increases with age — an age-based PM at ~B10 life is statistically justified."
+            : pattern === "random"
+              ? "Failures are age-independent — fixed-interval PM adds cost without reducing risk; prefer condition monitoring."
+              : "Failures cluster early after work — investigate installation/maintenance quality before adding PM frequency.",
+        },
+        current_pms: pms ?? [],
+        methodology: "Median-rank regression: Johnson adjusted ranks over failures + right-censored running time, Benard's approximation, OLS on ln-ln space. Same engine as the Reliability Modelling module.",
+      },
+      sources: [{ kind: "work_orders", ref: assetId, label: `${failureTimes.length} failure events, ${fit.n} intervals` }],
+    };
+  },
+};
+
+// ── draft_pm_interval ────────────────────────────────────────────────────
+// Tier-2 proposal: a PM-interval recommendation grounded in a Weibull fit.
+// Never writes — lands in ers_agent_actions (pending_review) and the
+// Specialist workspace proposals queue.
+const draftPmInterval: AgentTool = {
+  name: "draft_pm_interval",
+  description:
+    "Draft a PM-interval recommendation for an asset, grounded in the analyze_weibull result. This does NOT change any PM — it queues a proposal for human review. Only call AFTER analyze_weibull, and only when the pattern justifies it (wear_out → age-based interval near B10; random → recommend condition monitoring instead; infant_mortality → recommend quality review).",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_id: { type: "string" },
+      asset_tag: { type: "string" },
+      recommendation_type: { type: "string", enum: ["set_interval", "extend_interval", "condition_monitoring", "quality_review"] },
+      recommended_interval_days: { type: "number", description: "For set/extend types: the recommended interval in days (typically near B10 life)." },
+      basis: { type: "string", description: "One-sentence statistical basis citing beta/eta/B10." },
+      current_pm_code: { type: "string", description: "The existing PM this would change, if any." },
+    },
+    required: ["asset_tag", "recommendation_type", "basis"],
+  },
+  tier: 2,
+  // deno-lint-ignore require-await
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const payload = {
+      asset_id: args?.asset_id ?? null,
+      asset_tag: String(args?.asset_tag ?? ""),
+      recommendation_type: String(args?.recommendation_type ?? "set_interval"),
+      recommended_interval_days: Number(args?.recommended_interval_days) || null,
+      basis: String(args?.basis ?? ""),
+      current_pm_code: args?.current_pm_code ?? null,
+      created_by: "weibull_analyst",
+    };
+    ctx.proposals.push({
+      agent_type: "weibull_analyst",
+      action_type: "draft_pm_interval",
+      asset_id: args?.asset_id ?? null,
+      draft_payload: payload,
+    });
+    return {
+      data: { drafted: true, asset: payload.asset_tag, type: payload.recommendation_type },
+      sources: [{ kind: "proposal", ref: payload.asset_tag, label: "PM-interval draft (pending review)" }],
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
+  [analyzeWeibull.name]: analyzeWeibull,
+  [draftPmInterval.name]: draftPmInterval,
   [rankBadActors.name]: rankBadActors,
   [draftDeTask.name]: draftDeTask,
   [queryFailureHistory.name]: queryFailureHistory,
