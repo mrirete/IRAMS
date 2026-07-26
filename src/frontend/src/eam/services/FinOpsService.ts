@@ -1012,15 +1012,17 @@ class FinOpsServiceClass {
         let depreciationAmount = 0;
 
         switch (book.depreciation_method) {
-            case 'STRAIGHT_LINE':
+            case 'STRAIGHT_LINE': {
                 const monthlyDepreciation = (financial.acquisition_cost - financial.residual_value) / financial.useful_life_months;
                 depreciationAmount = monthlyDepreciation;
                 break;
+            }
 
-            case 'DECLINING_BALANCE':
+            case 'DECLINING_BALANCE': {
                 const rate = 2 / financial.useful_life_months; // Double declining
                 depreciationAmount = book.current_value * rate;
                 break;
+            }
 
             case 'UNITS_OF_PRODUCTION':
                 if (book.designed_hours && book.current_hours) {
@@ -1531,7 +1533,7 @@ class FinOpsServiceClass {
         const usefulLifeYears = financial.usefulLifeMonths / 12;
         const startYear = new Date(book.startDate).getFullYear();
 
-        let schedule: DepreciationScheduleItem[] = [];
+        const schedule: DepreciationScheduleItem[] = [];
         let currentBookValue = cost;
         let accumulatedDepr = 0;
 
@@ -1544,7 +1546,7 @@ class FinOpsServiceClass {
                     expense = (cost - salvage) / usefulLifeYears;
                     break;
 
-                case 'DECLINING_BALANCE':
+                case 'DECLINING_BALANCE': {
                     // Book Value * (2 / Life)  <-- Double Declining Balance usually
                     // Acceleration factor usually 2
                     const rate = 2 / usefulLifeYears;
@@ -1554,14 +1556,16 @@ class FinOpsServiceClass {
                         expense = currentBookValue - salvage;
                     }
                     break;
+                }
 
-                case 'SUM_OF_YEARS_DIGITS':
+                case 'SUM_OF_YEARS_DIGITS': {
                     // (Cost - Salvage) * (Remaining Life / Sum of Years)
                     // Sum of years = n(n+1)/2
                     const sumOfYears = (usefulLifeYears * (usefulLifeYears + 1)) / 2;
                     const remainingLife = usefulLifeYears - year + 1;
                     expense = (cost - salvage) * (remainingLife / sumOfYears);
                     break;
+                }
 
                 case 'UNITS_OF_PRODUCTION':
                     // (Cost - Salvage) * (Units Produced / Total Estimated Units)

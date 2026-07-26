@@ -272,7 +272,7 @@ export const Scheduling: React.FC = () => {
                 if (rawWOs.length > 0) {
                     // Fetch assets for name + criticality resolution (R-3: scheduling
                     // consumes the criticality the assessment engine writes to assets).
-                    let assetMap: Record<string, string> = {};
+                    const assetMap: Record<string, string> = {};
                     const critMap: Record<string, string> = {};
                     try {
                         const assets = await db.getAssets();
@@ -343,7 +343,7 @@ export const Scheduling: React.FC = () => {
 
                 if (dbPMs.length > 0) {
                     // Fetch assets for name resolution
-                    let assetMap: Record<string, string> = {};
+                    const assetMap: Record<string, string> = {};
                     try {
                         const assets = await db.getAssets();
                         assets.forEach((a: any) => { assetMap[a.id] = a.tag || a.name || 'Unknown'; });
@@ -777,7 +777,7 @@ export const Scheduling: React.FC = () => {
             try {
                 const rawWOs = await db.getWorkOrders();
                 if (rawWOs.length > 0) {
-                    let assetMap: Record<string, string> = {};
+                    const assetMap: Record<string, string> = {};
                     try {
                         const assets = await db.getAssets();
                         assets.forEach((a: any) => { assetMap[a.id] = a.tag || a.name || 'Unknown'; });

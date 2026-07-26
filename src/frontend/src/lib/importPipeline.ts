@@ -143,9 +143,9 @@ export function parseDateCell(cell: unknown, format: DateFormat = 'auto'): strin
   }
 
   // dd/mm/yyyy | mm/dd/yyyy | dd.mm.yyyy | dd-mm-yyyy
-  const m = s.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})/);
+  const m = s.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/);
   if (m) {
-    let a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+    const a = parseInt(m[1], 10), b = parseInt(m[2], 10);
     let year = parseInt(m[3], 10);
     if (year < 100) year += year > 50 ? 1900 : 2000;
     let day: number, month: number;
@@ -170,10 +170,10 @@ export function parseDateCell(cell: unknown, format: DateFormat = 'auto'): strin
 export function parseCostCell(cell: unknown): number | null {
   if (cell === null || cell === undefined || cell === '') return null;
   if (typeof cell === 'number') return isFinite(cell) ? cell : null;
-  let s = String(cell).trim().replace(/[^0-9.,()\-]/g, '');
+  let s = String(cell).trim().replace(/[^0-9.,()-]/g, '');
   if (!s) return null;
   const negative = /^\(.*\)$/.test(s) || s.startsWith('-');
-  s = s.replace(/[()\-]/g, '');
+  s = s.replace(/[()-]/g, '');
   const lastComma = s.lastIndexOf(','), lastDot = s.lastIndexOf('.');
   if (lastComma >= 0 && lastDot >= 0) {
     // Both present: the later separator is the decimal point.
@@ -348,7 +348,7 @@ export function applyMapping(
       status = closedAt ? 'CLOSED' : 'OPEN';
     }
 
-    let labor = w('labor_cost') >= 0 ? parseCostCell(row[w('labor_cost')]) : null;
+    const labor = w('labor_cost') >= 0 ? parseCostCell(row[w('labor_cost')]) : null;
     let material = w('material_cost') >= 0 ? parseCostCell(row[w('material_cost')]) : null;
     if (labor === null && material === null && w('total_cost') >= 0) {
       // Only a combined figure exists — keep the total (stored as material

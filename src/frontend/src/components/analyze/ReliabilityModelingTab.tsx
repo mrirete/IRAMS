@@ -783,7 +783,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
         };
         const assigned = new Set(s.groups.flatMap(g => g.blocks));
         const ungrouped = s.blocks.filter(b => !assigned.has(b.id));
-        let ao = s.groups.reduce((a, g) => a * gAo(g), 1);
+        const ao = s.groups.reduce((a, g) => a * gAo(g), 1);
         return ungrouped.reduce((a, b) => a * bAo(b), ao);
     };
 

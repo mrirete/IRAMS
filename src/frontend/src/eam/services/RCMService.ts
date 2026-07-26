@@ -543,7 +543,7 @@ class RCMServiceImpl {
     }
 
     // 2. Get or create a default function for import
-    let functions = await this.getFunctions(studyId);
+    const functions = await this.getFunctions(studyId);
     let targetFnId: string;
     if (functions.length === 0) {
       const fn = await this.createFunction({
@@ -613,7 +613,7 @@ class RCMServiceImpl {
     }
 
     // Get or create function
-    let functions = await this.getFunctions(studyId);
+    const functions = await this.getFunctions(studyId);
     let targetFnId: string;
     if (functions.length === 0) {
       const fn = await this.createFunction({

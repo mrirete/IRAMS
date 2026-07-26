@@ -3384,7 +3384,10 @@ const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: 
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
 const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
-    const [isFieldsExpanded, setIsFieldsExpanded] = useState(false);
+    // Default expanded: this state only gates the field cards on < lg screens
+    // (desktop always shows them via `hidden lg:block`), and collapsed-by-default
+    // left the mobile Details tab as a near-blank page under the readiness strip.
+    const [isFieldsExpanded, setIsFieldsExpanded] = useState(true);
     const tasks = job.tasks || [];
     const completedTasksCount = tasks.filter(t => t.status === 'COMPLETED').length;
     const totalTasksCount = tasks.length;

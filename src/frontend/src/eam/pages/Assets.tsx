@@ -1113,7 +1113,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                             <input
                                                 type="checkbox"
                                                 checked={critFilter.has(c)}
-                                                onChange={() => setCritFilter(prev => { const n = new Set(prev); n.has(c) ? n.delete(c) : n.add(c); return n; })}
+                                                onChange={() => setCritFilter(prev => { const n = new Set(prev); if (n.has(c)) n.delete(c); else n.add(c); return n; })}
                                                 className="rounded border-slate-300 w-4 h-4"
                                             />
                                             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white ${c === 'A' ? 'bg-red-500' : c === 'B' ? 'bg-orange-500' : 'bg-blue-500'}`}>{c}</span>

@@ -132,7 +132,7 @@ export const ReportDataTable: React.FC<ReportDataTableProps> = ({
 
   const toggleCol = (key: string) => {
     const next = new Set(hiddenCols);
-    next.has(key) ? next.delete(key) : next.add(key);
+    if (next.has(key)) next.delete(key); else next.add(key);
     setHiddenCols(next);
   };
 
@@ -156,7 +156,7 @@ export const ReportDataTable: React.FC<ReportDataTableProps> = ({
       if (isExpandable) {
         setExpandedRows(prev => {
           const next = new Set(prev);
-          next.has(id) ? next.delete(id) : next.add(id);
+          if (next.has(id)) next.delete(id); else next.add(id);
           return next;
         });
       } else {

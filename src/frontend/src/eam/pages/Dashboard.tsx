@@ -120,7 +120,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
 
   let scopedAssetIds: Set<string> | null = null;
   let rawAssets = assetResult.data || [];
-  let rawWos = allWOs;
+  const rawWos = allWOs;
 
   if (!isGlobalScope) {
     const fullAssets = await DatabaseService.getInstance().getAssets();

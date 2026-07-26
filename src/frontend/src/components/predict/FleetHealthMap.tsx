@@ -95,7 +95,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
     // Filter → Sort pipeline
     const processed = useMemo(() => {
         const q = search.toLowerCase().trim();
-        let filtered = effectiveData.filter(a => {
+        const filtered = effectiveData.filter(a => {
             if (critFilter !== 'all' && a.criticality !== critFilter) return false;
             if (q && !a.asset_name.toLowerCase().includes(q) && !a.unit.toLowerCase().includes(q) && !a.asset_id.toLowerCase().includes(q)) return false;
             return true;

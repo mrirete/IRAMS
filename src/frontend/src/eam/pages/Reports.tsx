@@ -232,7 +232,7 @@ export const Reports: React.FC = () => {
       const p = getDictDesc('Priority', w.priority, 'Unset');
       if (!pMap[p]) pMap[p] = { onTime: 0, overdue: 0 };
       const isOverdue = w.due_date && new Date(w.due_date) < new Date() && !['COMP', 'TECO', 'CLOSED'].includes(w.status?.toUpperCase());
-      isOverdue ? pMap[p].overdue++ : pMap[p].onTime++;
+      if (isOverdue) pMap[p].overdue++; else pMap[p].onTime++;
     });
     return Object.entries(pMap).map(([priority, d]) => ({ priority, ...d }));
   }, [filteredWOs, getDictDesc]);
@@ -497,7 +497,7 @@ export const Reports: React.FC = () => {
 
       // Assume random severity 1-5 for now if not present, in robust system from dict
       // Let's use priority text length as a fake severity proxy for visuals since DB lacks it
-      let severityScore = req.priority === 'High' ? 5 : req.priority === 'Medium' ? 3 : 1;
+      const severityScore = req.priority === 'High' ? 5 : req.priority === 'Medium' ? 3 : 1;
       
       const rpn = critScore * severityScore;
       if (rpn > 15) buckets['High Risk (>15)']++;

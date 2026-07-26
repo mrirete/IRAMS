@@ -286,28 +286,8 @@ export const Analytics: React.FC = () => {
         staleTime: 1000 * 60 * 5, // 5 minutes
     });
 
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-96">
-                <Loader2 size={32} className="animate-spin text-blue-600" />
-                <span className="ml-3 text-slate-500">Analyzing reliability data...</span>
-            </div>
-        );
-    }
-
-    if (error) {
-        return <div className="p-8 text-red-500">Error loading analytics: {(error as Error).message}</div>;
-    }
-
-    const { kpis, badActors, woTrends, failureModes, predictions } = data!;
-
-    const pmRatio = kpis ? (kpis.preventive_wos / Math.max(kpis.total_wos, 1)) * 100 : 0;
-    const cmRatio = kpis ? (kpis.corrective_wos / Math.max(kpis.total_wos, 1)) * 100 : 0;
-    const woMix = [
-        { name: 'Preventive', value: kpis?.preventive_wos || 0 },
-        { name: 'Corrective', value: kpis?.corrective_wos || 0 },
-    ];
-
+    // Hook must run unconditionally — keep it above the loading/error returns.
+    const badActors = data?.badActors;
     const sortedBadActors = useMemo(() => {
         if (!badActors || badActors.length === 0) return [];
         
@@ -339,6 +319,28 @@ export const Analytics: React.FC = () => {
         });
     }, [badActors, paretoCriteria]);
 
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-96">
+                <Loader2 size={32} className="animate-spin text-blue-600" />
+                <span className="ml-3 text-slate-500">Analyzing reliability data...</span>
+            </div>
+        );
+    }
+
+    if (error) {
+        return <div className="p-8 text-red-500">Error loading analytics: {(error as Error).message}</div>;
+    }
+
+    const { kpis, woTrends, failureModes, predictions } = data!;
+
+    const pmRatio = kpis ? (kpis.preventive_wos / Math.max(kpis.total_wos, 1)) * 100 : 0;
+    const cmRatio = kpis ? (kpis.corrective_wos / Math.max(kpis.total_wos, 1)) * 100 : 0;
+    const woMix = [
+        { name: 'Preventive', value: kpis?.preventive_wos || 0 },
+        { name: 'Corrective', value: kpis?.corrective_wos || 0 },
+    ];
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -365,7 +367,7 @@ export const Analytics: React.FC = () => {
                         <RefreshCw size={16} />
                     </button>
                     <button
-                        onClick={() => exportCSV(badActors, EXPORT_COLUMNS.badActors, `bad-actors-${new Date().toISOString().slice(0, 10)}.csv`)}
+                        onClick={() => exportCSV(badActors ?? [], EXPORT_COLUMNS.badActors, `bad-actors-${new Date().toISOString().slice(0, 10)}.csv`)}
                         className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium hover:bg-slate-900 transition flex items-center gap-2"
                     >
                         <Download size={14} /> Export CSV
@@ -538,7 +540,7 @@ export const Analytics: React.FC = () => {
                             </div>
                         </div>
                         <div className="divide-y divide-slate-100">
-                            {badActors.slice(0, 5).map((ba, i) => (
+                            {(badActors ?? []).slice(0, 5).map((ba, i) => (
                                 <div key={ba.asset_id} className="px-6 py-3 flex items-center gap-4 hover:bg-slate-50">
                                     <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${i < 3 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}`}>
                                         {i + 1}

@@ -278,7 +278,7 @@ export const AuditIntake: React.FC<Props> = ({ initialData, onComplete }) => {
                                 value={form.mobile}
                                 onChange={e => {
                                     // Allow only digits, spaces, and dashes
-                                    const cleaned = e.target.value.replace(/[^\d\s\-]/g, '');
+                                    const cleaned = e.target.value.replace(/[^\d\s-]/g, '');
                                     set('mobile', cleaned);
                                 }}
                                 placeholder="555 012 3456"

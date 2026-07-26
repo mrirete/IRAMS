@@ -934,7 +934,7 @@ const UserPermissionManager: React.FC = () => {
             role.description?.toLowerCase().includes('super admin')
         );
 
-        let aggregatedBase: Record<string, ModulePermissions> = {};
+        const aggregatedBase: Record<string, ModulePermissions> = {};
 
         if (isSysAdmin) {
             const allModules = ADMIN_MODULES.map(m => m.key);
@@ -969,7 +969,7 @@ const UserPermissionManager: React.FC = () => {
 
             allRoleModules.forEach(modKey => {
                 const mod = modKey as ModuleName;
-                let combined: ModulePermissions = {
+                const combined: ModulePermissions = {
                     view: false, create: false, edit: false, delete: false,
                     approve: false, authorize: false, assign: false, viewCosts: false, spendingLimit: 0
                 };

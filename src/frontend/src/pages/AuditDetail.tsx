@@ -17,11 +17,13 @@ export const AuditDetail: React.FC<{ ctx: any; onBack: () => void }> = ({ ctx, o
     // Finding form
     const [ff, setFf] = useState({ finding_type: 'observation' as AuditFindingType, severity: 'medium' as FindingSeverity, description: '', standard_reference: '', evidence: '' });
 
+    // Hook must run unconditionally — keep it above the !audit early return.
+    const responseMap = useMemo(() => new Map(responses.map((r: AuditResponse) => [r.question_id, r])), [responses]);
+
     if (!audit) return null;
 
     const template = audit.template;
     const sections = template?.sections || [];
-    const responseMap = useMemo(() => new Map(responses.map((r: AuditResponse) => [r.question_id, r])), [responses]);
 
     const getMaturityColor = (score: number) => MATURITY_LEVELS[Math.min(Math.round(score), 5)]?.color || '#94a3b8';
 

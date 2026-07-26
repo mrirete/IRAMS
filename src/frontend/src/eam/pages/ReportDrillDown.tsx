@@ -153,7 +153,7 @@ export const ReportDrillDown: React.FC = () => {
   const renderContent = () => {
     switch (type) {
       case 'downtime':
-      case 'downtime-by-asset':
+      case 'downtime-by-asset': {
         const dtCols: TableColumn[] = [
           { key: 'asset', label: 'Asset Tag', width: '100px' },
           { key: 'name', label: 'Asset Name' },
@@ -180,8 +180,9 @@ export const ReportDrillDown: React.FC = () => {
             <ReportDataTable title="Downtime Detail" columns={dtCols} data={downtimeByAsset} exportFilename="ERS_Downtime_by_Asset.csv" />
           </div>
         );
+      }
 
-      case 'mtbf-mttr':
+      case 'mtbf-mttr': {
         const mtCols: TableColumn[] = [
           { key: 'asset_tag', label: 'Tag', width: '90px' },
           { key: 'asset_name', label: 'Name' },
@@ -309,6 +310,7 @@ export const ReportDrillDown: React.FC = () => {
             />
           </div>
         );
+      }
 
       case 'downtime-by-reason':
         return (
@@ -353,7 +355,7 @@ export const ReportDrillDown: React.FC = () => {
           </div>
         );
 
-      case 'oee':
+      case 'oee': {
         const oeeGaugeData = [
           { name: 'Availability', value: Math.round(oeeData.availability * 100), target: 95, color: COLORS.emerald },
           { name: 'Performance', value: Math.round(oeeData.performance * 100), target: 90, color: COLORS.blue },
@@ -389,6 +391,7 @@ export const ReportDrillDown: React.FC = () => {
             </div>
           </div>
         );
+      }
 
       case 'backlog': {
         const now = new Date();

@@ -61,7 +61,7 @@ function StockAdjustmentModal({ isOpen, onClose, item, onSuccess }: {
         setLoading(true);
         try {
             // Determine final quantity or delta
-            let finalQty = qtyNum;
+            const finalQty = qtyNum;
             // The service expects the NEW TOTAL for Stocktake, but usually logic is complex.
             // My Service Logic:
             // if STOCKTAKE -> newLocationQty IS the total.

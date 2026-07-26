@@ -2645,7 +2645,7 @@ export class DatabaseService {
         }
 
         // Handle Properties merging if present in generic updates
-        let finalUpdates = { ...coreUpdates, updated_at: new Date().toISOString() };
+        const finalUpdates = { ...coreUpdates, updated_at: new Date().toISOString() };
 
         if (coreUpdates.properties) {
             // If we are updating properties, we likely want to merge, but for now specific flags from UI are passed as full object construction in DataMapper
@@ -3276,7 +3276,7 @@ export class DatabaseService {
 
         // Get usage counts for the found items
         const ids = (data || []).map(d => d.id);
-        let usageCounts: Record<string, number> = {};
+        const usageCounts: Record<string, number> = {};
         if (ids.length > 0) {
             const { data: bomData } = await supabase
                 .from('asset_bom')

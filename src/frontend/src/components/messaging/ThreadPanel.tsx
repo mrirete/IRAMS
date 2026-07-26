@@ -82,7 +82,6 @@ export const ThreadPanel: React.FC<Props> = ({ threadType, threadId, threadLabel
             if (myId && m.sender_id !== myId) messagingService.markRead(myId, threadType, threadId);
         });
         return () => { cancelled = true; unsub(); };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [threadType, threadId, myId]);
 
     // Detect the @token currently being typed (for the mention menu).

@@ -12,7 +12,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm, usePrompt } from '../../contexts/ConfirmContext';
 
 // Reusing types from parent if possible, but defining local props
-interface TaskLibraryManagerProps { }
+type TaskLibraryManagerProps = Record<string, never>;
 
 export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     const { permissions, user } = useAuth();
@@ -20,16 +20,6 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     const promptModal = usePrompt();
     const [tasks, setTasks] = useState<LibraryTask[]>([]);
     const [searchTerm, setSearchTerm] = useState('');
-
-    if (permissions && !permissions.taskLibrary?.view) {
-        return (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                <Shield size={64} className="mb-4 opacity-20" />
-                <h2 className="text-xl font-bold text-slate-700">Access Denied</h2>
-                <p className="text-sm text-slate-500 mt-2">You do not have permission to view the Task Library.</p>
-            </div>
-        );
-    }
     const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
     const [loading, setLoading] = useState(true);
 
@@ -41,6 +31,18 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     useEffect(() => {
         loadTasks();
     }, []);
+
+    // Permission guard AFTER all hooks — an early return between hook calls
+    // changes the hook count across renders and crashes React.
+    if (permissions && !permissions.taskLibrary?.view) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                <Shield size={64} className="mb-4 opacity-20" />
+                <h2 className="text-xl font-bold text-slate-700">Access Denied</h2>
+                <p className="text-sm text-slate-500 mt-2">You do not have permission to view the Task Library.</p>
+            </div>
+        );
+    }
 
     const loadTasks = async () => {
         setLoading(true);
