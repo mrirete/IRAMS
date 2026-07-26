@@ -77,25 +77,46 @@ function parseArgs(argv) {
         // migration in one pass. Never use for real provisioning — later files
         // run against a schema missing whatever the failed ones should have made.
         else if (a === '--continue-on-error') args.continueOnError = true;
-        else if (['--status', '--dry-run', '--apply', '--baseline'].includes(a)) args.command = a;
+        else if (['--status', '--dry-run', '--apply', '--baseline', '--refresh-checksums'].includes(a)) args.command = a;
         else if (a === '--help' || a === '-h') args.command = '--help';
     }
     return args;
 }
 
-async function runSql(projectRef, token, query) {
-    const res = await fetch(`${API}/projects/${projectRef}/database/query`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
-    });
-    const text = await res.text();
-    if (!res.ok) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A response that isn't JSON is the gateway talking, not Postgres — an HTML
+ * error page from a timeout or rate limit. Replaying 230 migrations back to
+ * back hits these occasionally, and because a transient failure early in the
+ * run cascades into dozens of bogus "missing relation" errors later, they must
+ * be retried rather than reported. A genuine SQL error always returns JSON.
+ */
+const isTransient = (status, body) =>
+    status === 429 || status >= 500 || /^\s*<(!doctype|html|div)/i.test(body);
+
+async function runSql(projectRef, token, query, { retries = 3 } = {}) {
+    let lastErr;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        const res = await fetch(`${API}/projects/${projectRef}/database/query`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query }),
+        });
+        const text = await res.text();
+        if (res.ok) {
+            try { return JSON.parse(text); } catch { return []; }
+        }
+        if (isTransient(res.status, text) && attempt < retries) {
+            await sleep(1500 * (attempt + 1)); // 1.5s, 3s, 4.5s
+            continue;
+        }
         let detail = text;
         try { detail = JSON.parse(text).message ?? text; } catch { /* raw text */ }
-        throw new Error(`HTTP ${res.status}: ${detail}`);
+        lastErr = new Error(`HTTP ${res.status}: ${detail}`);
+        break;
     }
-    try { return JSON.parse(text); } catch { return []; }
+    throw lastErr;
 }
 
 async function readLedger(projectRef, token) {
@@ -201,6 +222,26 @@ async function main() {
             console.log(`  ${m.file.padEnd(46)} ${transactionMode(contents[m.file])}`);
         }
         if (!plan.pending.length) console.log('  (nothing pending)');
+        return;
+    }
+
+    if (command === '--refresh-checksums') {
+        // For deliberate edits to already-applied migrations (repairs, guards).
+        // Re-records their checksums so drift detection stops flagging them.
+        // Executes nothing — the database is assumed already correct.
+        if (!plan.drifted.length) {
+            console.log('\n✔ No drifted migrations — nothing to refresh.');
+            return;
+        }
+        console.log(`\nRe-recording ${plan.drifted.length} edited migration(s) — no SQL is executed:`);
+        for (const file of plan.drifted) {
+            await runSql(projectRef, token, `
+                UPDATE public.schema_migrations
+                   SET checksum = ${sqlLiteral(checksums[file])}, applied_by = 'refresh-checksums'
+                 WHERE name = ${sqlLiteral(file)};`);
+            console.log(`    ${file}`);
+        }
+        console.log('\n✔ Ledger updated.');
         return;
     }
 

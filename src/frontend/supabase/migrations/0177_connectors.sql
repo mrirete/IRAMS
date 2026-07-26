@@ -1,1 +1,7 @@
-
+-- 0177: intentionally empty — superseded by 0202_connectors.sql.
+--
+-- This file shipped empty, so the `connectors` table never existed and the
+-- Connector Hub ran on mock cards until 0202 created the real schema
+-- (connectors + connector_sync_logs + RLS, matched to the sensor-sync edge
+-- function). Do not add DDL here: the remote database already ran 0202, and
+-- backfilling this file would only create replay confusion.

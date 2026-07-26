@@ -20,6 +20,16 @@
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'warranties_asset_id_fkey') THEN
+        -- ADDED 2026-07-25: adding an FK validates it against existing rows, so
+        -- a single orphan aborts the whole migration. On a fresh replay, seeded
+        -- warranties can outlive the assets they point at. Orphans are
+        -- unusable by definition (the app joins through this FK), so they are
+        -- removed rather than blocking the repair. On any database where the
+        -- constraint already exists this block never runs.
+        DELETE FROM warranties w
+         WHERE w.asset_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = w.asset_id);
+
         ALTER TABLE warranties ADD CONSTRAINT warranties_asset_id_fkey
             FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE;
     END IF;
@@ -28,6 +38,12 @@ BEGIN
             FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE SET NULL;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'asset_insurance_asset_id_fkey') THEN
+        -- Same orphan cleanup as warranties above: validating the FK against a
+        -- single row pointing at a missing asset would abort the migration.
+        DELETE FROM asset_insurance ai
+         WHERE ai.asset_id IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM assets a WHERE a.id = ai.asset_id);
+
         ALTER TABLE asset_insurance ADD CONSTRAINT asset_insurance_asset_id_fkey
             FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE;
     END IF;
@@ -370,10 +386,28 @@ END $$;
 -- search_path while referencing unqualified table names — every call died
 -- with 42P01 ("relation work_orders does not exist"), surfaced as REST 404.
 
-ALTER FUNCTION public.get_reliability_kpis() SET search_path = public;
-ALTER FUNCTION public.get_bad_actors(integer) SET search_path = public;
-ALTER FUNCTION public.get_asset_mtbf_mttr(integer) SET search_path = public;
-ALTER FUNCTION public.get_downtime_by_failure_mode() SET search_path = public;
+-- GUARDED 2026-07-25: this file repairs drift on an existing database, so it
+-- cannot assume every object is present. On a fresh replay
+-- get_asset_mtbf_mttr(integer) does not exist and the bare ALTER aborted the
+-- migration. to_regprocedure() returns NULL rather than raising, so each
+-- repair is applied only where there is something to repair.
+DO $$
+DECLARE
+    fn TEXT;
+BEGIN
+    FOREACH fn IN ARRAY ARRAY[
+        'public.get_reliability_kpis()',
+        'public.get_bad_actors(integer)',
+        'public.get_asset_mtbf_mttr(integer)',
+        'public.get_downtime_by_failure_mode()'
+    ] LOOP
+        IF to_regprocedure(fn) IS NOT NULL THEN
+            EXECUTE format('ALTER FUNCTION %s SET search_path = public', fn);
+        ELSE
+            RAISE NOTICE '0216: % not present — nothing to repair', fn;
+        END IF;
+    END LOOP;
+END $$;
 
 
 -- ── 5. PostgREST schema-cache reload ──

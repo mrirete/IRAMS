@@ -3,7 +3,24 @@
 -- Purpose: Add major equipment manufacturers as contacts so
 --          they appear in the Manufacturer dropdown across
 --          Assets, Inventory, and Purchase Orders.
+--
+-- GUARDED 2026-07-25 — this migration is effectively DEAD.
+-- It inserts into contacts.default_role, a column NO migration in this
+-- repo ever creates and which does not exist on the origin database
+-- either: it has always failed, everywhere, silently. Superseded by
+-- 0158_manufacturer_master, which gives manufacturers their own table
+-- (seeded and live). Kept as history, guarded so a replay does not
+-- abort on it; it will skip on every database.
 -- ═══════════════════════════════════════════════════════════════
+DO $$
+BEGIN
+IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'contacts' AND column_name = 'default_role'
+) THEN
+    RAISE NOTICE '0086: contacts.default_role does not exist — skipping (superseded by 0158_manufacturer_master).';
+    RETURN;
+END IF;
 
 INSERT INTO contacts (name, email, phone, code, title, roles, default_role, is_active, is_vendor, address_line_1, city, state, zip_code, country)
 VALUES
@@ -23,3 +40,5 @@ SELECT id, 'MANUFACTURER', 'NET-30', 'USD', 21, true
 FROM contacts
 WHERE code IN ('MFR-FLOW', 'MFR-SIEM', 'MFR-SKF', 'MFR-CAT', 'MFR-ABB', 'MFR-EMER', 'MFR-DR', 'MFR-HON')
   AND NOT EXISTS (SELECT 1 FROM vendors WHERE vendors.contact_id = contacts.id);
+
+END $$;

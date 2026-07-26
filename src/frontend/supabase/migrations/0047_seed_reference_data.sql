@@ -1,5 +1,30 @@
 -- Seed Reference Codes (Aligned with constants.ts MOCK_DICTIONARIES)
 
+-- FIXED 2026-07-25: reference_codes is not created until 0071, so on a fresh
+-- replay this seed — and the seven migrations after it that touch the table
+-- (0049, 0050, 0054, 0060, 0061, 0062, 0064) — all failed. The table is now
+-- created here if missing, using 0071's exact definition, so 0071's own
+-- CREATE TABLE IF NOT EXISTS becomes a harmless no-op and nothing diverges.
+CREATE TABLE IF NOT EXISTS reference_codes (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    category TEXT NOT NULL,
+    code TEXT NOT NULL,
+    description TEXT NOT NULL,
+    is_locked BOOLEAN DEFAULT FALSE,
+    active BOOLEAN DEFAULT TRUE,
+    properties JSONB DEFAULT '{}'::jsonb,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    category_ref TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    color_code TEXT,
+    sort_order INTEGER
+);
+
+-- The seed below uses ON CONFLICT (category, code), which needs this unique
+-- index to exist. It matches reference_codes_category_code_key on the origin.
+CREATE UNIQUE INDEX IF NOT EXISTS reference_codes_category_code_key
+    ON reference_codes (category, code);
+
 -- 0. Ensure 'active' column exists (Missing in original schema but required by app)
 ALTER TABLE reference_codes ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
 
@@ -140,9 +165,24 @@ SET description = EXCLUDED.description,
     active = EXCLUDED.active;
 
 -- Seed Assets
--- Added site_id as 'MAIN-SITE' default
--- Using 'Equipment' for hierarchy_level
-INSERT INTO assets (id, name, tag, status, criticality, hierarchy_level, site_id) VALUES 
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Atlas Copco Compressor', 'AC-2024-01', 'OPERATIONAL', 'A', 'Equipment', 'MAIN-SITE'),
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Cat Generator 3516', 'GEN-01', 'OPERATIONAL', 'A', 'Equipment', 'MAIN-SITE')
-ON CONFLICT (id) DO NOTHING;
+--
+-- GUARDED 2026-07-25: this writes assets.status, a column that does not exist
+-- (the schema has status_code) — so the statement has always failed, aborting
+-- the whole file and everything that follows it. It is also demo data in a
+-- reference-data migration: two sample assets that no customer wants. Guarded
+-- rather than repaired, so it skips everywhere while the reference seeds above
+-- (which are wanted) still apply.
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'assets' AND column_name = 'status'
+) THEN
+    INSERT INTO assets (id, name, tag, status, criticality, hierarchy_level, site_id) VALUES
+        ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Atlas Copco Compressor', 'AC-2024-01', 'OPERATIONAL', 'A', 'Equipment', 'MAIN-SITE'),
+        ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Cat Generator 3516', 'GEN-01', 'OPERATIONAL', 'A', 'Equipment', 'MAIN-SITE')
+    ON CONFLICT (id) DO NOTHING;
+ELSE
+    RAISE NOTICE '0047: assets.status does not exist — skipping demo asset seed.';
+END IF;
+END $$;

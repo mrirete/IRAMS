@@ -575,6 +575,35 @@ CREATE TABLE IF NOT EXISTS work_order_parts (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- RECONCILE 2026-07-25: migration 0040 also creates work_order_parts, with an
+-- incompatible shape (quantity_est / quantity_act, no `quantity`). Whichever
+-- runs first wins, because both use CREATE TABLE IF NOT EXISTS — so on a fresh
+-- replay 0040's shape survived and 0201 later failed on `wop.quantity`. The
+-- origin database happens to carry THIS shape. These ALTERs make the outcome
+-- order-independent; each is a no-op when the column already exists.
+ALTER TABLE work_order_parts ADD COLUMN IF NOT EXISTS quantity    NUMERIC(10,2) NOT NULL DEFAULT 1;
+ALTER TABLE work_order_parts ADD COLUMN IF NOT EXISTS total_cost  NUMERIC(10,2) DEFAULT 0;
+ALTER TABLE work_order_parts ADD COLUMN IF NOT EXISTS notes       TEXT;
+ALTER TABLE work_order_parts ADD COLUMN IF NOT EXISTS job_task_id UUID;
+ALTER TABLE work_order_parts ADD COLUMN IF NOT EXISTS is_planned  BOOLEAN DEFAULT TRUE;
+ALTER TABLE work_order_parts ADD COLUMN IF NOT EXISTS created_at  TIMESTAMPTZ DEFAULT NOW();
+
+-- 0040 also types item_id as TEXT while this file (and the origin database)
+-- use UUID. Left as TEXT, 0201 later fails comparing it to inventory_items.id
+-- ("operator does not exist: text = uuid"). Converted only when it is still
+-- TEXT, so this is a no-op on any database already carrying the UUID form.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'work_order_parts'
+          AND column_name = 'item_id' AND data_type = 'text'
+    ) THEN
+        ALTER TABLE work_order_parts
+            ALTER COLUMN item_id TYPE UUID USING NULLIF(item_id, '')::uuid;
+    END IF;
+END $$;
+
 -- ─── TIER 4: FK to Tier 3 tables ──────────────────────────
 
 CREATE TABLE IF NOT EXISTS ptw_approvals (

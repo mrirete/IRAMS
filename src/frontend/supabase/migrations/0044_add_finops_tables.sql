@@ -79,7 +79,25 @@ CREATE POLICY "Enable all access for authenticated users" ON asset_insurance FOR
 CREATE POLICY "Enable all access for authenticated users" ON insurance_incidents FOR ALL USING (auth.role() = 'authenticated');
 
 -- Triggers for Updated At
-CREATE TRIGGER update_warranties_modtime BEFORE UPDATE ON warranties FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
-CREATE TRIGGER update_warranty_claims_modtime BEFORE UPDATE ON warranty_claims FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
-CREATE TRIGGER update_asset_insurance_modtime BEFORE UPDATE ON asset_insurance FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
-CREATE TRIGGER update_insurance_incidents_modtime BEFORE UPDATE ON insurance_incidents FOR EACH ROW EXECUTE PROCEDURE update_modified_column();
+--
+-- FIXED 2026-07-25: update_modified_column() was never defined by any
+-- migration, so all four triggers below silently failed to be created — on the
+-- origin project as well as on replay — and updated_at never moved on these
+-- tables. Defined here (idempotently; 0026 also defines it) so the file is
+-- self-sufficient. Migration 0224 repairs already-deployed databases.
+CREATE OR REPLACE FUNCTION public.update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS update_warranties_modtime ON warranties;
+CREATE TRIGGER update_warranties_modtime BEFORE UPDATE ON warranties FOR EACH ROW EXECUTE PROCEDURE public.update_modified_column();
+DROP TRIGGER IF EXISTS update_warranty_claims_modtime ON warranty_claims;
+CREATE TRIGGER update_warranty_claims_modtime BEFORE UPDATE ON warranty_claims FOR EACH ROW EXECUTE PROCEDURE public.update_modified_column();
+DROP TRIGGER IF EXISTS update_asset_insurance_modtime ON asset_insurance;
+CREATE TRIGGER update_asset_insurance_modtime BEFORE UPDATE ON asset_insurance FOR EACH ROW EXECUTE PROCEDURE public.update_modified_column();
+DROP TRIGGER IF EXISTS update_insurance_incidents_modtime ON insurance_incidents;
+CREATE TRIGGER update_insurance_incidents_modtime BEFORE UPDATE ON insurance_incidents FOR EACH ROW EXECUTE PROCEDURE public.update_modified_column();

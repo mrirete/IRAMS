@@ -58,8 +58,26 @@ CREATE POLICY "Enable all access for authenticated users" ON public.jsa_hazards
     USING (true);
 
 -- Triggers for updated_at
-CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.jsa_assessments
-    FOR EACH ROW EXECUTE FUNCTION moddatetime('updated_at');
+--
+-- FIXED 2026-07-25: these originally called moddatetime('updated_at'), but the
+-- `moddatetime` extension was never installed on any database — so BOTH
+-- triggers silently failed to be created here, on the origin project as well
+-- as on any replay, and jsa_assessments/jsa_hazards.updated_at never actually
+-- updated. Replaced with a plain trigger function owned by this schema, which
+-- removes the extension dependency entirely. Migration 0224 applies the same
+-- repair to already-deployed databases.
+CREATE OR REPLACE FUNCTION public.update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS handle_updated_at ON public.jsa_assessments;
+CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.jsa_assessments
+    FOR EACH ROW EXECUTE FUNCTION public.update_modified_column();
+
+DROP TRIGGER IF EXISTS handle_updated_at ON public.jsa_hazards;
 CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.jsa_hazards
-    FOR EACH ROW EXECUTE FUNCTION moddatetime('updated_at');
+    FOR EACH ROW EXECUTE FUNCTION public.update_modified_column();

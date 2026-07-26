@@ -111,6 +111,15 @@ BEGIN
           -- Skip trigger functions and internal Supabase functions
           AND p.proname NOT LIKE 'pg_%'
           AND p.proname NOT LIKE 'supabase_%'
+          -- FIXED 2026-07-25: the comment above always said trigger functions
+          -- were skipped, but nothing actually excluded them. So this loop set
+          -- search_path='' on log_audit_event(), whose body writes to an
+          -- unqualified `audit_logs` — after which EVERY later migration that
+          -- touched an audited table died with "relation audit_logs does not
+          -- exist" (0118, 0121, 0130, 0158 and the long cascade behind them).
+          -- The origin database escaped only because a later migration
+          -- redefined the function, dropping the setting again.
+          AND p.prorettype <> 'pg_catalog.trigger'::regtype
           -- Only fix if search_path is currently mutable
           AND (
               p.proconfig IS NULL 
