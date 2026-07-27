@@ -12,6 +12,7 @@ import {
 import { MOCK_USERS, MOCK_WORK_ORDERS } from '../constants';
 import { Contact, Qualification, CustomField, WorkOrder, DictionaryEntry, User } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
+import { emptyResult, tally, errMessage } from '../services/importTypes';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { Button } from '../components/ui';
@@ -58,7 +59,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const [activeTab, setActiveTab] = useState<TabId>('details');
     const [viewMode, setViewMode] = useState<'directory' | 'orgChart'>('directory');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [showBulkImport, setShowBulkImport] = useState(false);
+    const [showBulkImport, setShowBulkImport] = useState(searchParams.get('action') === 'import');
 
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -323,12 +324,41 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
     const handleBulkImportData = async (type: ImportType, rows: Record<string, string>[]) => {
         if (type !== 'people') return;
         const db = DatabaseService.getInstance();
-        let imported = 0;
-        for (const row of rows) {
+        const res = emptyResult();
+
+        // These used to read row['role'], row['site'], row['reportingto'] and
+        // row['status'] — none of which the People template ships — while
+        // dropping the columns it does ship (orgUnit, costCenter, hourlyRate,
+        // currency, qualifications).
+        const existingCodes = new Set(contacts.map(c => (c.code || '').toUpperCase()));
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowNo = Number(row.__row) || i + 2;
+            const code = row['code'] || `PER-${Date.now()}-${i}`;
+
+            if (existingCodes.has(code.toUpperCase())) {
+                tally(res, { row: rowNo, key: code, status: 'skipped', reason: 'Contact code already exists' });
+                continue;
+            }
+
             try {
+                // Template ships a delimited list of names; the model wants
+                // records. Imported ones carry no expiry, so they land Pending
+                // for a planner to complete rather than claiming to be valid.
+                const quals: Qualification[] = (row['qualifications'] || '')
+                    .split(/[;,]/).map(q => q.trim()).filter(Boolean)
+                    .map(name => ({
+                        id: crypto.randomUUID(),
+                        name,
+                        type: 'IMPORTED',
+                        dateExpires: '',
+                        status: 'Pending' as const,
+                        notes: 'Imported — confirm expiry date',
+                    }));
                 const newContact: Contact = {
                     id: crypto.randomUUID(),
-                    code: row['code'] || `PER-${Date.now()}-${imported}`,
+                    code,
                     name: row['name'] || 'Imported Contact',
                     title: row['title'] || '',
                     defaultType: row['type'] ? row['type'].toUpperCase() : 'TECHNICIAN',
@@ -336,23 +366,33 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                     phone: row['phone'] || '',
                     mobile: row['mobile'] || '',
                     types: row['type'] ? [row['type'].toUpperCase()] : ['TECHNICIAN'],
-                    roles: row['role'] ? [row['role']] : [],
+                    roles: [],
                     department: row['department'] || '',
-                    site: row['site'] || '',
-                    reportingTo: row['reportingto'] || '',
-                    active: (row['status'] || 'Active').toLowerCase() !== 'inactive',
+                    orgUnit: row['orgunit'] || '',
+                    costCenter: row['costcenter'] || '',
+                    hourlyRate: parseFloat(row['hourlyrate'] || '0') || 0,
+                    currency: row['currency'] || '',
+                    site: '',
+                    reportingTo: '',
+                    active: true,
                     customFields: [],
-                    qualifications: [],
+                    qualifications: quals,
                     flags: {},
-                };
+                } as Contact;
                 await db.addContact(newContact);
-                imported++;
-            } catch (e: any) {
-                console.warn(`Failed to import contact row: ${row['code']}`, e);
+                existingCodes.add(code.toUpperCase());
+                tally(res, { row: rowNo, key: code, status: 'inserted' });
+            } catch (e: unknown) {
+                tally(res, { row: rowNo, key: code, status: 'failed', reason: errMessage(e) });
             }
         }
-        showModal('Import Complete', `Successfully imported ${imported} of ${rows.length} contacts.`, imported === rows.length ? 'success' : 'warning');
+
+        if (res.inserted > 0) {
+            res.notes!.push('Imported people can see nothing until they are invited — use Admin › Migration Center to send login invites in bulk.');
+        }
+        showModal('Import Complete', `Imported ${res.inserted} of ${rows.length} contacts.`, res.failed === 0 ? 'success' : 'warning');
         loadData();
+        return res;
     };
 
     // --- Filtered list for rendering ---

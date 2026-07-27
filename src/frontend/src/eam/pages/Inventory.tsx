@@ -16,6 +16,7 @@ import {
 } from '../constants';
 import { InventoryItem, InventoryLocation, Store, BinLocation, InventorySupplier, Contact, Vendor } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
+import { emptyResult, tally, errMessage } from '../services/importTypes';
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { useAuth } from '../contexts/AuthContext';
@@ -2096,7 +2097,10 @@ export function Inventory({ onAnalyze }: InventoryProps) {
     const [showStockModal, setShowStockModal] = useState(false);
     const [showAddModal, setShowAddModal] = useState(false);
     const [showStoreManager, setShowStoreManager] = useState(false);
-    const [showBulkImport, setShowBulkImport] = useState(false);
+    // Deep-linked from Admin › Migration Center (/inventory?action=import).
+    const [showBulkImport, setShowBulkImport] = useState(
+        new URLSearchParams(window.location.search).get('action') === 'import'
+    );
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
 
@@ -2381,52 +2385,124 @@ export function Inventory({ onAnalyze }: InventoryProps) {
             return;
         }
         if (type !== 'inventory') return;
-        let imported = 0;
-        for (const row of rows) {
+
+        // Header names must match the template exactly (parseImportFile
+        // lowercases them). These used to read 'unitcost' and 'storelocation',
+        // which the template never ships — so every imported item landed at
+        // cost 0 with no stock row at all.
+        const res = emptyResult();
+        const existingCodes = new Set(inventoryItems.map(i => (i.code || '').toUpperCase()));
+
+        // Storerooms must exist as real inventory_locations rows before stock can
+        // reference them (stock.location_id is an FK). Resolve by name, creating
+        // any the file mentions but the tenant doesn't have yet.
+        const storeIdByName = new Map<string, string>();
+        try {
+            const existingStores = await DatabaseService.getInstance().getInventoryLocations();
+            for (const s of existingStores) storeIdByName.set(String(s.name || '').toUpperCase(), s.id);
+        } catch { /* fall through — names below simply won't resolve */ }
+
+        const resolveStore = async (name: string): Promise<string | null> => {
+            const key = name.toUpperCase();
+            const hit = storeIdByName.get(key);
+            if (hit) return hit;
             try {
+                const created = await DatabaseService.getInstance().addStore({ name, code: name.slice(0, 12).toUpperCase() });
+                if (created?.id) {
+                    storeIdByName.set(key, created.id);
+                    res.notes!.push(`Storeroom "${name}" created.`);
+                    return created.id;
+                }
+            } catch (e: unknown) {
+                res.notes!.push(`Could not create storeroom "${name}" (${errMessage(e)}).`);
+            }
+            return null;
+        };
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowNo = Number(row.__row) || i + 2;
+            const code = row['code'] || `INV-${Date.now()}-${i}`;
+
+            if (existingCodes.has(code.toUpperCase())) {
+                tally(res, { row: rowNo, key: code, status: 'skipped', reason: 'Item code already exists' });
+                continue;
+            }
+
+            try {
+                const qtyOnHand = parseInt(row['qtyonhand'] || '0') || 0;
+                const storeName = row['storename'] || '';
+                const storeId = storeName ? await resolveStore(storeName) : null;
                 const newItem: InventoryItem = {
                     id: crypto.randomUUID(),
-                    code: row['code'] || row['partcode'] || `INV-${Date.now()}-${imported}`,
+                    code,
                     description: row['description'] || 'Imported Item',
-                    type: row['type'] || 'PARTS',
+                    type: (row['type'] || 'SPARE').toUpperCase(),
                     uom: row['uom'] || 'EA',
                     manufacturer: row['manufacturer'] || '',
                     model: row['model'] || '',
-                    itemCost: parseFloat(row['unitcost'] || '0') || 0,
-                    totalQtyOnHand: parseInt(row['qtyonhand'] || '0') || 0,
-                    totalQtyOnOrder: parseInt(row['qtyonorder'] || '0') || 0,
-                    minLevel: parseInt(row['minlevel'] || row['reorderpoint'] || '0') || 0,
+                    itemCost: parseFloat(row['itemcost'] || '0') || 0,
+                    totalQtyOnHand: qtyOnHand,
+                    totalQtyOnOrder: 0,
+                    minLevel: parseInt(row['minlevel'] || '0') || 0,
                     maxLevel: parseInt(row['maxlevel'] || '0') || 0,
                     isActive: true,
-                    isCritical: (row['critical'] || 'No').toLowerCase() === 'yes',
-                    stockLocations: row['storelocation'] ? [{
-                        id: crypto.randomUUID(),
-                        storeId: '',
-                        storeName: row['storelocation'],
+                    isCritical: ['yes', 'true', 'y'].includes((row['iscritical'] || '').toLowerCase()),
+                    // addInventoryItem keys stock off stock.id, which must be a
+                    // REAL inventory_locations uuid — a synthetic one trips the FK.
+                    stockLocations: storeId ? [{
+                        id: storeId,
+                        storeId,
+                        storeName,
                         binLocation: row['binlocation'] || '',
                         minQty: parseInt(row['minlevel'] || '0') || 0,
                         maxQty: parseInt(row['maxlevel'] || '0') || 0,
-                        reorderQty: parseInt(row['reorderqty'] || '0') || 0,
-                        qtyOnHand: parseInt(row['qtyonhand'] || '0') || 0,
+                        reorderQty: 0,
+                        qtyOnHand,
                         qtyOnOrder: 0,
                     }] : [],
                     transactions: [],
                     suppliers: [],
                     customFields: [],
                     comments: '',
-                    barcode: row['barcode'] || '',
+                    barcode: '',
                     markupPercentage: 0,
                     createdAt: new Date().toISOString(),
                     createdById: 'bulk-import',
                 };
-                await handleCreateItem(newItem);
-                imported++;
-            } catch (e: any) {
-                console.warn(`Failed to import inventory row: ${row['code']}`, e);
+                // Straight to the service: handleCreateItem swallows failures into
+                // a toast, which would let this loop report phantom successes.
+                await DatabaseService.getInstance().addInventoryItem({
+                    id: newItem.id,
+                    // Blank — the auto_material_number BEFORE INSERT trigger fills it.
+                    material_number: '',
+                    part_number: newItem.code,
+                    description: newItem.description,
+                    type: newItem.type,
+                    uom: newItem.uom,
+                    manufacturer: newItem.manufacturer,
+                    model: newItem.model,
+                    unit_cost: newItem.itemCost,
+                    stock_on_hand: newItem.totalQtyOnHand,
+                    min_level: newItem.minLevel,
+                    max_level: newItem.maxLevel,
+                    is_active: true,
+                    is_critical: newItem.isCritical,
+                    properties: { customFields: [], suppliers: [] },
+                }, newItem.stockLocations);
+                existingCodes.add(code.toUpperCase());
+                if (row['assettag'] || row['preferredsupplier']) {
+                    res.notes!.push(`Row ${rowNo}: assetTag / preferredSupplier are not linked on import — set them on the item afterwards.`);
+                }
+                tally(res, { row: rowNo, key: code, status: 'inserted' });
+            } catch (e: unknown) {
+                tally(res, { row: rowNo, key: code, status: 'failed', reason: errMessage(e) });
             }
         }
-        showToast(`Imported ${imported} of ${rows.length} inventory items.`, imported === rows.length ? 'success' : 'warning');
+
+        showToast(`Imported ${res.inserted} of ${rows.length} inventory items.`, res.failed === 0 ? 'success' : 'warning');
         loadInventory();
+        return res;
     };
 
     return (

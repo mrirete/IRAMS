@@ -18,6 +18,8 @@ import BulkImportModal from '../components/modals/BulkImportModal';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { DatabaseService } from '../services/DatabaseService';
 import { buildPMStrategy } from '../lib/pmStrategy';
+import { emptyResult, tally, errMessage } from '../services/importTypes';
+import { parseDateValue } from '../services/assetTemplates';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { NotificationService } from '../services/NotificationService';
 import { ProcedureBuilder } from '../components/ProcedureBuilder';
@@ -74,7 +76,7 @@ export const RecurringWork: React.FC = () => {
     const [groupBy, setGroupBy] = useState<GroupBy>('none');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     // Bulk Import
-    const [showBulkImport, setShowBulkImport] = useState(false);
+    const [showBulkImport, setShowBulkImport] = useState(urlParams.get('action') === 'import');
     // Phase 5B — PM Calendar
     const [showCalendar, setShowCalendar] = useState(false);
     const [calendarDate, setCalendarDate] = useState(new Date());
@@ -587,15 +589,38 @@ export const RecurringWork: React.FC = () => {
     const handleBulkImportData = async (type: ImportType, rows: Record<string, string>[]) => {
         if (type !== 'recurring') return;
         const db = DatabaseService.getInstance();
-        let imported = 0;
-        for (const row of rows) {
+        const res = emptyResult();
+
+        // Tags were matched case-sensitively, so "gt-301" silently vanished.
+        const assetByTag = new Map(dbAssets.map(a => [(a.tag || '').toUpperCase(), a.id]));
+
+        // The template's vocabulary is not the app's — translate rather than
+        // defaulting everything to Preventive/MED.
+        const JOB_TYPES: Record<string, string> = {
+            PM: 'Preventive', PDM: 'Predictive', INSPECTION: 'Inspection', CM: 'Corrective',
+        };
+        const PRIORITIES: Record<string, string> = {
+            EMERGENCY: 'EMG', HIGH: 'HIGH', MEDIUM: 'MED', LOW: 'LOW',
+        };
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowNo = Number(row.__row) || i + 2;
+            const code = row['code'] || `PM-${Date.now()}-${i}`;
+            const tag = row['assettag'] || '';
+
+            const importAssetId = assetByTag.get(tag.toUpperCase());
+            if (!importAssetId) {
+                tally(res, { row: rowNo, key: code, status: 'failed', reason: `Asset tag "${tag || '(blank)'}" not found — import assets first` });
+                continue;
+            }
+
             try {
-                // recurring_work.asset_id and .title are NOT NULL — resolve/guard both.
-                const importAssetId = row['assettag'] ? dbAssets.find(a => a.tag === row['assettag'])?.id : undefined;
-                if (!importAssetId) throw new Error(`asset tag "${row['assettag'] || '(blank)'}" not found`);
-                const importTitle = row['title'] || row['jobdescription'] || row['description'] || row['code'] || 'Imported PM';
+                const importTitle = row['title'] || row['jobdescription'] || row['description'] || code || 'Imported PM';
+                const rawJob = (row['jobtype'] || '').toUpperCase();
+                const rawPrio = (row['priority'] || '').toUpperCase();
                 const payload = buildPMStrategy({
-                    code: row['code'] || `PM-${Date.now()}-${imported}`,
+                    code,
                     title: importTitle,
                     description: row['description'] || row['jobdescription'] || row['title'] || 'Imported PM',
                     status: (row['status'] || 'ACTIVE').toUpperCase(),
@@ -603,19 +628,27 @@ export const RecurringWork: React.FC = () => {
                     scheduleType: (row['scheduletype'] || 'TIME').toUpperCase(),
                     frequencyInterval: parseInt(row['frequencyinterval'] || '1') || 1,
                     frequencyUnit: (row['frequencyunit'] || 'months').toLowerCase(),
-                    jobType: row['jobtype'] || 'Preventive',
-                    priorityCode: row['priority'] || 'MED',
+                    jobType: JOB_TYPES[rawJob] || row['jobtype'] || 'Preventive',
+                    priorityCode: PRIORITIES[rawPrio] || row['priority'] || 'MED',
                     estDuration: parseFloat(row['estduration'] || '0') || 0,
                     estDowntime: parseFloat(row['estdowntime'] || '0') || 0,
+                    // Both were collected by the template and thrown away here.
+                    leadTimeDays: row['leadtimedays'] ? (parseInt(row['leadtimedays']) || undefined) : undefined,
+                    nextDueDate: parseDateValue(row['nextduedate'] || '') || undefined,
                 });
                 await db.createPM(payload);
-                imported++;
-            } catch (e: any) {
-                console.warn(`Failed to import recurring job row: ${row['code']}`, e);
+                if (row['rcmstrategy'] || row['costcenter'] || row['department']) {
+                    res.notes!.push(`Row ${rowNo}: rcmStrategy / costCenter / department are not stored on a PM — set them on the job afterwards.`);
+                }
+                tally(res, { row: rowNo, key: code, status: 'inserted' });
+            } catch (e: unknown) {
+                tally(res, { row: rowNo, key: code, status: 'failed', reason: errMessage(e) });
             }
         }
-        showToast(`Imported ${imported} of ${rows.length} recurring jobs`, imported === rows.length ? 'success' : 'warning');
+
+        showToast(`Imported ${res.inserted} of ${rows.length} recurring jobs`, res.failed === 0 ? 'success' : 'warning');
         loadStrategies();
+        return res;
     };
 
     return (

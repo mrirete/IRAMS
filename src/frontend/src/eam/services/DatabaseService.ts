@@ -2447,15 +2447,20 @@ export class DatabaseService {
      * Lightweight head-count of the entities the getting-started checklist tracks,
      * so onboarding steps auto-complete from real data (no full-list fetches).
      */
-    public async getOnboardingCounts(): Promise<{ assets: number; pms: number; workOrders: number; people: number }> {
+    public async getOnboardingCounts(): Promise<{
+        assets: number; pms: number; workOrders: number; people: number;
+        inventory: number; vendors: number; readings: number; batches: number; connectors: number;
+    }> {
         const head = async (table: string) => {
             const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
             return error ? 0 : (count || 0);
         };
-        const [assets, pms, workOrders, people] = await Promise.all([
+        const [assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors] = await Promise.all([
             head('assets'), head('recurring_work'), head('work_orders'), head('contacts'),
+            head('inventory_items'), head('vendors'), head('reading_logs'),
+            head('import_batches'), head('connectors'),
         ]);
-        return { assets, pms, workOrders, people };
+        return { assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors };
     }
 
     /**
@@ -3705,10 +3710,13 @@ export class DatabaseService {
                         item_id: data.id,
                         location_id: locationId,
                         quantity: stock.qtyOnHand || 0,
-                        min_level: stock.min || 0,
-                        max_level: stock.max || 0,
+                        // The UI type names these minQty/maxQty/binLocation; older
+                        // callers pass min/max/bin. Accept both so levels and bin
+                        // actually persist instead of silently defaulting to 0/''.
+                        min_level: stock.min ?? stock.minQty ?? 0,
+                        max_level: stock.max ?? stock.maxQty ?? 0,
                         reorder_qty: stock.reorderQty || 0,
-                        bin_location: stock.bin || ''
+                        bin_location: stock.bin ?? stock.binLocation ?? ''
                     });
 
                     if (stock.qtyOnHand > 0) {
