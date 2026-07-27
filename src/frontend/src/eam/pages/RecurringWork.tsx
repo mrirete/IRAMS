@@ -585,8 +585,118 @@ export const RecurringWork: React.FC = () => {
         { id: 'history', label: 'History', icon: History },
     ];
 
+    /**
+     * Job-plan import — the procedure content a migrated PM otherwise lacks.
+     *
+     * Each row is one operation; rows are grouped by pmCode into that
+     * schedule's task list (recurring_work.templates.tasks), which is what
+     * generateWOFromPM copies onto every work order the schedule raises.
+     * Re-importing a pmCode replaces that schedule's plan, so a corrected
+     * export can simply be re-run.
+     */
+    const handleJobPlanImport = async (rows: Record<string, string>[]) => {
+        const db = DatabaseService.getInstance();
+        const res = emptyResult();
+
+        // recurring_work.code carries no unique constraint, so a code that
+        // matches more than one schedule is ambiguous and must not be guessed.
+        const pmsByCode = new Map<string, RecurringJob[]>();
+        for (const pm of jobs) {
+            const key = (pm.code || '').toUpperCase();
+            if (!key) continue;
+            (pmsByCode.get(key) ?? pmsByCode.set(key, []).get(key)!).push(pm);
+        }
+
+        const centres = await db.getWorkCenters().catch(() => [] as any[]);
+        const centreByCode = new Map(
+            (centres || []).map((c: any) => [String(c.code ?? '').toUpperCase(), c.id])
+        );
+
+        // Group operations by the schedule they belong to, preserving sheet order.
+        interface Op { row: number; data: Record<string, string> }
+        const opsByPm = new Map<string, Op[]>();
+        for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const rowNo = Number(r.__row) || i + 2;
+            const code = (r['pmcode'] || '').trim();
+            if (!code) { tally(res, { row: rowNo, status: 'failed', reason: 'Missing pmCode' }); continue; }
+            const key = code.toUpperCase();
+            const matches = pmsByCode.get(key);
+            if (!matches || matches.length === 0) {
+                tally(res, { row: rowNo, key: code, status: 'failed', reason: `PM schedule "${code}" not found — import schedules first` });
+                continue;
+            }
+            if (matches.length > 1) {
+                tally(res, { row: rowNo, key: code, status: 'failed', reason: `PM code "${code}" matches ${matches.length} schedules — cannot tell which` });
+                continue;
+            }
+            (opsByPm.get(key) ?? opsByPm.set(key, []).get(key)!).push({ row: rowNo, data: r });
+        }
+
+        for (const [key, ops] of opsByPm) {
+            const pm = pmsByCode.get(key)![0];
+            // Operation numbers order the plan; blanks keep sheet order behind them.
+            const sorted = [...ops].sort((a, b) => {
+                const an = parseInt(a.data['operationno'] || '', 10);
+                const bn = parseInt(b.data['operationno'] || '', 10);
+                if (isNaN(an) && isNaN(bn)) return a.row - b.row;
+                if (isNaN(an)) return 1;
+                if (isNaN(bn)) return -1;
+                return an - bn;
+            });
+
+            const tasks = sorted.map((op, idx) => {
+                const d = op.data;
+                const seq = (idx + 1) * 10;
+                const centreCode = (d['workcentre'] || '').toUpperCase();
+                const centreId = centreCode ? centreByCode.get(centreCode) : undefined;
+                if (centreCode && !centreId) {
+                    res.notes!.push(`Row ${op.row}: work centre "${d['workcentre']}" not found — operation imported without it.`);
+                }
+                const longText = (d['longtext'] || '').trim();
+                return {
+                    id: `imp-${Date.now()}-${key}-${idx}`,
+                    sequence: seq,
+                    operationNo: (d['operationno'] || String(seq).padStart(4, '0')).trim(),
+                    description: d['description'] || 'Imported operation',
+                    estHours: parseFloat(d['esthours'] || '0') || 0,
+                    status: 'PENDING',
+                    controlKey: (d['controlkey'] || 'PM01').toUpperCase(),
+                    workCenterId: centreId,
+                    // The long text is what a technician actually reads on the
+                    // work order, so it becomes a procedure block rather than
+                    // being stashed somewhere the app never renders.
+                    instructions: longText
+                        ? [{ id: `ib-${Date.now()}-${idx}`, type: 'PROCEDURE', content: longText, required: false }]
+                        : [],
+                } as unknown as JobTask;
+            });
+
+            try {
+                const existing = await db.getPMTemplates(pm.id).catch(() => null);
+                const templates = { ...(existing || {}), tasks };
+                await db.savePMTemplates(pm.id, templates);
+                const replaced = (existing?.tasks ?? []).length;
+                if (replaced > 0) {
+                    res.notes!.push(`${pm.code}: replaced an existing ${replaced}-step plan.`);
+                }
+                sorted.forEach(op => tally(res, { row: op.row, key: pm.code, status: 'inserted' }));
+            } catch (e: unknown) {
+                sorted.forEach(op => tally(res, { row: op.row, key: pm.code, status: 'failed', reason: errMessage(e) }));
+            }
+        }
+
+        if (res.inserted > 0) {
+            res.notes!.push('Job plans flow onto work orders when the schedule next generates.');
+        }
+        showToast(`Imported ${res.inserted} operations across ${opsByPm.size} schedule(s)`, res.failed === 0 ? 'success' : 'warning');
+        loadStrategies();
+        return res;
+    };
+
     // --- Bulk Import handler for Recurring Jobs ---
     const handleBulkImportData = async (type: ImportType, rows: Record<string, string>[]) => {
+        if (type === 'jobplan') return handleJobPlanImport(rows);
         if (type !== 'recurring') return;
         const db = DatabaseService.getInstance();
         const res = emptyResult();
@@ -1090,7 +1200,7 @@ export const RecurringWork: React.FC = () => {
             <BulkImportModal
                 isOpen={showBulkImport}
                 onClose={() => setShowBulkImport(false)}
-                preSelectedType="recurring"
+                allowedTypes={['recurring', 'jobplan']}
                 onImportData={handleBulkImportData}
             />
             {/* Create PM Modal */}

@@ -29,7 +29,7 @@ function downloadWorkbook(wb: XLSX.WorkBook, filename: string): void {
     downloadBlob(blob, filename);
 }
 
-export type ImportType = 'asset' | 'bom' | 'recurring' | 'people' | 'inventory' | 'workorder' | 'location' | 'vendor' | 'readings' | 'unknown';
+export type ImportType = 'asset' | 'bom' | 'recurring' | 'people' | 'inventory' | 'workorder' | 'location' | 'vendor' | 'readings' | 'jobplan' | 'unknown';
 
 // ─── Asset Template Columns ─────────────────────────────────────
 // hierarchyLevel is what actually places a row in the tree. assetType is the
@@ -416,6 +416,59 @@ export function downloadReadingsTemplate(): void {
     downloadWorkbook(wb, 'ERS_Readings_Import_Template.xlsx');
 }
 
+// ─── Job Plan / Task List Template ──────────────────────────────
+// One row per OPERATION. Rows are grouped by pmCode into the job plan of an
+// existing PM schedule — SAP task-list operations (PLPO) and Maximo job-plan
+// tasks (JOBTASK) both export in this shape.
+const JOB_PLAN_COLUMNS = [
+    { header: 'pmCode', description: 'Code of the PM schedule this operation belongs to — must already exist', required: true },
+    { header: 'operationNo', description: 'Operation number (0010, 0020…). Blank numbers are assigned in sheet order.', required: false },
+    { header: 'description', description: 'What the technician does at this step', required: true },
+    { header: 'longText', description: 'Detailed instruction — becomes the step’s procedure text', required: false },
+    { header: 'estHours', description: 'Planned duration for this operation, in hours', required: false },
+    { header: 'workCentre', description: 'Work-centre code responsible — must match an existing work centre', required: false },
+    { header: 'controlKey', description: 'PM01 (internal) or PM02 (external). Defaults to PM01.', required: false },
+    { header: 'craft', description: 'Craft / trade required (MECH, ELEC, INST…)', required: false },
+    { header: 'numPersons', description: 'How many people the operation needs', required: false },
+];
+
+const JOB_PLAN_EXAMPLES = [
+    { pmCode: 'PM-65320', operationNo: '0010', description: 'Isolate and lock out the pump', longText: 'Apply LOTO per site procedure. Verify zero energy before proceeding.', estHours: 0.5, workCentre: 'MECH', controlKey: 'PM01', craft: 'MECH', numPersons: 2 },
+    { pmCode: 'PM-65320', operationNo: '0020', description: 'Inspect mechanical seal for leakage', longText: 'Check seal faces and flush lines. Record any weeping.', estHours: 1, workCentre: 'MECH', controlKey: 'PM01', craft: 'MECH', numPersons: 1 },
+    { pmCode: 'PM-65320', operationNo: '0030', description: 'Record bearing temperature and vibration', longText: 'Take readings at DE and NDE bearings.', estHours: 0.5, workCentre: 'COND', controlKey: 'PM01', craft: 'INST', numPersons: 1 },
+];
+
+export function downloadJobPlanTemplate(): void {
+    const wb = XLSX.utils.book_new();
+    const dataHeaders = JOB_PLAN_COLUMNS.map(c => c.header);
+    const dataRows = JOB_PLAN_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
+    const ws = XLSX.utils.aoa_to_sheet([dataHeaders, ...dataRows]);
+    ws['!cols'] = dataHeaders.map(h => ({ wch: Math.max(h.length + 4, 16) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Job Plan');
+
+    const instrData = [
+        ['Column', 'Required', 'Description'],
+        ...JOB_PLAN_COLUMNS.map(c => [c.header, c.required ? 'YES' : 'no', c.description]),
+        [],
+        ['How this import works'],
+        ['• Import your PM schedules FIRST — an operation whose pmCode is unknown is reported as failed.'],
+        ['• All rows sharing a pmCode become the ordered job plan for that schedule.'],
+        ['• Re-importing a pmCode REPLACES that schedule’s job plan; other schedules are untouched.'],
+        ['• Operations are sorted by operationNo, then by their order in the sheet.'],
+        ['• longText becomes the step’s procedure block, which is what a technician reads on the work order.'],
+        [],
+        ['What ERS cannot store yet'],
+        ['• Planner group, task-list usage and plant — no destination.'],
+        ['• Per-operation cost centre — PM schedules have no cost-centre column.'],
+        ['• Operation material lists — import spare parts against the asset BOM instead.'],
+    ];
+    const instrWs = XLSX.utils.aoa_to_sheet(instrData);
+    instrWs['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 78 }];
+    XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
+
+    downloadWorkbook(wb, 'ERS_JobPlan_Import_Template.xlsx');
+}
+
 // ─── Purchase-Order Line Items Template ─────────────────────────
 // Not a BulkImportModal type — PO lines are imported into one open order
 // from its Items tab, so this is a standalone template + the columns the
@@ -633,6 +686,7 @@ export const READING_TYPES = ['HOURS', 'KM', 'TEMPERATURE', 'VIBRATION', 'PRESSU
 const TYPE_SIGNATURES: { type: ImportType; required: string[]; distinguisher: string[] }[] = [
     { type: 'bom', required: ['assettag', 'inventorycode'], distinguisher: ['inventorycode'] },
     { type: 'recurring', required: ['code', 'assettag', 'scheduletype'], distinguisher: ['scheduletype', 'frequencyinterval'] },
+    { type: 'jobplan', required: ['pmcode', 'description'], distinguisher: ['operationno', 'pmcode'] },
     { type: 'readings', required: ['assettag', 'readingtype'], distinguisher: ['readingtype'] },
     { type: 'workorder', required: ['wonumber', 'assettag'], distinguisher: ['wonumber'] },
     { type: 'vendor', required: ['code', 'name', 'email'], distinguisher: ['paymentterms', 'contactperson'] },
@@ -655,6 +709,7 @@ const REQUIRED_FIELDS: Record<ImportType, string[]> = {
     location: ['tag', 'name', 'locationtype'],
     vendor: ['code', 'name', 'email'],
     readings: ['assettag', 'readingtype', 'date', 'value'],
+    jobplan: ['pmcode', 'description'],
     unknown: [],
 };
 
@@ -769,6 +824,17 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
                             }
                             break;
                         }
+                        case 'jobplan': {
+                            const hrs = rowData['esthours'];
+                            if (hrs && isNaN(Number(hrs))) errors.push('estHours must be a number');
+                            const np = rowData['numpersons'];
+                            if (np && isNaN(Number(np))) errors.push('numPersons must be a number');
+                            const ck = rowData['controlkey'];
+                            if (ck && !['PM01', 'PM02'].includes(ck.toUpperCase())) {
+                                warnings.push(`Unusual controlKey "${ck}" — expected PM01 or PM02`);
+                            }
+                            break;
+                        }
                         case 'readings': {
                             if (rowData['date'] && !parseDateValue(rowData['date'])) {
                                 errors.push(`Unrecognised date "${rowData['date']}"`);
@@ -872,6 +938,6 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
 
 export {
     ASSET_COLUMNS, BOM_COLUMNS, RECURRING_JOB_COLUMNS, PEOPLE_COLUMNS,
-    INVENTORY_COLUMNS, WORK_ORDER_COLUMNS, VENDOR_COLUMNS, READINGS_COLUMNS,
+    INVENTORY_COLUMNS, WORK_ORDER_COLUMNS, VENDOR_COLUMNS, READINGS_COLUMNS, JOB_PLAN_COLUMNS,
 };
 

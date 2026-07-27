@@ -291,6 +291,15 @@ const TaskEditorModal: React.FC<{
 
     // AI State
     const [isThinking, setIsThinking] = useState(false);
+    // Real stock, so part suggestions reference items that actually exist.
+    const [stockItems, setStockItems] = useState<any[]>([]);
+    useEffect(() => {
+        let active = true;
+        DatabaseService.getInstance().getInventory()
+            .then(items => { if (active) setStockItems(items || []); })
+            .catch(() => { if (active) setStockItems([]); });
+        return () => { active = false; };
+    }, []);
 
     // Heuristic AI Suggestion
     const handleAutoSuggest = () => {
@@ -313,12 +322,23 @@ const TaskEditorModal: React.FC<{
                 }
             }
 
-            // Inventory (Mock suggestions)
-            if (desc.includes('bearing')) {
-                newInventory.push({ inventoryItemId: 'mock-bearing-id', itemDescription: 'Ball Bearing 6205', quantity: 1, notes: 'Auto-suggested' });
-            }
-            if (desc.includes('filter')) {
-                newInventory.push({ inventoryItemId: 'mock-filter-id', itemDescription: 'Oil Filter Type A', quantity: 1 });
+            // Parts — matched against REAL stock. These used to push the literal
+            // ids 'mock-bearing-id' / 'mock-filter-id', which are not uuids and
+            // do not exist, so saving the task threw an FK violation on
+            // task_library_inventory.inventory_item_id.
+            for (const keyword of ['bearing', 'filter', 'seal', 'gasket', 'belt']) {
+                if (!desc.includes(keyword)) continue;
+                const match = stockItems.find(i =>
+                    `${i.description ?? ''} ${i.code ?? ''}`.toLowerCase().includes(keyword)
+                );
+                if (match && !newInventory.find(n => n.inventoryItemId === match.id)) {
+                    newInventory.push({
+                        inventoryItemId: match.id,
+                        itemDescription: match.description,
+                        quantity: 1,
+                        notes: 'Auto-suggested',
+                    });
+                }
             }
 
             setRoles(newRoles);

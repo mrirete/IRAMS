@@ -64,9 +64,10 @@ const PHASES: Phase[] = [
         to: '/vendors?action=import', toLabel: 'Import vendors', count: c => c.vendors, unit: 'vendors',
     },
     {
-        n: 5, title: 'PM schedules', icon: <CalendarClock size={18} />,
-        blurb: 'Recurring preventive and predictive jobs. Needs the asset register in place first.',
-        to: '/recurring-work?action=import', toLabel: 'Import PM schedules', count: c => c.pms, unit: 'schedules',
+        n: 5, title: 'PM schedules & job plans', icon: <CalendarClock size={18} />,
+        blurb: 'Recurring jobs, then the task lists that tell a technician what to actually do. Schedules first — job plans attach to them by PM code.',
+        to: '/recurring-work?action=import', toLabel: 'Import schedules & job plans', count: c => c.pms, unit: 'schedules',
+        note: 'A schedule without a job plan tells a technician when, but not what. Import both.',
     },
     {
         n: 6, title: 'Work-order history', icon: <FileSpreadsheet size={18} />,

@@ -4426,20 +4426,34 @@ export class DatabaseService {
             }
         }
 
-        // 3. Copy template tasks → job_tasks
+        // 3. Copy template tasks → job_tasks.
+        // The plan is the whole point of a PM, so carry the operation across
+        // intact: operation number, work centre, control key and planned rate
+        // were previously dropped here, which quietly stripped an imported SAP
+        // task list back to bare descriptions by the time a technician saw it.
         if (templates.tasks && templates.tasks.length > 0) {
-            for (const task of templates.tasks) {
-                const taskRecord: any = {
+            const taskRows = templates.tasks.map((task: any, idx: number) => {
+                const seq = task.sequence || (idx + 1) * 10;
+                return {
                     id: crypto.randomUUID(),
                     wo_id: woId,
-                    sequence: task.sequence || 10,
+                    sequence: seq,
                     description: task.description || '',
                     est_hours: task.estHours || 0,
                     status: 'PENDING',
                     instructions: task.instructions || [],
+                    operation_no: task.operationNo || String(seq).padStart(4, '0'),
+                    control_key: task.controlKey || 'PM01',
+                    work_center_id: task.workCenterId || null,
+                    planned_rate: task.plannedRate ?? null,
+                    assigned_user_ids: task.assignedUserIds || [],
+                    assigned_org_unit_ids: task.assignedOrgUnitIds || [],
                 };
-                await supabase.from('job_tasks').insert(taskRecord);
-            }
+            });
+            // One insert instead of N — a 40-operation task list was 40 round
+            // trips, each unchecked.
+            const { error: taskErr } = await supabase.from('job_tasks').insert(taskRows);
+            if (taskErr) console.error('generateWOFromPM: task copy failed:', taskErr.message);
         }
 
         // 4. Copy template JSA → jsa_assessments + jsa_hazards
