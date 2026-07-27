@@ -23,6 +23,7 @@ import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, reso
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
+import { importAssets } from '../services/bulkImportService';
 import { exportAssetsToXLSX, exportAssetsToCSV } from '../services/assetTemplates';
 
 import { AddManufacturerModal } from '../components/modals/AddManufacturerModal';
@@ -1873,51 +1874,25 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
             <BulkImportModal
                 isOpen={isBulkImportOpen}
                 onClose={() => setIsBulkImportOpen(false)}
-                existingAssets={assets}
                 allowedTypes={['asset', 'bom']}
                 onImportData={async () => {}}
-                onImportAssets={async (importedAssets) => {
-                    let successCount = 0;
-                    let failCount = 0;
-                    for (const a of importedAssets) {
-                        try {
-                            const newAsset: Asset = {
-                                id: crypto.randomUUID(),
-                                tag: a.tag || '',
-                                name: a.name || '',
-                                assetType: a.assetType || '',
-                                category: a.assetType || 'Equipment',
-                                criticality: (a.criticality as any) || 'C',
-                                status: (a.status as any) || 'ACTIVE',
-                                department: a.department || '',
-                                costCenter: a.costCenter || '',
-                                location: a.location || '',
-                                manufacturer: a.manufacturer || '',
-                                model: a.model || '',
-                                serialNumber: a.serialNumber || '',
-                                description: a.description || a.name || '',
-                                healthScore: 100,
-                                parentId: a.parentId || undefined,
-                                priority: 'MEDIUM',
-                                bomItems: [],
-                            };
-                            await DatabaseService.getInstance().addAsset(newAsset);
-                            successCount++;
-                        } catch (err) {
-                            failCount++;
-                            errorLog.importError('assets', `Failed to import asset row: ${a.tag || 'unknown'}`, err, {
-                                tag: a.tag, name: a.name, assetType: a.assetType, status: a.status,
-                                criticality: a.criticality, department: a.department,
-                            });
-                        }
+                onImportAssets={async (rows) => {
+                    // The engine owns hierarchy resolution, parent ordering and
+                    // per-level rules; it reports every row's fate back to the modal.
+                    const result = await importAssets(rows);
+                    if (result.failed > 0) {
+                        errorLog.importError('assets', `${result.failed} asset row(s) could not be imported`, undefined, {
+                            failures: result.outcomes.filter(o => o.status === 'failed').slice(0, 20),
+                        });
                     }
                     const refreshed = await DatabaseService.getInstance().getAssets();
                     setAssets(refreshed);
-                    if (failCount > 0) {
-                        showToast(`Imported ${successCount} assets, ${failCount} failed — see Error Logs`, 'warning');
+                    if (result.failed > 0) {
+                        showToast(`Imported ${result.inserted} assets, ${result.failed} failed`, 'warning');
                     } else {
-                        showToast(`Imported ${successCount} assets`, 'success');
+                        showToast(`Imported ${result.inserted} assets`, 'success');
                     }
+                    return result;
                 }}
                 onImportBOMs={async (bomGroups) => {
                     let count = 0;

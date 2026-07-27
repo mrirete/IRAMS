@@ -6,6 +6,7 @@
  */
 import * as XLSX from 'xlsx';
 import type { Asset, BomItem } from '../types';
+import { getLevels } from './hierarchyModel';
 
 /** Native browser download — bypasses file-saver for reliable filenames */
 function downloadBlob(blob: Blob, filename: string): void {
@@ -28,20 +29,25 @@ function downloadWorkbook(wb: XLSX.WorkBook, filename: string): void {
     downloadBlob(blob, filename);
 }
 
-export type ImportType = 'asset' | 'bom' | 'recurring' | 'people' | 'inventory' | 'workorder' | 'location' | 'vendor' | 'unknown';
+export type ImportType = 'asset' | 'bom' | 'recurring' | 'people' | 'inventory' | 'workorder' | 'location' | 'vendor' | 'readings' | 'unknown';
 
 // ─── Asset Template Columns ─────────────────────────────────────
+// hierarchyLevel is what actually places a row in the tree. assetType is the
+// equipment kind (PUMP/MOTOR) and only acts as a level fallback when it happens
+// to name a level. See the Instructions sheet, generated from the live level
+// model so an admin's custom levels are always what the template advertises.
 const ASSET_COLUMNS = [
     { header: 'tag', description: 'Unique asset tag identifier (e.g. GT-301)', required: true },
     { header: 'name', description: 'Descriptive name (e.g. Gas Turbine #1)', required: true },
-    { header: 'assetType', description: 'ISO 14224 type: SITE, AREA, UNIT, SYSTEM, PUMP, MOTOR, COMPRESSOR, etc.', required: true },
-    { header: 'parentTag', description: 'Parent asset tag for hierarchy placement (leave blank for root)', required: false },
+    { header: 'hierarchyLevel', description: 'Where this row sits in the tree — see the Instructions sheet for the valid codes. Leave blank only if assetType is itself a level code.', required: false },
+    { header: 'assetType', description: 'Equipment kind / ISO 14224 class: PUMP, MOTOR, COMPRESSOR, VESSEL, VALVE…', required: true },
+    { header: 'parentTag', description: 'Parent asset tag for hierarchy placement (leave blank for root). May be an earlier row in this file or an existing asset.', required: false },
     { header: 'equipmentNumber', description: 'Internal Equipment Number (IEN). Leave blank to auto-generate EQ-NNNNNN. Provide to migrate from SAP/Maximo.', required: false },
-    { header: 'criticality', description: 'A = Safety Critical, B = Production, C = General, D = Low Impact', required: false },
+    { header: 'criticality', description: 'A = Safety Critical, B = Production, C = General, D = Low Impact. Required for equipment-class levels (see Instructions).', required: false },
     { header: 'status', description: 'ACTIVE, MAINTENANCE, STANDBY, DOWN, or DECOMMISSIONED', required: false },
-    { header: 'department', description: 'Department name', required: false },
-    { header: 'costCenter', description: 'Org cost center code', required: false },
-    { header: 'location', description: 'Physical location description', required: false },
+    { header: 'department', description: 'Department name (stored as an asset property)', required: false },
+    { header: 'costCenter', description: 'Cost-center code — must match an existing cost centre, otherwise the asset imports without it', required: false },
+    { header: 'location', description: 'Physical location description (stored as an asset property)', required: false },
     { header: 'manufacturer', description: 'OEM manufacturer name', required: false },
     { header: 'model', description: 'Model number', required: false },
     { header: 'serialNumber', description: 'Equipment serial number', required: false },
@@ -59,9 +65,11 @@ const BOM_COLUMNS = [
 
 // ─── Sample Data ────────────────────────────────────────────────
 const ASSET_EXAMPLES = [
-    { tag: 'SITE-HOU', name: 'Houston Production Site', assetType: 'SITE', parentTag: '', equipmentNumber: '', criticality: 'B', status: 'ACTIVE', department: 'Operations', costCenter: 'CC-001', location: 'Houston, TX', manufacturer: '', model: '', serialNumber: '', description: 'Main production facility' },
-    { tag: 'UNIT-300', name: 'Gas Turbine Generation Unit', assetType: 'UNIT', parentTag: 'SITE-HOU', equipmentNumber: '', criticality: 'A', status: 'ACTIVE', department: 'Power Generation', costCenter: 'CC-003', location: 'Block 300', manufacturer: '', model: '', serialNumber: '', description: 'Combined cycle power generation' },
-    { tag: 'GT-301', name: 'Gas Turbine #1', assetType: 'COMPRESSOR', parentTag: 'UNIT-300', equipmentNumber: 'EQ-SAP-50291', criticality: 'A', status: 'ACTIVE', department: 'Mechanical', costCenter: 'CC-003', location: 'Block 300 Bay 1', manufacturer: 'GE', model: 'LM2500', serialNumber: 'SN-50291', description: 'Frame 5 gas turbine' },
+    { tag: 'SITE-HOU', name: 'Houston Production Site', hierarchyLevel: 'SITE', assetType: 'SITE', parentTag: '', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Operations', costCenter: 'CC-001', location: 'Houston, TX', manufacturer: '', model: '', serialNumber: '', description: 'Main production facility' },
+    { tag: 'UNIT-300', name: 'Gas Turbine Generation Unit', hierarchyLevel: 'UNIT', assetType: 'UNIT', parentTag: 'SITE-HOU', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Power Generation', costCenter: 'CC-003', location: 'Block 300', manufacturer: '', model: '', serialNumber: '', description: 'Combined cycle power generation' },
+    { tag: 'SYS-300-GTG', name: 'Gas Turbine Generator System', hierarchyLevel: 'SYSTEM', assetType: 'SYSTEM', parentTag: 'UNIT-300', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Power Generation', costCenter: 'CC-003', location: 'Block 300', manufacturer: '', model: '', serialNumber: '', description: 'Turbine generator process system' },
+    { tag: 'GT-301', name: 'Gas Turbine #1', hierarchyLevel: 'EQUIPMENT', assetType: 'COMPRESSOR', parentTag: 'SYS-300-GTG', equipmentNumber: 'EQ-SAP-50291', criticality: 'A', status: 'ACTIVE', department: 'Mechanical', costCenter: 'CC-003', location: 'Block 300 Bay 1', manufacturer: 'GE', model: 'LM2500', serialNumber: 'SN-50291', description: 'Frame 5 gas turbine' },
+    { tag: 'GT-301-BRG1', name: 'GT-301 Thrust Bearing', hierarchyLevel: 'COMPONENT', assetType: 'BEARING', parentTag: 'GT-301', equipmentNumber: '', criticality: 'B', status: 'ACTIVE', department: 'Mechanical', costCenter: 'CC-003', location: 'Block 300 Bay 1', manufacturer: 'SKF', model: '7220', serialNumber: '', description: 'Thrust bearing assembly' },
 ];
 
 const BOM_EXAMPLES = [
@@ -84,18 +92,49 @@ export function downloadAssetTemplate(): void {
     ws['!cols'] = dataHeaders.map(h => ({ wch: Math.max(h.length + 4, 18) }));
     XLSX.utils.book_append_sheet(wb, ws, 'Assets');
 
-    // Sheet 2 — Instructions
+    // Sheet 2 — Instructions. The level table is generated from the live
+    // hierarchy model (hierarchy_config, admin-editable) rather than hardcoded,
+    // so the template can never advertise levels the importer would reject.
+    const levels = getLevels();
+    const levelCodes = levels.map(l => l.code).join(', ');
+    const mandatoryCrit = levels.filter(l => l.criticality === 'mandatory').map(l => l.code);
+
     const instrData = [
         ['Column', 'Required', 'Description', 'Valid Values'],
         ...ASSET_COLUMNS.map(c => [
             c.header,
             c.required ? 'YES' : 'no',
             c.description,
-            c.header === 'criticality' ? 'A, B, C, D' :
+            c.header === 'criticality' ? `A, B, C, D — mandatory for: ${mandatoryCrit.join(', ')}` :
                 c.header === 'status' ? 'ACTIVE, MAINTENANCE, STANDBY, DOWN, DECOMMISSIONED' :
-                    c.header === 'assetType' ? 'SITE, AREA, UNIT, SYSTEM, PUMP, MOTOR, COMPRESSOR, VESSEL, VALVE, HEAT_EXCHANGER' :
-                        c.header === 'equipmentNumber' ? 'Leave blank for auto-generation (EQ-NNNNNN) or provide existing IEN from SAP/Maximo' : ''
+                    c.header === 'hierarchyLevel' ? levelCodes :
+                        c.header === 'assetType' ? 'PUMP, MOTOR, COMPRESSOR, VESSEL, VALVE, HEAT_EXCHANGER, BEARING… (or a level code)' :
+                            c.header === 'equipmentNumber' ? 'Leave blank for auto-generation (EQ-NNNNNN) or provide existing IEN from SAP/Maximo' : ''
         ]),
+        [],
+        ['Hierarchy Levels — the shape of your register'],
+        ['Level', 'Label', 'Object class', 'Numbering', 'Criticality', 'Allowed child levels'],
+        ...levels.map(l => [
+            l.code,
+            l.label,
+            l.objectClass === 'FLOC' ? 'Functional location' : 'Equipment',
+            l.numbering === 'FL' ? 'FL-NNNNNN' : l.numbering === 'EQ' ? 'EQ-NNNNNN' : 'none',
+            l.criticality === 'mandatory' ? 'REQUIRED' : 'optional',
+            (l.allowedChildCodes ?? []).join(', ') || '(none — leaf level)',
+        ]),
+        [],
+        ['How parents work'],
+        ['• parentTag may point at an earlier row in this file, or at an asset that already exists in ERS.'],
+        ['• Rows are sorted automatically, so a child may appear above its parent in the sheet.'],
+        ['• A parent tag that exists nowhere is reported as a failed row — nothing is guessed.'],
+        ['• A child level must be allowed under its parent level (see the table above), or the row fails.'],
+        ['• Circular parent references (A → B → A) are detected and reported.'],
+        ['• If you leave tag blank the system auto-numbers it — but such a row cannot be used as a parentTag.'],
+        [],
+        ['Functional locations vs equipment'],
+        ['• Functional-location levels describe the position in the plant (SAP TPLNR). They get FL- numbers.'],
+        ['• Equipment levels describe the maintainable item itself (SAP EQUNR). They get EQ- numbers.'],
+        ['• Import the whole tree from this one sheet — locations and equipment are rows at different levels.'],
         [],
         ['Internal Equipment Number (IEN) — SAP PM Parity'],
         ['The equipmentNumber column is the Internal Equipment Number (IEN), equivalent to SAP PM Equipment Number.'],
@@ -103,19 +142,9 @@ export function downloadAssetTemplate(): void {
         ['• Provide a value: Use this to migrate existing equipment numbers from SAP, Maximo, or other EAM systems.'],
         ['• The IEN uniquely identifies a physical asset. The tag (Functional Location) identifies the position.'],
         ['• When equipment is replaced, the tag stays but a new IEN is generated for the replacement asset.'],
-        [],
-        ['ISO 14224 Taxonomy Reference'],
-        ['Level', 'Tag', 'Example'],
-        ['L1 Enterprise', 'SITE', 'SITE-HOU'],
-        ['L2 Site', 'AREA', 'AREA-NORTH'],
-        ['L3 Plant/Unit', 'UNIT', 'UNIT-300'],
-        ['L4 System', 'SYSTEM', 'SYS-300-GTG'],
-        ['L5 Equipment', 'Various', 'GT-301'],
-        ['L6 Subunit', 'Various', 'GT-301-COMB'],
-        ['L7 Component', 'Various', 'GT-301-COMB-BRG1'],
     ];
     const instrWs = XLSX.utils.aoa_to_sheet(instrData);
-    instrWs['!cols'] = [{ wch: 20 }, { wch: 10 }, { wch: 80 }, { wch: 60 }];
+    instrWs['!cols'] = [{ wch: 20 }, { wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 40 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
     downloadWorkbook(wb, 'ERS_Asset_Import_Template.xlsx');
@@ -340,44 +369,51 @@ export function downloadWorkOrderTemplate(): void {
     downloadWorkbook(wb, 'ERS_Work_Orders_Template.xlsx');
 }
 
-// ─── Location Template ──────────────────────────────────────────
-const LOCATION_COLUMNS = [
-    { header: 'tag', description: 'Functional location tag (unique)', required: true },
-    { header: 'name', description: 'Location name', required: true },
-    { header: 'locationType', description: 'SITE, AREA, BUILDING, FLOOR, ROOM', required: true },
-    { header: 'parentTag', description: 'Parent location tag (hierarchy)', required: false },
-    { header: 'description', description: 'Extended description', required: false },
-    { header: 'address', description: 'Physical address', required: false },
-    { header: 'gpsLat', description: 'GPS latitude', required: false },
-    { header: 'gpsLng', description: 'GPS longitude', required: false },
+// ─── Readings / Meter History Template ──────────────────────────
+// Historical meter + condition readings from the outgoing CMMS. Reading points
+// (reading_definitions) are created on demand per asset+type, so a migration
+// only needs the raw log.
+const READINGS_COLUMNS = [
+    { header: 'assetTag', description: 'Asset tag this reading belongs to (must already exist)', required: true },
+    { header: 'readingType', description: 'HOURS, KM, TEMPERATURE, VIBRATION or PRESSURE', required: true },
+    { header: 'date', description: 'Reading date — yyyy-mm-dd (or any Excel date cell)', required: true },
+    { header: 'value', description: 'Numeric reading value', required: true },
+    { header: 'unit', description: 'Unit of measure (hrs, km, °C, mm/s, bar)', required: false },
+    { header: 'notes', description: 'Optional comment carried onto the reading', required: false },
 ];
 
-const LOCATION_EXAMPLES = [
-    { tag: 'LOC-HOU', name: 'Houston Refinery', locationType: 'SITE', parentTag: '', description: 'Main production site', address: '1234 Refinery Road, Houston TX', gpsLat: '29.7604', gpsLng: '-95.3698' },
-    { tag: 'LOC-HOU-A', name: 'Area A — Process Units', locationType: 'AREA', parentTag: 'LOC-HOU', description: 'Primary processing area', address: '', gpsLat: '', gpsLng: '' },
-    { tag: 'LOC-HOU-B', name: 'Area B — Utilities', locationType: 'AREA', parentTag: 'LOC-HOU', description: 'Power generation & water treatment', address: '', gpsLat: '', gpsLng: '' },
+const READINGS_EXAMPLES = [
+    { assetTag: 'GT-301', readingType: 'HOURS', date: '2026-01-31', value: '48210', unit: 'hrs', notes: 'Month-end counter read' },
+    { assetTag: 'GT-301', readingType: 'VIBRATION', date: '2026-02-14', value: '4.2', unit: 'mm/s', notes: 'Route 12 — DE bearing' },
+    { assetTag: 'GT-301', readingType: 'TEMPERATURE', date: '2026-02-14', value: '72.5', unit: '°C', notes: '' },
 ];
 
-export function downloadLocationTemplate(): void {
+export function downloadReadingsTemplate(): void {
     const wb = XLSX.utils.book_new();
-    const dataHeaders = LOCATION_COLUMNS.map(c => c.header);
-    const dataRows = LOCATION_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
+    const dataHeaders = READINGS_COLUMNS.map(c => c.header);
+    const dataRows = READINGS_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
     const ws = XLSX.utils.aoa_to_sheet([dataHeaders, ...dataRows]);
-    ws['!cols'] = dataHeaders.map(h => ({ wch: Math.max(h.length + 4, 18) }));
-    XLSX.utils.book_append_sheet(wb, ws, 'Locations');
+    ws['!cols'] = dataHeaders.map(h => ({ wch: Math.max(h.length + 4, 16) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Readings');
 
     const instrData = [
         ['Column', 'Required', 'Description', 'Valid Values'],
-        ...LOCATION_COLUMNS.map(c => [
+        ...READINGS_COLUMNS.map(c => [
             c.header, c.required ? 'YES' : 'no', c.description,
-            c.header === 'locationType' ? 'SITE, AREA, BUILDING, FLOOR, ROOM' : ''
+            c.header === 'readingType' ? READING_TYPES.join(', ') : ''
         ]),
+        [],
+        ['How this import works'],
+        ['• Import your assets FIRST — a reading whose assetTag is unknown is reported as a failed row.'],
+        ['• A reading point is created automatically the first time an asset+readingType pair appears.'],
+        ['• Alarm limits are NOT set by this import. Add them afterwards on the asset\'s Readings tab.'],
+        ['• This is for HISTORY. Live sensor feeds belong in Admin › Connector Hub.'],
     ];
     const instrWs = XLSX.utils.aoa_to_sheet(instrData);
-    instrWs['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 50 }, { wch: 35 }];
+    instrWs['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 60 }, { wch: 45 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
-    downloadWorkbook(wb, 'ERS_Locations_Template.xlsx');
+    downloadWorkbook(wb, 'ERS_Readings_Import_Template.xlsx');
 }
 
 // ─── Vendor / Supplier Template ─────────────────────────────────
@@ -518,21 +554,27 @@ export interface ParseResult {
     errorCount: number;
 }
 
+/** Reading types that have seeded reference codes. */
+export const READING_TYPES = ['HOURS', 'KM', 'TEMPERATURE', 'VIBRATION', 'PRESSURE'];
+
 // Header signature map for auto-detection
 const TYPE_SIGNATURES: { type: ImportType; required: string[]; distinguisher: string[] }[] = [
     { type: 'bom', required: ['assettag', 'inventorycode'], distinguisher: ['inventorycode'] },
     { type: 'recurring', required: ['code', 'assettag', 'scheduletype'], distinguisher: ['scheduletype', 'frequencyinterval'] },
+    { type: 'readings', required: ['assettag', 'readingtype'], distinguisher: ['readingtype'] },
     { type: 'workorder', required: ['wonumber', 'assettag'], distinguisher: ['wonumber'] },
     { type: 'vendor', required: ['code', 'name', 'email'], distinguisher: ['paymentterms', 'contactperson'] },
     { type: 'inventory', required: ['code', 'description', 'uom'], distinguisher: ['itemcost', 'binlocation', 'qtyonhand'] },
     { type: 'location', required: ['tag', 'name', 'locationtype'], distinguisher: ['locationtype', 'gpslat'] },
     { type: 'people', required: ['code', 'name', 'email'], distinguisher: ['hourlyrate', 'qualifications', 'orgunit'] },
-    { type: 'asset', required: ['tag', 'name'], distinguisher: ['assettype', 'serialnumber'] },
+    { type: 'asset', required: ['tag', 'name'], distinguisher: ['assettype', 'hierarchylevel', 'serialnumber'] },
 ];
 
-// Required fields per type (lowercase)
+// Required fields per type (lowercase). Assets no longer require assetType —
+// hierarchyLevel or assetType must resolve to a level, which the import engine
+// checks against the live level model (a template can't encode that rule).
 const REQUIRED_FIELDS: Record<ImportType, string[]> = {
-    asset: ['tag', 'name', 'assettype'],
+    asset: ['tag', 'name'],
     bom: ['assettag', 'inventorycode', 'description', 'quantity'],
     recurring: ['code', 'description', 'assettag', 'scheduletype', 'frequencyinterval', 'frequencyunit'],
     people: ['code', 'name', 'email', 'type'],
@@ -540,10 +582,47 @@ const REQUIRED_FIELDS: Record<ImportType, string[]> = {
     workorder: ['wonumber', 'description', 'assettag', 'type', 'priority'],
     location: ['tag', 'name', 'locationtype'],
     vendor: ['code', 'name', 'email'],
+    readings: ['assettag', 'readingtype', 'date', 'value'],
     unknown: [],
 };
 
-function detectImportType(headers: string[]): ImportType {
+/**
+ * Excel serial / ISO / d-m-y → ISO date string. Excel stores dates as days
+ * since 1899-12-30 when a cell is date-formatted, so a raw parse yields "45678".
+ */
+export function parseDateValue(raw: string): string | null {
+    const v = String(raw ?? '').trim();
+    if (!v) return null;
+
+    if (/^\d{4}-\d{2}-\d{2}/.test(v)) {
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : v.slice(0, 10);
+    }
+    // Excel serial
+    if (/^\d+(\.\d+)?$/.test(v)) {
+        const serial = Number(v);
+        if (serial > 0 && serial < 100000) {
+            const ms = Math.round((serial - 25569) * 86400 * 1000);
+            const d = new Date(ms);
+            return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+        }
+        return null;
+    }
+    // d/m/y or m/d/y — ambiguous; prefer d/m/y when the first part can't be a month
+    const m = v.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+    if (m) {
+        let [, a, b, y] = m;
+        let day = Number(a), month = Number(b);
+        if (day <= 12 && month > 12) { const t = day; day = month; month = t; }
+        const year = Number(y.length === 2 ? `20${y}` : y);
+        const d = new Date(Date.UTC(year, month - 1, day));
+        return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+    }
+    const d = new Date(v);
+    return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+export function detectImportType(headers: string[]): ImportType {
     const lc = new Set(headers.map(h => h.toLowerCase()));
 
     for (const sig of TYPE_SIGNATURES) {
@@ -607,6 +686,27 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
                             if (crit && !['A', 'B', 'C', 'D'].includes(crit.toUpperCase())) warnings.push(`Invalid criticality "${crit}"`);
                             const status = rowData['status'];
                             if (status && !['ACTIVE', 'OPERATING', 'MAINTENANCE', 'STANDBY', 'DOWN', 'DECOMMISSIONED'].includes(status.toUpperCase())) warnings.push(`Invalid status "${status}"`);
+                            // The level must resolve here or the row can't be placed. Deeper
+                            // rules (parent legality, per-level criticality) need the whole
+                            // file plus the DB, so the import engine owns those.
+                            if (!rowData['hierarchylevel'] && !rowData['assettype']) {
+                                errors.push('Missing hierarchyLevel (or an assetType naming a level)');
+                            }
+                            if (tag && rowData['parenttag'] && rowData['parenttag'].toUpperCase() === tag.toUpperCase()) {
+                                errors.push('parentTag cannot be the row\'s own tag');
+                            }
+                            break;
+                        }
+                        case 'readings': {
+                            if (rowData['date'] && !parseDateValue(rowData['date'])) {
+                                errors.push(`Unrecognised date "${rowData['date']}"`);
+                            }
+                            const val = rowData['value'];
+                            if (val && isNaN(Number(val))) errors.push('value must be a number');
+                            const rt = rowData['readingtype'];
+                            if (rt && !READING_TYPES.includes(rt.toUpperCase())) {
+                                warnings.push(`Unknown readingType "${rt}" — it will still import`);
+                            }
                             break;
                         }
                         case 'bom': {
@@ -700,6 +800,6 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
 
 export {
     ASSET_COLUMNS, BOM_COLUMNS, RECURRING_JOB_COLUMNS, PEOPLE_COLUMNS,
-    INVENTORY_COLUMNS, WORK_ORDER_COLUMNS, LOCATION_COLUMNS, VENDOR_COLUMNS,
+    INVENTORY_COLUMNS, WORK_ORDER_COLUMNS, VENDOR_COLUMNS, READINGS_COLUMNS,
 };
 

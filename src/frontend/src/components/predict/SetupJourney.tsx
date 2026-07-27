@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import BulkImportModal from '../../eam/components/modals/BulkImportModal';
+import { importAssets } from '../../eam/services/bulkImportService';
 import { ImportReadingsModal } from '../connectors/ImportReadingsModal';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 import predictionService from '../../eam/services/PredictionService';
@@ -154,7 +155,6 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
     const [intake, setIntake] = useState<'choose' | 'pick' | 'add'>('choose');
     const [pickSearch, setPickSearch] = useState('');
     const [uploadOpen, setUploadOpen] = useState(false);
-    const [existingForImport, setExistingForImport] = useState<Asset[]>([]);
     const [quickAdd, setQuickAdd] = useState({ name: '', tag: '', criticality: 'B' });
     const [saving, setSaving] = useState(false);
 
@@ -217,14 +217,6 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
         return () => { active = false; };
     }, [assetId]);
 
-    // Lazy-load the register in eam shape for BulkImportModal duplicate checks.
-    useEffect(() => {
-        if (!uploadOpen || existingForImport.length > 0) return;
-        DatabaseService.getInstance().getAssets()
-            .then(a => setExistingForImport(a || []))
-            .catch(() => setExistingForImport([]));
-    }, [uploadOpen, existingForImport.length]);
-
     // ── Step 1 actions ────────────────────────────────────
 
     const handleQuickAdd = async () => {
@@ -248,28 +240,15 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
         } finally { setSaving(false); }
     };
 
-    const handleImportAssets = async (importedAssets: Partial<Asset>[]) => {
-        let ok = 0, fail = 0;
-        for (const a of importedAssets) {
-            try {
-                await DatabaseService.getInstance().addAsset({
-                    id: crypto.randomUUID(),
-                    tag: a.tag || '',
-                    name: a.name || '',
-                    assetType: a.assetType || '',
-                    category: a.assetType || 'Equipment',
-                    criticality: (a.criticality as any) || 'C',
-                    status: (a.status as any) || 'ACTIVE',
-                    parentId: a.parentId || undefined,
-                    manufacturer: a.manufacturer || '',
-                    model: a.model || '',
-                });
-                ok++;
-            } catch { fail++; }
-        }
+    const handleImportAssets = async (rows: Record<string, string>[]) => {
+        // Same hierarchy-aware engine the Asset Register uses — Predict's setup
+        // must not produce a flatter register than the main import path.
+        const result = await importAssets(rows);
         await refreshAssets();
+        const { inserted: ok, failed: fail } = result;
         if (ok > 0) showToast(`${ok} asset${ok > 1 ? 's' : ''} imported into your register${fail ? ` (${fail} failed)` : ''}.`, fail ? 'warning' : 'success');
-        else if (fail > 0) showToast(`Import failed for ${fail} row${fail > 1 ? 's' : ''} — check the template columns.`, 'error');
+        else if (fail > 0) showToast(`Import failed for ${fail} row${fail > 1 ? 's' : ''} — check the failure list.`, 'error');
+        return result;
     };
 
     // ── Step 2 actions ────────────────────────────────────
@@ -812,7 +791,6 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
                 onClose={() => { setUploadOpen(false); setIntake('pick'); }}
                 preSelectedType="asset"
                 allowedTypes={['asset']}
-                existingAssets={existingForImport}
                 onImportData={async () => { /* handled via onImportAssets */ }}
                 onImportAssets={handleImportAssets}
             />

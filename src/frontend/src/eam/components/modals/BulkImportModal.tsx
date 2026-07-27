@@ -7,35 +7,39 @@ import React, { useState, useCallback, useRef } from 'react';
 import {
     X, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle,
     XCircle, Download, ChevronRight, Loader2, FileCheck,
-    Wrench, Users, Package, ClipboardList, MapPin, Building2, CalendarClock, Boxes
+    Wrench, Users, Package, Building2, CalendarClock, Boxes, Gauge
 } from 'lucide-react';
 import {
-    parseImportFile,
+    parseImportFile, detectImportType,
     downloadAssetTemplate, downloadBOMTemplate,
     downloadRecurringJobTemplate, downloadPeopleTemplate,
-    downloadInventoryTemplate, downloadWorkOrderTemplate,
-    downloadLocationTemplate, downloadVendorTemplate,
+    downloadInventoryTemplate, downloadVendorTemplate,
+    downloadReadingsTemplate,
     type ImportType, type ParseResult, type ParsedRow
 } from '../../services/assetTemplates';
-import type { Asset, BomItem } from '../../types';
+import { outcomesToCsv, type ImportResult } from '../../services/importTypes';
+import type { BomItem } from '../../types';
 
 // ─── Import type metadata ───────────────────────────────────────
+// Functional locations are asset rows (FLOC-class hierarchy levels), so the
+// asset template carries the whole tree — there is no separate Locations type.
+// Work-order *history* belongs to the CMMS Import Wizard (/specialist/import),
+// which maps foreign columns and gives you a rollback-able batch.
 const IMPORT_TYPES: { type: ImportType; label: string; desc: string; icon: React.ReactNode; color: string; downloadFn: () => void }[] = [
     { type: 'asset',     label: 'Assets',          desc: 'Equipment & hierarchy',          icon: <Wrench size={20} />,         color: 'blue',    downloadFn: downloadAssetTemplate },
     { type: 'bom',       label: 'BOM',             desc: 'Bills of materials',             icon: <Boxes size={20} />,          color: 'emerald', downloadFn: downloadBOMTemplate },
     { type: 'recurring', label: 'Recurring Jobs',  desc: 'PM/PdM schedules',               icon: <CalendarClock size={20} />,  color: 'violet',  downloadFn: downloadRecurringJobTemplate },
     { type: 'people',    label: 'People',          desc: 'Contacts & personnel',           icon: <Users size={20} />,          color: 'cyan',    downloadFn: downloadPeopleTemplate },
     { type: 'inventory', label: 'Inventory',       desc: 'Spare parts & stock',            icon: <Package size={20} />,        color: 'amber',   downloadFn: downloadInventoryTemplate },
-    { type: 'workorder', label: 'Work Orders',     desc: 'Corrective & planned work',      icon: <ClipboardList size={20} />,  color: 'rose',    downloadFn: downloadWorkOrderTemplate },
-    { type: 'location',  label: 'Locations',       desc: 'Functional locations',            icon: <MapPin size={20} />,         color: 'teal',    downloadFn: downloadLocationTemplate },
     { type: 'vendor',    label: 'Vendors',         desc: 'Suppliers & contractors',         icon: <Building2 size={20} />,      color: 'orange',  downloadFn: downloadVendorTemplate },
+    { type: 'readings',  label: 'Readings',        desc: 'Meter & condition history',       icon: <Gauge size={20} />,          color: 'rose',    downloadFn: downloadReadingsTemplate },
 ];
 
 // Display label per type
 const TYPE_LABELS: Record<ImportType, string> = {
     asset: 'Assets', bom: 'BOM Items', recurring: 'Recurring Jobs', people: 'People',
     inventory: 'Inventory Items', workorder: 'Work Orders', location: 'Locations',
-    vendor: 'Vendors', unknown: 'Records',
+    vendor: 'Vendors', readings: 'Readings', unknown: 'Records',
 };
 
 // Key field to show in validation table per type
@@ -48,6 +52,7 @@ const KEY_FIELDS: Record<ImportType, [string, string]> = {
     workorder: ['wonumber', 'description'],
     location: ['tag', 'name'],
     vendor: ['code', 'name'],
+    readings: ['assettag', 'readingtype'],
     unknown: ['', ''],
 };
 
@@ -57,11 +62,14 @@ interface BulkImportModalProps {
     preSelectedType?: ImportType;
     /** Restrict the type-selector grid to only these types */
     allowedTypes?: ImportType[];
-    // Generic callback — caller interprets rows by type
-    onImportData: (type: ImportType, rows: Record<string, string>[]) => Promise<void>;
-    existingAssets?: Asset[];
-    // Legacy callbacks for Assets page backward compat
-    onImportAssets?: (assets: Partial<Asset>[]) => void;
+    /**
+     * Generic callback — caller interprets rows by type. Returning an
+     * ImportResult makes the completion screen report what actually landed;
+     * a void return falls back to the pre-validation count (clearly labelled).
+     */
+    onImportData: (type: ImportType, rows: Record<string, string>[]) => Promise<ImportResult | void>;
+    /** Raw-row asset handler. Hierarchy resolution happens in the handler. */
+    onImportAssets?: (rows: Record<string, string>[]) => Promise<ImportResult | void>;
     onImportBOMs?: (boms: { assetTag: string; items: Partial<BomItem>[] }[]) => void;
 }
 
@@ -69,7 +77,7 @@ type Step = 'select' | 'upload' | 'validate' | 'importing';
 
 export default function BulkImportModal({
     isOpen, onClose, preSelectedType, allowedTypes, onImportData,
-    onImportAssets, onImportBOMs, existingAssets = []
+    onImportAssets, onImportBOMs
 }: BulkImportModalProps) {
     const [step, setStep] = useState<Step>(preSelectedType ? 'upload' : 'select');
     const [selectedType, setSelectedType] = useState<ImportType>(preSelectedType || 'asset');
@@ -77,6 +85,10 @@ export default function BulkImportModal({
     const [fileName, setFileName] = useState('');
     const [importing, setImporting] = useState(false);
     const [importDone, setImportDone] = useState(false);
+    const [result, setResult] = useState<ImportResult | null>(null);
+    const [importError, setImportError] = useState<string | null>(null);
+    /** Advisory only: the file's headers look like a different template. */
+    const [typeMismatch, setTypeMismatch] = useState<ImportType | null>(null);
     const fileRef = useRef<HTMLInputElement>(null);
 
     const reset = () => {
@@ -86,6 +98,9 @@ export default function BulkImportModal({
         setFileName('');
         setImporting(false);
         setImportDone(false);
+        setResult(null);
+        setImportError(null);
+        setTypeMismatch(null);
     };
 
     const handleClose = () => { reset(); onClose(); };
@@ -98,13 +113,16 @@ export default function BulkImportModal({
     // ── File Upload ──
     const handleFile = useCallback(async (file: File) => {
         setFileName(file.name);
+        setImportError(null);
         try {
-            const result = await parseImportFile(file, selectedType !== 'unknown' ? selectedType : undefined);
-            setParseResult(result);
-            // If auto-detected type differs from selection, update
-            if (result.type !== 'unknown' && result.type !== selectedType) {
-                setSelectedType(result.type);
-            }
+            const parsed = await parseImportFile(file, selectedType !== 'unknown' ? selectedType : undefined);
+            setParseResult(parsed);
+            // Detection stays ADVISORY — a user may deliberately import a file
+            // with unusual headers as a chosen type. We only warn on mismatch
+            // so a work-order file dropped on the People page can't sail
+            // through silently mis-parsed.
+            const detected = detectImportType(Object.keys(parsed.rows[0]?.data ?? {}));
+            setTypeMismatch(detected !== 'unknown' && detected !== selectedType ? detected : null);
             setStep('validate');
         } catch (err) {
             alert('Failed to parse file. Please ensure it is a valid .xlsx or .csv file.');
@@ -127,32 +145,20 @@ export default function BulkImportModal({
         if (!parseResult) return;
         setStep('importing');
         setImporting(true);
+        setImportError(null);
 
-        const validRows = parseResult.rows.filter(r => r.isValid).map(r => r.data);
+        // Row numbers travel with the data so outcomes can point back at the
+        // user's spreadsheet rather than at an opaque zero-based index.
+        const validParsed = parseResult.rows.filter(r => r.isValid);
+        const validRows: Record<string, string>[] = validParsed.map(r => ({ ...r.data, __row: String(r.rowIndex) }));
 
         try {
-            // Use legacy callbacks if available for backward compat
+            // Assets go through the hierarchy-aware engine as RAW rows — the
+            // modal no longer pre-flattens them (that path silently dropped
+            // parentTag and defaulted every criticality to 'C').
             if (parseResult.type === 'asset' && onImportAssets) {
-                const existingTagSet = new Set(existingAssets.map(a => a.tag.toUpperCase()));
-                const assetsToImport: Partial<Asset>[] = validRows
-                    .filter(r => !existingTagSet.has((r['tag'] || '').toUpperCase()))
-                    .map(r => ({
-                        tag: r['tag'] || '',
-                        name: r['name'] || '',
-                        assetType: r['assettype'] || '',
-                        equipmentNumber: r['equipmentnumber'] || undefined, // undefined → DB trigger auto-generates
-                        criticality: (r['criticality'] || 'C').toUpperCase() as any,
-                        status: (r['status'] || 'ACTIVE').toUpperCase() as any,
-                        department: r['department'] || '',
-                        costCenter: r['costcenter'] || '',
-                        location: r['location'] || '',
-                        manufacturer: r['manufacturer'] || '',
-                        model: r['model'] || '',
-                        serialNumber: r['serialnumber'] || '',
-                        description: r['description'] || '',
-                        healthScore: 100,
-                    }));
-                await onImportAssets(assetsToImport);
+                const res = await onImportAssets(validRows);
+                if (res) setResult(res);
             } else if (parseResult.type === 'bom' && onImportBOMs) {
                 const bomMap = new Map<string, Partial<BomItem>[]>();
                 validRows.forEach(r => {
@@ -168,14 +174,29 @@ export default function BulkImportModal({
                 });
                 await onImportBOMs(Array.from(bomMap.entries()).map(([assetTag, items]) => ({ assetTag, items })));
             } else {
-                await onImportData(parseResult.type, validRows);
+                const res = await onImportData(parseResult.type, validRows);
+                if (res) setResult(res);
             }
         } catch (err) {
+            // A throw here means the whole run died, not one row — say so
+            // instead of showing a green "Import Complete".
             console.error('Import error:', err);
+            setImportError(err instanceof Error ? err.message : String(err));
         }
 
         setImporting(false);
         setImportDone(true);
+    };
+
+    const downloadFailures = () => {
+        if (!result) return;
+        const blob = new Blob([outcomesToCsv(result)], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `import-issues-${selectedType}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
     };
 
     if (!isOpen) return null;
@@ -319,7 +340,22 @@ export default function BulkImportModal({
                                 </div>
                             )}
 
-                            {parseResult.type !== 'unknown' && (
+                            {typeMismatch && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                                    <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                                    <div>
+                                        <div className="text-sm font-semibold text-amber-800">
+                                            This looks like a {TYPE_LABELS[typeMismatch]} file
+                                        </div>
+                                        <div className="text-xs text-amber-600 mt-0.5">
+                                            It will be imported as {TYPE_LABELS[parseResult.type]}. If that's not what you meant,
+                                            go back and download the {TYPE_LABELS[typeMismatch]} template instead.
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {parseResult.type !== 'unknown' && !typeMismatch && (
                                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2">
                                     <FileCheck size={16} className="text-blue-500" />
                                     <span className="text-xs font-semibold text-blue-700">
@@ -385,21 +421,101 @@ export default function BulkImportModal({
                                     <div className="text-sm text-slate-500">Processing {parseResult?.validCount} {typeLabel.toLowerCase()}</div>
                                 </>
                             ) : importDone ? (
-                                <>
-                                    <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4">
-                                        <CheckCircle2 size={32} className="text-emerald-600" />
+                                <div className="w-full">
+                                    {importError ? (
+                                        <div className="flex flex-col items-center">
+                                            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                                                <XCircle size={32} className="text-red-600" />
+                                            </div>
+                                            <div className="text-lg font-semibold text-slate-800">Import failed</div>
+                                            <div className="text-sm text-red-600 mt-1 max-w-md text-center font-mono text-xs">{importError}</div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex flex-col items-center">
+                                            <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${result && result.failed > 0 ? 'bg-amber-100' : 'bg-emerald-100'}`}>
+                                                <CheckCircle2 size={32} className={result && result.failed > 0 ? 'text-amber-600' : 'text-emerald-600'} />
+                                            </div>
+                                            <div className="text-lg font-semibold text-slate-800">
+                                                {result && result.failed > 0 ? 'Import finished with issues' : 'Import Complete!'}
+                                            </div>
+                                            {result ? (
+                                                <div className="flex items-center gap-3 mt-4">
+                                                    {[
+                                                        { label: 'Imported', value: result.inserted, cls: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
+                                                        { label: 'Skipped', value: result.skipped, cls: 'bg-slate-50 border-slate-200 text-slate-600' },
+                                                        { label: 'Failed', value: result.failed, cls: result.failed > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-50 border-slate-200 text-slate-400' },
+                                                    ].map(s => (
+                                                        <div key={s.label} className={`border rounded-xl px-5 py-3 text-center ${s.cls}`}>
+                                                            <div className="text-2xl font-bold">{s.value}</div>
+                                                            <div className="text-[10px] uppercase font-semibold">{s.label}</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm text-slate-500 mt-1">
+                                                    {parseResult?.validCount} {typeLabel.toLowerCase()} submitted
+                                                    <span className="text-slate-400"> (pre-validation count)</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Batch-level notes */}
+                                    {result?.notes && result.notes.length > 0 && (
+                                        <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1">
+                                            {result.notes.map((n, i) => (
+                                                <div key={i} className="text-xs text-slate-600">• {n}</div>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {/* What didn't land, and why */}
+                                    {result && (result.failed > 0 || result.skipped > 0) && (
+                                        <div className="mt-5">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <h4 className="text-xs font-bold text-slate-600 uppercase">Rows needing attention</h4>
+                                                <button onClick={downloadFailures} className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-800">
+                                                    <Download size={13} /> Download CSV
+                                                </button>
+                                            </div>
+                                            <div className="border border-slate-200 rounded-xl overflow-hidden">
+                                                <div className="max-h-52 overflow-auto">
+                                                    <table className="w-full text-xs">
+                                                        <thead className="bg-slate-50 sticky top-0">
+                                                            <tr>
+                                                                <th className="px-3 py-2 text-left font-bold text-slate-500">Row</th>
+                                                                <th className="px-3 py-2 text-left font-bold text-slate-500">Key</th>
+                                                                <th className="px-3 py-2 text-left font-bold text-slate-500">Status</th>
+                                                                <th className="px-3 py-2 text-left font-bold text-slate-500">Reason</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-slate-100">
+                                                            {result.outcomes.filter(o => o.status !== 'inserted').map((o, i) => (
+                                                                <tr key={`${o.row}-${i}`} className={o.status === 'failed' ? 'bg-red-50/30' : 'bg-white'}>
+                                                                    <td className="px-3 py-2 font-mono text-slate-400">{o.row}</td>
+                                                                    <td className="px-3 py-2 font-semibold text-slate-700">{o.key || '—'}</td>
+                                                                    <td className="px-3 py-2">
+                                                                        <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${o.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}`}>{o.status}</span>
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-slate-600">{o.reason || '—'}</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="flex justify-center">
+                                        <button
+                                            onClick={handleClose}
+                                            className="mt-6 px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium"
+                                        >
+                                            Close
+                                        </button>
                                     </div>
-                                    <div className="text-lg font-semibold text-slate-800">Import Complete!</div>
-                                    <div className="text-sm text-slate-500 mt-1">
-                                        Successfully imported {parseResult?.validCount} {typeLabel.toLowerCase()}
-                                    </div>
-                                    <button
-                                        onClick={handleClose}
-                                        className="mt-6 px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium"
-                                    >
-                                        Close
-                                    </button>
-                                </>
+                                </div>
                             ) : null}
                         </div>
                     )}
