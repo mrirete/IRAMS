@@ -29,6 +29,7 @@ const WorkCentersPage = lazyWithReload(() => import('./pages/WorkCentersPage').t
 const CompaniesPage = lazyWithReload(() => import('./pages/CompaniesPage').then(m => ({ default: m.CompaniesPage })));
 const AdminActivityPage = lazyWithReload(() => import('./pages/admin/AdminActivityPage').then(m => ({ default: m.AdminActivityPage })));
 const InvitationsPage = lazyWithReload(() => import('./pages/admin/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
+const MigrationCenterPage = lazyWithReload(() => import('./pages/admin/MigrationCenterPage').then(m => ({ default: m.MigrationCenterPage })));
 const SpecialistWorkspacePage = lazyWithReload(() => import('./pages/specialist/SpecialistWorkspacePage').then(m => ({ default: m.SpecialistWorkspacePage })));
 const ImportWizardPage = lazyWithReload(() => import('./pages/specialist/ImportWizardPage').then(m => ({ default: m.ImportWizardPage })));
 const AssessmentReportPage = lazyWithReload(() => import('./pages/specialist/AssessmentReportPage').then(m => ({ default: m.AssessmentReportPage })));
@@ -241,6 +242,10 @@ function App() {
                                 <Route path="/sustain" element={<Gated moduleId="sustain"><SustainPage /></Gated>} />
 
                                 {/* Admin — ERS connector hub + EAM dictionaries/permissions */}
+                                {/* Migration Center sits under /admin, not /specialist: it is
+                                    PermissionGate'd (RBAC) rather than ModuleGate'd (licence),
+                                    so a platform-edition tenant can still migrate its data in. */}
+                                <Route path="/admin/migration" element={<PermissionGate module="admin"><MigrationCenterPage /></PermissionGate>} />
                                 <Route path="/admin/invitations" element={<PermissionGate module="admin"><InvitationsPage /></PermissionGate>} />
                                 <Route path="/admin/connectors" element={<PermissionGate module="admin"><ConnectorHub /></PermissionGate>} />
                                 <Route path="/admin/connectors/new" element={<PermissionGate module="admin"><ConnectorWizard /></PermissionGate>} />

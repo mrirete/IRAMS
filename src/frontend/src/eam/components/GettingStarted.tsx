@@ -10,8 +10,9 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Circle, ArrowRight, X, Rocket, Boxes, CalendarClock, Wrench, Users } from 'lucide-react';
+import { CheckCircle2, Circle, ArrowRight, X, Rocket, Boxes, CalendarClock, Wrench, Users, Database } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
+import { useAuth } from '../contexts/AuthContext';
 
 const DISMISS_KEY = 'ers_onboarding_dismissed_v1';
 
@@ -34,6 +35,8 @@ const STEPS: Step[] = [
 
 export const GettingStarted: React.FC = () => {
     const navigate = useNavigate();
+    const { role } = useAuth();
+    const isAdmin = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
     const [counts, setCounts] = useState<Counts | null>(null);
     const [dismissed, setDismissed] = useState<boolean>(() => {
         try { return localStorage.getItem(DISMISS_KEY) === 'true'; } catch { return false; }
@@ -105,6 +108,21 @@ export const GettingStarted: React.FC = () => {
                     );
                 })}
             </ul>
+
+            {/* Coming off an existing CMMS? This checklist is the from-scratch
+                path; the Migration Center is the bring-your-data-with-you one. */}
+            {isAdmin && (
+                <button
+                    onClick={() => navigate('/admin/migration')}
+                    className="w-full flex items-center gap-2 px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/60 hover:bg-slate-50 text-left transition-colors"
+                >
+                    <Database size={15} className="text-slate-400 flex-shrink-0" />
+                    <span className="text-xs text-slate-600 flex-1">
+                        Already have a CMMS? <span className="font-semibold text-slate-700">Bring your data across in the Migration Center</span>
+                    </span>
+                    <ArrowRight size={13} className="text-slate-400 flex-shrink-0" />
+                </button>
+            )}
         </div>
     );
 };

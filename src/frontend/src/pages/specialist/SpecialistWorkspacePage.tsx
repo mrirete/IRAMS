@@ -8,11 +8,11 @@
  * dismissing a proposal — every apply stays in its owning module.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
     Sparkles, Send, Loader2, ClipboardList, ScrollText, UploadCloud,
     BarChart2, RefreshCw, ChevronRight, X, BrainCircuit, Activity, BadgeDollarSign,
-    Check,
+    Check, Database, ArrowRight,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -175,6 +175,22 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     </button>
                 </div>
             </div>
+
+            {/* Coming off another CMMS? The full migration path lives under Admin
+                (it isn't licence-gated), but this is where a new customer starts. */}
+            <Link to="/admin/migration"
+                className="flex items-center gap-3 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4 hover:border-violet-300 transition-colors group">
+                <div className="w-9 h-9 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0">
+                    <Database size={18} />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-slate-800">Migrating from SAP PM, Maximo or MaintainX?</div>
+                    <div className="text-xs text-slate-500 mt-0.5">
+                        The Migration Center walks your register, people, stock, schedules and history across in the right order.
+                    </div>
+                </div>
+                <ArrowRight size={16} className="text-violet-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+            </Link>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                 {/* ── Left: briefing + proposals ── */}

@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
     Search, Plus, Truck, Mail, Phone, MapPin, Globe, Save, Trash2, X, FileText, DollarSign,
-    Calendar, Users, Building, Package
+    Calendar, Users, Building, Package, Upload
 } from 'lucide-react';
+import BulkImportModal from '../components/modals/BulkImportModal';
+import { emptyResult, tally, errMessage } from '../services/importTypes';
+import type { ImportType } from '../services/assetTemplates';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { aiContextService } from '../services/AIContextService';
 import { Vendor, DictionaryEntry } from '../types';
@@ -22,6 +25,10 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    // Deep-linked from Admin › Migration Center (/vendors?action=import).
+    const [isBulkImportOpen, setIsBulkImportOpen] = useState(
+        new URLSearchParams(window.location.search).get('action') === 'import'
+    );
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; vendorId: string | null; vendorName: string | null }>({
         isOpen: false,
         vendorId: null,
@@ -121,6 +128,49 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
         }
     };
 
+    /** Bulk vendor import. vendors.code has no DB unique constraint, so the
+     *  dedupe has to happen here or a re-run silently doubles the directory. */
+    const handleBulkImportData = async (type: ImportType, rows: Record<string, string>[]) => {
+        if (type !== 'vendor') return;
+        const res = emptyResult();
+        const existingCodes = new Set(vendors.map(v => (v.code || '').toUpperCase()));
+
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const rowNo = Number(row.__row) || i + 2;
+            const code = row['code'] || `V-${Date.now()}-${i}`;
+
+            if (existingCodes.has(code.toUpperCase())) {
+                tally(res, { row: rowNo, key: code, status: 'skipped', reason: 'Vendor code already exists' });
+                continue;
+            }
+
+            try {
+                await DatabaseService.getInstance().addVendor({
+                    id: crypto.randomUUID(),
+                    name: row['name'] || 'Imported Vendor',
+                    code,
+                    type: (row['category'] || 'SUPPLIER').toUpperCase(),
+                    active: true,
+                    email: row['email'] || '',
+                    phone: row['phone'] || '',
+                    contactPerson: row['contactperson'] || '',
+                    paymentTerms: row['paymentterms'] || '',
+                    currency: row['currency'] || 'USD',
+                    address: { street: row['address'] || '', city: '', state: '', zip: '', country: '' },
+                } as unknown as Vendor);
+                existingCodes.add(code.toUpperCase());
+                tally(res, { row: rowNo, key: code, status: 'inserted' });
+            } catch (e: unknown) {
+                tally(res, { row: rowNo, key: code, status: 'failed', reason: errMessage(e) });
+            }
+        }
+
+        showToast(`Imported ${res.inserted} of ${rows.length} vendors`, res.failed === 0 ? 'success' : 'warning');
+        loadData();
+        return res;
+    };
+
     return (
         <div className="flex h-full gap-6">
             {/* List View */}
@@ -131,14 +181,25 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                             <Truck className="text-blue-600" size={24} />
                             <h2 className="text-xl font-bold text-slate-900">Vendor Directory</h2>
                         </div>
-                        <Button
-                            onClick={() => setIsAddModalOpen(true)}
-                            size="sm"
-                            leftIcon={<Plus size={16} />}
-                            className="hidden sm:inline-flex"
-                        >
-                            Add Vendor
-                        </Button>
+                        <div className="flex items-center gap-2">
+                            <Button
+                                onClick={() => setIsBulkImportOpen(true)}
+                                size="sm"
+                                variant="secondary"
+                                leftIcon={<Upload size={16} />}
+                                className="hidden sm:inline-flex"
+                            >
+                                Import
+                            </Button>
+                            <Button
+                                onClick={() => setIsAddModalOpen(true)}
+                                size="sm"
+                                leftIcon={<Plus size={16} />}
+                                className="hidden sm:inline-flex"
+                            >
+                                Add Vendor
+                            </Button>
+                        </div>
                     </div>
                     <div className="relative">
                         <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
@@ -736,6 +797,15 @@ export const Vendors: React.FC<VendorsProps> = ({ onAnalyze }) => {
                 message={`Are you sure you want to delete ${deleteModal.vendorName}? This action cannot be undone.`}
                 type="danger"
                 confirmText="Delete Vendor"
+            />
+
+            {/* Bulk vendor import — the supplier master a CMMS migration brings along */}
+            <BulkImportModal
+                isOpen={isBulkImportOpen}
+                onClose={() => setIsBulkImportOpen(false)}
+                preSelectedType="vendor"
+                allowedTypes={['vendor']}
+                onImportData={handleBulkImportData}
             />
 
             {/* ═══ Mobile FAB — Add Vendor (≤640px only) ═══ */}
