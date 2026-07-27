@@ -121,6 +121,9 @@ class ImportService {
                 return {
                     tag: a.tag,
                     name: a.name,
+                    // TODO: the wizard has no hierarchy columns, so history-derived
+                    // assets land flat. Migrate the register via the asset template
+                    // (Admin › Migration Center) FIRST and these match by tag instead.
                     hierarchy_level: 'EQUIPMENT',
                     criticality: a.criticality ?? 'C',
                     status_code: 'ACTIVE',
@@ -200,13 +203,16 @@ class ImportService {
             }
         }
 
-        // 5. Failure coding sidecar (columns are NOT NULL — pad the gaps).
+        // 5. Failure coding sidecar. Only failure_mode_code is NOT NULL (0109
+        // dropped the other two), and 'UNKNOWN' is not a catalog code — padding
+        // with it produced rows that decode to nothing in sem_failure_events.
+        // Genuine nulls keep the coverage statistics honest.
         for (const part of chunk(failureDrafts, 200)) {
             const rows = part.map(({ wo_id, draft }) => ({
                 wo_id,
                 failure_mode_code: draft.failure_mode ?? 'UNKNOWN',
-                failure_cause_code: draft.failure_cause ?? 'UNKNOWN',
-                remedy_code: draft.remedy ?? 'UNKNOWN',
+                failure_cause_code: draft.failure_cause ?? null,
+                remedy_code: draft.remedy ?? null,
                 comments: 'Imported from foreign CMMS history',
             }));
             const { error } = await supabase.from('wo_failure_data').insert(rows);

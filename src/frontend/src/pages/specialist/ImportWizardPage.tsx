@@ -12,6 +12,7 @@ import {
     UploadCloud, FileSpreadsheet, Wand2, CheckCircle2, AlertTriangle,
     ArrowRight, ArrowLeft, Database, RotateCcw, Loader2, BarChart2,
 } from 'lucide-react';
+import { useAuth } from '../../eam/contexts/AuthContext';
 import { runCmmsAnalyst } from '../../eam/services/agentRunClient';
 import { importService, type CommitResult } from '../../eam/services/ImportService';
 import {
@@ -58,6 +59,10 @@ const EMPTY_MAPPING: ImportMapping = {
 export const ImportWizardPage: React.FC = () => {
     const navigate = useNavigate();
     const fileRef = useRef<HTMLInputElement>(null);
+    const { role } = useAuth();
+    // import_batches is admin-only by RLS, so a non-admin's commit fails at the
+    // very last step after all the mapping work. Say so up front instead.
+    const canCommit = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
 
     const [step, setStep] = useState<Step>('upload');
     const [sourceSystem, setSourceSystem] = useState('sap_pm');
@@ -92,17 +97,28 @@ export const ImportWizardPage: React.FC = () => {
             setHeaders(hdrs);
             setRows(dataRows);
 
-            // Ask the CMMS Analyst for a mapping proposal.
-            const res = await runCmmsAnalyst({
-                file_name: file.name,
-                source_hint: sourceSystem,
-                headers: hdrs,
-                sample_rows: dataRows.slice(0, 15),
-            });
-            const { prose, mapping: proposed } = parseMappingProposal(res.answer);
-            setAgentProse(prose);
-            setMapping(proposed ?? EMPTY_MAPPING);
-            if (!proposed) setError('The Specialist could not produce a mapping automatically — map the columns manually below.');
+            // Ask the CMMS Analyst for a mapping proposal. Its failure must NOT
+            // strand the user on Upload — the manual mapping UI is right there,
+            // and an AI outage (or an exhausted quota) shouldn't block a migration.
+            try {
+                const res = await runCmmsAnalyst({
+                    file_name: file.name,
+                    source_hint: sourceSystem,
+                    headers: hdrs,
+                    sample_rows: dataRows.slice(0, 15),
+                });
+                const { prose, mapping: proposed } = parseMappingProposal(res.answer);
+                setAgentProse(prose);
+                setMapping(proposed ?? EMPTY_MAPPING);
+                if (!proposed) setError('The Specialist could not produce a mapping automatically — map the columns manually below.');
+            } catch (agentErr) {
+                setAgentProse('');
+                setMapping(EMPTY_MAPPING);
+                setError(
+                    `Automatic column mapping is unavailable right now (${agentErr instanceof Error ? agentErr.message : String(agentErr)}). ` +
+                    'Map the columns manually below — the import itself works exactly the same.'
+                );
+            }
             setStep('map');
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
@@ -207,6 +223,16 @@ export const ImportWizardPage: React.FC = () => {
                     ))}
                 </div>
             </div>
+
+            {!canCommit && (
+                <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                    <AlertTriangle size={16} className="mt-0.5 shrink-0 text-slate-400" />
+                    <span>
+                        Importing CMMS history requires an administrator account. You can upload a file and
+                        review the mapping, but the final commit will be blocked — ask an admin to run the import.
+                    </span>
+                </div>
+            )}
 
             {error && (
                 <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -395,8 +421,9 @@ export const ImportWizardPage: React.FC = () => {
                             className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
                             <ArrowLeft size={14} /> Adjust mapping
                         </button>
-                        <button onClick={() => void commit()} disabled={busy}
-                            className="flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 disabled:opacity-50">
+                        <button onClick={() => void commit()} disabled={busy || !canCommit}
+                            title={canCommit ? undefined : 'Administrator rights are required to commit an import'}
+                            className="flex items-center gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold px-5 py-2.5 disabled:opacity-50 disabled:cursor-not-allowed">
                             {busy ? <Loader2 size={14} className="animate-spin" /> : <Database size={14} />}
                             Commit {dq.totals.work_orders} work orders / {dq.totals.assets} assets
                         </button>
