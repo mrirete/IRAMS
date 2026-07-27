@@ -16,7 +16,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
     Sparkles, Send, Loader2, ClipboardList, ScrollText, UploadCloud,
     BarChart2, RefreshCw, ChevronRight, X, BrainCircuit, Activity, BadgeDollarSign,
-    Check, Database, ArrowRight, Clock, CheckCircle2, Copy, ChevronDown,
+    Check, Database, ArrowRight, CheckCircle2, Copy, ChevronDown,
     TrendingUp, Gauge,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
@@ -25,6 +25,7 @@ import { useSettings } from '../../contexts/SettingsContext';
 import AdvisoryAgentPanel from '../../eam/components/ui/AdvisoryAgentPanel';
 import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, type AgentTurn } from '../../eam/services/agentRunClient';
 import { predictionService, type AgentAction } from '../../eam/services/PredictionService';
+import { computeRealization, type RealizationSummary } from '../../lib/valueRealization';
 
 interface AuditRow {
     id: string; module: string; context_type: string; query_text: string;
@@ -138,8 +139,10 @@ export const SpecialistWorkspacePage: React.FC = () => {
     const [log, setLog] = useState<AuditRow[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // ── value ledger (v1: proposal-based) ──
+    // ── value ledger (identified = draft estimates; measured = before/after
+    //    CM run-rate on assets with approved actions, lib/valueRealization) ──
     const [ledger, setLedger] = useState<{ approved: number; pending: number; valueIdentified: number } | null>(null);
+    const [realized, setRealized] = useState<RealizationSummary | null>(null);
 
     // ── chat ──
     const [msgs, setMsgs] = useState<AgentTurn[]>([]);
@@ -167,7 +170,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
         setBriefing(rows.find((r) => r.context_type === 'reliability_digest') ?? null);
         setProposals(actionsQ.filter((a) => a.status === 'pending_review'));
 
-        // Value ledger v1: what the Specialist's proposals identified in money.
+        // Identified value: what the Specialist's proposals put on the table.
         setLedger({
             approved: actionsQ.filter((a) => a.status === 'approved').length,
             pending: actionsQ.filter((a) => a.status === 'pending_review').length,
@@ -176,6 +179,27 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 .reduce((s, a) => s + draftValue(a), 0),
         });
         setLoading(false);
+
+        // Measured value: before/after corrective run-rate on the assets whose
+        // proposals a human actually approved — the number that has to beat
+        // the $150k engineer's annual-review slide.
+        const approved = actionsQ.filter((a) => a.status === 'approved' && a.asset_id);
+        if (approved.length === 0) { setRealized(computeRealization([], [], Date.now())); return; }
+        const assetIds = [...new Set(approved.map((a) => a.asset_id as string))];
+        const { data: woRows } = await supabase.from('work_orders')
+            .select('asset_id, type, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost')
+            .in('asset_id', assetIds)
+            .limit(20000);
+        setRealized(computeRealization(
+            approved.map((a) => ({ asset_id: a.asset_id, approved_at: a.reviewed_at ?? a.created_at })),
+            (woRows ?? []).map((w: Record<string, unknown>) => ({
+                asset_id: (w.asset_id as string) ?? null,
+                type: (w.type as string) ?? null,
+                created_at: String(w.created_at),
+                cost: ((Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0)) || Number(w.total_actual_cost) || 0,
+            })),
+            Date.now(),
+        ));
     };
     useEffect(() => { void loadAll(); }, []);
 
@@ -311,10 +335,19 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     icon={<CheckCircle2 size={15} />}
                 />
                 <StatTile
-                    label="Last activity" loading={loading}
-                    value={<span className="text-base sm:text-lg">{lastRun}</span>}
-                    sub={`${log.length} agent run${log.length === 1 ? '' : 's'} logged`}
-                    icon={<Clock size={15} />}
+                    /* Measured ≠ identified: before/after CM run-rate on approved
+                       assets (30-day maturity). The renewal-slide number. */
+                    label="Value measured" loading={loading || realized === null}
+                    tone={(realized?.measuredToDate ?? 0) > 0 ? 'money' : (realized?.measuredToDate ?? 0) < 0 ? 'attention' : 'default'}
+                    value={realized && realized.assetsMeasured > 0 ? formatCurrency(realized.measuredToDate) : '—'}
+                    sub={!realized || (realized.assetsMeasured === 0 && realized.assetsMaturing === 0)
+                        ? 'measures 30 days after an approval'
+                        : realized.assetsMeasured === 0
+                            ? `${realized.assetsMaturing} asset${realized.assetsMaturing === 1 ? '' : 's'} maturing`
+                            : realized.measuredToDate < 0
+                                ? 'no measurable change yet'
+                                : `Δ corrective run-rate · ${realized.assetsMeasured} asset${realized.assetsMeasured === 1 ? '' : 's'}${realized.assetsMaturing ? ` · ${realized.assetsMaturing} maturing` : ''}`}
+                    icon={<TrendingUp size={15} />}
                 />
             </div>
 
@@ -536,7 +569,8 @@ export const SpecialistWorkspacePage: React.FC = () => {
                         </div>
                     </section>
 
-                    <Panel title="Work log" icon={<ScrollText size={14} />} meta="Every agent run, audited" bodyClass="">
+                    <Panel title="Work log" icon={<ScrollText size={14} />}
+                        meta={log.length ? `Every agent run, audited · last activity ${lastRun}` : 'Every agent run, audited'} bodyClass="">
                         {log.length === 0 ? (
                             <p className="text-[12px] text-slate-400 px-4 sm:px-5 py-5 text-center">
                                 No agent runs recorded yet (admin access required to view the log).

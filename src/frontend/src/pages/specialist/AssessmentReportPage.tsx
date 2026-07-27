@@ -11,11 +11,18 @@ import { useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Printer, Sparkles, Loader2, AlertTriangle, TrendingDown,
     BadgeDollarSign, Activity, Wrench, ShieldCheck, Database, RefreshCw,
+    Layers, FolderPlus, Check,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
+import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { fitWeibull, weibullBLife } from '../../eam/utils/weibull';
 import { runAssessmentNarrator } from '../../eam/services/agentRunClient';
+import { computeRegisterQuality, type RegisterQuality } from '../../lib/registerQuality';
+import {
+    getLatestSnapshot, saveSnapshot, shouldSaveSnapshot, type AssessmentSnapshot,
+} from '../../eam/services/assessmentSnapshotService';
+import { analyzeService } from '../../eam/services/AnalyzeService';
 
 // ── row shapes (only the columns we query) ────────────────────────────────
 interface WoRow {
@@ -24,7 +31,10 @@ interface WoRow {
     frozen_labor_cost: number | null; frozen_material_cost: number | null;
     total_actual_cost: number | null; actual_downtime_hrs: number | null;
 }
-interface AssetRow { id: string; tag: string; name: string; criticality: string | null; }
+interface AssetRow {
+    id: string; tag: string; name: string; criticality: string | null;
+    parent_id: string | null; manufacturer: string | null; model: string | null;
+}
 
 const woCost = (w: WoRow): number => {
     const frozen = (Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0);
@@ -40,7 +50,7 @@ interface BadActor {
     downtime12mo: number; cumulativePct: number;
 }
 interface WeibullFinding {
-    tag: string; name: string; nFailures: number; nSuspensions: number;
+    assetId: string; tag: string; name: string; nFailures: number; nSuspensions: number;
     beta: number; eta: number; b10Days: number; r2: number; interpretation: string;
 }
 interface WarrantyFind { woNumber: string; tag: string; date: string; recoverable: number; }
@@ -57,6 +67,7 @@ interface Assessment {
     warranty: { total: number; items: WarrantyFind[] };
     pmWaste: PmWasteFind[];
     coverage: { cost_pct: number; failure_code_pct: number; downtime_pct: number };
+    register: RegisterQuality;
     dataFrom: string | null;
     dataTo: string | null;
 }
@@ -68,7 +79,7 @@ async function computeAssessment(): Promise<Assessment> {
         supabase.from('work_orders')
             .select('id, asset_id, type, status, created_at, closed_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs')
             .order('created_at', { ascending: false }).limit(20000),
-        supabase.from('assets').select('id, tag, name, criticality').limit(10000),
+        supabase.from('assets').select('id, tag, name, criticality, parent_id, manufacturer, model').limit(10000),
         supabase.from('recurring_work')
             .select('id, code, title, asset_id, frequency_interval, frequency_unit, job_type, active')
             .eq('active', true).limit(3000),
@@ -143,7 +154,7 @@ async function computeAssessment(): Promise<Assessment> {
         const a = assetById.get(assetId);
         const b10 = weibullBLife(fit.beta, fit.eta, 10);
         weibull.push({
-            tag: a?.tag ?? '(unknown)', name: a?.name ?? '(unknown asset)',
+            assetId, tag: a?.tag ?? '(unknown)', name: a?.name ?? '(unknown asset)',
             nFailures: fit.nFailures, nSuspensions: fit.nSuspensions,
             beta: Math.round(fit.beta * 100) / 100, eta: Math.round(fit.eta),
             b10Days: Math.round(b10), r2: Math.round(fit.r2 * 100) / 100,
@@ -216,6 +227,14 @@ async function computeAssessment(): Promise<Assessment> {
         };
     }).filter((o) => o.category !== 'ok').slice(0, 10);
 
+    // Asset-register quality (Phase A2) — the foundation layer a human RE
+    // audits first; computed from rows already fetched above.
+    const register = computeRegisterQuality(
+        assets,
+        wos12.map((w) => ({ asset_id: w.asset_id })),
+        new Set(assetById.keys()),
+    );
+
     // Coverage + data window
     const n12 = wos12.length || 1;
     let from: string | null = null, to: string | null = null;
@@ -240,6 +259,7 @@ async function computeAssessment(): Promise<Assessment> {
             failure_code_pct: Math.round((wos12.filter((w) => codedWoIds.has(w.id)).length / n12) * 100),
             downtime_pct: Math.round((wos12.filter((w) => Number(w.actual_downtime_hrs) > 0).length / n12) * 100),
         },
+        register,
         dataFrom: from ? from.slice(0, 10) : null,
         dataTo: to ? to.slice(0, 10) : null,
     };
@@ -248,21 +268,30 @@ async function computeAssessment(): Promise<Assessment> {
 // ── page ──────────────────────────────────────────────────────────────────
 export const AssessmentReportPage: React.FC = () => {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const { formatCurrency } = useSettings();
     const [assessment, setAssessment] = useState<Assessment | null>(null);
     const [narrative, setNarrative] = useState<string>('');
     const [narrating, setNarrating] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // Trend record (Phase A1): the previous snapshot this run is compared against.
+    const [previous, setPrevious] = useState<AssessmentSnapshot | null>(null);
+    const [snapshotSaved, setSnapshotSaved] = useState(false);
+    // Findings → studies (Phase A4)
+    const [savingStudy, setSavingStudy] = useState<string | null>(null);
+    const [savedStudies, setSavedStudies] = useState<Set<string>>(new Set());
 
     const load = async () => {
-        setLoading(true); setError(null);
+        setLoading(true); setError(null); setSnapshotSaved(false);
         try {
-            const a = await computeAssessment();
+            const [a, prev] = await Promise.all([computeAssessment(), getLatestSnapshot()]);
             setAssessment(a);
+            setPrevious(prev);
             setLoading(false);
             // Narrative is additive — the numbers stand alone if the LLM is unavailable.
             setNarrating(true);
+            let prose = '';
             try {
                 const res = await runAssessmentNarrator({
                     window_months: a.windowMonths,
@@ -276,12 +305,39 @@ export const AssessmentReportPage: React.FC = () => {
                     warranty_top_items: a.warranty.items.slice(0, 3),
                     pm_waste: a.pmWaste.slice(0, 5),
                     data_coverage: a.coverage,
+                    register_quality: {
+                        health_pct: a.register.healthPct,
+                        structured_pct: a.register.structuredPct,
+                        criticality_spread_pct: a.register.criticalitySpreadPct,
+                        nameplate_pct: a.register.nameplatePct,
+                        tag_collisions: a.register.tagCollisionCount,
+                    },
                 });
-                setNarrative(res.answer);
+                prose = res.answer;
+                setNarrative(prose);
             } catch {
                 setNarrative('');
             } finally {
                 setNarrating(false);
+            }
+            // Persist the run (append-only, ≤ one per 12h) so a trend record
+            // exists — the before/after story the whole sale rests on.
+            if ((a.woCount12mo > 0 || a.assetCount > 0) && shouldSaveSnapshot(prev, Date.now())) {
+                const saved = await saveSnapshot({
+                    created_by: user?.username ?? user?.id ?? null,
+                    total_spend_12mo: a.totalSpend12mo,
+                    wo_count_12mo: a.woCount12mo,
+                    asset_count: a.assetCount,
+                    warranty_recoverable: a.warranty.total,
+                    pm_flag_count: a.pmWaste.length,
+                    coverage_cost_pct: a.coverage.cost_pct,
+                    coverage_failure_pct: a.coverage.failure_code_pct,
+                    coverage_downtime_pct: a.coverage.downtime_pct,
+                    register_health_pct: a.register.healthPct,
+                    findings: a as unknown as Record<string, unknown>,
+                    narrative: prose || null,
+                });
+                setSnapshotSaved(saved !== null);
             }
         } catch (e) {
             setError(e instanceof Error ? e.message : String(e));
@@ -290,7 +346,45 @@ export const AssessmentReportPage: React.FC = () => {
     };
     useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
+    /** One click: an assessment Weibull finding becomes a governed study +
+     *  versioned analysis in the reliability tier (Phase A4). */
+    const saveAsStudy = async (w: WeibullFinding) => {
+        setSavingStudy(w.tag);
+        try {
+            const today = new Date().toISOString().slice(0, 10);
+            const study = await analyzeService.createReliabilityStudy({
+                name: `Weibull — ${w.tag} (assessment ${today})`,
+                asset_id: w.assetId, asset_tag: w.tag, asset_name: w.name,
+                description: `Opened from the Specialist assessment of ${today}: ${w.interpretation}`,
+                created_by: user?.username ?? user?.id ?? null,
+            });
+            if (!study) return;
+            await analyzeService.saveReliabilityAnalysis({
+                study_id: study.id, asset_id: w.assetId, asset_tag: w.tag, asset_name: w.name,
+                analysis_type: 'weibull',
+                title: `Censored Weibull fit — ${w.tag}`,
+                inputs: { source: 'specialist_assessment', n_failures: w.nFailures, n_suspensions: w.nSuspensions },
+                results: { beta: w.beta, eta_days: w.eta, b10_days: w.b10Days, r2: w.r2, interpretation: w.interpretation },
+                notes: 'Fit computed deterministically by the Reliability Specialist assessment (median-rank regression, right-censored).',
+                created_by: user?.username ?? user?.id ?? null,
+            });
+            setSavedStudies((s) => new Set(s).add(w.tag));
+        } finally {
+            setSavingStudy(null);
+        }
+    };
+
     const totalOpportunity = useMemo(() => (assessment ? assessment.warranty.total : 0), [assessment]);
+
+    /** Run-over-run delta chip. `goodWhenDown` colours direction (spend); others stay neutral. */
+    const deltaChip = (cur: number, prev: number | null | undefined, fmt: (n: number) => string, goodWhenDown = false) => {
+        if (prev == null) return null;
+        const d = cur - Number(prev);
+        if (d === 0) return <span className="text-slate-300">— unchanged</span>;
+        const up = d > 0;
+        const colour = goodWhenDown ? (up ? 'text-rose-500' : 'text-emerald-600') : 'text-slate-400';
+        return <span className={`${colour} font-medium`}>{up ? '▲' : '▼'} {fmt(Math.abs(d))}</span>;
+    };
 
     if (loading) {
         return (
@@ -359,19 +453,31 @@ export const AssessmentReportPage: React.FC = () => {
                         </p>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-px mt-6 bg-slate-200 border border-slate-200 rounded-lg overflow-hidden">
                             {[
-                                { label: 'Maintenance spend (12 mo)', value: formatCurrency(a.totalSpend12mo) },
-                                { label: 'Work orders (12 mo)', value: a.woCount12mo.toLocaleString() },
-                                { label: a.paretoShare ? `Top ${a.paretoShare.topN} assets drive` : 'Cost concentration', value: a.paretoShare ? `${a.paretoShare.pct}%` : '—' },
-                                { label: 'Recoverable found', value: totalOpportunity > 0 ? formatCurrency(totalOpportunity) : '—' },
+                                {
+                                    label: 'Maintenance spend (12 mo)', value: formatCurrency(a.totalSpend12mo),
+                                    delta: deltaChip(a.totalSpend12mo, previous?.total_spend_12mo, formatCurrency, true),
+                                },
+                                {
+                                    label: 'Work orders (12 mo)', value: a.woCount12mo.toLocaleString(),
+                                    delta: deltaChip(a.woCount12mo, previous?.wo_count_12mo, (n) => n.toLocaleString()),
+                                },
+                                { label: a.paretoShare ? `Top ${a.paretoShare.topN} assets drive` : 'Cost concentration', value: a.paretoShare ? `${a.paretoShare.pct}%` : '—', delta: null },
+                                {
+                                    label: 'Recoverable found', value: totalOpportunity > 0 ? formatCurrency(totalOpportunity) : '—',
+                                    delta: deltaChip(totalOpportunity, previous?.warranty_recoverable, formatCurrency),
+                                },
                             ].map((s) => (
                                 <div key={s.label} className="bg-white p-3.5">
                                     <div className="text-lg md:text-2xl font-semibold text-slate-900 tabular-nums tracking-tight">{s.value}</div>
                                     <div className="text-[10.5px] text-slate-400 mt-1 leading-tight">{s.label}</div>
+                                    {s.delta && <div className="text-[10px] mt-1 tabular-nums">{s.delta}</div>}
                                 </div>
                             ))}
                         </div>
                         <p className="text-[10.5px] text-slate-400 mt-5 leading-relaxed">
                             IRAMS · Reliability Specialist by Relantern — every figure computed deterministically from your records; nothing estimated by AI.
+                            {previous && <> Deltas compare with the assessment of {new Date(previous.created_at).toLocaleDateString()}.</>}
+                            {snapshotSaved && <> This run has been added to the trend record.</>}
                         </p>
                     </div>
                 </div>
@@ -431,6 +537,20 @@ export const AssessmentReportPage: React.FC = () => {
                                     <div className="text-xs text-slate-600">η <span className="font-mono font-bold text-slate-800">{w.eta}d</span></div>
                                     <div className="text-xs text-slate-600">B10 <span className="font-mono font-bold text-slate-800">{w.b10Days}d</span></div>
                                     <div className="text-xs text-slate-500 italic flex-1 min-w-[14rem]">{w.interpretation}</div>
+                                    <div className="no-print shrink-0">
+                                        {savedStudies.has(w.tag) ? (
+                                            <button onClick={() => navigate('/analyze')}
+                                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-800">
+                                                <Check size={12} /> In studies
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => void saveAsStudy(w)} disabled={savingStudy !== null}
+                                                title="Persist this fit as a governed reliability study (Analyze › Reliability Modelling)"
+                                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] font-semibold px-2 py-1 disabled:opacity-50">
+                                                {savingStudy === w.tag ? <Loader2 size={12} className="animate-spin" /> : <FolderPlus size={12} />} Save as study
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                             <p className="text-[11px] text-slate-400">β&gt;1: failure probability grows with age (PM helps). β≈1: random (monitor, don't over-PM). β&lt;1: early-life failures (fix quality, not frequency). B10 = age by which 10% of units fail — a defensible PM-interval basis.</p>
@@ -483,6 +603,48 @@ export const AssessmentReportPage: React.FC = () => {
                     )}
                 </Section>
 
+                {/* Asset register quality (Phase A2) */}
+                <Section icon={<Layers size={15} className="text-sky-600" />} title="Asset register quality — the foundation layer">
+                    <div className="flex flex-col sm:flex-row gap-3 mb-3">
+                        <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-center sm:w-40 shrink-0 flex flex-col justify-center">
+                            <div className={`text-3xl font-bold ${a.register.healthPct >= 70 ? 'text-emerald-600' : a.register.healthPct >= 40 ? 'text-amber-500' : 'text-rose-500'}`}>
+                                {a.register.healthPct}%
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-1">register health</div>
+                            {previous?.register_health_pct != null && (
+                                <div className="text-[10px] mt-1 tabular-nums">
+                                    {deltaChip(a.register.healthPct, previous.register_health_pct, (n) => `${n} pts`)}
+                                </div>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 flex-1">
+                            {[
+                                { label: 'Hierarchy structured', pct: a.register.structuredPct, hint: 'assets under a parent' },
+                                { label: 'Criticality spread', pct: a.register.criticalitySpreadPct, hint: a.register.dominantCriticality ? `${a.register.dominantCriticality.pct}% sit in class ${a.register.dominantCriticality.value}` : '' },
+                                { label: 'Nameplate complete', pct: a.register.nameplatePct, hint: 'manufacturer + model' },
+                                { label: 'History linked', pct: a.register.woLinkedPct, hint: `${a.register.woUnlinkedCount} WOs unlinked` },
+                            ].map((c) => (
+                                <div key={c.label} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-center">
+                                    <div className={`text-xl font-bold ${c.pct >= 60 ? 'text-emerald-600' : c.pct >= 30 ? 'text-amber-500' : 'text-rose-500'}`}>{c.pct}%</div>
+                                    <div className="text-[11px] text-slate-500 mt-0.5">{c.label}</div>
+                                    {c.hint && <div className="text-[10px] text-slate-400 mt-0.5">{c.hint}</div>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    {a.register.tagCollisionCount > 0 && (
+                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-2">
+                            {a.register.tagCollisionCount} tag collision{a.register.tagCollisionCount === 1 ? '' : 's'} — one physical asset's history split across rows
+                            (e.g. {a.register.tagCollisionExamples[0]?.join(' / ')}). Merging these sharpens every per-asset figure above.
+                        </p>
+                    )}
+                    <p className="text-xs text-slate-500">
+                        A register that is flat, uniformly ranked or missing nameplates degrades every analysis downstream — it is the first
+                        thing a reliability engineer fixes on arrival. Fix order: hierarchy (Migration Center asset template), criticality
+                        ranking (a uniform class usually means imported defaults, not an assessment), then nameplate data for parts and warranty work.
+                    </p>
+                </Section>
+
                 {/* Data quality */}
                 <Section icon={<Database size={15} className="text-slate-500" />} title="Data quality — what this assessment rests on">
                     <div className="grid grid-cols-3 gap-3 mb-3">
@@ -503,7 +665,7 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1.5">
-                    <ShieldCheck size={11} /> Methodology: Pareto on frozen WO costs · median-rank regression Weibull with Johnson-adjusted ranks and right-censoring · PM effectiveness vs corrective history · warranty windows vs completed WOs. Advisory only — a human approves every action.
+                    <ShieldCheck size={11} /> Methodology: Pareto on frozen WO costs · median-rank regression Weibull with Johnson-adjusted ranks and right-censoring · PM effectiveness vs corrective history · warranty windows vs completed WOs · register hygiene scored on hierarchy, criticality spread, nameplate, tag collisions and history linkage. Advisory only — a human approves every action.
                 </p>
             </div>
         </>

@@ -22,15 +22,41 @@ import {
 
 type Step = 'upload' | 'map' | 'review' | 'done';
 
+// exportHint answers the question every first-time user has here: "which
+// export, from where?" — a spreadsheet extract, never a database dump.
 const SOURCE_SYSTEMS = [
-    { value: 'sap_pm', label: 'SAP PM' },
-    { value: 'maximo', label: 'IBM Maximo' },
-    { value: 'maintainx', label: 'MaintainX' },
-    { value: 'emaint', label: 'eMaint' },
-    { value: 'limble', label: 'Limble' },
-    { value: 'fiix', label: 'Fiix' },
-    { value: 'upkeep', label: 'UpKeep' },
-    { value: 'spreadsheet', label: 'Spreadsheet / other' },
+    {
+        value: 'sap_pm', label: 'SAP PM',
+        exportHint: 'From SAP: IW38/IW39 (order list) or IW47/IW49 for history → export to spreadsheet. Register: IH06 / IE05 equipment list.',
+    },
+    {
+        value: 'maximo', label: 'IBM Maximo',
+        exportHint: 'From Maximo: Work Order Tracking → filter → Download (CSV). Register: Assets application → Download.',
+    },
+    {
+        value: 'maintainx', label: 'MaintainX',
+        exportHint: 'From MaintainX: Reporting → Work Orders → Export CSV. Register: Assets → ⋯ → Export.',
+    },
+    {
+        value: 'emaint', label: 'eMaint',
+        exportHint: 'From eMaint X5: Work Orders table view → Export to Excel. Register: Assets table view → Export.',
+    },
+    {
+        value: 'limble', label: 'Limble',
+        exportHint: 'From Limble: Work → Tasks → Export CSV. Register: Assets → Export.',
+    },
+    {
+        value: 'fiix', label: 'Fiix',
+        exportHint: 'From Fiix: Work Orders view → Export. Register: Assets view → Export.',
+    },
+    {
+        value: 'upkeep', label: 'UpKeep',
+        exportHint: 'From UpKeep: Work Orders → Export CSV. Register: Assets → Export.',
+    },
+    {
+        value: 'spreadsheet', label: 'Spreadsheet / other',
+        exportHint: 'Any sheet with one row per work order (and/or per asset) works — the Specialist proposes the column mapping either way.',
+    },
 ];
 
 const ASSET_FIELD_LABELS: Record<AssetField, string> = {
@@ -250,6 +276,9 @@ export const ImportWizardPage: React.FC = () => {
                             {SOURCE_SYSTEMS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                         </select>
                     </label>
+                    <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 max-w-2xl">
+                        {SOURCE_SYSTEMS.find((s) => s.value === sourceSystem)?.exportHint}
+                    </p>
                     <button
                         onClick={() => fileRef.current?.click()}
                         disabled={busy}
