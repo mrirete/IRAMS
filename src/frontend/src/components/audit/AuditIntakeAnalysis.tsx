@@ -50,7 +50,7 @@ export const AuditIntakeAnalysis: React.FC<Props> = ({ intake, onContinue, onRef
 
             {/* ─── Header ─────────────────────────────────────── */}
             <div className="text-center mb-2">
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-violet-50 border border-violet-200 text-violet-700 text-[11px] font-bold mb-3">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 border border-primary-200 text-primary-700 text-[11px] font-bold mb-3">
                     <Sparkles size={12} /> Preliminary Maturity Snapshot
                 </div>
                 <h2 className="text-2xl font-black text-slate-800">

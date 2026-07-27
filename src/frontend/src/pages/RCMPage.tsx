@@ -1013,7 +1013,6 @@ export const RCMPage: React.FC = () => {
           onRemove={handleRemoveCollaborator}
           onUpdateRole={handleUpdateCollabRole}
           onClose={() => setShowTeamPanel(false)}
-          accentColor="cyan"
         />
       )}
     </div>

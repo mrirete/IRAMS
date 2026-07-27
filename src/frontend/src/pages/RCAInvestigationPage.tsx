@@ -2375,7 +2375,6 @@ export function RCAInvestigationPage() {
                     onRemove={handleRemoveCollaborator}
                     onUpdateRole={handleUpdateCollaboratorRole}
                     onClose={() => setShowTeamPanel(false)}
-                    accentColor="violet"
                 />
             )}
 

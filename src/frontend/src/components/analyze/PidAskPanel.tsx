@@ -94,8 +94,8 @@ export const PidAskPanel: React.FC<PidAskPanelProps> = ({ pidTitle, equipment, o
                 onClick={e => e.stopPropagation()}>
 
                 {/* Header */}
-                <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-violet-50 via-white to-white rounded-t-2xl">
-                    <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-100 text-violet-600 shrink-0">
+                <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-primary-50 via-white to-white rounded-t-2xl">
+                    <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary-100 text-primary-600 shrink-0">
                         <MessageCircleQuestion size={16} />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -112,7 +112,7 @@ export const PidAskPanel: React.FC<PidAskPanelProps> = ({ pidTitle, equipment, o
                     <div className="flex flex-wrap gap-1.5">
                         {QUICK.map(q => (
                             <button key={q.label} onClick={() => ask(q.question)} disabled={loading}
-                                className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-40 transition-colors">
+                                className="flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-medium rounded-lg border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100 disabled:opacity-40 transition-colors">
                                 <Sparkles size={11} /> {q.label}
                             </button>
                         ))}
@@ -125,7 +125,7 @@ export const PidAskPanel: React.FC<PidAskPanelProps> = ({ pidTitle, equipment, o
                         </label>
                         <div className="flex flex-col sm:flex-row gap-2">
                             <select value={component} onChange={e => setComponent(e.target.value)}
-                                className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 outline-none focus:ring-2 focus:ring-violet-200">
+                                className="flex-1 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 outline-none focus:ring-2 focus:ring-primary-200">
                                 <option value="">Select a component…</option>
                                 {labels.map(l => <option key={l} value={l}>{l}</option>)}
                             </select>
@@ -146,9 +146,9 @@ export const PidAskPanel: React.FC<PidAskPanelProps> = ({ pidTitle, equipment, o
                         <input value={question} onChange={e => setQuestion(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') ask(question); }}
                             placeholder="Or ask anything about this drawing…"
-                            className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400" />
+                            className="flex-1 px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400" />
                         <button onClick={() => ask(question)} disabled={loading || !question.trim()}
-                            className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-violet-500 to-violet-600 shadow-sm hover:shadow disabled:opacity-50">
+                            className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 active:bg-primary-800 transition-colors disabled:opacity-50">
                             {loading ? <Loader2 size={15} className="animate-spin" /> : <MessageCircleQuestion size={15} />}
                             {loading ? 'Asking…' : 'Ask'}
                         </button>
@@ -169,7 +169,7 @@ export const PidAskPanel: React.FC<PidAskPanelProps> = ({ pidTitle, equipment, o
                     {res && (
                         <div className="space-y-2.5 pt-1">
                             {asked && <p className="text-[11px] text-slate-400 italic">"{asked}"</p>}
-                            <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-2 border-violet-200 pl-3">
+                            <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-2 border-primary-200 pl-3">
                                 {res.answer}
                             </div>
 

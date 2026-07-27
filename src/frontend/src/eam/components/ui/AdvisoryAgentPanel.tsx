@@ -17,14 +17,26 @@ type Accent = 'primary' | 'teal' | 'violet' | 'indigo' | 'amber' | 'blue' | 'eme
  * Accents tint the icon chip and the quote bar only — the run button is flat in
  * every variant. Gradient buttons were the loudest thing on these panels and
  * read as marketing chrome next to real analysis output.
+ *
+ * Every cool accent (teal / violet / indigo / blue) now resolves to the one
+ * primary ramp: an agent panel is an agent panel, and giving each its own hue
+ * made the app look assembled from four different products. Only amber and
+ * emerald stay distinct, because there they carry meaning — caution and money.
+ * The names survive so existing callers keep compiling.
  */
+const PRIMARY = {
+    icon: 'bg-primary-50 text-primary-600',
+    btn: 'bg-primary-600 hover:bg-primary-700 active:bg-primary-800',
+    bar: 'border-primary-300',
+    ring: 'focus:ring-primary-500/15 focus:border-primary-500',
+};
 const ACCENT: Record<Accent, { icon: string; btn: string; bar: string; ring: string }> = {
-    primary: { icon: 'bg-primary-50 text-primary-600',  btn: 'bg-primary-600 hover:bg-primary-700 active:bg-primary-800',  bar: 'border-primary-300', ring: 'focus:ring-primary-500/15 focus:border-primary-500' },
-    teal:    { icon: 'bg-primary-50 text-primary-600',  btn: 'bg-primary-600 hover:bg-primary-700 active:bg-primary-800',  bar: 'border-primary-300', ring: 'focus:ring-primary-500/15 focus:border-primary-500' },
-    violet:  { icon: 'bg-violet-50 text-violet-600',    btn: 'bg-violet-600 hover:bg-violet-700',   bar: 'border-violet-300',  ring: 'focus:ring-violet-500/15 focus:border-violet-500' },
-    indigo:  { icon: 'bg-indigo-50 text-indigo-600',    btn: 'bg-indigo-600 hover:bg-indigo-700',   bar: 'border-indigo-300',  ring: 'focus:ring-indigo-500/15 focus:border-indigo-500' },
+    primary: PRIMARY,
+    teal:    PRIMARY,
+    violet:  PRIMARY,
+    indigo:  PRIMARY,
+    blue:    PRIMARY,
     amber:   { icon: 'bg-amber-50 text-amber-600',      btn: 'bg-amber-600 hover:bg-amber-700',     bar: 'border-amber-300',   ring: 'focus:ring-amber-500/15 focus:border-amber-500' },
-    blue:    { icon: 'bg-blue-50 text-blue-600',        btn: 'bg-blue-600 hover:bg-blue-700',       bar: 'border-blue-300',    ring: 'focus:ring-blue-500/15 focus:border-blue-500' },
     emerald: { icon: 'bg-emerald-50 text-emerald-600',  btn: 'bg-emerald-600 hover:bg-emerald-700', bar: 'border-emerald-300', ring: 'focus:ring-emerald-500/15 focus:border-emerald-500' },
 };
 

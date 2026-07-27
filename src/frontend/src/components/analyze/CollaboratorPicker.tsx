@@ -70,7 +70,6 @@ interface TeamPanelProps {
     onRemove: (id: string) => void;
     onUpdateRole: (id: string, role: CollabRole) => void;
     onClose: () => void;
-    accentColor?: string; // 'cyan' or 'violet'
 }
 
 export const TeamPanel: React.FC<TeamPanelProps> = ({
@@ -79,7 +78,6 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
     onRemove,
     onUpdateRole,
     onClose,
-    accentColor = 'cyan',
 }) => {
     const [showPicker, setShowPicker] = useState(false);
     const [tab, setTab] = useState<'people' | 'teams'>('people');
@@ -140,9 +138,10 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
         setResults([]);
     }, [tab, selectedRole, onAdd]);
 
-    const accent = accentColor === 'violet'
-        ? { btn: 'bg-primary-600 hover:bg-primary-500', light: 'bg-blue-50 border-blue-200 text-blue-700', ring: 'focus:ring-blue-200 focus:border-blue-400' }
-        : { btn: 'bg-primary-600 hover:bg-primary-700', light: 'bg-primary-50 border-primary-200 text-primary-700', ring: 'focus:ring-primary-200 focus:border-primary-400' };
+    // One accent, not one per caller: the drawer used to render a slightly
+    // different blue depending on who opened it (raw Tailwind blue vs the token
+    // ramp), which read as two components rather than one.
+    const accent = { btn: 'bg-primary-600 hover:bg-primary-700', light: 'bg-primary-50 border-primary-200 text-primary-700', ring: 'focus:ring-primary-200 focus:border-primary-400' };
 
     return (
         <div className="fixed inset-0 z-50 bg-black/30 flex justify-end" onClick={onClose}>
@@ -151,7 +150,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                 <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
                     <div>
                         <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                            <Users size={16} className={accentColor === 'violet' ? 'text-blue-600' : 'text-primary-600'} /> Study Team
+                            <Users size={16} className="text-primary-600" /> Study Team
                         </h3>
                         <p className="text-xs text-slate-400 mt-0.5">{collaborators.length} member{collaborators.length !== 1 ? 's' : ''}</p>
                     </div>

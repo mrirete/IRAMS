@@ -47,8 +47,8 @@ export const RcaChallengerPanel: React.FC<RcaChallengerPanelProps> = ({ initialT
 
     return (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className="flex items-center gap-2.5 px-4 sm:px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-violet-50 via-white to-white">
-                <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-violet-100 text-violet-600 shrink-0"><ShieldQuestion size={16} /></span>
+            <div className="flex items-center gap-2.5 px-4 sm:px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r from-primary-50 via-white to-white">
+                <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary-100 text-primary-600 shrink-0"><ShieldQuestion size={16} /></span>
                 <div className="min-w-0">
                     <h4 className="text-sm font-bold text-slate-800">RCA Challenger</h4>
                     <p className="text-[11px] text-slate-400 truncate">AI stress-tests a proposed root cause against the evidence</p>
@@ -60,19 +60,19 @@ export const RcaChallengerPanel: React.FC<RcaChallengerPanelProps> = ({ initialT
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     placeholder="Paste the proposed root cause / 5-Why / problem statement to challenge…"
-                    className="w-full min-h-[96px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400 resize-y"
+                    className="w-full min-h-[96px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400 resize-y"
                 />
                 <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
                     <input
                         value={tag}
                         onChange={(e) => setTag(e.target.value)}
                         placeholder="Asset tag (optional, e.g. P-101)"
-                        className="flex-1 min-h-[40px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-400"
+                        className="flex-1 min-h-[40px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-400"
                     />
                     <button
                         onClick={run}
                         disabled={loading || !text.trim()}
-                        className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-violet-500 to-violet-600 shadow-sm hover:shadow disabled:opacity-50"
+                        className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 active:bg-primary-800 transition-colors disabled:opacity-50"
                     >
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <ShieldQuestion size={15} />}
                         {loading ? 'Challenging…' : 'Challenge'}
@@ -87,7 +87,7 @@ export const RcaChallengerPanel: React.FC<RcaChallengerPanelProps> = ({ initialT
 
                 {res && (
                     <div className="space-y-2.5 pt-1">
-                        <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-2 border-violet-200 pl-3">{res.answer}</div>
+                        <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-2 border-primary-200 pl-3">{res.answer}</div>
                         <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
                             <span className="px-2 py-0.5 rounded-full bg-slate-100">Tier {res.tier_used} · advisory</span>
                             <span className="px-2 py-0.5 rounded-full bg-slate-100">{res.sources.length} sources</span>

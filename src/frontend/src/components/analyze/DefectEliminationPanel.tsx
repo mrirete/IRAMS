@@ -1415,7 +1415,6 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
                         onUpdateTaskCollaborators(selectedTask.id, updated);
                     }}
                     onClose={() => setShowTeamPanel(false)}
-                    accentColor="violet"
                 />
             )}
         </div>

@@ -176,10 +176,10 @@ export const PidRegisterModal: React.FC<Props> = ({ onClose, onImported }) => {
                             <button
                                 onClick={() => fileInput.current?.click()}
                                 disabled={busy}
-                                className="w-full rounded-2xl border-2 border-dashed border-slate-200 hover:border-violet-300 hover:bg-violet-50/40 p-10 flex flex-col items-center gap-3 transition-colors disabled:opacity-60"
+                                className="w-full rounded-2xl border-2 border-dashed border-slate-200 hover:border-primary-300 hover:bg-primary-50/40 p-10 flex flex-col items-center gap-3 transition-colors disabled:opacity-60"
                             >
                                 {busy
-                                    ? <Loader2 size={26} className="animate-spin text-violet-500" />
+                                    ? <Loader2 size={26} className="animate-spin text-primary-500" />
                                     : <Upload size={26} className="text-slate-400" />}
                                 <span className="text-sm font-semibold text-slate-700">
                                     {busy ? 'Reading the drawing…' : 'Choose a P&ID (PDF)'}
@@ -360,7 +360,7 @@ export const PidRegisterModal: React.FC<Props> = ({ onClose, onImported }) => {
                             <button
                                 onClick={() => void doImport()}
                                 disabled={busy || selectedCount === 0}
-                                className="flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50"
+                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-4 py-2 disabled:opacity-50"
                             >
                                 {busy ? <Loader2 size={14} className="animate-spin" /> : null}
                                 Create {selectedCount} asset{selectedCount === 1 ? '' : 's'}

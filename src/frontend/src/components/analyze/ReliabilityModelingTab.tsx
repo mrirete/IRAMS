@@ -1100,7 +1100,6 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                 analyzeService.updateRBDModel(activeStudy.id, { collaborators: updated } as any);
                             }}
                             onClose={() => setShowRbdTeam(false)}
-                            accentColor="cyan"
                         />
                     )}
 
@@ -1395,7 +1394,6 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                 analyzeService.updatePIDConfig(activePidStudy.id, { collaborators: updated } as any);
                             }}
                             onClose={() => setShowPidTeam(false)}
-                            accentColor="violet"
                         />
                     )}
 
@@ -1420,7 +1418,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                         {/* The drawing is a graph, so the Specialist can trace it — flow paths,
                             isolation valves, and the reliability history of what it finds. */}
                         <button onClick={() => setShowPidAsk(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 text-violet-700 text-xs font-medium rounded-lg border border-violet-200 hover:bg-violet-100 transition-colors"
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-50 text-primary-700 text-xs font-medium rounded-lg border border-primary-200 hover:bg-primary-100 transition-colors"
                             title="Ask the Reliability Specialist about this drawing">
                             <MessageCircleQuestion size={12} /> Ask about this drawing
                         </button>

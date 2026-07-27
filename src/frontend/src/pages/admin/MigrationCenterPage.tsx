@@ -246,7 +246,7 @@ export const MigrationCenterPage: React.FC = () => {
         <div className="max-w-4xl mx-auto space-y-6 pb-24 animate-in fade-in duration-300">
             <div>
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <Database size={22} className="text-violet-600" /> Migration Center
+                    <Database size={22} className="text-primary-600" /> Migration Center
                 </h1>
                 <p className="text-slate-500 text-sm mt-1 max-w-2xl">
                     Moving from SAP PM, Maximo, MaintainX or spreadsheets? Work down this list in order.
@@ -300,7 +300,7 @@ export const MigrationCenterPage: React.FC = () => {
                                         {p.importType && (
                                             <button
                                                 onClick={() => setOpenType(p.importType!)}
-                                                className="flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-3 py-2"
+                                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2"
                                             >
                                                 Import {p.title.toLowerCase()} <ArrowRight size={13} />
                                             </button>
@@ -308,7 +308,7 @@ export const MigrationCenterPage: React.FC = () => {
                                         {p.to && (
                                             <Link
                                                 to={p.to}
-                                                className="flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-3 py-2"
+                                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2"
                                             >
                                                 {p.toLabel} <ArrowRight size={13} />
                                             </Link>

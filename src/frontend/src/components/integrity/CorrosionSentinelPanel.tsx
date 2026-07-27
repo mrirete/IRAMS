@@ -53,7 +53,7 @@ export const CorrosionSentinelPanel: React.FC<CorrosionSentinelPanelProps> = ({ 
                     <button
                         onClick={run}
                         disabled={loading}
-                        className="shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-primary-500 to-primary-600 shadow-sm hover:shadow disabled:opacity-60"
+                        className="shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 active:bg-primary-800 transition-colors disabled:opacity-60"
                     >
                         {loading ? <Loader2 size={15} className="animate-spin" /> : <Radar size={15} />}
                         <span className="hidden sm:inline">{loading ? 'Scanning…' : 'Scan'}</span>
