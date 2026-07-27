@@ -146,7 +146,7 @@ export function chunkPages(pages: SourcePage[], opts: ChunkOptions = {}): Manual
         const candidate = buffer ? `${buffer}\n\n${unit.text}` : unit.text;
         if (candidate.length > maxChars && buffer) {
             const carried = overlapTail(buffer, overlapChars);
-            const startedOn = bufferPage;
+            const startedOn: number | null = bufferPage;
             flush();
             buffer = carried ? `${carried}\n\n${unit.text}` : unit.text;
             // Overlapped text came from the previous page; the new chunk is
