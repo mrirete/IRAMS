@@ -1508,6 +1508,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
         const updatedStatus = WorkOrderStatus.TECO;
         let message = `Work Order ${localJob.woNumber || localJob.id} is now Technically Complete.`;
+        let followUpFailed = false;
 
         try {
             // Flush any pending debounced saves first
@@ -1583,11 +1584,14 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     }
                 } catch (fuErr: any) {
                     console.error('Failed to create follow-up WO:', fuErr);
+                    followUpFailed = true;
                     message += `\n\n⚠️ Follow-up WO creation failed: ${fuErr.message}. Please create manually.`;
                 }
             }
 
-            showToast(message, 'success');
+            // The message already carries the failure; the severity should too,
+            // or a green toast buries the one line the user has to act on.
+            showToast(message, followUpFailed ? 'warning' : 'success');
             setShowCompleteModal(false);
             onBack();
         } catch (e: any) {
@@ -2236,8 +2240,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                 <button
                                     onClick={async () => {
                                         // Write audit log
+                                        let auditLogged = true;
                                         try {
-                                            await supabase.from('audit_logs').insert({
+                                            // insert() resolves with { error } rather than throwing,
+                                            // so the catch alone would have missed every real DB
+                                            // failure — an RLS denial included.
+                                            const { error: auditErr } = await supabase.from('audit_logs').insert({
                                                 table_name: 'work_orders',
                                                 record_id: localJob.id,
                                                 action: 'GATEKEEPER_CANCELLATION',
@@ -2254,16 +2262,26 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                                     signed_off_at: new Date().toISOString(),
                                                 }),
                                             });
-                                        } catch (auditErr) {
-                                            console.warn('[Gatekeeper] Audit log write failed:', auditErr);
+                                            if (auditErr) {
+                                                auditLogged = false;
+                                                console.error('[Gatekeeper] Audit log write failed:', auditErr.message);
+                                            }
+                                        } catch (thrown) {
+                                            auditLogged = false;
+                                            console.error('[Gatekeeper] Audit log write threw:', thrown);
                                         }
 
                                         // Proceed with cancellation
                                         setShowGatekeeperModal(false);
                                         await updateJob({ status: 'CANCELLED' as any }, true);
+                                        // Never claim an audit trail that was not written — this is a
+                                        // Criticality A override, and the audit record is the only
+                                        // evidence the rejection was authorised.
                                         showToast(
-                                            `⛔ WO ${localJob.woNumber || localJob.id} cancelled (Criticality A — Gatekeeper approved). Audit trail logged.`,
-                                            'warning'
+                                            auditLogged
+                                                ? `⛔ WO ${localJob.woNumber || localJob.id} cancelled (Criticality A — Gatekeeper approved). Audit trail logged.`
+                                                : `⛔ WO ${localJob.woNumber || localJob.id} cancelled (Criticality A — Gatekeeper approved), but the AUDIT RECORD FAILED TO WRITE. Record this rejection manually.`,
+                                            auditLogged ? 'warning' : 'error'
                                         );
                                     }}
                                     disabled={gatekeeperReason.trim().length < 20 || !gatekeeperConfirmed}

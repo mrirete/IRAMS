@@ -297,6 +297,7 @@ export const RecurringWork: React.FC = () => {
         setGenerationResult(null);
         const db = DatabaseService.getInstance();
         let created = 0;
+        const incomplete: string[] = [];
         let errors = 0;
 
         // Iterate per selected item (each is a PM + asset combination)
@@ -321,8 +322,12 @@ export const RecurringWork: React.FC = () => {
                 try {
                     const assetId = item.assetId || undefined;
                     // Only advance PM dates on the last asset so all WOs get the same due date
-                    await db.generateWOFromPM(pmId, assetId, !isLastAssetForPM);
+                    const wo = await db.generateWOFromPM(pmId, assetId, !isLastAssetForPM);
                     created++;
+                    // The WO exists, but part of its plan may not have copied —
+                    // a technician must not receive it believing it is complete.
+                    const missing = (wo as any)?.__copyFailures as string[] | undefined;
+                    if (missing?.length) incomplete.push(`${(wo as any).wo_number ?? pmId}: ${missing.join(', ')}`);
                 } catch (e) {
                     console.error(`Failed to generate WO for PM ${pmId} / asset ${item.asset}:`, e);
                     errors++;
@@ -331,9 +336,12 @@ export const RecurringWork: React.FC = () => {
         }
 
         setGenerating(false);
-        const resultMsg = `Created ${created} Work Order${created !== 1 ? 's' : ''}${errors > 0 ? `, ${errors} failed` : ''} successfully.`;
+        let resultMsg = `Created ${created} Work Order${created !== 1 ? 's' : ''}${errors > 0 ? `, ${errors} failed` : ''} successfully.`;
+        if (incomplete.length > 0) {
+            resultMsg += ` ${incomplete.length} generated without part of their plan — ${incomplete.join('; ')}.`;
+        }
         setGenerationResult(resultMsg);
-        showToast(resultMsg, errors > 0 ? 'warning' : 'success');
+        showToast(resultMsg, errors > 0 || incomplete.length > 0 ? 'warning' : 'success');
         // Reload strategies to reflect updated next_due_date
         await loadStrategies();
     };
@@ -551,7 +559,12 @@ export const RecurringWork: React.FC = () => {
             console.log('[handleSave] PM ID:', selectedJob.id, 'Payload:', headerPayload);
             // Save header fields
             await db.updatePM(selectedJob.id, headerPayload);
-            // Save templates (tasks, jsa, labor, inventory) — best-effort
+            // Save templates (tasks, jsa, labor, inventory). This is the job
+            // plan — the steps, hazards, labour and parts. Losing it silently
+            // was never "non-critical": the header saved, the user was told the
+            // strategy saved, and every step they had just written was gone on
+            // the next reload.
+            let templateError: string | null = null;
             try {
                 await db.savePMTemplates(selectedJob.id, {
                     tasks: selectedJob.tasks || [],
@@ -560,8 +573,19 @@ export const RecurringWork: React.FC = () => {
                     inventory: selectedJob.inventory || [],
                 });
             } catch (templateErr: any) {
-                console.warn('[handleSave] Template save failed (non-critical):', templateErr?.message || templateErr);
+                templateError = templateErr?.message || String(templateErr);
+                console.error('[handleSave] Template save failed:', templateError);
             }
+
+            if (templateError) {
+                setSaveStatus('error');
+                showToast(
+                    `Schedule details saved, but the job plan (steps, JSA, labour, parts) did NOT save: ${templateError}. Re-save before leaving this page.`,
+                    'error'
+                );
+                return;
+            }
+
             setSaveStatus('saved');
             showToast('Strategy saved successfully', 'success');
             setTimeout(() => setSaveStatus('idle'), 3000);

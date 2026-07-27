@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { mustWrite } from '../lib/supabaseWrite';
 
 // =====================================================
 // TYPES
@@ -1055,15 +1056,20 @@ class FinOpsServiceClass {
         for (const book of books || []) {
             const { amount, newValue } = await this.calculateDepreciation(book.id);
 
-            // Insert schedule entry
-            await supabase.from('depreciation_schedules').insert({
-                book_id: book.id,
-                fiscal_year: fiscalYear,
-                period: period,
-                depreciation_amount: amount,
-                opening_value: newValue + amount,
-                closing_value: newValue
-            });
+            // Insert schedule entry. processedCount is reported to the user as
+            // "N books depreciated", so an unchecked write here would count a
+            // book that gained no schedule row and no new carrying value.
+            await mustWrite(
+                supabase.from('depreciation_schedules').insert({
+                    book_id: book.id,
+                    fiscal_year: fiscalYear,
+                    period: period,
+                    depreciation_amount: amount,
+                    opening_value: newValue + amount,
+                    closing_value: newValue
+                }),
+                `Depreciation schedule for book ${book.id} (${fiscalYear}/${period})`,
+            );
 
             // Update book
             await supabase.from('depreciation_books').update({

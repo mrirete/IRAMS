@@ -46,6 +46,7 @@ import {
     NotificationLog
 } from '../types';
 import { supabase } from '../lib/supabase';
+import { tryWrite } from '../lib/supabaseWrite';
 import { FinOpsService } from './FinOpsService';
 import { errorLog } from './ErrorLogService';
 
@@ -4361,6 +4362,11 @@ export class DatabaseService {
     }
 
     public async generateWOFromPM(pmId: string, assetId?: string, skipDateAdvance?: boolean, meterReading?: number): Promise<WorkOrderRecord> {
+        // A generated WO is only as good as the plan copied onto it. Each copy
+        // below is best-effort so one failure cannot abandon a WO that already
+        // exists — but the caller is told what is missing rather than handing a
+        // technician a work order silently stripped of its steps or its JSA.
+        const copyFailures: string[] = [];
         // 1. Fetch PM with templates
         const { data: pm, error: getErr } = await supabase.from('recurring_work').select('*').eq('id', pmId).single();
         if (getErr || !pm) throw new Error('PM Strategy not found');
@@ -4452,21 +4458,23 @@ export class DatabaseService {
             });
             // One insert instead of N — a 40-operation task list was 40 round
             // trips, each unchecked.
-            const { error: taskErr } = await supabase.from('job_tasks').insert(taskRows);
-            if (taskErr) console.error('generateWOFromPM: task copy failed:', taskErr.message);
+            if (!await tryWrite(supabase.from('job_tasks').insert(taskRows), `job steps for WO ${woId}`)) {
+                copyFailures.push(`${taskRows.length} job step(s)`);
+            }
         }
 
         // 4. Copy template JSA → jsa_assessments + jsa_hazards
         if (templates.jsa && templates.jsa.hazards && templates.jsa.hazards.length > 0) {
             const jsaId = crypto.randomUUID();
-            await supabase.from('jsa_assessments').insert({
+            const jsaOk = await tryWrite(supabase.from('jsa_assessments').insert({
                 id: jsaId,
                 wo_id: woId,
                 status: 'DRAFT',
                 created_by: 'system',
                 permits: templates.jsa.permits || [],
                 updated_at: new Date().toISOString(),
-            });
+            }), `JSA for WO ${woId}`);
+            if (!jsaOk) copyFailures.push('the job safety analysis');
             const hazardRows = templates.jsa.hazards.map((h: any) => ({
                 id: crypto.randomUUID(),
                 jsa_id: jsaId,
@@ -4474,8 +4482,10 @@ export class DatabaseService {
                 risk_score: h.riskScore || 'Medium',
                 controls: h.controls || '',
             }));
-            if (hazardRows.length > 0) {
-                await supabase.from('jsa_hazards').insert(hazardRows);
+            if (jsaOk && hazardRows.length > 0) {
+                if (!await tryWrite(supabase.from('jsa_hazards').insert(hazardRows), `JSA hazards for WO ${woId}`)) {
+                    copyFailures.push(`${hazardRows.length} JSA hazard(s)`);
+                }
             }
         }
 
@@ -4491,7 +4501,9 @@ export class DatabaseService {
                 date_worked: new Date().toISOString().split('T')[0],
                 created_at: new Date().toISOString(),
             }));
-            await supabase.from('work_order_labor').insert(laborRows);
+            if (!await tryWrite(supabase.from('work_order_labor').insert(laborRows), `planned labour for WO ${woId}`)) {
+                copyFailures.push(`${laborRows.length} planned labour line(s)`);
+            }
         }
 
         // 6. Copy template inventory → work_order_parts
@@ -4505,7 +4517,9 @@ export class DatabaseService {
                 unit_cost: item.estUnitCost || 0,
                 date_used: new Date().toISOString().split('T')[0],
             }));
-            await supabase.from('work_order_parts').insert(partRows);
+            if (!await tryWrite(supabase.from('work_order_parts').insert(partRows), `planned parts for WO ${woId}`)) {
+                copyFailures.push(`${partRows.length} planned part line(s)`);
+            }
         }
 
         // 7. Update PM last_generated_date and calculate next_due_date (skip if multi-asset
@@ -4555,6 +4569,10 @@ export class DatabaseService {
             }
         }
 
+        if (copyFailures.length > 0) {
+            console.error(`[generateWOFromPM] WO ${data?.wo_number ?? woId} generated WITHOUT ${copyFailures.join(', ')}`);
+            (data as any).__copyFailures = copyFailures;
+        }
         return data;
     }
 

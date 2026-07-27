@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { mustWrite } from './supabaseWrite';
 
 /**
  * Goods issue on work-order completion (B2).
@@ -75,13 +76,19 @@ export async function issueWorkOrderParts(woId: string, actor: string): Promise<
                 .eq('id', t.stockRowId);
             if (updErr) throw updErr;
 
-            await supabase.from('inventory_transactions').insert({
-                item_id: part.item_id,
-                transaction_type: 'ISSUE',
-                quantity: t.take,
-                cost_at_time: Number(part.unit_cost) || 0,
-                timestamp: new Date().toISOString(),
-            });
+            // The stock level has already moved. If the ledger entry does not
+            // land, on-hand quantity and the transaction history disagree and
+            // nothing reveals which is right — so this must not fail quietly.
+            await mustWrite(
+                supabase.from('inventory_transactions').insert({
+                    item_id: part.item_id,
+                    transaction_type: 'ISSUE',
+                    quantity: t.take,
+                    cost_at_time: Number(part.unit_cost) || 0,
+                    timestamp: new Date().toISOString(),
+                }),
+                `Issue transaction for item ${part.item_id}`,
+            );
         }
 
         // The part was used either way — mark it issued so cost and history
