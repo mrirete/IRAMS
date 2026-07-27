@@ -174,6 +174,24 @@ export function runSpecialist(query: string, history: AgentTurn[] = []): Promise
 }
 
 /**
+ * Ask the Specialist about a P&ID. The supervisor reaches the drawing through
+ * the query_pid tool, which walks the stored graph deterministically — so the
+ * flow paths and valve lists in the answer come from the drawing, not from the
+ * model's recollection of what a process unit usually looks like.
+ *
+ * The title is pinned into the query because a site may hold several drawings
+ * and the tool will otherwise stop and ask which one.
+ */
+export function runPidQuestion(question: string, pidTitle: string): Promise<AgentRunResponse> {
+    return runAgent(
+        'specialist_supervisor',
+        `P&ID: "${pidTitle}"\n\n${question}\n\n` +
+        `(Use query_pid with pid_title exactly as given above. Report its paths and ` +
+        `valve lists as returned — do not add, reorder or infer components.)`,
+    );
+}
+
+/**
  * Manual Reader — answers equipment questions from the organisation's own
  * indexed OEM manuals and SOPs, citing document and page. Advisory only.
  */

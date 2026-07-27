@@ -9,13 +9,14 @@
  * P2.3: Links RBD blocks to Asset Register with WO-based MTBF/MTTR auto-populate
  */
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { Cpu, Wrench, Download, FileText, RotateCcw, Undo2, Redo2, Upload, Loader2, Activity, Send, Plus, ArrowLeft, Trash2, Copy, Clock, LayoutGrid, Edit3, ChevronRight, Search, Check, X as XIcon, Link2, Users } from 'lucide-react';
+import { Cpu, Wrench, Download, FileText, RotateCcw, Undo2, Redo2, Upload, Loader2, Activity, Send, Plus, ArrowLeft, Trash2, Copy, Clock, LayoutGrid, Edit3, ChevronRight, Search, Check, X as XIcon, Link2, Users, MessageCircleQuestion } from 'lucide-react';
 import { TeamPanel, AvatarStack } from './CollaboratorPicker';
 import type { StudyCollaborator } from '../../eam/services/AnalyzeService';
 import type { RBDBlock, RBDGroup } from './ReliabilityBlockDiagram';
 import type { PIDEquipment, PIDConnection } from './PIDViewer';
 import ReliabilityBlockDiagram from './ReliabilityBlockDiagram';
 import PIDViewer from './PIDViewer';
+import PidAskPanel from './PidAskPanel';
 import { useHistory } from '../../hooks/useHistory';
 import analyzeService from '../../eam/services/AnalyzeService';
 import { DatabaseService } from '../../eam/services/DatabaseService';
@@ -134,6 +135,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
     // ── Team Panel State ──
     const [showRbdTeam, setShowRbdTeam] = useState(false);
     const [showPidTeam, setShowPidTeam] = useState(false);
+    const [showPidAsk, setShowPidAsk] = useState(false);
 
     // Fetch saved studies on mount
     useEffect(() => {
@@ -1414,6 +1416,14 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                             className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-slate-600 text-xs font-medium rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
                             <Upload size={12} /> Import JSON
                         </button>
+                        <div className="w-px h-5 bg-slate-200"></div>
+                        {/* The drawing is a graph, so the Specialist can trace it — flow paths,
+                            isolation valves, and the reliability history of what it finds. */}
+                        <button onClick={() => setShowPidAsk(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 text-violet-700 text-xs font-medium rounded-lg border border-violet-200 hover:bg-violet-100 transition-colors"
+                            title="Ask the Reliability Specialist about this drawing">
+                            <MessageCircleQuestion size={12} /> Ask about this drawing
+                        </button>
                     </div>
 
                     {uploading && (
@@ -1438,6 +1448,14 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                         onAddConnection={pidAddConnection}
                         onRemoveConnection={pidRemoveConnection}
                     />
+
+                    {showPidAsk && (
+                        <PidAskPanel
+                            pidTitle={activePidStudy.title}
+                            equipment={pidEquipment}
+                            onClose={() => setShowPidAsk(false)}
+                        />
+                    )}
                 </div>
             )}
         </div>
