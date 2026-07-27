@@ -117,7 +117,7 @@ export const ManualsPage: React.FC = () => {
                     <ArrowLeft size={15} /> Specialist workspace
                 </button>
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <BookOpen size={20} className="text-violet-600" /> Manuals & procedures
+                    <BookOpen size={20} className="text-primary-600" /> Manuals & procedures
                 </h1>
                 <p className="text-slate-500 text-sm mt-1">
                     An engineer who has read your OEM manuals beats one working from general knowledge.
@@ -141,10 +141,10 @@ export const ManualsPage: React.FC = () => {
                 {!chunks ? (
                     <>
                         <button onClick={() => fileRef.current?.click()} disabled={busy}
-                            className="w-full rounded-2xl border-2 border-dashed border-violet-200 bg-violet-50/50 hover:bg-violet-50 transition-colors p-8 flex flex-col items-center gap-2 text-violet-700">
+                            className="w-full rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/40 hover:bg-primary-50 transition-colors p-8 flex flex-col items-center gap-2 text-primary-700">
                             {busy ? <Loader2 size={28} className="animate-spin" /> : <UploadCloud size={28} />}
                             <span className="font-semibold">{busy ? 'Reading the document…' : 'Add a manual or procedure'}</span>
-                            <span className="text-xs text-violet-500">PDF, TXT or MD — the file is read in your browser; only the text is stored</span>
+                            <span className="text-xs text-primary-600">PDF, TXT or MD — the file is read in your browser; only the text is stored</span>
                         </button>
                         <input ref={fileRef} type="file" accept=".pdf,.txt,.md" className="hidden"
                             onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ''; }} />
@@ -152,7 +152,7 @@ export const ManualsPage: React.FC = () => {
                 ) : (
                     <>
                         <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                            <FileText size={16} className="text-violet-600" /> Ready to index
+                            <FileText size={16} className="text-primary-600" /> Ready to index
                             <span className="text-xs font-normal text-slate-400">
                                 {chunks.length} passage(s) · ~{estimateTokens(chunks.map((c) => c.chunk_text).join(' ')).toLocaleString()} tokens
                             </span>
@@ -188,7 +188,7 @@ export const ManualsPage: React.FC = () => {
                         </div>
                         <div className="flex gap-2">
                             <button onClick={() => void index()} disabled={busy || !name.trim()}
-                                className="flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-5 py-2.5 disabled:opacity-50">
+                                className="flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-5 py-2.5 disabled:opacity-50 transition-colors">
                                 {busy ? <Loader2 size={14} className="animate-spin" /> : <BookOpen size={14} />} Index this document
                             </button>
                             <button onClick={() => { setChunks(null); setName(''); }}
@@ -208,7 +208,7 @@ export const ManualsPage: React.FC = () => {
                     <input value={query} onChange={(e) => setQuery(e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter') void runSearch(); }}
                         placeholder="mechanical seal flush plan, bearing clearance, torque spec…"
-                        className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-violet-400" />
+                        className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500" />
                     <button onClick={() => void runSearch()} disabled={searching || !query.trim()}
                         className="rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium px-4 disabled:opacity-40">
                         {searching ? <Loader2 size={14} className="animate-spin" /> : 'Search'}
@@ -242,7 +242,7 @@ export const ManualsPage: React.FC = () => {
                 title="Ask the Manual Reader"
                 subtitle="Answers from your indexed documentation, cited by document and page — and says plainly when the manuals don't cover it"
                 icon={<Sparkles size={16} />}
-                accent="violet"
+                accent="primary"
                 runLabel="Ask"
                 inputPlaceholder="What is the recommended lubrication interval for P-101?"
                 onRun={(input) => runManualReader(input)}
@@ -269,7 +269,7 @@ export const ManualsPage: React.FC = () => {
                                 <span className="text-[10px] uppercase tracking-wider bg-slate-100 text-slate-500 rounded-full px-1.5 py-0.5">
                                     {d.document_type.replaceAll('_', ' ')}
                                 </span>
-                                {d.asset_tag && <span className="text-xs font-mono text-violet-600">{d.asset_tag}</span>}
+                                {d.asset_tag && <span className="text-xs font-mono text-primary-600">{d.asset_tag}</span>}
                                 <span className="text-xs text-slate-400 ml-auto">{d.chunks} passages</span>
                                 <button onClick={() => void remove(d.source)} title="Remove from index"
                                     className="text-slate-300 hover:text-rose-500">

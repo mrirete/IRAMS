@@ -11,15 +11,21 @@ import { Loader2, AlertTriangle } from 'lucide-react';
 import type { AgentRunResponse } from '../../services/agentRunClient';
 import { friendlyAIError } from '../../lib/aiError';
 
-type Accent = 'teal' | 'violet' | 'indigo' | 'amber' | 'blue' | 'emerald';
+type Accent = 'primary' | 'teal' | 'violet' | 'indigo' | 'amber' | 'blue' | 'emerald';
 
-const ACCENT: Record<Accent, { head: string; icon: string; btn: string; bar: string; ring: string }> = {
-    teal:    { head: 'from-primary-50',    icon: 'bg-primary-100 text-primary-600',       btn: 'from-primary-500 to-primary-600',       bar: 'border-primary-200',    ring: 'focus:ring-primary-300 focus:border-primary-400' },
-    violet:  { head: 'from-violet-50',  icon: 'bg-violet-100 text-violet-600',   btn: 'from-violet-500 to-violet-600',   bar: 'border-violet-200',  ring: 'focus:ring-violet-300 focus:border-violet-400' },
-    indigo:  { head: 'from-indigo-50',  icon: 'bg-indigo-100 text-indigo-600',   btn: 'from-indigo-500 to-indigo-600',   bar: 'border-indigo-200',  ring: 'focus:ring-indigo-300 focus:border-indigo-400' },
-    amber:   { head: 'from-amber-50',   icon: 'bg-amber-100 text-amber-600',     btn: 'from-amber-500 to-amber-600',     bar: 'border-amber-200',   ring: 'focus:ring-amber-300 focus:border-amber-400' },
-    blue:    { head: 'from-blue-50',    icon: 'bg-blue-100 text-blue-600',       btn: 'from-blue-500 to-blue-600',       bar: 'border-blue-200',    ring: 'focus:ring-blue-300 focus:border-blue-400' },
-    emerald: { head: 'from-emerald-50', icon: 'bg-emerald-100 text-emerald-600', btn: 'from-emerald-500 to-emerald-600', bar: 'border-emerald-200', ring: 'focus:ring-emerald-300 focus:border-emerald-400' },
+/**
+ * Accents tint the icon chip and the quote bar only — the run button is flat in
+ * every variant. Gradient buttons were the loudest thing on these panels and
+ * read as marketing chrome next to real analysis output.
+ */
+const ACCENT: Record<Accent, { icon: string; btn: string; bar: string; ring: string }> = {
+    primary: { icon: 'bg-primary-50 text-primary-600',  btn: 'bg-primary-600 hover:bg-primary-700 active:bg-primary-800',  bar: 'border-primary-300', ring: 'focus:ring-primary-500/15 focus:border-primary-500' },
+    teal:    { icon: 'bg-primary-50 text-primary-600',  btn: 'bg-primary-600 hover:bg-primary-700 active:bg-primary-800',  bar: 'border-primary-300', ring: 'focus:ring-primary-500/15 focus:border-primary-500' },
+    violet:  { icon: 'bg-violet-50 text-violet-600',    btn: 'bg-violet-600 hover:bg-violet-700',   bar: 'border-violet-300',  ring: 'focus:ring-violet-500/15 focus:border-violet-500' },
+    indigo:  { icon: 'bg-indigo-50 text-indigo-600',    btn: 'bg-indigo-600 hover:bg-indigo-700',   bar: 'border-indigo-300',  ring: 'focus:ring-indigo-500/15 focus:border-indigo-500' },
+    amber:   { icon: 'bg-amber-50 text-amber-600',      btn: 'bg-amber-600 hover:bg-amber-700',     bar: 'border-amber-300',   ring: 'focus:ring-amber-500/15 focus:border-amber-500' },
+    blue:    { icon: 'bg-blue-50 text-blue-600',        btn: 'bg-blue-600 hover:bg-blue-700',       bar: 'border-blue-300',    ring: 'focus:ring-blue-500/15 focus:border-blue-500' },
+    emerald: { icon: 'bg-emerald-50 text-emerald-600',  btn: 'bg-emerald-600 hover:bg-emerald-700', bar: 'border-emerald-300', ring: 'focus:ring-emerald-500/15 focus:border-emerald-500' },
 };
 
 export interface AdvisoryAgentPanelProps {
@@ -55,12 +61,12 @@ export const AdvisoryAgentPanel: React.FC<AdvisoryAgentPanelProps> = ({
     };
 
     return (
-        <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-100 bg-gradient-to-r ${a.head} via-white to-white`}>
+        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-slate-100">
                 <div className="flex items-center gap-2.5 min-w-0">
                     <span className={`flex items-center justify-center w-8 h-8 rounded-lg shrink-0 ${a.icon}`}>{icon}</span>
                     <div className="min-w-0">
-                        <h4 className="text-sm font-bold text-slate-800">{title}</h4>
+                        <h4 className="text-[13px] font-semibold text-slate-900">{title}</h4>
                         <p className="text-[11px] text-slate-400 truncate">{subtitle}</p>
                     </div>
                 </div>
@@ -69,37 +75,38 @@ export const AdvisoryAgentPanel: React.FC<AdvisoryAgentPanelProps> = ({
                         <input
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !loading) void run(); }}
                             placeholder={inputPlaceholder}
-                            className={`flex-1 sm:w-44 min-h-[40px] rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${a.ring}`}
+                            className={`flex-1 sm:w-44 h-10 sm:h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${a.ring}`}
                         />
                     )}
                     <button
                         onClick={run}
                         disabled={loading}
-                        className={`shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r ${a.btn} shadow-sm hover:shadow disabled:opacity-60`}
+                        className={`shrink-0 inline-flex items-center justify-center gap-1.5 px-3.5 h-10 sm:h-9 rounded-lg text-[13px] font-semibold text-white transition-colors ${a.btn} disabled:opacity-50 disabled:pointer-events-none`}
                     >
-                        {loading ? <Loader2 size={15} className="animate-spin" /> : null}
-                        <span className={inputPlaceholder ? 'hidden sm:inline' : ''}>{loading ? 'Working…' : runLabel}</span>
+                        {loading ? <Loader2 size={14} className="animate-spin" /> : null}
+                        <span>{loading ? 'Working…' : runLabel}</span>
                     </button>
                 </div>
             </div>
 
             <div className="p-4 sm:p-5 space-y-3">
                 {error && (
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
+                    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-[13px] text-red-700">
                         <AlertTriangle size={15} className="mt-0.5 shrink-0" /><span>{error}</span>
                     </div>
                 )}
                 {!res && !error && !loading && (
-                    <p className="text-sm text-slate-400">{subtitle}.</p>
+                    <p className="text-[12.5px] text-slate-400">{subtitle}. Results appear here; anything approvable is drafted into the proposals queue.</p>
                 )}
                 {res && (
                     <>
-                        <div className={`text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-2 ${a.bar} pl-3`}>{res.answer}</div>
-                        <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
-                            <span className="px-2 py-0.5 rounded-full bg-slate-100">Tier {res.tier_used} · advisory</span>
-                            <span className="px-2 py-0.5 rounded-full bg-slate-100">{res.sources.length} sources</span>
-                            <span className="px-2 py-0.5 rounded-full bg-slate-100">{res.tokens_used} tokens · {res.duration_ms} ms</span>
+                        <div className={`text-[13.5px] text-slate-700 whitespace-pre-wrap leading-[1.7] border-l-2 ${a.bar} pl-3`}>{res.answer}</div>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
+                            <span className="px-2 py-0.5 rounded bg-slate-100 font-medium">Tier {res.tier_used} · advisory</span>
+                            <span className="px-2 py-0.5 rounded bg-slate-100 font-medium">{res.sources.length} sources</span>
+                            <span className="px-2 py-0.5 rounded bg-slate-100 font-medium tabular-nums">{res.tokens_used} tokens · {res.duration_ms} ms</span>
                         </div>
                     </>
                 )}

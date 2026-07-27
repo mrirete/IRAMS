@@ -6,13 +6,18 @@
  * Reads: ers_ai_audit_log (admin SELECT, 0219) for the last briefing + work
  * log; ers_agent_actions for pending proposals. Writes: none except a human
  * dismissing a proposal — every apply stays in its owning module.
+ *
+ * Visual language (2026-07-27): flat white surfaces, hairline borders, one
+ * blue for action, colour reserved for state. No marketing gradients — this
+ * is a console an engineer sits in front of all day.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
     Sparkles, Send, Loader2, ClipboardList, ScrollText, UploadCloud,
     BarChart2, RefreshCw, ChevronRight, X, BrainCircuit, Activity, BadgeDollarSign,
-    Check, Database, ArrowRight,
+    Check, Database, ArrowRight, Clock, CheckCircle2, Copy, ChevronDown,
+    TrendingUp, Gauge,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -33,6 +38,85 @@ const PROPOSAL_HOMES: Record<string, { label: string; path: string }> = {
     alert_to_wo: { label: 'Predict — Agent Review', path: '/predict' },
 };
 
+/** Per-agent glyph so a long queue is scannable without reading every title. */
+const AGENT_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+    bad_actor_hunter: TrendingUp,
+    threshold_adapter: Gauge,
+    alert_to_wo: ClipboardList,
+    weibull_analyst: Activity,
+};
+
+const SUGGESTED = [
+    'Which asset is costing us the most?',
+    "What's overdue right now?",
+    'How risky is P-101?',
+];
+
+// ── shared control classes — one definition each, so every button on the page
+//    lands on the same height, radius and hover behaviour ──
+const BTN_PRIMARY =
+    'inline-flex items-center justify-center gap-1.5 rounded-lg bg-primary-600 px-3.5 h-10 sm:h-9 text-[13px] font-semibold text-white ' +
+    'transition-colors hover:bg-primary-700 active:bg-primary-800 disabled:opacity-45 disabled:pointer-events-none';
+const BTN_GHOST =
+    'inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3.5 h-10 sm:h-9 text-[13px] font-semibold text-slate-700 ' +
+    'transition-colors hover:bg-slate-50 hover:border-slate-300 disabled:opacity-45 disabled:pointer-events-none';
+const CARD = 'rounded-xl border border-slate-200 bg-white';
+
+const relTime = (iso: string): string => {
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.round(hrs / 24);
+    return days < 7 ? `${days}d ago` : new Date(iso).toLocaleDateString();
+};
+
+/** One KPI on the rail. Values are real reads — never a placeholder number. */
+const StatTile: React.FC<{
+    label: string;
+    value: React.ReactNode;
+    sub: string;
+    icon: React.ReactNode;
+    tone?: 'default' | 'money' | 'attention';
+    loading?: boolean;
+}> = ({ label, value, sub, icon, tone = 'default', loading }) => (
+    <div className={`${CARD} p-3.5 sm:p-4`}>
+        <div className="flex items-start justify-between gap-2">
+            <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-400 leading-tight">{label}</span>
+            <span className="text-slate-300 shrink-0">{icon}</span>
+        </div>
+        {loading
+            ? <div className="mt-2.5 h-6 w-20 skeleton-line" />
+            : <div className={`mt-1.5 text-xl sm:text-[26px] font-semibold tabular-nums tracking-tight leading-none ${tone === 'money' ? 'text-emerald-700' : tone === 'attention' ? 'text-amber-600' : 'text-slate-900'
+                }`}>{value}</div>}
+        <div className="mt-1.5 text-[11px] text-slate-400 truncate">{sub}</div>
+    </div>
+);
+
+/** Card shell: hairline header strip + body, used by every panel below. */
+const Panel: React.FC<{
+    title: string;
+    icon: React.ReactNode;
+    meta?: React.ReactNode;
+    actions?: React.ReactNode;
+    children: React.ReactNode;
+    bodyClass?: string;
+}> = ({ title, icon, meta, actions, children, bodyClass = 'p-4 sm:p-5' }) => (
+    <section className={`${CARD} overflow-hidden`}>
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-slate-100">
+            <div className="min-w-0">
+                <h2 className="flex items-center gap-2 text-[13px] font-semibold text-slate-900">
+                    <span className="text-slate-400">{icon}</span>{title}
+                </h2>
+                {meta && <div className="text-[11px] text-slate-400 mt-0.5 truncate">{meta}</div>}
+            </div>
+            {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+        </div>
+        <div className={bodyClass}>{children}</div>
+    </section>
+);
+
 export const SpecialistWorkspacePage: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
@@ -42,6 +126,8 @@ export const SpecialistWorkspacePage: React.FC = () => {
     const [briefing, setBriefing] = useState<AuditRow | null>(null);
     const [briefingLive, setBriefingLive] = useState<string | null>(null);
     const [running, setRunning] = useState(false);
+    const [briefingOpen, setBriefingOpen] = useState(false);
+    const [copied, setCopied] = useState(false);
 
     // ── proposals ──
     const [proposals, setProposals] = useState<AgentAction[]>([]);
@@ -50,6 +136,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
 
     // ── work log ──
     const [log, setLog] = useState<AuditRow[]>([]);
+    const [loading, setLoading] = useState(true);
 
     // ── value ledger (v1: proposal-based) ──
     const [ledger, setLedger] = useState<{ approved: number; pending: number; valueIdentified: number } | null>(null);
@@ -59,6 +146,12 @@ export const SpecialistWorkspacePage: React.FC = () => {
     const [input, setInput] = useState('');
     const [chatBusy, setChatBusy] = useState(false);
     const chatRef = useRef<HTMLDivElement>(null);
+
+    /** estimated_savings (DE tasks) preferred; annual_cost as the stake proxy. */
+    const draftValue = (a: AgentAction): number => {
+        const p = (a.draft_payload ?? {}) as Record<string, unknown>;
+        return Number(p.estimated_savings) || Number(p.annual_cost) || 0;
+    };
 
     const loadAll = async () => {
         const [logQ, actionsQ] = await Promise.all([
@@ -75,11 +168,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
         setProposals(actionsQ.filter((a) => a.status === 'pending_review'));
 
         // Value ledger v1: what the Specialist's proposals identified in money.
-        // estimated_savings (DE tasks) preferred; annual_cost as the stake proxy.
-        const draftValue = (a: AgentAction): number => {
-            const p = (a.draft_payload ?? {}) as Record<string, unknown>;
-            return Number(p.estimated_savings) || Number(p.annual_cost) || 0;
-        };
         setLedger({
             approved: actionsQ.filter((a) => a.status === 'approved').length,
             pending: actionsQ.filter((a) => a.status === 'pending_review').length,
@@ -87,14 +175,21 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 .filter((a) => a.status === 'approved' || a.status === 'pending_review')
                 .reduce((s, a) => s + draftValue(a), 0),
         });
+        setLoading(false);
     };
     useEffect(() => { void loadAll(); }, []);
+
+    // Keep the transcript pinned to the newest turn.
+    useEffect(() => {
+        chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' });
+    }, [msgs, chatBusy]);
 
     const runBriefing = async () => {
         setRunning(true);
         try {
             const res = await runReliabilityDigest();
             setBriefingLive(res.answer);
+            setBriefingOpen(true);
             void loadAll();
         } catch (e) {
             setBriefingLive(`The briefing could not be produced right now (${e instanceof Error ? e.message : 'error'}).`);
@@ -103,8 +198,8 @@ export const SpecialistWorkspacePage: React.FC = () => {
         }
     };
 
-    const send = async () => {
-        const text = input.trim();
+    const send = async (preset?: string) => {
+        const text = (preset ?? input).trim();
         if (!text || chatBusy) return;
         setInput('');
         const history = [...msgs];
@@ -117,7 +212,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
             setMsgs((m) => [...m, { role: 'model', text: `I hit an error: ${e instanceof Error ? e.message : String(e)}` }]);
         } finally {
             setChatBusy(false);
-            setTimeout(() => chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' }), 50);
         }
     };
 
@@ -126,6 +220,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
         try {
             await predictionService.updateAgentActionStatus(id, 'rejected', user?.username || user?.id || 'workspace', 'Dismissed from Specialist workspace');
             setProposals((p) => p.filter((x) => x.id !== id));
+            void loadAll();
         } finally {
             setDismissing(null);
         }
@@ -148,207 +243,319 @@ export const SpecialistWorkspacePage: React.FC = () => {
     };
 
     const briefingText = briefingLive ?? briefing?.response_text ?? null;
-    const briefingWhen = briefingLive ? 'just now' : briefing ? new Date(briefing.created_at).toLocaleString() : null;
+    const briefingWhen = briefingLive ? 'just now' : briefing ? relTime(briefing.created_at) : null;
+    const isLong = (briefingText?.length ?? 0) > 700;
+
+    const copyBriefing = async () => {
+        if (!briefingText) return;
+        await navigator.clipboard.writeText(briefingText);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+    };
+
+    const lastRun = useMemo(() => (log.length ? relTime(log[0].created_at) : '—'), [log]);
 
     return (
-        <div className="max-w-6xl mx-auto space-y-5 pb-24 animate-in fade-in duration-300">
-            {/* ── Identity header ── */}
-            <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-600 to-indigo-700 text-white p-6 flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
-                    <BrainCircuit size={28} />
+        <div className="max-w-6xl mx-auto space-y-4 pb-24 animate-in fade-in duration-300">
+            {/* ── Identity header — flat surface, blue reserved for the action ── */}
+            <header className={`${CARD} p-4 sm:p-5`}>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <div className="w-11 h-11 rounded-xl bg-primary-600 text-white flex items-center justify-center shrink-0">
+                            <BrainCircuit size={22} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h1 className="text-[17px] sm:text-xl font-semibold text-slate-900 tracking-tight">Reliability Specialist</h1>
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-700">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Active
+                                </span>
+                            </div>
+                            <p className="text-[12.5px] sm:text-[13px] text-slate-500 mt-1 leading-relaxed max-w-2xl">
+                                Reads your maintenance history, runs the engineering analyses and drafts the work.
+                                <span className="text-slate-700 font-medium"> You approve everything.</span>
+                            </p>
+                        </div>
+                    </div>
+                    {/* Both actions stay reachable on a phone — they used to be desktop-only. */}
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => navigate('/specialist/import')} className={`${BTN_GHOST} flex-1 sm:flex-none`}>
+                            <UploadCloud size={14} /> Import data
+                        </button>
+                        <button onClick={() => navigate('/specialist/assessment')} className={`${BTN_PRIMARY} flex-1 sm:flex-none`}>
+                            <BarChart2 size={14} /> Run assessment
+                        </button>
+                    </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                    <p className="text-violet-200 text-[11px] font-bold uppercase tracking-widest">IRAMS · by Relantern</p>
-                    <h1 className="text-xl md:text-2xl font-bold">Your Reliability Specialist</h1>
-                    <p className="text-violet-100 text-xs md:text-sm mt-0.5">
-                        Reads your maintenance history · runs the engineering analyses · drafts the work — you approve everything.
-                    </p>
-                </div>
-                <div className="hidden md:flex flex-col gap-2">
-                    <button onClick={() => navigate('/specialist/import')}
-                        className="flex items-center gap-1.5 rounded-lg bg-white/15 hover:bg-white/25 border border-white/25 text-xs font-semibold px-3 py-2">
-                        <UploadCloud size={13} /> Import CMMS data
-                    </button>
-                    <button onClick={() => navigate('/specialist/assessment')}
-                        className="flex items-center gap-1.5 rounded-lg bg-white text-violet-700 hover:bg-violet-50 text-xs font-bold px-3 py-2">
-                        <BarChart2 size={13} /> Run assessment
-                    </button>
-                </div>
+            </header>
+
+            {/* ── KPI rail — the ledger, promoted out of a side card so the numbers
+                 that justify the Specialist read first ── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <StatTile
+                    /* green only when there IS money on the board — a green $0 overstates the state */
+                    label="Value identified" tone={(ledger?.valueIdentified ?? 0) > 0 ? 'money' : 'default'} loading={loading}
+                    value={ledger ? formatCurrency(ledger.valueIdentified) : '—'}
+                    sub={`across ${(ledger?.approved ?? 0) + (ledger?.pending ?? 0)} proposals`}
+                    icon={<BadgeDollarSign size={15} />}
+                />
+                <StatTile
+                    label="Awaiting review" loading={loading}
+                    tone={(ledger?.pending ?? 0) > 0 ? 'attention' : 'default'}
+                    value={ledger?.pending ?? '—'} sub="needs your decision"
+                    icon={<ClipboardList size={15} />}
+                />
+                <StatTile
+                    label="Approved" loading={loading}
+                    value={ledger?.approved ?? '—'} sub="queued for delivery"
+                    icon={<CheckCircle2 size={15} />}
+                />
+                <StatTile
+                    label="Last activity" loading={loading}
+                    value={<span className="text-base sm:text-lg">{lastRun}</span>}
+                    sub={`${log.length} agent run${log.length === 1 ? '' : 's'} logged`}
+                    icon={<Clock size={15} />}
+                />
             </div>
 
             {/* Coming off another CMMS? The full migration path lives under Admin
                 (it isn't licence-gated), but this is where a new customer starts. */}
             <Link to="/admin/migration"
-                className="flex items-center gap-3 rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-4 hover:border-violet-300 transition-colors group">
-                <div className="w-9 h-9 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center shrink-0">
-                    <Database size={18} />
+                className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-primary-300 hover:bg-primary-50/40 transition-colors group`}>
+                <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+                    <Database size={16} />
                 </div>
                 <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-slate-800">Migrating from SAP PM, Maximo or MaintainX?</div>
-                    <div className="text-xs text-slate-500 mt-0.5">
+                    <div className="text-[13px] font-semibold text-slate-800">Migrating from SAP PM, Maximo or MaintainX?</div>
+                    <div className="text-[11.5px] text-slate-500 mt-0.5 hidden sm:block">
                         The Migration Center walks your register, people, stock, schedules and history across in the right order.
                     </div>
                 </div>
-                <ArrowRight size={16} className="text-violet-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                <ArrowRight size={16} className="text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all shrink-0" />
             </Link>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                {/* ── Left: briefing + proposals ── */}
-                <div className="lg:col-span-2 space-y-5">
-                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
-                        <div className="flex items-center justify-between mb-3">
-                            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
-                                <Sparkles size={15} className="text-violet-600" /> Briefing
-                                {briefingWhen && <span className="text-[11px] font-normal text-slate-400">· {briefingWhen}</span>}
-                            </h2>
-                            <button onClick={() => void runBriefing()} disabled={running}
-                                className="flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-3 py-1.5 disabled:opacity-50">
-                                {running ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                                {briefingText ? 'Fresh briefing' : 'First briefing'}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* ── Left: briefing + proposals + analyst ── */}
+                <div className="lg:col-span-2 space-y-4">
+                    <Panel
+                        title="Briefing"
+                        icon={<Sparkles size={14} className="text-primary-600" />}
+                        meta={briefingWhen ? `Generated ${briefingWhen}` : 'Not run yet'}
+                        actions={<>
+                            {briefingText && (
+                                <button onClick={() => void copyBriefing()} title="Copy briefing"
+                                    className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors">
+                                    {copied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
+                                </button>
+                            )}
+                            <button onClick={() => void runBriefing()} disabled={running} className={BTN_PRIMARY}>
+                                {running ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                                {briefingText ? 'Refresh' : 'Run briefing'}
                             </button>
-                        </div>
-                        {briefingText
-                            ? <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed max-h-96 overflow-y-auto">{briefingText}</div>
-                            : <p className="text-sm text-slate-400 italic">
-                                No briefing yet. Run the first one — the Specialist will review the backlog, bad actors and integrity risk and report back with citations.
-                            </p>}
-                    </section>
+                        </>}
+                    >
+                        {briefingText ? (
+                            <div className="relative">
+                                <div className={`text-[13.5px] text-slate-700 whitespace-pre-wrap leading-[1.7] ${!briefingOpen && isLong ? 'max-h-72 overflow-hidden' : ''}`}>
+                                    {briefingText}
+                                </div>
+                                {isLong && !briefingOpen && (
+                                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+                                )}
+                                {isLong && (
+                                    <button onClick={() => setBriefingOpen((o) => !o)}
+                                        className="relative mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-primary-600 hover:text-primary-700">
+                                        {briefingOpen ? 'Show less' : 'Show full briefing'}
+                                        <ChevronDown size={13} className={briefingOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            <div className="text-center py-6">
+                                <div className="w-11 h-11 rounded-xl bg-primary-50 text-primary-600 mx-auto flex items-center justify-center">
+                                    <Sparkles size={18} />
+                                </div>
+                                <p className="mt-3 text-[13px] font-semibold text-slate-700">No briefing yet</p>
+                                <p className="mt-1 text-[12px] text-slate-500 max-w-sm mx-auto leading-relaxed">
+                                    Run the first one — the Specialist reviews the backlog, bad actors and integrity risk, then reports back with citations.
+                                </p>
+                            </div>
+                        )}
+                    </Panel>
 
-                    <section className="rounded-2xl border border-slate-200 bg-white p-5">
-                        <div className="flex items-center justify-between mb-3">
-                            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800">
-                                <ClipboardList size={15} className="text-amber-500" /> Proposals awaiting your review
-                                {proposals.length > 0 && <span className="text-[10px] font-bold bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5">{proposals.length}</span>}
-                            </h2>
-                            <button onClick={() => navigate('/specialist/deliver')}
-                                className="flex items-center gap-1.5 text-xs font-semibold text-violet-600 hover:text-violet-800">
-                                <Send size={12} /> Deliver approved work
-                            </button>
-                        </div>
-                        {proposals.length === 0
-                            ? <p className="text-sm text-slate-400 italic">Nothing pending. Proposals drafted by any agent land here for a human decision.</p>
-                            : <div className="divide-y divide-slate-100">
+                    <Panel
+                        title="Proposals awaiting review"
+                        icon={<ClipboardList size={14} />}
+                        meta={proposals.length > 0 ? `${proposals.length} drafted, none applied without you` : 'Every agent draft lands here first'}
+                        actions={<button onClick={() => navigate('/specialist/deliver')} className={BTN_GHOST}>
+                            <Send size={13} /> Deliver<span className="hidden xs:inline">&nbsp;approved</span>
+                            {(ledger?.approved ?? 0) > 0 && (
+                                <span className="ml-0.5 rounded-full bg-primary-600 text-white text-[10px] font-bold px-1.5 min-w-[18px] text-center">{ledger?.approved}</span>
+                            )}
+                        </button>}
+                        bodyClass=""
+                    >
+                        {proposals.length === 0 ? (
+                            <div className="text-center py-10 px-5">
+                                <div className="w-11 h-11 rounded-xl bg-slate-50 text-slate-300 mx-auto flex items-center justify-center">
+                                    <CheckCircle2 size={18} />
+                                </div>
+                                <p className="mt-3 text-[13px] font-semibold text-slate-700">Queue is clear</p>
+                                <p className="mt-1 text-[12px] text-slate-500">Proposals drafted by any agent land here for a human decision.</p>
+                            </div>
+                        ) : (
+                            <ul className="divide-y divide-slate-100">
                                 {proposals.map((p) => {
                                     const payload = (p.draft_payload ?? {}) as Record<string, unknown>;
                                     const title = String(payload.title ?? payload.action ?? p.action_type ?? 'Proposal');
                                     const home = PROPOSAL_HOMES[String(p.agent_type)] ?? { label: 'owning module', path: '/' };
+                                    const Icon = AGENT_ICON[String(p.agent_type)] ?? Sparkles;
+                                    const value = draftValue(p);
+                                    const busy = approving === p.id || dismissing === p.id;
                                     return (
-                                        <div key={p.id} className="py-3 flex items-center gap-3">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-medium text-slate-700 truncate">{title}</div>
-                                                <div className="text-[11px] text-slate-400">
-                                                    {String(p.agent_type).replaceAll('_', ' ')} · {new Date(p.created_at).toLocaleDateString()}
+                                        <li key={p.id} className="px-4 sm:px-5 py-3.5 hover:bg-slate-50/60 transition-colors">
+                                            <div className="flex items-start gap-3">
+                                                <span className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0 mt-0.5">
+                                                    <Icon size={15} />
+                                                </span>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-[13.5px] font-medium text-slate-900 leading-snug">{title}</div>
+                                                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                                                        <span className="rounded bg-slate-100 text-slate-600 px-1.5 py-0.5 font-medium">
+                                                            {String(p.agent_type).replaceAll('_', ' ')}
+                                                        </span>
+                                                        <span className="text-slate-400">{relTime(p.created_at)}</span>
+                                                        {value > 0 && (
+                                                            <span className="font-semibold text-emerald-700 tabular-nums">{formatCurrency(value)}/yr</span>
+                                                        )}
+                                                        <button onClick={() => navigate(home.path)}
+                                                            title={`Open the full context in ${home.label}`}
+                                                            className="hidden sm:inline-flex items-center gap-0.5 text-slate-400 hover:text-primary-600 font-medium">
+                                                            {home.label} <ChevronRight size={12} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                {/* Desktop: inline actions. Mobile: full-width row below. */}
+                                                <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                                                    <button onClick={() => void approve(p.id)} disabled={busy}
+                                                        title="Approve — queues this for delivery to your CMMS"
+                                                        className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-semibold px-2.5 h-8 disabled:opacity-50 transition-colors">
+                                                        {approving === p.id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Approve
+                                                    </button>
+                                                    <button onClick={() => void dismiss(p.id)} disabled={busy} title="Dismiss proposal"
+                                                        className="h-8 w-8 inline-flex items-center justify-center rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 transition-colors">
+                                                        {dismissing === p.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                                                    </button>
                                                 </div>
                                             </div>
-                                            <button onClick={() => navigate(home.path)}
-                                                title={`Open the full context in ${home.label}`}
-                                                className="hidden sm:flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
-                                                {home.label} <ChevronRight size={13} />
-                                            </button>
-                                            <button onClick={() => void approve(p.id)} disabled={approving === p.id}
-                                                title="Approve — queues this for delivery to your CMMS"
-                                                className="flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-2.5 py-1.5 disabled:opacity-50">
-                                                {approving === p.id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Approve
-                                            </button>
-                                            <button onClick={() => void dismiss(p.id)} disabled={dismissing === p.id}
-                                                title="Dismiss proposal" className="text-slate-300 hover:text-rose-500 disabled:opacity-50">
-                                                {dismissing === p.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
-                                            </button>
-                                        </div>
+                                            <div className="sm:hidden mt-3 flex gap-2">
+                                                <button onClick={() => void approve(p.id)} disabled={busy}
+                                                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 active:bg-emerald-700 text-white text-[13px] font-semibold h-10 disabled:opacity-50">
+                                                    {approving === p.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Approve
+                                                </button>
+                                                <button onClick={() => navigate(home.path)}
+                                                    className="inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 text-[13px] font-semibold h-10 px-3">
+                                                    Review
+                                                </button>
+                                                <button onClick={() => void dismiss(p.id)} disabled={busy} aria-label="Dismiss proposal"
+                                                    className="w-11 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 active:bg-rose-50 active:text-rose-600 h-10 disabled:opacity-50">
+                                                    {dismissing === p.id ? <Loader2 size={14} className="animate-spin" /> : <X size={15} />}
+                                                </button>
+                                            </div>
+                                        </li>
                                     );
                                 })}
-                            </div>}
-                    </section>
+                            </ul>
+                        )}
+                    </Panel>
 
                     {/* Weibull Analyst — Tier-2: proposals it drafts land in the queue above */}
                     <AdvisoryAgentPanel
                         title="Weibull Analyst"
-                        subtitle="Censored Weibull fit + statistically defensible PM basis for one asset — drafts land in the proposals queue"
+                        subtitle="Censored Weibull fit + statistically defensible PM basis for one asset"
                         icon={<Activity size={16} />}
-                        accent="violet"
+                        accent="primary"
                         runLabel="Analyse asset"
                         inputPlaceholder="Asset tag, e.g. P-101"
                         onRun={(input) => runWeibullAnalyst(input.trim())}
                     />
                 </div>
 
-                {/* ── Right: ledger + chat + work log ── */}
-                <div className="space-y-5">
-                    {/* Value ledger v1 — the Specialist's running performance review */}
-                    <section className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4">
-                        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-2">
-                            <BadgeDollarSign size={15} className="text-emerald-600" /> Value ledger
-                        </h2>
-                        <div className="grid grid-cols-3 gap-2 text-center">
-                            <div>
-                                <div className="text-lg font-bold text-emerald-700">{ledger ? formatCurrency(ledger.valueIdentified) : '—'}</div>
-                                <div className="text-[10px] text-slate-500">value identified</div>
-                            </div>
-                            <div>
-                                <div className="text-lg font-bold text-slate-700">{ledger?.approved ?? '—'}</div>
-                                <div className="text-[10px] text-slate-500">proposals approved</div>
-                            </div>
-                            <div>
-                                <div className="text-lg font-bold text-slate-700">{ledger?.pending ?? '—'}</div>
-                                <div className="text-[10px] text-slate-500">awaiting review</div>
-                            </div>
+                {/* ── Right: conversation + work log ── */}
+                <div className="space-y-4">
+                    <section className={`${CARD} flex flex-col h-[26rem] lg:h-[32rem] overflow-hidden`}>
+                        <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
+                            <Sparkles size={14} className="text-primary-600" />
+                            <h2 className="text-[13px] font-semibold text-slate-900">Ask the Specialist</h2>
                         </div>
-                        <button onClick={() => navigate('/specialist/assessment')}
-                            className="mt-3 w-full text-center text-[11px] font-semibold text-emerald-700 hover:text-emerald-900">
-                            Full assessment report →
-                        </button>
-                    </section>
 
-                    <section className="rounded-2xl border border-slate-200 bg-white flex flex-col h-96">
-                        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 p-4 pb-2">
-                            <Sparkles size={15} className="text-violet-600" /> Ask the Specialist
-                        </h2>
-                        <div ref={chatRef} className="flex-1 overflow-y-auto px-4 space-y-3">
+                        <div ref={chatRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2.5">
                             {msgs.length === 0 && (
-                                <p className="text-xs text-slate-400 italic">
-                                    Ask anything about your fleet — "which asset is costing us most?", "what's overdue?", "how risky is P-101?"
-                                </p>
+                                <div className="space-y-3">
+                                    <p className="text-[12px] text-slate-500 leading-relaxed">
+                                        Ask anything about your fleet — it answers from your own records and cites what it used.
+                                    </p>
+                                    <div className="flex flex-col gap-1.5">
+                                        {SUGGESTED.map((q) => (
+                                            <button key={q} onClick={() => void send(q)}
+                                                className="text-left text-[12px] text-slate-600 rounded-lg border border-slate-200 px-2.5 py-2 hover:border-primary-300 hover:bg-primary-50/50 hover:text-primary-700 transition-colors">
+                                                {q}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             )}
                             {msgs.map((m, i) => (
-                                <div key={i} className={`text-sm rounded-xl px-3 py-2 whitespace-pre-wrap leading-relaxed ${m.role === 'user'
-                                    ? 'bg-violet-600 text-white ml-8'
-                                    : 'bg-slate-50 border border-slate-100 text-slate-700 mr-4'}`}>
-                                    {m.text}
+                                <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                                    <div className={`text-[13px] rounded-xl px-3 py-2 whitespace-pre-wrap leading-relaxed max-w-[90%] ${m.role === 'user'
+                                        ? 'bg-primary-600 text-white rounded-br-sm'
+                                        : 'bg-slate-50 border border-slate-200 text-slate-700 rounded-bl-sm'}`}>
+                                        {m.text}
+                                    </div>
                                 </div>
                             ))}
-                            {chatBusy && <Loader2 size={16} className="animate-spin text-violet-400" />}
+                            {chatBusy && (
+                                <div className="flex items-center gap-2 text-[12px] text-slate-400">
+                                    <Loader2 size={13} className="animate-spin" /> Thinking…
+                                </div>
+                            )}
                         </div>
-                        <div className="p-3 border-t border-slate-100 flex gap-2">
+
+                        <div className="p-2.5 border-t border-slate-100 flex gap-2 shrink-0">
                             <input
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter') void send(); }}
                                 placeholder="Ask about your assets…"
-                                className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:outline-none focus:border-violet-400"
+                                className="flex-1 min-w-0 rounded-lg border border-slate-200 px-3 h-10 text-[13px] text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/15"
                             />
-                            <button onClick={() => void send()} disabled={chatBusy || !input.trim()}
-                                className="rounded-lg bg-violet-600 hover:bg-violet-700 text-white px-3 disabled:opacity-40">
-                                <Send size={14} />
+                            <button onClick={() => void send()} disabled={chatBusy || !input.trim()} aria-label="Send"
+                                className="w-10 h-10 shrink-0 inline-flex items-center justify-center rounded-lg bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white disabled:opacity-40 disabled:pointer-events-none transition-colors">
+                                <Send size={15} />
                             </button>
                         </div>
                     </section>
 
-                    <section className="rounded-2xl border border-slate-200 bg-white p-4">
-                        <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-2">
-                            <ScrollText size={15} className="text-slate-400" /> Work log
-                        </h2>
-                        {log.length === 0
-                            ? <p className="text-xs text-slate-400 italic">No agent runs recorded yet (admin access required to view the log).</p>
-                            : <div className="divide-y divide-slate-50 max-h-72 overflow-y-auto">
+                    <Panel title="Work log" icon={<ScrollText size={14} />} meta="Every agent run, audited" bodyClass="">
+                        {log.length === 0 ? (
+                            <p className="text-[12px] text-slate-400 px-4 sm:px-5 py-5 text-center">
+                                No agent runs recorded yet (admin access required to view the log).
+                            </p>
+                        ) : (
+                            <div className="max-h-80 overflow-y-auto px-4 sm:px-5 py-2">
                                 {log.map((r) => (
-                                    <div key={r.id} className="py-2">
-                                        <div className="text-xs font-medium text-slate-600">{r.context_type.replaceAll('_', ' ')}</div>
-                                        <div className="text-[11px] text-slate-400 truncate" title={r.query_text}>{r.query_text}</div>
-                                        <div className="text-[10px] text-slate-300">{new Date(r.created_at).toLocaleString()}{r.duration_ms ? ` · ${(r.duration_ms / 1000).toFixed(1)}s` : ''}</div>
+                                    <div key={r.id} className="relative pl-4 py-2 border-l border-slate-200 last:border-l-transparent">
+                                        <span className="absolute -left-[3.5px] top-3.5 w-1.5 h-1.5 rounded-full bg-slate-300" />
+                                        <div className="text-[12px] font-semibold text-slate-700 capitalize">{r.context_type.replaceAll('_', ' ')}</div>
+                                        <div className="text-[11px] text-slate-500 truncate" title={r.query_text}>{r.query_text}</div>
+                                        <div className="text-[10.5px] text-slate-400 mt-0.5 tabular-nums">
+                                            {relTime(r.created_at)}{r.duration_ms ? ` · ${(r.duration_ms / 1000).toFixed(1)}s` : ''}
+                                        </div>
                                     </div>
                                 ))}
-                            </div>}
-                    </section>
+                            </div>
+                        )}
+                    </Panel>
                 </div>
             </div>
         </div>

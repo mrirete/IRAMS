@@ -180,7 +180,7 @@ const getGreeting = () => {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  OPEN: '#246CFF', PLAN: '#8b5cf6', SCHEDULED: '#6366f1', WIP: '#f59e0b',
+  OPEN: '#1E4FDB', PLAN: '#8b5cf6', SCHEDULED: '#6366f1', WIP: '#f59e0b',
   HOLD: '#ef4444', REVIEW: '#10b981', COMP: '#14b8a6', TECO: '#22c55e',
   CLOSED: '#64748b', CANCELLED: '#94a3b8',
 };
@@ -215,7 +215,7 @@ const severityBg = (s: string) => {
   return 'border-l-blue-500 bg-blue-50/30';
 };
 
-const SPARKLINE_COLORS = { created: '#246CFF', closed: '#22c55e' };
+const SPARKLINE_COLORS = { created: '#1E4FDB', closed: '#22c55e' };
 
 // ──────────────────────────────── Dashboard ────────────────────────────────
 export const Dashboard: React.FC = () => {

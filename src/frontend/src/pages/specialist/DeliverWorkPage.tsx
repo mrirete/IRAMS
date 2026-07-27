@@ -110,7 +110,7 @@ export const DeliverWorkPage: React.FC = () => {
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center py-32 gap-3 text-slate-500">
-                <Loader2 size={26} className="animate-spin text-violet-500" />
+                <Loader2 size={26} className="animate-spin text-primary-600" />
                 <p className="text-sm">Loading approved work…</p>
             </div>
         );
@@ -124,7 +124,7 @@ export const DeliverWorkPage: React.FC = () => {
                     <ArrowLeft size={15} /> Specialist workspace
                 </button>
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <Send size={20} className="text-violet-600" /> Deliver work to your CMMS
+                    <Send size={20} className="text-primary-600" /> Deliver work to your CMMS
                 </h1>
                 <p className="text-slate-500 text-sm mt-1">
                     Work you approved, shaped for the system you actually run. Download a package to import,
@@ -147,7 +147,7 @@ export const DeliverWorkPage: React.FC = () => {
                         workspace — approved items appear here ready to send.
                     </p>
                     <button onClick={() => navigate('/specialist')}
-                        className="mt-4 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-5 py-2.5">
+                        className="mt-4 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-5 py-2.5 transition-colors">
                         Go to the proposals queue
                     </button>
                 </div>
@@ -161,7 +161,7 @@ export const DeliverWorkPage: React.FC = () => {
                             </h2>
                             <div className="flex gap-2 text-xs">
                                 <button onClick={() => setSelected(new Set(proposals.map((p) => p.id)))}
-                                    className="text-violet-600 hover:text-violet-800 font-medium">Select all</button>
+                                    className="text-primary-600 hover:text-primary-800 font-medium">Select all</button>
                                 <button onClick={() => setSelected(new Set())}
                                     className="text-slate-400 hover:text-slate-600 font-medium">Clear</button>
                             </div>
@@ -173,7 +173,7 @@ export const DeliverWorkPage: React.FC = () => {
                                 return (
                                     <label key={p.id} className="flex items-start gap-3 py-2.5 cursor-pointer">
                                         <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggle(p.id)}
-                                            className="mt-1 accent-violet-600" />
+                                            className="mt-1 accent-primary-600" />
                                         <div className="min-w-0 flex-1">
                                             <div className="text-sm text-slate-700 truncate">{title}</div>
                                             <div className="text-[11px] text-slate-400">
@@ -250,10 +250,10 @@ export const DeliverWorkPage: React.FC = () => {
                     <section className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
                         <div className="flex items-center justify-between">
                             <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                <Radio size={15} className="text-violet-600" /> Live delivery
+                                <Radio size={15} className="text-primary-600" /> Live delivery
                             </h2>
                             <button onClick={() => setShowAddTarget((v) => !v)}
-                                className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-800">
+                                className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-800">
                                 <Plus size={13} /> Add target
                             </button>
                         </div>
@@ -278,11 +278,11 @@ export const DeliverWorkPage: React.FC = () => {
                                         ))}
                                     </select>
                                     <button onClick={() => void deliver(true)} disabled={busy || !targetId || pkg.actions.length === 0}
-                                        className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 hover:bg-violet-100 text-violet-700 text-xs font-semibold px-3 py-2 disabled:opacity-40">
+                                        className="flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 text-xs font-semibold px-3 py-2 disabled:opacity-40">
                                         {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />} Dry run
                                     </button>
                                     <button onClick={() => void deliver(false)} disabled={busy || !targetId || pkg.actions.length === 0}
-                                        className="flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-4 py-2 disabled:opacity-40">
+                                        className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-4 py-2 disabled:opacity-40 transition-colors">
                                         {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Deliver {pkg.actions.length} item(s)
                                     </button>
                                 </div>
@@ -359,7 +359,7 @@ const AddTargetForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
     };
 
     return (
-        <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 space-y-3">
+        <div className="rounded-xl border border-primary-200 bg-primary-50/50 p-4 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1 text-xs">
                     <span className="font-medium text-slate-600">Name</span>
@@ -392,7 +392,7 @@ const AddTargetForm: React.FC<{ onDone: () => void }> = ({ onDone }) => {
             {err && <p className="text-xs text-rose-600 flex items-start gap-1.5"><X size={12} className="mt-0.5" />{err}</p>}
             <div className="flex gap-2">
                 <button onClick={() => void save()} disabled={saving || !name.trim() || !url.trim()}
-                    className="rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-4 py-2 disabled:opacity-40">
+                    className="rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-4 py-2 disabled:opacity-40 transition-colors">
                     {saving ? 'Saving…' : 'Save target'}
                 </button>
                 <button onClick={onDone} className="text-xs text-slate-500 hover:text-slate-700 px-3">Cancel</button>

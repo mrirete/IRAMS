@@ -6,7 +6,7 @@
   /* ── Relantern Professional Light Palette ── */
   /* Inverted: 950 = lightest bg, 50 = darkest text */
   --color-brand-950: #ffffff;
-  --color-brand-900: #f1f5f9;
+  --color-brand-900: #f4f6fa;  /* app canvas — a touch cooler/quieter than slate-100 */
   --color-brand-800: #e8edf3;
   --color-brand-700: #cbd5e1;
   --color-brand-600: #94a3b8;
@@ -17,17 +17,25 @@
   --color-brand-100: #0f172a;
   --color-brand-50: #020617;
 
-  /* ── MaintainX Blue — Primary UI Color ── */
-  --color-primary-900: #0A1E5E;
-  --color-primary-800: #0F2D82;
-  --color-primary-700: #1A3FA6;
-  --color-primary-600: #246CFF;
-  --color-primary-500: #4C84FF;
-  --color-primary-400: #6E9EFF;
-  --color-primary-300: #9BBDFF;
-  --color-primary-200: #C5D5F7;
-  --color-primary-100: #E8EFFD;
-  --color-primary-50:  #F0F5FF;
+  /* ── Primary UI Blue ──────────────────────────────────────────────────────
+     Retuned 2026-07-27. The previous ramp was anchored on #246CFF — 100%
+     saturation, which reads consumer/neon on large surfaces. This ramp drops
+     to ~76% saturation and deepens the action tier, which is what makes
+     MaintainX/Fiori-class UI feel like tooling rather than marketing.
+     600 = the only tier allowed on a primary action; 700 = hover/pressed.
+     #1E4FDB carries 6.5:1 on white, so white-on-blue and blue-on-white both
+     clear WCAG AA for body text. ── */
+  --color-primary-950: #0C1B44;
+  --color-primary-900: #12276B;
+  --color-primary-800: #16328E;
+  --color-primary-700: #1A3FB4;
+  --color-primary-600: #1E4FDB;
+  --color-primary-500: #3E6BEF;
+  --color-primary-400: #6E93F8;
+  --color-primary-300: #9FBAFC;
+  --color-primary-200: #C7D8FE;
+  --color-primary-100: #E3ECFF;
+  --color-primary-50:  #F3F7FF;
 
   /* ── Relantern Signature Yellow — Logo, FAB, CTA only ── */
   --color-relantern-700: #B47D15;
@@ -40,8 +48,8 @@
   --color-relantern-50: #FFFBF0;
 
   /* ── Semantic Accents ── */
-  --color-accent-blue: #246CFF;
-  --color-accent-cyan: #246CFF;
+  --color-accent-blue: #1E4FDB;
+  --color-accent-cyan: #1E4FDB;
   --color-accent-alert: #ef4444;
   --color-accent-warn: #f59e0b;
   --color-accent-safe: #10b981;
@@ -232,6 +240,11 @@ option {
 
 /* ── Unified Layout System Tokens ── */
 :root {
+  /* Primary as raw channels, so hand-written rgba() rings/tints below track the
+     @theme ramp instead of drifting from it. Keep in sync with --color-primary-600. */
+  --ers-primary-rgb: 30 79 219;
+  --ers-hairline: #e6eaf0;   /* card/table borders — one notch quieter than slate-200 */
+
   --ers-list-panel-width: 380px;
   --ers-list-panel-min: 300px;
   --ers-list-panel-max: 420px;
@@ -415,15 +428,15 @@ select {
   left: 0;
   right: 0;
   height: 2px;
-  background: var(--color-primary-600, #246CFF);
+  background: var(--color-primary-600);
   animation: tab-indicator 0.2s ease-out forwards;
   transform-origin: left;
 }
 
 /* ── Active Row Highlight ── */
 .unified-row-active {
-  background: linear-gradient(90deg, rgba(36, 108, 255, 0.06) 0%, rgba(36, 108, 255, 0.02) 100%) !important;
-  border-left: 3px solid var(--color-primary-600, #246CFF);
+  background: linear-gradient(90deg, rgb(var(--ers-primary-rgb) / 0.06) 0%, rgb(var(--ers-primary-rgb) / 0.02) 100%) !important;
+  border-left: 3px solid var(--color-primary-600);
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -434,7 +447,7 @@ select {
   border-left: 3px solid transparent;
 }
 .unified-row-interactive:hover {
-  background: rgba(36, 108, 255, 0.04);
+  background: rgb(var(--ers-primary-rgb) / 0.04);
   box-shadow: inset 0 -1px 0 0 rgba(148, 163, 184, 0.15);
 }
 
@@ -635,8 +648,8 @@ select {
 }
 .input-field:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  border-color: var(--color-primary-600);
+  box-shadow: 0 0 0 3px rgb(var(--ers-primary-rgb) / 0.12);
   background-color: #ffffff;
 }
 .input-field::placeholder {
@@ -881,7 +894,7 @@ select {
   -webkit-tap-highlight-color: transparent;
 }
 .mobile-bottom-nav-item.active {
-  color: #246CFF;
+  color: var(--color-primary-600);
 }
 .mobile-bottom-nav-item.active::before {
   content: '';
@@ -891,7 +904,7 @@ select {
   right: 20%;
   height: 3px;
   border-radius: 0 0 3px 3px;
-  background: #246CFF;
+  background: var(--color-primary-600);
 }
 /* Hide on tablet+ */
 @media (min-width: 640px) {
@@ -975,15 +988,15 @@ select {
     padding: 0.375rem 0.75rem;
     font-size: 0.75rem;
     font-weight: 600;
-    color: #3b82f6;
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
+    color: var(--color-primary-600);
+    background: var(--color-primary-50);
+    border: 1px solid var(--color-primary-200);
     border-radius: 0.5rem;
     cursor: pointer;
     transition: background 0.15s ease;
   }
   .back-to-list-btn:active {
-    background: #dbeafe;
+    background: var(--color-primary-100);
   }
 }
 
@@ -1454,21 +1467,21 @@ select {
   font-size: 0.875rem;
   font-weight: 600;
   color: #ffffff;
-  background: #246CFF;
+  background: var(--color-primary-600);
   border: none;
   border-radius: 0.625rem;
   cursor: pointer;
   transition: all 0.15s ease;
   -webkit-tap-highlight-color: transparent;
 }
+/* Hover/press go DARKER, not lighter — a lift-and-brighten hover is the
+   consumer tell; enterprise controls sink into the action colour. */
 .btn-blue:hover {
-  background: #4C84FF;
-  box-shadow: 0 4px 12px rgba(36, 108, 255, 0.25);
-  transform: translateY(-1px);
+  background: var(--color-primary-700);
+  box-shadow: 0 2px 6px rgb(var(--ers-primary-rgb) / 0.22);
 }
 .btn-blue:active {
-  background: #1A3FA6;
-  transform: translateY(0);
+  background: var(--color-primary-800);
   box-shadow: none;
 }
 .btn-blue:disabled {
@@ -1487,16 +1500,16 @@ select {
   padding: 0.5625rem 1.25rem;
   font-size: 0.875rem;
   font-weight: 600;
-  color: #246CFF;
-  background: #F0F5FF;
-  border: 1.5px solid #C5D5F7;
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  border: 1.5px solid var(--color-primary-200);
   border-radius: 0.625rem;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .btn-blue-outline:hover {
-  background: #E8EFFD;
-  border-color: #9BBDFF;
+  background: var(--color-primary-100);
+  border-color: var(--color-primary-300);
 }
 
 /* ── Relantern CTA Button (Yellow — for FAB, "New WO") ── */
@@ -1555,7 +1568,7 @@ select {
   font-weight: 600;
   letter-spacing: 0.01em;
 }
-.status-pill--open     { color: #246CFF; background: #F0F5FF; border: 1px solid #C5D5F7; }
+.status-pill--open     { color: var(--color-primary-600); background: var(--color-primary-50); border: 1px solid var(--color-primary-200); }
 .status-pill--progress { color: #0369a1; background: #e0f2fe; border: 1px solid #7dd3fc; }
 .status-pill--hold     { color: #d97706; background: #fffbeb; border: 1px solid #fde68a; }
 .status-pill--done     { color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; }
@@ -1620,8 +1633,8 @@ select {
   color: #475569;
 }
 .mobile-detail-tab.active {
-  color: #246CFF;
-  border-bottom-color: #246CFF;
+  color: var(--color-primary-600);
+  border-bottom-color: var(--color-primary-600);
   font-weight: 600;
 }
 
@@ -1661,7 +1674,7 @@ select {
   bottom: 0;
   width: 3px;
   border-radius: 3px 0 0 3px;
-  background: linear-gradient(180deg, #246CFF, #4C84FF);
+  background: linear-gradient(180deg, var(--color-primary-600), var(--color-primary-500));
 }
 
 /* ── Status Quick-Update Buttons (MaintainX-style) ── */
@@ -1690,10 +1703,10 @@ select {
   transform: scale(0.95);
 }
 .status-quick-btn.active {
-  border-color: #246CFF;
-  color: #246CFF;
-  background: #F0F5FF;
-  box-shadow: 0 0 0 2px rgba(36, 108, 255, 0.1);
+  border-color: var(--color-primary-600);
+  color: var(--color-primary-600);
+  background: var(--color-primary-50);
+  box-shadow: 0 0 0 2px rgb(var(--ers-primary-rgb) / 0.1);
 }
 .status-quick-btn.active.is-done {
   border-color: #10b981;
@@ -1741,7 +1754,7 @@ select {
   font-size: 0.75rem;
   font-weight: 600;
   font-family: 'SF Mono', 'Fira Code', monospace;
-  color: #246CFF;
+  color: var(--color-primary-600);
 }
 .mobile-card-v2-meta {
   display: flex;
@@ -1811,11 +1824,11 @@ select {
   width: 64px;
   height: 64px;
   border-radius: 1rem;
-  background: #F0F5FF;
+  background: var(--color-primary-50);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #246CFF;
+  color: var(--color-primary-600);
 }
 .empty-state-v2-title {
   font-size: 1rem;
@@ -1834,17 +1847,17 @@ select {
    ═══════════════════════════════════════════════════════ */
 
 .sidebar-link-active-blue {
-  background: #F0F5FF !important;
-  color: #246CFF !important;
-  border-left: 3px solid #246CFF;
+  background: var(--color-primary-50) !important;
+  color: var(--color-primary-600) !important;
+  border-left: 3px solid var(--color-primary-600);
   font-weight: 600;
 }
 .sidebar-link-active-blue .sidebar-icon {
-  color: #246CFF !important;
+  color: var(--color-primary-600) !important;
 }
 .sidebar-sublink-active-blue {
-  background: #F0F5FF !important;
-  color: #246CFF !important;
+  background: var(--color-primary-50) !important;
+  color: var(--color-primary-600) !important;
   font-weight: 600;
 }
 

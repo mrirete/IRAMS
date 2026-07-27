@@ -11,7 +11,7 @@ import { useUnreadNotifications } from '../hooks/useUnreadNotifications';
  *
  * Pattern: MaintainX-style operator/technician-first navigation with a raised
  * center "Report" button that opens the QuickReport bottom sheet (operator's
- * fastest path to log a problem). Color: MaintainX Blue (#246CFF) active state.
+ * fastest path to log a problem). Color: the primary blue token (--color-primary-600) active state.
  */
 
 interface NavItem {

@@ -295,7 +295,7 @@ export const AssessmentReportPage: React.FC = () => {
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center py-32 gap-3 text-slate-500">
-                <Loader2 size={28} className="animate-spin text-violet-500" />
+                <Loader2 size={28} className="animate-spin text-primary-600" />
                 <p className="text-sm">Your Specialist is running the assessment — Pareto, Weibull, PM and warranty analysis…</p>
             </div>
         );
@@ -337,7 +337,7 @@ export const AssessmentReportPage: React.FC = () => {
                     <button onClick={() => void load()} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2">
                         <RefreshCw size={13} /> Recompute
                     </button>
-                    <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold px-4 py-2">
+                    <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-4 py-2">
                         <Printer size={13} /> Print / PDF
                     </button>
                 </div>
@@ -345,32 +345,39 @@ export const AssessmentReportPage: React.FC = () => {
 
             <div className="max-w-4xl mx-auto space-y-5 pb-24">
                 {/* Cover */}
-                <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-600 to-indigo-700 text-white p-8 print:rounded-none">
-                    <p className="text-violet-200 text-xs font-bold uppercase tracking-widest">Reliability Assessment</p>
-                    <h1 className="text-2xl md:text-3xl font-bold mt-1">Your Reliability Specialist's findings</h1>
-                    <p className="text-violet-100 text-sm mt-2">
-                        {a.dataFrom && a.dataTo ? <>Based on {a.woCount12mo.toLocaleString()} work orders (trailing 12 months) across {a.assetCount.toLocaleString()} assets · full history {a.dataFrom} → {a.dataTo}</> : 'No work-order history found.'}
-                    </p>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-                        {[
-                            { label: 'Maintenance spend (12 mo)', value: formatCurrency(a.totalSpend12mo) },
-                            { label: 'Work orders (12 mo)', value: a.woCount12mo.toLocaleString() },
-                            { label: a.paretoShare ? `Top ${a.paretoShare.topN} assets drive` : 'Cost concentration', value: a.paretoShare ? `${a.paretoShare.pct}%` : '—' },
-                            { label: 'Recoverable found', value: totalOpportunity > 0 ? formatCurrency(totalOpportunity) : '—' },
-                        ].map((s) => (
-                            <div key={s.label}>
-                                <div className="text-xl md:text-2xl font-bold">{s.value}</div>
-                                <div className="text-[11px] text-violet-200 mt-0.5">{s.label}</div>
-                            </div>
-                        ))}
+                {/* Cover — white and ink-light so it prints like a consulting
+                    report rather than a brochure; the blue rule does the branding. */}
+                <div className="rounded-xl border border-slate-200 bg-white overflow-hidden print:rounded-none print:border-0">
+                    <div className="h-1 bg-primary-600 print:hidden" />
+                    <div className="p-6 sm:p-8">
+                        <p className="text-primary-700 text-[11px] font-bold uppercase tracking-[0.12em]">Reliability Assessment</p>
+                        <h1 className="text-xl sm:text-2xl md:text-3xl font-semibold text-slate-900 tracking-tight mt-1.5">
+                            Your Reliability Specialist's findings
+                        </h1>
+                        <p className="text-[13px] text-slate-500 mt-2 leading-relaxed">
+                            {a.dataFrom && a.dataTo ? <>Based on {a.woCount12mo.toLocaleString()} work orders (trailing 12 months) across {a.assetCount.toLocaleString()} assets · full history {a.dataFrom} → {a.dataTo}</> : 'No work-order history found.'}
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-px mt-6 bg-slate-200 border border-slate-200 rounded-lg overflow-hidden">
+                            {[
+                                { label: 'Maintenance spend (12 mo)', value: formatCurrency(a.totalSpend12mo) },
+                                { label: 'Work orders (12 mo)', value: a.woCount12mo.toLocaleString() },
+                                { label: a.paretoShare ? `Top ${a.paretoShare.topN} assets drive` : 'Cost concentration', value: a.paretoShare ? `${a.paretoShare.pct}%` : '—' },
+                                { label: 'Recoverable found', value: totalOpportunity > 0 ? formatCurrency(totalOpportunity) : '—' },
+                            ].map((s) => (
+                                <div key={s.label} className="bg-white p-3.5">
+                                    <div className="text-lg md:text-2xl font-semibold text-slate-900 tabular-nums tracking-tight">{s.value}</div>
+                                    <div className="text-[10.5px] text-slate-400 mt-1 leading-tight">{s.label}</div>
+                                </div>
+                            ))}
+                        </div>
+                        <p className="text-[10.5px] text-slate-400 mt-5 leading-relaxed">
+                            IRAMS · Reliability Specialist by Relantern — every figure computed deterministically from your records; nothing estimated by AI.
+                        </p>
                     </div>
-                    <p className="text-[10px] text-violet-300 mt-5">
-                        IRAMS · Reliability Specialist by Relantern — every figure computed deterministically from your records; nothing estimated by AI.
-                    </p>
                 </div>
 
                 {/* Executive summary */}
-                <Section icon={<Sparkles size={15} className="text-violet-600" />} title="Executive summary">
+                <Section icon={<Sparkles size={15} className="text-primary-600" />} title="Executive summary">
                     {narrating
                         ? <p className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> The Specialist is writing the summary…</p>
                         : narrative

@@ -189,7 +189,7 @@ export const ImportWizardPage: React.FC = () => {
                 <select
                     value={current ?? ''}
                     onChange={(e) => setField(group, field, e.target.value)}
-                    className={`rounded-lg border px-2 py-1.5 bg-white text-slate-700 ${current ? 'border-violet-300' : 'border-slate-200 text-slate-400'}`}
+                    className={`rounded-lg border px-2 py-1.5 bg-white text-slate-700 ${current ? 'border-primary-400' : 'border-slate-200 text-slate-400'}`}
                 >
                     <option value="">— not mapped —</option>
                     {headers.map((h) => <option key={h} value={h}>{h}</option>)}
@@ -204,7 +204,7 @@ export const ImportWizardPage: React.FC = () => {
             {/* Header + stepper */}
             <div>
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
-                    <Database size={22} className="text-violet-600" /> Import CMMS Data
+                    <Database size={22} className="text-primary-600" /> Import CMMS Data
                 </h1>
                 <p className="text-slate-500 text-sm mt-1">
                     Send your Specialist a maintenance-history export — SAP PM, Maximo, MaintainX or any spreadsheet.
@@ -212,9 +212,9 @@ export const ImportWizardPage: React.FC = () => {
                 <div className="flex items-center gap-2 mt-4">
                     {['Upload', 'Map columns', 'Review quality', 'Done'].map((label, i) => (
                         <React.Fragment key={label}>
-                            {i > 0 && <div className={`h-px flex-1 ${i <= stepIndex ? 'bg-violet-400' : 'bg-slate-200'}`} />}
-                            <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${i === stepIndex ? 'bg-violet-600 text-white border-violet-600'
-                                : i < stepIndex ? 'bg-violet-50 text-violet-700 border-violet-200'
+                            {i > 0 && <div className={`h-px flex-1 ${i <= stepIndex ? 'bg-primary-400' : 'bg-slate-200'}`} />}
+                            <div className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full border ${i === stepIndex ? 'bg-primary-600 text-white border-primary-600'
+                                : i < stepIndex ? 'bg-primary-50 text-primary-700 border-primary-200'
                                     : 'bg-white text-slate-400 border-slate-200'}`}>
                                 {i < stepIndex ? <CheckCircle2 size={12} /> : <span className="font-bold">{i + 1}</span>}
                                 {label}
@@ -253,11 +253,11 @@ export const ImportWizardPage: React.FC = () => {
                     <button
                         onClick={() => fileRef.current?.click()}
                         disabled={busy}
-                        className="w-full rounded-2xl border-2 border-dashed border-violet-200 bg-violet-50/50 hover:bg-violet-50 transition-colors p-10 flex flex-col items-center gap-3 text-violet-700"
+                        className="w-full rounded-2xl border-2 border-dashed border-primary-200 bg-primary-50/40 hover:bg-primary-50 transition-colors p-10 flex flex-col items-center gap-3 text-primary-700"
                     >
                         {busy ? <Loader2 size={32} className="animate-spin" /> : <UploadCloud size={32} />}
                         <span className="font-semibold">{busy ? 'Reading file & consulting your Specialist…' : 'Choose an export file'}</span>
-                        <span className="text-xs text-violet-500">.xlsx, .xls or .csv — work-order history and/or asset register</span>
+                        <span className="text-xs text-primary-600">.xlsx, .xls or .csv — work-order history and/or asset register</span>
                     </button>
                     <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
                         onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ''; }} />
@@ -271,11 +271,11 @@ export const ImportWizardPage: React.FC = () => {
             {/* ── Step 2: Map ── */}
             {step === 'map' && (
                 <div className="space-y-4">
-                    <div className="rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-white p-5">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-violet-800">
-                            <Wand2 size={16} /> Specialist's read of <span className="font-mono text-xs bg-white border border-violet-200 rounded px-1.5 py-0.5">{fileName}</span>
+                    <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-5">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-primary-800">
+                            <Wand2 size={16} /> Specialist's read of <span className="font-mono text-xs bg-white border border-primary-200 rounded px-1.5 py-0.5">{fileName}</span>
                             {typeof mapping.confidence === 'number' && (
-                                <span className="ml-auto text-xs font-medium text-violet-500">confidence {(mapping.confidence * 100).toFixed(0)}%</span>
+                                <span className="ml-auto text-xs font-medium text-primary-600">confidence {(mapping.confidence * 100).toFixed(0)}%</span>
                             )}
                         </div>
                         {agentProse && <p className="text-sm text-slate-600 mt-2 whitespace-pre-wrap">{agentProse}</p>}
@@ -356,7 +356,7 @@ export const ImportWizardPage: React.FC = () => {
                             <ArrowLeft size={14} /> Back
                         </button>
                         <button onClick={() => void confirmMapping()} disabled={busy}
-                            className="flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-5 py-2.5 disabled:opacity-50">
+                            className="flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-5 py-2.5 disabled:opacity-50 transition-colors">
                             {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
                             Apply mapping & review
                         </button>
@@ -433,7 +433,7 @@ export const ImportWizardPage: React.FC = () => {
 
             {/* ── Step 4: Done ── */}
             {step === 'done' && commitResult && (
-                <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-8 text-center space-y-4">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-6 sm:p-8 text-center space-y-4">
                     <CheckCircle2 size={40} className="text-emerald-500 mx-auto" />
                     <h2 className="text-lg font-bold text-slate-800">Import committed</h2>
                     <p className="text-sm text-slate-600 max-w-lg mx-auto">
@@ -446,9 +446,9 @@ export const ImportWizardPage: React.FC = () => {
                             {commitResult.notes.map((n, i) => <li key={i}>• {n}</li>)}
                         </ul>
                     )}
-                    <div className="flex items-center justify-center gap-3 pt-2">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2.5 pt-2">
                         <button onClick={() => navigate('/specialist/assessment')}
-                            className="flex items-center gap-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold px-5 py-2.5">
+                            className="flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-5 py-2.5 transition-colors">
                             <BarChart2 size={15} /> Run the assessment
                         </button>
                         <button onClick={() => { setStep('upload'); setBatchId(null); setApplied(null); setDq(null); setCommitResult(null); setError(null); }}

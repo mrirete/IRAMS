@@ -174,9 +174,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
     // ── Blue active highlight for active, crisp slate for inactive ──
     const activeBgStyle: React.CSSProperties = {
-        background: '#F0F5FF',
-        color: '#246CFF',
-        borderLeft: '3px solid #246CFF',
+        background: 'var(--color-primary-50)',
+        color: 'var(--color-primary-600)',
+        borderLeft: '3px solid var(--color-primary-600)',
     };
 
     const linkClass = (isActive: boolean) =>
