@@ -12,9 +12,10 @@ import { Link } from 'react-router-dom';
 import {
     Database, Wrench, Users, Package, Building2, CalendarClock, Gauge,
     FileSpreadsheet, Radio, BarChart2, CheckCircle2, ArrowRight, Loader2,
-    Send, RotateCcw, AlertTriangle, Tags, Download,
+    Send, RotateCcw, AlertTriangle, Tags, Download, FileUp,
 } from 'lucide-react';
 import BulkImportModal from '../../eam/components/modals/BulkImportModal';
+import PidRegisterModal from '../../components/migration/PidRegisterModal';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 import { importAssets, importReadings, importFailureCodes, findUnresolvedFailureCodes } from '../../eam/services/bulkImportService';
 import { importService } from '../../eam/services/ImportService';
@@ -104,6 +105,7 @@ export const MigrationCenterPage: React.FC = () => {
     const { showToast } = useToast();
     const [counts, setCounts] = useState<Counts | null>(null);
     const [openType, setOpenType] = useState<ImportType | null>(null);
+    const [pidOpen, setPidOpen] = useState(false);
     const [batches, setBatches] = useState<Awaited<ReturnType<typeof importService.listBatches>>>([]);
     const [inviting, setInviting] = useState(false);
     const [harvesting, setHarvesting] = useState(false);
@@ -321,6 +323,15 @@ export const MigrationCenterPage: React.FC = () => {
                                                 Export unresolved codes from history
                                             </button>
                                         )}
+                                        {p.n === 1 && (
+                                            <button
+                                                onClick={() => setPidOpen(true)}
+                                                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2"
+                                            >
+                                                <FileUp size={13} />
+                                                No spreadsheet? Build it from a P&ID
+                                            </button>
+                                        )}
                                         {p.n === 2 && (
                                             <button
                                                 onClick={() => void inviteImportedPeople()}
@@ -375,6 +386,13 @@ export const MigrationCenterPage: React.FC = () => {
                     allowedTypes={[openType]}
                     onImportData={handleImportData}
                     onImportAssets={handleImportAssets}
+                />
+            )}
+
+            {pidOpen && (
+                <PidRegisterModal
+                    onClose={() => { setPidOpen(false); void refresh(); }}
+                    onImported={() => void refresh()}
                 />
             )}
         </div>
