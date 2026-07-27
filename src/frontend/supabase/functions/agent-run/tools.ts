@@ -1,6 +1,17 @@
 // Deterministic tools for the reliability agents. The LLM decides WHICH tool
 // to call; the math/data lives here. Every tool returns cited sources.
 import type { AgentTool, ToolContext, ToolResult } from "./types.ts";
+import {
+  buildPidGraph,
+  serializePidGraph,
+  estimateTokens,
+  walk,
+  tracePath,
+  findIsolationPoints,
+  type AssetFacts,
+  type PidEdgeInput,
+  type PidNodeInput,
+} from "./pidGraph.ts";
 
 // ── rank_bad_actors ──────────────────────────────────────────────────────
 // Folds "query WO cost/frequency" + "Pareto" into one deterministic tool
@@ -1048,7 +1059,226 @@ const searchManuals: AgentTool = {
   },
 };
 
+// ── query_pid ────────────────────────────────────────────────────────────
+// GraphRAG over the plant's own P&IDs. ers_pid_configurations already stores
+// the drawing as typed nodes and typed edges (0081); this tool is the retrieval
+// half — it serialises that graph for the model, or answers routing questions
+// by walking it deterministically. See pidGraph.ts for why traversal is done in
+// code rather than by the LLM.
+//
+// The asset-register join is the part a chat-with-the-drawing cannot do: every
+// component carrying an asset tag comes back with its live health from
+// sem_asset_health, so "trace the discharge" and "which of those is a bad
+// actor" are the same question.
+const queryPid: AgentTool = {
+  name: "query_pid",
+  description:
+    "Query a stored P&ID as a connected graph: get an overview of a drawing, trace the flow path between two components, list what is upstream or downstream of a component, or determine which valves isolate it. Components carrying an asset tag are returned with their live health (MTBF, failures, open work orders). Use this for any question about how equipment is connected, what feeds what, or what must be closed to work on something — never infer plant topology from memory.",
+  parameters: {
+    type: "object",
+    properties: {
+      operation: {
+        type: "string",
+        enum: ["overview", "trace", "upstream", "downstream", "isolate"],
+        description:
+          "overview = the whole drawing as text; trace = flow path from one component to another; upstream/downstream = what feeds or is fed by a component; isolate = the valves to close to work on it.",
+      },
+      pid_title: {
+        type: "string",
+        description: "Which drawing to query. Omit when the site has only one; otherwise the tool lists the available drawings.",
+      },
+      component: {
+        type: "string",
+        description: "Component label or asset tag, for upstream / downstream / isolate (e.g. 'T4750', 'P-101A').",
+      },
+      from: { type: "string", description: "Start component label or asset tag, for trace." },
+      to: { type: "string", description: "End component label or asset tag, for trace." },
+      detail: {
+        type: "string",
+        enum: ["graph", "topology"],
+        description: "overview only: 'graph' keeps attributes and instrument links (default); 'topology' is connectivity alone, at roughly half the tokens.",
+      },
+    },
+    required: ["operation"],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const operation = String(args?.operation ?? "overview");
+
+    // ── Locate the drawing ──
+    let q = ctx.db
+      .from("ers_pid_configurations")
+      .select("id, title, asset_id, equipment, connections, updated_at");
+    const title = typeof args?.pid_title === "string" && args.pid_title.trim() ? args.pid_title.trim() : null;
+    if (title) q = q.ilike("title", `%${title}%`);
+
+    const { data: configs, error } = await q.limit(25);
+    if (error) throw new Error(`ers_pid_configurations query failed: ${error.message}`);
+
+    const rows = (configs ?? []) as Record<string, unknown>[];
+    if (rows.length === 0) {
+      return {
+        data: { found: false },
+        sources: [],
+        warnings: [
+          title
+            ? `No P&ID matched "${title}".`
+            : "No P&IDs have been drawn yet. They are created under Analyze → Reliability Modelling.",
+        ],
+      };
+    }
+    if (rows.length > 1 && !title) {
+      // Ambiguous: name them rather than silently picking one.
+      return {
+        data: { found: true, needs_selection: true, drawings: rows.map((r) => r.title) },
+        sources: [],
+        warnings: ["Several P&IDs exist — ask which one, or pass pid_title."],
+      };
+    }
+    const cfg = rows[0];
+
+    const graph = buildPidGraph(
+      (cfg.equipment ?? []) as PidNodeInput[],
+      (cfg.connections ?? []) as PidEdgeInput[],
+    );
+    ctx.sources.push({ kind: "pid", ref: String(cfg.id), label: `P&ID ${cfg.title}` });
+
+    // Resolve a user-supplied name against labels first, then asset tags.
+    const resolve = (name: unknown): string | null => {
+      const needle = String(name ?? "").trim().toLowerCase();
+      if (!needle) return null;
+      for (const n of graph.nodes.values()) {
+        if (n.label?.toLowerCase() === needle) return n.id;
+      }
+      for (const n of graph.nodes.values()) {
+        if (n.assetTag?.toLowerCase() === needle) return n.id;
+      }
+      return null;
+    };
+    const labelOf = (id: string) => graph.nodes.get(id)?.label ?? id;
+    const notFound = (name: unknown): ToolResult => ({
+      data: { found: false, component: name },
+      sources: [],
+      warnings: [
+        `"${name}" is not on this drawing. Components present: ${
+          [...graph.nodes.values()].map((n) => n.label).join(", ")
+        }.`,
+      ],
+    });
+
+    // ── Traversal operations ──
+    if (operation === "trace") {
+      const fromId = resolve(args?.from);
+      const toId = resolve(args?.to);
+      if (!fromId) return notFound(args?.from);
+      if (!toId) return notFound(args?.to);
+      const path = tracePath(graph, fromId, toId);
+      return {
+        data: {
+          pid: cfg.title,
+          from: labelOf(fromId),
+          to: labelOf(toId),
+          path: path?.map((n) => `${n.label} (${n.type})`) ?? null,
+          connected: !!path,
+          method: "Breadth-first walk of process-flow edges, following flow direction.",
+        },
+        sources: [{ kind: "pid", ref: String(cfg.id), label: `flow path on ${cfg.title}` }],
+        warnings: path
+          ? undefined
+          : [`No process path runs from ${labelOf(fromId)} to ${labelOf(toId)} in the direction of flow.`],
+      };
+    }
+
+    if (operation === "upstream" || operation === "downstream") {
+      const id = resolve(args?.component);
+      if (!id) return notFound(args?.component);
+      const found = walk(graph, id, operation === "upstream" ? "up" : "down");
+      return {
+        data: {
+          pid: cfg.title,
+          component: labelOf(id),
+          direction: operation,
+          components: found.map((n) => ({
+            label: n.label,
+            type: graph.nodes.get(n.id)?.type,
+            hops: n.depth,
+          })),
+        },
+        sources: [{ kind: "pid", ref: String(cfg.id), label: `${operation} of ${labelOf(id)}` }],
+        warnings: found.length === 0 ? [`Nothing is drawn ${operation} of ${labelOf(id)}.`] : undefined,
+      };
+    }
+
+    if (operation === "isolate") {
+      const id = resolve(args?.component);
+      if (!id) return notFound(args?.component);
+      const { valves, unisolatedBranches } = findIsolationPoints(graph, id);
+      const warnings: string[] = [];
+      if (valves.length === 0) {
+        warnings.push(`No isolating valve is drawn upstream of ${labelOf(id)}.`);
+      }
+      if (unisolatedBranches.length) {
+        warnings.push(
+          `These inlets reach ${labelOf(id)} with no valve between: ${
+            unisolatedBranches.map((b) => b.label).join(", ")
+          }. They cannot be isolated from this drawing.`,
+        );
+      }
+      warnings.push(
+        "Derived from the drawing only. The site's isolation procedure and a physical walk-down govern; drain, vent and blind requirements are not modelled here.",
+      );
+      return {
+        data: {
+          pid: cfg.title,
+          component: labelOf(id),
+          close_valves: valves.map((v) => v.label),
+          unisolated_inlets: unisolatedBranches.map((b) => b.label),
+          method: "First isolating device on each upstream branch, walking process-flow edges.",
+        },
+        sources: [{ kind: "pid", ref: String(cfg.id), label: `isolation for ${labelOf(id)}` }],
+        warnings,
+      };
+    }
+
+    // ── overview: serialise the graph, joined to live asset health ──
+    const tags = [...graph.nodes.values()]
+      .map((n) => n.assetTag)
+      .filter((t): t is string => !!t);
+
+    const facts = new Map<string, AssetFacts>();
+    if (tags.length) {
+      const { data: health } = await ctx.db
+        .from("sem_asset_health")
+        .select("asset_tag, criticality, mtbf_days, open_wo_count, failure_events_12mo, overdue_pm_count")
+        .in("asset_tag", tags);
+      for (const h of (health ?? []) as AssetFacts[]) {
+        facts.set(h.asset_tag, h);
+        ctx.sources.push({ kind: "assets", ref: h.asset_tag, label: `health ${h.asset_tag}` });
+      }
+    }
+
+    const mode = args?.detail === "topology" ? "topology" : "graph";
+    const text = serializePidGraph(graph, { mode, title: String(cfg.title), facts });
+
+    return {
+      data: {
+        pid: cfg.title,
+        component_count: graph.nodes.size,
+        connection_count: graph.edges.size,
+        assets_linked: facts.size,
+        approx_tokens: estimateTokens(text),
+        graph: text,
+      },
+      sources: [{ kind: "pid", ref: String(cfg.id), label: `${cfg.title} (${graph.nodes.size} components)` }],
+      warnings: tags.length === 0
+        ? ["No component on this drawing is linked to the asset register, so no health data could be joined. Link them in the P&ID editor to make condition part of the answer."]
+        : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
+  [queryPid.name]: queryPid,
   [searchManuals.name]: searchManuals,
   [analyzeWeibull.name]: analyzeWeibull,
   [draftPmInterval.name]: draftPmInterval,

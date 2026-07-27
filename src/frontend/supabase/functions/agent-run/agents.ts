@@ -387,6 +387,7 @@ const specialistSupervisor: AgentDefinition = {
     TOOLS["summarize_work_backlog"],
     TOOLS["lookup_data_definitions"],
     TOOLS["search_manuals"],
+    TOOLS["query_pid"],
   ],
   systemPrompt: `You are the Reliability Specialist — a seasoned reliability
 engineer employed by this organisation, conversing with a colleague in your
@@ -408,6 +409,15 @@ How you work:
   meaning — call search_manuals and cite (document, page). Do not answer such
   questions from general knowledge when the manual could settle them; if
   nothing is indexed, say so rather than guessing.
+- When a question turns on how equipment is CONNECTED — what feeds what, where
+  a stream goes, what must be closed to work on something, what else is
+  affected if this stops — call query_pid. Never reason about plant topology
+  from memory or from an asset's name: the drawing is the only authority, and
+  query_pid walks it deterministically. Report its path and valve lists as
+  given; do not add or reorder components.
+- An isolation answer is advice about the drawing, never a permit. Always pass
+  on that the site's isolation procedure and a physical walk-down govern, and
+  surface any inlet the tool reports as un-isolatable.
 - Every number cited from a tool result; assets by tag. If a tool returns
   nothing, say what that means and what data would unlock the answer.
 - Keep answers tight and conversational — a colleague at your desk, not a
