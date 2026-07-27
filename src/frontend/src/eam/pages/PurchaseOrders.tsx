@@ -1,9 +1,10 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
     Search, Plus, Filter, Save, ShoppingCart, Truck, FileText,
     CheckCircle, Settings, Users, Printer, Upload, Box,
-    MoreHorizontal, DollarSign, X, ChevronRight, Clock, AlertTriangle, Briefcase, Trash2, Copy
+    MoreHorizontal, DollarSign, X, ChevronRight, Clock, AlertTriangle, Briefcase, Trash2, Copy,
+    Download, Loader2
 } from 'lucide-react';
 import {
     PurchaseOrder, POStatus, PurchaseOrderItem, Contact, Store, Vendor, InventoryItem
@@ -13,6 +14,8 @@ type TabId = 'details' | 'items' | 'properties' | 'authorise';
 
 import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
+import { downloadPOItemsTemplate, parsePOItemsFile } from '../services/assetTemplates';
+import { emptyResult, tally, errMessage, type ImportResult } from '../services/importTypes';
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
@@ -542,6 +545,9 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
     // Local state for the "Add Item" row
     const [newItem, setNewItem] = useState<Partial<PurchaseOrderItem>>({ qtyOrdered: 1, unitCost: 0 });
     const [importOpen, setImportOpen] = useState(false);
+    const [importing, setImporting] = useState(false);
+    const [importResult, setImportResult] = useState<ImportResult | null>(null);
+    const poFileRef = useRef<HTMLInputElement>(null);
     const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
     const [invoiceMatchId, setInvoiceMatchId] = useState<string | null>(null);
     const [invoiceInput, setInvoiceInput] = useState('');
@@ -685,6 +691,91 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
         onUpdate({ items: updatedItems });
     };
 
+    /**
+     * Bulk line-item import. Lines are appended to the order in memory and
+     * persist with the normal PO save — this deliberately does not write to
+     * the database on its own, so an import can be reviewed and abandoned.
+     */
+    const handleImportFile = async (file: File) => {
+        setImporting(true);
+        const res = emptyResult();
+        try {
+            const { rows } = await parsePOItemsFile(file);
+            if (rows.length === 0) {
+                res.notes!.push('No data rows found under the header row.');
+                setImportResult(res);
+                return;
+            }
+
+            const invByCode = new Map(inventoryItems.map(i => [(i.code || '').toUpperCase(), i]));
+            const woByNumber = new Map(
+                (workOrders || []).map((w: any) => [String(w.woNumber ?? w.wo_number ?? '').toUpperCase(), w])
+            );
+
+            const additions: PurchaseOrderItem[] = [];
+            for (let idx = 0; idx < rows.length; idx++) {
+                const r = rows[idx];
+                const rowNo = Number(r.__row) || idx + 2;
+                const description = r['description'] || '';
+                const qty = parseFloat(r['qty'] || '');
+
+                if (!description) {
+                    tally(res, { row: rowNo, status: 'failed', reason: 'Missing description' });
+                    continue;
+                }
+                if (!qty || isNaN(qty) || qty <= 0) {
+                    tally(res, { row: rowNo, key: description, status: 'failed', reason: `Quantity "${r['qty']}" must be a number greater than 0` });
+                    continue;
+                }
+
+                // A stock code links the line so receiving moves quantity on hand.
+                const code = (r['inventorycode'] || '').toUpperCase();
+                const inv = code ? invByCode.get(code) : undefined;
+                if (code && !inv) {
+                    res.notes!.push(`Row ${rowNo}: stock code "${r['inventorycode']}" matched nothing — imported as a free-text line.`);
+                }
+
+                const woNum = (r['wonumber'] || '').toUpperCase();
+                const wo = woNum ? woByNumber.get(woNum) : undefined;
+                if (woNum && !wo) {
+                    res.notes!.push(`Row ${rowNo}: work order "${r['wonumber']}" not found — line imported without the job link.`);
+                }
+
+                const unitCost = r['unitcost'] ? (parseFloat(r['unitcost']) || 0) : (inv?.itemCost ?? 0);
+                additions.push({
+                    id: `pi-${Date.now()}-${idx}`,
+                    description,
+                    inventoryId: inv?.id,
+                    uom: r['uom'] || inv?.uom || 'EA',
+                    qtyOrdered: qty,
+                    qtyReceivedTotal: 0,
+                    unitCost,
+                    taxAmount: 0,
+                    lineTotal: qty * unitCost,
+                    jobId: wo?.id,
+                    glCode: r['glcode'] || undefined,
+                    invoiceMatched: false,
+                });
+                tally(res, { row: rowNo, key: description, status: 'inserted' });
+            }
+
+            if (additions.length > 0) {
+                onUpdate({
+                    items: [...po.items, ...additions],
+                    status: po.status === POStatus.DRAFT ? POStatus.OPEN : po.status,
+                });
+                res.notes!.push('Save the purchase order to commit these lines.');
+            }
+        } catch (e: unknown) {
+            res.notes!.push(`Could not read the file: ${errMessage(e)}`);
+        } finally {
+            setImporting(false);
+            setImportResult(res);
+        }
+    };
+
+    const closeImport = () => { setImportOpen(false); setImportResult(null); };
+
     const handleDeleteItem = (id: string) => {
         setDeleteItemId(id);
     };
@@ -728,15 +819,83 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
             {/* Import Modal */}
             {importOpen && (
                 <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white p-6 rounded-xl shadow-xl w-96">
-                        <h3 className="font-bold text-lg mb-4">Import Items</h3>
-                        <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center text-slate-500 bg-slate-50 mb-4">
-                            Drag CSV here or click to browse
-                        </div>
-                        <div className="flex justify-end gap-2">
-                            <button onClick={() => setImportOpen(false)} className="px-4 py-2 text-slate-600">Cancel</button>
-                            <button onClick={() => { showToast('Imported 5 items (Mock)', 'success'); setImportOpen(false); }} className="px-4 py-2 bg-primary-600 text-white rounded">Process</button>
-                        </div>
+                    <div className="bg-white p-6 rounded-xl shadow-xl w-[30rem] max-h-[80vh] flex flex-col">
+                        <h3 className="font-bold text-lg mb-1">Import Line Items</h3>
+                        <p className="text-xs text-slate-500 mb-4">
+                            Lines are added to this purchase order. Nothing is saved until you save the order.
+                        </p>
+
+                        {importResult ? (
+                            <div className="flex-1 overflow-auto">
+                                <div className="flex items-center gap-3 mb-4">
+                                    {[
+                                        { label: 'Added', value: importResult.inserted, cls: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
+                                        { label: 'Skipped', value: importResult.skipped, cls: 'bg-slate-50 border-slate-200 text-slate-600' },
+                                        { label: 'Failed', value: importResult.failed, cls: importResult.failed > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-50 border-slate-200 text-slate-400' },
+                                    ].map(s => (
+                                        <div key={s.label} className={`border rounded-lg px-4 py-2 text-center flex-1 ${s.cls}`}>
+                                            <div className="text-xl font-bold">{s.value}</div>
+                                            <div className="text-[10px] uppercase font-semibold">{s.label}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                                {(importResult.notes ?? []).length > 0 && (
+                                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 mb-3 space-y-1">
+                                        {importResult.notes!.map((n, i) => <div key={i} className="text-xs text-slate-600">• {n}</div>)}
+                                    </div>
+                                )}
+                                {importResult.outcomes.filter(o => o.status !== 'inserted').length > 0 && (
+                                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-slate-50">
+                                                <tr>
+                                                    <th className="px-2 py-1.5 text-left font-bold text-slate-500">Row</th>
+                                                    <th className="px-2 py-1.5 text-left font-bold text-slate-500">Item</th>
+                                                    <th className="px-2 py-1.5 text-left font-bold text-slate-500">Reason</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {importResult.outcomes.filter(o => o.status !== 'inserted').map((o, i) => (
+                                                    <tr key={i} className="bg-red-50/30">
+                                                        <td className="px-2 py-1.5 font-mono text-slate-400">{o.row}</td>
+                                                        <td className="px-2 py-1.5 text-slate-700 max-w-[10rem] truncate">{o.key || '—'}</td>
+                                                        <td className="px-2 py-1.5 text-slate-600">{o.reason}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                                <div className="flex justify-end mt-4">
+                                    <button onClick={closeImport} className="px-4 py-2 bg-primary-600 text-white rounded">Done</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <>
+                                <button
+                                    onClick={() => poFileRef.current?.click()}
+                                    disabled={importing}
+                                    className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center text-slate-500 bg-slate-50 mb-3 hover:border-primary-400 hover:bg-primary-50/30 transition-colors disabled:opacity-60"
+                                >
+                                    {importing
+                                        ? <span className="flex items-center justify-center gap-2"><Loader2 size={16} className="animate-spin" /> Reading file…</span>
+                                        : <>Click to browse — .xlsx or .csv</>}
+                                </button>
+                                <input
+                                    ref={poFileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+                                    onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleImportFile(f); e.target.value = ''; }}
+                                />
+                                <button
+                                    onClick={downloadPOItemsTemplate}
+                                    className="flex items-center gap-2 text-xs font-semibold text-primary-600 hover:text-primary-700 mb-4"
+                                >
+                                    <Download size={13} /> Download the template
+                                </button>
+                                <div className="flex justify-end gap-2">
+                                    <button onClick={closeImport} className="px-4 py-2 text-slate-600">Cancel</button>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}

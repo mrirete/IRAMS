@@ -416,6 +416,78 @@ export function downloadReadingsTemplate(): void {
     downloadWorkbook(wb, 'ERS_Readings_Import_Template.xlsx');
 }
 
+// ─── Purchase-Order Line Items Template ─────────────────────────
+// Not a BulkImportModal type — PO lines are imported into one open order
+// from its Items tab, so this is a standalone template + the columns the
+// importer reads.
+export const PO_ITEM_COLUMNS = [
+    { header: 'description', description: 'What is being bought (free text)', required: true },
+    { header: 'qty', description: 'Quantity ordered', required: true },
+    { header: 'unitCost', description: 'Cost per unit — defaults to the linked stock item’s cost when blank', required: false },
+    { header: 'uom', description: 'Unit of measure: EA, SET, MTR, KG, LTR, BOX', required: false },
+    { header: 'inventoryCode', description: 'Stock code to link this line to an inventory item', required: false },
+    { header: 'woNumber', description: 'Work order this line is charged to', required: false },
+    { header: 'glCode', description: 'GL / cost-centre code', required: false },
+];
+
+const PO_ITEM_EXAMPLES = [
+    { description: 'Air Inlet Filter — 24x24x12', qty: 4, unitCost: 85.5, uom: 'EA', inventoryCode: 'FLT-0023', woNumber: '', glCode: 'CC-003' },
+    { description: 'Thrust Bearing Assembly', qty: 1, unitCost: 2400, uom: 'EA', inventoryCode: 'BRG-0041', woNumber: 'WO-1042', glCode: 'CC-003' },
+    { description: 'Contractor day rate — alignment', qty: 2, unitCost: 650, uom: 'EA', inventoryCode: '', woNumber: 'WO-1042', glCode: 'CC-010' },
+];
+
+export function downloadPOItemsTemplate(): void {
+    const wb = XLSX.utils.book_new();
+    const dataHeaders = PO_ITEM_COLUMNS.map(c => c.header);
+    const dataRows = PO_ITEM_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
+    const ws = XLSX.utils.aoa_to_sheet([dataHeaders, ...dataRows]);
+    ws['!cols'] = dataHeaders.map(h => ({ wch: Math.max(h.length + 4, 18) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Line Items');
+
+    const instrData = [
+        ['Column', 'Required', 'Description'],
+        ...PO_ITEM_COLUMNS.map(c => [c.header, c.required ? 'YES' : 'no', c.description]),
+        [],
+        ['Notes'],
+        ['• Lines are ADDED to the purchase order you are editing — nothing is replaced.'],
+        ['• inventoryCode links the line to stock, so receiving it moves quantity on hand.'],
+        ['• An inventoryCode that matches nothing still imports as a free-text line, and is reported.'],
+        ['• Nothing is saved until you save the purchase order.'],
+    ];
+    const instrWs = XLSX.utils.aoa_to_sheet(instrData);
+    instrWs['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 70 }];
+    XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
+
+    downloadWorkbook(wb, 'ERS_PO_LineItems_Template.xlsx');
+}
+
+/** Parse a PO line-item sheet into lowercase-keyed rows (headers as shipped). */
+export function parsePOItemsFile(file: File): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer), { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const raw: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                if (raw.length < 2) return resolve({ headers: [], rows: [] });
+                const headers = (raw[0] as string[]).map(h => String(h || '').trim());
+                const lower = headers.map(h => h.toLowerCase());
+                const rows = raw.slice(1)
+                    .filter(r => r.some(c => c !== undefined && c !== null && c !== ''))
+                    .map((r, idx) => {
+                        const o: Record<string, string> = { __row: String(idx + 2) };
+                        lower.forEach((h, i) => { o[h] = String(r[i] ?? '').trim(); });
+                        return o;
+                    });
+                resolve({ headers, rows });
+            } catch (err) { reject(err); }
+        };
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
 // ─── Vendor / Supplier Template ─────────────────────────────────
 const VENDOR_COLUMNS = [
     { header: 'code', description: 'Vendor code (unique)', required: true },
