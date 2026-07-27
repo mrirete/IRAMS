@@ -55,7 +55,7 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
         <button
           onClick={onAIOptimize}
           disabled={aiLoading === 'optimize'}
-          className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 shadow-sm"
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary-50 border border-primary-200 rounded-lg text-sm font-medium text-primary-700 hover:bg-primary-100 transition-colors disabled:opacity-50 shadow-sm"
         >
           {aiLoading === 'optimize' ? <RefreshCw size={14} className="animate-spin" /> : <Brain size={14} />}
           AI Optimize Study
@@ -166,7 +166,7 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
                       <Link
                         to={raiseWOUrl(task.failure_mode_description)}
                         title="Raise a corrective work order for this failure mode"
-                        className="inline-flex items-center gap-0.5 text-slate-400 hover:text-blue-600 transition-colors"
+                        className="inline-flex items-center gap-0.5 text-slate-400 hover:text-primary-600 transition-colors"
                       >
                         <Wrench size={13} />
                         <ArrowUpRight size={10} />
@@ -191,9 +191,9 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
 
       {/* AI Optimization Report */}
       {aiReport && (
-        <div className="bg-white border border-blue-200 rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="bg-white border border-primary-200 rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold text-blue-800 flex items-center gap-2">
+            <h3 className="text-sm font-bold text-primary-800 flex items-center gap-2">
               <Brain size={16} /> AI Strategy Optimization Report
             </h3>
             <button onClick={onCloseReport} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">

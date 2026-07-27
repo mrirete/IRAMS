@@ -187,25 +187,25 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                 ) : (
                     <>
                         {/* ── Analysis Provenance Banner ────────────── */}
-                        <div className="mx-6 mt-5 p-4 bg-gradient-to-r from-blue-50 via-blue-50 to-blue-50 border border-blue-200/60 rounded-xl">
+                        <div className="mx-6 mt-5 p-4 bg-gradient-to-r from-primary-50 via-primary-50 to-primary-50 border border-primary-200/60 rounded-xl">
                             <div className="flex items-center gap-2 mb-2">
-                                <Info size={14} className="text-blue-500" />
-                                <span className="text-xs font-bold text-blue-700 uppercase tracking-wider">Analysis Basis</span>
+                                <Info size={14} className="text-primary-500" />
+                                <span className="text-xs font-bold text-primary-700 uppercase tracking-wider">Analysis Basis</span>
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                <div className="text-center p-2 bg-white/70 rounded-lg border border-blue-100">
+                                <div className="text-center p-2 bg-white/70 rounded-lg border border-primary-100">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase">Asset</p>
                                     <p className="text-xs font-bold text-slate-800 font-mono">{data.asset.tag}</p>
                                 </div>
-                                <div className="text-center p-2 bg-white/70 rounded-lg border border-blue-100">
+                                <div className="text-center p-2 bg-white/70 rounded-lg border border-primary-100">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase">Shape β</p>
-                                    <p className="text-sm font-bold text-blue-700">{data.beta}</p>
+                                    <p className="text-sm font-bold text-primary-700">{data.beta}</p>
                                 </div>
-                                <div className="text-center p-2 bg-white/70 rounded-lg border border-blue-100">
+                                <div className="text-center p-2 bg-white/70 rounded-lg border border-primary-100">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase">Scale η</p>
-                                    <p className="text-sm font-bold text-blue-700">{data.eta.toLocaleString()} hrs</p>
+                                    <p className="text-sm font-bold text-primary-700">{data.eta.toLocaleString()} hrs</p>
                                 </div>
-                                <div className="text-center p-2 bg-white/70 rounded-lg border border-blue-100">
+                                <div className="text-center p-2 bg-white/70 rounded-lg border border-primary-100">
                                     <p className="text-[10px] text-slate-400 font-bold uppercase">R²</p>
                                     <p className={`text-sm font-bold ${data.r2 >= 0.9 ? 'text-emerald-700' : 'text-amber-600'}`}>{data.r2}</p>
                                 </div>
@@ -239,8 +239,8 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                         <div className="px-6 py-5 space-y-4">
                             {/* Class scope banner — one PM applied across the whole class */}
                             {data.classAssets && data.classAssets.length > 0 && (
-                                <div className="flex items-start gap-2 p-3 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-800">
-                                    <Wrench size={14} className="mt-0.5 shrink-0 text-indigo-500" />
+                                <div className="flex items-start gap-2 p-3 rounded-xl bg-primary-50 border border-primary-200 text-xs text-primary-800">
+                                    <Wrench size={14} className="mt-0.5 shrink-0 text-primary-500" />
                                     <span>
                                         <strong>Population PM.</strong> Fitted on pooled failures across the{' '}
                                         <strong>{data.className}</strong> class and applied to all{' '}

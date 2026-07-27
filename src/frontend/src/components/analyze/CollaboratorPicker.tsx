@@ -16,8 +16,11 @@ type CollabRole = StudyCollaborator['role'];
 
 const ROLE_META: Record<CollabRole, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
     owner:    { label: 'Owner',    color: 'text-amber-600',  bg: 'bg-amber-50 border-amber-200',  icon: <Shield size={10} /> },
-    editor:   { label: 'Editor',   color: 'text-primary-600',   bg: 'bg-primary-50 border-primary-200',    icon: <Pencil size={10} /> },
-    reviewer: { label: 'Reviewer', color: 'text-blue-600', bg: 'bg-blue-50 border-blue-200', icon: <Eye size={10} /> },
+    // Editor and Reviewer separate by weight on the one ramp, not by hue: they
+    // were primary-600 and blue-600 before, six percent apart and effectively
+    // the same badge. Light chip acts, deep chip checks.
+    editor:   { label: 'Editor',   color: 'text-primary-600', bg: 'bg-primary-50 border-primary-200',   icon: <Pencil size={10} /> },
+    reviewer: { label: 'Reviewer', color: 'text-primary-800', bg: 'bg-primary-100 border-primary-300', icon: <Eye size={10} /> },
     viewer:   { label: 'Viewer',   color: 'text-slate-500',  bg: 'bg-slate-50 border-slate-200',  icon: <Eye size={10} /> },
 };
 
@@ -28,9 +31,15 @@ const getInitials = (name: string) => {
     return name.slice(0, 2).toUpperCase();
 };
 
+/**
+ * Identity hashing, not branding — variety is the whole point, so this palette
+ * deliberately stays multi-hue while the rest of the app collapses onto one
+ * blue. Eight distinct entries: three used to be blue, which meant a third of
+ * the team shared a colour.
+ */
 const AVATAR_COLORS = [
-    'bg-primary-500', 'bg-blue-500', 'bg-amber-500', 'bg-emerald-500',
-    'bg-rose-500', 'bg-blue-500', 'bg-pink-500', 'bg-primary-500',
+    'bg-primary-500', 'bg-teal-500', 'bg-amber-500', 'bg-emerald-500',
+    'bg-rose-500', 'bg-violet-500', 'bg-pink-500', 'bg-slate-500',
 ];
 const colorFor = (id: string) => AVATAR_COLORS[Math.abs([...id].reduce((a, c) => a + c.charCodeAt(0), 0)) % AVATAR_COLORS.length];
 

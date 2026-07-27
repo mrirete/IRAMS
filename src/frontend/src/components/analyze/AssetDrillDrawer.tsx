@@ -90,7 +90,7 @@ export const AssetDrillDrawer: React.FC<AssetDrillDrawerProps> = ({
                     </div>
                     <div className="bg-slate-50 rounded-lg p-3 text-center">
                         <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Work Orders</p>
-                        <p className="text-2xl font-bold text-blue-400 mt-1">{asset.event_count}</p>
+                        <p className="text-2xl font-bold text-primary-400 mt-1">{asset.event_count}</p>
                     </div>
                 </div>
 

@@ -151,11 +151,11 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
           <div className="flex h-3 rounded-full overflow-hidden bg-slate-100">
             {risk.critical > 0 && <div style={{ flex: risk.critical }} className="bg-red-500" title={`Critical: ${risk.critical}`} />}
             {risk.high > 0 && <div style={{ flex: risk.high }} className="bg-amber-500" title={`High: ${risk.high}`} />}
-            {risk.medium > 0 && <div style={{ flex: risk.medium }} className="bg-blue-500" title={`Medium: ${risk.medium}`} />}
+            {risk.medium > 0 && <div style={{ flex: risk.medium }} className="bg-primary-500" title={`Medium: ${risk.medium}`} />}
             {risk.low > 0 && <div style={{ flex: risk.low }} className="bg-emerald-500" title={`Low: ${risk.low}`} />}
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5 text-[10px] text-slate-500">
-            {([['Critical', risk.critical, 'bg-red-500'], ['High', risk.high, 'bg-amber-500'], ['Medium', risk.medium, 'bg-blue-500'], ['Low', risk.low, 'bg-emerald-500']] as const)
+            {([['Critical', risk.critical, 'bg-red-500'], ['High', risk.high, 'bg-amber-500'], ['Medium', risk.medium, 'bg-primary-500'], ['Low', risk.low, 'bg-emerald-500']] as const)
               .filter(([, n]) => n > 0)
               .map(([label, n, dot]) => (
                 <span key={label} className="flex items-center gap-1.5">
@@ -201,7 +201,7 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
             <Link
               to={`/work-orders?action=create&type=CM${hasRegisteredAsset ? `&asset=${study.asset_id}` : ''}&title=${encodeURIComponent(`Corrective — ${study.title}`)}`}
               title="Raise a corrective work order against this asset"
-              className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold text-primary-700 bg-primary-50 border border-primary-200 rounded-lg hover:bg-primary-100 transition-colors"
             >
               Raise WO <ArrowUpRight size={12} />
             </Link>

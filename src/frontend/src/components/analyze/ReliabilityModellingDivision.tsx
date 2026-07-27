@@ -238,7 +238,7 @@ function SavedAnalysesPanel({ analyses, activeId, onLoad, onEdit, onDelete, load
                                     <FolderOpen size={14} />
                                 </button>
                                 <button onClick={() => onEdit(a)} title="Edit"
-                                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                    className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
                                     <Edit3 size={14} />
                                 </button>
                                 <button onClick={() => onDelete(a)} title="Delete"

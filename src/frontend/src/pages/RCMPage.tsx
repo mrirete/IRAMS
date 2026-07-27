@@ -557,7 +557,7 @@ export const RCMPage: React.FC = () => {
                 <option value="approved">Approved</option>
                 <option value="closed">Closed</option>
               </select>
-              <button onClick={() => handleOpenEditStudy(selectedStudy)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit study">
+              <button onClick={() => handleOpenEditStudy(selectedStudy)} className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" title="Edit study">
                 <Edit3 size={16} />
               </button>
               <button onClick={() => setConfirmDelete({ type: 'study', id: selectedStudy.id, name: selectedStudy.title })} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete study">
@@ -845,7 +845,7 @@ export const RCMPage: React.FC = () => {
           <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-lg mx-4 shadow-2xl animate-in zoom-in-95 duration-200 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="p-6 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-50 rounded-lg text-blue-600"><Edit3 size={20} /></div>
+                <div className="p-2 bg-primary-50 rounded-lg text-primary-600"><Edit3 size={20} /></div>
                 <div>
                   <h2 className="text-lg font-bold text-slate-800">Edit Study</h2>
                   <p className="text-xs text-slate-500 mt-0.5">Modify RCM study properties</p>

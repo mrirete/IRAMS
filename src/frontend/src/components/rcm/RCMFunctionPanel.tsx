@@ -141,7 +141,7 @@ const FailureModeTreeNode: React.FC<{
   const rpnConfig = {
     critical: { ring: 'ring-red-500/30', bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', label: 'Critical', barColor: '#ef4444' },
     high:     { ring: 'ring-amber-500/30', bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', label: 'High', barColor: '#f59e0b' },
-    medium:   { ring: 'ring-blue-500/20', bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', label: 'Medium', barColor: '#3b82f6' },
+    medium:   { ring: 'ring-primary-500/20', bg: 'bg-primary-50', text: 'text-primary-700', border: 'border-primary-200', label: 'Medium', barColor: '#3b82f6' },
     low:      { ring: 'ring-emerald-500/20', bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', label: 'Low', barColor: '#10b981' },
   }[rpnLevel];
 
@@ -151,12 +151,12 @@ const FailureModeTreeNode: React.FC<{
     <>
       {/* ── Q3 Node: Failure Mode + Cause ── */}
       <TreeNode level={2} isLast={isLast && !showEffects} color="#3b82f6">
-        <div className="bg-white border border-blue-300 border-l-4 border-l-blue-500 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all group/fm my-1.5">
+        <div className="bg-white border border-primary-300 border-l-4 border-l-primary-500 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all group/fm my-1.5">
           {/* Header strip */}
-          <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-blue-50 via-blue-50/15 to-white border-b border-blue-300/40">
+          <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-primary-50 via-primary-50/15 to-white border-b border-primary-300/40">
             <StepBadge label={`FM-${index + 1}`} color="#3b82f6" done={!!fm.failure_mode_description} />
             {fm.data_source !== 'manual' && (
-              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200">
+              <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-primary-50 text-primary-600 border border-primary-200">
                 {fm.data_source === 'ai_generated' ? '🤖 AI' : fm.data_source === 'fmea_import' ? '📋 FMEA' : '📊 WO'}
               </span>
             )}
@@ -172,7 +172,7 @@ const FailureModeTreeNode: React.FC<{
             {/* Expand effects toggle */}
             <button
               onClick={() => setShowEffects(!showEffects)}
-              className="p-1 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
+              className="p-1 text-slate-400 hover:text-primary-500 hover:bg-primary-50 rounded transition-colors"
               title={showEffects ? 'Collapse effects' : 'Expand effects'}
             >
               {showEffects ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -191,23 +191,23 @@ const FailureModeTreeNode: React.FC<{
           {/* Mode + Cause fields */}
           <div className="px-3 py-2.5 grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Failure Mode</label>
+              <label className="text-[9px] font-bold text-primary-600 uppercase tracking-wider">Failure Mode</label>
               <input
                 type="text"
                 defaultValue={fm.failure_mode_description}
                 onChange={e => debouncedUpdate('failure_mode_description', e.target.value)}
                 placeholder="What failed? e.g. Shaft seal leaking"
-                className="w-full text-xs text-slate-700 bg-blue-50/30 border border-blue-300/70 rounded-lg px-2.5 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 mt-1 transition-colors placeholder:text-slate-300"
+                className="w-full text-xs text-slate-700 bg-primary-50/30 border border-primary-300/70 rounded-lg px-2.5 py-2 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 mt-1 transition-colors placeholder:text-slate-300"
               />
             </div>
             <div>
-              <label className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Cause</label>
+              <label className="text-[9px] font-bold text-primary-600 uppercase tracking-wider">Cause</label>
               <input
                 type="text"
                 defaultValue={fm.failure_cause_description || ''}
                 onChange={e => debouncedUpdate('failure_cause_description', e.target.value)}
                 placeholder="Why? e.g. Wear, corrosion, fatigue"
-                className="w-full text-xs text-slate-700 bg-blue-50/30 border border-blue-300/70 rounded-lg px-2.5 py-2 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 mt-1 transition-colors placeholder:text-slate-300"
+                className="w-full text-xs text-slate-700 bg-primary-50/30 border border-primary-300/70 rounded-lg px-2.5 py-2 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500/20 mt-1 transition-colors placeholder:text-slate-300"
               />
             </div>
           </div>
@@ -283,8 +283,8 @@ const FailureModeTreeNode: React.FC<{
 
               {/* Hidden / Evident toggle — inline compact */}
               <div className="flex items-center gap-2">
-                <EyeOff size={12} className="text-blue-500 shrink-0" />
-                <span className="text-[9px] font-bold text-blue-600 uppercase">Evident to operators?</span>
+                <EyeOff size={12} className="text-primary-500 shrink-0" />
+                <span className="text-[9px] font-bold text-primary-600 uppercase">Evident to operators?</span>
                 <div className="flex items-center gap-1">
                   {[
                     { label: 'Evident', value: false },
@@ -302,7 +302,7 @@ const FailureModeTreeNode: React.FC<{
                       className={`px-3 py-1 text-[10px] font-bold rounded-md border transition-all ${
                         (decision?.is_hidden_failure ?? false) === opt.value
                           ? opt.value
-                            ? 'bg-blue-500 text-white border-blue-500'
+                            ? 'bg-primary-500 text-white border-primary-500'
                             : 'bg-accent-cyan text-brand-900 border-accent-cyan'
                           : 'bg-white border-slate-300/80 text-slate-500 hover:border-slate-400 hover:text-slate-700 shadow-2xs'
                       }`}
@@ -326,7 +326,7 @@ const FailureModeTreeNode: React.FC<{
               {decision?.is_hidden_failure ? (
                 /* HIDDEN path */
                 <div className="space-y-1.5">
-                  <span className="text-[9px] text-blue-500 font-medium italic">
+                  <span className="text-[9px] text-primary-500 font-medium italic">
                     If combined with another failure, could it threaten safety?
                   </span>
                   <div className="flex flex-wrap gap-1.5">
@@ -414,10 +414,10 @@ const FailureModeTreeNode: React.FC<{
       {/* ── Risk Assessment Node ── */}
       {showEffects && (
         <TreeNode level={3} isLast={isLast} color="#8b5cf6">
-          <div className="bg-white border border-blue-300 border-l-4 border-l-blue-500 rounded-xl overflow-hidden shadow-sm my-1">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-50 via-blue-50/15 to-white border-b border-blue-300/40">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Risk Assessment</span>
+          <div className="bg-white border border-primary-300 border-l-4 border-l-primary-500 rounded-xl overflow-hidden shadow-sm my-1">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-primary-50 via-primary-50/15 to-white border-b border-primary-300/40">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary-500" />
+              <span className="text-[9px] font-bold text-primary-600 uppercase tracking-wider">Risk Assessment</span>
             </div>
             <div className="px-3 py-2.5">
               <div className="flex items-center gap-2">
@@ -428,7 +428,7 @@ const FailureModeTreeNode: React.FC<{
                     defaultValue={fm.severity || ''}
                     onChange={e => debouncedUpdate('severity', parseInt(e.target.value) || null)}
                     placeholder="1-10"
-                    className="w-full text-xs text-center font-semibold text-slate-700 bg-blue-50/10 border border-blue-300/70 rounded-lg px-2 py-1.5 focus:border-blue-500 focus:outline-none mt-0.5 transition-colors"
+                    className="w-full text-xs text-center font-semibold text-slate-700 bg-primary-50/10 border border-primary-300/70 rounded-lg px-2 py-1.5 focus:border-primary-500 focus:outline-none mt-0.5 transition-colors"
                   />
                 </div>
                 <span className="text-slate-300 text-sm font-bold mt-3">×</span>
@@ -439,7 +439,7 @@ const FailureModeTreeNode: React.FC<{
                     defaultValue={fm.occurrence || ''}
                     onChange={e => debouncedUpdate('occurrence', parseInt(e.target.value) || null)}
                     placeholder="1-10"
-                    className="w-full text-xs text-center font-semibold text-slate-700 bg-blue-50/10 border border-blue-300/70 rounded-lg px-2 py-1.5 focus:border-blue-500 focus:outline-none mt-0.5 transition-colors"
+                    className="w-full text-xs text-center font-semibold text-slate-700 bg-primary-50/10 border border-primary-300/70 rounded-lg px-2 py-1.5 focus:border-primary-500 focus:outline-none mt-0.5 transition-colors"
                   />
                 </div>
                 <span className="text-slate-300 text-sm font-bold mt-3">=</span>
@@ -508,7 +508,7 @@ export const RCMFunctionPanel: React.FC<RCMFunctionPanelProps> = ({
         <button
           onClick={onAISuggest}
           disabled={aiLoading === 'suggest'}
-          className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-sm font-medium text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 shadow-sm"
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary-50 border border-primary-200 rounded-lg text-sm font-medium text-primary-700 hover:bg-primary-100 transition-colors disabled:opacity-50 shadow-sm"
         >
           {aiLoading === 'suggest' ? <RefreshCw size={14} className="animate-spin" /> : <Sparkles size={14} />}
           AI Suggest Functions

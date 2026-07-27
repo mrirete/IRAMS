@@ -19,7 +19,7 @@ import type { ReliabilityAnalysis, ReliabilityAnalysisType, ReliabilityStudy, Re
 
 // ── Study lifecycle (0204) ────────────────────────────────────
 const STATUS_META: Record<ReliabilityStudyStatus, { label: string; cls: string }> = {
-    active:    { label: 'Active',    cls: 'bg-blue-50 text-blue-700 border-blue-200' },
+    active:    { label: 'Active',    cls: 'bg-primary-50 text-primary-700 border-primary-200' },
     in_review: { label: 'In Review', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
     approved:  { label: 'Approved',  cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     archived:  { label: 'Archived',  cls: 'bg-slate-100 text-slate-500 border-slate-200' },

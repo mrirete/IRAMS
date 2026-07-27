@@ -91,7 +91,7 @@ export const RCMEvidencePanel: React.FC<Props> = ({ study, failureModes, decisio
                     <FlaskConical size={18} className="text-primary-500" />
                     <h3 className="text-base font-semibold text-slate-800">Failure-pattern verdict</h3>
                     {verdict && verdict.pattern !== 'unknown' && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${verdict.pattern === 'wear-out' ? 'bg-blue-50 text-blue-700 border-blue-200' : verdict.pattern === 'random' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase ${verdict.pattern === 'wear-out' ? 'bg-primary-50 text-primary-700 border-primary-200' : verdict.pattern === 'random' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-red-50 text-red-600 border-red-200'}`}>
                             {verdict.pattern} · β={verdict.beta}
                         </span>
                     )}
@@ -144,7 +144,7 @@ export const RCMEvidencePanel: React.FC<Props> = ({ study, failureModes, decisio
             {/* ── 3. CBM coverage ── */}
             <div className="bg-white border border-slate-200 rounded-xl p-5">
                 <div className="flex items-center gap-2 mb-1">
-                    <Radio size={16} className="text-blue-500" />
+                    <Radio size={16} className="text-primary-500" />
                     <h3 className="text-base font-semibold text-slate-800">On-condition task coverage</h3>
                     {uncovered.length > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">{uncovered.length} uncovered</span>}
                 </div>

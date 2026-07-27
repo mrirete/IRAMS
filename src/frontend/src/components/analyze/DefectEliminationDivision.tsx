@@ -57,7 +57,7 @@ export const DefectEliminationDivision: React.FC<DefectEliminationDivisionProps>
                    and clipped its own steps. ─────────────────────────────────── */}
             <div className="flex items-center gap-x-1.5 gap-y-2 flex-wrap px-1">
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 mr-1">
-                    <Target size={13} className="text-cyan-500" />
+                    <Target size={13} className="text-primary-500" />
                     Elimination loop
                 </span>
                 {WORKFLOW_STEPS.map((step, i) => (

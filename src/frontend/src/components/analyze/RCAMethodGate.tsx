@@ -90,10 +90,10 @@ const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, adv
     const changing = committed && switching;
 
     return (
-        <div className="rounded-xl border border-blue-200/60 bg-gradient-to-br from-blue-50/50 to-indigo-50/40 p-5 shadow-sm md:p-6">
+        <div className="rounded-xl border border-primary-200/60 bg-gradient-to-br from-primary-50/50 to-primary-50/40 p-5 shadow-sm md:p-6">
             <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2 text-sm font-extrabold text-blue-900 sm:text-base">
-                    <AlertTriangle size={16} className="text-blue-600" />
+                <span className="flex items-center gap-2 text-sm font-extrabold text-primary-900 sm:text-base">
+                    <AlertTriangle size={16} className="text-primary-600" />
                     {changing ? 'Change the analysis method' : 'Choose one analysis method'}
                 </span>
                 <div className="flex shrink-0 items-center gap-2">

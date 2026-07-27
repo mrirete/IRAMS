@@ -1011,7 +1011,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                                 <AvatarStack collaborators={(study as any).collaborators || []} max={3} />
                                             </div>
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                                <button onClick={() => { setRenamingStudyId(study.id); setRenameValue(study.title); }} title="Rename" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Edit3 size={12} /></button>
+                                                <button onClick={() => { setRenamingStudyId(study.id); setRenameValue(study.title); }} title="Rename" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary-600"><Edit3 size={12} /></button>
                                                 <button onClick={() => handleDuplicateStudy(study)} title="Duplicate" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary-600"><Copy size={12} /></button>
                                                 <button onClick={() => setDeleteConfirm(study.id)} title="Delete" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"><Trash2 size={12} /></button>
                                             </div>
@@ -1228,11 +1228,11 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                 <div className="space-y-4">
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2"><LayoutGrid size={16} className="text-blue-600" /> P&ID Configurations</h3>
+                            <h3 className="text-base font-semibold text-slate-800 flex items-center gap-2"><LayoutGrid size={16} className="text-primary-600" /> P&ID Configurations</h3>
                             <p className="text-xs text-slate-500 mt-0.5">Create and manage piping & instrumentation diagrams for process visualization and equipment health overlays</p>
                         </div>
                         <button onClick={() => setShowNewPidModal(true)}
-                            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-600 text-white text-sm font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
+                            className="flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-primary-600 to-primary-600 text-white text-sm font-medium rounded-lg shadow-sm hover:shadow-md transition-all">
                             <Plus size={14} /> New P&ID
                         </button>
                     </div>
@@ -1250,7 +1250,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
 
                     {pidStudiesLoading ? (
                         <div className="flex items-center justify-center py-16">
-                            <Loader2 size={24} className="animate-spin text-blue-600" />
+                            <Loader2 size={24} className="animate-spin text-primary-600" />
                             <span className="ml-2 text-sm text-slate-500">Loading P&ID configurations…</span>
                         </div>
                     ) : pidStudies.length === 0 ? (
@@ -1260,7 +1260,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                             <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Create your first P&ID to visualize process equipment, upload background drawings, and overlay live asset health data.</p>
                             <div className="flex items-center justify-center gap-2 mt-4">
                                 <button onClick={() => setShowNewPidModal(true)}
-                                    className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-primary-500 transition-colors">
+                                    className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 text-white text-xs font-medium rounded-lg hover:bg-primary-500 transition-colors">
                                     <Plus size={12} /> Create New P&ID
                                 </button>
                                 <button onClick={() => handleCreatePidStudy('Demo — Process Unit', 'Sample P&ID with ISA 5.1 symbols')}
@@ -1278,7 +1278,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             {filteredPidStudies.map(study => (
                                 <div key={study.id} onClick={() => handleOpenPidStudy(study)}
-                                    className="group relative bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-blue-300 hover:shadow-md transition-all">
+                                    className="group relative bg-white rounded-xl border border-slate-200 p-4 cursor-pointer hover:border-primary-300 hover:shadow-md transition-all">
                                     {/* Delete confirm overlay */}
                                     {deletePidConfirm === study.id && (
                                         <div className="absolute inset-0 bg-white/95 rounded-xl z-10 flex flex-col items-center justify-center gap-2 p-4" onClick={e => e.stopPropagation()}>
@@ -1291,13 +1291,13 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                     )}
                                     <div className="flex items-start justify-between mb-2">
                                         <div className="flex-1 min-w-0">
-                                            <h4 className="text-sm font-semibold text-slate-800 truncate group-hover:text-blue-700 transition-colors">{study.title}</h4>
+                                            <h4 className="text-sm font-semibold text-slate-800 truncate group-hover:text-primary-700 transition-colors">{study.title}</h4>
                                             {study.description && <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{study.description}</p>}
                                         </div>
-                                        <ChevronRight size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors mt-0.5 shrink-0 ml-2" />
+                                        <ChevronRight size={14} className="text-slate-300 group-hover:text-primary-500 transition-colors mt-0.5 shrink-0 ml-2" />
                                     </div>
                                     <div className="flex items-center gap-3 mb-3 text-[10px]">
-                                        <span className="px-1.5 py-0.5 bg-blue-50 rounded text-blue-500 font-mono">{study.equipment?.length || 0} equipment</span>
+                                        <span className="px-1.5 py-0.5 bg-primary-50 rounded text-primary-500 font-mono">{study.equipment?.length || 0} equipment</span>
                                         <span className="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono">{study.connections?.length || 0} connections</span>
                                     </div>
                                     <div className="flex items-center justify-between">
@@ -1306,7 +1306,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                             <AvatarStack collaborators={(study as any).collaborators || []} max={3} />
                                         </div>
                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                                            <button onClick={() => handleDuplicatePidStudy(study)} title="Duplicate" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-blue-600"><Copy size={12} /></button>
+                                            <button onClick={() => handleDuplicatePidStudy(study)} title="Duplicate" className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary-600"><Copy size={12} /></button>
                                             <button onClick={() => setDeletePidConfirm(study.id)} title="Delete" className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"><Trash2 size={12} /></button>
                                         </div>
                                     </div>
@@ -1323,17 +1323,17 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                                 <div>
                                     <label className="text-xs font-medium text-slate-600">Title *</label>
                                     <input value={newPidTitle} onChange={e => setNewPidTitle(e.target.value)} autoFocus placeholder="e.g. Gas Treatment Unit — Level 2"
-                                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none" />
+                                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-400 focus:ring-1 focus:ring-primary-200 outline-none" />
                                 </div>
                                 <div>
                                     <label className="text-xs font-medium text-slate-600">Description</label>
                                     <textarea value={newPidDesc} onChange={e => setNewPidDesc(e.target.value)} rows={2} placeholder="Brief description of the process being depicted…"
-                                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-200 outline-none resize-none" />
+                                        className="mt-1 w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:border-primary-400 focus:ring-1 focus:ring-primary-200 outline-none resize-none" />
                                 </div>
                                 <div className="flex justify-end gap-2 pt-2">
                                     <button onClick={() => setShowNewPidModal(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg">Cancel</button>
                                     <button onClick={() => handleCreatePidStudy(newPidTitle || 'Untitled P&ID', newPidDesc)} disabled={!newPidTitle.trim()}
-                                        className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-primary-500 disabled:opacity-40 transition-colors">
+                                        className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-500 disabled:opacity-40 transition-colors">
                                         Create P&ID
                                     </button>
                                 </div>
@@ -1358,7 +1358,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                         </div>
                         <AvatarStack collaborators={(activePidStudy as any).collaborators || []} size="md" />
                         <button onClick={() => setShowPidTeam(true)}
-                            className="relative flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-500 hover:from-blue-600 hover:to-blue-600 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-blue-500/25 hover:shadow-xl hover:shadow-blue-500/30 hover:scale-[1.02]"
+                            className="relative flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-500 to-primary-500 hover:from-primary-600 hover:to-primary-600 text-white font-semibold rounded-xl text-xs transition-all shadow-lg shadow-primary-500/25 hover:shadow-xl hover:shadow-primary-500/30 hover:scale-[1.02]"
                             title="Invite people, teams, or departments to collaborate on this P&ID">
                             {!((activePidStudy as any).collaborators?.length) && (
                               <span className="absolute -top-1 -right-1 flex h-3 w-3">

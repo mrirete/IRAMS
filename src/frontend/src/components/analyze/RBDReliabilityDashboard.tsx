@@ -120,7 +120,7 @@ const RBDReliabilityDashboard: React.FC<Props> = ({
                     </div>
                     <div className="p-3 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200">
                         <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">System MTBF</div>
-                        <div className="text-xl font-black font-mono text-blue-600">
+                        <div className="text-xl font-black font-mono text-primary-600">
                             {topoMTBF > 100000 ? `${(topoMTBF / 1000).toFixed(0)}k` : topoMTBF.toFixed(0)}
                         </div>
                         <div className="text-[9px] text-slate-400 mt-0.5">hours (topology-aware)</div>
@@ -213,7 +213,7 @@ const RBDReliabilityDashboard: React.FC<Props> = ({
             {kofnGroups.length > 0 && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
                     <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
-                        <Calculator size={14} className="text-blue-500" /> Redundancy & Voting Configuration
+                        <Calculator size={14} className="text-primary-500" /> Redundancy & Voting Configuration
                     </h3>
                     <div className="space-y-3">
                         {kofnGroups.map(kg => (

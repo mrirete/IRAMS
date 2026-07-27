@@ -113,7 +113,7 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
 
   const kpis = React.useMemo(() => [
     { label: 'Total Studies', value: studies.length, icon: <FileText size={20} />, color: 'text-slate-600 bg-slate-50', accentColor: '#64748b' },
-    { label: 'In Progress', value: studies.filter(s => s.status === 'in_progress').length, icon: <Clock size={20} />, color: 'text-blue-600 bg-blue-50', accentColor: '#3b82f6' },
+    { label: 'In Progress', value: studies.filter(s => s.status === 'in_progress').length, icon: <Clock size={20} />, color: 'text-primary-600 bg-primary-50', accentColor: '#3b82f6' },
     { label: 'Approved', value: studies.filter(s => s.status === 'approved').length, icon: <CheckCircle size={20} />, color: 'text-emerald-600 bg-emerald-50', accentColor: '#10b981' },
     { label: 'Under Review', value: studies.filter(s => s.status === 'review').length, icon: <AlertTriangle size={20} />, color: 'text-amber-600 bg-amber-50', accentColor: '#f59e0b' },
   ], [studies]);
@@ -215,7 +215,7 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
                     <div className="flex items-center justify-between mt-3">
                       <div className="flex items-center gap-3 text-[10px] text-slate-400">
                         <span className="flex items-center gap-1">
-                          {study.rcm_source === 'ai_generated' ? <><Sparkles size={10} className="text-blue-400" /> AI</> : '📝 Manual'}
+                          {study.rcm_source === 'ai_generated' ? <><Sparkles size={10} className="text-primary-400" /> AI</> : '📝 Manual'}
                         </span>
                         <span>{new Date(study.updated_at).toLocaleDateString()}</span>
                       </div>

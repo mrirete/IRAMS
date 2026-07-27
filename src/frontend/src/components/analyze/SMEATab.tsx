@@ -14,11 +14,11 @@ import { analyzeService, type SMEAWorksheet, type SMEAItem } from '../../eam/ser
 import { useAssetContext } from '../../contexts/AssetContext';
 
 const STATUS_CLS: Record<string, string> = {
-    open: 'bg-slate-100 text-slate-600', monitored: 'bg-blue-50 text-blue-700',
+    open: 'bg-slate-100 text-slate-600', monitored: 'bg-primary-50 text-primary-700',
     sustained: 'bg-emerald-50 text-emerald-700', dropped: 'bg-slate-50 text-slate-400 line-through',
 };
 const spnCls = (spn: number) =>
-    spn >= 500 ? 'bg-emerald-100 text-emerald-800' : spn >= 250 ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600';
+    spn >= 500 ? 'bg-emerald-100 text-emerald-800' : spn >= 250 ? 'bg-primary-100 text-primary-700' : 'bg-slate-100 text-slate-600';
 
 const Score: React.FC<{ value: number; onChange: (v: number) => void; title: string }> = ({ value, onChange, title }) => (
     <input type="number" min={1} max={10} value={value} title={title}

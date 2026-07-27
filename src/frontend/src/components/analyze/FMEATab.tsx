@@ -168,7 +168,7 @@ export const FMEATab: React.FC<FMEATabProps> = ({
                                                 <button
                                                     onClick={e => handleEdit(ws, e)}
                                                     title="Edit worksheet"
-                                                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                                                    className="p-1.5 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
                                                 >
                                                     <Edit3 size={14} />
                                                 </button>
