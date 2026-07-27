@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.tsx",
+    "index.html",
+    "src/**/*.test.{ts,tsx}",
+    "tests/**/*.{ts,mjs}"
+  ],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": [
+    "supabase/functions/**",
+    "src/vitest.d.ts",
+    "src/vite-env.d.ts"
+  ],
+  "ignoreDependencies": ["knip"]
+}
