@@ -21,7 +21,10 @@ serve(async (req) => {
             { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
         )
 
-        const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
+        // JWT passed explicitly: newer auth-js drops the Authorization-header
+        // fallback (see the matching note in agent-run/index.ts).
+        const jwt = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '')
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser(jwt)
         if (authError || !user) throw new Error('Unauthorized')
 
         // Optional: Check 'roles' in public.users or dictionary to ensure they are Admin

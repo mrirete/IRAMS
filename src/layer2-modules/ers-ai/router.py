@@ -470,7 +470,7 @@ async def ai_health():
     return {
         "status": "healthy" if GEMINI_API_KEY else "degraded",
         "api_key_configured": bool(GEMINI_API_KEY),
-        "model": "gemini-2.0-flash",
+        "model": "gemini-2.5-flash",
         "audit_logging": _gs() is not None,
         "capabilities": {
             "chat": True,

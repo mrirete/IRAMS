@@ -16,7 +16,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.5.0";
 import type { ToolContext } from "../agent-run/types.ts";
 import { AGENTS } from "../agent-run/agents.ts";
-import { runToolLoop } from "../agent-run/gemini.ts";
+import { MODEL, runToolLoop } from "../agent-run/gemini.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -56,7 +56,7 @@ serve(async (req) => {
         response_text: loop.answer,
         context_type: agent.name,
         context_summary: `scheduled briefing; tools: ${loop.toolCalls.join(", ") || "none"}`,
-        model_used: "gemini-2.0-flash",
+        model_used: MODEL,
         tokens_used: loop.tokensUsed,
         duration_ms: Date.now() - started,
       });

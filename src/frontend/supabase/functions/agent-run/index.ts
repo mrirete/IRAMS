@@ -9,7 +9,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.5.0";
 import type { AgentProposal, AgentResponse, ToolContext } from "./types.ts";
 import { AGENTS } from "./agents.ts";
-import { runToolLoop } from "./gemini.ts";
+import { MODEL, runToolLoop } from "./gemini.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -32,9 +32,14 @@ serve(async (req) => {
     if (!GEMINI_API_KEY) return json({ error: "GEMINI_API_KEY not configured on the server" }, 500);
 
     // 1. Authn — user-scoped client (carries the caller's JWT; reads respect RLS).
+    // Pass the JWT to getUser EXPLICITLY: newer auth-js (re-resolved by esm.sh
+    // under the pinned supabase-js on every redeploy) no longer falls back to
+    // the global Authorization header, which turned a 2026-07-27 redeploy into
+    // a blanket 401 with zero code change.
     const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.replace(/^Bearer\s+/i, "");
     const db = createClient(SUPABASE_URL, ANON_KEY, { global: { headers: { Authorization: authHeader } } });
-    const { data: { user }, error: authErr } = await db.auth.getUser();
+    const { data: { user }, error: authErr } = await db.auth.getUser(jwt);
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     // 2. Route.
@@ -64,7 +69,7 @@ serve(async (req) => {
       response_text: loop.answer,
       context_type: agent.name,
       context_summary: `tools: ${loop.toolCalls.join(", ") || "none"}`,
-      model_used: "gemini-2.0-flash",
+      model_used: MODEL,
       tokens_used: loop.tokensUsed,
       duration_ms: duration,
     });

@@ -31,7 +31,7 @@ logger = logging.getLogger("ers.ai.service")
 
 # ── Gemini Configuration ────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 _client: genai.Client | None = None
 

@@ -1,6 +1,6 @@
 # The $150k Replacement Plan — Reliability Specialist
 
-**Date:** 2026-07-27 · **Status:** Phase A in execution · **Owner:** Specialist-led strategy (see `IRAMS-Specialist-Strategy.md`)
+**Date:** 2026-07-27 (rev. 2 — strategy, PSC/Golden Spot and culture layers added) · **Status:** Phase A SHIPPED · **Owner:** Specialist-led strategy (see `IRAMS-Specialist-Strategy.md`)
 
 ## 1. The claim we have to be able to defend
 
@@ -32,6 +32,9 @@ what actually happened after the recommendation was applied.* That closed loop i
 | 9 | RCA facilitation after big failures | ✅ RCA module with evidence grading (0217) | **C2** auto-draft RCA on downtime threshold |
 | 10 | Spares/stock advice tied to criticality | ❌ Not connected to Specialist | **B4** after Migration Center phase 3 data lands |
 | 11 | Always-on monitoring (a human is ~1 FTE; agent never sleeps) | ⚠️ Cron briefing exists; watchdogs don't | **C1** emergent-bad-actor + PM-drift + DQ-regression watchdogs feeding proposals |
+| 12 | **Develop the maintenance strategy** — per-asset task selection from criticality + failure behaviour, not folklore | ⚠️ All the engines exist (criticality assessments, FMECA/RCM, Weibull, meter-PM) but nothing composes them into a per-asset strategy verdict | **D** strategy engine: every critical asset gets a deliberate, defensible strategy |
+| 13 | **Assure success, not just prevent failure** — where does the plant sit vs its optimum, and how do we keep it there | ⚠️ PSC layer shipped (Golden Spot, MTOP/SR, SMEA, D-I-S-G forecasting) but lives beside the Specialist, not inside it | **E** Golden-Spot operating strategy: the published-framework moat |
+| 14 | Build the reliability culture — TPM/operator care, leadership cadence, wins made visible | ❌ Building blocks exist (rounds, My Work, OEE RPC, value ledger) with no program layer | **F** culture & leadership operating system |
 
 ## 3. The economics, stated plainly
 
@@ -61,7 +64,7 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
 
 ## 5. Phases
 
-### Phase A — prove value (this session)
+### Phase A — prove value (SHIPPED 2026-07-27, commit 4a2f45a, migration 0228 applied)
 - **A1. Assessment snapshots** — `ers_assessment_snapshots` (0228): every qualifying run persists
   KPIs + full findings JSON + narrative, append-only, admin-write. Report shows deltas vs the
   previous snapshot. This creates the baseline→now story and makes the briefing trendable.
@@ -93,7 +96,110 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
 - **C2.** Downtime-threshold RCA auto-draft into the RCA module.
 - **C3.** Customer-facing ROI page: subscription cost vs measured value, printable for renewals.
 
-## 6. Guardrails (unchanged)
+### Phase D — maintenance-strategy development (the engineer's real deliverable)
+
+A $150k engineer's signature artifact is the **maintenance strategy**: for each asset, a
+deliberate, documented decision about *how* it will be maintained. IRAMS already owns every
+input — criticality assessments (0088), FMECA + RCM (0118), censored Weibull fits, meter-based PM,
+condition monitoring, spares data. Phase D composes them:
+
+- **D1. Strategy engine (deterministic, `lib/maintenanceStrategy`-style):** per asset, combine
+  criticality × failure behaviour (Weibull β) × detectability/monitorability × cost of failure →
+  one of: **run-to-failure** (low-consequence, β≈1), **fixed-interval PM** (wear-out β>1.5, B10
+  basis), **condition-based / PdM** (random β≈1 + monitorable — sensors or rounds), **redesign /
+  defect elimination** (infant mortality β<1 — more PM makes it worse), **RCM study** (safety-
+  critical or high-stakes ambiguity). Output = a strategy verdict with the evidence chain, drafted
+  into the proposals queue; approval writes/updates `recurring_work` with analysis provenance
+  (`linked_pm_id` lineage already exists).
+- **D2. Strategy coverage KPI** in assessment + snapshots: "% of A/B-criticality assets with a
+  deliberate strategy" (vs inherited/imported folklore). World-class ≥95% on criticals. This is a
+  first-class trend number — it is how a plant manager sees the Specialist *building* something,
+  not just flagging things.
+- **D3. Task-level rationalization:** for existing PM libraries, map each task to the failure mode
+  it defends (FMEA link); tasks defending nothing → kill-list with annual hours freed (feeds B3's
+  economics). Duplicate-defence tasks → consolidate.
+- **D4. Living strategy:** watchdogs (C1) re-open a strategy when its evidence changes — β drifts,
+  a new failure mode appears, sensor coverage arrives. Strategies carry review-by dates like any
+  governed document.
+
+### Phase E — the Golden Spot operating strategy (PSC: the moat no competitor can copy)
+
+IRAMS is the reference implementation of the user's published PSC framework (Olorunfemi 2026,
+*A Success-Centric Evolution of RCM*). Everything else in this plan, competitors can eventually
+imitate; **a published, peer-reviewed framework with its engines already shipped
+(`lib/psc.ts`, SMEA, D-I-S-G forecasting) is a defensible category position: the Specialist
+doesn't just prevent failure — it keeps the plant *in its Golden Spot*.**
+
+- **E1. Success layer in the assessment:** fleet Golden-Spot residency, MTOP, MTTRg, SR
+  (≥90 target / ≥95 world-class) and OPE = SR×PQ×EE (≥85) join the report + snapshots for assets
+  with banded reading points; the org's position is stated plainly: "you sit at X — the top
+  quartile sits at Y — here is the residency gap in hours and dollars."
+- **E2. Golden-Spot watchdog (C1 family):** Sub-Optimal Drift entry (not just alarm breach)
+  → early proposal *before* Critical Departure, using the D-I-S-G drift forecasts already shipped
+  (predicted time-to-departure). This operationalizes "defend the optimum" as the daily loop.
+- **E3. SMEA into strategy:** D1's verdicts consume SMEA's SPN (Value × Sustainability ×
+  Monitorability) so what gets *sustained* is ranked with the same rigor FMEA ranks what gets
+  prevented — success modes with high SPN get explicit sustainment tasks in the strategy.
+- **E4. RSA (Root Success Analysis) agent mode:** when an asset beats its class (top MTOP/SR),
+  the Specialist investigates *why* (positive deviance) and proposes propagating the practice —
+  the success-side mirror of RCA, and the cheapest improvement mechanism a plant owns.
+- **E5. D-I-S-G at the front of life:** new/overhauled assets get design-and-installation quality
+  gates (time-to-Success tracked); infant-mortality signatures (β<0.85) route to installation-
+  quality review, not more PM.
+
+### Phase F — TPM & proactive reliability culture (the leadership operating system)
+
+Tools don't move plants; operating rhythms do. A world-class RE spends half their week on culture:
+making operators owners, making leaders review the right numbers, making wins visible. The
+Specialist becomes the **cadence engine**:
+
+- **F1. Operator care (TPM autonomous maintenance):** clean-inspect-lubricate routes built from
+  the strategy engine's CBM verdicts, delivered as mobile rounds (condition-data module); abnormality
+  reporting one tap from a round; AM step progression tracked per area.
+- **F2. OEE + OPE side by side:** the classic loss lens (OEE RPC exists, 0203) next to the
+  success lens (OPE) — availability losses decomposed into the six big losses, each loss tied to
+  the asset strategies (D) that attack it.
+- **F3. Leadership pack (auto-drafted, cadence-bound):** weekly reliability meeting agenda from
+  live data (new bad actors, proposals awaiting decision >7 days, wins realized); monthly
+  management report (snapshot deltas, measured value, strategy coverage, SR trend) — the
+  Specialist writes the pack, the leader runs the room. Decision latency (time-to-approve) is
+  itself a tracked culture KPI.
+- **F4. Wins made visible:** value-ledger events pushed to the contextual-messaging threads of the
+  crews that did the work — reinforcement, not reporting.
+- **F5. Skills & accountability:** training/qualification matrix vs the strategies deployed (who
+  can do precision alignment? laser? thermography?); gaps become proposals; policy-deployment
+  goals (hoshin-style) cascade from the plant SR/OPE target to area-level KPIs on My Work.
+
+## 6. World-class program elements — adoption map
+
+Benchmarks the majors sell against (SMRP Body of Knowledge, Uptime Elements, ISO 55000/55001,
+TPM pillars, RCM-II). Status: ✅ shipped in IRAMS · ⚠️ partial · ❌ roadmap.
+
+| Program element | Status | Where / next |
+|---|---|---|
+| Criticality analysis | ✅ | 0088 assessments; feeds D1 |
+| FMEA/FMECA + RCM | ✅ | 0118 + FMECA division; D3 links tasks→modes |
+| Weibull / life-data analysis | ✅ | assessment + analyst + studies (A4) |
+| PM optimization | ⚠️ | flags shipped; B3 fleet-wide economics |
+| Predictive maintenance | ✅ | Predict: FFT/envelope, bearing freqs, rules, alert diagnosis |
+| Alarm rationalization | ✅ | 0205 — fold into E2 watchdog |
+| Defect elimination | ✅ | DE panel + evidence confidence (0218); F4 celebrates closures |
+| RCA (evidence-graded) | ✅ | 0217; C2 auto-draft |
+| Planning & scheduling excellence | ⚠️ | schedule compliance measured; wrench-time/backlog-weeks KPIs → F3 pack |
+| MRO storeroom / spares optimization | ⚠️ | ATP netting shipped; B4 criticality-driven min/max proposals |
+| Precision maintenance standards | ❌ | alignment/balance/lube specs as task-library standards (D3 attach) |
+| Lubrication program | ❌ | route-based, from D1 CBM verdicts (F1 delivery) |
+| Operator-driven reliability (TPM AM) | ❌ | F1 |
+| OEE / six big losses | ⚠️ | RPC exists; F2 surfaces + decomposes |
+| Leadership cadence & scorecards | ❌ | F3 |
+| Skills / qualification matrix | ⚠️ | qualifications table exists; F5 gap analysis |
+| Asset lifecycle / repair-vs-replace | ⚠️ | RUL reset on capital events exists; economics popup on dossier → B-phase |
+| Warranty recovery | ✅ | assessment section (self-funding closer) |
+| Management of change | ⚠️ | audit trail exists; strategy re-open (D4) is the reliability MoC |
+| Benchmarking flywheel | ❌ | consented anonymized cross-tenant aggregation (strategy O1 decision) |
+| **Success-centric layer (PSC/Golden Spot)** | ✅ engines / ⚠️ integration | **E — nobody else has this; it is the category claim** |
+
+## 7. Guardrails (unchanged)
 
 Every number deterministic; LLM writes prose over computed findings, never the reverse. Human
 approves every outward action (`ers_agent_actions` → Deliver). Snapshots append-only. All agent

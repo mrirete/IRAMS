@@ -69,11 +69,14 @@ serve(async (req) => {
 
   try {
     // 1. Authn — the caller must be a signed-in user of this workspace.
+    // JWT passed explicitly: newer auth-js drops the header fallback (see the
+    // matching note in agent-run/index.ts).
     const authHeader = req.headers.get("Authorization") ?? "";
+    const jwt = authHeader.replace(/^Bearer\s+/i, "");
     const userClient = createClient(SUPABASE_URL, ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    const { data: { user }, error: authErr } = await userClient.auth.getUser(jwt);
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const body = await req.json().catch(() => ({}));

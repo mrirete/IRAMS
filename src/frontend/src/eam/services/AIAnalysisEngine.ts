@@ -306,7 +306,7 @@ async function callGemini(prompt: string, temperature: number = 0.3): Promise<st
         const sysInstruction = (RELANTERN_SYSTEM_INSTRUCTION || '') +
             '\n\nIMPORTANT: Always respond with valid JSON only. No markdown, no code fences, just raw JSON.';
         const response = await ai.models.generateContent({
-            model: 'gemini-2.0-flash',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 systemInstruction: sysInstruction,
@@ -1787,7 +1787,7 @@ Respond as JSON:
             const sysInstruction = (RELANTERN_SYSTEM_INSTRUCTION || '') +
                 '\n\nIMPORTANT: Always respond with valid JSON only. No markdown, no code fences, just raw JSON.';
             const response = await ai.models.generateContent({
-                model: 'gemini-2.0-flash',
+                model: 'gemini-2.5-flash',
                 contents: [{
                     role: 'user',
                     parts: [

@@ -39,7 +39,14 @@ const fetchWithRetry: typeof fetch = async (input, init) => {
         const ctrl = new AbortController();
         const onCallerAbort = () => ctrl.abort((callerSignal as any)?.reason);
         callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
-        const timer = setTimeout(() => ctrl.abort(new DOMException('Request timed out', 'TimeoutError')), PER_ATTEMPT_TIMEOUT_MS);
+        // Hung-connection watchdog for idempotent reads ONLY. POSTs (writes,
+        // edge-function agent runs) get no artificial deadline: an LLM briefing
+        // legitimately runs 10–30s, and aborting the single non-retryable
+        // attempt at 10s surfaced as random "Failed to send a request to the
+        // Edge Function" — slow agents died, fast ones survived.
+        const timer = retryable
+            ? setTimeout(() => ctrl.abort(new DOMException('Request timed out', 'TimeoutError')), PER_ATTEMPT_TIMEOUT_MS)
+            : null;
         try {
             return await fetch(input, { ...init, signal: ctrl.signal });
         } catch (err: any) {
@@ -49,7 +56,7 @@ const fetchWithRetry: typeof fetch = async (input, init) => {
             if (!retryable || attempt >= MAX_ATTEMPTS) throw err;
             await new Promise(r => setTimeout(r, 300 * attempt)); // 300ms, 600ms, 900ms
         } finally {
-            clearTimeout(timer);
+            if (timer) clearTimeout(timer);
             callerSignal?.removeEventListener('abort', onCallerAbort);
         }
     }

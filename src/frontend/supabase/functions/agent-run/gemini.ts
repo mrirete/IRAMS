@@ -2,7 +2,9 @@
 // allowed tool, feed the result back, and repeat until it returns prose.
 import type { AgentDefinition, ToolContext, ToolSource } from "./types.ts";
 
-const MODEL = "gemini-2.0-flash";
+// gemini-2.0-flash was retired by Google (404 as of 2026-07); overridable so
+// the next retirement is a secret change, not a redeploy.
+export const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
 const ENDPOINT = (key: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
 const MAX_TURNS = 6;
