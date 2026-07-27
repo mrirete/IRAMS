@@ -7,14 +7,14 @@ import React, { useState, useCallback, useRef } from 'react';
 import {
     X, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle,
     XCircle, Download, ChevronRight, Loader2, FileCheck,
-    Wrench, Users, Package, Building2, CalendarClock, Boxes, Gauge, ListChecks
+    Wrench, Users, Package, Building2, CalendarClock, Boxes, Gauge, ListChecks, Tags
 } from 'lucide-react';
 import {
     parseImportFile, detectImportType,
     downloadAssetTemplate, downloadBOMTemplate,
     downloadRecurringJobTemplate, downloadPeopleTemplate,
     downloadInventoryTemplate, downloadVendorTemplate,
-    downloadReadingsTemplate, downloadJobPlanTemplate,
+    downloadReadingsTemplate, downloadJobPlanTemplate, downloadFailureCodesTemplate,
     type ImportType, type ParseResult, type ParsedRow
 } from '../../services/assetTemplates';
 import { outcomesToCsv, type ImportResult } from '../../services/importTypes';
@@ -34,13 +34,14 @@ const IMPORT_TYPES: { type: ImportType; label: string; desc: string; icon: React
     { type: 'vendor',    label: 'Vendors',         desc: 'Suppliers & contractors',         icon: <Building2 size={20} />,      color: 'orange',  downloadFn: downloadVendorTemplate },
     { type: 'readings',  label: 'Readings',        desc: 'Meter & condition history',       icon: <Gauge size={20} />,          color: 'rose',    downloadFn: downloadReadingsTemplate },
     { type: 'jobplan',   label: 'Job Plans',       desc: 'PM task lists & operations',      icon: <ListChecks size={20} />,     color: 'violet',  downloadFn: downloadJobPlanTemplate },
+    { type: 'failurecodes', label: 'Failure Codes', desc: 'Your ISO 14224 / SAP catalogs',   icon: <Tags size={20} />,           color: 'teal',    downloadFn: downloadFailureCodesTemplate },
 ];
 
 // Display label per type
 const TYPE_LABELS: Record<ImportType, string> = {
     asset: 'Assets', bom: 'BOM Items', recurring: 'Recurring Jobs', people: 'People',
     inventory: 'Inventory Items', workorder: 'Work Orders', location: 'Locations',
-    vendor: 'Vendors', readings: 'Readings', jobplan: 'Job Plans', unknown: 'Records',
+    vendor: 'Vendors', readings: 'Readings', jobplan: 'Job Plans', failurecodes: 'Failure Codes', unknown: 'Records',
 };
 
 // Key field to show in validation table per type
@@ -55,6 +56,7 @@ const KEY_FIELDS: Record<ImportType, [string, string]> = {
     vendor: ['code', 'name'],
     readings: ['assettag', 'readingtype'],
     jobplan: ['pmcode', 'description'],
+    failurecodes: ['code', 'description'],
     unknown: ['', ''],
 };
 

@@ -29,7 +29,7 @@ function downloadWorkbook(wb: XLSX.WorkBook, filename: string): void {
     downloadBlob(blob, filename);
 }
 
-export type ImportType = 'asset' | 'bom' | 'recurring' | 'people' | 'inventory' | 'workorder' | 'location' | 'vendor' | 'readings' | 'jobplan' | 'unknown';
+export type ImportType = 'asset' | 'bom' | 'recurring' | 'people' | 'inventory' | 'workorder' | 'location' | 'vendor' | 'readings' | 'jobplan' | 'failurecodes' | 'unknown';
 
 // ─── Asset Template Columns ─────────────────────────────────────
 // hierarchyLevel is what actually places a row in the tree. assetType is the
@@ -416,6 +416,81 @@ export function downloadReadingsTemplate(): void {
     downloadWorkbook(wb, 'ERS_Readings_Import_Template.xlsx');
 }
 
+// ─── Failure-Code Catalog Template ──────────────────────────────
+// The codes a CMMS history refers to. Without them, imported failure codes are
+// free text that resolves to nothing in the semantic layer — the analytics
+// count the record as "coded" while the code itself decodes to blank.
+export const CODE_CATEGORIES = [
+    'FAILURE_MODE', 'FAILURE_CAUSE', 'FAULT_TYPE', 'REMEDY_CODE', 'WORK_TYPE', 'PRIORITY',
+];
+
+const FAILURE_CODE_COLUMNS = [
+    { header: 'category', description: `Which catalog this belongs to: ${CODE_CATEGORIES.join(', ')}`, required: true },
+    { header: 'code', description: 'The code exactly as it appears in your maintenance history', required: true },
+    { header: 'description', description: 'What the code means, in the words a planner would use', required: true },
+    { header: 'active', description: 'YES (default) or NO to load a retired code for history only', required: false },
+];
+
+const FAILURE_CODE_EXAMPLES = [
+    { category: 'FAILURE_MODE', code: 'VIB', description: 'Abnormal vibration', active: 'YES' },
+    { category: 'FAILURE_MODE', code: 'Bearing Failure', description: 'Bearing failure (legacy free-text code)', active: 'YES' },
+    { category: 'FAILURE_CAUSE', code: 'LUBR-DEGRAD', description: 'Lubricant degradation', active: 'YES' },
+    { category: 'REMEDY_CODE', code: 'RPL', description: 'Replace', active: 'YES' },
+];
+
+export function downloadFailureCodesTemplate(): void {
+    const wb = XLSX.utils.book_new();
+    const dataHeaders = FAILURE_CODE_COLUMNS.map(c => c.header);
+    const dataRows = FAILURE_CODE_EXAMPLES.map(ex => dataHeaders.map(h => (ex as any)[h] ?? ''));
+    const ws = XLSX.utils.aoa_to_sheet([dataHeaders, ...dataRows]);
+    ws['!cols'] = dataHeaders.map(h => ({ wch: Math.max(h.length + 4, 20) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Codes');
+
+    const instrData = [
+        ['Column', 'Required', 'Description'],
+        ...FAILURE_CODE_COLUMNS.map(c => [c.header, c.required ? 'YES' : 'no', c.description]),
+        [],
+        ['Why this matters'],
+        ['• Imported failure codes are stored as written — nothing rejects an unknown code.'],
+        ['• But an uncatalogued code resolves to blank in reporting, so the record counts as'],
+        ['  "coded" while showing no failure mode. That silently inflates coverage figures.'],
+        ['• Load your own catalog here and the history you already imported starts resolving.'],
+        [],
+        ['Getting your codes'],
+        ['• Admin › Migration Center can export every unresolved code already in your history,'],
+        ['  pre-filled into this format — complete the descriptions and import it back.'],
+        ['• Codes are matched EXACTLY, including case and spacing, so paste them unchanged.'],
+        ['• Re-importing a code updates its description rather than duplicating it.'],
+    ];
+    const instrWs = XLSX.utils.aoa_to_sheet(instrData);
+    instrWs['!cols'] = [{ wch: 16 }, { wch: 10 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
+
+    downloadWorkbook(wb, 'ERS_FailureCodes_Template.xlsx');
+}
+
+/** Build a pre-filled catalog sheet from codes found in the user's own history. */
+export function downloadUnresolvedCodes(rows: { category: string; code: string; uses: number }[]): void {
+    const wb = XLSX.utils.book_new();
+    const headers = FAILURE_CODE_COLUMNS.map(c => c.header);
+    const data = rows.map(r => [r.category, r.code, '', 'YES']);
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 4, 24) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Codes');
+
+    const usage = XLSX.utils.aoa_to_sheet([
+        ['Category', 'Code', 'Times used in your history'],
+        ...rows.map(r => [r.category, r.code, r.uses]),
+        [],
+        ['Fill in the description column on the Codes sheet, then import it from'],
+        ['Admin › Migration Center → Failure-code catalogs.'],
+    ]);
+    usage['!cols'] = [{ wch: 18 }, { wch: 30 }, { wch: 26 }];
+    XLSX.utils.book_append_sheet(wb, usage, 'Usage');
+
+    downloadWorkbook(wb, 'ERS_UnresolvedCodes.xlsx');
+}
+
 // ─── Job Plan / Task List Template ──────────────────────────────
 // One row per OPERATION. Rows are grouped by pmCode into the job plan of an
 // existing PM schedule — SAP task-list operations (PLPO) and Maximo job-plan
@@ -686,6 +761,7 @@ export const READING_TYPES = ['HOURS', 'KM', 'TEMPERATURE', 'VIBRATION', 'PRESSU
 const TYPE_SIGNATURES: { type: ImportType; required: string[]; distinguisher: string[] }[] = [
     { type: 'bom', required: ['assettag', 'inventorycode'], distinguisher: ['inventorycode'] },
     { type: 'recurring', required: ['code', 'assettag', 'scheduletype'], distinguisher: ['scheduletype', 'frequencyinterval'] },
+    { type: 'failurecodes', required: ['category', 'code', 'description'], distinguisher: ['category'] },
     { type: 'jobplan', required: ['pmcode', 'description'], distinguisher: ['operationno', 'pmcode'] },
     { type: 'readings', required: ['assettag', 'readingtype'], distinguisher: ['readingtype'] },
     { type: 'workorder', required: ['wonumber', 'assettag'], distinguisher: ['wonumber'] },
@@ -710,6 +786,7 @@ const REQUIRED_FIELDS: Record<ImportType, string[]> = {
     vendor: ['code', 'name', 'email'],
     readings: ['assettag', 'readingtype', 'date', 'value'],
     jobplan: ['pmcode', 'description'],
+    failurecodes: ['category', 'code', 'description'],
     unknown: [],
 };
 
@@ -822,6 +899,16 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
                             if (tag && rowData['parenttag'] && rowData['parenttag'].toUpperCase() === tag.toUpperCase()) {
                                 errors.push('parentTag cannot be the row\'s own tag');
                             }
+                            break;
+                        }
+                        case 'failurecodes': {
+                            const cat = (rowData['category'] || '').toUpperCase();
+                            if (cat && !CODE_CATEGORIES.includes(cat)) {
+                                errors.push(`Unknown category "${rowData['category']}" — expected one of ${CODE_CATEGORIES.join(', ')}`);
+                            }
+                            const dupKey = `${cat}|${rowData['code']}`;
+                            if (rowData['code'] && seenKeys.has(dupKey)) errors.push(`Duplicate ${cat} code "${rowData['code']}" in this file`);
+                            if (rowData['code']) seenKeys.add(dupKey);
                             break;
                         }
                         case 'jobplan': {
@@ -938,6 +1025,6 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
 
 export {
     ASSET_COLUMNS, BOM_COLUMNS, RECURRING_JOB_COLUMNS, PEOPLE_COLUMNS,
-    INVENTORY_COLUMNS, WORK_ORDER_COLUMNS, VENDOR_COLUMNS, READINGS_COLUMNS, JOB_PLAN_COLUMNS,
+    INVENTORY_COLUMNS, WORK_ORDER_COLUMNS, VENDOR_COLUMNS, READINGS_COLUMNS, JOB_PLAN_COLUMNS, FAILURE_CODE_COLUMNS,
 };
 

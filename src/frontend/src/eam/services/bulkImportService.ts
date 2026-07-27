@@ -423,7 +423,134 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
     return res;
 }
 
-export const bulkImportService = { importAssets, importReadings };
+// ───────────────────── Failure-code catalogs ─────────────────────
+
+/** A code used by imported history that the catalog cannot decode. */
+export interface UnresolvedCode { category: string; code: string; uses: number }
+
+/**
+ * Every failure code in wo_failure_data that has no catalog entry.
+ *
+ * These are invisible failures: nothing rejects an unknown code on insert, and
+ * the semantic layer LEFT JOINs the catalog, so the record counts as "coded"
+ * while decoding to blank. This is what makes coverage statistics lie.
+ */
+export async function findUnresolvedFailureCodes(): Promise<UnresolvedCode[]> {
+    const [{ data: coded }, { data: catalog }] = await Promise.all([
+        supabase.from('wo_failure_data').select('failure_mode_code, failure_cause_code, remedy_code'),
+        supabase.from('reference_codes').select('category, code'),
+    ]);
+
+    const known = new Set((catalog ?? []).map(c => `${c.category}|${c.code}`));
+    const counts = new Map<string, UnresolvedCode>();
+
+    const note = (category: string, code: string | null) => {
+        const c = (code ?? '').trim();
+        if (!c || c.toUpperCase() === 'UNKNOWN') return;
+        if (known.has(`${category}|${c}`)) return;
+        const key = `${category}|${c}`;
+        const hit = counts.get(key);
+        if (hit) hit.uses += 1;
+        else counts.set(key, { category, code: c, uses: 1 });
+    };
+
+    for (const r of coded ?? []) {
+        note('FAILURE_MODE', r.failure_mode_code);
+        note('FAILURE_CAUSE', r.failure_cause_code);
+        note('REMEDY_CODE', r.remedy_code);
+    }
+    return [...counts.values()].sort((a, b) => b.uses - a.uses || a.code.localeCompare(b.code));
+}
+
+/**
+ * Load a failure-code catalog. Upserts on (category, code) — the table's own
+ * unique key — so re-importing a corrected sheet updates descriptions instead
+ * of duplicating codes.
+ */
+export async function importFailureCodes(rows: Row[]): Promise<ImportResult> {
+    const res = emptyResult();
+    if (rows.length === 0) return res;
+
+    const unresolvedBefore = await findUnresolvedFailureCodes().catch(() => []);
+
+    const { data: existing } = await supabase.from('reference_codes').select('category, code');
+    const known = new Set((existing ?? []).map(c => `${c.category}|${c.code}`));
+
+    interface Draft { row: number; key: string; payload: Record<string, unknown> }
+    const drafts: Draft[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        const row = rowNum(r, i + 2);
+        const category = (r['category'] || '').trim().toUpperCase();
+        const code = (r['code'] || '').trim();
+        const description = (r['description'] || '').trim();
+
+        if (!category) { tally(res, { row, status: 'failed', reason: 'Missing category' }); continue; }
+        if (!code) { tally(res, { row, key: category, status: 'failed', reason: 'Missing code' }); continue; }
+        if (!description) { tally(res, { row, key: `${category} ${code}`, status: 'failed', reason: 'Missing description — an undescribed code is no more useful than an uncatalogued one' }); continue; }
+
+        drafts.push({
+            row,
+            key: `${category} ${code}`,
+            payload: {
+                category,
+                code,
+                description,
+                active: !['no', 'false', 'n'].includes((r['active'] || 'yes').toLowerCase()),
+            },
+        });
+    }
+
+    for (const part of chunk(drafts, LOOKUP_CHUNK)) {
+        const { error } = await supabase
+            .from('reference_codes')
+            .upsert(part.map(d => d.payload), { onConflict: 'category,code' });
+
+        if (error) {
+            // reference_codes writes are admin-only; say so rather than
+            // reporting a bare permission error per row.
+            const denied = error.code === '42501';
+            for (const d of part) {
+                tally(res, {
+                    row: d.row, key: d.key, status: 'failed',
+                    reason: denied ? 'Administrator rights are required to load a code catalog' : error.message,
+                });
+            }
+            if (denied) break;
+            continue;
+        }
+        for (const d of part) {
+            const updated = known.has(`${d.payload.category}|${d.payload.code}`);
+            tally(res, {
+                row: d.row, key: d.key,
+                status: 'inserted',
+                reason: updated ? 'description updated' : undefined,
+            });
+        }
+    }
+
+    // What the import actually bought: how much of the existing history now decodes.
+    if (res.inserted > 0) {
+        const after = await findUnresolvedFailureCodes().catch(() => null);
+        if (after) {
+            const fixed = unresolvedBefore.length - after.length;
+            if (fixed > 0) {
+                res.notes!.push(`${fixed} code(s) used by your existing history now resolve.`);
+            }
+            if (after.length > 0) {
+                const top = after.slice(0, 3).map(u => `${u.code} (${u.uses}×)`).join(', ');
+                res.notes!.push(`${after.length} code(s) in your history still have no catalog entry — e.g. ${top}.`);
+            } else if (unresolvedBefore.length > 0) {
+                res.notes!.push('Every failure code in your history now resolves.');
+            }
+        }
+    }
+
+    return res;
+}
+
+export const bulkImportService = { importAssets, importReadings, importFailureCodes, findUnresolvedFailureCodes };
 
 // Exported for unit tests — pure ordering logic, no I/O.
 export const __testables = { chunk };

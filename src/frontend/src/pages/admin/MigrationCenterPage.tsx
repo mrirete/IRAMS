@@ -12,15 +12,15 @@ import { Link } from 'react-router-dom';
 import {
     Database, Wrench, Users, Package, Building2, CalendarClock, Gauge,
     FileSpreadsheet, Radio, BarChart2, CheckCircle2, ArrowRight, Loader2,
-    Send, RotateCcw, AlertTriangle,
+    Send, RotateCcw, AlertTriangle, Tags, Download,
 } from 'lucide-react';
 import BulkImportModal from '../../eam/components/modals/BulkImportModal';
 import { DatabaseService } from '../../eam/services/DatabaseService';
-import { importAssets, importReadings } from '../../eam/services/bulkImportService';
+import { importAssets, importReadings, importFailureCodes, findUnresolvedFailureCodes } from '../../eam/services/bulkImportService';
 import { importService } from '../../eam/services/ImportService';
 import { supabase } from '../../eam/lib/supabase';
 import { emptyResult, tally, errMessage, type ImportResult } from '../../eam/services/importTypes';
-import type { ImportType } from '../../eam/services/assetTemplates';
+import { downloadUnresolvedCodes, type ImportType } from '../../eam/services/assetTemplates';
 import { useToast } from '../../eam/contexts/ToastContext';
 
 type Counts = Awaited<ReturnType<DatabaseService['getOnboardingCounts']>>;
@@ -76,18 +76,24 @@ const PHASES: Phase[] = [
         count: c => c.workOrders, unit: 'work orders',
     },
     {
-        n: 7, title: 'Meter & condition history', icon: <Gauge size={18} />,
+        n: 7, title: 'Failure-code catalogs', icon: <Tags size={18} />,
+        blurb: 'Your own failure modes, causes and remedies. Imported history stores codes as written — without the catalog they decode to blank while still counting as "coded".',
+        importType: 'failurecodes', count: c => c.codes, unit: 'codes',
+        note: 'Import history first, then export the codes it actually used — the button below fills the template for you.',
+    },
+    {
+        n: 8, title: 'Meter & condition history', icon: <Gauge size={18} />,
         blurb: 'Runtime hours, vibration and temperature logs. Reading points are created automatically.',
         importType: 'readings', count: c => c.readings, unit: 'readings',
     },
     {
-        n: 8, title: 'Live sensor feeds', icon: <Radio size={18} />,
+        n: 9, title: 'Live sensor feeds', icon: <Radio size={18} />,
         blurb: 'Optional — connect a live telemetry source so Predict keeps learning after the migration.',
         to: '/admin/connectors', toLabel: 'Open the Connector Hub',
         count: c => c.connectors, unit: 'connectors',
     },
     {
-        n: 9, title: 'Verify & assess', icon: <BarChart2 size={18} />,
+        n: 10, title: 'Verify & assess', icon: <BarChart2 size={18} />,
         blurb: 'Put the Specialist to work on what you just loaded — reliability baseline, bad actors, quick wins.',
         to: '/specialist/assessment', toLabel: 'Run the assessment',
         count: c => c.batches, unit: 'import batches',
@@ -100,6 +106,29 @@ export const MigrationCenterPage: React.FC = () => {
     const [openType, setOpenType] = useState<ImportType | null>(null);
     const [batches, setBatches] = useState<Awaited<ReturnType<typeof importService.listBatches>>>([]);
     const [inviting, setInviting] = useState(false);
+    const [harvesting, setHarvesting] = useState(false);
+
+    /**
+     * Turn "which codes do I even need?" into a filled-in spreadsheet: read the
+     * codes the imported history actually uses, minus the ones already
+     * catalogued, and hand them back in the import template's own shape.
+     */
+    const exportUnresolvedCodes = async () => {
+        setHarvesting(true);
+        try {
+            const unresolved = await findUnresolvedFailureCodes();
+            if (unresolved.length === 0) {
+                showToast('Every failure code in your history already resolves — nothing to export.', 'success');
+                return;
+            }
+            downloadUnresolvedCodes(unresolved);
+            showToast(`Exported ${unresolved.length} unresolved code(s). Fill in the descriptions and import it back.`, 'success');
+        } catch (e: unknown) {
+            showToast(`Could not read the failure codes: ${errMessage(e)}`, 'error');
+        } finally {
+            setHarvesting(false);
+        }
+    };
 
     const refresh = useCallback(async () => {
         const [c, b] = await Promise.all([
@@ -178,6 +207,11 @@ export const MigrationCenterPage: React.FC = () => {
     const handleImportData = async (type: ImportType, rows: Record<string, string>[]): Promise<ImportResult | void> => {
         if (type === 'readings') {
             const res = await importReadings(rows);
+            void refresh();
+            return res;
+        }
+        if (type === 'failurecodes') {
+            const res = await importFailureCodes(rows);
             void refresh();
             return res;
         }
@@ -276,6 +310,16 @@ export const MigrationCenterPage: React.FC = () => {
                                             >
                                                 {p.toLabel} <ArrowRight size={13} />
                                             </Link>
+                                        )}
+                                        {p.n === 7 && (
+                                            <button
+                                                onClick={() => void exportUnresolvedCodes()}
+                                                disabled={harvesting}
+                                                className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2 disabled:opacity-50"
+                                            >
+                                                {harvesting ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                                                Export unresolved codes from history
+                                            </button>
                                         )}
                                         {p.n === 2 && (
                                             <button
