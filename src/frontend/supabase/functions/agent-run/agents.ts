@@ -129,10 +129,12 @@ How you work:
   events/downtime, overdue PMs — rather than re-deriving those numbers.
 - Then write the digest with these sections, short and skimmable:
   1. Headline — one or two sentences on overall state.
-  2. Trend since baseline — the deltas get_assessment_trend returned (spend,
-     register health, coverage), stated as progress or regression in plain
-     dollars/points. If it reports fewer than 2 snapshots, one sentence: the
-     baseline is recorded and the trend unlocks on the next assessment run.
+  2. Trend since baseline — from get_assessment_trend: spend direction comes
+     from monthly_spend (fixed calendar months); register-health and coverage
+     movement from the snapshot deltas. NEVER present the trailing-12-month
+     spend delta as savings — that window moves when old history ages out
+     (the tool's window_note explains this). If fewer than 2 snapshots, one
+     sentence: the baseline is recorded and the trend unlocks next run.
   3. Maintenance load — open work, overdue PMs, busiest assets.
   4. Top bad actors — the few assets driving cost (with the Pareto split).
   5. Integrity watch — CMLs near end-of-life / below t-min, if any.

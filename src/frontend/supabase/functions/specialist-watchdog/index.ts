@@ -13,6 +13,10 @@
 //   3. Data-quality regression — failure-code or cost coverage over the last
 //      30 days ≥15 points below the trailing-year average → audit-log note
 //      (not a CMMS deliverable).
+//   4. Big-failure RCA — a corrective event in the last 30 days with ≥24h
+//      downtime or ≥$25k cost auto-drafts a REACTIVE RCA investigation
+//      (status 'draft', trigger_reference_id = the WO, so it never drafts
+//      twice) — the same draft a good engineer opens the morning after.
 //
 // Idempotent by design: a proposal is skipped while a matching watchdog
 // proposal is pending, or was reviewed in the last 30 days (never nag a
@@ -37,6 +41,9 @@ const DRIFT_MIN_FAILURES_90D = 3;
 const DQ_DROP_POINTS = 15;
 const DQ_MIN_RECENT_WOS = 5;
 const SNOOZE_DAYS = 30;
+const RCA_MIN_DOWNTIME_HRS = 24;
+const RCA_MIN_COST = 25_000;
+const RCA_MAX_PER_RUN = 3;
 
 serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -56,7 +63,7 @@ serve(async (req) => {
     const cutoff395 = new Date(now - 395 * DAY_MS).toISOString();
     const [woQ, assetQ, pmQ, failQ, existingQ] = await Promise.all([
       admin.from("work_orders")
-        .select("id, asset_id, type, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost")
+        .select("id, asset_id, type, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs")
         .gte("created_at", cutoff395)
         .limit(20000),
       admin.from("assets").select("id, tag, name, criticality").limit(10000),
@@ -71,7 +78,7 @@ serve(async (req) => {
     ]);
     if (woQ.error) throw new Error(`work_orders: ${woQ.error.message}`);
 
-    type Wo = { id: string; asset_id: string | null; type: string | null; created_at: string; frozen_labor_cost: number | null; frozen_material_cost: number | null; total_actual_cost: number | null };
+    type Wo = { id: string; asset_id: string | null; type: string | null; created_at: string; frozen_labor_cost: number | null; frozen_material_cost: number | null; total_actual_cost: number | null; actual_downtime_hrs: number | null };
     const wos = (woQ.data ?? []) as Wo[];
     const assetById = new Map(((assetQ.data ?? []) as { id: string; tag: string; name: string; criticality: string | null }[]).map((a) => [a.id, a]));
     const codedIds = new Set(((failQ.data ?? []) as { wo_id: string }[]).map((f) => f.wo_id));
@@ -188,6 +195,51 @@ serve(async (req) => {
       }
     }
 
+    // ── 4. Big-failure RCA auto-draft ─────────────────────────────────────
+    // The draft a good engineer opens the morning after a major event —
+    // status 'draft' in the RCA module, never delivered anywhere. Dedup is
+    // structural: trigger_reference_id = the work order id.
+    let rcaDrafts = 0;
+    const bigOnes = wos
+      .filter((w) => w.asset_id && isCm(w) && new Date(w.created_at).getTime() >= cut30)
+      .map((w) => ({ w, downtime: Number(w.actual_downtime_hrs) || 0, c: cost(w) }))
+      .filter(({ downtime, c }) => downtime >= RCA_MIN_DOWNTIME_HRS || c >= RCA_MIN_COST)
+      .sort((a, b) => (b.downtime * 1000 + b.c) - (a.downtime * 1000 + a.c))
+      .slice(0, RCA_MAX_PER_RUN);
+    if (bigOnes.length) {
+      const { data: existingRca } = await admin
+        .from("ers_rca_investigations")
+        .select("trigger_reference_id")
+        .in("trigger_reference_id", bigOnes.map(({ w }) => w.id));
+      const drafted = new Set(((existingRca ?? []) as { trigger_reference_id: string | null }[]).map((r) => r.trigger_reference_id));
+      for (const { w, downtime, c } of bigOnes) {
+        if (drafted.has(w.id)) continue;
+        const a = assetById.get(w.asset_id!);
+        const day = w.created_at.slice(0, 10);
+        const why = downtime >= RCA_MIN_DOWNTIME_HRS ? `${Math.round(downtime)}h downtime` : `${Math.round(c)} corrective cost`;
+        const { error } = await admin.from("ers_rca_investigations").insert({
+          asset_id: w.asset_id,
+          title: `RCA — ${a?.tag ?? "asset"}: major corrective event ${day} (${why})`,
+          status: "draft",
+          investigation_type: "reactive",
+          rca_category: "asset_failure",
+          trigger_type: downtime >= RCA_MIN_DOWNTIME_HRS ? "downtime" : "cost",
+          trigger_reference_id: w.id,
+          problem_statement:
+            `${a?.tag ?? "Asset"} (${a?.name ?? ""}) took a corrective event on ${day} with ` +
+            `${Math.round(downtime)}h recorded downtime and ${Math.round(c)} recorded cost — above the ` +
+            `watchdog threshold (≥${RCA_MIN_DOWNTIME_HRS}h or ≥${RCA_MIN_COST}). Drafted automatically; ` +
+            `investigate while the evidence is fresh.`,
+          event_date: day,
+          event_how_much: { cost: Math.round(c), downtime_hrs: Math.round(downtime) },
+          created_by: "00000000-0000-0000-0000-000000000000",
+        });
+        if (error) { console.error("rca draft failed:", error.message); continue; }
+        rcaDrafts += 1;
+        findings.push(`rca:${a?.tag ?? w.asset_id}`);
+      }
+    }
+
     // ── persist ───────────────────────────────────────────────────────────
     let inserted = 0;
     if (proposals.length) {
@@ -198,6 +250,7 @@ serve(async (req) => {
 
     const summary =
       `Nightly watchdog: ${wos.length} WOs scanned · ${spikes} cost step-change(s) · ${drifts} PM-drift signal(s)` +
+      `${rcaDrafts ? ` · ${rcaDrafts} RCA draft(s) opened` : ""}` +
       `${dqNote ? " · data-quality regression flagged" : ""} · ${inserted} proposal(s) queued.` +
       (dqNote ? `\n\n${dqNote}` : "");
     try {
@@ -223,6 +276,7 @@ serve(async (req) => {
       scanned_wos: wos.length,
       spikes,
       pm_drift: drifts,
+      rca_drafts: rcaDrafts,
       dq_regression: Boolean(dqNote),
       proposals_queued: inserted,
       skipped_snoozed: snoozed.size,

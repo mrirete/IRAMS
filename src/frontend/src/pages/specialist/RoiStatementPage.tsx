@@ -321,6 +321,10 @@ export const RoiStatementPage: React.FC = () => {
                                     })}
                                 </tbody>
                             </table>
+                            <p className="text-[10.5px] text-slate-400 mt-2">
+                                Spend rows are trailing-12-month windows: they also move as old history ages out, so treat the spend Δ as
+                                directional corroboration — the per-asset measured record above is the attribution-safe number.
+                            </p>
                         </div>
                     )}
                 </Section>

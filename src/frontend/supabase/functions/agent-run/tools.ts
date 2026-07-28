@@ -1294,6 +1294,31 @@ const getAssessmentTrend: AgentTool = {
       .limit(1000);
     if (error) throw new Error(`assessment snapshots query failed: ${error.message}`);
     const rows = data ?? [];
+
+    // Fixed CALENDAR-month spend (last 6 months incl. current) — trailing-12mo
+    // snapshot deltas move when old history rolls out of the window, so spend
+    // direction must come from fixed buckets, never from the snapshot delta.
+    const monthStart = new Date();
+    monthStart.setUTCDate(1); monthStart.setUTCHours(0, 0, 0, 0);
+    monthStart.setUTCMonth(monthStart.getUTCMonth() - 5);
+    const { data: recentWos } = await ctx.db
+      .from("work_orders")
+      .select("created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost")
+      .gte("created_at", monthStart.toISOString())
+      .limit(20000);
+    const monthly = new Map<string, number>();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(monthStart);
+      d.setUTCMonth(d.getUTCMonth() + i);
+      monthly.set(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`, 0);
+    }
+    for (const w of (recentWos ?? []) as { created_at: string; frozen_labor_cost: number | null; frozen_material_cost: number | null; total_actual_cost: number | null }[]) {
+      const key = String(w.created_at).slice(0, 7);
+      if (!monthly.has(key)) continue;
+      const c = ((Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0)) || Number(w.total_actual_cost) || 0;
+      monthly.set(key, (monthly.get(key) ?? 0) + c);
+    }
+    const monthly_spend = [...monthly.entries()].map(([month, spend]) => ({ month, spend: Math.round(spend) }));
     if (rows.length === 0) {
       return {
         data: { snapshots: 0, note: "No assessment snapshots exist yet — running an assessment records the baseline." },
@@ -1332,6 +1357,9 @@ const getAssessmentTrend: AgentTool = {
         latest,
         delta_vs_baseline: rows.length >= 2 ? diff(latest, baseline) : null,
         delta_vs_previous: previous ? diff(latest, previous) : null,
+        monthly_spend,
+        window_note:
+          "spend deltas in delta_vs_* are TRAILING-12-MONTH windows — they move when old history rolls out and must never be presented as savings. Use monthly_spend (fixed calendar months) for spend direction; use snapshot deltas for register health and coverage only.",
       },
       sources: [{
         kind: "assessment_snapshots",
