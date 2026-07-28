@@ -140,7 +140,10 @@ condition monitoring, spares data. Phase D composes them:
 > **E1 + E2 SHIPPED 2026-07-28 (4a313c5):** success layer in the assessment (fleet SR vs
 > 90/95 targets, zone-now counts, worst-residency table; SR trended via 0232) + the
 > Sub-Optimal-Drift watchdog (restore-the-optimum proposals before departure).
-> E3 (SMEA→strategy), E4 (RSA agent mode), E5 (D-I-S-G front-of-life gates) remain.
+> **E3 + E4 SHIPPED 2026-07-28 (275e08e):** strategy verdicts carry each asset's top-SPN
+> SMEA success mode; `rsa_analyst` agent + `find_positive_deviants` tool (equipment-class
+> positive deviance, honest when no class qualifies) with a workspace panel.
+> E5 (D-I-S-G front-of-life gates) remains.
 
 IRAMS is the reference implementation of the user's published PSC framework (Olorunfemi 2026,
 *A Success-Centric Evolution of RCM*). Everything else in this plan, competitors can eventually
