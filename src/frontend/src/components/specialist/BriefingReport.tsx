@@ -22,7 +22,7 @@ import {
     BadgeDollarSign, Database,
 } from 'lucide-react';
 import {
-    parseBriefing, tokenizeTags, routeForAction, MISSION_HANDOFF_KEY,
+    parseBriefing, tokenizeTags, routeForAction, deepLink, MISSION_HANDOFF_KEY,
     type ActiveMission, type BriefingSection, type SectionKey,
 } from '../../lib/briefingParse';
 import SectionCharts from './BriefingCharts';
@@ -264,16 +264,19 @@ const MissionList: React.FC<{ actions: string[]; briefingKey: string; assetsByTa
                      *  the Specialist's walkthrough inside the destination. */
                     const go = () => {
                         if (!route) return;
-                        const tags = tokenizeTags(a, [...assetsByTag.values()].map((x) => x.tag))
+                        const tagAssets = [...new Set(tokenizeTags(a, [...assetsByTag.values()].map((x) => x.tag))
                             .filter((t) => t.kind === 'tag')
-                            .map((t) => assetsByTag.get(t.value.toLowerCase())?.tag ?? t.value);
+                            .map((t) => assetsByTag.get(t.value.toLowerCase()))
+                            .filter((x): x is BriefingAsset => Boolean(x)))];
+                        // Sharpened destination: pre-scoped to the mission's entities.
+                        const target = deepLink(route, tagAssets);
                         const handoff: ActiveMission = {
                             briefingKey, index: i, text: a,
-                            path: route.path, label: route.label,
-                            tags: [...new Set(tags)],
+                            path: target, label: route.label,
+                            tags: tagAssets.map((x) => x.tag),
                         };
                         try { sessionStorage.setItem(MISSION_HANDOFF_KEY, JSON.stringify(handoff)); } catch { /* ignore */ }
-                        navigate(route.path);
+                        navigate(target);
                     };
                     return (
                         <li key={i} className={`flex items-start gap-3 px-4 py-3 transition-colors ${isDone ? 'bg-emerald-50/40' : 'hover:bg-slate-50/60'}`}>

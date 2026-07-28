@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBriefing, tokenizeTags, routeForAction, guideForMission } from './briefingParse';
+import { parseBriefing, tokenizeTags, routeForAction, guideForMission, deepLink } from './briefingParse';
 
 // Shape the live reliability_digest actually produced (2026-07-28 run).
 const SAMPLE = `**Reliability & Integrity Digest: Fleet Overview**
@@ -78,14 +78,29 @@ describe('tokenizeTags', () => {
 });
 
 describe('routeForAction', () => {
-    it('routes by module keywords in specificity order', () => {
-        expect(routeForAction('Investigate the root causes for GT-301')?.path).toBe('/analyze');
-        expect(routeForAction('Clear the 2 overdue PMs on P-101-A')?.path).toBe('/recurring-work');
+    it('routes by module keywords in specificity order, already deep-linked', () => {
+        expect(routeForAction('Investigate the root causes for GT-301')?.path).toBe('/analyze?tab=rca');
+        expect(routeForAction('Raise a defect elimination task for GT-301')?.path).toBe('/analyze?tab=defect_elimination');
+        expect(routeForAction('Clear the 2 overdue PMs on P-101-A')?.path).toBe('/recurring-work?due=overdue');
         expect(routeForAction('Review the 3 open work orders on K-601')?.path).toBe('/work-orders');
         expect(routeForAction('Schedule the CML inspection on V-201')?.path).toBe('/comply/evaluate');
-        expect(routeForAction('Revise the "Pump Inspection" PM for P-101-A given 5 failures')?.path).toBe('/recurring-work');
+        expect(routeForAction('Revise the "Pump Inspection" PM for P-101-A given 5 failures')?.path).toBe('/recurring-work?due=overdue');
         expect(routeForAction('File the warranty claim')?.path).toBe('/specialist/assessment');
         expect(routeForAction('Celebrate the win')).toBeNull();
+    });
+});
+
+describe('deepLink', () => {
+    const ASSETS = [{ tag: 'K-601', id: 'uuid-k601' }];
+
+    it('scopes the WO list by tag and Analyze by asset id', () => {
+        expect(deepLink({ path: '/work-orders', label: 'Work orders' }, ASSETS)).toBe('/work-orders?asset=K-601');
+        expect(deepLink({ path: '/analyze?tab=rca', label: 'Analyze' }, ASSETS)).toBe('/analyze?tab=rca&asset=uuid-k601');
+    });
+
+    it('leaves routes untouched without entities or without a scoped form', () => {
+        expect(deepLink({ path: '/work-orders', label: 'Work orders' }, [])).toBe('/work-orders');
+        expect(deepLink({ path: '/comply/evaluate', label: 'Integrity' }, ASSETS)).toBe('/comply/evaluate');
     });
 });
 

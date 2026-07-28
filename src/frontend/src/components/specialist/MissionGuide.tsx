@@ -57,7 +57,10 @@ export const MissionGuide: React.FC = () => {
     };
 
     const guide = guideForMission(mission.path, mission.tags);
-    const onTrack = location.pathname.startsWith(mission.path.split('/').slice(0, 2).join('/'));
+    // Deep-linked paths carry query strings — compare pathnames only, and
+    // "on track" means being anywhere under the destination's first segment.
+    const basePath = mission.path.split('?')[0];
+    const onTrack = location.pathname.startsWith(basePath.split('/').slice(0, 2).join('/'));
 
     return (
         <aside className="no-print fixed bottom-4 right-4 z-40 w-[21rem] max-w-[calc(100vw-2rem)] rounded-xl border border-primary-200 bg-white shadow-xl shadow-primary-900/10 animate-in fade-in slide-in-from-bottom-2 duration-300">

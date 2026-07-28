@@ -64,7 +64,8 @@ export function computeMissions(
             id: 'overdue-pm',
             current: inp.overduePmCount,
             tags: inp.overduePmTags,
-            path: '/recurring-work',
+            // Deep link: lands the plan already scoped to past-due programmes.
+            path: '/recurring-work?due=overdue',
             label: 'PM schedules',
             openText: (c) => `Clear ${plural(c, 'overdue PM programme')}${inp.overduePmTags.length ? ` (${inp.overduePmTags.join(', ')})` : ''}`,
             doneText: (i) => `Overdue PM programmes cleared — ${i} at the start of this briefing, none now`,
@@ -73,7 +74,8 @@ export function computeMissions(
             id: `open-wo:${a.tag}`,
             current: a.open,
             tags: [a.tag],
-            path: '/work-orders',
+            // Deep link: the WO list arrives pre-searched to this asset.
+            path: `/work-orders?asset=${encodeURIComponent(a.tag)}`,
             label: 'Work orders',
             openText: (c) => `Close the ${plural(c, 'open work order')} on ${a.tag} — a top cost driver`,
             doneText: () => `Open work on ${a.tag} cleared`,

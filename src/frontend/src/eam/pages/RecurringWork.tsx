@@ -68,6 +68,9 @@ export const RecurringWork: React.FC = () => {
     // Deep link (e.g. RCM task matrix → /recurring-work?q=RCM-xxxx) seeds the search box
     const [urlParams] = useSearchParams();
     const [searchQuery, setSearchQuery] = useState(urlParams.get('q') || '');
+    // Deep link from Specialist missions: ?due=overdue lands the plan already
+    // scoped to past-due programmes (clearable chip in the toolbar).
+    const [overdueOnly, setOverdueOnly] = useState(urlParams.get('due') === 'overdue');
     const [deleting, setDeleting] = useState(false);
     const [duplicating, setDuplicating] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -424,6 +427,15 @@ export const RecurringWork: React.FC = () => {
         if (statusFilter !== 'ALL') {
             result = result.filter(j => j.status === statusFilter);
         }
+        // Overdue deep-link: active programmes whose next due date has passed
+        // (same definition the Specialist's digest and missions use).
+        if (overdueOnly) {
+            const now = Date.now();
+            result = result.filter(j => {
+                const due = (j as any).nextDueDate || (j as any).next_due_date || '';
+                return j.status === 'ACTIVE' && due && new Date(due).getTime() < now;
+            });
+        }
         // Search text
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
@@ -434,7 +446,7 @@ export const RecurringWork: React.FC = () => {
             );
         }
         return result;
-    }, [jobs, searchQuery, statusFilter]);
+    }, [jobs, searchQuery, statusFilter, overdueOnly]);
 
     // Status counts for pills (Phase 4A)
     const statusCounts = useMemo(() => {
@@ -825,6 +837,15 @@ export const RecurringWork: React.FC = () => {
                     </div>
                     {/* Phase 4A — Status Filter Pills */}
                     <div className="flex gap-1.5 flex-wrap">
+                        {overdueOnly && (
+                            <button
+                                onClick={() => setOverdueOnly(false)}
+                                title="Showing only past-due active programmes — click to clear"
+                                className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase border bg-amber-500 text-white border-amber-500 shadow-sm flex items-center gap-1.5"
+                            >
+                                Overdue only ✕
+                            </button>
+                        )}
                         {(['ALL', 'ACTIVE', 'PAUSED', 'DRAFT', 'EXPIRED'] as StatusFilter[]).map(s => (
                             <button
                                 key={s}

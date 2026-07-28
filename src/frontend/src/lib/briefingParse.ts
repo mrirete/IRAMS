@@ -146,12 +146,27 @@ export function routeForAction(text: string): ActionRoute | null {
     // NOT bare "inspection" — PM task titles ("Pump Inspection") would hijack
     // PM actions into the integrity module.
     if (/\bcml|corrosion|t-min|integrity/.test(t)) return { path: '/comply/evaluate', label: 'Integrity' };
-    if (/root cause|rca\b|defect elimination|investigate/.test(t)) return { path: '/analyze', label: 'Analyze' };
-    if (/overdue pm|\bpms?\b|preventive/.test(t)) return { path: '/recurring-work', label: 'PM schedules' };
+    if (/defect elimination/.test(t)) return { path: '/analyze?tab=defect_elimination', label: 'Analyze' };
+    if (/root cause|rca\b|investigate/.test(t)) return { path: '/analyze?tab=rca', label: 'Analyze' };
+    if (/overdue pm|\bpms?\b|preventive/.test(t)) return { path: '/recurring-work?due=overdue', label: 'PM schedules' };
     if (/work order|open work|backlog/.test(t)) return { path: '/work-orders', label: 'Work orders' };
     if (/warranty/.test(t)) return { path: '/specialist/assessment', label: 'Assessment' };
     if (/proposal|approve/.test(t)) return { path: '/specialist/deliver', label: 'Deliver work' };
     return null;
+}
+
+/**
+ * Sharpen a route with the mission's own entities so Go LANDS pre-scoped:
+ * the WO list already searched to the asset, Analyze already carrying the
+ * asset context. Falls back to the base route untouched.
+ */
+export function deepLink(route: ActionRoute, assets: { tag: string; id: string }[]): string {
+    const first = assets[0];
+    if (!first) return route.path;
+    const joiner = route.path.includes('?') ? '&' : '?';
+    if (route.path.startsWith('/work-orders')) return `${route.path}${joiner}asset=${encodeURIComponent(first.tag)}`;
+    if (route.path.startsWith('/analyze')) return `${route.path}${joiner}asset=${encodeURIComponent(first.id)}`;
+    return route.path;
 }
 
 // ── guided handoff ────────────────────────────────────────────────────────
@@ -190,20 +205,26 @@ export function guideForMission(path: string, tags: string[]): { title: string; 
         };
     }
     if (path.startsWith('/recurring-work')) {
+        const scoped = path.includes('due=overdue');
         return {
             title: 'Clear the overdue PMs',
             steps: [
-                'Sort or filter the plan to overdue programmes — these are the ones the briefing flagged.',
+                scoped
+                    ? 'This view is already scoped to past-due programmes — the amber chip clears the filter.'
+                    : 'Sort or filter the plan to overdue programmes — these are the ones the briefing flagged.',
                 `Complete or reschedule each overdue PM${tags.length ? ` on ${tagList}` : ''}; overdue PM debt compounds into failures.`,
                 'If the same PM keeps going overdue, ask the Specialist whether the interval is defensible before just rescheduling it.',
             ],
         };
     }
     if (path.startsWith('/work-orders')) {
+        const scoped = path.includes('asset=');
         return {
             title: 'Work the open backlog',
             steps: [
-                `Filter to open work${tags.length ? ` on ${tagList}` : ''} and rank by criticality.`,
+                scoped
+                    ? `The list is already searched to ${tagList} — clear the search box to widen it.`
+                    : `Filter to open work${tags.length ? ` on ${tagList}` : ''} and rank by criticality.`,
                 'Assign an owner and a date to anything unowned — open work without an owner is where backlog grows.',
                 'On completion, record failure code, cost and downtime — those three fields power every analysis the Specialist runs.',
             ],
