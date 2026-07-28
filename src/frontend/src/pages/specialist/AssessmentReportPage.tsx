@@ -13,264 +13,19 @@ import {
     BadgeDollarSign, Activity, Wrench, ShieldCheck, Database, RefreshCw,
     Layers, FolderPlus, Check,
 } from 'lucide-react';
-import { supabase } from '../../eam/lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
-import { fitWeibull, weibullBLife } from '../../eam/utils/weibull';
 import { runAssessmentNarrator } from '../../eam/services/agentRunClient';
-import { computeRegisterQuality, type RegisterQuality } from '../../lib/registerQuality';
+import { computeAssessment, type Assessment, type WeibullFinding } from '../../eam/services/assessmentEngine';
 import {
     getLatestSnapshot, saveSnapshot, shouldSaveSnapshot, type AssessmentSnapshot,
 } from '../../eam/services/assessmentSnapshotService';
 import { analyzeService } from '../../eam/services/AnalyzeService';
 import BriefingReport, { type BriefingAsset } from '../../components/specialist/BriefingReport';
 import PmOptimizationModal from '../../components/specialist/PmOptimizationModal';
+import AreaAssessmentModal from '../../components/specialist/AreaAssessmentModal';
 
-// ── row shapes (only the columns we query) ────────────────────────────────
-interface WoRow {
-    id: string; asset_id: string; type: string | null; status: string | null;
-    created_at: string; closed_at: string | null;
-    frozen_labor_cost: number | null; frozen_material_cost: number | null;
-    total_actual_cost: number | null; actual_downtime_hrs: number | null;
-}
-interface AssetRow {
-    id: string; tag: string; name: string; criticality: string | null;
-    parent_id: string | null; manufacturer: string | null; model: string | null;
-}
-
-const woCost = (w: WoRow): number => {
-    const frozen = (Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0);
-    return frozen || Number(w.total_actual_cost) || 0;
-};
-const isCorrective = (w: WoRow) => String(w.type ?? '').toUpperCase() === 'CM';
-const DAY_MS = 86400_000;
-
-// ── computed section shapes ───────────────────────────────────────────────
-interface BadActor {
-    tag: string; name: string; criticality: string | null;
-    cost12mo: number; woCount12mo: number; cmCount12mo: number;
-    downtime12mo: number; cumulativePct: number;
-}
-interface WeibullFinding {
-    assetId: string; tag: string; name: string; nFailures: number; nSuspensions: number;
-    beta: number; eta: number; b10Days: number; r2: number; interpretation: string;
-}
-interface WarrantyFind { woNumber: string; tag: string; date: string; recoverable: number; }
-interface PmWasteFind { code: string; title: string; tag: string; category: string; annualEvents: number | null; failures12mo: number; }
-
-interface Assessment {
-    windowMonths: number;
-    totalSpend12mo: number;
-    woCount12mo: number;
-    assetCount: number;
-    badActors: BadActor[];
-    paretoShare: { topN: number; pct: number } | null;
-    weibull: WeibullFinding[];
-    warranty: { total: number; items: WarrantyFind[] };
-    pmWaste: PmWasteFind[];
-    coverage: { cost_pct: number; failure_code_pct: number; downtime_pct: number };
-    register: RegisterQuality;
-    /** id/tag/name/criticality for entity-linking the narrative's asset tags. */
-    assetIndex: { id: string; tag: string; name: string; criticality: string | null }[];
-    dataFrom: string | null;
-    dataTo: string | null;
-}
-
-async function computeAssessment(): Promise<Assessment> {
-    const cutoff12 = new Date(Date.now() - 365 * DAY_MS).toISOString();
-
-    const [woQ, assetQ, pmQ, warrQ, failQ] = await Promise.all([
-        supabase.from('work_orders')
-            .select('id, asset_id, type, status, created_at, closed_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs')
-            .order('created_at', { ascending: false }).limit(20000),
-        supabase.from('assets').select('id, tag, name, criticality, parent_id, manufacturer, model').limit(10000),
-        supabase.from('recurring_work')
-            .select('id, code, title, asset_id, frequency_interval, frequency_unit, job_type, active')
-            .eq('active', true).limit(3000),
-        supabase.from('warranties')
-            .select('id, asset_id, warranty_type, start_date, end_date, deductible, status')
-            .eq('status', 'ACTIVE').limit(5000),
-        supabase.from('wo_failure_data').select('wo_id').limit(20000),
-    ]);
-
-    const wos: WoRow[] = (woQ.data ?? []) as WoRow[];
-    const assets: AssetRow[] = (assetQ.data ?? []) as AssetRow[];
-    const assetById = new Map(assets.map((a) => [a.id, a]));
-    const codedWoIds = new Set((failQ.data ?? []).map((f: { wo_id: string }) => f.wo_id));
-
-    const wos12 = wos.filter((w) => w.created_at >= cutoff12);
-    const totalSpend12mo = wos12.reduce((s, w) => s + woCost(w), 0);
-
-    // Bad actors (12-month window, cost-ranked, Pareto)
-    const agg = new Map<string, { cost: number; count: number; cm: number; down: number }>();
-    for (const w of wos12) {
-        if (!w.asset_id) continue;
-        const cur = agg.get(w.asset_id) ?? { cost: 0, count: 0, cm: 0, down: 0 };
-        cur.cost += woCost(w); cur.count += 1;
-        if (isCorrective(w)) cur.cm += 1;
-        cur.down += Number(w.actual_downtime_hrs) || 0;
-        agg.set(w.asset_id, cur);
-    }
-    const grand = [...agg.values()].reduce((s, v) => s + v.cost, 0) || 1;
-    let cum = 0;
-    const badActors: BadActor[] = [...agg.entries()]
-        .sort((a, b) => b[1].cost - a[1].cost)
-        .slice(0, 10)
-        .map(([id, v]) => {
-            cum += v.cost;
-            const a = assetById.get(id);
-            return {
-                tag: a?.tag ?? '(unknown)', name: a?.name ?? '(unknown asset)',
-                criticality: a?.criticality ?? null,
-                cost12mo: Math.round(v.cost), woCount12mo: v.count, cmCount12mo: v.cm,
-                downtime12mo: Math.round(v.down), cumulativePct: Math.round((cum / grand) * 1000) / 10,
-            };
-        });
-    const topAt80 = badActors.findIndex((b) => b.cumulativePct >= 80);
-    const paretoShare = badActors.length >= 3
-        ? { topN: topAt80 >= 0 ? topAt80 + 1 : badActors.length, pct: topAt80 >= 0 ? badActors[topAt80].cumulativePct : badActors[badActors.length - 1].cumulativePct }
-        : null;
-
-    // Weibull on the worst corrective-failure assets (full history, censored)
-    const failureDatesByAsset = new Map<string, number[]>();
-    for (const w of wos) {
-        if (!w.asset_id || !isCorrective(w)) continue;
-        const arr = failureDatesByAsset.get(w.asset_id) ?? [];
-        arr.push(new Date(w.created_at).getTime());
-        failureDatesByAsset.set(w.asset_id, arr);
-    }
-    const weibull: WeibullFinding[] = [];
-    const candidates = [...failureDatesByAsset.entries()]
-        .filter(([, d]) => d.length >= 3)
-        .sort((a, b) => b[1].length - a[1].length)
-        .slice(0, 5);
-    for (const [assetId, timesMs] of candidates) {
-        const sorted = [...timesMs].sort((a, b) => a - b);
-        const intervals: number[] = [];
-        for (let i = 1; i < sorted.length; i++) {
-            const days = (sorted[i] - sorted[i - 1]) / DAY_MS;
-            if (days > 0.25) intervals.push(days); // ignore same-day duplicates
-        }
-        const sinceLast = (Date.now() - sorted[sorted.length - 1]) / DAY_MS;
-        const suspensions = sinceLast > 1 ? [sinceLast] : [];
-        const fit = fitWeibull(intervals, suspensions);
-        if (!fit) continue;
-        const a = assetById.get(assetId);
-        const b10 = weibullBLife(fit.beta, fit.eta, 10);
-        weibull.push({
-            assetId, tag: a?.tag ?? '(unknown)', name: a?.name ?? '(unknown asset)',
-            nFailures: fit.nFailures, nSuspensions: fit.nSuspensions,
-            beta: Math.round(fit.beta * 100) / 100, eta: Math.round(fit.eta),
-            b10Days: Math.round(b10), r2: Math.round(fit.r2 * 100) / 100,
-            interpretation: fit.beta > 1.5 ? 'wear-out — age-based PM is justified'
-                : fit.beta > 0.95 ? 'random failures — condition monitoring beats fixed-interval PM'
-                    : 'infant mortality — look at installation/maintenance quality, not more PM',
-        });
-    }
-
-    // Warranty recovery (mirrors the scan_warranty_recovery tool)
-    const today = new Date().toISOString().slice(0, 10);
-    const warrantiesByAsset = new Map<string, Record<string, unknown>[]>();
-    for (const w of (warrQ.data ?? []) as Record<string, unknown>[]) {
-        if (w.end_date && String(w.end_date) < today) continue;
-        const arr = warrantiesByAsset.get(String(w.asset_id)) ?? [];
-        arr.push(w); warrantiesByAsset.set(String(w.asset_id), arr);
-    }
-    const warrantyItems: WarrantyFind[] = [];
-    for (const w of wos) {
-        if (!['CLOSED', 'TECO'].includes(String(w.status ?? '').toUpperCase())) continue;
-        const cost = woCost(w);
-        if (cost <= 0) continue;
-        const day = w.created_at.slice(0, 10);
-        const cover = (warrantiesByAsset.get(w.asset_id) ?? []).find(
-            (c) => day >= String(c.start_date) && (!c.end_date || day <= String(c.end_date)),
-        );
-        if (!cover) continue;
-        const net = Math.max(0, cost - (Number(cover.deductible) || 0));
-        if (net <= 0) continue;
-        warrantyItems.push({
-            woNumber: w.id, tag: assetById.get(w.asset_id)?.tag ?? '(unknown)',
-            date: day, recoverable: Math.round(net),
-        });
-    }
-    warrantyItems.sort((a, b) => b.recoverable - a.recoverable);
-    const warrantyTotal = warrantyItems.reduce((s, i) => s + i.recoverable, 0);
-
-    // PM waste (mirrors analyze_pm_effectiveness, asset-level)
-    const annualEvents = (interval: number, unit: string): number | null => {
-        if (!interval || interval <= 0) return null;
-        const u = (unit || '').toLowerCase();
-        if (u.startsWith('day')) return 365 / interval;
-        if (u.startsWith('week')) return 52 / interval;
-        if (u.startsWith('month')) return 12 / interval;
-        if (u.startsWith('year')) return 1 / interval;
-        return null;
-    };
-    const cmByAsset = new Map<string, number>();
-    for (const w of wos12) if (w.asset_id && isCorrective(w)) cmByAsset.set(w.asset_id, (cmByAsset.get(w.asset_id) ?? 0) + 1);
-    const pmsByAssetType = new Map<string, number>();
-    const pms = (pmQ.data ?? []) as Record<string, unknown>[];
-    for (const p of pms) {
-        const k = `${p.asset_id}|${p.job_type}`;
-        pmsByAssetType.set(k, (pmsByAssetType.get(k) ?? 0) + 1);
-    }
-    const pmWaste: PmWasteFind[] = pms.map((p) => {
-        const annual = annualEvents(Number(p.frequency_interval), String(p.frequency_unit ?? ''));
-        const failures = cmByAsset.get(String(p.asset_id)) ?? 0;
-        const redundant = (pmsByAssetType.get(`${p.asset_id}|${p.job_type}`) ?? 1) > 1;
-        let category = 'ok';
-        if (redundant) category = 'redundant';
-        else if (failures >= 3) category = 'ineffective';
-        else if (annual !== null && annual >= 6 && failures === 0) category = 'over-maintenance';
-        const asset = assetById.get(String(p.asset_id));
-        return {
-            code: String(p.code ?? ''), title: String(p.title ?? ''),
-            tag: asset?.tag ?? String(p.asset_id ?? ''), category,
-            annualEvents: annual === null ? null : Math.round(annual * 10) / 10,
-            failures12mo: failures,
-        };
-    }).filter((o) => o.category !== 'ok').slice(0, 10);
-
-    // Asset-register quality (Phase A2) — the foundation layer a human RE
-    // audits first; computed from rows already fetched above.
-    const register = computeRegisterQuality(
-        assets,
-        wos12.map((w) => ({ asset_id: w.asset_id })),
-        new Set(assetById.keys()),
-    );
-
-    // Coverage + data window
-    const n12 = wos12.length || 1;
-    let from: string | null = null, to: string | null = null;
-    for (const w of wos) {
-        if (!from || w.created_at < from) from = w.created_at;
-        if (!to || w.created_at > to) to = w.created_at;
-    }
-    const windowMonths = from && to ? Math.max(1, Math.round((new Date(to).getTime() - new Date(from).getTime()) / (30.44 * DAY_MS))) : 0;
-
-    return {
-        windowMonths,
-        totalSpend12mo: Math.round(totalSpend12mo),
-        woCount12mo: wos12.length,
-        assetCount: assets.length,
-        badActors,
-        paretoShare,
-        weibull,
-        warranty: { total: warrantyTotal, items: warrantyItems.slice(0, 8) },
-        pmWaste,
-        coverage: {
-            cost_pct: Math.round((wos12.filter((w) => woCost(w) > 0).length / n12) * 100),
-            failure_code_pct: Math.round((wos12.filter((w) => codedWoIds.has(w.id)).length / n12) * 100),
-            downtime_pct: Math.round((wos12.filter((w) => Number(w.actual_downtime_hrs) > 0).length / n12) * 100),
-        },
-        register,
-        assetIndex: assets.map((x) => ({ id: x.id, tag: x.tag, name: x.name, criticality: x.criticality })),
-        dataFrom: from ? from.slice(0, 10) : null,
-        dataTo: to ? to.slice(0, 10) : null,
-    };
-}
-
-// ── page ──────────────────────────────────────────────────────────────────
+// ── page (engine lives in eam/services/assessmentEngine) ──────────────────────────────────────────────────────────────────
 export const AssessmentReportPage: React.FC = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
@@ -288,6 +43,8 @@ export const AssessmentReportPage: React.FC = () => {
     const [savedStudies, setSavedStudies] = useState<Set<string>>(new Set());
     // Fleet-wide PM optimization (Phase B3) — process lives in the popup.
     const [pmOptOpen, setPmOptOpen] = useState(false);
+    // Area assessment (Phase B2) — same engine, one subtree, saved as a study.
+    const [areaOpen, setAreaOpen] = useState(false);
 
     const load = async () => {
         setLoading(true); setError(null); setSnapshotSaved(false);
@@ -440,6 +197,9 @@ export const AssessmentReportPage: React.FC = () => {
                     <ArrowLeft size={15} /> Specialist workspace
                 </button>
                 <div className="flex items-center gap-2">
+                    <button onClick={() => setAreaOpen(true)} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2">
+                        <Layers size={13} /> Assess an area
+                    </button>
                     <button onClick={() => void load()} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2">
                         <RefreshCw size={13} /> Recompute
                     </button>
@@ -688,6 +448,7 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 <PmOptimizationModal open={pmOptOpen} onClose={() => setPmOptOpen(false)} />
+                <AreaAssessmentModal open={areaOpen} onClose={() => setAreaOpen(false)} />
 
                 <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1.5">
                     <ShieldCheck size={11} /> Methodology: Pareto on frozen WO costs · median-rank regression Weibull with Johnson-adjusted ranks and right-censoring · PM effectiveness vs corrective history · warranty windows vs completed WOs · register hygiene scored on hierarchy, criticality spread, nameplate, tag collisions and history linkage. Advisory only — a human approves every action.
