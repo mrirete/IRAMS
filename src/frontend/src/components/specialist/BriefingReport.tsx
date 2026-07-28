@@ -17,7 +17,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    Megaphone, Wrench, TrendingDown, ShieldCheck, ShieldAlert, Target,
+    Megaphone, Wrench, TrendingDown, TrendingUp, ShieldCheck, ShieldAlert, Target,
     ChevronRight, Check, ExternalLink, MessageCircleQuestion, Sparkles,
     BadgeDollarSign, Database,
 } from 'lucide-react';
@@ -185,6 +185,7 @@ const SECTION_META: Record<Exclude<SectionKey, 'title' | 'headline' | 'act'>, { 
     integrity: { icon: <ShieldAlert size={14} />, tint: 'text-amber-600 bg-amber-50 border-amber-100' },
     wins: { icon: <BadgeDollarSign size={14} />, tint: 'text-emerald-600 bg-emerald-50 border-emerald-100' },
     data: { icon: <Database size={14} />, tint: 'text-slate-500 bg-slate-50 border-slate-100' },
+    trend: { icon: <TrendingUp size={14} />, tint: 'text-indigo-600 bg-indigo-50 border-indigo-100' },
     other: { icon: <Sparkles size={14} />, tint: 'text-slate-500 bg-slate-50 border-slate-100' },
 };
 

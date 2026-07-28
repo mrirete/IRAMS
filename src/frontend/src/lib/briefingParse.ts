@@ -13,7 +13,7 @@
 
 export type SectionKey =
     | 'title' | 'headline' | 'load' | 'badActors' | 'integrity' | 'act'
-    | 'wins' | 'data' | 'other';
+    | 'wins' | 'data' | 'trend' | 'other';
 
 export interface BriefingSection {
     key: SectionKey;
@@ -40,6 +40,7 @@ function classify(title: string): SectionKey {
     if (/act this|action|this week|this month/.test(t)) return 'act';
     if (/quick win|warranty/.test(t)) return 'wins';
     if (/data quality/.test(t)) return 'data';
+    if (/trend|since baseline|progress/.test(t)) return 'trend';
     return 'other';
 }
 

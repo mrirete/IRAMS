@@ -1277,6 +1277,71 @@ const queryPid: AgentTool = {
   },
 };
 
+// ── get_assessment_trend ─────────────────────────────────────────────────
+// Run-over-run deltas from the persisted assessment snapshots (0228) — the
+// before/after story. All arithmetic here; the LLM only narrates it.
+const getAssessmentTrend: AgentTool = {
+  name: "get_assessment_trend",
+  description:
+    "Compare the latest persisted reliability-assessment snapshot against the previous run and the baseline (first ever). Returns dates plus deltas for 12-month maintenance spend, work-order count, asset count, recoverable warranty, asset-register health % and data-coverage %. Use it to report measurable progress since the baseline assessment. If it reports fewer than 2 snapshots, say the trend unlocks on the next assessment run instead of inventing one.",
+  parameters: { type: "object", properties: {} },
+  tier: 1,
+  async run(_args, ctx: ToolContext): Promise<ToolResult> {
+    const { data, error } = await ctx.db
+      .from("ers_assessment_snapshots")
+      .select("created_at, total_spend_12mo, wo_count_12mo, asset_count, warranty_recoverable, register_health_pct, coverage_cost_pct, coverage_failure_pct, coverage_downtime_pct")
+      .order("created_at", { ascending: true })
+      .limit(1000);
+    if (error) throw new Error(`assessment snapshots query failed: ${error.message}`);
+    const rows = data ?? [];
+    if (rows.length === 0) {
+      return {
+        data: { snapshots: 0, note: "No assessment snapshots exist yet — running an assessment records the baseline." },
+        sources: [{ kind: "assessment_snapshots", ref: "trend", label: "0 snapshots" }],
+      };
+    }
+    type Snap = (typeof rows)[number];
+    const pick = (r: Snap) => ({
+      date: String(r.created_at).slice(0, 10),
+      spend_12mo: Number(r.total_spend_12mo) || 0,
+      wo_count_12mo: Number(r.wo_count_12mo) || 0,
+      asset_count: Number(r.asset_count) || 0,
+      warranty_recoverable: Number(r.warranty_recoverable) || 0,
+      register_health_pct: r.register_health_pct == null ? null : Number(r.register_health_pct),
+      coverage_cost_pct: r.coverage_cost_pct == null ? null : Number(r.coverage_cost_pct),
+      coverage_failure_pct: r.coverage_failure_pct == null ? null : Number(r.coverage_failure_pct),
+    });
+    const baseline = pick(rows[0]);
+    const latest = pick(rows[rows.length - 1]);
+    const previous = rows.length >= 2 ? pick(rows[rows.length - 2]) : null;
+    const diff = (a: ReturnType<typeof pick>, b: ReturnType<typeof pick>) => ({
+      spend_12mo: a.spend_12mo - b.spend_12mo,
+      wo_count_12mo: a.wo_count_12mo - b.wo_count_12mo,
+      asset_count: a.asset_count - b.asset_count,
+      warranty_recoverable: a.warranty_recoverable - b.warranty_recoverable,
+      register_health_pct: a.register_health_pct != null && b.register_health_pct != null
+        ? a.register_health_pct - b.register_health_pct : null,
+      coverage_failure_pct: a.coverage_failure_pct != null && b.coverage_failure_pct != null
+        ? a.coverage_failure_pct - b.coverage_failure_pct : null,
+    });
+    return {
+      data: {
+        snapshots: rows.length,
+        baseline,
+        previous,
+        latest,
+        delta_vs_baseline: rows.length >= 2 ? diff(latest, baseline) : null,
+        delta_vs_previous: previous ? diff(latest, previous) : null,
+      },
+      sources: [{
+        kind: "assessment_snapshots",
+        ref: "trend",
+        label: `${rows.length} snapshot${rows.length === 1 ? "" : "s"} ${baseline.date} → ${latest.date}`,
+      }],
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [queryPid.name]: queryPid,
   [searchManuals.name]: searchManuals,
@@ -1292,4 +1357,5 @@ export const TOOLS: Record<string, AgentTool> = {
   [getAssetHealth.name]: getAssetHealth,
   [lookupDataDefinitions.name]: lookupDataDefinitions,
   [getInvestigation.name]: getInvestigation,
+  [getAssessmentTrend.name]: getAssessmentTrend,
 };

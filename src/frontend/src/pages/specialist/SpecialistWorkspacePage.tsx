@@ -389,7 +389,8 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 />
                 <StatTile
                     /* Measured ≠ identified: before/after CM run-rate on approved
-                       assets (30-day maturity). The renewal-slide number. */
+                       assets (30-day maturity). The renewal-slide number — the
+                       full story prints from /specialist/roi. */
                     label="Value measured" loading={loading || realized === null}
                     tone={(realized?.measuredToDate ?? 0) > 0 ? 'money' : (realized?.measuredToDate ?? 0) < 0 ? 'attention' : 'default'}
                     value={realized && realized.assetsMeasured > 0 ? formatCurrency(realized.measuredToDate) : '—'}
@@ -403,6 +404,21 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     icon={<TrendingUp size={15} />}
                 />
             </div>
+
+            {/* The renewal artifact: cost vs measured value, printable. */}
+            <Link to="/specialist/roi"
+                className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors group`}>
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                    <BadgeDollarSign size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-semibold text-slate-800">Return on Reliability statement</div>
+                    <div className="text-[11.5px] text-slate-500 mt-0.5 hidden sm:block">
+                        What the Specialist costs vs what it measurably earned — print it for the renewal conversation.
+                    </div>
+                </div>
+                <ArrowRight size={16} className="text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+            </Link>
 
             {/* Coming off another CMMS? The full migration path lives under Admin
                 (it isn't licence-gated), but this is where a new customer starts. */}
