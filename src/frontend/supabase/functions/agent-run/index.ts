@@ -1,7 +1,8 @@
 // agent-run — Phase 0 orchestration Edge Function for the reliability AI agents.
-// Flow: verify the caller's JWT → route to an agent → run the Gemini tool loop
-// (tools respect RLS via the user-scoped client) → enforce the tier cap →
-// persist the audit trail + any proposals → return a structured AgentResponse.
+// Flow: verify the caller's JWT → route to an agent → reserve against the
+// caller's daily AI budget (0229) → run the Gemini tool loop (tools respect RLS
+// via the user-scoped client) → enforce the tier cap → persist the audit trail
+// + any proposals → return a structured AgentResponse.
 //
 // Deploy:  supabase functions deploy agent-run
 // Secret:  supabase secrets set GEMINI_API_KEY=...   (SUPABASE_* are auto-provided)
@@ -48,7 +49,27 @@ serve(async (req) => {
     if (!agent) return json({ error: `Unknown agent '${agentName}'` }, 400);
     if (!query || typeof query !== "string") return json({ error: "Missing 'query'" }, 400);
 
-    // 3. Run the tool-calling loop (history enables multi-turn copilots).
+    // 3. Daily spend budget (migration 0229) — the same ceiling the FastAPI AI
+    // proxy enforces, so an agent run and a chat message draw on one pot. This
+    // function previously had no limit of any kind: a logged-in caller could
+    // loop it. Fails OPEN on a budget-backend error; a cost guard must not be
+    // the reason the agents stop answering.
+    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    const { data: budget, error: budgetErr } = await admin
+      .rpc("ers_ai_budget_reserve", { p_user_id: user.id });
+    if (budgetErr) {
+      console.warn("[agent-run] budget reserve failed, allowing call:", budgetErr.message);
+    } else {
+      const row = Array.isArray(budget) ? budget[0] : budget;
+      if (row && row.allowed === false) {
+        return json({
+          error: row.reason || "Daily AI budget reached",
+          budget: { requests_today: row.requests_today, max_requests: row.max_requests },
+        }, 429);
+      }
+    }
+
+    // 4. Run the tool-calling loop (history enables multi-turn copilots).
     const ctx: ToolContext = { db, proposals: [], sources: [] };
     const loop = await runToolLoop(agent, query, ctx, GEMINI_API_KEY, Array.isArray(history) ? history : []);
 
@@ -56,9 +77,11 @@ serve(async (req) => {
     const requiresApproval = proposals.length > 0; // any draft needs a human
     const duration = Date.now() - started;
 
-    // 4. Persist (service role — audit/proposals must succeed regardless of RLS).
-    const admin = createClient(SUPABASE_URL, SERVICE_KEY);
+    // 5. Persist (service role — audit/proposals must succeed regardless of RLS).
     const username = (user.user_metadata?.username as string) || user.email || user.id;
+
+    // Charge the run's real token cost against today's budget.
+    await admin.rpc("ers_ai_budget_record", { p_user_id: user.id, p_tokens: loop.tokensUsed ?? 0 });
 
     await admin.from("ers_ai_audit_log").insert({
       user_id: user.id,
@@ -86,7 +109,7 @@ serve(async (req) => {
       );
     }
 
-    // 5. Respond.
+    // 6. Respond.
     const response: AgentResponse = {
       agent: agent.name,
       query,

@@ -94,6 +94,56 @@ def _check_rate_limit(user_id: str) -> bool:
     return True
 
 
+# ── Daily Spend Budget (durable) ─────────────────────────────
+# The limiter above is per-process and dies on restart, so it bounds bursts
+# but not spend. The daily ceiling lives in Postgres (migration 0229) where
+# it survives restarts, is shared across replicas, and is the SAME rule the
+# agent-run Edge Function enforces.
+#
+# Two-phase: reserve a slot before the model call, record real tokens after.
+# Fails OPEN on infrastructure trouble — a cost guard must never be the
+# reason the product stops answering.
+
+
+def _budget_reserve(user_id: str) -> tuple[bool, str]:
+    """Reserve one AI call against the user's daily budget.
+
+    Returns (allowed, reason). Allows the call if the budget backend is
+    unavailable — this caps cost, it is not a security control.
+    """
+    sb = _get_supabase()
+    if sb is None:
+        return True, ""
+    try:
+        res = sb.rpc("ers_ai_budget_reserve", {"p_user_id": user_id}).execute()
+        rows = res.data or []
+        row = rows[0] if isinstance(rows, list) and rows else rows
+        if not row:
+            return True, ""
+        if row.get("allowed"):
+            return True, ""
+        reason = row.get("reason") or "daily AI budget reached"
+        logger.warning(
+            "AI budget refused user %s: %s (requests=%s tokens=%s)",
+            user_id, reason, row.get("requests_today"), row.get("tokens_today"),
+        )
+        return False, reason
+    except Exception as e:
+        logger.warning("AI budget reserve failed (allowing call): %s", e)
+        return True, ""
+
+
+def _budget_record(user_id: str, tokens_used: int) -> None:
+    """Add the call's actual token cost to today's counter (non-blocking)."""
+    sb = _get_supabase()
+    if sb is None:
+        return
+    try:
+        sb.rpc("ers_ai_budget_record", {"p_user_id": user_id, "p_tokens": int(tokens_used)}).execute()
+    except Exception as e:
+        logger.warning("AI budget record failed: %s", e)
+
+
 # ── Core AI Service ──────────────────────────────────────────
 
 RELANTERN_SYSTEM_INSTRUCTION = """You are the "Reliability Specialist" — an AI-powered advisor embedded in an Enterprise Asset Management system.
@@ -127,9 +177,13 @@ async def call_gemini_proxy(
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY not configured on server")
 
-    # Rate limit check
+    # Burst limit (per process) then the durable daily budget (Postgres).
     if not _check_rate_limit(user_id):
         raise ValueError(f"Rate limit exceeded ({RATE_LIMIT_MAX_REQUESTS} requests/{RATE_LIMIT_WINDOW}s)")
+
+    budget_ok, budget_reason = _budget_reserve(user_id)
+    if not budget_ok:
+        raise ValueError(budget_reason)
 
     start_time = time.time()
 
@@ -149,6 +203,7 @@ async def call_gemini_proxy(
 
         # Estimate tokens (rough: 4 chars per token)
         tokens_used = (len(prompt) + len(text)) // 4
+        _budget_record(user_id, tokens_used)
 
         # Audit log (fire-and-forget)
         _log_ai_interaction(
@@ -225,6 +280,10 @@ async def call_gemini_vision(
     if not _check_rate_limit(user_id):
         raise ValueError(f"Rate limit exceeded ({RATE_LIMIT_MAX_REQUESTS} requests/{RATE_LIMIT_WINDOW}s)")
 
+    budget_ok, budget_reason = _budget_reserve(user_id)
+    if not budget_ok:
+        raise ValueError(budget_reason)
+
     start_time = time.time()
 
     try:
@@ -264,6 +323,7 @@ async def call_gemini_vision(
         text = response.text or ""
         duration_ms = int((time.time() - start_time) * 1000)
         tokens_used = (len(prompt) + len(text)) // 4
+        _budget_record(user_id, tokens_used)
 
         _log_ai_interaction(
             user_id=user_id,
