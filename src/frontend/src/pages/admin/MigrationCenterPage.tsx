@@ -8,10 +8,10 @@
  * opens the right importer for each phase.
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
     Database, Wrench, Users, Package, Building2, CalendarClock, Gauge,
-    FileSpreadsheet, Radio, BarChart2, CheckCircle2, ArrowRight, Loader2,
+    FileSpreadsheet, Radio, BarChart2, CheckCircle2, ArrowRight, ArrowLeft, Loader2,
     Send, RotateCcw, AlertTriangle, Tags, Download, FileUp,
 } from 'lucide-react';
 import BulkImportModal from '../../eam/components/modals/BulkImportModal';
@@ -101,8 +101,21 @@ const PHASES: Phase[] = [
     },
 ];
 
+/**
+ * Where "back" goes. The page sits under Admin in the sidebar but is reached
+ * from three places — the Specialist workspace, the dashboard's getting-started
+ * card, and the Admin nav — so each entry point states its own origin rather
+ * than the page guessing. The workspace is the fallback: it is the flow this
+ * page was built for, and on a cold URL it is the most useful place to land.
+ */
+export interface MigrationOrigin { to?: string; label?: string }
+
 export const MigrationCenterPage: React.FC = () => {
     const { showToast } = useToast();
+    const { state } = useLocation();
+    const origin = (state ?? {}) as MigrationOrigin;
+    const backTo = origin.to ?? '/specialist';
+    const backLabel = origin.label ?? 'Workspace';
     const [counts, setCounts] = useState<Counts | null>(null);
     const [openType, setOpenType] = useState<ImportType | null>(null);
     const [pidOpen, setPidOpen] = useState(false);
@@ -245,6 +258,12 @@ export const MigrationCenterPage: React.FC = () => {
     return (
         <div className="max-w-4xl mx-auto space-y-6 pb-24 animate-in fade-in duration-300">
             <div>
+                <Link
+                    to={backTo}
+                    className="inline-flex items-center gap-1.5 mb-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors w-fit py-0.5"
+                >
+                    <ArrowLeft size={14} strokeWidth={2.5} /> Back to {backLabel}
+                </Link>
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
                     <Database size={22} className="text-primary-600" /> Migration Center
                 </h1>

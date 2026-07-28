@@ -113,7 +113,7 @@ export const GettingStarted: React.FC = () => {
                 path; the Migration Center is the bring-your-data-with-you one. */}
             {isAdmin && (
                 <button
-                    onClick={() => navigate('/admin/migration')}
+                    onClick={() => navigate('/admin/migration', { state: { to: '/dashboard', label: 'Dashboard' } })}
                     className="w-full flex items-center gap-2 px-4 sm:px-5 py-3 border-t border-slate-100 bg-slate-50/60 hover:bg-slate-50 text-left transition-colors"
                 >
                     <Database size={15} className="text-slate-400 flex-shrink-0" />
