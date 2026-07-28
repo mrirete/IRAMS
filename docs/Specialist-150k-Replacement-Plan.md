@@ -83,8 +83,9 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
 ### Phase B — match the engineer's scope
 - **B1. SHIPPED 2026-07-28 (2e2313a):** digest consumes snapshot history via the
   `get_assessment_trend` tool — "Trend since baseline" section with deterministic deltas.
-- **B2.** Study-scoped assessment: run the assessment engine over one system/asset set, persisted
-  against the study record. (The Explore→popup pattern; no new engine, a filter.)
+- **B2. SHIPPED 2026-07-28 (0108b3b):** "Assess an area" — the engine (extracted to
+  `assessmentEngine`) runs over any hierarchy subtree and persists as an
+  `ers_reliability_studies` record with structured findings. Same engine, one filter.
 - **B3. SHIPPED 2026-07-28:** fleet-wide PM optimization (`lib/pmOptimization`): every active PM ×
   failure history × censored Weibull → stretch / tighten / shift-to-CBM / consolidate verdicts with
   PM-events-per-year recovered, drafted into the proposals queue (pm_optimizer →
