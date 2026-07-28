@@ -8,6 +8,7 @@ import { GlobalErrorToaster } from '../eam/components/GlobalErrorToaster';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { setLevelModel } from '../eam/services/hierarchyModel';
 import { registerRoutePrefetch } from '../lib/lazyWithReload';
+import MissionGuide from '../components/specialist/MissionGuide';
 
 // ── Lazy-loaded panels (not needed on initial render) ──
 // RelanternAI (Reliability Specialist) is the single AI chat panel — opened from
@@ -97,6 +98,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     {children}
                 </main>
             </div>
+
+            {/* Specialist mission handoff — floats the active briefing mission's
+                walkthrough in whatever module the user landed in. */}
+            <MissionGuide />
 
             {/* Relantern AI Panel — lazy loaded on first open */}
             {isRelanternOpen && (

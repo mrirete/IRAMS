@@ -26,6 +26,7 @@ import AdvisoryAgentPanel from '../../eam/components/ui/AdvisoryAgentPanel';
 import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, type AgentTurn } from '../../eam/services/agentRunClient';
 import { predictionService, type AgentAction } from '../../eam/services/PredictionService';
 import { computeRealization, type RealizationSummary } from '../../lib/valueRealization';
+import { computeBriefingAnalytics, type BriefingAnalytics } from '../../lib/briefingCharts';
 import BriefingReport, { RichText, type BriefingAsset } from '../../components/specialist/BriefingReport';
 
 interface AuditRow {
@@ -132,6 +133,8 @@ export const SpecialistWorkspacePage: React.FC = () => {
 
     // ── entity linking: real register tags → interactive chips in briefing/chat ──
     const [assetsByTag, setAssetsByTag] = useState<Map<string, BriefingAsset>>(new Map());
+    // ── live illustrations for the briefing (computed, never parsed from prose) ──
+    const [analytics, setAnalytics] = useState<BriefingAnalytics | null>(null);
 
     // ── proposals ──
     const [proposals, setProposals] = useState<AgentAction[]>([]);
@@ -160,7 +163,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
     };
 
     const loadAll = async () => {
-        const [logQ, actionsQ, assetQ] = await Promise.all([
+        const [logQ, actionsQ, assetQ, woQ] = await Promise.all([
             supabase.from('ers_ai_audit_log')
                 .select('id, module, context_type, query_text, response_text, created_at, duration_ms')
                 .eq('action_type', 'agent_run')
@@ -168,11 +171,25 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 .limit(15),
             predictionService.getAgentActions(),
             supabase.from('assets').select('id, tag, name, criticality').limit(10000),
+            supabase.from('work_orders')
+                .select('asset_id, type, status, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost')
+                .order('created_at', { ascending: false })
+                .limit(20000),
         ]);
         const rows = (logQ.data ?? []) as AuditRow[];
         setLog(rows);
-        setAssetsByTag(new Map(
-            ((assetQ.data ?? []) as BriefingAsset[]).map((a) => [a.tag.toLowerCase(), a]),
+        const assetRows = (assetQ.data ?? []) as BriefingAsset[];
+        setAssetsByTag(new Map(assetRows.map((a) => [a.tag.toLowerCase(), a])));
+        setAnalytics(computeBriefingAnalytics(
+            ((woQ.data ?? []) as Record<string, unknown>[]).map((w) => ({
+                asset_id: (w.asset_id as string) ?? null,
+                type: (w.type as string) ?? null,
+                status: (w.status as string) ?? null,
+                created_at: String(w.created_at),
+                cost: ((Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0)) || Number(w.total_actual_cost) || 0,
+            })),
+            assetRows,
+            Date.now(),
         ));
         setBriefing(rows.find((r) => r.context_type === 'reliability_digest') ?? null);
         setProposals(actionsQ.filter((a) => a.status === 'pending_review'));
@@ -358,7 +375,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
 
             {/* Coming off another CMMS? The full migration path lives under Admin
                 (it isn't licence-gated), but this is where a new customer starts. */}
-            <Link to="/admin/migration" state={{ to: '/specialist', label: 'Workspace' }}
+            <Link to="/admin/migration"
                 className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-primary-300 hover:bg-primary-50/40 transition-colors group`}>
                 <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
                     <Database size={16} />
@@ -400,6 +417,8 @@ export const SpecialistWorkspacePage: React.FC = () => {
                                 briefingKey={briefingLive ? 'live' : briefing?.created_at ?? 'none'}
                                 assetsByTag={assetsByTag}
                                 onAsk={(q) => void send(q)}
+                                analytics={analytics}
+                                formatCurrency={formatCurrency}
                             />
                         ) : (
                             <div className="text-center py-6">

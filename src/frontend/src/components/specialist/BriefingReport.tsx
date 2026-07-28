@@ -21,8 +21,11 @@ import {
     ChevronRight, Check, ExternalLink, MessageCircleQuestion, Sparkles,
 } from 'lucide-react';
 import {
-    parseBriefing, tokenizeTags, routeForAction, type BriefingSection, type SectionKey,
+    parseBriefing, tokenizeTags, routeForAction, MISSION_HANDOFF_KEY,
+    type ActiveMission, type BriefingSection, type SectionKey,
 } from '../../lib/briefingParse';
+import SectionCharts from './BriefingCharts';
+import type { BriefingAnalytics } from '../../lib/briefingCharts';
 
 export interface BriefingAsset {
     id: string;
@@ -39,6 +42,9 @@ interface Props {
     assetsByTag: Map<string, BriefingAsset>;
     /** Hand a question to the workspace chat ("Ask the Specialist"). */
     onAsk?: (question: string) => void;
+    /** Live chart data (lib/briefingCharts) — computed, never parsed from prose. */
+    analytics?: BriefingAnalytics | null;
+    formatCurrency?: (n: number) => string;
 }
 
 // ── inline rendering ──────────────────────────────────────────────────────
@@ -174,7 +180,13 @@ const SECTION_META: Record<Exclude<SectionKey, 'title' | 'headline' | 'act'>, { 
     other: { icon: <Sparkles size={14} />, tint: 'text-slate-500 bg-slate-50 border-slate-100' },
 };
 
-const SectionCard: React.FC<{ section: BriefingSection; assetsByTag: Map<string, BriefingAsset>; onAsk?: (q: string) => void }> = ({ section, assetsByTag, onAsk }) => {
+const SectionCard: React.FC<{
+    section: BriefingSection;
+    assetsByTag: Map<string, BriefingAsset>;
+    onAsk?: (q: string) => void;
+    analytics?: BriefingAnalytics | null;
+    formatCurrency?: (n: number) => string;
+}> = ({ section, assetsByTag, onAsk, analytics, formatCurrency }) => {
     // Integrity reads calm when the agent reports it clear.
     const clear = section.key === 'integrity' && /no cml|clear|none|nothing/i.test(section.body);
     const meta = clear
@@ -187,6 +199,9 @@ const SectionCard: React.FC<{ section: BriefingSection; assetsByTag: Map<string,
                 <span className="text-[12px] font-semibold text-slate-800 uppercase tracking-[0.05em]">{section.title}</span>
             </h3>
             <RichText text={section.body} assetsByTag={assetsByTag} onAsk={onAsk} />
+            {formatCurrency && (
+                <SectionCharts sectionKey={section.key} analytics={analytics ?? null} formatCurrency={formatCurrency} />
+            )}
         </section>
     );
 };
@@ -236,6 +251,22 @@ const MissionList: React.FC<{ actions: string[]; briefingKey: string; assetsByTa
                 {actions.map((a, i) => {
                     const route = routeForAction(a);
                     const isDone = done.has(i);
+                    /** Go = a guided handoff, not a drop-off: the mission travels
+                     *  via sessionStorage and MissionGuide (AppLayout) continues
+                     *  the Specialist's walkthrough inside the destination. */
+                    const go = () => {
+                        if (!route) return;
+                        const tags = tokenizeTags(a, [...assetsByTag.values()].map((x) => x.tag))
+                            .filter((t) => t.kind === 'tag')
+                            .map((t) => assetsByTag.get(t.value.toLowerCase())?.tag ?? t.value);
+                        const handoff: ActiveMission = {
+                            briefingKey, index: i, text: a,
+                            path: route.path, label: route.label,
+                            tags: [...new Set(tags)],
+                        };
+                        try { sessionStorage.setItem(MISSION_HANDOFF_KEY, JSON.stringify(handoff)); } catch { /* ignore */ }
+                        navigate(route.path);
+                    };
                     return (
                         <li key={i} className={`flex items-start gap-3 px-4 py-3 transition-colors ${isDone ? 'bg-emerald-50/40' : 'hover:bg-slate-50/60'}`}>
                             <button
@@ -251,7 +282,8 @@ const MissionList: React.FC<{ actions: string[]; briefingKey: string; assetsByTa
                             </div>
                             {route && !isDone && (
                                 <button
-                                    onClick={() => navigate(route.path)}
+                                    onClick={go}
+                                    title={`The Specialist guides you through this in ${route.label}`}
                                     className="shrink-0 inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white hover:border-primary-300 hover:text-primary-700 text-slate-500 text-[11px] font-semibold px-2 h-7 transition-colors">
                                     {route.label} <ChevronRight size={12} />
                                 </button>
@@ -266,7 +298,7 @@ const MissionList: React.FC<{ actions: string[]; briefingKey: string; assetsByTa
 
 // ── the report ────────────────────────────────────────────────────────────
 
-export const BriefingReport: React.FC<Props> = ({ text, briefingKey, assetsByTag, onAsk }) => {
+export const BriefingReport: React.FC<Props> = ({ text, briefingKey, assetsByTag, onAsk, analytics, formatCurrency }) => {
     const parsed = useMemo(() => parseBriefing(text), [text]);
 
     // Unstructured (errors, free-form replies) → plain rich text, no chrome.
@@ -290,7 +322,8 @@ export const BriefingReport: React.FC<Props> = ({ text, briefingKey, assetsByTag
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {cards.map((s, i) => (
                     <div key={i} className={cards.length % 2 === 1 && i === cards.length - 1 ? 'md:col-span-2' : ''}>
-                        <SectionCard section={s} assetsByTag={assetsByTag} onAsk={onAsk} />
+                        <SectionCard section={s} assetsByTag={assetsByTag} onAsk={onAsk}
+                            analytics={analytics} formatCurrency={formatCurrency} />
                     </div>
                 ))}
             </div>

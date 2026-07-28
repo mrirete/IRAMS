@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBriefing, tokenizeTags, routeForAction } from './briefingParse';
+import { parseBriefing, tokenizeTags, routeForAction, guideForMission } from './briefingParse';
 
 // Shape the live reliability_digest actually produced (2026-07-28 run).
 const SAMPLE = `**Reliability & Integrity Digest: Fleet Overview**
@@ -85,5 +85,22 @@ describe('routeForAction', () => {
         expect(routeForAction('Schedule the CML inspection on V-201')?.path).toBe('/comply/evaluate');
         expect(routeForAction('File the warranty claim')?.path).toBe('/specialist/assessment');
         expect(routeForAction('Celebrate the win')).toBeNull();
+    });
+});
+
+describe('guideForMission', () => {
+    it('gives every routed destination a concrete, tag-specific playbook', () => {
+        for (const path of ['/analyze', '/recurring-work', '/work-orders', '/comply/evaluate', '/specialist/deliver']) {
+            const g = guideForMission(path, ['GT-301']);
+            expect(g.title.length).toBeGreaterThan(0);
+            expect(g.steps.length).toBeGreaterThanOrEqual(2);
+        }
+        expect(guideForMission('/analyze', ['GT-301']).steps[0]).toContain('GT-301');
+        expect(guideForMission('/analyze', ['GT-301', 'K-601']).steps[0]).toContain('GT-301, K-601');
+    });
+
+    it('falls back gracefully with no tags and unknown paths', () => {
+        expect(guideForMission('/analyze', []).steps[0]).toContain('the flagged asset');
+        expect(guideForMission('/somewhere-new', []).steps.length).toBeGreaterThanOrEqual(2);
     });
 });

@@ -143,3 +143,86 @@ export function routeForAction(text: string): ActionRoute | null {
     if (/proposal|approve/.test(t)) return { path: '/specialist/deliver', label: 'Deliver work' };
     return null;
 }
+
+// ── guided handoff ────────────────────────────────────────────────────────
+// Clicking Go must not dump the user at a module root: the mission travels
+// with them (sessionStorage) and MissionGuide renders the Specialist's
+// walkthrough in the destination module until the mission is done/dismissed.
+
+export interface ActiveMission {
+    briefingKey: string;
+    index: number;
+    text: string;
+    path: string;
+    label: string;
+    /** Asset tags named in the mission, original casing. */
+    tags: string[];
+}
+
+export const MISSION_HANDOFF_KEY = 'specialist-active-mission';
+
+/**
+ * The Specialist's playbook for a destination — concrete, tag-specific steps
+ * so the guidance continues inside the module. Deterministic text; the tags
+ * come from the mission itself.
+ */
+export function guideForMission(path: string, tags: string[]): { title: string; steps: string[] } {
+    const tag = tags[0] ?? 'the flagged asset';
+    const tagList = tags.length > 1 ? tags.join(', ') : tag;
+    if (path.startsWith('/analyze')) {
+        return {
+            title: 'Run the elimination play',
+            steps: [
+                `Open Defect Elimination and raise a task for ${tagList} — check the proposals queue first, a draft may already be waiting.`,
+                `If the failure cause is unclear, start an RCA investigation on ${tag}'s most recent failure instead of guessing.`,
+                'Save the outcome as a reliability study so the fix (and its evidence) stays auditable.',
+            ],
+        };
+    }
+    if (path.startsWith('/recurring-work')) {
+        return {
+            title: 'Clear the overdue PMs',
+            steps: [
+                'Sort or filter the plan to overdue programmes — these are the ones the briefing flagged.',
+                `Complete or reschedule each overdue PM${tags.length ? ` on ${tagList}` : ''}; overdue PM debt compounds into failures.`,
+                'If the same PM keeps going overdue, ask the Specialist whether the interval is defensible before just rescheduling it.',
+            ],
+        };
+    }
+    if (path.startsWith('/work-orders')) {
+        return {
+            title: 'Work the open backlog',
+            steps: [
+                `Filter to open work${tags.length ? ` on ${tagList}` : ''} and rank by criticality.`,
+                'Assign an owner and a date to anything unowned — open work without an owner is where backlog grows.',
+                'On completion, record failure code, cost and downtime — those three fields power every analysis the Specialist runs.',
+            ],
+        };
+    }
+    if (path.startsWith('/comply')) {
+        return {
+            title: 'Close the integrity loop',
+            steps: [
+                'Open Evaluate and review any CML trending toward t-min.',
+                `Schedule the inspection${tags.length ? ` for ${tagList}` : ''} before the projected breach date, not after.`,
+                'Record the reading — the corrosion-rate model sharpens with every point.',
+            ],
+        };
+    }
+    if (path.startsWith('/specialist/deliver')) {
+        return {
+            title: 'Deliver the approved work',
+            steps: [
+                'Review each approved proposal — the export preview shows exactly what leaves the system.',
+                'Deliver to your CMMS (or download the package) — nothing unapproved can be sent.',
+            ],
+        };
+    }
+    return {
+        title: 'Work the finding',
+        steps: [
+            `Address the flagged item${tags.length ? ` on ${tagList}` : ''} in this module.`,
+            'When it is handled, mark the mission done so your briefing progress stays honest.',
+        ],
+    };
+}
