@@ -103,7 +103,7 @@ export interface Assessment {
 export async function computeAssessment(scopeRootId?: string): Promise<Assessment> {
     const cutoff12 = new Date(Date.now() - 365 * DAY_MS).toISOString();
 
-    const [woQ, assetQ, pmQ, warrQ, failQ, readQ, logQ] = await Promise.all([
+    const [woQ, assetQ, pmQ, warrQ, failQ, readQ, logQ, smeaWsQ, smeaItemQ] = await Promise.all([
         supabase.from('work_orders')
             .select('id, asset_id, type, status, created_at, closed_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs')
             .order('created_at', { ascending: false }).limit(20000),
@@ -121,6 +121,8 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
         supabase.from('reading_logs')
             .select('definition_id, asset_id, reading_date, reading_time, reading_value')
             .order('reading_date', { ascending: false }).limit(20000),
+        supabase.from('ers_smea_worksheets').select('id, asset_id, status').neq('status', 'closed').limit(2000),
+        supabase.from('ers_smea_items').select('worksheet_id, success_mode, spn, status').neq('status', 'dropped').limit(5000),
     ]);
 
     let wos: WoRow[] = (woQ.data ?? []) as WoRow[];
@@ -286,12 +288,25 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
     for (const w of wos12) {
         if (w.asset_id && isCorrective(w)) cmCost12ByAsset.set(w.asset_id, (cmCost12ByAsset.get(w.asset_id) ?? 0) + woCost(w));
     }
+    // E3: the top-SPN success mode per asset rides into the strategy basis —
+    // what a SMEA says to SUSTAIN shapes how the asset is maintained.
+    const wsAsset = new Map(((smeaWsQ.data ?? []) as { id: string; asset_id: string | null }[])
+        .filter((w) => w.asset_id && assetById.has(w.asset_id))
+        .map((w) => [w.id, w.asset_id as string]));
+    const smeaTopByAsset = new Map<string, { mode: string; spn: number }>();
+    for (const it of (smeaItemQ.data ?? []) as { worksheet_id: string; success_mode: string; spn: number | null }[]) {
+        const assetId = wsAsset.get(it.worksheet_id);
+        if (!assetId || it.spn == null) continue;
+        const cur = smeaTopByAsset.get(assetId);
+        if (!cur || it.spn > cur.spn) smeaTopByAsset.set(assetId, { mode: it.success_mode, spn: it.spn });
+    }
     const strategy = selectStrategies({
         assets,
         cmTimesByAsset: failureDatesByAsset,
         cmCost12ByAsset,
         activePmAssets: new Set(pms.map((p) => String(p.asset_id)).filter((id) => assetById.has(id))),
         monitoredAssets,
+        smeaTopByAsset,
     }, Date.now());
 
     // Success layer (Phase E1, PSC framework) — Golden-Spot residency per

@@ -40,6 +40,9 @@ export interface StrategyInputs {
     activePmAssets: Set<string>;
     /** Assets with ≥1 reading definition (condition monitoring exists). */
     monitoredAssets: Set<string>;
+    /** Top SMEA success mode per asset (PSC E3) — what to SUSTAIN, ranked by
+     *  SPN = Value × Sustainability × Monitorability. Optional. */
+    smeaTopByAsset?: Map<string, { mode: string; spn: number }>;
 }
 
 export type StrategyRegime = 'run_to_failure' | 'fixed_interval' | 'condition_based' | 'defect_elimination' | 'rcm_study';
@@ -59,6 +62,8 @@ export interface StrategyVerdict {
     isMonitored: boolean;
     /** Current state already matches the recommendation. */
     aligned: boolean;
+    /** The asset's highest-SPN success mode, when a SMEA exists (E3). */
+    smeaTop: { mode: string; spn: number } | null;
 }
 
 export interface StrategyReview {
@@ -131,6 +136,13 @@ export function selectStrategies(inp: StrategyInputs, nowMs: number): StrategyRe
             basis = `Criticality ${crit || '—'} and ${cost12 > 0 ? `only ${cost12} of` : 'no'} corrective cost in 12 months — deliberate run-to-failure is the economic choice; record the decision so it reads as a choice, not a gap.`;
         }
 
+        // E3: a SMEA on the asset names what success looks like — the strategy
+        // must sustain it, so the top-SPN mode rides along in the basis.
+        const smeaTop = inp.smeaTopByAsset?.get(a.id) ?? null;
+        if (smeaTop) {
+            basis += ` SMEA: sustain "${smeaTop.mode}" (SPN ${smeaTop.spn}).`;
+        }
+
         const aligned =
             (recommended === 'fixed_interval' && hasActivePm) ||
             (recommended === 'condition_based' && isMonitored) ||
@@ -142,6 +154,7 @@ export function selectStrategies(inp: StrategyInputs, nowMs: number): StrategyRe
             assetId: a.id, tag: a.tag, name: a.name, criticality: a.criticality,
             recommended, basis, recommendedIntervalDays: interval,
             weibull: fit, cmCost12mo: cost12, hasActivePm, isMonitored, aligned,
+            smeaTop,
         });
     }
 

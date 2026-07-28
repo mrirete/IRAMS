@@ -23,7 +23,7 @@ import { supabase } from '../../eam/lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import AdvisoryAgentPanel from '../../eam/components/ui/AdvisoryAgentPanel';
-import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, type AgentTurn } from '../../eam/services/agentRunClient';
+import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, runRsaAnalyst, type AgentTurn } from '../../eam/services/agentRunClient';
 import { predictionService, type AgentAction } from '../../eam/services/PredictionService';
 import { computeRealization, type RealizationSummary } from '../../lib/valueRealization';
 import { computeBriefingAnalytics, type BriefingAnalytics } from '../../lib/briefingCharts';
@@ -582,6 +582,17 @@ export const SpecialistWorkspacePage: React.FC = () => {
                         runLabel="Analyse asset"
                         inputPlaceholder="Asset tag, e.g. P-101"
                         onRun={(input) => runWeibullAnalyst(input.trim())}
+                    />
+
+                    {/* Root Success Analyst — PSC E4: positive deviance, the success-side RCA */}
+                    <AdvisoryAgentPanel
+                        title="Root Success Analyst"
+                        subtitle="Why does the best asset in a class succeed — and how do we propagate it (PSC RSA)"
+                        icon={<TrendingUp size={16} />}
+                        accent="primary"
+                        runLabel="Find success"
+                        inputPlaceholder="Optional focus, e.g. a pump class or area"
+                        onRun={(input) => runRsaAnalyst(input)}
                     />
                 </div>
 

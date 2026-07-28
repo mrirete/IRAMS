@@ -1370,6 +1370,85 @@ const getAssessmentTrend: AgentTool = {
   },
 };
 
+// ── find_positive_deviants ───────────────────────────────────────────────
+// RSA (Root Success Analysis, PSC framework): the cheapest improvement a
+// plant owns is a peer that already succeeds. Groups assets sharing a model
+// (nameplate), finds the one that outperforms its class on 12-month
+// corrective count/cost, and returns the spread so the agent can ask WHY.
+const findPositiveDeviants: AgentTool = {
+  name: "find_positive_deviants",
+  description:
+    "Find positive deviants: groups of assets sharing the same model where one asset has far fewer corrective failures / lower corrective cost than its peers over the last 12 months. Returns each group with per-asset failure counts and costs and names the deviant. Use as the starting point of a Root Success Analysis (why does the best one succeed?). If nameplate (model) data is too sparse to form groups, it says so.",
+  parameters: {
+    type: "object",
+    properties: {
+      min_group_size: { type: "integer", description: "Minimum assets sharing a model to form a class (default 2)." },
+    },
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    const minGroup = Number.isFinite(args?.min_group_size) ? Math.max(2, args.min_group_size) : 2;
+    const cutoff = new Date(Date.now() - 365 * 24 * 3600 * 1000).toISOString();
+    const [assetQ, woQ] = await Promise.all([
+      ctx.db.from("assets").select("id, tag, name, model, manufacturer, criticality, hierarchy_level")
+        // A class is EQUIPMENT vs EQUIPMENT — sites/areas sharing a model
+        // string are register noise, not peers.
+        .in("hierarchy_level", ["EQUIPMENT", "COMPONENT"]).limit(10000),
+      ctx.db.from("work_orders")
+        .select("asset_id, type, frozen_labor_cost, frozen_material_cost, total_actual_cost")
+        .gte("created_at", cutoff).limit(20000),
+    ]);
+    if (assetQ.error) throw new Error(`assets query failed: ${assetQ.error.message}`);
+    type A = { id: string; tag: string; name: string; model: string | null; manufacturer: string | null; criticality: string | null };
+    const assets = (assetQ.data ?? []) as A[];
+    const stats = new Map<string, { failures: number; cost: number }>();
+    for (const w of (woQ.data ?? []) as { asset_id: string | null; type: string | null; frozen_labor_cost: number | null; frozen_material_cost: number | null; total_actual_cost: number | null }[]) {
+      if (!w.asset_id || String(w.type ?? "").toUpperCase() !== "CM") continue;
+      const c = ((Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0)) || Number(w.total_actual_cost) || 0;
+      const cur = stats.get(w.asset_id) ?? { failures: 0, cost: 0 };
+      cur.failures += 1; cur.cost += c;
+      stats.set(w.asset_id, cur);
+    }
+    const byModel = new Map<string, A[]>();
+    for (const a of assets) {
+      const m = (a.model ?? "").trim();
+      if (!m) continue;
+      const k = `${(a.manufacturer ?? "").trim().toLowerCase()}|${m.toLowerCase()}`;
+      (byModel.get(k) ?? byModel.set(k, []).get(k)!).push(a);
+    }
+    const withModel = [...byModel.values()].reduce((s, g) => s + g.length, 0);
+    const groups: Record<string, unknown>[] = [];
+    for (const members of byModel.values()) {
+      if (members.length < minGroup) continue;
+      const rows = members.map((a) => ({
+        tag: a.tag, name: a.name, criticality: a.criticality,
+        failures_12mo: stats.get(a.id)?.failures ?? 0,
+        cm_cost_12mo: Math.round(stats.get(a.id)?.cost ?? 0),
+      })).sort((x, y) => x.failures_12mo - y.failures_12mo || x.cm_cost_12mo - y.cm_cost_12mo);
+      const meanFailures = rows.reduce((s, r) => s + r.failures_12mo, 0) / rows.length;
+      const best = rows[0];
+      // A deviant needs peers that actually struggle AND a real gap to explain.
+      if (meanFailures < 1 || best.failures_12mo > meanFailures / 2) continue;
+      groups.push({
+        model: `${members[0].manufacturer ?? ""} ${members[0].model ?? ""}`.trim(),
+        class_size: rows.length,
+        class_mean_failures_12mo: Math.round(meanFailures * 10) / 10,
+        positive_deviant: best,
+        peers: rows.slice(1),
+      });
+    }
+    return {
+      data: {
+        groups,
+        note: groups.length === 0
+          ? `No positive-deviant groups found: ${withModel}/${assets.length} assets carry a model, and no model class had both struggling peers and a clear outperformer. Improving nameplate completeness widens this search.`
+          : `${groups.length} class(es) with a clear outperformer — investigate WHY the deviant succeeds (installation, operating practice, duty) and propose propagating it.`,
+      },
+      sources: [{ kind: "assets", ref: "positive-deviants", label: `${byModel.size} model classes over ${withModel} nameplated assets` }],
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
   [queryPid.name]: queryPid,
   [searchManuals.name]: searchManuals,
@@ -1386,4 +1465,5 @@ export const TOOLS: Record<string, AgentTool> = {
   [lookupDataDefinitions.name]: lookupDataDefinitions,
   [getInvestigation.name]: getInvestigation,
   [getAssessmentTrend.name]: getAssessmentTrend,
+  [findPositiveDeviants.name]: findPositiveDeviants,
 };

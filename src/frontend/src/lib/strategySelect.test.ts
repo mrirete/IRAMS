@@ -74,4 +74,13 @@ describe('selectStrategies', () => {
         expect(r.coveragePct).toBe(100);
         expect(r.criticalTotal).toBe(0);
     });
+
+    it('rides the top-SPN SMEA success mode into the basis (E3)', () => {
+        const r = selectStrategies(base({
+            assets: [asset('k1', 'A')],
+            smeaTopByAsset: new Map([['k1', { mode: 'Bearing within thermal envelope', spn: 448 }]]),
+        }), NOW);
+        expect(r.verdicts[0].smeaTop?.spn).toBe(448);
+        expect(r.verdicts[0].basis).toContain('sustain "Bearing within thermal envelope" (SPN 448)');
+    });
 });

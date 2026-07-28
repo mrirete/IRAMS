@@ -155,6 +155,17 @@ export function runAssessmentNarrator(findings: Record<string, unknown>): Promis
 }
 
 /**
+ * Root Success Analyst (RSA, PSC framework) — positive deviance: why does the
+ * best asset in a class succeed, and how do we propagate it? Advisory only.
+ */
+export function runRsaAnalyst(scope?: string): Promise<AgentRunResponse> {
+    const query = scope?.trim()
+        ? `Run a Root Success Analysis focused on: ${scope.trim()}`
+        : 'Run a fleet Root Success Analysis: find the positive deviants and explain how to propagate their success.';
+    return runAgent('rsa_analyst', query);
+}
+
+/**
  * Weibull Analyst — censored Weibull fit + PM-interval recommendation for one
  * asset (Tier 2: may queue a draft_pm_interval proposal for human review).
  */
