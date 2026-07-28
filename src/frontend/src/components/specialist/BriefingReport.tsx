@@ -19,6 +19,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     Megaphone, Wrench, TrendingDown, ShieldCheck, ShieldAlert, Target,
     ChevronRight, Check, ExternalLink, MessageCircleQuestion, Sparkles,
+    BadgeDollarSign, Database,
 } from 'lucide-react';
 import {
     parseBriefing, tokenizeTags, routeForAction, MISSION_HANDOFF_KEY,
@@ -26,6 +27,7 @@ import {
 } from '../../lib/briefingParse';
 import SectionCharts from './BriefingCharts';
 import type { BriefingAnalytics } from '../../lib/briefingCharts';
+import type { DetMission } from '../../lib/missionEngine';
 
 export interface BriefingAsset {
     id: string;
@@ -45,6 +47,10 @@ interface Props {
     /** Live chart data (lib/briefingCharts) — computed, never parsed from prose. */
     analytics?: BriefingAnalytics | null;
     formatCurrency?: (n: number) => string;
+    /** Deterministic, self-verifying missions (lib/missionEngine). When
+     *  provided they REPLACE the parsed act-items — the data decides "done",
+     *  not the honor system. */
+    missions?: DetMission[] | null;
 }
 
 // ── inline rendering ──────────────────────────────────────────────────────
@@ -177,6 +183,8 @@ const SECTION_META: Record<Exclude<SectionKey, 'title' | 'headline' | 'act'>, { 
     load: { icon: <Wrench size={14} />, tint: 'text-sky-600 bg-sky-50 border-sky-100' },
     badActors: { icon: <TrendingDown size={14} />, tint: 'text-rose-600 bg-rose-50 border-rose-100' },
     integrity: { icon: <ShieldAlert size={14} />, tint: 'text-amber-600 bg-amber-50 border-amber-100' },
+    wins: { icon: <BadgeDollarSign size={14} />, tint: 'text-emerald-600 bg-emerald-50 border-emerald-100' },
+    data: { icon: <Database size={14} />, tint: 'text-slate-500 bg-slate-50 border-slate-100' },
     other: { icon: <Sparkles size={14} />, tint: 'text-slate-500 bg-slate-50 border-slate-100' },
 };
 
@@ -296,9 +304,82 @@ const MissionList: React.FC<{ actions: string[]; briefingKey: string; assetsByTa
     );
 };
 
+/** Self-verifying mission list: the data marks missions done, nobody ticks. */
+const DetMissionList: React.FC<{
+    missions: DetMission[];
+    briefingKey: string;
+    assetsByTag: Map<string, BriefingAsset>;
+    onAsk?: (q: string) => void;
+}> = ({ missions, briefingKey, assetsByTag, onAsk }) => {
+    const navigate = useNavigate();
+    const doneCount = missions.filter((m) => m.done).length;
+    const pct = missions.length ? Math.round((doneCount / missions.length) * 100) : 0;
+
+    const go = (m: DetMission, i: number) => {
+        if (!m.path) return;
+        const handoff: ActiveMission = {
+            briefingKey, index: i, text: m.text,
+            path: m.path, label: m.label ?? 'module', tags: m.tags,
+        };
+        try { sessionStorage.setItem(MISSION_HANDOFF_KEY, JSON.stringify(handoff)); } catch { /* ignore */ }
+        navigate(m.path);
+    };
+
+    return (
+        <section className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100">
+                <h3 className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-md border text-primary-600 bg-primary-50 border-primary-100 flex items-center justify-center"><Target size={14} /></span>
+                    <span className="text-[12px] font-semibold text-slate-800 uppercase tracking-[0.05em]">This week's missions</span>
+                    <span className="hidden sm:inline text-[10px] font-medium text-slate-400 normal-case tracking-normal">verified from your records — done means done</span>
+                </h3>
+                <div className="flex items-center gap-2">
+                    <span className={`text-[11px] font-semibold tabular-nums ${doneCount === missions.length ? 'text-emerald-600' : 'text-slate-400'}`}>
+                        {doneCount}/{missions.length} done
+                    </span>
+                    <span className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                        <span className={`block h-full rounded-full transition-all duration-500 ${doneCount === missions.length ? 'bg-emerald-500' : 'bg-primary-500'}`} style={{ width: `${pct}%` }} />
+                    </span>
+                </div>
+            </div>
+            <ul className="divide-y divide-slate-100">
+                {missions.map((m, i) => (
+                    <li key={m.id} className={`flex items-start gap-3 px-4 py-3 transition-colors ${m.done ? 'bg-emerald-50/40' : 'hover:bg-slate-50/60'}`}>
+                        {m.done ? (
+                            <span className="mt-0.5 w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0">
+                                <Check size={12} strokeWidth={3} />
+                            </span>
+                        ) : (
+                            <span className="mt-0.5 w-5 h-5 rounded-full border-2 border-primary-300 bg-primary-50 text-primary-700 text-[9.5px] font-bold flex items-center justify-center shrink-0 tabular-nums">
+                                {m.current > 9 ? '9+' : m.current}
+                            </span>
+                        )}
+                        <div className={`flex-1 min-w-0 text-[13px] leading-[1.6] ${m.done ? 'text-slate-400' : 'text-slate-600'}`}>
+                            <InlineText text={m.text} assetsByTag={assetsByTag} onAsk={onAsk} />
+                            {m.done && (
+                                <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[9.5px] font-bold px-1.5 py-px align-middle">
+                                    <Check size={9} strokeWidth={3} /> verified
+                                </span>
+                            )}
+                        </div>
+                        {m.path && !m.done && (
+                            <button
+                                onClick={() => go(m, i)}
+                                title={`The Specialist guides you through this in ${m.label}`}
+                                className="shrink-0 inline-flex items-center gap-0.5 rounded-lg border border-slate-200 bg-white hover:border-primary-300 hover:text-primary-700 text-slate-500 text-[11px] font-semibold px-2 h-7 transition-colors">
+                                {m.label} <ChevronRight size={12} />
+                            </button>
+                        )}
+                    </li>
+                ))}
+            </ul>
+        </section>
+    );
+};
+
 // ── the report ────────────────────────────────────────────────────────────
 
-export const BriefingReport: React.FC<Props> = ({ text, briefingKey, assetsByTag, onAsk, analytics, formatCurrency }) => {
+export const BriefingReport: React.FC<Props> = ({ text, briefingKey, assetsByTag, onAsk, analytics, formatCurrency, missions }) => {
     const parsed = useMemo(() => parseBriefing(text), [text]);
 
     // Unstructured (errors, free-form replies) → plain rich text, no chrome.
@@ -306,16 +387,21 @@ export const BriefingReport: React.FC<Props> = ({ text, briefingKey, assetsByTag
         return <RichText text={text} assetsByTag={assetsByTag} onAsk={onAsk} />;
     }
 
-    const headline = parsed.sections.find((s) => s.key === 'headline');
+    // Every headline-keyed block (explicit Headline section + any title-lede
+    // the parser folded in) merges into one hero statement.
+    const headlineBody = parsed.sections
+        .filter((s) => s.key === 'headline' && s.body)
+        .map((s) => s.body)
+        .join('\n');
     const cards = parsed.sections.filter((s) => !['headline', 'act'].includes(s.key));
 
     return (
         <div className="space-y-3">
-            {headline && headline.body && (
+            {headlineBody && (
                 <div className="flex gap-3 rounded-xl bg-primary-50/60 border border-primary-100 px-4 py-3">
                     <span className="mt-0.5 text-primary-600 shrink-0"><Megaphone size={16} /></span>
                     <p className="text-[13.5px] text-slate-700 leading-[1.65] font-medium">
-                        <InlineText text={headline.body.replace(/\n+/g, ' ')} assetsByTag={assetsByTag} onAsk={onAsk} />
+                        <InlineText text={headlineBody.replace(/\n+/g, ' ')} assetsByTag={assetsByTag} onAsk={onAsk} />
                     </p>
                 </div>
             )}
@@ -327,9 +413,11 @@ export const BriefingReport: React.FC<Props> = ({ text, briefingKey, assetsByTag
                     </div>
                 ))}
             </div>
-            {parsed.actions.length > 0 && (
+            {missions && missions.length > 0 ? (
+                <DetMissionList missions={missions} briefingKey={briefingKey} assetsByTag={assetsByTag} onAsk={onAsk} />
+            ) : parsed.actions.length > 0 ? (
                 <MissionList actions={parsed.actions} briefingKey={briefingKey} assetsByTag={assetsByTag} onAsk={onAsk} />
-            )}
+            ) : null}
         </div>
     );
 };

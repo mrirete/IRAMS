@@ -83,6 +83,7 @@ describe('routeForAction', () => {
         expect(routeForAction('Clear the 2 overdue PMs on P-101-A')?.path).toBe('/recurring-work');
         expect(routeForAction('Review the 3 open work orders on K-601')?.path).toBe('/work-orders');
         expect(routeForAction('Schedule the CML inspection on V-201')?.path).toBe('/comply/evaluate');
+        expect(routeForAction('Revise the "Pump Inspection" PM for P-101-A given 5 failures')?.path).toBe('/recurring-work');
         expect(routeForAction('File the warranty claim')?.path).toBe('/specialist/assessment');
         expect(routeForAction('Celebrate the win')).toBeNull();
     });

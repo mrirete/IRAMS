@@ -10,6 +10,7 @@ import React, { useState } from 'react';
 import { ShieldQuestion, Loader2, AlertTriangle } from 'lucide-react';
 import { runRcaChallenger, type AgentRunResponse } from '../../eam/services/agentRunClient';
 import { friendlyAIError } from '../../eam/lib/aiError';
+import SpecialistProse from '../specialist/SpecialistProse';
 
 interface RcaChallengerPanelProps {
     /** Pre-fill the analysis text (e.g. the current RCA summary). */
@@ -87,7 +88,9 @@ export const RcaChallengerPanel: React.FC<RcaChallengerPanelProps> = ({ initialT
 
                 {res && (
                     <div className="space-y-2.5 pt-1">
-                        <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed border-l-2 border-primary-200 pl-3">{res.answer}</div>
+                        <div className="text-sm text-slate-700 leading-relaxed border-l-2 border-primary-200 pl-3">
+                            <SpecialistProse text={res.answer} />
+                        </div>
                         <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
                             <span className="px-2 py-0.5 rounded-full bg-slate-100">Tier {res.tier_used} · advisory</span>
                             <span className="px-2 py-0.5 rounded-full bg-slate-100">{res.sources.length} sources</span>

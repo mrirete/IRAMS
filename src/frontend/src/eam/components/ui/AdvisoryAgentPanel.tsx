@@ -10,6 +10,7 @@ import React, { useState } from 'react';
 import { Loader2, AlertTriangle } from 'lucide-react';
 import type { AgentRunResponse } from '../../services/agentRunClient';
 import { friendlyAIError } from '../../lib/aiError';
+import SpecialistProse from '../../../components/specialist/SpecialistProse';
 
 type Accent = 'primary' | 'teal' | 'violet' | 'indigo' | 'amber' | 'blue' | 'emerald';
 
@@ -114,7 +115,9 @@ export const AdvisoryAgentPanel: React.FC<AdvisoryAgentPanelProps> = ({
                 )}
                 {res && (
                     <>
-                        <div className={`text-[13.5px] text-slate-700 whitespace-pre-wrap leading-[1.7] border-l-2 ${a.bar} pl-3`}>{res.answer}</div>
+                        <div className={`text-[13.5px] text-slate-700 leading-[1.7] border-l-2 ${a.bar} pl-3`}>
+                            <SpecialistProse text={res.answer} />
+                        </div>
                         <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-500">
                             <span className="px-2 py-0.5 rounded bg-slate-100 font-medium">Tier {res.tier_used} · advisory</span>
                             <span className="px-2 py-0.5 rounded bg-slate-100 font-medium">{res.sources.length} sources</span>

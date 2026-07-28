@@ -23,6 +23,7 @@ import {
     getLatestSnapshot, saveSnapshot, shouldSaveSnapshot, type AssessmentSnapshot,
 } from '../../eam/services/assessmentSnapshotService';
 import { analyzeService } from '../../eam/services/AnalyzeService';
+import BriefingReport, { type BriefingAsset } from '../../components/specialist/BriefingReport';
 
 // ── row shapes (only the columns we query) ────────────────────────────────
 interface WoRow {
@@ -68,6 +69,8 @@ interface Assessment {
     pmWaste: PmWasteFind[];
     coverage: { cost_pct: number; failure_code_pct: number; downtime_pct: number };
     register: RegisterQuality;
+    /** id/tag/name/criticality for entity-linking the narrative's asset tags. */
+    assetIndex: { id: string; tag: string; name: string; criticality: string | null }[];
     dataFrom: string | null;
     dataTo: string | null;
 }
@@ -260,6 +263,7 @@ async function computeAssessment(): Promise<Assessment> {
             downtime_pct: Math.round((wos12.filter((w) => Number(w.actual_downtime_hrs) > 0).length / n12) * 100),
         },
         register,
+        assetIndex: assets.map((x) => ({ id: x.id, tag: x.tag, name: x.name, criticality: x.criticality })),
         dataFrom: from ? from.slice(0, 10) : null,
         dataTo: to ? to.slice(0, 10) : null,
     };
@@ -376,6 +380,11 @@ export const AssessmentReportPage: React.FC = () => {
 
     const totalOpportunity = useMemo(() => (assessment ? assessment.warranty.total : 0), [assessment]);
 
+    /** Register tags → entity chips inside the executive summary. */
+    const assetsByTag = useMemo(() => new Map<string, BriefingAsset>(
+        (assessment?.assetIndex ?? []).map((x) => [x.tag.toLowerCase(), x]),
+    ), [assessment]);
+
     /** Run-over-run delta chip. `goodWhenDown` colours direction (spend); others stay neutral. */
     const deltaChip = (cur: number, prev: number | null | undefined, fmt: (n: number) => string, goodWhenDown = false) => {
         if (prev == null) return null;
@@ -482,12 +491,17 @@ export const AssessmentReportPage: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Executive summary */}
+                {/* Executive summary — same interactive treatment as the briefing:
+                    sections, asset-tag chips, "Act this month" as guided missions. */}
                 <Section icon={<Sparkles size={15} className="text-primary-600" />} title="Executive summary">
                     {narrating
                         ? <p className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> The Specialist is writing the summary…</p>
                         : narrative
-                            ? <div className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{narrative}</div>
+                            ? <BriefingReport
+                                text={narrative}
+                                briefingKey={`assessment:${a.dataTo ?? 'na'}`}
+                                assetsByTag={assetsByTag}
+                            />
                             : <Empty>Narrative unavailable — the findings below stand on their own.</Empty>}
                 </Section>
 

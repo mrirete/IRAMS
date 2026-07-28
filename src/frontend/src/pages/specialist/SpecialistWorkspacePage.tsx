@@ -27,6 +27,7 @@ import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, type AgentTurn 
 import { predictionService, type AgentAction } from '../../eam/services/PredictionService';
 import { computeRealization, type RealizationSummary } from '../../lib/valueRealization';
 import { computeBriefingAnalytics, type BriefingAnalytics } from '../../lib/briefingCharts';
+import { computeMissions, type DetMission } from '../../lib/missionEngine';
 import BriefingReport, { RichText, type BriefingAsset } from '../../components/specialist/BriefingReport';
 
 interface AuditRow {
@@ -135,6 +136,8 @@ export const SpecialistWorkspacePage: React.FC = () => {
     const [assetsByTag, setAssetsByTag] = useState<Map<string, BriefingAsset>>(new Map());
     // ── live illustrations for the briefing (computed, never parsed from prose) ──
     const [analytics, setAnalytics] = useState<BriefingAnalytics | null>(null);
+    // ── deterministic missions — the data marks them done, not the user ──
+    const [missions, setMissions] = useState<DetMission[] | null>(null);
 
     // ── proposals ──
     const [proposals, setProposals] = useState<AgentAction[]>([]);
@@ -163,7 +166,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
     };
 
     const loadAll = async () => {
-        const [logQ, actionsQ, assetQ, woQ] = await Promise.all([
+        const [logQ, actionsQ, assetQ, woQ, overdueQ] = await Promise.all([
             supabase.from('ers_ai_audit_log')
                 .select('id, module, context_type, query_text, response_text, created_at, duration_ms')
                 .eq('action_type', 'agent_run')
@@ -175,22 +178,50 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 .select('asset_id, type, status, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost')
                 .order('created_at', { ascending: false })
                 .limit(20000),
+            // Same overdue definition the digest agent's tool uses.
+            supabase.from('recurring_work')
+                .select('id, asset_id')
+                .eq('active', true)
+                .lt('next_due_date', new Date().toISOString())
+                .limit(5000),
         ]);
         const rows = (logQ.data ?? []) as AuditRow[];
         setLog(rows);
         const assetRows = (assetQ.data ?? []) as BriefingAsset[];
         setAssetsByTag(new Map(assetRows.map((a) => [a.tag.toLowerCase(), a])));
-        setAnalytics(computeBriefingAnalytics(
-            ((woQ.data ?? []) as Record<string, unknown>[]).map((w) => ({
-                asset_id: (w.asset_id as string) ?? null,
-                type: (w.type as string) ?? null,
-                status: (w.status as string) ?? null,
-                created_at: String(w.created_at),
-                cost: ((Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0)) || Number(w.total_actual_cost) || 0,
-            })),
-            assetRows,
-            Date.now(),
-        ));
+        const woRows = ((woQ.data ?? []) as Record<string, unknown>[]).map((w) => ({
+            asset_id: (w.asset_id as string) ?? null,
+            type: (w.type as string) ?? null,
+            status: (w.status as string) ?? null,
+            created_at: String(w.created_at),
+            cost: ((Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0)) || Number(w.total_actual_cost) || 0,
+        }));
+        const liveAnalytics = computeBriefingAnalytics(woRows, assetRows, Date.now());
+        setAnalytics(liveAnalytics);
+
+        // Deterministic missions: live counts in, verified "done" out. The
+        // baseline is snapshotted per briefing so a cleared count renders as
+        // a win instead of vanishing.
+        const tagById = new Map(assetRows.map((a) => [a.id, a.tag]));
+        const overduePmTags = [...new Set(((overdueQ.data ?? []) as { asset_id: string | null }[])
+            .map((r) => (r.asset_id ? tagById.get(r.asset_id) : null))
+            .filter((t): t is string => Boolean(t)))].slice(0, 3);
+        const openStatuses = (s: string | null) => !['CLOSED', 'TECO', 'CANCELLED', 'CANCELED', 'COMPLETED'].includes(String(s ?? '').toUpperCase());
+        const openByAsset = new Map<string, number>();
+        for (const w of woRows) {
+            if (w.asset_id && openStatuses(w.status)) openByAsset.set(w.asset_id, (openByAsset.get(w.asset_id) ?? 0) + 1);
+        }
+        const missionKey = `specialist-mission-baseline:${rows.find((r) => r.context_type === 'reliability_digest')?.created_at ?? 'none'}`;
+        let prevBaseline: Record<string, number> | null = null;
+        try { prevBaseline = JSON.parse(localStorage.getItem(missionKey) ?? 'null'); } catch { /* ignore */ }
+        const computed = computeMissions({
+            overduePmCount: (overdueQ.data ?? []).length,
+            overduePmTags,
+            topOpenAssets: liveAnalytics.pareto.slice(0, 3).map((p) => ({ tag: p.tag, open: openByAsset.get(p.assetId) ?? 0 })),
+            pendingProposals: actionsQ.filter((a) => a.status === 'pending_review').length,
+        }, prevBaseline);
+        try { localStorage.setItem(missionKey, JSON.stringify(computed.baseline)); } catch { /* private mode */ }
+        setMissions(computed.missions);
         setBriefing(rows.find((r) => r.context_type === 'reliability_digest') ?? null);
         setProposals(actionsQ.filter((a) => a.status === 'pending_review'));
 
@@ -210,13 +241,13 @@ export const SpecialistWorkspacePage: React.FC = () => {
         const approved = actionsQ.filter((a) => a.status === 'approved' && a.asset_id);
         if (approved.length === 0) { setRealized(computeRealization([], [], Date.now())); return; }
         const assetIds = [...new Set(approved.map((a) => a.asset_id as string))];
-        const { data: woRows } = await supabase.from('work_orders')
+        const { data: realizationWoRows } = await supabase.from('work_orders')
             .select('asset_id, type, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost')
             .in('asset_id', assetIds)
             .limit(20000);
         setRealized(computeRealization(
             approved.map((a) => ({ asset_id: a.asset_id, approved_at: a.reviewed_at ?? a.created_at })),
-            (woRows ?? []).map((w: Record<string, unknown>) => ({
+            (realizationWoRows ?? []).map((w: Record<string, unknown>) => ({
                 asset_id: (w.asset_id as string) ?? null,
                 type: (w.type as string) ?? null,
                 created_at: String(w.created_at),
@@ -419,6 +450,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
                                 onAsk={(q) => void send(q)}
                                 analytics={analytics}
                                 formatCurrency={formatCurrency}
+                                missions={missions}
                             />
                         ) : (
                             <div className="text-center py-6">

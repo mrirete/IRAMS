@@ -11,7 +11,9 @@
  * plain text. Never throws.
  */
 
-export type SectionKey = 'title' | 'headline' | 'load' | 'badActors' | 'integrity' | 'act' | 'other';
+export type SectionKey =
+    | 'title' | 'headline' | 'load' | 'badActors' | 'integrity' | 'act'
+    | 'wins' | 'data' | 'other';
 
 export interface BriefingSection {
     key: SectionKey;
@@ -30,12 +32,14 @@ const HEADING_RE = /^\s*(?:#{1,4}\s*)?(?:\d+\.\s*)?\*\*(.+?)\*\*[:.]?\s*$/;
 
 function classify(title: string): SectionKey {
     const t = title.toLowerCase();
-    if (/digest|overview|briefing/.test(t)) return 'title';
+    if (/digest|overview|briefing|executive summary/.test(t)) return 'title';
     if (/headline/.test(t)) return 'headline';
     if (/maintenance load|open work|workload/.test(t)) return 'load';
-    if (/bad actor/.test(t)) return 'badActors';
+    if (/bad actor|where the money/.test(t)) return 'badActors';
     if (/integrity/.test(t)) return 'integrity';
     if (/act this|action|this week|this month/.test(t)) return 'act';
+    if (/quick win|warranty/.test(t)) return 'wins';
+    if (/data quality/.test(t)) return 'data';
     return 'other';
 }
 
@@ -65,7 +69,11 @@ export function parseBriefing(text: string): ParsedBriefing {
     if (current) current.body = current.body.trim();
     if (!sawHeading) return { sections: [], actions: [] };
 
-    const kept = sections.filter((s) => s.key !== 'title' && (s.body || s.key === 'headline'));
+    // A document-title heading with prose under it (the narrator's opening
+    // lede) keeps its body as headline; a bare title line is dropped.
+    const kept = sections
+        .map((s) => (s.key === 'title' && s.body ? { ...s, key: 'headline' as SectionKey, title: '' } : s))
+        .filter((s) => s.key !== 'title' && (s.body || s.key === 'headline'));
 
     // Split the act section into discrete items; continuation lines belong to
     // the previous item (LLMs wrap long actions).
@@ -135,7 +143,9 @@ export interface ActionRoute {
  */
 export function routeForAction(text: string): ActionRoute | null {
     const t = text.toLowerCase();
-    if (/\bcml|corrosion|t-min|integrity|inspection/.test(t)) return { path: '/comply/evaluate', label: 'Integrity' };
+    // NOT bare "inspection" — PM task titles ("Pump Inspection") would hijack
+    // PM actions into the integrity module.
+    if (/\bcml|corrosion|t-min|integrity/.test(t)) return { path: '/comply/evaluate', label: 'Integrity' };
     if (/root cause|rca\b|defect elimination|investigate/.test(t)) return { path: '/analyze', label: 'Analyze' };
     if (/overdue pm|\bpms?\b|preventive/.test(t)) return { path: '/recurring-work', label: 'PM schedules' };
     if (/work order|open work|backlog/.test(t)) return { path: '/work-orders', label: 'Work orders' };
