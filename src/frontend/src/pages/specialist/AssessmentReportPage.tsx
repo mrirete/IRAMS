@@ -24,6 +24,7 @@ import {
 } from '../../eam/services/assessmentSnapshotService';
 import { analyzeService } from '../../eam/services/AnalyzeService';
 import BriefingReport, { type BriefingAsset } from '../../components/specialist/BriefingReport';
+import PmOptimizationModal from '../../components/specialist/PmOptimizationModal';
 
 // ── row shapes (only the columns we query) ────────────────────────────────
 interface WoRow {
@@ -285,6 +286,8 @@ export const AssessmentReportPage: React.FC = () => {
     // Findings → studies (Phase A4)
     const [savingStudy, setSavingStudy] = useState<string | null>(null);
     const [savedStudies, setSavedStudies] = useState<Set<string>>(new Set());
+    // Fleet-wide PM optimization (Phase B3) — process lives in the popup.
+    const [pmOptOpen, setPmOptOpen] = useState(false);
 
     const load = async () => {
         setLoading(true); setError(null); setSnapshotSaved(false);
@@ -592,6 +595,12 @@ export const AssessmentReportPage: React.FC = () => {
 
                 {/* PM waste */}
                 <Section icon={<Wrench size={15} className="text-amber-500" />} title="PM programme health">
+                    <div className="no-print mb-3">
+                        <button onClick={() => setPmOptOpen(true)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[12px] font-semibold px-3 py-1.5 transition-colors">
+                            <Wrench size={13} /> Optimize the whole fleet — every active PM vs its failure history
+                        </button>
+                    </div>
                     {a.pmWaste.length === 0 ? <Empty>No active PM programmes flagged (or no PM programme data in scope — imported histories usually arrive without PM definitions; connect or rebuild the PM plan to unlock this).</Empty> : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -677,6 +686,8 @@ export const AssessmentReportPage: React.FC = () => {
                         Higher coverage sharpens every finding above. The fastest upgrades, in order of value: cost data on work orders (money-ranks everything), failure coding (unlocks failure-mode analysis and RCM), downtime hours (converts availability into money).
                     </p>
                 </Section>
+
+                <PmOptimizationModal open={pmOptOpen} onClose={() => setPmOptOpen(false)} />
 
                 <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1.5">
                     <ShieldCheck size={11} /> Methodology: Pareto on frozen WO costs · median-rank regression Weibull with Johnson-adjusted ranks and right-censoring · PM effectiveness vs corrective history · warranty windows vs completed WOs · register hygiene scored on hierarchy, criticality spread, nameplate, tag collisions and history linkage. Advisory only — a human approves every action.

@@ -81,12 +81,14 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
   app downloads, MaintainX CSV exports…), so "Import CMMS data" stops reading as "upload a database."
 
 ### Phase B — match the engineer's scope
-- **B1.** Briefing/digest consumes snapshot history: "since the baseline assessment (date): spend Δ,
-  coverage Δ, register health Δ" with the same citation discipline.
+- **B1. SHIPPED 2026-07-28 (2e2313a):** digest consumes snapshot history via the
+  `get_assessment_trend` tool — "Trend since baseline" section with deterministic deltas.
 - **B2.** Study-scoped assessment: run the assessment engine over one system/asset set, persisted
   against the study record. (The Explore→popup pattern; no new engine, a filter.)
-- **B3.** Fleet-wide PM optimization: every active PM × failure history × Weibull where fittable →
-  ranked kill/stretch/shift-to-condition list with annual hours + $ freed.
+- **B3. SHIPPED 2026-07-28:** fleet-wide PM optimization (`lib/pmOptimization`): every active PM ×
+  failure history × censored Weibull → stretch / tighten / shift-to-CBM / consolidate verdicts with
+  PM-events-per-year recovered, drafted into the proposals queue (pm_optimizer →
+  draft_pm_interval) — same approve → deliver → measure loop.
 - **B4.** Spares exposure: stock lines vs criticality/lead time once Migration Center phase 3 data
   exists.
 
@@ -94,7 +96,8 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
 - **C1.** Watchdogs on cron: emergent bad actor (cost-rate step change), PM-effectiveness drift,
   data-quality regression → proposals queue, so value generation is not click-driven.
 - **C2.** Downtime-threshold RCA auto-draft into the RCA module.
-- **C3.** Customer-facing ROI page: subscription cost vs measured value, printable for renewals.
+- **C3. SHIPPED 2026-07-28 (2e2313a):** `/specialist/roi` "Return on Reliability" — measured vs
+  identified value, subscription vs the $150k benchmark, snapshot-trend corroboration, printable.
 
 ### Phase D — maintenance-strategy development (the engineer's real deliverable)
 

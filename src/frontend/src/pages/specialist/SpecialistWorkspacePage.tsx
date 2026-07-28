@@ -17,7 +17,7 @@ import {
     Sparkles, Send, Loader2, ClipboardList, ScrollText, UploadCloud,
     BarChart2, RefreshCw, ChevronRight, X, BrainCircuit, Activity, BadgeDollarSign,
     Check, Database, ArrowRight, CheckCircle2, Copy,
-    TrendingUp, Gauge,
+    TrendingUp, Gauge, Wrench,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -40,6 +40,7 @@ const PROPOSAL_HOMES: Record<string, { label: string; path: string }> = {
     bad_actor_hunter: { label: 'Defect Elimination', path: '/analyze' },
     threshold_adapter: { label: 'Predict — Agent Review', path: '/predict' },
     alert_to_wo: { label: 'Predict — Agent Review', path: '/predict' },
+    pm_optimizer: { label: 'PM schedules', path: '/recurring-work' },
 };
 
 /** Per-agent glyph so a long queue is scannable without reading every title. */
@@ -48,6 +49,7 @@ const AGENT_ICON: Record<string, React.ComponentType<{ size?: number; className?
     threshold_adapter: Gauge,
     alert_to_wo: ClipboardList,
     weibull_analyst: Activity,
+    pm_optimizer: Wrench,
 };
 
 const SUGGESTED = [
