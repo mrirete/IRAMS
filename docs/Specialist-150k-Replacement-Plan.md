@@ -172,8 +172,12 @@ doesn't just prevent failure — it keeps the plant *in its Golden Spot*.**
 
 > **F3 + F4 SHIPPED 2026-07-28 (1b2245f):** `/specialist/meeting` — the auto-drafted weekly
 > pack (decision latency as the culture KPI, wins/stuck/night-signals/numbers, printable) +
-> approvals posted to the asset's crew thread. F1 (operator care routes), F2 (OEE loss
-> decomposition — plant OEE already in the pack), F5 (skills matrix) remain.
+> approvals posted to the asset's crew thread.
+> **F1 + F2 + F5 + E5 + D4 + B4 SHIPPED 2026-07-28 (7a4b6b0) — the data-ready build:**
+> operator-care route planner (CIL routes from CBM verdicts + banded points → proposals),
+> loss decomposition in the pack, workforce readiness vs strategy demand, D-I-S-G S-phase
+> front-of-life judgement, living-strategy change detection, spares exposure from real
+> consumption on criticals. **Every numbered item in this plan is now built.**
 
 Tools don't move plants; operating rhythms do. A world-class RE spends half their week on culture:
 making operators owners, making leaders review the right numbers, making wins visible. The
