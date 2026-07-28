@@ -170,6 +170,11 @@ doesn't just prevent failure — it keeps the plant *in its Golden Spot*.**
 
 ### Phase F — TPM & proactive reliability culture (the leadership operating system)
 
+> **F3 + F4 SHIPPED 2026-07-28 (1b2245f):** `/specialist/meeting` — the auto-drafted weekly
+> pack (decision latency as the culture KPI, wins/stuck/night-signals/numbers, printable) +
+> approvals posted to the asset's crew thread. F1 (operator care routes), F2 (OEE loss
+> decomposition — plant OEE already in the pack), F5 (skills matrix) remain.
+
 Tools don't move plants; operating rhythms do. A world-class RE spends half their week on culture:
 making operators owners, making leaders review the right numbers, making wins visible. The
 Specialist becomes the **cadence engine**:
