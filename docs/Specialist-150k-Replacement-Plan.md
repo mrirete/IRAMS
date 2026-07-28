@@ -98,7 +98,9 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
   deterministic, zero-LLM): emergent bad-actor step change → draft_de_task, PM-effectiveness
   drift → draft_pm_interval, data-quality regression → audit note; snoozed while pending or
   for 30 days after a human decision.
-- **C2.** Downtime-threshold RCA auto-draft into the RCA module.
+- **C2. SHIPPED 2026-07-28 (e23cc5a):** big-failure RCA auto-draft — the nightly watchdog opens a
+  reactive draft investigation (≥24h downtime or ≥$25k, deduped via trigger_reference_id) with
+  the event context prefilled, while the evidence is fresh.
 - **C3. SHIPPED 2026-07-28 (2e2313a):** `/specialist/roi` "Return on Reliability" — measured vs
   identified value, subscription vs the $150k benchmark, snapshot-trend corroboration, printable.
 
