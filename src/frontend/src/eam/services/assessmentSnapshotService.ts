@@ -24,6 +24,8 @@ export interface AssessmentSnapshot {
     register_health_pct: number | null;
     /** % of A/B-criticality assets with a strategy in place (0231). */
     strategy_coverage_pct?: number | null;
+    /** Fleet Success Rate per the PSC framework (0232). */
+    success_rate_pct?: number | null;
     findings: Record<string, unknown>;
     narrative: string | null;
 }

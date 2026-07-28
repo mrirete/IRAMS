@@ -88,6 +88,15 @@ export const AssessmentReportPage: React.FC = () => {
                             tag: g.tag, criticality: g.criticality, recommended: g.recommended,
                         })),
                     },
+                    success_layer_psc: a.success.assetsMeasured > 0 ? {
+                        fleet_success_rate_pct: a.success.fleetSuccessRate,
+                        target: a.success.targets.srTarget,
+                        world_class: a.success.targets.srWorldClass,
+                        assets_measured: a.success.assetsMeasured,
+                        in_golden_spot_now: a.success.zoneCounts.inSpot,
+                        in_drift_now: a.success.zoneCounts.drift,
+                        in_critical_departure_now: a.success.zoneCounts.critical,
+                    } : null,
                 });
                 prose = res.answer;
                 setNarrative(prose);
@@ -111,6 +120,7 @@ export const AssessmentReportPage: React.FC = () => {
                     coverage_downtime_pct: a.coverage.downtime_pct,
                     register_health_pct: a.register.healthPct,
                     strategy_coverage_pct: a.strategy.coveragePct,
+                    success_rate_pct: a.success.fleetSuccessRate,
                     findings: a as unknown as Record<string, unknown>,
                     narrative: prose || null,
                 });
@@ -527,6 +537,88 @@ export const AssessmentReportPage: React.FC = () => {
                             </>
                         );
                     })()}
+                </Section>
+
+                {/* Success layer — PSC / Golden Spot (Phase E1) */}
+                <Section icon={<Activity size={15} className="text-emerald-600" />} title="Success layer — Golden-Spot residency (PSC)">
+                    {a.success.assetsWithBands === 0 ? (
+                        <Empty>
+                            No measurement points carry warning bands yet — set bands on reading points (Condition Data) and the
+                            Specialist starts measuring time-in-optimal, not just time-to-failure. This is the PSC framework's
+                            success-side lens (Olorunfemi 2026); IRAMS is its reference implementation.
+                        </Empty>
+                    ) : (
+                        <>
+                            <div className="flex flex-col sm:flex-row gap-3 mb-3">
+                                <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-center sm:w-44 shrink-0 flex flex-col justify-center">
+                                    <div className={`text-3xl font-bold ${a.success.fleetSuccessRate == null ? 'text-slate-300'
+                                        : a.success.fleetSuccessRate >= a.success.targets.srWorldClass ? 'text-emerald-600'
+                                            : a.success.fleetSuccessRate >= a.success.targets.srTarget ? 'text-emerald-500'
+                                                : 'text-amber-500'}`}>
+                                        {a.success.fleetSuccessRate == null ? '—' : `${a.success.fleetSuccessRate}%`}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 mt-1">fleet Success Rate</div>
+                                    <div className="text-[10px] text-slate-400 mt-0.5">SR = MTOP/(MTOP+MTTRg) · target ≥{a.success.targets.srTarget} · world-class ≥{a.success.targets.srWorldClass}</div>
+                                    {previous?.success_rate_pct != null && a.success.fleetSuccessRate != null && (
+                                        <div className="text-[10px] mt-1 tabular-nums">{deltaChip(a.success.fleetSuccessRate, Number(previous.success_rate_pct), (n) => `${Math.round(n * 10) / 10} pts`)}</div>
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                    <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-slate-400 mb-1.5">
+                                        Where the {a.success.assetsMeasured} measured asset{a.success.assetsMeasured === 1 ? ' sits' : 's sit'} right now
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5 mb-2.5">
+                                        <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 px-2 py-1 text-[11px] font-semibold">In Golden Spot <span className="font-bold tabular-nums">{a.success.zoneCounts.inSpot}</span></span>
+                                        <span className="inline-flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 text-amber-600 px-2 py-1 text-[11px] font-semibold">Sub-optimal drift <span className="font-bold tabular-nums">{a.success.zoneCounts.drift}</span></span>
+                                        <span className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-600 px-2 py-1 text-[11px] font-semibold">Critical departure <span className="font-bold tabular-nums">{a.success.zoneCounts.critical}</span></span>
+                                        {a.success.zoneCounts.unknown > 0 && (
+                                            <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 px-2 py-1 text-[11px] font-semibold">No recent data <span className="font-bold tabular-nums">{a.success.zoneCounts.unknown}</span></span>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-500 leading-relaxed">
+                                        Mean time in the optimal envelope: <strong className="text-slate-700">{a.success.meanTimeInSpotPct ?? '—'}%</strong> over 90 days,
+                                        across {a.success.assetsWithBands} banded asset{a.success.assetsWithBands === 1 ? '' : 's'}. The Specialist defends the
+                                        optimum — drift is acted on before it becomes departure.
+                                    </p>
+                                </div>
+                            </div>
+                            {a.success.worst.length > 0 && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200">
+                                                <th className="py-2 pr-3">Asset</th><th className="py-2 pr-3">Zone now</th>
+                                                <th className="py-2 pr-3 text-right">Time in spot</th><th className="py-2 pr-3 text-right">SR</th>
+                                                <th className="py-2 pr-3 text-right">MTOP</th><th className="py-2 text-right">MTTRg</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {a.success.worst.map((r) => (
+                                                <tr key={r.assetId} className="border-b border-slate-100">
+                                                    <td className="py-2 pr-3"><span className="font-mono font-semibold text-slate-800">{r.tag}</span> <span className="text-slate-400 text-xs">{r.name}</span></td>
+                                                    <td className="py-2 pr-3">
+                                                        <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${r.zoneNow === 'GOLDEN_SPOT' ? 'bg-emerald-50 text-emerald-600'
+                                                            : r.zoneNow === 'SUB_OPTIMAL_DRIFT' ? 'bg-amber-50 text-amber-600'
+                                                                : r.zoneNow === 'CRITICAL_DEPARTURE' ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-500'}`}>
+                                                            {r.zoneNow.replaceAll('_', ' ').toLowerCase()}
+                                                        </span>
+                                                        {r.currentDepartureHours != null && <span className="ml-1.5 text-[10px] text-slate-400 tabular-nums">{r.currentDepartureHours}h out</span>}
+                                                    </td>
+                                                    <td className="py-2 pr-3 text-right font-mono">{r.percentTimeInSpot ?? '—'}%</td>
+                                                    <td className="py-2 pr-3 text-right font-mono">{r.successRate == null ? '—' : `${r.successRate}%`}</td>
+                                                    <td className="py-2 pr-3 text-right font-mono">{r.mtopHours == null ? '—' : `${r.mtopHours}h`}</td>
+                                                    <td className="py-2 text-right font-mono">{r.mttrgHours == null ? '—' : `${r.mttrgHours}h`}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                    <p className="text-[10.5px] text-slate-400 mt-2">
+                                        MTOP = mean time in the Golden Spot; MTTRg = mean time to restore it; SR per PSC Eq.3. Success-side mirror of MTBF/MTTR — the plant is managed to stay at its optimum, not just to avoid failure.
+                                    </p>
+                                </div>
+                            )}
+                        </>
+                    )}
                 </Section>
 
                 {/* Asset register quality (Phase A2) */}

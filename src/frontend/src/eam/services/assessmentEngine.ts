@@ -16,6 +16,7 @@ import { fitWeibull, weibullBLife } from '../utils/weibull';
 import { computeRegisterQuality, type RegisterQuality } from '../../lib/registerQuality';
 import { collectSubtree } from '../../lib/assetSubtree';
 import { selectStrategies, type StrategyReview } from '../../lib/strategySelect';
+import { computePSC, isBanded, PSC_TARGETS, type GoldenSpotParam, type ParamReading, type PSCZone } from '../../lib/psc';
 
 // ── row shapes (only the columns we query) ────────────────────────────────
 interface WoRow {
@@ -47,6 +48,28 @@ export interface WeibullFinding {
     beta: number; eta: number; b10Days: number; r2: number; interpretation: string;
 }
 export interface WarrantyFind { woNumber: string; tag: string; date: string; recoverable: number; }
+
+/** Fleet success layer (PSC, Olorunfemi 2026) over assets with banded points. */
+export interface SuccessAssetRow {
+    assetId: string; tag: string; name: string;
+    zoneNow: PSCZone;
+    successRate: number | null;
+    percentTimeInSpot: number | null;
+    mtopHours: number | null;
+    mttrgHours: number | null;
+    currentDepartureHours: number | null;
+}
+export interface SuccessReview {
+    assetsWithBands: number;
+    assetsMeasured: number;
+    /** Mean SR across measured assets (Eq.3); null when nothing measured. */
+    fleetSuccessRate: number | null;
+    meanTimeInSpotPct: number | null;
+    zoneCounts: { inSpot: number; drift: number; critical: number; unknown: number };
+    /** Worst residency first — the defend-the-optimum work list. */
+    worst: SuccessAssetRow[];
+    targets: { srTarget: number; srWorldClass: number };
+}
 export interface PmWasteFind { code: string; title: string; tag: string; category: string; annualEvents: number | null; failures12mo: number; }
 
 export interface Assessment {
@@ -63,6 +86,8 @@ export interface Assessment {
     register: RegisterQuality;
     /** Per-asset strategy selection + A/B coverage (Phase D1/D2). */
     strategy: StrategyReview;
+    /** Success layer (Phase E1) — Golden-Spot residency per the PSC framework. */
+    success: SuccessReview;
     /** id/tag/name/criticality for entity-linking the narrative's asset tags. */
     assetIndex: { id: string; tag: string; name: string; criticality: string | null }[];
     dataFrom: string | null;
@@ -78,7 +103,7 @@ export interface Assessment {
 export async function computeAssessment(scopeRootId?: string): Promise<Assessment> {
     const cutoff12 = new Date(Date.now() - 365 * DAY_MS).toISOString();
 
-    const [woQ, assetQ, pmQ, warrQ, failQ, readQ] = await Promise.all([
+    const [woQ, assetQ, pmQ, warrQ, failQ, readQ, logQ] = await Promise.all([
         supabase.from('work_orders')
             .select('id, asset_id, type, status, created_at, closed_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs')
             .order('created_at', { ascending: false }).limit(20000),
@@ -90,7 +115,12 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
             .select('id, asset_id, warranty_type, start_date, end_date, deductible, status')
             .eq('status', 'ACTIVE').limit(5000),
         supabase.from('wo_failure_data').select('wo_id').limit(20000),
-        supabase.from('reading_definitions').select('asset_id').limit(20000),
+        supabase.from('reading_definitions')
+            .select('id, asset_id, name, min_warning, max_warning, min_critical, max_critical')
+            .eq('is_active', true).limit(20000),
+        supabase.from('reading_logs')
+            .select('definition_id, asset_id, reading_date, reading_time, reading_value')
+            .order('reading_date', { ascending: false }).limit(20000),
     ]);
 
     let wos: WoRow[] = (woQ.data ?? []) as WoRow[];
@@ -264,6 +294,69 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
         monitoredAssets,
     }, Date.now());
 
+    // Success layer (Phase E1, PSC framework) — Golden-Spot residency per
+    // asset with banded reading points; every figure from lib/psc's tested
+    // replay, aggregated to a fleet position vs the SR 90/95 targets.
+    type DefRow = { id: string; asset_id: string | null; name: string; min_warning: number | null; max_warning: number | null; min_critical: number | null; max_critical: number | null };
+    type LogRow = { definition_id: string | null; asset_id: string | null; reading_date: string | null; reading_time: string | null; reading_value: number | null };
+    const defsByAsset = new Map<string, GoldenSpotParam[]>();
+    for (const d of (readQ.data ?? []) as DefRow[]) {
+        if (!d.asset_id || !assetById.has(d.asset_id)) continue;
+        const p: GoldenSpotParam = {
+            id: d.id, name: d.name,
+            minWarning: d.min_warning, maxWarning: d.max_warning,
+            minCritical: d.min_critical, maxCritical: d.max_critical,
+        };
+        if (!isBanded(p)) continue;
+        (defsByAsset.get(d.asset_id) ?? defsByAsset.set(d.asset_id, []).get(d.asset_id)!).push(p);
+    }
+    const logsByAsset = new Map<string, ParamReading[]>();
+    for (const l of (logQ.data ?? []) as LogRow[]) {
+        if (!l.asset_id || !l.definition_id || l.reading_value == null || !defsByAsset.has(l.asset_id)) continue;
+        (logsByAsset.get(l.asset_id) ?? logsByAsset.set(l.asset_id, []).get(l.asset_id)!).push({
+            paramId: l.definition_id,
+            at: `${l.reading_date}T${(l.reading_time ?? '12:00').slice(0, 5)}`,
+            value: Number(l.reading_value),
+        });
+    }
+    const successRows: SuccessAssetRow[] = [];
+    const zoneCounts = { inSpot: 0, drift: 0, critical: 0, unknown: 0 };
+    for (const [assetId, params] of defsByAsset) {
+        const res = computePSC(params, logsByAsset.get(assetId) ?? [], Date.now(), 90);
+        const a = assetById.get(assetId);
+        if (res.zoneNow === 'GOLDEN_SPOT') zoneCounts.inSpot += 1;
+        else if (res.zoneNow === 'SUB_OPTIMAL_DRIFT') zoneCounts.drift += 1;
+        else if (res.zoneNow === 'CRITICAL_DEPARTURE') zoneCounts.critical += 1;
+        else zoneCounts.unknown += 1;
+        successRows.push({
+            assetId, tag: a?.tag ?? '(unknown)', name: a?.name ?? '',
+            zoneNow: res.zoneNow,
+            successRate: res.successRate == null ? null : Math.round(res.successRate * 10) / 10,
+            percentTimeInSpot: res.percentTimeInSpot == null ? null : Math.round(res.percentTimeInSpot * 10) / 10,
+            mtopHours: res.mtopHours == null ? null : Math.round(res.mtopHours),
+            mttrgHours: res.mttrgHours == null ? null : Math.round(res.mttrgHours * 10) / 10,
+            currentDepartureHours: res.currentDepartureHours == null ? null : Math.round(res.currentDepartureHours),
+        });
+    }
+    const measured = successRows.filter((r) => r.percentTimeInSpot != null);
+    const withSr = measured.filter((r) => r.successRate != null);
+    const zoneRank: Record<PSCZone, number> = { CRITICAL_DEPARTURE: 0, SUB_OPTIMAL_DRIFT: 1, GOLDEN_SPOT: 2, UNKNOWN: 3 };
+    const success: SuccessReview = {
+        assetsWithBands: defsByAsset.size,
+        assetsMeasured: measured.length,
+        fleetSuccessRate: withSr.length
+            ? Math.round((withSr.reduce((s, r) => s + (r.successRate ?? 0), 0) / withSr.length) * 10) / 10
+            : null,
+        meanTimeInSpotPct: measured.length
+            ? Math.round((measured.reduce((s, r) => s + (r.percentTimeInSpot ?? 0), 0) / measured.length) * 10) / 10
+            : null,
+        zoneCounts,
+        worst: [...measured]
+            .sort((a, b) => zoneRank[a.zoneNow] - zoneRank[b.zoneNow] || (a.percentTimeInSpot ?? 100) - (b.percentTimeInSpot ?? 100))
+            .slice(0, 5),
+        targets: { srTarget: PSC_TARGETS.srTarget, srWorldClass: PSC_TARGETS.srWorldClass },
+    };
+
     // Asset-register quality (Phase A2) — the foundation layer a human RE
     // audits first; computed from rows already fetched above.
     const register = computeRegisterQuality(
@@ -298,6 +391,7 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
         },
         register,
         strategy,
+        success,
         assetIndex: assets.map((x) => ({ id: x.id, tag: x.tag, name: x.name, criticality: x.criticality })),
         dataFrom: from ? from.slice(0, 10) : null,
         dataTo: to ? to.slice(0, 10) : null,

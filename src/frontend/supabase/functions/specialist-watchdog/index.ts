@@ -17,6 +17,10 @@
 //      downtime or ≥$25k cost auto-drafts a REACTIVE RCA investigation
 //      (status 'draft', trigger_reference_id = the WO, so it never drafts
 //      twice) — the same draft a good engineer opens the morning after.
+//   5. Golden-Spot drift (PSC, Phase E2) — an asset whose latest reading on a
+//      banded point sits OUTSIDE its warning band queues a restore-the-optimum
+//      proposal — acting on Sub-Optimal Drift BEFORE Critical Departure is
+//      the framework's whole point.
 //
 // Idempotent by design: a proposal is skipped while a matching watchdog
 // proposal is pending, or was reviewed in the last 30 days (never nag a
@@ -44,6 +48,8 @@ const SNOOZE_DAYS = 30;
 const RCA_MIN_DOWNTIME_HRS = 24;
 const RCA_MIN_COST = 25_000;
 const RCA_MAX_PER_RUN = 3;
+const DRIFT_LOOKBACK_DAYS = 14;
+const DRIFT_MAX_PER_RUN = 5;
 
 serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -240,6 +246,73 @@ serve(async (req) => {
       }
     }
 
+    // ── 5. Golden-Spot drift (PSC E2) ─────────────────────────────────────
+    // Latest reading per banded point vs its bands; the asset's worst state
+    // decides. Snooze key is shared with other DE-shaped proposals per asset,
+    // which is deliberate politeness: one open ask per asset at a time.
+    let driftFlags = 0;
+    {
+      const [defQ, logRecentQ] = await Promise.all([
+        admin.from("reading_definitions")
+          .select("id, asset_id, name, min_warning, max_warning, min_critical, max_critical")
+          .eq("is_active", true).limit(20000),
+        admin.from("reading_logs")
+          .select("definition_id, asset_id, reading_date, reading_time, reading_value")
+          .gte("reading_date", new Date(now - DRIFT_LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10))
+          .order("reading_date", { ascending: false })
+          .limit(10000),
+      ]);
+      type Def = { id: string; asset_id: string | null; name: string; min_warning: number | null; max_warning: number | null; min_critical: number | null; max_critical: number | null };
+      const defs = new Map(((defQ.data ?? []) as Def[])
+        .filter((d) => d.asset_id && [d.min_warning, d.max_warning, d.min_critical, d.max_critical].some((b) => b != null))
+        .map((d) => [d.id, d]));
+      // First row seen per definition is the latest (ordered desc).
+      const latest = new Map<string, { value: number; date: string }>();
+      for (const l of (logRecentQ.data ?? []) as { definition_id: string | null; reading_date: string | null; reading_value: number | null }[]) {
+        if (!l.definition_id || l.reading_value == null || latest.has(l.definition_id) || !defs.has(l.definition_id)) continue;
+        latest.set(l.definition_id, { value: Number(l.reading_value), date: String(l.reading_date) });
+      }
+      type AssetState = { worst: "DRIFT" | "CRITICAL"; params: string[] };
+      const byAssetState = new Map<string, AssetState>();
+      for (const [defId, r] of latest) {
+        const d = defs.get(defId)!;
+        const critical = (d.min_critical != null && r.value < d.min_critical) || (d.max_critical != null && r.value > d.max_critical);
+        const drift = !critical && ((d.min_warning != null && r.value < d.min_warning) || (d.max_warning != null && r.value > d.max_warning));
+        if (!critical && !drift) continue;
+        const cur = byAssetState.get(d.asset_id!) ?? { worst: "DRIFT" as const, params: [] };
+        if (critical) cur.worst = "CRITICAL";
+        cur.params.push(`${d.name} = ${r.value} (${r.date})`);
+        byAssetState.set(d.asset_id!, cur);
+      }
+      let taken = 0;
+      for (const [assetId, st] of byAssetState) {
+        if (taken >= DRIFT_MAX_PER_RUN) break;
+        if (snoozed.has(`${assetId}|draft_de_task`)) continue;
+        const a = assetById.get(assetId);
+        taken += 1; driftFlags += 1;
+        findings.push(`golden-spot:${a?.tag ?? assetId}`);
+        proposals.push({
+          agent_type: "watchdog",
+          asset_id: assetId,
+          action_type: "draft_de_task",
+          status: "pending_review",
+          draft_payload: {
+            asset_id: assetId,
+            asset_tag: a?.tag ?? "(unknown)",
+            title: `${st.worst === "CRITICAL" ? "Critical departure" : "Golden-Spot drift"} — restore ${a?.tag ?? "asset"} to its optimal envelope`,
+            root_cause_summary: `Latest readings outside the ${st.worst === "CRITICAL" ? "CRITICAL" : "warning"} band: ${st.params.slice(0, 3).join("; ")}.`,
+            proposed_solution: st.worst === "CRITICAL"
+              ? "Inspect now and restore operating conditions — the asset has left its optimal envelope entirely (PSC: Critical Departure)."
+              : "Inspect and correct the drifting parameter(s) before this becomes a departure — defending the Golden Spot is cheaper than restoring it.",
+            annual_cost: 0,
+            estimated_savings: 0,
+            priority: st.worst === "CRITICAL" ? "HIGH" : "MEDIUM",
+            created_by: "watchdog",
+          },
+        });
+      }
+    }
+
     // ── persist ───────────────────────────────────────────────────────────
     let inserted = 0;
     if (proposals.length) {
@@ -250,6 +323,7 @@ serve(async (req) => {
 
     const summary =
       `Nightly watchdog: ${wos.length} WOs scanned · ${spikes} cost step-change(s) · ${drifts} PM-drift signal(s)` +
+      `${driftFlags ? ` · ${driftFlags} Golden-Spot drift(s)` : ""}` +
       `${rcaDrafts ? ` · ${rcaDrafts} RCA draft(s) opened` : ""}` +
       `${dqNote ? " · data-quality regression flagged" : ""} · ${inserted} proposal(s) queued.` +
       (dqNote ? `\n\n${dqNote}` : "");
@@ -276,6 +350,7 @@ serve(async (req) => {
       scanned_wos: wos.length,
       spikes,
       pm_drift: drifts,
+      golden_spot_drift: driftFlags,
       rca_drafts: rcaDrafts,
       dq_regression: Boolean(dqNote),
       proposals_queued: inserted,
