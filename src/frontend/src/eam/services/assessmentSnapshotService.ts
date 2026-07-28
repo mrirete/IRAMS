@@ -22,6 +22,8 @@ export interface AssessmentSnapshot {
     coverage_failure_pct: number | null;
     coverage_downtime_pct: number | null;
     register_health_pct: number | null;
+    /** % of A/B-criticality assets with a strategy in place (0231). */
+    strategy_coverage_pct?: number | null;
     findings: Record<string, unknown>;
     narrative: string | null;
 }

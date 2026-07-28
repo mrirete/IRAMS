@@ -15,6 +15,7 @@ import { supabase } from '../lib/supabase';
 import { fitWeibull, weibullBLife } from '../utils/weibull';
 import { computeRegisterQuality, type RegisterQuality } from '../../lib/registerQuality';
 import { collectSubtree } from '../../lib/assetSubtree';
+import { selectStrategies, type StrategyReview } from '../../lib/strategySelect';
 
 // ── row shapes (only the columns we query) ────────────────────────────────
 interface WoRow {
@@ -60,6 +61,8 @@ export interface Assessment {
     pmWaste: PmWasteFind[];
     coverage: { cost_pct: number; failure_code_pct: number; downtime_pct: number };
     register: RegisterQuality;
+    /** Per-asset strategy selection + A/B coverage (Phase D1/D2). */
+    strategy: StrategyReview;
     /** id/tag/name/criticality for entity-linking the narrative's asset tags. */
     assetIndex: { id: string; tag: string; name: string; criticality: string | null }[];
     dataFrom: string | null;
@@ -75,7 +78,7 @@ export interface Assessment {
 export async function computeAssessment(scopeRootId?: string): Promise<Assessment> {
     const cutoff12 = new Date(Date.now() - 365 * DAY_MS).toISOString();
 
-    const [woQ, assetQ, pmQ, warrQ, failQ] = await Promise.all([
+    const [woQ, assetQ, pmQ, warrQ, failQ, readQ] = await Promise.all([
         supabase.from('work_orders')
             .select('id, asset_id, type, status, created_at, closed_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs')
             .order('created_at', { ascending: false }).limit(20000),
@@ -87,6 +90,7 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
             .select('id, asset_id, warranty_type, start_date, end_date, deductible, status')
             .eq('status', 'ACTIVE').limit(5000),
         supabase.from('wo_failure_data').select('wo_id').limit(20000),
+        supabase.from('reading_definitions').select('asset_id').limit(20000),
     ]);
 
     let wos: WoRow[] = (woQ.data ?? []) as WoRow[];
@@ -241,6 +245,25 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
         };
     }).filter((o) => o.category !== 'ok').slice(0, 10);
 
+    // Maintenance-strategy selection (Phase D1/D2) — each asset's recommended
+    // regime + A/B coverage, from data already in hand.
+    const monitoredAssets = new Set(
+        ((readQ.data ?? []) as { asset_id: string | null }[])
+            .map((r) => r.asset_id)
+            .filter((id): id is string => Boolean(id && assetById.has(id))),
+    );
+    const cmCost12ByAsset = new Map<string, number>();
+    for (const w of wos12) {
+        if (w.asset_id && isCorrective(w)) cmCost12ByAsset.set(w.asset_id, (cmCost12ByAsset.get(w.asset_id) ?? 0) + woCost(w));
+    }
+    const strategy = selectStrategies({
+        assets,
+        cmTimesByAsset: failureDatesByAsset,
+        cmCost12ByAsset,
+        activePmAssets: new Set(pms.map((p) => String(p.asset_id)).filter((id) => assetById.has(id))),
+        monitoredAssets,
+    }, Date.now());
+
     // Asset-register quality (Phase A2) — the foundation layer a human RE
     // audits first; computed from rows already fetched above.
     const register = computeRegisterQuality(
@@ -274,6 +297,7 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
             downtime_pct: Math.round((wos12.filter((w) => Number(w.actual_downtime_hrs) > 0).length / n12) * 100),
         },
         register,
+        strategy,
         assetIndex: assets.map((x) => ({ id: x.id, tag: x.tag, name: x.name, criticality: x.criticality })),
         dataFrom: from ? from.slice(0, 10) : null,
         dataTo: to ? to.slice(0, 10) : null,

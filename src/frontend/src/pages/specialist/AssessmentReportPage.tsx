@@ -11,12 +11,14 @@ import { useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Printer, Sparkles, Loader2, AlertTriangle, TrendingDown,
     BadgeDollarSign, Activity, Wrench, ShieldCheck, Database, RefreshCw,
-    Layers, FolderPlus, Check,
+    Layers, FolderPlus, Check, Route, SendHorizonal,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { runAssessmentNarrator } from '../../eam/services/agentRunClient';
 import { computeAssessment, type Assessment, type WeibullFinding } from '../../eam/services/assessmentEngine';
+import type { StrategyVerdict, StrategyRegime } from '../../lib/strategySelect';
+import { predictionService } from '../../eam/services/PredictionService';
 import {
     getLatestSnapshot, saveSnapshot, shouldSaveSnapshot, type AssessmentSnapshot,
 } from '../../eam/services/assessmentSnapshotService';
@@ -45,6 +47,9 @@ export const AssessmentReportPage: React.FC = () => {
     const [pmOptOpen, setPmOptOpen] = useState(false);
     // Area assessment (Phase B2) — same engine, one subtree, saved as a study.
     const [areaOpen, setAreaOpen] = useState(false);
+    // Strategy gaps → proposals queue (Phase D1)
+    const [draftingStrategy, setDraftingStrategy] = useState<string | null>(null);
+    const [draftedStrategies, setDraftedStrategies] = useState<Set<string>>(new Set());
 
     const load = async () => {
         setLoading(true); setError(null); setSnapshotSaved(false);
@@ -76,6 +81,13 @@ export const AssessmentReportPage: React.FC = () => {
                         nameplate_pct: a.register.nameplatePct,
                         tag_collisions: a.register.tagCollisionCount,
                     },
+                    strategy: {
+                        critical_coverage_pct: a.strategy.coveragePct,
+                        criticals_covered: `${a.strategy.criticalCovered}/${a.strategy.criticalTotal}`,
+                        top_gaps: a.strategy.gaps.slice(0, 3).map((g) => ({
+                            tag: g.tag, criticality: g.criticality, recommended: g.recommended,
+                        })),
+                    },
                 });
                 prose = res.answer;
                 setNarrative(prose);
@@ -98,6 +110,7 @@ export const AssessmentReportPage: React.FC = () => {
                     coverage_failure_pct: a.coverage.failure_code_pct,
                     coverage_downtime_pct: a.coverage.downtime_pct,
                     register_health_pct: a.register.healthPct,
+                    strategy_coverage_pct: a.strategy.coveragePct,
                     findings: a as unknown as Record<string, unknown>,
                     narrative: prose || null,
                 });
@@ -135,6 +148,42 @@ export const AssessmentReportPage: React.FC = () => {
             setSavedStudies((s) => new Set(s).add(w.tag));
         } finally {
             setSavingStudy(null);
+        }
+    };
+
+    /** A strategy gap becomes a governed proposal (same loop as everything). */
+    const draftStrategyProposal = async (v: StrategyVerdict) => {
+        setDraftingStrategy(v.assetId);
+        try {
+            const isDe = v.recommended === 'defect_elimination';
+            const created = await predictionService.createAgentAction({
+                agent_type: 'strategy_engine' as never,
+                trigger_id: 'assessment',
+                asset_id: v.assetId,
+                action_type: (isDe ? 'draft_de_task' : 'draft_pm_interval') as never,
+                status: 'pending_review' as never,
+                draft_payload: isDe
+                    ? {
+                        asset_id: v.assetId, asset_tag: v.tag,
+                        title: `Defect elimination — ${v.tag} (infant-mortality pattern)`,
+                        root_cause_summary: v.basis,
+                        proposed_solution: 'Review recent installation/maintenance quality on this asset before adding any PM frequency.',
+                        annual_cost: v.cmCost12mo, estimated_savings: 0,
+                        priority: v.criticality === 'A' ? 'HIGH' : 'MEDIUM',
+                        created_by: 'strategy_engine',
+                    }
+                    : {
+                        asset_id: v.assetId, asset_tag: v.tag,
+                        recommendation_type: v.recommended === 'fixed_interval' ? 'set_interval' : 'condition_monitoring',
+                        recommended_interval_days: v.recommendedIntervalDays,
+                        basis: v.basis,
+                        current_pm_code: null,
+                        created_by: 'strategy_engine',
+                    },
+            });
+            if (created) setDraftedStrategies((s) => new Set(s).add(v.assetId));
+        } finally {
+            setDraftingStrategy(null);
         }
     };
 
@@ -384,6 +433,100 @@ export const AssessmentReportPage: React.FC = () => {
                             </table>
                         </div>
                     )}
+                </Section>
+
+                {/* Maintenance strategy (Phase D1/D2) */}
+                <Section icon={<Route size={15} className="text-violet-600" />} title="Maintenance strategy — every asset a deliberate regime">
+                    {(() => {
+                        const st = a.strategy;
+                        const REGIME_META: Record<StrategyRegime, { label: string; cls: string }> = {
+                            run_to_failure: { label: 'RTF', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
+                            fixed_interval: { label: 'age-based PM', cls: 'bg-primary-50 text-primary-700 border-primary-200' },
+                            condition_based: { label: 'CBM', cls: 'bg-sky-50 text-sky-600 border-sky-200' },
+                            defect_elimination: { label: 'DE first', cls: 'bg-rose-50 text-rose-600 border-rose-200' },
+                            rcm_study: { label: 'RCM study', cls: 'bg-violet-50 text-violet-600 border-violet-200' },
+                        };
+                        const dist = st.verdicts.reduce<Record<string, number>>((acc, v) => {
+                            acc[v.recommended] = (acc[v.recommended] ?? 0) + 1; return acc;
+                        }, {});
+                        return (
+                            <>
+                                <div className="flex flex-col sm:flex-row gap-3 mb-4">
+                                    <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-center sm:w-44 shrink-0 flex flex-col justify-center">
+                                        <div className={`text-3xl font-bold ${st.coveragePct >= 95 ? 'text-emerald-600' : st.coveragePct >= 60 ? 'text-amber-500' : 'text-rose-500'}`}>
+                                            {st.coveragePct}%
+                                        </div>
+                                        <div className="text-[11px] text-slate-500 mt-1">critical assets covered</div>
+                                        <div className="text-[10px] text-slate-400 mt-0.5">{st.criticalCovered}/{st.criticalTotal} A/B assets · world-class ≥95%</div>
+                                        {previous?.strategy_coverage_pct != null && (
+                                            <div className="text-[10px] mt-1 tabular-nums">{deltaChip(st.coveragePct, previous.strategy_coverage_pct, (n) => `${n} pts`)}</div>
+                                        )}
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-slate-400 mb-1.5">Recommended regimes across {st.verdicts.length} assets</div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {(Object.keys(REGIME_META) as StrategyRegime[]).filter((k) => dist[k]).map((k) => (
+                                                <span key={k} className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold ${REGIME_META[k].cls}`}>
+                                                    {REGIME_META[k].label} <span className="tabular-nums font-bold">{dist[k]}</span>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-2.5 leading-relaxed">
+                                            Each asset's regime is derived from criticality × failure behaviour (censored Weibull where ≥3 events) × monitorability.
+                                            Deliberate run-to-failure counts as a strategy once recorded — a decision, not a gap.
+                                        </p>
+                                    </div>
+                                </div>
+                                {st.gaps.length === 0 ? (
+                                    <Empty>No misaligned critical assets — every A/B asset's current state matches its recommended regime.</Empty>
+                                ) : (
+                                    <div className="overflow-x-auto">
+                                        <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-slate-400 mb-1.5">Strategy gaps on critical assets — worst first</div>
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200">
+                                                    <th className="py-2 pr-3">Asset</th><th className="py-2 pr-3">Crit.</th>
+                                                    <th className="py-2 pr-3">Today</th><th className="py-2 pr-3">Recommended</th>
+                                                    <th className="py-2 pr-3">Why</th><th className="py-2 no-print" />
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {st.gaps.slice(0, 8).map((v) => {
+                                                    const meta = REGIME_META[v.recommended];
+                                                    const draftable = v.recommended === 'fixed_interval' || v.recommended === 'condition_based' || v.recommended === 'defect_elimination';
+                                                    return (
+                                                        <tr key={v.assetId} className="border-b border-slate-100 align-top">
+                                                            <td className="py-2 pr-3"><span className="font-mono font-semibold text-slate-800">{v.tag}</span></td>
+                                                            <td className="py-2 pr-3">{v.criticality ?? '—'}</td>
+                                                            <td className="py-2 pr-3 text-[11px] text-slate-500 whitespace-nowrap">
+                                                                {v.hasActivePm ? 'PM ✓' : 'no PM'} · {v.isMonitored ? 'monitored ✓' : 'no monitoring'}
+                                                            </td>
+                                                            <td className="py-2 pr-3">
+                                                                <span className={`inline-block rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase ${meta.cls}`}>
+                                                                    {meta.label}{v.recommendedIntervalDays ? ` ${v.recommendedIntervalDays}d` : ''}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-2 pr-3 text-[11.5px] text-slate-500 leading-relaxed max-w-md">{v.basis}</td>
+                                                            <td className="py-2 no-print">
+                                                                {draftable && (draftedStrategies.has(v.assetId) ? (
+                                                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700"><Check size={12} /> Queued</span>
+                                                                ) : (
+                                                                    <button onClick={() => void draftStrategyProposal(v)} disabled={draftingStrategy !== null}
+                                                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white hover:border-primary-300 hover:text-primary-700 text-slate-500 text-[11px] font-semibold px-2 h-7 disabled:opacity-45 transition-colors">
+                                                                        {draftingStrategy === v.assetId ? <Loader2 size={12} className="animate-spin" /> : <SendHorizonal size={12} />} Draft
+                                                                    </button>
+                                                                ))}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                )}
+                            </>
+                        );
+                    })()}
                 </Section>
 
                 {/* Asset register quality (Phase A2) */}
