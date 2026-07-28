@@ -17,7 +17,7 @@ import {
     Sparkles, Send, Loader2, ClipboardList, ScrollText, UploadCloud,
     BarChart2, RefreshCw, ChevronRight, X, BrainCircuit, Activity, BadgeDollarSign,
     Check, Database, ArrowRight, CheckCircle2, Copy,
-    TrendingUp, Gauge, Wrench, Radar, Route,
+    TrendingUp, Gauge, Wrench, Radar, Route, Presentation,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -28,6 +28,7 @@ import { predictionService, type AgentAction } from '../../eam/services/Predicti
 import { computeRealization, type RealizationSummary } from '../../lib/valueRealization';
 import { computeBriefingAnalytics, type BriefingAnalytics } from '../../lib/briefingCharts';
 import { computeMissions, type DetMission } from '../../lib/missionEngine';
+import { messagingService } from '../../eam/services/MessagingService';
 import BriefingReport, { RichText, type BriefingAsset } from '../../components/specialist/BriefingReport';
 
 interface AuditRow {
@@ -319,7 +320,23 @@ export const SpecialistWorkspacePage: React.FC = () => {
         setApproving(id);
         try {
             await predictionService.updateAgentActionStatus(id, 'approved', user?.username || user?.id || 'workspace', 'Approved in Specialist workspace');
-            setProposals((p) => p.filter((x) => x.id !== id));
+            // F4 — wins made visible: tell the asset's thread, where the crew
+            // talks, that leadership just green-lit the work. Fire-and-forget.
+            const p = proposals.find((x) => x.id === id);
+            const tag = String((p?.draft_payload as Record<string, unknown> | undefined)?.asset_tag ?? '');
+            if (p?.asset_id && user?.id) {
+                const title = String((p.draft_payload as Record<string, unknown>)?.title
+                    ?? (p.draft_payload as Record<string, unknown>)?.recommendation_type ?? p.action_type);
+                void messagingService.postMessage({
+                    threadType: 'asset',
+                    threadId: p.asset_id,
+                    body: `✅ Specialist proposal approved: "${title}" — delivery queued. This lands on ${tag || 'this asset'}'s plan; the value clock starts now.`,
+                    senderId: user.id,
+                    senderName: user?.username ?? 'Reliability Specialist',
+                    threadLabel: tag || 'asset',
+                }).catch(() => { /* the approval stands even if the note fails */ });
+            }
+            setProposals((prev) => prev.filter((x) => x.id !== id));
             void loadAll();
         } finally {
             setApproving(null);
@@ -411,20 +428,35 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 />
             </div>
 
-            {/* The renewal artifact: cost vs measured value, printable. */}
-            <Link to="/specialist/roi"
-                className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors group`}>
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                    <BadgeDollarSign size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold text-slate-800">Return on Reliability statement</div>
-                    <div className="text-[11.5px] text-slate-500 mt-0.5 hidden sm:block">
-                        What the Specialist costs vs what it measurably earned — print it for the renewal conversation.
+            {/* The two leadership artifacts: the renewal statement + the weekly pack. */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Link to="/specialist/roi"
+                    className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors group`}>
+                    <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                        <BadgeDollarSign size={16} />
                     </div>
-                </div>
-                <ArrowRight size={16} className="text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-            </Link>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-semibold text-slate-800">Return on Reliability statement</div>
+                        <div className="text-[11.5px] text-slate-500 mt-0.5 hidden sm:block">
+                            Cost vs measured value — print it for the renewal conversation.
+                        </div>
+                    </div>
+                    <ArrowRight size={16} className="text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+                </Link>
+                <Link to="/specialist/meeting"
+                    className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-violet-300 hover:bg-violet-50/40 transition-colors group`}>
+                    <div className="w-8 h-8 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center shrink-0">
+                        <Presentation size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-[13px] font-semibold text-slate-800">Weekly meeting pack</div>
+                        <div className="text-[11.5px] text-slate-500 mt-0.5 hidden sm:block">
+                            Wins, stuck decisions, night-shift signals, the numbers — auto-drafted.
+                        </div>
+                    </div>
+                    <ArrowRight size={16} className="text-slate-300 group-hover:text-violet-600 group-hover:translate-x-0.5 transition-all shrink-0" />
+                </Link>
+            </div>
 
             {/* Coming off another CMMS? The full migration path lives under Admin
                 (it isn't licence-gated), but this is where a new customer starts. */}
