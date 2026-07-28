@@ -7,12 +7,13 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench } from 'lucide-react';
+import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench, Lock } from 'lucide-react';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 import { PSCPanel } from '../components/metrics/PSCPanel';
 import { supabase } from '../eam/lib/supabase';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { useRelantern } from '../eam/contexts/RelanternContext';
+import { useToast } from '../eam/contexts/ToastContext';
 import analyzeService from '../eam/services/AnalyzeService';
 import { classifyWork } from '../eam/services/workReadiness';
 import {
@@ -66,6 +67,7 @@ function fleetScalars(rows: any[], windowDays: number) {
 
 export const ReliabilityMetricsPage: React.FC = () => {
     const { openRelantern } = useRelantern();
+    const { showToast } = useToast();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -271,7 +273,16 @@ export const ReliabilityMetricsPage: React.FC = () => {
         setAdvisorAsset({ id: assetId, tag: a?.tag || '', name: a?.name || assetName(assetId) });
     };
 
+    // The review is a paid AI call. With nothing in scope, or with every KPI still
+    // N/A, the model would be reasoning about blanks — the page already says so.
+    const askBlocked = filteredAssets.length === 0
+        ? 'No assets in this scope — widen the filters before asking the Specialist.'
+        : [...kpis, ...exec.kpis].every(k => k.value == null)
+            ? 'Every KPI in this window is still N/A — there is no reliability history for the Specialist to read yet.'
+            : '';
+
     const askSpecialist = () => {
+        if (askBlocked) { showToast(askBlocked, 'info'); return; }
         const ctx = [
             'RELIABILITY METRICS',
             `Scope: ${windowLabel} window${critFilter !== 'ALL' ? `, Criticality ${critFilter}` : ''}${classFilter !== 'ALL' ? `, Class ${classFilter}` : ''} (${filteredAssets.length} assets).`,
@@ -295,9 +306,11 @@ export const ReliabilityMetricsPage: React.FC = () => {
                 <button
                     onClick={askSpecialist}
                     disabled={loading}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 shadow-sm disabled:opacity-50"
+                    aria-disabled={!!askBlocked}
+                    title={askBlocked || 'Ask the Reliability Specialist to review these KPIs'}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold shadow-sm disabled:opacity-50 ${askBlocked ? 'text-slate-500 bg-slate-100 border border-slate-200 hover:bg-slate-200' : 'text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'}`}
                 >
-                    <Sparkles size={15} /> Ask Specialist
+                    {askBlocked ? <Lock size={15} /> : <Sparkles size={15} />} Ask Specialist
                 </button>
             </div>
 

@@ -63,7 +63,7 @@ import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // A
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
-import { assessReadiness, assessCloseout, classifyWork, type ReadinessResult } from '../services/workReadiness';
+import { assessReadiness, assessCloseout, classifyWork, canReviewPlan, canReviewCloseout, canRaiseRCA, type ReadinessResult, type ActionGate } from '../services/workReadiness';
 import { computeAssetReliability, computePMEffectiveness, pmEffectivenessKpi, kpisToAIContext, type AssetReliability } from '../services/reliabilityMetrics';
 import { useRelantern } from '../contexts/RelanternContext';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
@@ -1058,6 +1058,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         }
     }, [showCompleteModal]);
 
+    // Raising an RCA hands this WO's asset, problem statement and event data to a
+    // new investigation — it stays locked until those exist, so the investigation
+    // backlog doesn't fill with empty records.
+    const rcaGate = canRaiseRCA(localJob);
+
     const [showNotificationModal, setShowNotificationModal] = useState(false);
     const [pendingStatus, setPendingStatus] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
@@ -1809,10 +1814,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         className="flex items-center gap-1.5 px-2 py-1 md:px-2.5 md:py-1.5 text-[11px] md:text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 border border-transparent hover:border-red-100 rounded transition-colors" title="Delete Work Order">
                         <Trash2 size={14} /> Delete
                     </button>
-                    {/* ── Raise RCA — only for Corrective/Breakdown/Emergency WOs ── */}
+                    {/* ── Raise RCA — only for Corrective/Breakdown/Emergency WOs, and only
+                          once the WO carries the evidence an investigation inherits ── */}
                     {['CM', 'BM', 'EM'].includes(localJob.type) && (
                         <button
                             onClick={() => {
+                                if (!rcaGate.ok) { showToast(rcaGate.reason, 'info'); return; }
                                 navigate('/analyze', {
                                     state: {
                                         raiseRCA: {
@@ -1829,11 +1836,16 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     }
                                 });
                             }}
-                            className="flex items-center gap-1.5 px-2.5 py-1 md:px-3 md:py-1.5 text-[11px] md:text-xs font-bold text-white rounded transition-all hover:shadow-md"
-                            style={{ background: 'linear-gradient(135deg, #0891b2, #0d9488)' }}
-                            title="Raise a Root Cause Analysis investigation from this Work Order"
+                            aria-disabled={!rcaGate.ok}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 md:px-3 md:py-1.5 text-[11px] md:text-xs font-bold rounded transition-all ${
+                                rcaGate.ok
+                                    ? 'text-white hover:shadow-md'
+                                    : 'text-slate-500 bg-slate-100 border border-slate-200 hover:bg-slate-200'
+                            }`}
+                            style={rcaGate.ok ? { background: 'linear-gradient(135deg, #0891b2, #0d9488)' } : undefined}
+                            title={rcaGate.reason}
                         >
-                            <GitPullRequest size={14} /> Raise RCA
+                            {rcaGate.ok ? <GitPullRequest size={14} /> : <Lock size={14} />} Raise RCA
                         </button>
                     )}
                 </div>
@@ -2763,8 +2775,13 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
 
     // Gate 2: Closeout quality — advisory strip + Specialist review.
     const { openRelantern } = useRelantern();
+    const { showToast } = useToast();
     const closeout = assessCloseout(job, { isPreventive });
+    // Paid AI call — needs the work done and written up before there is anything
+    // to review. Failure coding is not required: the review suggests it.
+    const closeoutGate = canReviewCloseout(closeout);
     const handleReviewCloseout = () => {
+        if (!closeoutGate.ok) { showToast(closeoutGate.reason, 'info'); return; }
         const tasks = job.tasks || [];
         const done = tasks.filter(t => String(t.status).toUpperCase() === 'COMPLETED').length;
         const fd = job.failureData || {};
@@ -2790,7 +2807,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     return (
         <div className="flex flex-col gap-3 md:gap-4 animate-in fade-in duration-300">
             {/* ══ Closeout Quality (Gate 2) — advisory ══ */}
-            <CloseoutReadinessStrip readiness={closeout} onReview={handleReviewCloseout} />
+            <CloseoutReadinessStrip readiness={closeout} onReview={handleReviewCloseout} reviewGate={closeoutGate} />
 
             {/* ══ Asset Reliability context (Phase 4) — SMRP equipment-reliability KPIs ══ */}
             {relMetrics && relMetrics.totalFailures > 0 && (
@@ -3293,9 +3310,12 @@ const GateStrip: React.FC<{
     leftBadges?: React.ReactNode;
     reviewLabel?: string;
     onReview?: () => void;
+    /** Gate on the Specialist review — a paid AI call. Blocked = greyed, but still
+     *  clickable so the handler can explain what's missing instead of firing. */
+    reviewGate?: ActionGate;
     isExpanded?: boolean;
     onToggleExpand?: () => void;
-}> = ({ title, readiness, readyText, incompleteText, scoreTitle, leftBadges, reviewLabel = 'Review with Specialist', onReview, isExpanded, onToggleExpand }) => {
+}> = ({ title, readiness, readyText, incompleteText, scoreTitle, leftBadges, reviewLabel = 'Review with Specialist', onReview, reviewGate, isExpanded, onToggleExpand }) => {
     const { score, requiredMet, items, blockers } = readiness;
     const ring = score >= 80 ? '#10b981' : score >= 50 ? '#f59e0b' : '#ef4444';
     return (
@@ -3311,15 +3331,23 @@ const GateStrip: React.FC<{
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-bold text-slate-800">{title}</span>
                         {leftBadges}
-                        {onReview && (
-                            <button
-                                onClick={onReview}
-                                title="Have the Reliability Specialist review this"
-                                className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 px-2 py-0.5 rounded-full shadow-sm transition-all"
-                            >
-                                <Sparkles size={11} /> {reviewLabel}
-                            </button>
-                        )}
+                        {onReview && (() => {
+                            const blocked = reviewGate ? !reviewGate.ok : false;
+                            return (
+                                <button
+                                    onClick={onReview}
+                                    aria-disabled={blocked}
+                                    title={reviewGate ? reviewGate.reason : 'Have the Reliability Specialist review this'}
+                                    className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm transition-all ${
+                                        blocked
+                                            ? 'text-slate-500 bg-slate-100 border border-slate-200 hover:bg-slate-200'
+                                            : 'text-white bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700'
+                                    }`}
+                                >
+                                    {blocked ? <Lock size={11} /> : <Sparkles size={11} />} {reviewLabel}
+                                </button>
+                            );
+                        })()}
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">{requiredMet ? readyText : incompleteText(blockers.length)}</p>
                 </div>
@@ -3363,9 +3391,10 @@ const GateStrip: React.FC<{
 const WorkReadinessStrip: React.FC<{
     readiness: ReadinessResult;
     onReview?: () => void;
+    reviewGate?: ActionGate;
     isExpanded?: boolean;
     onToggleExpand?: () => void;
-}> = ({ readiness, onReview, isExpanded, onToggleExpand }) => {
+}> = ({ readiness, onReview, reviewGate, isExpanded, onToggleExpand }) => {
     const badge = READINESS_CLASS_BADGE[readiness.classification] || READINESS_CLASS_BADGE.UNCLASSIFIED;
     return (
         <GateStrip
@@ -3380,13 +3409,14 @@ const WorkReadinessStrip: React.FC<{
             </>}
             reviewLabel="Review plan with Specialist"
             onReview={onReview}
+            reviewGate={reviewGate}
             isExpanded={isExpanded}
             onToggleExpand={onToggleExpand}
         />
     );
 };
 
-const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () => void }> = ({ readiness, onReview }) => (
+const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: () => void; reviewGate?: ActionGate }> = ({ readiness, onReview, reviewGate }) => (
     <GateStrip
         title="Closeout Quality"
         readiness={readiness}
@@ -3396,6 +3426,7 @@ const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: 
         leftBadges={<span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border ${readiness.requiredMet ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>{readiness.requiredMet ? 'Ready to close' : 'Incomplete'}</span>}
         reviewLabel="Review closeout with Specialist"
         onReview={onReview}
+        reviewGate={reviewGate}
     />
 );
 
@@ -3450,7 +3481,11 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     // "Review plan with Specialist" — hand the WO context to the Reliability AI and
     // auto-run a structured plan/readiness/RCA review.
     const { openRelantern } = useRelantern();
+    const { showToast } = useToast();
+    // The review is a paid AI call: it only runs once the plan is actually planned.
+    const planGate = canReviewPlan(readiness);
     const handleReviewPlan = () => {
+        if (!planGate.ok) { showToast(planGate.reason, 'info'); return; }
         const tasks = job.tasks || [];
         const withInstr = tasks.filter(t => (t.instructions || []).length > 0).length;
         const estHrs = job.estDuration && job.estDuration > 0 ? job.estDuration : tasks.reduce((s, t) => s + (t.estHours || 0), 0);
@@ -3539,6 +3574,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                 <WorkReadinessStrip
                     readiness={readiness}
                     onReview={handleReviewPlan}
+                    reviewGate={planGate}
                     isExpanded={isFieldsExpanded}
                     onToggleExpand={() => setIsFieldsExpanded(!isFieldsExpanded)}
                 />
@@ -6299,7 +6335,16 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
 
     // Ask the Reliability Specialist to advise which PMs to reduce/eliminate, off
     // the actual KPI results (low effectiveness or no findings = candidates).
+    // Same rule as the WO gates: no paid AI call when there is nothing to reason
+    // about. With no strategies (or no PM history behind them) the model would be
+    // inventing a programme rather than optimising one.
+    const pmOptimiseBlocked = pms.length === 0
+        ? 'Create at least one maintenance strategy before asking the Specialist to optimise the programme.'
+        : pmEff.overall.written === 0
+            ? 'No PM history yet — the Specialist optimises the programme from PM effectiveness results, so run some PM work orders first.'
+            : '';
     const handleOptimizePMs = () => {
+        if (pmOptimiseBlocked) { showToast(pmOptimiseBlocked, 'info'); return; }
         const lowValue = pms.filter(pm => { const e = pmEff.byPM[pm.id]; return e && e.written >= 2 && (e.pct ?? 100) < 50; });
         const noFindings = pms.filter(pm => !pmEff.byPM[pm.id]);
         const kpiBlock = kpisToAIContext([pmEffectivenessKpi(pmEff)]);
@@ -6400,8 +6445,13 @@ const PMList: React.FC<{ pms: any[], dictionaries: DictionaryEntry[], assets: an
                     <p className="text-xs text-slate-500">Manage PM intervals, templates, and auto-generation rules.</p>
                 </div>
                 <div className="flex gap-2">
-                    <button onClick={handleOptimizePMs} className="border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2" title="Ask the Reliability Specialist which PMs to optimise or eliminate">
-                        <Sparkles size={16} /> Optimise PMs
+                    <button
+                        onClick={handleOptimizePMs}
+                        aria-disabled={!!pmOptimiseBlocked}
+                        className={`border px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 ${pmOptimiseBlocked ? 'border-slate-200 bg-slate-100 hover:bg-slate-200 text-slate-500' : 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700'}`}
+                        title={pmOptimiseBlocked || 'Ask the Reliability Specialist which PMs to optimise or eliminate'}
+                    >
+                        {pmOptimiseBlocked ? <Lock size={16} /> : <Sparkles size={16} />} Optimise PMs
                     </button>
                     <button onClick={() => navigate('/recurring-work')} className="border border-slate-300 hover:bg-slate-50 text-slate-700 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
                         <Repeat size={16} /> Full Manager

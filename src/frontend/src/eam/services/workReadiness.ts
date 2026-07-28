@@ -163,3 +163,86 @@ export function assessCloseout(wo: WorkOrder, opts: CloseoutOptions = {}): Readi
 
   return { gate: 'CLOSE', score, requiredMet, items, blockers, classification: 'UNCLASSIFIED', isHighCriticality: false };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ACTION GATES — when is an expensive downstream action worth taking?
+//
+// Two actions on a work order cost real money: a Specialist review (a paid AI
+// call) and raising an RCA (an investigation somebody has to staff and work).
+// Neither is worth spending on a half-filled work order — the deterministic
+// engines above already name what's missing, so an AI round-trip on an empty
+// plan would only read the checklist back to the user, and an RCA raised off a
+// blank WO produces an investigation with no evidence in it.
+//
+// These gates return the reason as well as the verdict, so the UI can teach
+// rather than just grey a button out.
+// ─────────────────────────────────────────────────────────────────────────────
+export interface ActionGate {
+  /** True when the action may proceed. */
+  ok: boolean;
+  /** Labels of what is still missing — empty when ok. */
+  missing: string[];
+  /** Button tooltip / toast text: what this does, or what to fix first. */
+  reason: string;
+}
+
+const gateResult = (missing: string[], readyReason: string, blockedPrefix: string): ActionGate => ({
+  ok: missing.length === 0,
+  missing,
+  reason: missing.length === 0 ? readyReason : `${blockedPrefix}: ${missing.join(', ')}.`,
+});
+
+/**
+ * Gate 1 review. The Specialist critiques a *finished* plan — every required
+ * planning essential must be in place first. Reviewing a blank plan burns an AI
+ * call to restate the readiness chips the planner is already looking at.
+ */
+export function canReviewPlan(readiness: ReadinessResult): ActionGate {
+  return gateResult(
+    readiness.blockers.map(b => b.label),
+    'Have the Reliability Specialist review this plan',
+    'Complete the planning essentials first, then the Specialist can review the plan. Still missing',
+  );
+}
+
+/**
+ * Gate 2 review. Requires only that the job was actually done and written up —
+ * the substance the review reads. Failure coding is deliberately NOT required:
+ * suggesting the most likely mode and cause is one of the things this review is
+ * for, so gating on it would block the review precisely when it adds most.
+ */
+const CLOSEOUT_SUBSTANCE_ITEMS = ['tasks-done', 'documented'];
+export function canReviewCloseout(closeout: ReadinessResult): ActionGate {
+  return gateResult(
+    closeout.items.filter(it => CLOSEOUT_SUBSTANCE_ITEMS.includes(it.id) && !it.met).map(it => it.label),
+    'Have the Reliability Specialist review this closeout',
+    'Finish and document the work first, then the Specialist can review the closeout. Still missing',
+  );
+}
+
+/**
+ * Minimum evidence to raise an RCA off a work order. An investigation inherits
+ * the WO's asset, problem statement and event data — without those the RCA is
+ * created empty (and the asset falls back to a placeholder UUID), which is how
+ * investigation backlogs fill up with records nobody can work.
+ *
+ * Required:
+ *  - the asset the failure happened on;
+ *  - a described problem, which seeds the problem statement;
+ *  - evidence the failure is real — either the work has been started (WIP and
+ *    beyond, so there is something to look at) or the failure mode is coded.
+ *    A breakdown still in progress qualifies: RCA evidence is freshest then.
+ */
+export function canRaiseRCA(wo: WorkOrder): ActionGate {
+  const missing: string[] = [];
+  if (!wo.assetId) missing.push('Asset linked');
+  if (!(wo.description || '').trim()) missing.push('Problem described');
+  const started = EXECUTION_STATES.includes(String(wo.status));
+  const coded = !!wo.failureData?.failureMode;
+  if (!started && !coded) missing.push('Failure evidence (start the work, or code the failure mode)');
+  return gateResult(
+    missing,
+    'Raise a Root Cause Analysis investigation from this Work Order',
+    'An RCA needs evidence to work from. Still missing',
+  );
+}
