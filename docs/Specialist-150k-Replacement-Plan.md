@@ -93,8 +93,10 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
   exists.
 
 ### Phase C — the always-on advantage
-- **C1.** Watchdogs on cron: emergent bad actor (cost-rate step change), PM-effectiveness drift,
-  data-quality regression → proposals queue, so value generation is not click-driven.
+- **C1. SHIPPED 2026-07-28 (ce593ae):** specialist-watchdog on a nightly cron (05:30 UTC,
+  deterministic, zero-LLM): emergent bad-actor step change → draft_de_task, PM-effectiveness
+  drift → draft_pm_interval, data-quality regression → audit note; snoozed while pending or
+  for 30 days after a human decision.
 - **C2.** Downtime-threshold RCA auto-draft into the RCA module.
 - **C3. SHIPPED 2026-07-28 (2e2313a):** `/specialist/roi` "Return on Reliability" — measured vs
   identified value, subscription vs the $150k benchmark, snapshot-trend corroboration, printable.
