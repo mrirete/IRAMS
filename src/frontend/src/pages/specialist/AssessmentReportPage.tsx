@@ -11,14 +11,15 @@ import { useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Printer, Sparkles, Loader2, AlertTriangle, TrendingDown,
     BadgeDollarSign, Activity, Wrench, ShieldCheck, Database, RefreshCw,
-    Layers, FolderPlus, Check, Route, SendHorizonal,
+    Layers, FolderPlus, Check, Route, SendHorizonal, Users, PackageSearch, Footprints,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { runAssessmentNarrator } from '../../eam/services/agentRunClient';
 import { computeAssessment, type Assessment, type WeibullFinding } from '../../eam/services/assessmentEngine';
-import type { StrategyVerdict, StrategyRegime } from '../../lib/strategySelect';
+import { diffStrategyVerdicts, type StrategyVerdict, type StrategyRegime } from '../../lib/strategySelect';
 import { predictionService } from '../../eam/services/PredictionService';
+import OperatorCarePlannerModal from '../../components/specialist/OperatorCarePlannerModal';
 import {
     getLatestSnapshot, saveSnapshot, shouldSaveSnapshot, type AssessmentSnapshot,
 } from '../../eam/services/assessmentSnapshotService';
@@ -50,6 +51,8 @@ export const AssessmentReportPage: React.FC = () => {
     // Strategy gaps → proposals queue (Phase D1)
     const [draftingStrategy, setDraftingStrategy] = useState<string | null>(null);
     const [draftedStrategies, setDraftedStrategies] = useState<Set<string>>(new Set());
+    // Operator-care route planner (Phase F1)
+    const [careOpen, setCareOpen] = useState(false);
 
     const load = async () => {
         setLoading(true); setError(null); setSnapshotSaved(false);
@@ -449,6 +452,11 @@ export const AssessmentReportPage: React.FC = () => {
                 <Section icon={<Route size={15} className="text-violet-600" />} title="Maintenance strategy — every asset a deliberate regime">
                     {(() => {
                         const st = a.strategy;
+                        // D4 — living strategies: verdicts that CHANGED since the
+                        // previous snapshot (the evidence moved; re-decide).
+                        const prevVerdicts = ((previous?.findings as Record<string, unknown> | undefined)?.strategy as
+                            { verdicts?: Pick<StrategyVerdict, 'assetId' | 'tag' | 'recommended'>[] } | undefined)?.verdicts;
+                        const changes = diffStrategyVerdicts(prevVerdicts, st.verdicts);
                         const REGIME_META: Record<StrategyRegime, { label: string; cls: string }> = {
                             run_to_failure: { label: 'RTF', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
                             fixed_interval: { label: 'age-based PM', cls: 'bg-primary-50 text-primary-700 border-primary-200' },
@@ -485,8 +493,21 @@ export const AssessmentReportPage: React.FC = () => {
                                             Each asset's regime is derived from criticality × failure behaviour (censored Weibull where ≥3 events) × monitorability.
                                             Deliberate run-to-failure counts as a strategy once recorded — a decision, not a gap.
                                         </p>
+                                        <div className="no-print mt-2.5">
+                                            <button onClick={() => setCareOpen(true)}
+                                                className="inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700 text-[12px] font-semibold px-3 py-1.5 transition-colors">
+                                                <Footprints size={13} /> Plan operator-care routes from these verdicts
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
+                                {changes.length > 0 && (
+                                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                        <strong>The evidence moved since the last assessment</strong> — {changes.length} regime{changes.length === 1 ? '' : 's'} changed:
+                                        {' '}{changes.slice(0, 4).map((c) => `${c.tag} ${c.from.replaceAll('_', ' ')} → ${c.to.replaceAll('_', ' ')}`).join('; ')}
+                                        {changes.length > 4 ? ` (+${changes.length - 4} more)` : ''}. Re-decide these in the room, don't let them drift silently.
+                                    </div>
+                                )}
                                 {st.gaps.length === 0 ? (
                                     <Empty>No misaligned critical assets — every A/B asset's current state matches its recommended regime.</Empty>
                                 ) : (
@@ -537,6 +558,38 @@ export const AssessmentReportPage: React.FC = () => {
                             </>
                         );
                     })()}
+                </Section>
+
+                {/* Workforce readiness (Phase F5) */}
+                <Section icon={<Users size={15} className="text-teal-600" />} title="Workforce readiness — can this roster execute the strategy?">
+                    {a.skills.totalQualifications === 0 ? (
+                        <Empty>
+                            No qualifications are recorded yet — the strategy above needs {a.skills.areas.filter((x) => x.demand > 0).length} capability
+                            area{a.skills.areas.filter((x) => x.demand > 0).length === 1 ? '' : 's'} staffed. Record certifications and training under
+                            People &amp; Org and this section becomes the skills-vs-strategy matrix.
+                        </Empty>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                                {a.skills.areas.map((ar) => (
+                                    <div key={ar.key} className={`rounded-xl border p-3 ${ar.gap ? 'border-rose-200 bg-rose-50/50' : 'border-slate-100 bg-slate-50/60'}`}>
+                                        <div className="flex items-baseline gap-1.5">
+                                            <span className={`text-xl font-bold tabular-nums ${ar.gap ? 'text-rose-600' : 'text-slate-800'}`}>{ar.qualifiedPeople}</span>
+                                            <span className="text-[11px] text-slate-400">qualified vs {ar.demand} asset{ar.demand === 1 ? '' : 's'} needing it</span>
+                                        </div>
+                                        <div className="text-[11px] text-slate-600 mt-1 font-medium">{ar.label}</div>
+                                        {ar.gap && <div className="text-[10px] text-rose-600 font-semibold mt-0.5">no one qualified — hire, train or contract</div>}
+                                        {ar.exampleQuals.length > 0 && <div className="text-[10px] text-slate-400 mt-0.5 truncate">{ar.exampleQuals.join(' · ')}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-xs text-slate-500">
+                                {a.skills.totalQualifications} active qualification{a.skills.totalQualifications === 1 ? '' : 's'} on the roster
+                                {a.skills.expiringSoon > 0 ? ` · ${a.skills.expiringSoon} expiring within 90 days — renew before the capability lapses.` : '.'}
+                                {' '}A strategy no one can execute is a document, not a plan.
+                            </p>
+                        </>
+                    )}
                 </Section>
 
                 {/* Success layer — PSC / Golden Spot (Phase E1) */}
@@ -617,7 +670,71 @@ export const AssessmentReportPage: React.FC = () => {
                                     </p>
                                 </div>
                             )}
+                            {/* E5 — front of life (D-I-S-G S-phase) */}
+                            {a.frontOfLife.length > 0 && (
+                                <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                                    <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-slate-400 mb-1.5">
+                                        Front of life — D-I-S-G S-phase (first 180 days observed)
+                                    </div>
+                                    <ul className="space-y-1">
+                                        {a.frontOfLife.slice(0, 5).map((f) => (
+                                            <li key={f.assetId} className="text-[12px] text-slate-600">
+                                                <span className="font-mono font-semibold text-slate-700">{f.tag}</span>
+                                                <span className="text-slate-400"> · observed {f.observedDays}d · </span>
+                                                {f.reachedSpot
+                                                    ? <span className="text-emerald-700">reached Success in {f.timeToSuccessHours}h</span>
+                                                    : <span className="text-rose-600 font-semibold">has never entered its Golden Spot — S-phase red flag: review installation/commissioning quality, not PM frequency</span>}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
                         </>
+                    )}
+                </Section>
+
+                {/* Spares exposure (Phase B4) */}
+                <Section icon={<PackageSearch size={15} className="text-orange-500" />} title="Spares exposure — parts the criticals already needed once">
+                    {a.spares.criticalPartsTracked === 0 ? (
+                        <Empty>
+                            No parts consumption is recorded against A/B-criticality assets yet
+                            {a.spares.stockRowsSeen === 0 ? ' (and no stock records exist)' : ''} — book parts to work orders and
+                            this section becomes the criticality-driven stock-risk list.
+                        </Empty>
+                    ) : a.spares.exposures.length === 0 ? (
+                        <Empty>Every part consumed on a critical asset in the last 12 months is held adequately — no exposure.</Empty>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left text-[11px] uppercase tracking-wider text-slate-400 border-b border-slate-200">
+                                        <th className="py-2 pr-3">Part</th><th className="py-2 pr-3">Risk</th>
+                                        <th className="py-2 pr-3 text-right">Used (12 mo)</th><th className="py-2 pr-3 text-right">On hand</th>
+                                        <th className="py-2">Critical assets served</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {a.spares.exposures.slice(0, 8).map((e, i) => (
+                                        <tr key={e.itemId ?? `d${i}`} className="border-b border-slate-100">
+                                            <td className="py-2 pr-3 font-medium text-slate-700">{e.label}</td>
+                                            <td className="py-2 pr-3">
+                                                <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-full ${e.severity === 'stockout' ? 'bg-rose-50 text-rose-600'
+                                                    : e.severity === 'below_min' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                    {e.severity.replaceAll('_', ' ')}
+                                                </span>
+                                            </td>
+                                            <td className="py-2 pr-3 text-right font-mono">{e.consumedQty12mo} ({e.uses}×)</td>
+                                            <td className="py-2 pr-3 text-right font-mono">{e.onHand ?? '?'}{e.minLevel != null ? ` / min ${e.minLevel}` : ''}</td>
+                                            <td className="py-2 font-mono text-[12px] text-slate-600">{e.assets.join(', ')}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            <p className="text-[10.5px] text-slate-400 mt-2">
+                                Exposure = a part consumed on an A/B asset in the last 12 months that is now stocked out, below minimum, or not traceable to a stock record.
+                                The failure that needed it once can need it again tomorrow.
+                            </p>
+                        </div>
                     )}
                 </Section>
 
@@ -684,6 +801,7 @@ export const AssessmentReportPage: React.FC = () => {
 
                 <PmOptimizationModal open={pmOptOpen} onClose={() => setPmOptOpen(false)} />
                 <AreaAssessmentModal open={areaOpen} onClose={() => setAreaOpen(false)} />
+                <OperatorCarePlannerModal open={careOpen} onClose={() => setCareOpen(false)} assessment={assessment} />
 
                 <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1.5">
                     <ShieldCheck size={11} /> Methodology: Pareto on frozen WO costs · median-rank regression Weibull with Johnson-adjusted ranks and right-censoring · PM effectiveness vs corrective history · warranty windows vs completed WOs · register hygiene scored on hierarchy, criticality spread, nameplate, tag collisions and history linkage. Advisory only — a human approves every action.

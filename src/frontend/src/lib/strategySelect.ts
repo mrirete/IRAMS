@@ -99,6 +99,28 @@ function fitFor(times: number[] | undefined, nowMs: number) {
     };
 }
 
+/** D4 — living strategies: what changed since the last assessment. A regime
+ *  change means the evidence moved; the strategy must be re-decided, not
+ *  silently different. Pure diff over (assetId → recommended). */
+export interface StrategyChange {
+    tag: string;
+    from: StrategyRegime;
+    to: StrategyRegime;
+}
+export function diffStrategyVerdicts(
+    prev: Pick<StrategyVerdict, 'assetId' | 'tag' | 'recommended'>[] | null | undefined,
+    cur: Pick<StrategyVerdict, 'assetId' | 'tag' | 'recommended'>[],
+): StrategyChange[] {
+    if (!prev?.length) return [];
+    const before = new Map(prev.map((v) => [v.assetId, v.recommended]));
+    const out: StrategyChange[] = [];
+    for (const v of cur) {
+        const was = before.get(v.assetId);
+        if (was && was !== v.recommended) out.push({ tag: v.tag, from: was, to: v.recommended });
+    }
+    return out;
+}
+
 export function selectStrategies(inp: StrategyInputs, nowMs: number): StrategyReview {
     const verdicts: StrategyVerdict[] = [];
 

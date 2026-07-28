@@ -17,6 +17,9 @@ import { computeRegisterQuality, type RegisterQuality } from '../../lib/register
 import { collectSubtree } from '../../lib/assetSubtree';
 import { selectStrategies, type StrategyReview } from '../../lib/strategySelect';
 import { computePSC, isBanded, PSC_TARGETS, type GoldenSpotParam, type ParamReading, type PSCZone } from '../../lib/psc';
+import { assessDisg } from '../../lib/predict/disg';
+import { computeSkillsGap, type SkillsGapReview, type QualificationRow } from '../../lib/skillsGap';
+import { computeSparesExposure, type SparesReview, type PartUseRow, type StockRow } from '../../lib/sparesExposure';
 
 // ── row shapes (only the columns we query) ────────────────────────────────
 interface WoRow {
@@ -59,6 +62,17 @@ export interface SuccessAssetRow {
     mttrgHours: number | null;
     currentDepartureHours: number | null;
 }
+/** E5 — an asset early in observed life, judged on the S-phase of D-I-S-G. */
+export interface FrontOfLifeRow {
+    assetId: string;
+    tag: string;
+    /** Days since the first reading was observed. */
+    observedDays: number;
+    /** Hours from first observation to first Golden-Spot entry; null = never entered. */
+    timeToSuccessHours: number | null;
+    reachedSpot: boolean;
+}
+
 export interface SuccessReview {
     assetsWithBands: number;
     assetsMeasured: number;
@@ -88,6 +102,16 @@ export interface Assessment {
     strategy: StrategyReview;
     /** Success layer (Phase E1) — Golden-Spot residency per the PSC framework. */
     success: SuccessReview;
+    /** Workforce readiness vs the deployed strategies (Phase F5). */
+    skills: SkillsGapReview;
+    /** Critical-asset spares risk from real consumption (Phase B4). */
+    spares: SparesReview;
+    /** D-I-S-G front of life: recently-observed banded assets (Phase E5). */
+    frontOfLife: FrontOfLifeRow[];
+    /** Banded measurement points per asset — feeds the care-route planner (F1). */
+    pointCountByAsset: Record<string, number>;
+    /** Hierarchy parent per asset — route grouping (F1). */
+    parentByAsset: Record<string, string | null>;
     /** id/tag/name/criticality for entity-linking the narrative's asset tags. */
     assetIndex: { id: string; tag: string; name: string; criticality: string | null }[];
     dataFrom: string | null;
@@ -103,7 +127,7 @@ export interface Assessment {
 export async function computeAssessment(scopeRootId?: string): Promise<Assessment> {
     const cutoff12 = new Date(Date.now() - 365 * DAY_MS).toISOString();
 
-    const [woQ, assetQ, pmQ, warrQ, failQ, readQ, logQ, smeaWsQ, smeaItemQ] = await Promise.all([
+    const [woQ, assetQ, pmQ, warrQ, failQ, readQ, logQ, smeaWsQ, smeaItemQ, qualQ, partsQ, stockQ] = await Promise.all([
         supabase.from('work_orders')
             .select('id, asset_id, type, status, created_at, closed_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs')
             .order('created_at', { ascending: false }).limit(20000),
@@ -123,6 +147,9 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
             .order('reading_date', { ascending: false }).limit(20000),
         supabase.from('ers_smea_worksheets').select('id, asset_id, status').neq('status', 'closed').limit(2000),
         supabase.from('ers_smea_items').select('worksheet_id, success_mode, spn, status').neq('status', 'dropped').limit(5000),
+        supabase.from('qualifications').select('contact_id, name, type, status, date_expires').limit(5000),
+        supabase.from('work_order_parts').select('wo_id, item_id, description, quantity_act, date_used').limit(20000),
+        supabase.from('inventory_stock').select('item_id, quantity, min_level').limit(20000),
     ]);
 
     let wos: WoRow[] = (woQ.data ?? []) as WoRow[];
@@ -353,6 +380,26 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
             currentDepartureHours: res.currentDepartureHours == null ? null : Math.round(res.currentDepartureHours),
         });
     }
+    // E5 — front of life: banded assets whose first observation is recent get
+    // the D-I-S-G S-phase judgement (time to first Golden-Spot entry).
+    const frontOfLife: FrontOfLifeRow[] = [];
+    for (const [assetId, params] of defsByAsset) {
+        const logs = logsByAsset.get(assetId) ?? [];
+        if (!logs.length) continue;
+        const firstMs = Math.min(...logs.map((l) => new Date(l.at).getTime()).filter(Number.isFinite));
+        const observedDays = Math.round((Date.now() - firstMs) / DAY_MS);
+        if (observedDays > 180) continue; // established life — not front-of-life
+        const disg = assessDisg(params, logs, { now: Date.now() });
+        const a = assetById.get(assetId);
+        frontOfLife.push({
+            assetId, tag: a?.tag ?? '(unknown)',
+            observedDays,
+            timeToSuccessHours: disg.timeToSuccessHours ?? null,
+            reachedSpot: disg.timeToSuccessHours != null,
+        });
+    }
+    frontOfLife.sort((a, b) => Number(a.reachedSpot) - Number(b.reachedSpot) || a.observedDays - b.observedDays);
+
     const measured = successRows.filter((r) => r.percentTimeInSpot != null);
     const withSr = measured.filter((r) => r.successRate != null);
     const zoneRank: Record<PSCZone, number> = { CRITICAL_DEPARTURE: 0, SUB_OPTIMAL_DRIFT: 1, GOLDEN_SPOT: 2, UNKNOWN: 3 };
@@ -371,6 +418,28 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
             .slice(0, 5),
         targets: { srTarget: PSC_TARGETS.srTarget, srWorldClass: PSC_TARGETS.srWorldClass },
     };
+
+    // F5 — workforce readiness vs the strategies just selected.
+    const skills = computeSkillsGap(
+        strategy.verdicts,
+        (qualQ.data ?? []) as QualificationRow[],
+        Date.now(),
+    );
+
+    // B4 — spares exposure from real consumption on critical assets.
+    const woAssetMap = new Map<string, string>();
+    for (const w of wos) if (w.asset_id) woAssetMap.set(w.id, w.asset_id);
+    const spares = computeSparesExposure({
+        woAsset: woAssetMap,
+        assets: new Map(assets.map((a) => [a.id, { tag: a.tag, criticality: a.criticality }])),
+        parts: (partsQ.data ?? []) as PartUseRow[],
+        stock: (stockQ.data ?? []) as StockRow[],
+        nowMs: Date.now(),
+    });
+
+    // F1 feed — banded point counts per asset for the care-route planner.
+    const pointCountByAsset: Record<string, number> = {};
+    for (const [assetId, params] of defsByAsset) pointCountByAsset[assetId] = params.length;
 
     // Asset-register quality (Phase A2) — the foundation layer a human RE
     // audits first; computed from rows already fetched above.
@@ -407,6 +476,11 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
         register,
         strategy,
         success,
+        skills,
+        spares,
+        frontOfLife,
+        pointCountByAsset,
+        parentByAsset: Object.fromEntries(assets.map((x) => [x.id, x.parent_id])),
         assetIndex: assets.map((x) => ({ id: x.id, tag: x.tag, name: x.name, criticality: x.criticality })),
         dataFrom: from ? from.slice(0, 10) : null,
         dataTo: to ? to.slice(0, 10) : null,

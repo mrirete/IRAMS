@@ -30,12 +30,14 @@ interface PackData {
     weekAgo: AssessmentSnapshot | null;
     monthSpend: { label: string; cost: number }[]; // last 2 fixed months
     plantOee: { oee_pct?: number | null; availability_pct?: number | null } | null;
+    /** F2 — loss decomposition from production events (30 days), defensive shape. */
+    losses: Record<string, unknown>[];
 }
 
 async function loadPack(): Promise<PackData> {
     const now = Date.now();
     const weekAgoIso = new Date(now - 7 * DAY_MS).toISOString();
-    const [actions, logQ, rcaQ, snapQ, woQ, oeeQ] = await Promise.all([
+    const [actions, logQ, rcaQ, snapQ, woQ, oeeQ, lossQ] = await Promise.all([
         predictionService.getAgentActions(),
         supabase.from('ers_ai_audit_log')
             .select('created_at, response_text, context_summary')
@@ -54,6 +56,11 @@ async function loadPack(): Promise<PackData> {
             .gte('created_at', new Date(new Date(now).getFullYear(), new Date(now).getMonth() - 1, 1).toISOString())
             .limit(20000),
         supabase.rpc('get_plant_oee', {
+            p_from: new Date(now - 30 * DAY_MS).toISOString().slice(0, 10),
+            p_to: new Date(now).toISOString().slice(0, 10),
+        }),
+        supabase.rpc('get_oee_losses', {
+            p_asset_id: null,
             p_from: new Date(now - 30 * DAY_MS).toISOString().slice(0, 10),
             p_to: new Date(now).toISOString().slice(0, 10),
         }),
@@ -89,6 +96,7 @@ async function loadPack(): Promise<PackData> {
         newRcaDrafts: (rcaQ.data ?? []) as PackData['newRcaDrafts'],
         latest, weekAgo, monthSpend,
         plantOee: (oeeRow ?? null) as PackData['plantOee'],
+        losses: Array.isArray(lossQ.data) ? (lossQ.data as Record<string, unknown>[]).slice(0, 5) : [],
     };
 }
 
@@ -278,6 +286,29 @@ export const MeetingPackPage: React.FC = () => {
                             </div>
                         ))}
                     </div>
+                    {/* F2 — loss decomposition, tied back to the strategy that attacks it */}
+                    {data.losses.length > 0 && (
+                        <div className="mt-4">
+                            <div className="text-[10.5px] font-semibold uppercase tracking-[0.05em] text-slate-400 mb-1.5">Top production losses (30 days)</div>
+                            <ul className="space-y-1">
+                                {data.losses.map((l, i) => {
+                                    const label = String(l.loss_label ?? l.loss_category ?? 'loss');
+                                    const hours = Number(l.total_hours ?? l.downtime_hours ?? l.hours ?? 0);
+                                    const events = Number(l.event_count ?? l.events ?? 0);
+                                    return (
+                                        <li key={i} className="flex items-center gap-2 text-[12.5px] text-slate-600">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />
+                                            <span className="flex-1">{label}</span>
+                                            <span className="font-mono tabular-nums text-slate-700">{hours ? `${Math.round(hours * 10) / 10}h` : ''}{events ? ` · ${events}×` : ''}</span>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                            <p className="text-[10.5px] text-slate-400 mt-1.5">
+                                Availability losses trace to assets — the assessment's maintenance-strategy section names the regime that attacks each one.
+                            </p>
+                        </div>
+                    )}
                     <p className="text-[10.5px] text-slate-400 mt-3">
                         Spend shown as fixed calendar months (never rolling-window deltas). Register health, strategy coverage and SR trend from the assessment snapshots.
                     </p>
