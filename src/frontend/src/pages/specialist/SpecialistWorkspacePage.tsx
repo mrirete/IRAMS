@@ -16,7 +16,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import {
     Sparkles, Send, Loader2, ClipboardList, ScrollText, UploadCloud,
     BarChart2, RefreshCw, ChevronRight, X, BrainCircuit, Activity, BadgeDollarSign,
-    Check, Database, ArrowRight, CheckCircle2, Copy, ChevronDown,
+    Check, Database, ArrowRight, CheckCircle2, Copy,
     TrendingUp, Gauge,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
@@ -26,6 +26,7 @@ import AdvisoryAgentPanel from '../../eam/components/ui/AdvisoryAgentPanel';
 import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, type AgentTurn } from '../../eam/services/agentRunClient';
 import { predictionService, type AgentAction } from '../../eam/services/PredictionService';
 import { computeRealization, type RealizationSummary } from '../../lib/valueRealization';
+import BriefingReport, { RichText, type BriefingAsset } from '../../components/specialist/BriefingReport';
 
 interface AuditRow {
     id: string; module: string; context_type: string; query_text: string;
@@ -127,8 +128,10 @@ export const SpecialistWorkspacePage: React.FC = () => {
     const [briefing, setBriefing] = useState<AuditRow | null>(null);
     const [briefingLive, setBriefingLive] = useState<string | null>(null);
     const [running, setRunning] = useState(false);
-    const [briefingOpen, setBriefingOpen] = useState(false);
     const [copied, setCopied] = useState(false);
+
+    // ── entity linking: real register tags → interactive chips in briefing/chat ──
+    const [assetsByTag, setAssetsByTag] = useState<Map<string, BriefingAsset>>(new Map());
 
     // ── proposals ──
     const [proposals, setProposals] = useState<AgentAction[]>([]);
@@ -157,16 +160,20 @@ export const SpecialistWorkspacePage: React.FC = () => {
     };
 
     const loadAll = async () => {
-        const [logQ, actionsQ] = await Promise.all([
+        const [logQ, actionsQ, assetQ] = await Promise.all([
             supabase.from('ers_ai_audit_log')
                 .select('id, module, context_type, query_text, response_text, created_at, duration_ms')
                 .eq('action_type', 'agent_run')
                 .order('created_at', { ascending: false })
                 .limit(15),
             predictionService.getAgentActions(),
+            supabase.from('assets').select('id, tag, name, criticality').limit(10000),
         ]);
         const rows = (logQ.data ?? []) as AuditRow[];
         setLog(rows);
+        setAssetsByTag(new Map(
+            ((assetQ.data ?? []) as BriefingAsset[]).map((a) => [a.tag.toLowerCase(), a]),
+        ));
         setBriefing(rows.find((r) => r.context_type === 'reliability_digest') ?? null);
         setProposals(actionsQ.filter((a) => a.status === 'pending_review'));
 
@@ -213,7 +220,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
         try {
             const res = await runReliabilityDigest();
             setBriefingLive(res.answer);
-            setBriefingOpen(true);
             void loadAll();
         } catch (e) {
             setBriefingLive(`The briefing could not be produced right now (${e instanceof Error ? e.message : 'error'}).`);
@@ -268,7 +274,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
 
     const briefingText = briefingLive ?? briefing?.response_text ?? null;
     const briefingWhen = briefingLive ? 'just now' : briefing ? relTime(briefing.created_at) : null;
-    const isLong = (briefingText?.length ?? 0) > 700;
 
     const copyBriefing = async () => {
         if (!briefingText) return;
@@ -353,7 +358,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
 
             {/* Coming off another CMMS? The full migration path lives under Admin
                 (it isn't licence-gated), but this is where a new customer starts. */}
-            <Link to="/admin/migration"
+            <Link to="/admin/migration" state={{ to: '/specialist', label: 'Workspace' }}
                 className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-primary-300 hover:bg-primary-50/40 transition-colors group`}>
                 <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
                     <Database size={16} />
@@ -388,21 +393,14 @@ export const SpecialistWorkspacePage: React.FC = () => {
                         </>}
                     >
                         {briefingText ? (
-                            <div className="relative">
-                                <div className={`text-[13.5px] text-slate-700 whitespace-pre-wrap leading-[1.7] ${!briefingOpen && isLong ? 'max-h-72 overflow-hidden' : ''}`}>
-                                    {briefingText}
-                                </div>
-                                {isLong && !briefingOpen && (
-                                    <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white to-transparent pointer-events-none" />
-                                )}
-                                {isLong && (
-                                    <button onClick={() => setBriefingOpen((o) => !o)}
-                                        className="relative mt-2 inline-flex items-center gap-1 text-[12px] font-semibold text-primary-600 hover:text-primary-700">
-                                        {briefingOpen ? 'Show less' : 'Show full briefing'}
-                                        <ChevronDown size={13} className={briefingOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
-                                    </button>
-                                )}
-                            </div>
+                            /* Interactive brief: sections, live asset-tag popovers,
+                               and a mission list that routes into the owning modules. */
+                            <BriefingReport
+                                text={briefingText}
+                                briefingKey={briefingLive ? 'live' : briefing?.created_at ?? 'none'}
+                                assetsByTag={assetsByTag}
+                                onAsk={(q) => void send(q)}
+                            />
                         ) : (
                             <div className="text-center py-6">
                                 <div className="w-11 h-11 rounded-xl bg-primary-50 text-primary-600 mx-auto flex items-center justify-center">
@@ -540,10 +538,14 @@ export const SpecialistWorkspacePage: React.FC = () => {
                             )}
                             {msgs.map((m, i) => (
                                 <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
-                                    <div className={`text-[13px] rounded-xl px-3 py-2 whitespace-pre-wrap leading-relaxed max-w-[90%] ${m.role === 'user'
-                                        ? 'bg-primary-600 text-white rounded-br-sm'
+                                    <div className={`text-[13px] rounded-xl px-3 py-2 leading-relaxed max-w-[90%] ${m.role === 'user'
+                                        ? 'bg-primary-600 text-white rounded-br-sm whitespace-pre-wrap'
                                         : 'bg-slate-50 border border-slate-200 text-slate-700 rounded-bl-sm'}`}>
-                                        {m.text}
+                                        {m.role === 'user'
+                                            ? m.text
+                                            /* Model turns get the same treatment as the briefing:
+                                               markdown rendered, asset tags → live popovers. */
+                                            : <RichText text={m.text} assetsByTag={assetsByTag} onAsk={(q) => void send(q)} />}
                                     </div>
                                 </div>
                             ))}
