@@ -106,6 +106,11 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
 
 ### Phase D — maintenance-strategy development (the engineer's real deliverable)
 
+> **D1 + D2 SHIPPED 2026-07-28 (9c8c86d):** `lib/strategySelect` engine + the assessment's
+> "Maintenance strategy" section (coverage KPI trended via 0231, regime distribution,
+> worst-first gap table drafting into the proposals queue). D3 (task→failure-mode
+> rationalization) and D4 (living strategy re-opens) remain.
+
 A $150k engineer's signature artifact is the **maintenance strategy**: for each asset, a
 deliberate, documented decision about *how* it will be maintained. IRAMS already owns every
 input — criticality assessments (0088), FMECA + RCM (0118), censored Weibull fits, meter-based PM,
