@@ -60,6 +60,23 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 // ─── Main Reports Component ─────────────────────────────
+/**
+ * Cost of a work order, read from the columns that exist.
+ *
+ * This page summed `w.estimated_cost` in three places. There is no
+ * `estimated_cost` column on work_orders (schema.ts declares one; the table
+ * does not have it), so every one of those totals was structurally zero --
+ * including the "Total Cost" card on the Costs & Parts tab, which sat at $0
+ * next to an overview card reading the RPC's real $773,500.
+ *
+ * Labour and material are frozen at closure; the aggregate columns are the
+ * fallback for rows costed in one lump.
+ */
+const woLabor = (w: any) => Number(w.frozen_labor_cost) || 0;
+const woParts = (w: any) => Number(w.frozen_material_cost) || 0;
+const woCost = (w: any) =>
+    (woLabor(w) + woParts(w)) || Number(w.frozen_total_cost) || Number(w.total_actual_cost) || 0;
+
 export const Reports: React.FC = () => {
   const navigate = useNavigate();
   const { pinToActiveDashboard } = useDashboardStore();
@@ -126,7 +143,16 @@ export const Reports: React.FC = () => {
   const { data: assetMtbfMttr = [] } = useQuery({
     queryKey: ['report-asset-mtbf-mttr'],
     queryFn: async () => {
-      const { data } = await supabase.rpc('get_asset_mtbf_mttr', { p_limit: 10 });
+      // sem_asset_reliability (0234) — the same source as the drill-down and
+      // the agents. The get_asset_mtbf_mttr RPC this replaced counted EVERY
+      // work order as a failure (K-601: 15 "failures" against 5 corrective
+      // events) and averaged MTTR over PMs too, reading 29.6 days where the
+      // canonical figure is 71.5.
+      const { data } = await supabase
+        .from('sem_asset_reliability')
+        .select('asset_id, asset_tag, mtbf_days, mttr_hours, failures_12mo, downtime_hrs_12mo, availability_pct')
+        .gt('failures_12mo', 0)
+        .order('mtbf_days', { ascending: true });
       return data || [];
     },
   });
@@ -187,7 +213,9 @@ export const Reports: React.FC = () => {
   const filteredWOs = useMemo(() => {
     let wos = workOrders;
     if (filters.departments.length) wos = wos.filter((w: any) => filters.departments.includes(w.department));
-    if (filters.workTypes.length) wos = wos.filter((w: any) => filters.workTypes.includes(w.work_type));
+    // work_orders has `type` (PM/CM/PROJ) -- there is no work_type column, so
+    // this filter previously matched nothing and silently emptied the page.
+    if (filters.workTypes.length) wos = wos.filter((w: any) => filters.workTypes.includes(w.type));
     if (filters.priorities.length) wos = wos.filter((w: any) => filters.priorities.includes(w.priority));
     if (filters.statuses.length) wos = wos.filter((w: any) => filters.statuses.includes(w.status));
     if (filters.criticalities.length) {
@@ -204,9 +232,9 @@ export const Reports: React.FC = () => {
   // Canonical lifecycle buckets (lib/woState) — shared with the dashboard,
   // the reliability digest and the mission engine.
   const completedWOs = filteredWOs.filter((w: any) => isDoneWo(w.status)).length;
-  const preventiveWOs = filteredWOs.filter((w: any) => ['PM', 'PREVENTIVE'].includes(w.work_type?.toUpperCase())).length;
-  const correctiveWOs = filteredWOs.filter((w: any) => ['CM', 'CORRECTIVE', 'BREAKDOWN'].includes(w.work_type?.toUpperCase())).length;
-  const pmRatio = totalWOs > 0 ? (preventiveWOs / totalWOs) * 100 : 0;
+  // Preventive/corrective counts and the PM ratio come from the canonical lib
+  // below (computePmRatio) -- see pmRatioCanonical. They used to be counted here
+  // off w.work_type, a column that does not exist, so both were always 0.
   const overdueWOs = filteredWOs.filter((w: any) => {
     // Only open work can be overdue — cancelled work is not a debt.
     if (!w.due_date || !isOpenWo(w.status)) return false;
@@ -221,7 +249,7 @@ export const Reports: React.FC = () => {
       const m = new Date(w.created_at).toISOString().slice(0, 7);
       if (!months[m]) months[m] = { pm: 0, cm: 0, total: 0 };
       months[m].total++;
-      if (['PM', 'PREVENTIVE'].includes(w.work_type?.toUpperCase())) months[m].pm++;
+      if (['PM', 'PREVENTIVE'].includes(w.type?.toUpperCase())) months[m].pm++;
       else months[m].cm++;
     });
     return Object.entries(months).sort().slice(-12).map(([month, d]) => ({
@@ -234,7 +262,7 @@ export const Reports: React.FC = () => {
   const woByPriority = useMemo(() => {
     const pMap: Record<string, { onTime: number; overdue: number }> = {};
     filteredWOs.forEach((w: any) => {
-      const p = getDictDesc('Priority', w.priority, 'Unset');
+      const p = getDictDesc('PRIORITY', w.priority, 'Unset');
       if (!pMap[p]) pMap[p] = { onTime: 0, overdue: 0 };
       const isOverdue = w.due_date && new Date(w.due_date) < new Date() && !['COMP', 'TECO', 'CLOSED'].includes(w.status?.toUpperCase());
       if (isOverdue) pMap[p].overdue++; else pMap[p].onTime++;
@@ -246,7 +274,7 @@ export const Reports: React.FC = () => {
   const woByType = useMemo(() => {
     const tMap: Record<string, number> = {};
     filteredWOs.forEach((w: any) => { 
-      const t = getDictDesc('WorkType', w.work_type, 'Other'); 
+      const t = getDictDesc('WORK_TYPE', w.type, 'Other'); 
       tMap[t] = (tMap[t] || 0) + 1; 
     });
     return Object.entries(tMap).map(([name, value]) => ({ name, value }));
@@ -286,6 +314,9 @@ export const Reports: React.FC = () => {
     [filteredWOs, dateRange],
   );
   const pmRatioCanonical = useMemo(() => computePmRatio(filteredWOs as any), [filteredWOs]);
+  const preventiveWOs = pmRatioCanonical.preventive;
+  const correctiveWOs = pmRatioCanonical.corrective;
+  const pmRatio = pmRatioCanonical.ratioPct ?? 0;
 
   // ── OEE (data-driven via production_logs, fallback to proxy) ──
   const { data: plantOEEData } = useQuery({
@@ -308,6 +339,7 @@ export const Reports: React.FC = () => {
         quality: Number(plantOEEData.quality_pct) / 100,
         oee: Number(plantOEEData.oee_pct) / 100,
         isReal: true,
+        assetCount: Number(plantOEEData.asset_count) || 0,
       };
     }
     // Fallback: proxy from asset health_index (legacy behavior)
@@ -316,12 +348,14 @@ export const Reports: React.FC = () => {
       : 0.92;
     const performance = 0.88;
     const quality = 0.96;
-    return { availability, performance, quality, oee: availability * performance * quality, isReal: false };
+    return { availability, performance, quality, oee: availability * performance * quality, isReal: false, assetCount: 0 };
   }, [plantOEEData, filteredAssets]);
 
+  // Recorded downtime, summed. Was mttr_hours × failure_count_ytd — a
+  // product of two frozen columns, not a measurement.
   const totalDowntimeHrs = useMemo(() =>
-    filteredAssets.reduce((s: number, a: any) => s + ((a.mttr_hours || 0) * (a.failure_count_ytd || 0)), 0),
-  [filteredAssets]);
+    Math.round((filteredWOs as any[]).reduce((s: number, w: any) => s + (Number(w.actual_downtime_hrs) || 0), 0)),
+  [filteredWOs]);
 
   // Downtime by asset / Top 5 Bad Actors (Pareto) - Rule: Monthly Pareto Analysis
   // Derived from the get_bad_actors RPC data, filtered by slicer selections
@@ -365,16 +399,28 @@ export const Reports: React.FC = () => {
   // Maintain existing fallback for older charts if needed, or point to new bad actors
   const downtimeByAsset = useMemo(() => {
     return filteredAssets
-      .filter((a: any) => a.mttr_hours && a.mttr_hours > 0)
-      .sort((a: any, b: any) => (b.mttr_hours * (b.failure_count_ytd || 1)) - (a.mttr_hours * (a.failure_count_ytd || 1)))
-      .slice(0, 12)
       .map((a: any) => {
-        const totalDown = a.mttr_hours * (a.failure_count_ytd || 1);
-        const unplanned = totalDown * 0.65;
-        const planned = totalDown * 0.35;
-        return { asset: a.tag || a.name, name: a.name, Unplanned: Math.round(unplanned), Planned: Math.round(planned), Total: Math.round(totalDown) };
-      });
-  }, [filteredAssets]);
+        // REAL downtime, split by what the work actually was: corrective =
+        // unplanned, preventive = planned. This used to synthesise the total
+        // as mttr_hours × failure_count_ytd (both frozen columns) and then
+        // split it 65/35 by decree.
+        const rows = (filteredWOs as any[]).filter((w: any) => w.asset_id === a.id);
+        let unplanned = 0, planned = 0;
+        for (const w of rows) {
+          const hrs = Number(w.actual_downtime_hrs) || 0;
+          if (hrs <= 0) continue;
+          if (String(w.type ?? '').toUpperCase() === 'CM') unplanned += hrs; else planned += hrs;
+        }
+        return {
+          asset: a.tag || a.name, name: a.name,
+          Unplanned: Math.round(unplanned), Planned: Math.round(planned),
+          Total: Math.round(unplanned + planned),
+        };
+      })
+      .filter((r: any) => r.Total > 0)
+      .sort((x: any, y: any) => y.Total - x.Total)
+      .slice(0, 12);
+  }, [filteredAssets, filteredWOs]);
 
   // ── Group By helper: get group label for an asset ──
   const getGroupLabel = useCallback((assetId: string): string => {
@@ -427,12 +473,24 @@ export const Reports: React.FC = () => {
         MTTR: Math.round((g.mttrSum / g.count) * 10) / 10,
       }));
     }
-    return data.map((a: any) => ({
-      asset: a.asset_tag || a.asset_name,
+    return data.slice(0, 12).map((a: any) => ({
+      asset: a.asset_tag || a.asset_id,
       MTBF: Number(a.mtbf_days) || 0,
       MTTR: Number(a.mttr_hours) || 0,
     }));
   }, [assetMtbfMttr, filteredAssetIds, hasHierarchyOrLocationFilter, groupBy, getGroupLabel]);
+
+  // Average of per-asset MTBF, from the computed view. The card below used to
+  // average assets.mtbf_days — the one-off 2026 backfill that migration 0234
+  // catalogued "do not quote" (frozen mean 47.3 days vs a computed 205.7).
+  const avgAssetMtbf = useMemo(() => {
+    const rows = (assetMtbfMttr as any[])
+      .filter((a) => Number(a.mtbf_days) > 0)
+      .filter((a) => !hasHierarchyOrLocationFilter || filteredAssetIds.has(a.asset_id));
+    if (!rows.length) return null;
+    const days = rows.reduce((t, a) => t + Number(a.mtbf_days), 0) / rows.length;
+    return { days: Math.round(days * 10) / 10, n: rows.length };
+  }, [assetMtbfMttr, hasHierarchyOrLocationFilter, filteredAssetIds]);
 
   // Downtime reasons — derived from get_downtime_by_failure_mode RPC
   const REASON_COLORS = [COLORS.red, COLORS.amber, COLORS.blue, COLORS.purple, COLORS.pink, COLORS.slate, COLORS.emerald, COLORS.indigo, COLORS.teal, COLORS.cyan];
@@ -450,10 +508,15 @@ export const Reports: React.FC = () => {
     filteredWOs.forEach((w: any) => {
       const m = new Date(w.created_at).toISOString().slice(0, 7);
       if (!months[m]) months[m] = { labor: 0, parts: 0, total: 0 };
-      const cost = Number(w.estimated_cost) || 0;
+      // Real split: frozen labour and material are captured at closure.
+      // This used to bill 60/40 against ESTIMATED cost — an invented ratio
+      // over the wrong basis.
+      const labor = Number(w.frozen_labor_cost) || 0;
+      const parts = Number(w.frozen_material_cost) || 0;
+      const cost = (labor + parts) || Number(w.total_actual_cost) || 0;
       months[m].total += cost;
-      months[m].labor += cost * 0.6;
-      months[m].parts += cost * 0.4;
+      months[m].labor += labor;
+      months[m].parts += parts;
     });
     return Object.entries(months).sort().slice(-12).map(([month, d]) => ({
       month: new Date(month + '-01').toLocaleDateString('en', { month: 'short', year: '2-digit' }),
@@ -461,14 +524,16 @@ export const Reports: React.FC = () => {
     }));
   }, [filteredWOs]);
 
-  const totalCost = useMemo(() => filteredWOs.reduce((s: number, w: any) => s + (Number(w.estimated_cost) || 0), 0), [filteredWOs]);
+  const totalCost = useMemo(() => filteredWOs.reduce((s: number, w: any) => s + woCost(w), 0), [filteredWOs]);
+  const laborCostTotal = useMemo(() => filteredWOs.reduce((s: number, w: any) => s + woLabor(w), 0), [filteredWOs]);
+  const partsCostTotal = useMemo(() => filteredWOs.reduce((s: number, w: any) => s + woParts(w), 0), [filteredWOs]);
   const avgCostPerWO = totalWOs > 0 ? totalCost / totalWOs : 0;
 
   // ── Notification Aging ──
   const notificationAging = useMemo(() => {
     const now = new Date();
     const buckets = { '0-24h': 0, '1-3d': 0, '3-7d': 0, '7d+': 0 };
-    filteredWOs.filter((w: any) => w.work_type?.toUpperCase() === 'REQUEST' || w.status?.toUpperCase() === 'REQUESTED')
+    filteredWOs.filter((w: any) => w.type?.toUpperCase() === 'REQUEST' || w.status?.toUpperCase() === 'REQUESTED')
       .forEach((w: any) => {
         const age = (now.getTime() - new Date(w.created_at).getTime()) / 3600000;
         if (age <= 24) buckets['0-24h']++;
@@ -483,11 +548,11 @@ export const Reports: React.FC = () => {
   const pmCompliance = useMemo(() => {
     const byMonth: Record<string, { scheduled: number; executed: number }> = {};
     filteredWOs.forEach((w: any) => {
-      if (!['PM', 'PREVENTIVE'].includes(w.work_type?.toUpperCase())) return;
+      if (!['PM', 'PREVENTIVE'].includes(w.type?.toUpperCase())) return;
       const m = new Date(w.created_at).toISOString().slice(0, 7);
       if (!byMonth[m]) byMonth[m] = { scheduled: 0, executed: 0 };
       byMonth[m].scheduled++;
-      if (['COMP', 'TECO', 'CLOSED'].includes(w.status?.toUpperCase())) byMonth[m].executed++;
+      if (isDoneWo(w.status)) byMonth[m].executed++;   // canonical rule, not another private list
     });
     return Object.entries(byMonth).sort().slice(-6).map(([month, d]) => ({
       month: new Date(month + '-01').toLocaleDateString('en', { month: 'short', year: '2-digit' }),
@@ -499,7 +564,7 @@ export const Reports: React.FC = () => {
   const requestsByStatus = useMemo(() => {
     const statusMap: Record<string, number> = {};
     serviceRequests.forEach((req: any) => {
-      const status = getDictDesc('Status', req.status, 'Unknown');
+      const status = getDictDesc('STATUS_CODE', req.status, 'Unknown');
       statusMap[status] = (statusMap[status] || 0) + 1;
     });
     return Object.entries(statusMap).map(([name, value]) => ({ name, value }));
@@ -542,7 +607,7 @@ export const Reports: React.FC = () => {
   const assetCriticalityDist = useMemo(() => {
     const map: Record<string, number> = {};
     filteredAssets.forEach((a: any) => {
-      const crit = getDictDesc('Criticality', a.criticality, 'Unassigned');
+      const crit = getDictDesc('CRITICALITY', a.criticality, 'Unassigned');
       map[crit] = (map[crit] || 0) + 1;
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
@@ -556,7 +621,7 @@ export const Reports: React.FC = () => {
       const site = asset?.site ? getDictDesc('Site', asset.site, asset.site) : 'Unknown Site';
       const unit = asset?.functional_location ? getDictDesc('Location', asset.functional_location, asset.functional_location) : 'Unknown Unit';
       const key = `${site} / ${unit}`;
-      hierarchyCosts[key] = (hierarchyCosts[key] || 0) + (Number(w.estimated_cost) || 0);
+      hierarchyCosts[key] = (hierarchyCosts[key] || 0) + woCost(w);
     });
     return Object.entries(hierarchyCosts)
       .sort((a, b) => b[1] - a[1]) // Sort desc
@@ -584,13 +649,17 @@ export const Reports: React.FC = () => {
     downtimeByAsset, mtbfMttrByAsset, downtimeReasons, top5BadActors, assetCriticalityDist, costsByHierarchy,
     totalWOs, completedWOs, pmRatio, onTimeRate, overdueWOs,
     totalCost, avgCostPerWO, totalDowntimeHrs, badActorCount: badActors.length,
-    kpis: { avg_mttr_hrs: kpis.avg_mttr_hrs, availability_pct: kpis.availability_pct, total_cost: kpis.total_cost },
+    // Canonical, not the RPC -- a pinned widget must not contradict the page
+    // it was pinned from.
+    kpis: { avg_mttr_hrs: reliability.mttrHours, availability_pct: reliability.availabilityPct, total_cost: totalCost },
+    reliability, pmCompliancePct: pmComplianceKpi.compliancePct,
     oeeData,
     requestsByStatus, requestsByRPN, pmByScheduleType,
   }), [
     woTrend, backlogAging, woByType, woByPriority, pmCompliance, costData, downtimeByAsset, mtbfMttrByAsset, 
     downtimeReasons, top5BadActors, assetCriticalityDist, costsByHierarchy, totalWOs, completedWOs, pmRatio, 
-    onTimeRate, overdueWOs, totalCost, avgCostPerWO, totalDowntimeHrs, badActors.length, kpis, oeeData, 
+    onTimeRate, overdueWOs, totalCost, avgCostPerWO, totalDowntimeHrs, badActors.length, reliability,
+    pmComplianceKpi, oeeData, 
     requestsByStatus, requestsByRPN, pmByScheduleType
   ]);
 
@@ -613,12 +682,17 @@ export const Reports: React.FC = () => {
             (SMRP ≈80% target) vs schedule adherence (PMs done by due date). */}
         <ReportKPICard title="PM Ratio" value={pmRatioCanonical.ratioPct ?? '—'} format={pmRatioCanonical.ratioPct == null ? undefined : 'percent'} subtitle="preventive share of all work" target={80} targetLabel="Target: 80%" icon={<CheckCircle2 size={14} />} ragStatus={pmRatioCanonical.ratioPct == null ? 'neutral' : pmRatioCanonical.ratioPct >= 80 ? 'green' : pmRatioCanonical.ratioPct >= 60 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/pm-compliance')} clickLabel="View PM details" />
         <ReportKPICard title="PM Compliance" value={pmComplianceKpi.compliancePct ?? '—'} format={pmComplianceKpi.compliancePct == null ? undefined : 'percent'} subtitle={pmComplianceKpi.compliancePct == null ? 'no PMs due in range' : `${pmComplianceKpi.onTime}/${pmComplianceKpi.due} done by due date`} target={90} targetLabel="Target: 90%" icon={<CheckCircle2 size={14} />} ragStatus={pmComplianceKpi.compliancePct == null ? 'neutral' : pmComplianceKpi.compliancePct >= 90 ? 'green' : pmComplianceKpi.compliancePct >= 70 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/pm-compliance')} clickLabel="View PM Compliance details" />
-        <ReportKPICard title="MTBF" value={reliability.mtbfHours ?? '—'} subtitle={reliability.mtbfHours == null ? 'no failures in range' : `hours · ${reliability.failures} failures`} icon={<Timer size={14} />} ragStatus="neutral" onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
+        <ReportKPICard title="Fleet MTBF" value={reliability.mtbfHours ?? '—'} subtitle={reliability.mtbfHours == null ? 'no failures in range' : `hours · ${reliability.failures} failures across ${filteredAssets.length} assets`} icon={<Timer size={14} />} ragStatus="neutral" onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
         <ReportKPICard title="MTTR" value={reliability.mttrHours ?? '—'} format={reliability.mttrHours == null ? undefined : 'hours'} subtitle={reliability.mttrHours == null ? 'no timed repairs' : `${reliability.downtimeCoveragePct}% of failures timed`} icon={<Clock size={14} />} ragStatus={reliability.mttrHours == null ? 'neutral' : reliability.mttrHours <= 4 ? 'green' : reliability.mttrHours <= 8 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
         <ReportKPICard title="Availability" value={reliability.availabilityPct ?? '—'} format={reliability.availabilityPct == null ? undefined : 'percent'} subtitle={reliability.availabilityPct == null ? 'needs failures + downtime' : 'inherent — MTBF/(MTBF+MTTR)'} target={95} targetLabel="Target: 95%" icon={<Gauge size={14} />} ragStatus={reliability.availabilityPct == null ? 'neutral' : reliability.availabilityPct >= 95 ? 'green' : reliability.availabilityPct >= 85 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/availability')} clickLabel="View Availability trend" />
-        <ReportKPICard title="OEE" value={Number((oeeData.oee * 100).toFixed(1))} format="percent" target={Math.round(oeeData.oee * 100)} targetLabel="Target: 85%" icon={<Activity size={14} />} ragStatus={oeeData.oee >= 0.85 ? 'green' : oeeData.oee >= 0.65 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/oee')} clickLabel="View OEE breakdown" />
+        {/* OEE needs production data. The fallback path invents performance
+            (0.88) and quality (0.96); `isReal` existed but was never read, so
+            a fabricated OEE rendered as fact. Now it says so. */}
+        <ReportKPICard title="OEE" value={oeeData.isReal ? Number((oeeData.oee * 100).toFixed(1)) : '—'} format={oeeData.isReal ? 'percent' : undefined} subtitle={oeeData.isReal ? `from ${oeeData.assetCount} asset(s) logging production` : 'needs production data (rate & quality)'} target={85} targetLabel="Target: 85%" icon={<Activity size={14} />} ragStatus={!oeeData.isReal ? 'neutral' : oeeData.oee >= 0.85 ? 'green' : oeeData.oee >= 0.65 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/oee')} clickLabel="View OEE breakdown" />
         <ReportKPICard title="Total Downtime" value={totalDowntimeHrs} format="hours" icon={<AlertTriangle size={14} />} ragStatus={totalDowntimeHrs <= 200 ? 'green' : totalDowntimeHrs <= 500 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/downtime')} clickLabel="View Downtime analysis" />
-        <ReportKPICard title="Total Cost" value={kpis.total_cost || 0} format="currency" icon={<DollarSign size={14} />} ragStatus="neutral" onClick={() => setActiveTab('costParts')} clickLabel="View Costs & Parts" />
+        {/* Filtered actuals, not the all-time RPC — this card sat at $773,500
+            regardless of the date range, contradicting the Cost & Parts tab. */}
+        <ReportKPICard title="Total Cost" value={totalCost} format="currency" subtitle="labour + material, frozen at closure" icon={<DollarSign size={14} />} ragStatus="neutral" onClick={() => setActiveTab('costParts')} clickLabel="View Costs & Parts" />
       </div>
 
       {/* Charts Row */}
@@ -857,10 +931,16 @@ export const Reports: React.FC = () => {
         {/* KPI Cards */}
         <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3 sm:gap-4">
           <ReportKPICard title="Assets Online" value={filteredAssets.filter((a: any) => a.status?.toUpperCase() !== 'DECOMMISSIONED').length} format="number" icon={<Package size={14} />} ragStatus="green" onClick={() => navigate('/assets')} clickLabel="View all Assets" />
-          <ReportKPICard title="Avg MTBF" value={(() => { const vals = filteredAssets.filter((a: any) => a.mtbf_days && a.mtbf_days > 0); return vals.length > 0 ? Number((vals.reduce((s: number, a: any) => s + a.mtbf_days, 0) / vals.length).toFixed(1)) : 0; })()} format="number" subtitle="days" icon={<Timer size={14} />} ragStatus={(() => { const vals = filteredAssets.filter((a: any) => a.mtbf_days && a.mtbf_days > 0); const avg = vals.length > 0 ? vals.reduce((s: number, a: any) => s + a.mtbf_days, 0) / vals.length : 0; return avg >= 90 ? 'green' : avg >= 30 ? 'amber' : 'red'; })()} onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
-          <ReportKPICard title="Avg MTTR" value={kpis.avg_mttr_hrs || 0} format="hours" icon={<Clock size={14} />} ragStatus={kpis.avg_mttr_hrs <= 4 ? 'green' : kpis.avg_mttr_hrs <= 8 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
-          <ReportKPICard title="Availability" value={kpis.availability_pct || 0} format="percent" target={Math.round(kpis.availability_pct || 0)} targetLabel="Target: 95%" icon={<Gauge size={14} />} ragStatus={(kpis.availability_pct || 0) >= 95 ? 'green' : (kpis.availability_pct || 0) >= 85 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/availability')} clickLabel="View Availability trend" />
-          <ReportKPICard title="OEE" value={Number((oeeData.oee * 100).toFixed(1))} format="percent" target={Math.round(oeeData.oee * 100)} targetLabel="Target: 85%" icon={<Activity size={14} />} ragStatus={oeeData.oee >= 0.85 ? 'green' : oeeData.oee >= 0.65 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/oee')} clickLabel="View OEE breakdown" />
+          <ReportKPICard title="Avg asset MTBF" value={avgAssetMtbf?.days ?? '—'} format={avgAssetMtbf ? 'number' : undefined} subtitle={avgAssetMtbf ? `days · mean of ${avgAssetMtbf.n} assets with failures` : 'no failures recorded in range'} icon={<Timer size={14} />} ragStatus={!avgAssetMtbf ? 'neutral' : avgAssetMtbf.days >= 90 ? 'green' : avgAssetMtbf.days >= 30 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
+          {/* Canonical, so this tab agrees with the overview. The RPC these used
+              averages downtime over ALL work orders (PMs included) and ignores
+              the page's date range and hierarchy slicers. */}
+          <ReportKPICard title="Avg MTTR" value={reliability.mttrHours ?? '—'} format={reliability.mttrHours == null ? undefined : 'hours'} subtitle={reliability.mttrHours == null ? 'no timed repairs in range' : `${reliability.downtimeCoveragePct}% of failures timed`} icon={<Clock size={14} />} ragStatus={reliability.mttrHours == null ? 'neutral' : reliability.mttrHours <= 4 ? 'green' : reliability.mttrHours <= 8 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
+          <ReportKPICard title="Availability" value={reliability.availabilityPct ?? '—'} format={reliability.availabilityPct == null ? undefined : 'percent'} subtitle="inherent — MTBF/(MTBF+MTTR)" target={95} targetLabel="Target: 95%" icon={<Gauge size={14} />} ragStatus={reliability.availabilityPct == null ? 'neutral' : reliability.availabilityPct >= 95 ? 'green' : reliability.availabilityPct >= 85 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/availability')} clickLabel="View Availability trend" />
+          {/* OEE needs production data. The fallback path invents performance
+            (0.88) and quality (0.96); `isReal` existed but was never read, so
+            a fabricated OEE rendered as fact. Now it says so. */}
+        <ReportKPICard title="OEE" value={oeeData.isReal ? Number((oeeData.oee * 100).toFixed(1)) : '—'} format={oeeData.isReal ? 'percent' : undefined} subtitle={oeeData.isReal ? `from ${oeeData.assetCount} asset(s) logging production` : 'needs production data (rate & quality)'} target={85} targetLabel="Target: 85%" icon={<Activity size={14} />} ragStatus={!oeeData.isReal ? 'neutral' : oeeData.oee >= 0.85 ? 'green' : oeeData.oee >= 0.65 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/oee')} clickLabel="View OEE breakdown" />
           <ReportKPICard title="Total Downtime" value={totalDowntimeHrs} format="hours" icon={<AlertTriangle size={14} />} ragStatus={totalDowntimeHrs <= 200 ? 'green' : totalDowntimeHrs <= 500 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/downtime')} clickLabel="View Downtime analysis" />
           <ReportKPICard title="Bad Actors" value={filteredBadActors.length} format="number" icon={<AlertTriangle size={14} />} ragStatus={filteredBadActors.length <= 3 ? 'green' : filteredBadActors.length <= 7 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/downtime-by-asset')} clickLabel="View Bad Actors" />
         </div>
@@ -978,8 +1058,8 @@ export const Reports: React.FC = () => {
     <div className="space-y-6">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <ReportKPICard title="Total Cost" value={totalCost} format="currency" icon={<DollarSign size={14} />} ragStatus="neutral" />
-        <ReportKPICard title="Labor Cost" value={totalCost * 0.6} format="currency" icon={<Users size={14} />} ragStatus="neutral" />
-        <ReportKPICard title="Parts Cost" value={totalCost * 0.4} format="currency" icon={<Package size={14} />} ragStatus="neutral" />
+        <ReportKPICard title="Labor Cost" value={laborCostTotal} format="currency" subtitle="frozen at closure" icon={<Users size={14} />} ragStatus="neutral" />
+        <ReportKPICard title="Parts Cost" value={partsCostTotal} format="currency" subtitle="frozen at closure" icon={<Package size={14} />} ragStatus="neutral" />
         <ReportKPICard title="Avg Cost/WO" value={avgCostPerWO} format="currency" icon={<Zap size={14} />} ragStatus="neutral" />
       </div>
 
@@ -1033,14 +1113,17 @@ export const Reports: React.FC = () => {
   );
 
   const renderDetails = () => {
+    // wo_cost is projected here because the table reads row fields by key and
+    // there is no single cost column to point at.
+    const detailRows = filteredWOs.map((w: any) => ({ ...w, wo_cost: woCost(w) }));
     const detailCols: TableColumn[] = [
       { key: 'job_number', label: 'WO #', width: '100px' },
       { key: 'title', label: 'Title' },
-      { key: 'work_type', label: 'Type' },
+      { key: 'type', label: 'Type' },
       { key: 'priority', label: 'Priority' },
       { key: 'status', label: 'Status' },
       { key: 'department', label: 'Department' },
-      { key: 'estimated_cost', label: 'Est. Cost', format: 'currency', dataBar: true },
+      { key: 'wo_cost', label: 'Actual Cost', format: 'currency', dataBar: true },
       { key: 'created_at', label: 'Created', format: 'date' },
     ];
 
@@ -1048,7 +1131,7 @@ export const Reports: React.FC = () => {
       <ReportDataTable
         title="Work Order Details"
         columns={detailCols}
-        data={filteredWOs}
+        data={detailRows}
         pageSize={25}
         exportFilename="ERS_Work_Order_Report.csv"
       />
@@ -1086,12 +1169,16 @@ export const Reports: React.FC = () => {
               // Export all KPI data for the current tab
               const kpiExport = [
                 { metric: 'Total WOs', value: totalWOs },
-                { metric: 'PM Compliance %', value: pmRatio.toFixed(1) },
-                { metric: 'MTTR (hrs)', value: kpis.avg_mttr_hrs || 0 },
-                { metric: 'Availability %', value: kpis.availability_pct || 0 },
-                { metric: 'OEE %', value: (oeeData.oee * 100).toFixed(1) },
+                { metric: 'PM Ratio % (preventive share)', value: pmRatioCanonical.ratioPct ?? 'n/a' },
+                { metric: 'PM Compliance % (by due date)', value: pmComplianceKpi.compliancePct ?? 'n/a' },
+                { metric: 'MTBF (hrs)', value: reliability.mtbfHours ?? 'n/a' },
+                { metric: 'MTTR (hrs)', value: reliability.mttrHours ?? 'n/a' },
+                { metric: 'Availability %', value: reliability.availabilityPct ?? 'n/a' },
+                { metric: 'OEE %', value: oeeData.isReal ? (oeeData.oee * 100).toFixed(1) : 'needs production data' },
                 { metric: 'Total Downtime (hrs)', value: totalDowntimeHrs },
-                { metric: 'Total Cost', value: kpis.total_cost || 0 },
+                { metric: 'Total Cost', value: totalCost },
+                { metric: 'Labour Cost', value: laborCostTotal },
+                { metric: 'Parts Cost', value: partsCostTotal },
                 { metric: 'Bad Actors', value: badActors.length },
               ];
               const cols = [{ key: 'metric', label: 'Metric' }, { key: 'value', label: 'Value' }];

@@ -390,8 +390,11 @@ export const Dashboard: React.FC = () => {
   const criticalDETasks = deTasks.filter((t: any) => t.priority === 'critical' && (t.status === 'identified' || t.status === 'in_progress')).length;
 
   // ── Fleet Reliability ──
-  const mtbfValues = assets.filter((a: any) => a.mtbf_days && a.mtbf_days > 0).map((a: any) => a.mtbf_days);
-  const mttrValues = assets.filter((a: any) => a.mttr_hours && a.mttr_hours > 0).map((a: any) => a.mttr_hours);
+  // Averaged over the computed view (0234), not assets.mtbf_days/mttr_hours —
+  // those are the frozen 0108 backfill, and this average was also being pasted
+  // into the AI context summary below, so the agent quoted it back as fact.
+  const mtbfValues = (assetMtbf as any[]).filter((a: any) => a.mtbf_days && a.mtbf_days > 0).map((a: any) => Number(a.mtbf_days));
+  const mttrValues = (assetMtbf as any[]).filter((a: any) => a.mttr_hours && a.mttr_hours > 0).map((a: any) => Number(a.mttr_hours));
   const avgMTBF = mtbfValues.length > 0 ? Math.round(mtbfValues.reduce((s: number, v: number) => s + v, 0) / mtbfValues.length) : 0;
   const avgMTTR = mttrValues.length > 0 ? Number((mttrValues.reduce((s: number, v: number) => s + v, 0) / mttrValues.length).toFixed(1)) : 0;
 
@@ -882,6 +885,10 @@ export const Dashboard: React.FC = () => {
           <div className="flex items-center gap-2 mb-3">
             <Timer size={16} className="text-blue-600" />
             <h4 className="text-sm font-semibold text-slate-900">Fleet Reliability</h4>
+            {/* Per-asset means. Reports shows a POOLED fleet figure over its date
+                range, which is a different (also correct) aggregation — both are
+                labelled so the two pages cannot look like they disagree. */}
+            <span className="text-[10px] text-slate-400">mean of {mtbfValues.length} assets with failures</span>
           </div>
           <div className="space-y-3">
             <div className="bg-blue-50 rounded-lg p-3">

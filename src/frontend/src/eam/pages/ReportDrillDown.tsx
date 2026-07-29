@@ -72,15 +72,6 @@ export const ReportDrillDown: React.FC = () => {
     },
   });
 
-  // Legacy RPC — kept only as a fallback for assets the view has no failures for
-  const { data: rpcMtbfMttr = [] } = useQuery({
-    queryKey: ['drilldown-rpc-mtbf-mttr'],
-    queryFn: async () => {
-      const { data } = await supabase.rpc('get_asset_mtbf_mttr', { p_limit: 50 });
-      return data || [];
-    },
-  });
-
   // Fetch work orders for expandable row traceability
   const { data: workOrders = [] } = useQuery({
     queryKey: ['drilldown-work-orders'],
@@ -95,18 +86,25 @@ export const ReportDrillDown: React.FC = () => {
   });
 
   // Derive downtime data from assets
+  // Planned vs unplanned downtime from the work orders themselves —
+  // corrective is unplanned, preventive is planned. Previously the total was
+  // synthesised from frozen columns and split 65/35 by decree.
   const downtimeByAsset = useMemo(() => {
-    return assets
-      .filter((a: any) => a.mttr_hours && a.mttr_hours > 0)
-      .sort((a: any, b: any) => (b.mttr_hours * (b.failure_count_ytd || 1)) - (a.mttr_hours * (a.failure_count_ytd || 1)))
-      .slice(0, 15)
-      .map((a: any) => {
-        const totalDown = a.mttr_hours * (a.failure_count_ytd || 1);
-        const unplanned = totalDown * 0.65;
-        const planned = totalDown * 0.35;
-        return { asset: a.tag || a.name, name: a.name, Unplanned: Math.round(unplanned), Planned: Math.round(planned), Total: Math.round(totalDown) };
-      });
-  }, [assets]);
+    const byAsset = new Map<string, { name: string; tag: string; unplanned: number; planned: number }>();
+    for (const w of workOrders as any[]) {
+      const hrs = Number(w.actual_downtime_hrs) || 0;
+      if (hrs <= 0 || !w.asset_id) continue;
+      const a = (assets as any[]).find((x: any) => x.id === w.asset_id);
+      const key = w.asset_id;
+      const cur = byAsset.get(key) ?? { name: a?.name ?? key, tag: a?.tag ?? key, unplanned: 0, planned: 0 };
+      if (String(w.type ?? '').toUpperCase() === 'CM') cur.unplanned += hrs; else cur.planned += hrs;
+      byAsset.set(key, cur);
+    }
+    return [...byAsset.values()]
+      .map((r) => ({ asset: r.tag, name: r.name, Unplanned: Math.round(r.unplanned), Planned: Math.round(r.planned), Total: Math.round(r.unplanned + r.planned) }))
+      .sort((x, y) => y.Total - x.Total)
+      .slice(0, 12);
+  }, [assets, workOrders]);
 
   // MTBF/MTTR grid — canonical computed values (sem_asset_reliability).
   // This used to PREFER assets.mtbf_days, a one-off backfill that migration
@@ -152,12 +150,15 @@ export const ReportDrillDown: React.FC = () => {
 
   // OEE data
   const oeeData = useMemo(() => {
+    // Placeholder factors, flagged as such: real OEE needs production rate
+    // and quality counts (production_logs → get_plant_oee). Anything shown
+    // from here is labelled an estimate rather than passed off as measured.
     const availability = (assets.length > 0
       ? assets.reduce((s: number, a: any) => s + (a.health_index || 90), 0) / assets.length / 100
       : 0.92);
     const performance = 0.88;
     const quality = 0.96;
-    return { availability, performance, quality, oee: availability * performance * quality };
+    return { availability, performance, quality, oee: availability * performance * quality, isEstimate: true };
   }, [assets]);
 
   const handleExport = (data: any[], columns: { key: string; label: string }[], filename: string) => {

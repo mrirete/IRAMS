@@ -61,8 +61,12 @@ export interface WidgetData {
   totalDowntimeHrs: number;
   badActorCount: number;
   // Objects
-  kpis: { avg_mttr_hrs: number; availability_pct: number; total_cost: number };
-  oeeData: { availability: number; performance: number; quality: number; oee: number };
+  // Canonical KPIs are nullable on purpose: "not enough data" is an answer, and
+  // rendering 0% for it is the lie this sweep exists to remove.
+  kpis: { avg_mttr_hrs: number | null; availability_pct: number | null; total_cost: number };
+  reliability?: { mtbfHours: number | null; mttrHours: number | null; availabilityPct: number | null; failures: number; downtimeCoveragePct: number };
+  pmCompliancePct?: number | null;
+  oeeData: { availability: number; performance: number; quality: number; oee: number; isReal?: boolean };
 }
 
 // ── Registry ────────────────────────────────────────────
@@ -114,8 +118,10 @@ export const WIDGET_REGISTRY: WidgetDef[] = [
         <PieChart>
           <Pie
             data={[
-              { name: 'Preventive', value: Math.round(d.totalWOs * d.pmRatio / 100) },
-              { name: 'Corrective', value: Math.round(d.totalWOs * (100 - d.pmRatio) / 100) },
+              // Counted, not back-calculated from the ratio: "corrective" is
+              // CM work, not "everything that is not preventive".
+              { name: 'Preventive', value: d.reliability ? d.totalWOs - d.reliability.failures : Math.round(d.totalWOs * d.pmRatio / 100) },
+              { name: 'Corrective', value: d.reliability ? d.reliability.failures : Math.round(d.totalWOs * (100 - d.pmRatio) / 100) },
             ]}
             cx="50%" cy="50%" innerRadius={50} outerRadius={90} paddingAngle={3} dataKey="value"
             label={({ name, percent = 0 }) => `${name} ${(percent * 100).toFixed(0)}%`}
@@ -241,22 +247,24 @@ export const WIDGET_REGISTRY: WidgetDef[] = [
   {
     key: 'pm-compliance-kpi', type: 'kpi', label: 'PM Compliance', category: 'Overview',
     defaultW: 3, defaultH: 1,
-    render: (d) => <ReportKPICard title="PM Compliance" value={d.pmRatio} format="percent" target={Math.round(d.pmRatio)} targetLabel="Target: 80%" icon={<CheckCircle2 size={14} />} ragStatus={d.pmRatio >= 80 ? 'green' : d.pmRatio >= 60 ? 'amber' : 'red'} />,
+    render: (d) => <ReportKPICard title="PM Ratio" value={d.pmRatio} format="percent" subtitle="preventive share of all work" target={80} targetLabel="Target: 80%" icon={<CheckCircle2 size={14} />} ragStatus={d.pmRatio >= 80 ? 'green' : d.pmRatio >= 60 ? 'amber' : 'red'} />,
   },
   {
     key: 'mttr-kpi', type: 'kpi', label: 'MTTR', category: 'Overview',
     defaultW: 3, defaultH: 1,
-    render: (d) => <ReportKPICard title="MTTR" value={d.kpis.avg_mttr_hrs || 0} format="hours" icon={<Clock size={14} />} ragStatus={d.kpis.avg_mttr_hrs <= 4 ? 'green' : d.kpis.avg_mttr_hrs <= 8 ? 'amber' : 'red'} />,
+    render: (d) => <ReportKPICard title="MTTR" value={d.kpis.avg_mttr_hrs ?? '—'} format={d.kpis.avg_mttr_hrs == null ? undefined : 'hours'} subtitle={d.kpis.avg_mttr_hrs == null ? 'no timed repairs in range' : undefined} icon={<Clock size={14} />} ragStatus={d.kpis.avg_mttr_hrs == null ? 'neutral' : d.kpis.avg_mttr_hrs <= 4 ? 'green' : d.kpis.avg_mttr_hrs <= 8 ? 'amber' : 'red'} />,
   },
   {
     key: 'availability-kpi', type: 'kpi', label: 'Availability', category: 'Overview',
     defaultW: 3, defaultH: 1,
-    render: (d) => <ReportKPICard title="Availability" value={d.kpis.availability_pct || 0} format="percent" target={Math.round(d.kpis.availability_pct || 0)} targetLabel="Target: 95%" icon={<Gauge size={14} />} ragStatus={(d.kpis.availability_pct || 0) >= 95 ? 'green' : (d.kpis.availability_pct || 0) >= 85 ? 'amber' : 'red'} />,
+    render: (d) => <ReportKPICard title="Availability" value={d.kpis.availability_pct ?? '—'} format={d.kpis.availability_pct == null ? undefined : 'percent'} subtitle="inherent — MTBF/(MTBF+MTTR)" target={95} targetLabel="Target: 95%" icon={<Gauge size={14} />} ragStatus={d.kpis.availability_pct == null ? 'neutral' : d.kpis.availability_pct >= 95 ? 'green' : d.kpis.availability_pct >= 85 ? 'amber' : 'red'} />,
   },
   {
     key: 'oee-kpi', type: 'kpi', label: 'OEE', category: 'Asset Health',
     defaultW: 3, defaultH: 1,
-    render: (d) => <ReportKPICard title="OEE" value={Number((d.oeeData.oee * 100).toFixed(1))} format="percent" target={Math.round(d.oeeData.oee * 100)} targetLabel="Target: 85%" icon={<Activity size={14} />} ragStatus={d.oeeData.oee >= 0.85 ? 'green' : d.oeeData.oee >= 0.65 ? 'amber' : 'red'} />,
+    // OEE without production data is a proxy (performance 0.88, quality 0.96
+    // invented). Say so rather than print it.
+    render: (d) => <ReportKPICard title="OEE" value={d.oeeData.isReal ? Number((d.oeeData.oee * 100).toFixed(1)) : '—'} format={d.oeeData.isReal ? 'percent' : undefined} subtitle={d.oeeData.isReal ? undefined : 'needs production data'} target={85} targetLabel="Target: 85%" icon={<Activity size={14} />} ragStatus={!d.oeeData.isReal ? 'neutral' : d.oeeData.oee >= 0.85 ? 'green' : d.oeeData.oee >= 0.65 ? 'amber' : 'red'} />,
   },
   {
     key: 'downtime-kpi', type: 'kpi', label: 'Total Downtime', category: 'Asset Health',
