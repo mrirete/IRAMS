@@ -37,7 +37,7 @@ import { CRIT_COLORS, CONSEQUENCE_OPTIONS } from '../components/rcm/types';
 import {
   assessStudyData, canSpecialistDraft, canSpecialistCompleteRow,
   canSpecialistExpandFunction, canSpecialistRecommendStrategy,
-  canSpecialistReviewProgram, completableRows, isRowComplete,
+  canSpecialistReviewProgram, canGeneratePM, completableRows, isRowComplete,
   MIN_CONTEXT_CHARS,
 } from '../eam/services/rcmReadiness';
 
@@ -74,7 +74,7 @@ export const RCMPage: React.FC = () => {
   const rcmSeedAppliedRef = useRef(false);
 
   // ── Auth & Asset Lookup ────────────────────────────────
-  const { permissions } = useAuth();
+  const { permissions, user } = useAuth();
   const hasAssetAccess = useMemo(() => permissions?.assets?.view ?? false, [permissions]);
   const { assetOptions } = useAssetLookup();
   const [assetInputMode, setAssetInputMode] = useState<'search' | 'manual'>('search');
@@ -317,8 +317,20 @@ export const RCMPage: React.FC = () => {
 
   const handleInlineStudyUpdate = (field: string, value: any) => {
     if (!selectedStudy) return;
-    setSelectedStudy(prev => prev ? { ...prev, [field]: value } : null);
-    debouncedSave(`study-${field}`, () => trackSave(rcmService.updateStudy(selectedStudy.id, { [field]: value })));
+    // Approval is a record, not just a status — stamp who and when. Moving
+    // OFF approved clears the stamp so a re-approval re-records it.
+    const updates: Record<string, any> = { [field]: value };
+    if (field === 'status') {
+      if (value === 'approved') {
+        updates.approved_by = user?.full_name || user?.email || 'Unknown';
+        updates.approved_at = new Date().toISOString();
+      } else if (selectedStudy.status === 'approved') {
+        updates.approved_by = null;
+        updates.approved_at = null;
+      }
+    }
+    setSelectedStudy(prev => prev ? { ...prev, ...updates } : null);
+    debouncedSave(`study-${field}`, () => trackSave(rcmService.updateStudy(selectedStudy.id, updates)));
   };
 
   // Edit Study
@@ -652,12 +664,14 @@ export const RCMPage: React.FC = () => {
     setAiLoading(null);
   };
 
+  const pmGate = useMemo(
+    () => canGeneratePM(selectedStudy?.asset_id, decisions),
+    [selectedStudy?.asset_id, decisions],
+  );
+
   const handleGeneratePM = async () => {
     if (!selectedStudy) return;
-    if (!selectedStudy.asset_id) {
-      showToast('Link an asset to this study first (Edit Study → Asset ID)', 'error');
-      return;
-    }
+    if (!pmGate.ok) { showToast(pmGate.reason, 'error'); return; }
     setAiLoading('pm');
     const count = await rcmService.generatePMSchedule(selectedStudy.id);
     setAiLoading(null);
@@ -914,6 +928,7 @@ export const RCMPage: React.FC = () => {
           aiLoading={aiLoading}
           aiReport={aiReport}
           onGeneratePM={handleGeneratePM}
+          pmGate={pmGate}
           onAIOptimize={handleAIOptimize}
           optimizeGate={optimizeGate}
           onGoToStrategy={() => setActiveTab('decisions')}

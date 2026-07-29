@@ -18,6 +18,7 @@ import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMe
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Layers, Sparkles, Lock,
   RefreshCw, EyeOff, ShieldAlert, CheckCircle2, Info, ChevronsDownUp, ChevronsUpDown,
+  ArrowDown10, Download,
 } from 'lucide-react';
 import { RCMContextualHelp } from './RCMContextualHelp';
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './types';
@@ -373,7 +374,7 @@ export interface RCMFMEATableProps {
 const COL_COUNT = 12;
 
 export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
-  functions, failureModes, decisions, aiLoading,
+  study, functions, failureModes, decisions, aiLoading,
   onAddFunction, onUpdateFunction, onDeleteFunction,
   onAddFailureMode, onUpdateFailureMode, onDeleteFailureMode,
   onUpdateDecision, onSpecialistSuggestModes, onSpecialistCompleteRow, onBlocked,
@@ -381,6 +382,10 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
 }) => {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
+  // Rank mode: rows sort by RPN (desc) inside each function — ranking risk is
+  // what the scores are FOR. Off = the worksheet's stored order.
+  const [rankByRpn, setRankByRpn] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const toggleFn = (id: string) => setCollapsed(prev => {
     const next = new Set(prev);
@@ -403,8 +408,64 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
       const list = map.get(fm.function_id);
       if (list) list.push(fm); else map.set(fm.function_id, [fm]);
     });
+    if (rankByRpn) {
+      map.forEach(list => list.sort((a, b) =>
+        ((b.severity || 0) * (b.occurrence || 0)) - ((a.severity || 0) * (a.occurrence || 0))
+      ));
+    }
     return map;
-  }, [failureModes]);
+  }, [failureModes, rankByRpn]);
+
+  // Export the worksheet as a flat FMEA sheet — one row per failure mode with
+  // its function, effects, risk, consequence AND the Q6–Q7 decision, so the
+  // export is the full study, filterable in Excel. xlsx loads on demand.
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const header = [
+        'Fn #', 'Function', 'Type', 'Functional Failure',
+        '#', 'Failure Mode', 'Cause', 'Local Effect', 'System Effect', 'End Effect',
+        'S', 'O', 'RPN', 'Hidden?', 'Consequence', 'Strategy', 'Task', 'Interval', 'Owner', 'Justification',
+      ];
+      const rows: (string | number)[][] = [];
+      functions.forEach(fn => {
+        const fms = failureModes.filter(fm => fm.function_id === fn.id);
+        if (fms.length === 0) {
+          rows.push([fn.function_number, fn.function_description, fn.function_type, fn.functional_failure || '',
+            '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']);
+          return;
+        }
+        fms.forEach((fm, i) => {
+          const d = decisions.get(fm.id);
+          const rpn = (fm.severity || 0) * (fm.occurrence || 0);
+          const consequences = parseConsequenceCodes(d?.consequence_code)
+            .map(code => CONSEQUENCE_OPTIONS.find(c => c.code === code)?.label || code).join(', ');
+          rows.push([
+            fn.function_number, fn.function_description, fn.function_type, fn.functional_failure || '',
+            i + 1, fm.failure_mode_description || '', fm.failure_cause_description || '',
+            fm.failure_effect_local || '', fm.failure_effect_system || '', fm.end_effect || fm.failure_effect_plant || '',
+            fm.severity ?? '', fm.occurrence ?? '', rpn || '',
+            d ? (d.is_hidden_failure ? 'Hidden' : 'Evident') : '', consequences,
+            d?.recommended_strategy_code ? (STRATEGY_LABELS[d.recommended_strategy_code]?.label || d.recommended_strategy_code) : '',
+            d?.task_description || '', d?.task_interval || '', d?.task_owner_craft || '', d?.justification || '',
+          ]);
+        });
+      });
+      const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+      ws['!cols'] = [
+        { wch: 5 }, { wch: 40 }, { wch: 10 }, { wch: 35 },
+        { wch: 3 }, { wch: 35 }, { wch: 32 }, { wch: 28 }, { wch: 28 }, { wch: 32 },
+        { wch: 4 }, { wch: 4 }, { wch: 5 }, { wch: 8 }, { wch: 24 }, { wch: 16 }, { wch: 35 }, { wch: 12 }, { wch: 18 }, { wch: 35 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'FMEA Worksheet');
+      const safe = (study.title || 'RCM Study').replace(/[\\/:*?"<>|]/g, '-').slice(0, 80);
+      XLSX.writeFile(wb, `${safe} — FMEA.xlsx`);
+    } finally {
+      setExporting(false);
+    }
+  }, [functions, failureModes, decisions, study.title]);
 
   const th = 'px-2 py-1.5 text-[9px] font-bold uppercase tracking-wider text-slate-500 border border-slate-200 bg-slate-50';
 
@@ -416,10 +477,35 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
       <div className="flex items-center gap-2 flex-wrap">
         <h3 className="text-sm font-bold text-slate-700">FMEA Worksheet</h3>
         <span className="text-[10px] font-semibold text-slate-400">Q1–Q5 · SAE JA1011</span>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
           <span className="text-xs text-slate-400">
             {functions.length} function{functions.length !== 1 ? 's' : ''} · {failureModes.length} failure mode{failureModes.length !== 1 ? 's' : ''}
           </span>
+          {failureModes.length > 1 && (
+            <button
+              onClick={() => setRankByRpn(v => !v)}
+              title={rankByRpn ? 'Back to worksheet order' : 'Sort rows by RPN within each function — highest risk first'}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${
+                rankByRpn
+                  ? 'bg-primary-50 border-primary-300 text-primary-700'
+                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              <ArrowDown10 size={12} />
+              {rankByRpn ? 'Ranked by RPN' : 'Rank by RPN'}
+            </button>
+          )}
+          {failureModes.length > 0 && (
+            <button
+              onClick={handleExport}
+              aria-disabled={exporting}
+              title="Download the worksheet as Excel — functions, effects, risk and decisions in one flat sheet"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-[11px] font-semibold text-slate-600 hover:border-slate-300 transition-colors"
+            >
+              {exporting ? <RefreshCw size={12} className="animate-spin" /> : <Download size={12} />}
+              Export
+            </button>
+          )}
           {functions.length > 0 && (
             <button
               onClick={toggleAll}

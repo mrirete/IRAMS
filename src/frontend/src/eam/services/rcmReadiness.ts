@@ -198,6 +198,29 @@ export function canSpecialistReviewProgram(fmCount: number, strategyCount: numbe
   );
 }
 
+/**
+ * Generate the PM schedule into Work Management. Creates real recurring-work
+ * records planners must then live with — so it needs the asset they attach to
+ * and at least one decision that is actually actionable (a proactive strategy
+ * with a task written; Run-to-Failure generates nothing by definition).
+ */
+export function canGeneratePM(assetId: string | null | undefined, decisions: RCMDecision[]): ActionGate {
+  const missing: string[] = [];
+  if (!assetId) missing.push('Asset linked (PMs attach to it)');
+  const actionable = decisions.filter(d =>
+    d.recommended_strategy_code && d.recommended_strategy_code !== 'RTF' &&
+    described(d.task_description) && !d.recurring_work_id
+  );
+  if (actionable.length === 0) {
+    missing.push('An actionable decision — proactive strategy + task description, not yet generated');
+  }
+  return gate(
+    missing,
+    `Create ${actionable.length} PM task${actionable.length !== 1 ? 's' : ''} in Work Management from the decisions`,
+    'PM generation creates real work records. Still missing',
+  );
+}
+
 // ── Row completeness — what still needs finishing ────────────────────────────
 
 /** A worksheet row is complete when every FMEA column is filled and classified. */

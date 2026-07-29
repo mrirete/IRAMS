@@ -8,6 +8,7 @@ import {
   TrendingUp, Sparkles
 } from 'lucide-react';
 import { AvatarStack } from '../analyze/CollaboratorPicker';
+import { useAssetLookup } from '../../hooks/useAssetLookup';
 import type { RCMDashboardProps, RCMStudy } from './types';
 import { STATUS_COLORS, CRIT_COLORS } from './types';
 
@@ -100,6 +101,14 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
   studies, loading, searchQuery, onSelectStudy, onCreateStudy, onEditStudy, onDeleteStudy,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
+  const { getAssetName } = useAssetLookup();
+
+  // Cards show the asset as people know it (tag — name), not a raw UUID; a
+  // manual tag that isn't in the register passes through unchanged.
+  const assetLabel = React.useCallback((s: RCMStudy): string => {
+    if (!s.asset_id) return 'No asset linked';
+    return getAssetName(s.asset_id);
+  }, [getAssetName]);
 
   const filteredStudies = React.useMemo(() => {
     if (!searchQuery) return studies;
@@ -107,9 +116,10 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
     return studies.filter(s =>
       s.title.toLowerCase().includes(q) ||
       (s.asset_id || '').toLowerCase().includes(q) ||
+      assetLabel(s).toLowerCase().includes(q) ||
       s.status.toLowerCase().includes(q)
     );
-  }, [studies, searchQuery]);
+  }, [studies, searchQuery, assetLabel]);
 
   const kpis = React.useMemo(() => [
     { label: 'Total Studies', value: studies.length, icon: <FileText size={20} />, color: 'text-slate-600 bg-slate-50', accentColor: '#64748b' },
@@ -190,8 +200,8 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
                     <h3 className="text-sm font-bold text-slate-800 group-hover:text-accent-cyan transition-colors truncate">
                       {study.title}
                     </h3>
-                    <p className="text-xs text-slate-400 mt-1 truncate">
-                      {study.study_type.replace(/_/g, ' ')} • {study.asset_id || 'No asset linked'}
+                    <p className="text-xs text-slate-400 mt-1 truncate" title={assetLabel(study)}>
+                      {study.study_type.replace(/_/g, ' ')} • {assetLabel(study)}
                     </p>
 
                     {/* Completion bar (placeholder based on available data) */}

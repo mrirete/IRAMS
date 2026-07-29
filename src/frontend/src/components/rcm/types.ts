@@ -138,6 +138,8 @@ export interface RCMTaskMatrixProps {
   aiLoading: string | null;
   aiReport: string | null;
   onGeneratePM: () => void;
+  /** PM generation creates real work records — gated on asset + actionable decisions. */
+  pmGate: { ok: boolean; missing: string[]; reason: string };
   /** Specialist program review — fires only when optimizeGate.ok. */
   onAIOptimize: () => void;
   optimizeGate: { ok: boolean; missing: string[]; reason: string };
@@ -146,10 +148,3 @@ export interface RCMTaskMatrixProps {
   onCloseReport: () => void;
 }
 
-export interface RCMProgressTrackerProps {
-  functions: RCMFunction[];
-  failureModes: RCMFailureMode[];
-  decisions: Map<string, RCMDecision>;
-  activeTab: string;
-  onNavigate: (tab: string) => void;
-}

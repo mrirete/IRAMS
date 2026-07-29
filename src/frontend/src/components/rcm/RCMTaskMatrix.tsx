@@ -15,7 +15,7 @@ import { STRATEGY_LABELS } from './types';
 
 export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
   study, taskSummaries, decisions, aiLoading, aiReport,
-  onGeneratePM, onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport,
+  onGeneratePM, pmGate, onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport,
 }) => {
   // Strategy distribution
   const stratDist = useMemo(() => {
@@ -49,10 +49,15 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
       <div className="flex items-center gap-3 flex-wrap">
         <button
           onClick={onGeneratePM}
-          disabled={aiLoading === 'pm'}
-          className="flex items-center gap-2 px-5 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] disabled:opacity-50"
+          aria-disabled={aiLoading === 'pm'}
+          title={pmGate.reason}
+          className={`flex items-center gap-2 px-5 py-2.5 font-bold rounded-lg text-sm transition-colors ${
+            pmGate.ok
+              ? 'bg-accent-cyan hover:bg-primary-400 text-brand-900 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
+              : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
+          }`}
         >
-          {aiLoading === 'pm' ? <RefreshCw size={14} className="animate-spin" /> : <Wrench size={14} />}
+          {aiLoading === 'pm' ? <RefreshCw size={14} className="animate-spin" /> : pmGate.ok ? <Wrench size={14} /> : <Lock size={14} />}
           Generate PM Schedule
         </button>
         <button

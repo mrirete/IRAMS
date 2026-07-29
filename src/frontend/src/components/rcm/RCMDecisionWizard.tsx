@@ -75,6 +75,28 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
     failureModes.length > 0 ? failureModes[0].id : null
   );
 
+  // Where each mode stands in the Q5→Q7 flow — drives the filter chips so a
+  // 16-mode study doesn't mean scrolling to find the unresolved ones.
+  type StageFilter = 'all' | 'needs_q5' | 'needs_strategy' | 'done';
+  const [stageFilter, setStageFilter] = useState<StageFilter>('all');
+  const stageOf = (fmId: string): Exclude<StageFilter, 'all'> => {
+    const d = decisions.get(fmId);
+    if (!d?.consequence_code) return 'needs_q5';
+    if (!d.recommended_strategy_code) return 'needs_strategy';
+    return 'done';
+  };
+  const stageCounts = useMemo(() => {
+    const c = { all: failureModes.length, needs_q5: 0, needs_strategy: 0, done: 0 };
+    failureModes.forEach(fm => { c[stageOf(fm.id)]++; });
+    return c;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [failureModes, decisions]);
+  const visibleModes = useMemo(
+    () => stageFilter === 'all' ? failureModes : failureModes.filter(fm => stageOf(fm.id) === stageFilter),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [failureModes, decisions, stageFilter],
+  );
+
 
 
   const fnMap = useMemo(() => new Map(functions.map(f => [f.id, f])), [functions]);
@@ -105,6 +127,28 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
         </div>
       )}
 
+      {/* Stage filter — jump straight to the modes that still need work */}
+      {failureModes.length > 1 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {([
+            ['all', 'All', 'text-slate-700 border-slate-300 bg-white'],
+            ['needs_q5', 'Needs consequence (Q5)', 'text-amber-700 border-amber-300 bg-amber-50'],
+            ['needs_strategy', 'Needs strategy (Q6–Q7)', 'text-primary-700 border-primary-300 bg-primary-50'],
+            ['done', 'Decided', 'text-emerald-700 border-emerald-300 bg-emerald-50'],
+          ] as const).map(([key, label, tone]) => (
+            <button
+              key={key}
+              onClick={() => setStageFilter(key)}
+              className={`px-3 py-1.5 rounded-full border text-[11px] font-bold transition-all ${
+                stageFilter === key ? `${tone} ring-2 ring-offset-1 ring-slate-300/60` : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+              }`}
+            >
+              {label} <span className="tabular-nums opacity-70">{stageCounts[key]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Empty State */}
       {failureModes.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center shadow-sm">
@@ -115,7 +159,12 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
           <p className="text-xs text-slate-400 mt-1">Fill the Worksheet (step 1) first — each failure mode found there gets its strategy decided here.</p>
         </div>
       ) : (
-        failureModes.map((fm, fmIdx) => {
+        visibleModes.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-sm text-slate-400">
+            Nothing in this stage — switch the filter above.
+          </div>
+        ) : (
+        visibleModes.map((fm, fmIdx) => {
           const decision = decisions.get(fm.id);
           const isExpanded = expandedFM === fm.id;
 
@@ -133,8 +182,9 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                 onClick={() => setExpandedFM(isExpanded ? null : fm.id)}
               >
                 <div className="flex items-center gap-3">
+                  {/* Number by position in the full study, not the filtered view */}
                   <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
-                    FM-{fmIdx + 1}
+                    FM-{failureModes.indexOf(fm) + 1}
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-slate-800 truncate">
@@ -384,6 +434,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
             </div>
           );
         })
+        )
       )}
     </div>
   );

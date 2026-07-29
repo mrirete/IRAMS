@@ -670,8 +670,12 @@ class RCMServiceImpl {
     if (!study?.asset_id) return 0;
 
     const decisions = await this.getDecisions(studyId);
+    // Skip decisions already linked to a PM — re-running the generator after
+    // adding new strategies must only create the new ones, not re-attempt
+    // (and collide with) the ones that exist.
     const actionable = decisions.filter(d =>
-      d.recommended_strategy_code && d.recommended_strategy_code !== 'RTF' && d.task_description
+      d.recommended_strategy_code && d.recommended_strategy_code !== 'RTF' &&
+      d.task_description && !d.recurring_work_id
     );
 
     let created = 0;
@@ -679,7 +683,10 @@ class RCMServiceImpl {
       // Parse interval into frequency components
       const { interval, unit } = parseInterval(d.task_interval || '30 Days');
 
-      const pmCode = `RCM-${studyId.slice(0, 8)}-${created + 1}`;
+      // Decision-scoped code: deterministic, idempotent, and collision-free —
+      // the old `-${created + 1}` counter restarted at 1 on every run, so a
+      // second run collided with the first run's codes and created nothing.
+      const pmCode = `RCM-${studyId.slice(0, 8)}-${d.id.slice(0, 8)}`;
       const { error } = await supabase
         .from('recurring_work')
         .insert({
@@ -1151,9 +1158,22 @@ Format in markdown.`;
 // ─── Utility Helpers ─────────────────────────────────────────
 
 function parseInterval(interval: string): { interval: number; unit: string } {
-  const match = interval.match(/(\d+)\s*(day|week|month|year|hour)/i);
+  // Accept the forms the app itself produces: "Every 3 months", "1,700 h"
+  // (the wizard's measured-Weibull interval), "6 wks", "90 days". The old
+  // regex missed bare "h" and thousands separators, so a measured 1,700-hour
+  // interval silently became the 30-day default — a wrong PM frequency with
+  // no warning. recurring_work supports Hours natively (0001).
+  const cleaned = interval.replace(/,/g, '');
+  const match = cleaned.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h\b|days?|d\b|weeks?|wks?|w\b|months?|mos?|years?|yrs?|y\b)/i);
   if (match) {
-    return { interval: parseInt(match[1]), unit: match[2] + 's' };
+    const n = Math.max(1, Math.round(parseFloat(match[1])));
+    const u = match[2].toLowerCase();
+    const unit = u.startsWith('h') ? 'Hours'
+      : u.startsWith('d') ? 'Days'
+      : u.startsWith('w') ? 'Weeks'
+      : u.startsWith('y') ? 'Years'
+      : 'Months';
+    return { interval: n, unit };
   }
   return { interval: 30, unit: 'Days' };
 }
