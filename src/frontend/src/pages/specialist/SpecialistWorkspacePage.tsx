@@ -389,6 +389,50 @@ export const SpecialistWorkspacePage: React.FC = () => {
             setOpenRcas(rcas.filter((r) => r.status !== 'closed').slice(0, 3)));
     }, []);
 
+    /** Data-poor tenant: nothing imported yet, so migration IS the primary
+     *  action and its card leads the page; once real history exists it
+     *  demotes to the page foot — the daily flow starts at the ask box. */
+    const dataPoor = analytics != null
+        && assetsByTag.size < 10
+        && analytics.pareto.length === 0
+        && analytics.monthly.every((m) => m.cost === 0);
+
+    /** ONE data on-ramp, two jobs named plainly. The old layout offered
+     *  "Import data" (header) and "Migration Center" (card) as siblings —
+     *  but the wizard is phase 6 OF the migration, and two same-sounding
+     *  buttons at the top of a buyer's first page is where trust erodes. */
+    const migrationCard = (
+        <div className={`${CARD} p-4`}>
+            <div className="flex items-center gap-2.5 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+                    <Database size={16} />
+                </div>
+                <div className="min-w-0">
+                    <div className="text-[13px] font-semibold text-slate-800">Bring your data in</div>
+                    <div className="text-[11.5px] text-slate-500">From SAP PM, Maximo, MaintainX or any spreadsheet — pick the size of the move.</div>
+                </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Link to="/specialist/import"
+                    className="rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/40 px-3 py-2.5 transition-colors group">
+                    <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
+                        <UploadCloud size={13} className="text-primary-600" /> Quick import
+                        <ArrowRight size={12} className="text-slate-300 group-hover:text-primary-600 ml-auto transition-colors" />
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">One CMMS export file — the Specialist maps it and you get an assessment in minutes.</div>
+                </Link>
+                <Link to="/admin/migration"
+                    className="rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/40 px-3 py-2.5 transition-colors group">
+                    <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
+                        <Database size={13} className="text-primary-600" /> Full migration
+                        <ArrowRight size={12} className="text-slate-300 group-hover:text-primary-600 ml-auto transition-colors" />
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">The Migration Center walks register, people, stock, schedules and history across in the right order.</div>
+                </Link>
+            </div>
+        </div>
+    );
+
     /** Hero submit: same governed brain — the answer lands in the chat panel. */
     const askHero = () => {
         const q = heroQ.trim();
@@ -420,48 +464,21 @@ export const SpecialistWorkspacePage: React.FC = () => {
                             </p>
                         </div>
                     </div>
-                    {/* Both actions stay reachable on a phone — they used to be desktop-only. */}
+                    {/* ONE primary action. "Import data" left the header — it read
+                        as a sibling of the Migration Center while actually being a
+                        subset of it; the single data on-ramp card below owns both
+                        paths (and the wizard stays one click away in the sidebar). */}
                     <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => navigate('/specialist/import')} className={`${BTN_GHOST} flex-1 sm:flex-none`}>
-                            <UploadCloud size={14} /> Import data
-                        </button>
                         <button onClick={() => navigate('/specialist/assessment')} className={`${BTN_PRIMARY} flex-1 sm:flex-none`}>
                             <BarChart2 size={14} /> Run assessment
                         </button>
                     </div>
                 </div>
-
-                {/* ── Ask-first start (moved home from the Tier's Start·Home):
-                     one question, ONE brain — submits into the governed chat
-                     below, never a second AI surface. Intent chips route
-                     deterministically and work with the AI down. ── */}
-                <div className="mt-4 pt-4 border-t border-slate-100">
-                    <h2 className="text-[15px] sm:text-[17px] font-semibold text-slate-900 tracking-tight">
-                        What do you want to achieve today{firstName ? `, ${firstName}` : ''}?
-                    </h2>
-                    <div className="mt-2.5 flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-0.5 focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/15 transition-all">
-                        <input
-                            value={heroQ}
-                            onChange={(e) => setHeroQ(e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') askHero(); }}
-                            placeholder='Ask anything — "why does P-101 keep failing?"'
-                            className="flex-1 min-w-0 py-2.5 text-[13px] text-slate-900 placeholder:text-slate-400 bg-transparent outline-none"
-                        />
-                        <button onClick={askHero} disabled={!heroQ.trim()} aria-label="Ask the Specialist"
-                            className="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 transition-colors">
-                            <Send size={14} />
-                        </button>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                        {INTENTS.map((i) => (
-                            <button key={i.label} onClick={() => navigate(i.path)} title={i.hint}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-[11.5px] font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-colors">
-                                <span className="text-slate-400">{i.icon}</span>{i.label}
-                            </button>
-                        ))}
-                    </div>
-                </div>
             </header>
+
+            {/* Onboarding position: with nothing imported, migration IS the
+                first move — it leads the page until real data exists. */}
+            {dataPoor && migrationCard}
 
             {/* ── Value ledger ──
                  Two tiles, not four. "Awaiting review" and "Approved" were counts
@@ -514,6 +531,40 @@ export const SpecialistWorkspacePage: React.FC = () => {
             </div>
             )}
 
+            {/* ── The heart of the page: ask-first, centered (the Tier's old
+                 Start·Home look) — value reads first above, action starts here.
+                 One question, ONE brain: submits into the governed chat below.
+                 Intent chips route deterministically and work with the AI down. ── */}
+            <div className="py-6 sm:py-10">
+                <div className="max-w-2xl mx-auto text-center px-2">
+                    <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
+                        What do you want to achieve today{firstName ? `, ${firstName}` : ''}?
+                    </h2>
+                    <p className="mt-1.5 text-[12.5px] text-slate-400">Your Specialist answers from your own records — or jump straight to the work.</p>
+                    <div className="mt-5 flex items-center gap-2 bg-white border border-slate-300 rounded-2xl shadow-sm px-4 py-1 focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/15 transition-all">
+                        <input
+                            value={heroQ}
+                            onChange={(e) => setHeroQ(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') askHero(); }}
+                            placeholder='Ask anything — "why does P-101 keep failing?"'
+                            className="flex-1 min-w-0 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 bg-transparent outline-none"
+                        />
+                        <button onClick={askHero} disabled={!heroQ.trim()} aria-label="Ask the Specialist"
+                            className="shrink-0 flex items-center justify-center w-9 h-9 rounded-xl bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 transition-colors">
+                            <Send size={14} />
+                        </button>
+                    </div>
+                    <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+                        {INTENTS.map((i) => (
+                            <button key={i.label} onClick={() => navigate(i.path)} title={i.hint}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-[11.5px] font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 hover:shadow-sm transition-all">
+                                <span className="text-slate-400">{i.icon}</span>{i.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+
             {/* The two leadership artifacts: the renewal statement + the weekly pack. */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Link to="/specialist/roi"
@@ -543,22 +594,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     <ArrowRight size={16} className="text-slate-300 group-hover:text-violet-600 group-hover:translate-x-0.5 transition-all shrink-0" />
                 </Link>
             </div>
-
-            {/* Coming off another CMMS? The full migration path lives under Admin
-                (it isn't licence-gated), but this is where a new customer starts. */}
-            <Link to="/admin/migration"
-                className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-primary-300 hover:bg-primary-50/40 transition-colors group`}>
-                <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
-                    <Database size={16} />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-semibold text-slate-800">Migrating from SAP PM, Maximo or MaintainX?</div>
-                    <div className="text-[11.5px] text-slate-500 mt-0.5 hidden sm:block">
-                        The Migration Center walks your register, people, stock, schedules and history across in the right order.
-                    </div>
-                </div>
-                <ArrowRight size={16} className="text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all shrink-0" />
-            </Link>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* ── Left: briefing + proposals + analyst ── */}
@@ -816,6 +851,9 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     </Panel>
                 </div>
             </div>
+
+            {/* Established tenants: migration stays reachable at the page foot. */}
+            {!dataPoor && migrationCard}
 
             {/* The reliability loop — the practitioner's spine, one hop away. */}
             <div className="flex items-center justify-center gap-1 text-[11px] text-slate-400 pt-1">
