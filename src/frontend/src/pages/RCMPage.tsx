@@ -37,8 +37,8 @@ import { CRIT_COLORS, CONSEQUENCE_OPTIONS } from '../components/rcm/types';
 import {
   assessStudyData, canSpecialistDraft, canSpecialistCompleteRow,
   canSpecialistExpandFunction, canSpecialistRecommendStrategy,
-  canSpecialistReviewProgram, canGeneratePM, completableRows, isRowComplete,
-  MIN_CONTEXT_CHARS,
+  canSpecialistReviewProgram, canGeneratePM, canApproveStudy,
+  completableRows, isRowComplete, MIN_CONTEXT_CHARS,
 } from '../eam/services/rcmReadiness';
 
 // ── Types ─────────────────────────────────────────────────
@@ -315,6 +315,11 @@ export const RCMPage: React.FC = () => {
   const handleSelectStudy = (study: RCMStudy) => { navigate(`/rcm/${study.id}`); setActiveTab('functions'); };
   const handleBackToDashboard = () => { navigate('/rcm'); setSelectedStudy(null); setActiveTab('dashboard'); loadStudies(); };
 
+  const approveGate = useMemo(
+    () => canApproveStudy(functions, failureModes, decisionMap),
+    [functions, failureModes, decisionMap],
+  );
+
   const handleInlineStudyUpdate = (field: string, value: any) => {
     if (!selectedStudy) return;
     // Approval is a record, not just a status — stamp who and when. Moving
@@ -322,6 +327,8 @@ export const RCMPage: React.FC = () => {
     const updates: Record<string, any> = { [field]: value };
     if (field === 'status') {
       if (value === 'approved') {
+        // JA1012: sign-off asserts all seven questions answered per mode.
+        if (!approveGate.ok) { showToast(approveGate.reason, 'error'); return; }
         updates.approved_by = user?.full_name || user?.email || 'Unknown';
         updates.approved_at = new Date().toISOString();
       } else if (selectedStudy.status === 'approved') {
@@ -352,11 +359,23 @@ export const RCMPage: React.FC = () => {
 
   const handleSaveEditStudy = async () => {
     if (!editingStudy) return;
+    // Approval gate also guards the modal path — but only when the study being
+    // edited is the loaded one (its worksheet is what the gate reads).
+    const approving = editStudyForm.status === 'approved' && editingStudy.status !== 'approved';
+    if (approving && selectedStudy?.id === editingStudy.id && !approveGate.ok) {
+      showToast(approveGate.reason, 'error');
+      return;
+    }
     setSaving(true);
     const updated = await rcmService.updateStudy(editingStudy.id, {
       title: editStudyForm.title, asset_id: editStudyForm.asset_id || null,
       operating_context: editStudyForm.operating_context || null, study_type: editStudyForm.study_type as any,
       status: editStudyForm.status as any, facilitator: editStudyForm.facilitator || null, notes: editStudyForm.notes || null,
+      ...(approving
+        ? { approved_by: user?.full_name || user?.email || 'Unknown', approved_at: new Date().toISOString() }
+        : editStudyForm.status !== 'approved' && editingStudy.status === 'approved'
+          ? { approved_by: null, approved_at: null }
+          : {}),
     });
     setSaving(false);
     if (updated) {
@@ -867,6 +886,17 @@ export const RCMPage: React.FC = () => {
           onCreateStudy={() => setShowNewStudy(true)}
           onEditStudy={handleOpenEditStudy}
           onDeleteStudy={(study) => setConfirmDelete({ type: 'study', id: study.id, name: study.title })}
+          onDuplicateStudy={async (study) => {
+            showToast(`Duplicating "${study.title}"…`);
+            const copy = await trackSave(rcmService.duplicateStudy(study.id));
+            if (copy) {
+              showToast('Study duplicated — opening the draft copy');
+              await loadStudies();
+              navigate(`/rcm/${copy.id}`);
+            } else {
+              showToast('Failed to duplicate the study', 'error');
+            }
+          }}
         />
       )}
 
@@ -940,8 +970,26 @@ export const RCMPage: React.FC = () => {
       {activeTab === 'evidence' && selectedStudy && (
         <RCMEvidencePanel
           study={selectedStudy}
+          functions={functions}
           failureModes={failureModes}
           decisions={decisionMap}
+          onAddObservedMode={async (code, description, functionId) => {
+            const count = failureModes.filter(fm => fm.function_id === functionId).length;
+            const created = await trackSave(rcmService.createFailureMode({
+              function_id: functionId,
+              failure_mode_code: code,
+              failure_mode_description: description,
+              data_source: 'wo_history',
+              sort_order: count + 1,
+            }));
+            if (created) {
+              setFailureModes(prev => [...prev, created]);
+              showToast(`${code} added to the study from WO history — complete its row on the Worksheet`);
+              return true;
+            }
+            showToast('Failed to add the failure mode', 'error');
+            return false;
+          }}
         />
       )}
       {activeTab === 'evidence' && !selectedStudy && (

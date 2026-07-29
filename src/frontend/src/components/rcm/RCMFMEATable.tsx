@@ -52,7 +52,9 @@ const GridCell: React.FC<{
   numeric?: boolean;
   tone?: 'default' | 'warn';
   label: string;
-}> = ({ value, onCommit, placeholder, numeric, tone = 'default', label }) => {
+  /** Column key for Enter-to-next-row navigation across the worksheet. */
+  col?: string;
+}> = ({ value, onCommit, placeholder, numeric, tone = 'default', label, col }) => {
   const incoming = value == null ? '' : String(value);
   const [local, setLocal] = useState(incoming);
   const focused = useRef(false);
@@ -97,6 +99,19 @@ const GridCell: React.FC<{
     timer.current = setTimeout(() => commit(v), 700);
   };
 
+  // Enter = commit + move to the same column one row down, spreadsheet-style.
+  // Shift+Enter keeps its newline meaning in text cells.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.shiftKey || !col) return;
+    e.preventDefault();
+    if (timer.current) clearTimeout(timer.current);
+    commit(local);
+    const el = e.currentTarget;
+    const cells = Array.from(el.closest('table')?.querySelectorAll<HTMLElement>(`[data-col="${col}"]`) ?? []);
+    const next = cells[cells.indexOf(el) + 1];
+    next?.focus();
+  };
+
   const base = `w-full bg-transparent border border-transparent rounded px-1.5 py-1 text-[11px] leading-snug
     text-slate-700 placeholder:text-slate-300 transition-colors
     hover:border-slate-200 hover:bg-slate-50/60
@@ -107,9 +122,10 @@ const GridCell: React.FC<{
     return (
       <input
         type="number" min={1} max={10} aria-label={label} title={label}
-        value={local} placeholder={placeholder}
+        value={local} placeholder={placeholder} data-col={col}
         onFocus={() => { focused.current = true; }}
         onBlur={() => { focused.current = false; if (timer.current) clearTimeout(timer.current); commit(local); }}
+        onKeyDown={handleKeyDown}
         onChange={e => handleChange(e.target.value)}
         className={`${base} text-center font-semibold tabular-nums [appearance:textfield]
           [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
@@ -121,9 +137,10 @@ const GridCell: React.FC<{
     <textarea
       ref={taRef}
       rows={2} aria-label={label} title={label}
-      value={local} placeholder={placeholder}
+      value={local} placeholder={placeholder} data-col={col}
       onFocus={() => { focused.current = true; }}
       onBlur={() => { focused.current = false; if (timer.current) clearTimeout(timer.current); commit(local); }}
+      onKeyDown={handleKeyDown}
       onChange={e => handleChange(e.target.value)}
       className={`${base} resize-none overflow-hidden min-h-[38px]`}
     />
@@ -723,7 +740,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                             </td>
                             <td className={td}>
                               <GridCell
-                                label="Failure mode"
+                                label="Failure mode" col="mode"
                                 value={fm.failure_mode_description}
                                 placeholder="What failed? e.g. Shaft seal leaking"
                                 onCommit={v => onUpdateFailureMode(fm.id, { failure_mode_description: v })}
@@ -731,7 +748,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                             </td>
                             <td className={td}>
                               <GridCell
-                                label="Cause"
+                                label="Cause" col="cause"
                                 value={fm.failure_cause_description}
                                 placeholder="Why? e.g. Wear, corrosion, fatigue"
                                 onCommit={v => onUpdateFailureMode(fm.id, { failure_cause_description: v })}
@@ -739,7 +756,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                             </td>
                             <td className={td}>
                               <GridCell
-                                label="Local effect"
+                                label="Local effect" col="local"
                                 value={fm.failure_effect_local}
                                 placeholder="Component level"
                                 onCommit={v => onUpdateFailureMode(fm.id, { failure_effect_local: v })}
@@ -747,7 +764,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                             </td>
                             <td className={td}>
                               <GridCell
-                                label="System effect"
+                                label="System effect" col="system"
                                 value={fm.failure_effect_system}
                                 placeholder="System level"
                                 onCommit={v => onUpdateFailureMode(fm.id, { failure_effect_system: v })}
@@ -758,7 +775,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                   effect in failure_effect_plant — read either, and
                                   write both so the two stay in step. */}
                               <GridCell
-                                label="End effect"
+                                label="End effect" col="end"
                                 tone="warn"
                                 value={fm.end_effect || fm.failure_effect_plant}
                                 placeholder="Plant / production impact"
@@ -767,14 +784,14 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                             </td>
                             <td className={td}>
                               <GridCell
-                                label="Severity 1–10" numeric
+                                label="Severity 1–10" numeric col="sev"
                                 value={fm.severity} placeholder="—"
                                 onCommit={v => onUpdateFailureMode(fm.id, { severity: v === '' ? null : parseInt(v, 10) || null })}
                               />
                             </td>
                             <td className={td}>
                               <GridCell
-                                label="Occurrence 1–10" numeric
+                                label="Occurrence 1–10" numeric col="occ"
                                 value={fm.occurrence} placeholder="—"
                                 onCommit={v => onUpdateFailureMode(fm.id, { occurrence: v === '' ? null : parseInt(v, 10) || null })}
                               />

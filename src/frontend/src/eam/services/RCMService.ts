@@ -362,6 +362,114 @@ class RCMServiceImpl {
     return data as RCMStudy;
   }
 
+  /**
+   * Duplicate a study — worksheet, decisions and all — as a fresh draft.
+   * Streamlined RCM re-uses a proven study across identical assets; the copy
+   * carries the analysis but NOT the outputs (no PM links) or the approval
+   * (a template is not an approved study for a different serial number).
+   */
+  async duplicateStudy(id: string): Promise<RCMStudy | null> {
+    const src = await this.getStudy(id);
+    if (!src) return null;
+    const copy = await this.createStudy({
+      title: `${src.title} (copy)`,
+      asset_id: src.asset_id,
+      operating_context: src.operating_context,
+      study_type: src.study_type,
+      criticality_rank: src.criticality_rank,
+      facilitator: src.facilitator,
+      notes: src.notes,
+      rcm_source: src.rcm_source,
+    });
+    if (!copy) return null;
+
+    // Bulk copies — one insert per table per function, not one per row: a
+    // 16-mode study clones in a couple of round-trips instead of forty.
+    const [fns, fms, decs] = await Promise.all([
+      this.getFunctions(id),
+      this.getFailureModesByStudy(id),
+      this.getDecisions(id),
+    ]);
+    const decByFm = new Map(decs.map(d => [d.failure_mode_id, d]));
+
+    for (const fn of fns) {
+      const newFn = await this.createFunction({
+        study_id: copy.id,
+        function_number: fn.function_number,
+        function_description: fn.function_description,
+        performance_standard: fn.performance_standard,
+        function_type: fn.function_type,
+        functional_failure: fn.functional_failure,
+        failure_code: fn.failure_code,
+        sort_order: fn.sort_order,
+      });
+      if (!newFn) continue;
+
+      const srcFms = fms.filter(fm => fm.function_id === fn.id);
+      if (srcFms.length === 0) continue;
+      const { data: newFms, error: fmErr } = await supabase
+        .from('ers_rcm_failure_modes')
+        .insert(srcFms.map(fm => ({
+          function_id: newFn.id,
+          failure_mode_code: fm.failure_mode_code,
+          failure_mode_description: fm.failure_mode_description,
+          failure_cause_code: fm.failure_cause_code,
+          failure_cause_description: fm.failure_cause_description,
+          failure_effect_local: fm.failure_effect_local,
+          failure_effect_system: fm.failure_effect_system,
+          failure_effect_plant: fm.failure_effect_plant,
+          end_effect: fm.end_effect,
+          severity: fm.severity,
+          occurrence: fm.occurrence,
+          detection: fm.detection,
+          data_source: fm.data_source,
+          sort_order: fm.sort_order,
+        })))
+        .select();
+      if (fmErr || !newFms) { console.error('[RCM] duplicateStudy modes error:', fmErr); continue; }
+
+      // Rows come back in payload order — map source decisions across by index.
+      const decPayload = newFms.flatMap((nf: RCMFailureMode, i: number) => {
+        const d = decByFm.get(srcFms[i].id);
+        if (!d) return [];
+        return [{
+          failure_mode_id: nf.id,
+          is_hidden_failure: d.is_hidden_failure,
+          consequence_code: d.consequence_code,
+          consequence_description: d.consequence_description,
+          on_condition_task: d.on_condition_task,
+          on_condition_interval: d.on_condition_interval,
+          on_condition_applicable: d.on_condition_applicable,
+          on_condition_technology: d.on_condition_technology,
+          scheduled_restoration_task: d.scheduled_restoration_task,
+          restoration_interval: d.restoration_interval,
+          restoration_applicable: d.restoration_applicable,
+          scheduled_discard_task: d.scheduled_discard_task,
+          discard_interval: d.discard_interval,
+          discard_applicable: d.discard_applicable,
+          failure_finding_task: d.failure_finding_task,
+          failure_finding_interval: d.failure_finding_interval,
+          failure_finding_applicable: d.failure_finding_applicable,
+          recommended_strategy_code: d.recommended_strategy_code,
+          task_description: d.task_description,
+          task_interval: d.task_interval,
+          task_type_code: d.task_type_code,
+          task_owner_craft: d.task_owner_craft,
+          justification: d.justification,
+          spares_requirements: d.spares_requirements,
+          // deliberately NOT copied: ai_recommendation history, recurring_work_id
+        }];
+      });
+      if (decPayload.length > 0) {
+        const { error: decErr } = await supabase
+          .from('ers_rcm_decisions')
+          .upsert(decPayload, { onConflict: 'failure_mode_id' });
+        if (decErr) console.error('[RCM] duplicateStudy decisions error:', decErr);
+      }
+    }
+    return copy;
+  }
+
   async deleteStudy(id: string): Promise<boolean> {
     const { error } = await supabase
       .from('ers_rcm_studies')

@@ -221,6 +221,33 @@ export function canGeneratePM(assetId: string | null | undefined, decisions: RCM
   );
 }
 
+/**
+ * Approve the study. JA1012's conformance audit means sign-off asserts every
+ * failure mode was carried through all seven questions — consequence classified
+ * (Q5) and a strategy selected (Q6–Q7). Approving a study with unresolved
+ * modes turns "Approved" into a label instead of a record.
+ */
+export function canApproveStudy(
+  functions: RCMFunction[],
+  failureModes: RCMFailureMode[],
+  decisions: Map<string, RCMDecision>,
+): ActionGate {
+  const missing: string[] = [];
+  if (functions.length === 0 || failureModes.length === 0) {
+    missing.push('A worksheet — at least one function with a failure mode');
+  } else {
+    const unclassified = failureModes.filter(fm => !text(decisions.get(fm.id)?.consequence_code)).length;
+    const unstrategised = failureModes.filter(fm => !text(decisions.get(fm.id)?.recommended_strategy_code)).length;
+    if (unclassified > 0) missing.push(`Consequences classified (Q5) — ${unclassified} remaining`);
+    if (unstrategised > 0) missing.push(`Strategies selected (Q6–Q7) — ${unstrategised} remaining`);
+  }
+  return gate(
+    missing,
+    'Approve the study — every failure mode is classified and has a strategy',
+    'Approval asserts all seven questions are answered for every failure mode (SAE JA1012). Still missing',
+  );
+}
+
 // ── Row completeness — what still needs finishing ────────────────────────────
 
 /** A worksheet row is complete when every FMEA column is filled and classified. */

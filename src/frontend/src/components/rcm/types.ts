@@ -103,6 +103,8 @@ export interface RCMDashboardProps {
   onCreateStudy: () => void;
   onEditStudy: (study: RCMStudy, e?: React.MouseEvent) => void;
   onDeleteStudy: (study: RCMStudy) => void;
+  /** Clone worksheet + decisions as a fresh draft (no PM links, no approval). */
+  onDuplicateStudy: (study: RCMStudy) => void;
 }
 
 // The FMEA worksheet owns its own props (see RCMFMEATable.tsx) — they include

@@ -67,6 +67,62 @@ const SyncedField: React.FC<{
     : <input type="text" {...shared} onChange={e => handleChange(e.target.value)} />;
 };
 
+// ── Structured interval ─────────────────────────────────────
+// The interval is the program's executable output — free text like "when
+// needed" can't schedule anything. Value + unit compose a canonical string
+// ("1700 Hours") that the PM generator parses losslessly. Legacy free text
+// that doesn't parse is surfaced, not silently discarded.
+const INTERVAL_UNITS = ['Hours', 'Days', 'Weeks', 'Months', 'Years'] as const;
+type IntervalUnit = typeof INTERVAL_UNITS[number];
+
+function parseIntervalText(text: string | null | undefined): { n: number | null; unit: IntervalUnit; raw: string } {
+  const raw = (text || '').trim();
+  const m = raw.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h\b|days?|d\b|weeks?|wks?|w\b|months?|mos?|years?|yrs?|y\b)/i);
+  if (!m) return { n: null, unit: 'Months', raw };
+  const u = m[2].toLowerCase();
+  const unit: IntervalUnit = u.startsWith('h') ? 'Hours' : u.startsWith('d') ? 'Days' : u.startsWith('w') ? 'Weeks' : u.startsWith('y') ? 'Years' : 'Months';
+  return { n: Math.max(1, Math.round(parseFloat(m[1]))), unit, raw };
+}
+
+const IntervalField: React.FC<{
+  value: string | null | undefined;
+  onCommit: (v: string | null) => void;
+}> = ({ value, onCommit }) => {
+  const parsed = parseIntervalText(value);
+  const unparseable = !!parsed.raw && parsed.n === null;
+
+  const commit = (n: number | null, unit: IntervalUnit) => {
+    onCommit(n && n > 0 ? `${n} ${unit}` : null);
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mt-1">
+        <input
+          type="number" min={1} aria-label="Interval value"
+          value={parsed.n ?? ''}
+          placeholder="e.g. 3"
+          onChange={e => commit(e.target.value === '' ? null : Math.max(1, parseInt(e.target.value, 10) || 0), parsed.unit)}
+          className="w-20 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:outline-none text-center font-semibold tabular-nums"
+        />
+        <select
+          aria-label="Interval unit"
+          value={parsed.unit}
+          onChange={e => commit(parsed.n ?? 1, e.target.value as IntervalUnit)}
+          className="flex-1 px-2 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:outline-none cursor-pointer"
+        >
+          {INTERVAL_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
+      </div>
+      {unparseable && (
+        <p className="text-[10px] text-amber-600 mt-1" title={parsed.raw}>
+          Was "{parsed.raw.slice(0, 30)}{parsed.raw.length > 30 ? '…' : ''}" — set a value and unit so the PM generator can schedule it.
+        </p>
+      )}
+    </div>
+  );
+};
+
 // ── Main Component ──────────────────────────────────────────
 export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   study, failureModes, functions, decisions, aiLoading, lifeEvidence, onUpdateDecision, onAIRecommend,
@@ -353,17 +409,16 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                       </div>
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Interval</label>
-                        <SyncedField
-                          label="Task interval"
+                        <IntervalField
                           value={decision?.task_interval}
-                          onCommit={v => onUpdateDecision(fm.id, { task_interval: v || null })}
-                          placeholder="e.g. Every 3 months"
+                          onCommit={v => onUpdateDecision(fm.id, { task_interval: v })}
                         />
-                        {lifeEvidence && decision?.task_interval !== `${lifeEvidence.interval.toLocaleString()} h` && (
+                        {lifeEvidence && parseIntervalText(decision?.task_interval).n !== lifeEvidence.interval && (
                           <button
                             onClick={() => {
                               onUpdateDecision(fm.id, {
-                                task_interval: `${lifeEvidence.interval.toLocaleString()} h`,
+                                // Canonical structured form — what the PM generator parses.
+                                task_interval: `${lifeEvidence.interval} Hours`,
                                 justification: decision?.justification
                                   ? decision.justification
                                   : `Interval from measured Weibull fit: β=${lifeEvidence.beta.toFixed(2)}, η=${Math.round(lifeEvidence.eta).toLocaleString()} h, B10=${lifeEvidence.b10.toLocaleString()} h ("${lifeEvidence.source}").`,

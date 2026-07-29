@@ -4,7 +4,7 @@
 import React from 'react';
 import {
   FileText, Clock, CheckCircle, AlertTriangle, Shield,
-  MoreVertical, Eye, Edit3, Trash2, Plus, RefreshCw,
+  MoreVertical, Eye, Edit3, Copy, Trash2, Plus, RefreshCw,
   TrendingUp, Sparkles
 } from 'lucide-react';
 import { AvatarStack } from '../analyze/CollaboratorPicker';
@@ -63,8 +63,9 @@ const StudyCardMenu: React.FC<{
   onToggle: () => void;
   onOpen: () => void;
   onEdit: (e: React.MouseEvent) => void;
+  onDuplicate: () => void;
   onDelete: () => void;
-}> = ({ study, open, onToggle, onOpen, onEdit, onDelete }) => (
+}> = ({ study, open, onToggle, onOpen, onEdit, onDuplicate, onDelete }) => (
   <div className="relative">
     <button
       onClick={(e) => { e.stopPropagation(); onToggle(); }}
@@ -87,6 +88,13 @@ const StudyCardMenu: React.FC<{
         <button onClick={onEdit} className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2">
           <Edit3 size={12} /> Edit Details
         </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDuplicate(); }}
+          title="Copy worksheet + decisions as a fresh draft — for an identical asset"
+          className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+        >
+          <Copy size={12} /> Duplicate
+        </button>
         <hr className="my-1 border-slate-100" />
         <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 flex items-center gap-2">
           <Trash2 size={12} /> Delete Study
@@ -98,7 +106,7 @@ const StudyCardMenu: React.FC<{
 
 // ── Main Component ───────────────────────────────────────────
 export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
-  studies, loading, searchQuery, onSelectStudy, onCreateStudy, onEditStudy, onDeleteStudy,
+  studies, loading, searchQuery, onSelectStudy, onCreateStudy, onEditStudy, onDeleteStudy, onDuplicateStudy,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
   const { getAssetName } = useAssetLookup();
@@ -191,6 +199,7 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
                       onToggle={() => setMenuOpen(menuOpen === study.id ? null : study.id)}
                       onOpen={() => { setMenuOpen(null); onSelectStudy(study); }}
                       onEdit={(e) => { setMenuOpen(null); onEditStudy(study, e); }}
+                      onDuplicate={() => { setMenuOpen(null); onDuplicateStudy(study); }}
                       onDelete={() => { setMenuOpen(null); onDeleteStudy(study); }}
                     />
                   </div>
