@@ -565,8 +565,10 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 </div>
             </div>
 
-            {/* The two leadership artifacts: the renewal statement + the weekly pack. */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* The doors row: renewal statement + weekly pack + (for established
+                tenants) the compact data on-ramp — visible mid-page, never
+                buried at the foot, never shouting at the top. */}
+            <div className={`grid grid-cols-1 md:grid-cols-2 ${!dataPoor ? 'lg:grid-cols-3' : ''} gap-3`}>
                 <Link to="/specialist/roi"
                     className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors group`}>
                     <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
@@ -593,6 +595,21 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     </div>
                     <ArrowRight size={16} className="text-slate-300 group-hover:text-violet-600 group-hover:translate-x-0.5 transition-all shrink-0" />
                 </Link>
+                {!dataPoor && (
+                    <div className={`${CARD} flex items-center gap-3 px-4 py-3`}>
+                        <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
+                            <Database size={16} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-semibold text-slate-800">Bring your data in</div>
+                            <div className="text-[11.5px] mt-0.5 flex items-center gap-2">
+                                <Link to="/specialist/import" className="text-primary-600 hover:text-primary-700 hover:underline font-medium">Quick import</Link>
+                                <span className="text-slate-300">·</span>
+                                <Link to="/admin/migration" className="text-primary-600 hover:text-primary-700 hover:underline font-medium">Full migration</Link>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -851,9 +868,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     </Panel>
                 </div>
             </div>
-
-            {/* Established tenants: migration stays reachable at the page foot. */}
-            {!dataPoor && migrationCard}
 
             {/* The reliability loop — the practitioner's spine, one hop away. */}
             <div className="flex items-center justify-center gap-1 text-[11px] text-slate-400 pt-1">
