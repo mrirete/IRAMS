@@ -30,6 +30,7 @@ import { RCMStudyDashboard } from '../components/rcm/RCMStudyDashboard';
 import { RCMStudyOverview } from '../components/rcm/RCMStudyOverview';
 import { RCMFMEATable } from '../components/rcm/RCMFMEATable';
 import { RCMSpecialistBar } from '../components/rcm/RCMSpecialistBar';
+import { RCMAddFunctionModal } from '../components/rcm/RCMAddFunctionModal';
 import { RCMDecisionWizard } from '../components/rcm/RCMDecisionWizard';
 import { RCMTaskMatrix } from '../components/rcm/RCMTaskMatrix';
 import { RCMEvidencePanel } from '../components/rcm/RCMEvidencePanel';
@@ -409,13 +410,34 @@ export const RCMPage: React.FC = () => {
   };
 
   // Functions & Failure Modes CRUD
-  const handleAddFunction = async () => {
+  // Add Function opens the guided Q1 modal — the function statement first,
+  // everything else revealed after it exists. No more blank rows inserted on
+  // click and abandoned on the worksheet.
+  const [showAddFunction, setShowAddFunction] = useState(false);
+  const handleAddFunction = () => {
     if (!selectedStudy) return;
-    const fn = await rcmService.createFunction({
-      study_id: selectedStudy.id, function_number: `F${functions.length + 1}`,
-      function_description: '', function_type: 'primary', sort_order: functions.length + 1,
-    });
-    if (fn) setFunctions(prev => [...prev, fn]);
+    setShowAddFunction(true);
+  };
+
+  const handleCreateFunction = async (data: { description: string; type: RCMFunction['function_type']; functional_failure: string }) => {
+    if (!selectedStudy) return;
+    setSaving(true);
+    const fn = await trackSave(rcmService.createFunction({
+      study_id: selectedStudy.id,
+      function_number: `F${functions.length + 1}`,
+      function_description: data.description,
+      function_type: data.type,
+      functional_failure: data.functional_failure || null,
+      sort_order: functions.length + 1,
+    }));
+    setSaving(false);
+    if (fn) {
+      setFunctions(prev => [...prev, fn]);
+      setShowAddFunction(false);
+      showToast(`${fn.function_number} added — now capture its failure modes on the worksheet`);
+    } else {
+      showToast('Failed to add the function', 'error');
+    }
   };
 
   const handleAddFailureMode = async (functionId: string) => {
@@ -1276,6 +1298,16 @@ export const RCMPage: React.FC = () => {
           <span className="text-sm font-medium">{toast.message}</span>
           <button onClick={() => setToast(null)} className="ml-2 p-0.5 hover:bg-black/5 rounded"><X size={14} /></button>
         </div>
+      )}
+
+      {/* ═══ Add Function — guided Q1 modal ═══ */}
+      {showAddFunction && selectedStudy && (
+        <RCMAddFunctionModal
+          nextNumber={`F${functions.length + 1}`}
+          saving={saving}
+          onClose={() => setShowAddFunction(false)}
+          onCreate={handleCreateFunction}
+        />
       )}
 
       {/* ═══ Team Panel ═══ */}

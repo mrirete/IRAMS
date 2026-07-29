@@ -75,10 +75,18 @@ export function assessStudyData(
     },
     {
       id: 'context',
-      label: 'Operating context',
+      // "Missing" and "too brief" are different problems — say which one.
+      // "Booster pump in fire water section" is a label, not a context, and
+      // showing the count teaches what to fix instead of contradicting the
+      // user who can see their text on the Overview.
+      label: context.length === 0
+        ? 'Operating context'
+        : `Operating context · ${context.length}/${MIN_CONTEXT_CHARS} chars`,
       met: context.length >= MIN_CONTEXT_CHARS,
       severity: 'required',
-      hint: `Describe duty cycle, environment, load profile and redundancy (at least ${MIN_CONTEXT_CHARS} characters). This is what makes the failure modes specific to your plant rather than generic.`,
+      hint: context.length === 0
+        ? `Describe duty cycle, environment, load profile and redundancy (at least ${MIN_CONTEXT_CHARS} characters). This is what makes the failure modes specific to your plant rather than generic.`
+        : `Too brief for the Specialist to draft from — add duty cycle (continuous or standby?), environment, load and redundancy until it reaches ${MIN_CONTEXT_CHARS} characters.`,
     },
     {
       id: 'title',
