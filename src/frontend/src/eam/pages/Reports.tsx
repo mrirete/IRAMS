@@ -22,6 +22,7 @@ import { useDashboardStore } from '../stores/DashboardStore';
 import { WidgetData } from '../components/reports/WidgetRegistry';
 import { DictionaryEntry } from '../types';
 import { OEEDashboard } from '../components/reports/OEEDashboard';
+import { isOpenWo, isDoneWo } from '../../lib/woState';
 
 // ─── Color Palette ──────────────────────────────────────
 const COLORS = {
@@ -199,12 +200,15 @@ export const Reports: React.FC = () => {
   }, [workOrders, filters, filteredAssetIds]);
 
   const totalWOs = filteredWOs.length;
-  const completedWOs = filteredWOs.filter((w: any) => ['COMP', 'TECO', 'CLOSED'].includes(w.status?.toUpperCase())).length;
+  // Canonical lifecycle buckets (lib/woState) — shared with the dashboard,
+  // the reliability digest and the mission engine.
+  const completedWOs = filteredWOs.filter((w: any) => isDoneWo(w.status)).length;
   const preventiveWOs = filteredWOs.filter((w: any) => ['PM', 'PREVENTIVE'].includes(w.work_type?.toUpperCase())).length;
   const correctiveWOs = filteredWOs.filter((w: any) => ['CM', 'CORRECTIVE', 'BREAKDOWN'].includes(w.work_type?.toUpperCase())).length;
   const pmRatio = totalWOs > 0 ? (preventiveWOs / totalWOs) * 100 : 0;
   const overdueWOs = filteredWOs.filter((w: any) => {
-    if (!w.due_date || ['COMP', 'TECO', 'CLOSED'].includes(w.status?.toUpperCase())) return false;
+    // Only open work can be overdue — cancelled work is not a debt.
+    if (!w.due_date || !isOpenWo(w.status)) return false;
     return new Date(w.due_date) < new Date();
   }).length;
   const onTimeRate = totalWOs > 0 ? ((totalWOs - overdueWOs) / totalWOs) * 100 : 100;

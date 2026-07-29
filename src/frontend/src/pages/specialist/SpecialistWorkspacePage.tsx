@@ -27,6 +27,7 @@ import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, runRsaAnalyst, 
 import { predictionService, type AgentAction } from '../../eam/services/PredictionService';
 import { computeBriefingAnalytics, type BriefingAnalytics } from '../../lib/briefingCharts';
 import { computeMissions, type DetMission } from '../../lib/missionEngine';
+import { isOpenWo } from '../../lib/woState';
 import { messagingService } from '../../eam/services/MessagingService';
 import { analyzeService, type RCAInvestigation } from '../../eam/services/AnalyzeService';
 import { Search, GitBranch, Target, HeartPulse, FolderOpen } from 'lucide-react';
@@ -152,7 +153,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
 
     // ── work log ──
     const [log, setLog] = useState<AuditRow[]>([]);
-    const [loading, setLoading] = useState(true);
 
     // ── value ledger (identified = draft estimates; measured = before/after
     //    CM run-rate on assets with approved actions, lib/valueRealization) ──
@@ -217,10 +217,10 @@ export const SpecialistWorkspacePage: React.FC = () => {
         const overduePmTags = [...new Set(((overdueQ.data ?? []) as { asset_id: string | null }[])
             .map((r) => (r.asset_id ? tagById.get(r.asset_id) : null))
             .filter((t): t is string => Boolean(t)))].slice(0, 3);
-        const openStatuses = (s: string | null) => !['CLOSED', 'TECO', 'CANCELLED', 'CANCELED', 'COMPLETED'].includes(String(s ?? '').toUpperCase());
         const openByAsset = new Map<string, number>();
         for (const w of woRows) {
-            if (w.asset_id && openStatuses(w.status)) openByAsset.set(w.asset_id, (openByAsset.get(w.asset_id) ?? 0) + 1);
+            // Canonical backlog rule (lib/woState) — same as dashboard/reports/digest.
+            if (w.asset_id && isOpenWo(w.status)) openByAsset.set(w.asset_id, (openByAsset.get(w.asset_id) ?? 0) + 1);
         }
         const missionKey = `specialist-mission-baseline:${rows.find((r) => r.context_type === 'reliability_digest')?.created_at ?? 'none'}`;
         let prevBaseline: Record<string, number> | null = null;
@@ -244,7 +244,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 .filter((a) => a.status === 'approved' || a.status === 'pending_review')
                 .reduce((s, a) => s + draftValue(a), 0),
         });
-        setLoading(false);
         // Measured value is NOT computed here any more — the value story lives
         // in the Return on Reliability statement, which owns both halves
         // (identified vs measured) with the methodology beside them. The desk

@@ -473,16 +473,27 @@ const summarizeWorkBacklog: AgentTool = {
   parameters: { type: "object", properties: {} },
   tier: 1,
   async run(_args, ctx: ToolContext): Promise<ToolResult> {
-    const { data: wos } = await ctx.db.from("work_orders").select("status, asset_id").limit(50000);
-    const openStatuses = new Set(["OPEN", "WIP", "PLAN"]);
+    // Read the semantic view (0233), never raw status: `is_open` is the ONE
+    // definition of backlog, shared with the dashboard, reports and the
+    // mission engine. An unmapped status classifies as unknown and still
+    // counts as open — reported below so the digest can be honest about it.
+    const { data: wos } = await ctx.db
+      .from("sem_work_orders")
+      .select("status, wo_state, is_open, asset_id")
+      .limit(50000);
     const byStatus: Record<string, number> = {};
     const openByAsset = new Map<string, number>();
+    let openTotal = 0;
+    const unmapped = new Set<string>();
     for (const w of wos ?? []) {
       const s = String(w.status || "UNKNOWN").toUpperCase();
       byStatus[s] = (byStatus[s] ?? 0) + 1;
-      if (openStatuses.has(s) && w.asset_id) openByAsset.set(w.asset_id, (openByAsset.get(w.asset_id) ?? 0) + 1);
+      if (w.wo_state === "unknown") unmapped.add(s);
+      if (w.is_open) {
+        openTotal += 1;
+        if (w.asset_id) openByAsset.set(w.asset_id, (openByAsset.get(w.asset_id) ?? 0) + 1);
+      }
     }
-    const openTotal = [...openStatuses].reduce((n, s) => n + (byStatus[s] ?? 0), 0);
 
     const nowIso = new Date().toISOString();
     const { data: overduePms } = await ctx.db
@@ -507,8 +518,13 @@ const summarizeWorkBacklog: AgentTool = {
         by_status: byStatus,
         overdue_pm_count: (overduePms ?? []).length,
         top_assets_by_open_work: topAssets,
+        unmapped_statuses: [...unmapped].sort(),
+        definition_note: "open = canonical wo_state open|unknown (sem_work_orders, migration 0233) — the same rule the dashboard, reports and mission list use.",
       },
       sources: [{ kind: "work_orders", ref: "backlog", label: `${(wos ?? []).length} WOs scanned` }],
+      warnings: unmapped.size
+        ? [`${unmapped.size} work-order status code(s) are not mapped to a lifecycle state (${[...unmapped].sort().slice(0, 5).join(", ")}) — they count as open until mapped.`]
+        : undefined,
     };
   },
 };

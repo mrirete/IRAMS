@@ -5,6 +5,7 @@ import { GettingStarted } from '../components/GettingStarted';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useQuery } from '@tanstack/react-query';
+import { isOpenWo } from '../../lib/woState';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart
@@ -308,7 +309,10 @@ export const Dashboard: React.FC = () => {
   wos.forEach((wo: any) => { statusMap[wo.status] = (statusMap[wo.status] || 0) + 1; });
 
   const totalWOs = wos.length;
-  const openWOs = (statusMap['OPEN'] || 0) + (statusMap['WIP'] || 0);
+  // Canonical backlog (lib/woState) — the same rule the reports, the
+  // reliability digest and the mission engine use, so the number a manager
+  // reads here matches the one the Specialist quotes.
+  const openWOs = wos.filter((wo: any) => isOpenWo(wo.status)).length;
   const pendingSRs = srs.filter((sr: any) => sr.status !== 'CONVERTED' && sr.status !== 'REJECTED').length;
   const totalAssets = assets.length;
   const criticalAssets = assets.filter((a: any) => a.criticality === 'A').length;

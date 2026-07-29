@@ -45,8 +45,9 @@ export interface BriefingAnalytics {
     openCm: number;
 }
 
+import { isOpenWo } from './woState';
+
 const DAY_MS = 86_400_000;
-const OPEN_EXCLUDED = new Set(['CLOSED', 'TECO', 'CANCELLED', 'CANCELED', 'COMPLETED']);
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export function computeBriefingAnalytics(
@@ -78,8 +79,7 @@ export function computeBriefingAnalytics(
     let openCm = 0;
 
     for (const w of wos) {
-        const status = String(w.status ?? '').toUpperCase();
-        if (status && !OPEN_EXCLUDED.has(status)) {
+        if (isOpenWo(w.status)) {
             openTotal += 1;
             if (String(w.type ?? '').toUpperCase() === 'CM') openCm += 1;
         }
