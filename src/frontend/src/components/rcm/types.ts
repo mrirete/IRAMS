@@ -138,7 +138,11 @@ export interface RCMTaskMatrixProps {
   aiLoading: string | null;
   aiReport: string | null;
   onGeneratePM: () => void;
+  /** Specialist program review — fires only when optimizeGate.ok. */
   onAIOptimize: () => void;
+  optimizeGate: { ok: boolean; missing: string[]; reason: string };
+  /** Back-link for the empty state: tasks are the output of Strategy (Q6–Q7). */
+  onGoToStrategy: () => void;
   onCloseReport: () => void;
 }
 

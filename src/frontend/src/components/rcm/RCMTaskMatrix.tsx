@@ -1,18 +1,21 @@
 /**
- * RCMTaskMatrix — Premium task output grid with strategy distribution
+ * RCMTaskMatrix — the Maintenance Plan: what the strategy decisions produce
+ * One row per failure mode: consequence → chosen strategy → task, interval,
+ * owner — and the PM it became in Work Management. The Specialist's program
+ * review lives here too (gated: no strategies, nothing to review).
  */
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Wrench, Brain, RefreshCw, CheckCircle, X,
-  AlertTriangle, BarChart3, ArrowUpRight,
+  Wrench, Sparkles, Lock, RefreshCw, CheckCircle, X,
+  AlertTriangle, BarChart3, ArrowUpRight, ArrowRight,
 } from 'lucide-react';
 import type { RCMTaskMatrixProps } from './types';
 import { STRATEGY_LABELS } from './types';
 
 export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
   study, taskSummaries, decisions, aiLoading, aiReport,
-  onGeneratePM, onAIOptimize, onCloseReport,
+  onGeneratePM, onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport,
 }) => {
   // Strategy distribution
   const stratDist = useMemo(() => {
@@ -54,11 +57,16 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
         </button>
         <button
           onClick={onAIOptimize}
-          disabled={aiLoading === 'optimize'}
-          className="flex items-center gap-2 px-4 py-2.5 bg-primary-50 border border-primary-200 rounded-lg text-sm font-medium text-primary-700 hover:bg-primary-100 transition-colors disabled:opacity-50 shadow-sm"
+          aria-disabled={aiLoading === 'optimize'}
+          title={optimizeGate.reason}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm border ${
+            optimizeGate.ok
+              ? 'bg-primary-50 border-primary-200 text-primary-700 hover:bg-primary-100'
+              : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+          }`}
         >
-          {aiLoading === 'optimize' ? <RefreshCw size={14} className="animate-spin" /> : <Brain size={14} />}
-          AI Optimize Study
+          {aiLoading === 'optimize' ? <RefreshCw size={14} className="animate-spin" /> : optimizeGate.ok ? <Sparkles size={14} /> : <Lock size={14} />}
+          Specialist: review the program
         </button>
         {pmCount > 0 && (
           <Link
@@ -183,8 +191,16 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
             <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-slate-50 flex items-center justify-center">
               <Wrench size={24} className="text-slate-300" />
             </div>
-            <p className="text-sm font-semibold text-slate-500">No task recommendations yet</p>
-            <p className="text-xs text-slate-400 mt-1">Complete the Decision Logic tab first.</p>
+            <p className="text-sm font-semibold text-slate-500">The plan is empty</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+              Tasks are the output of the strategy decisions — each failure mode on the Worksheet gets a strategy on the Strategy tab, and its task lands here.
+            </p>
+            <button
+              onClick={onGoToStrategy}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 bg-accent-cyan/10 border border-accent-cyan/40 rounded-lg text-xs font-bold text-slate-700 hover:bg-accent-cyan/20 transition-colors"
+            >
+              Go to 2 · Strategy <ArrowRight size={13} className="text-accent-cyan" />
+            </button>
           </div>
         )}
       </div>
@@ -194,7 +210,7 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
         <div className="bg-white border border-primary-200 rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-bottom-2 duration-300">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold text-primary-800 flex items-center gap-2">
-              <Brain size={16} /> AI Strategy Optimization Report
+              <Sparkles size={16} /> Specialist Program Review
             </h3>
             <button onClick={onCloseReport} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
               <X size={16} />

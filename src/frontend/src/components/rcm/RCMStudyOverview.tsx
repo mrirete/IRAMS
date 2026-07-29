@@ -144,22 +144,31 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
         <StatChip label="PM Tasks" value={`${pmCount}`} icon={<Wrench size={16} />} done={pmCount > 0} onClick={() => onNavigate('tasks')} />
       </div>
 
-      {/* Risk profile */}
+      {/* Risk profile — counts of failure modes per RPN band, not RPN values.
+          The old legend ("Low 2") read like an RPN of 2. */}
       {riskTotal > 0 && (
         <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
-          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">Risk Profile (RPN)</h3>
+          <div className="flex items-baseline justify-between gap-2 mb-3 flex-wrap">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Risk Profile</h3>
+            <span className="text-[10px] text-slate-400">
+              {riskTotal} of {fmCount} failure mode{fmCount !== 1 ? 's' : ''} scored (RPN = S × O)
+              {riskTotal < fmCount && <> · <button onClick={() => onNavigate('functions')} className="font-bold text-accent-cyan hover:underline">score the rest</button></>}
+            </span>
+          </div>
           <div className="flex h-3 rounded-full overflow-hidden bg-slate-100">
-            {risk.critical > 0 && <div style={{ flex: risk.critical }} className="bg-red-500" title={`Critical: ${risk.critical}`} />}
-            {risk.high > 0 && <div style={{ flex: risk.high }} className="bg-amber-500" title={`High: ${risk.high}`} />}
-            {risk.medium > 0 && <div style={{ flex: risk.medium }} className="bg-primary-500" title={`Medium: ${risk.medium}`} />}
-            {risk.low > 0 && <div style={{ flex: risk.low }} className="bg-emerald-500" title={`Low: ${risk.low}`} />}
+            {risk.critical > 0 && <div style={{ flex: risk.critical }} className="bg-red-500" title={`Critical (RPN > 80): ${risk.critical} modes`} />}
+            {risk.high > 0 && <div style={{ flex: risk.high }} className="bg-amber-500" title={`High (RPN 51–80): ${risk.high} modes`} />}
+            {risk.medium > 0 && <div style={{ flex: risk.medium }} className="bg-primary-500" title={`Medium (RPN 26–50): ${risk.medium} modes`} />}
+            {risk.low > 0 && <div style={{ flex: risk.low }} className="bg-emerald-500" title={`Low (RPN 1–25): ${risk.low} modes`} />}
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5 text-[10px] text-slate-500">
-            {([['Critical', risk.critical, 'bg-red-500'], ['High', risk.high, 'bg-amber-500'], ['Medium', risk.medium, 'bg-primary-500'], ['Low', risk.low, 'bg-emerald-500']] as const)
-              .filter(([, n]) => n > 0)
-              .map(([label, n, dot]) => (
+            {([['Critical', '> 80', risk.critical, 'bg-red-500'], ['High', '51–80', risk.high, 'bg-amber-500'], ['Medium', '26–50', risk.medium, 'bg-primary-500'], ['Low', '1–25', risk.low, 'bg-emerald-500']] as const)
+              .filter(([, , n]) => n > 0)
+              .map(([label, range, n, dot]) => (
                 <span key={label} className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${dot}`} /> {label} <strong className="text-slate-700">{n}</strong>
+                  <span className={`w-2 h-2 rounded-full ${dot}`} />
+                  {label} <span className="text-slate-400">(RPN {range})</span>
+                  <strong className="text-slate-700">{n} mode{n !== 1 ? 's' : ''}</strong>
                 </span>
               ))}
           </div>

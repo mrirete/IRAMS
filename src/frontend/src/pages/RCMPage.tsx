@@ -36,18 +36,23 @@ import { RCMEvidencePanel } from '../components/rcm/RCMEvidencePanel';
 import { CRIT_COLORS, CONSEQUENCE_OPTIONS } from '../components/rcm/types';
 import {
   assessStudyData, canSpecialistDraft, canSpecialistCompleteRow,
-  canSpecialistExpandFunction, completableRows, isRowComplete,
+  canSpecialistExpandFunction, canSpecialistRecommendStrategy,
+  canSpecialistReviewProgram, completableRows, isRowComplete,
 } from '../eam/services/rcmReadiness';
 
 // ── Types ─────────────────────────────────────────────────
 type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
 
+// The three working tabs are a numbered pipeline — the worksheet finds and
+// ranks the failure modes, the strategy tab decides what to do about each
+// (Q6–Q7), and the plan is what those decisions produce. Tasks come AFTER
+// decisions because they are the output of them.
 const RCM_TABS: { id: RCMTab; label: string; icon: React.ReactNode; desc: string }[] = [
   { id: 'dashboard', label: 'Overview', icon: <LayoutList size={16} />, desc: 'Study health' },
-  { id: 'functions', label: 'Functions & Failures', icon: <Layers size={16} />, desc: 'Q1–Q5' },
-  { id: 'decisions', label: 'Decision Logic', icon: <GitBranch size={16} />, desc: 'Q6–Q7' },
-  { id: 'tasks', label: 'Task Output', icon: <Wrench size={16} />, desc: 'Recommendations' },
-  { id: 'evidence', label: 'Evidence', icon: <Layers size={16} />, desc: 'Study vs data' },
+  { id: 'functions', label: '1 · Worksheet', icon: <Layers size={16} />, desc: 'What can fail (Q1–Q5)' },
+  { id: 'decisions', label: '2 · Strategy', icon: <GitBranch size={16} />, desc: 'Prevent it (Q6–Q7)' },
+  { id: 'tasks', label: '3 · Maintenance Plan', icon: <Wrench size={16} />, desc: 'The PM program' },
+  { id: 'evidence', label: 'Evidence', icon: <Layers size={16} />, desc: 'Study vs live data' },
 ];
 
 // ── Main Page Component ───────────────────────────────────
@@ -88,6 +93,10 @@ export const RCMPage: React.FC = () => {
   const [selectedStudy, setSelectedStudy] = useState<RCMStudy | null>(null);
   const [functions, setFunctions] = useState<RCMFunction[]>([]);
   const [failureModes, setFailureModes] = useState<RCMFailureMode[]>([]);
+  // Synchronous mirror of failureModes for optimistic writes — see
+  // handleUpdateFailureMode for why state alone races.
+  const failureModesRef = useRef<RCMFailureMode[]>([]);
+  useEffect(() => { failureModesRef.current = failureModes; }, [failureModes]);
   const [decisions, setDecisions] = useState<RCMDecision[]>([]);
   const [taskSummaries, setTaskSummaries] = useState<RCMTaskSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -375,17 +384,21 @@ export const RCMPage: React.FC = () => {
   };
 
   const handleUpdateFailureMode = async (id: string, updates: Partial<RCMFailureMode>) => {
-    // Auto-compute RPN when severity or occurrence changes
-    if ('severity' in updates || 'occurrence' in updates) {
-      const currentFM = failureModes.find(fm => fm.id === id);
-      if (currentFM) {
-        const sev = ('severity' in updates ? updates.severity : currentFM.severity) || 0;
-        const occ = ('occurrence' in updates ? updates.occurrence : currentFM.occurrence) || 0;
-        updates.rpn = sev * occ;
-      }
-    }
-    const updated = await rcmService.updateFailureMode(id, updates);
-    if (updated) setFailureModes(prev => prev.map(fm => fm.id === id ? { ...fm, ...updated } : fm));
+    // Optimistic, ref-based update — and NEVER send `rpn`: it is a GENERATED
+    // column (0118), and Postgres rejects the entire UPDATE when a payload
+    // includes one (428C9). That rejection is why S/O edits silently never
+    // saved — the old code computed rpn client-side and attached it. Local
+    // state is the source of truth for display (the worksheet computes RPN
+    // inline from S × O anyway); the server call is persistence only. The ref
+    // mirrors state synchronously so two commits in the same tick — tabbing
+    // from Severity straight into Occurrence — never read a stale row.
+    const payload: Partial<RCMFailureMode> = { ...updates };
+    delete payload.rpn;
+    failureModesRef.current = failureModesRef.current.map(fm => fm.id === id ? { ...fm, ...payload } : fm);
+    setFailureModes(prev => prev.map(fm => fm.id === id ? { ...fm, ...payload } : fm));
+
+    const updated = await rcmService.updateFailureMode(id, payload);
+    if (!updated) showToast('Failed to save the change — check your connection', 'error');
   };
 
   const handleUpdateDecision = async (fmId: string, updates: Partial<RCMDecision>) => {
@@ -598,20 +611,35 @@ export const RCMPage: React.FC = () => {
 
   const handleAIRecommend = async (fm: RCMFailureMode) => {
     const decision = decisions.find(d => d.failure_mode_id === fm.id);
+    // JA1012: the strategy decision branches on the consequence class — no Q5,
+    // no grounded recommendation, no AI call.
+    const gate = canSpecialistRecommendStrategy(fm, decision);
+    if (!gate.ok) { showToast(gate.reason, 'error'); return; }
     setAiLoading(`recommend-${fm.id}`);
     const rec = await rcmService.aiRecommendStrategy(fm, decision?.consequence_code || undefined);
     if (rec) {
       await handleUpdateDecision(fm.id, {
         ai_recommendation: rec, recommended_strategy_code: rec.strategy,
-        task_description: `AI: ${rec.reasoning?.substring(0, 200)}`,
+        task_description: rec.reasoning?.substring(0, 200),
         task_interval: rec.suggested_interval || '', justification: rec.reasoning,
       });
+    } else {
+      showToast('Specialist could not produce a recommendation — check the AI configuration', 'error');
     }
     setAiLoading(null);
   };
 
+  const optimizeGate = useMemo(
+    () => canSpecialistReviewProgram(
+      failureModes.length,
+      decisions.filter(d => !!d.recommended_strategy_code).length,
+    ),
+    [failureModes.length, decisions],
+  );
+
   const handleAIOptimize = async () => {
     if (!selectedStudy) return;
+    if (!optimizeGate.ok) { showToast(optimizeGate.reason, 'error'); return; }
     setAiLoading('optimize');
     const report = await rcmService.aiOptimizeStudy(selectedStudy.id);
     setAiReport(report);
@@ -827,6 +855,7 @@ export const RCMPage: React.FC = () => {
           onSpecialistSuggestModes={handleSpecialistSuggestModes}
           onSpecialistCompleteRow={handleSpecialistCompleteRow}
           onBlocked={reason => showToast(reason, 'error')}
+          onGoToStrategy={() => setActiveTab('decisions')}
           header={
             <RCMSpecialistBar
               readiness={studyReadiness}
@@ -857,7 +886,7 @@ export const RCMPage: React.FC = () => {
         />
       )}
 
-      {/* Task Output */}
+      {/* Maintenance Plan — the output the decisions produce */}
       {activeTab === 'tasks' && selectedStudy && (
         <RCMTaskMatrix
           study={selectedStudy}
@@ -867,6 +896,8 @@ export const RCMPage: React.FC = () => {
           aiReport={aiReport}
           onGeneratePM={handleGeneratePM}
           onAIOptimize={handleAIOptimize}
+          optimizeGate={optimizeGate}
+          onGoToStrategy={() => setActiveTab('decisions')}
           onCloseReport={() => setAiReport(null)}
         />
       )}
@@ -906,7 +937,10 @@ export const RCMPage: React.FC = () => {
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Asset ID (optional)</label>
+                  {/* An FMEA without an asset is a study of nothing — the asset
+                      grounds the functions, the Specialist, PM generation and
+                      the Evidence check. Required at creation. */}
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Asset <span className="text-red-400">*</span></label>
                   {hasAssetAccess && (
                     <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
                       <button
@@ -984,7 +1018,8 @@ export const RCMPage: React.FC = () => {
             </div>
             <div className="p-6 pt-0 flex justify-end gap-3">
               <button onClick={() => setShowNewStudy(false)} className="px-4 py-2 bg-slate-50 border border-slate-200 text-slate-600 hover:bg-slate-100 rounded-lg text-sm font-medium">Cancel</button>
-              <button onClick={handleCreateStudy} disabled={!newStudyForm.title}
+              <button onClick={handleCreateStudy} disabled={!newStudyForm.title || !newStudyForm.asset_id.trim()}
+                title={!newStudyForm.asset_id.trim() ? 'An RCM study is performed ON an asset — link one from the register or enter its tag' : undefined}
                 className="px-6 py-2 bg-accent-cyan hover:bg-primary-400 disabled:opacity-40 text-brand-900 font-bold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] flex items-center gap-2">
                 <Shield size={16} /> Create Study
               </button>

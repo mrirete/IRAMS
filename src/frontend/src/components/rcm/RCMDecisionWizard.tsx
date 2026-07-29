@@ -3,16 +3,16 @@
  * Strategy selection and task details per failure mode.
  * Consequence classification (Q5) is handled in RCMFunctionPanel.
  */
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import {
-  GitBranch, Sparkles, RefreshCw, ChevronDown, ChevronUp,
+  GitBranch, Sparkles, RefreshCw, ChevronDown, ChevronUp, Lock,
   Check, CheckCircle2, AlertTriangle, ShieldAlert,
 } from 'lucide-react';
-import { RCMContextualHelp } from './RCMContextualHelp';
 import type {
-  RCMDecisionWizardProps, RCMFailureMode, RCMDecision,
+  RCMDecisionWizardProps,
 } from './types';
 import { CONSEQUENCE_OPTIONS, STRATEGY_LABELS, parseConsequenceCodes, hasSafetyConsequence } from './types';
+import { canSpecialistRecommendStrategy } from '../../eam/services/rcmReadiness';
 
 
 
@@ -40,23 +40,9 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
 
   const fnMap = useMemo(() => new Map(functions.map(f => [f.id, f])), [functions]);
 
-  // Proactively and automatically trigger the Relantern AI strategy recommendation by default
-  // when an unresolved failure mode is expanded, providing zero-click predictive RCM suggestions.
-  useEffect(() => {
-    if (!expandedFM) return;
-    const activeFM = failureModes.find(fm => fm.id === expandedFM);
-    if (!activeFM) return;
-
-    const activeDecision = decisions.get(expandedFM);
-    const hasStrategy = !!activeDecision?.recommended_strategy_code;
-
-    if (!hasStrategy && aiLoading !== `recommend-${expandedFM}`) {
-      const timer = setTimeout(() => {
-        onAIRecommend(activeFM);
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [expandedFM, decisions, failureModes, onAIRecommend, aiLoading]);
+  // The Specialist recommends on request only. This used to auto-fire a paid AI
+  // call for every unresolved failure mode the moment its card was expanded —
+  // paging through a 16-mode study burned 16 Gemini calls with zero clicks.
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
@@ -87,7 +73,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
             <GitBranch size={28} className="text-primary-300" />
           </div>
           <p className="text-sm font-semibold text-slate-500">No failure modes to evaluate</p>
-          <p className="text-xs text-slate-400 mt-1">Define failure modes in the Functions tab first.</p>
+          <p className="text-xs text-slate-400 mt-1">Fill the Worksheet (step 1) first — each failure mode found there gets its strategy decided here.</p>
         </div>
       ) : (
         failureModes.map((fm, fmIdx) => {
@@ -146,15 +132,27 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                     ) : null}
                   </div>
 
-                  {/* AI button */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onAIRecommend(fm); }}
-                    disabled={aiLoading === `recommend-${fm.id}`}
-                    className="flex items-center gap-1 px-2.5 py-1.5 bg-primary-50 border border-primary-200 rounded-lg text-[10px] font-bold text-primary-700 hover:bg-primary-100 transition-colors disabled:opacity-50 shrink-0"
-                  >
-                    {aiLoading === `recommend-${fm.id}` ? <RefreshCw size={11} className="animate-spin" /> : <Sparkles size={11} />}
-                    AI
-                  </button>
+                  {/* Specialist — gated on Q5 being answered; the page-level
+                      handler re-checks and toasts the reason when blocked. */}
+                  {(() => {
+                    const recGate = canSpecialistRecommendStrategy(fm, decision);
+                    const recBusy = aiLoading === `recommend-${fm.id}`;
+                    return (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onAIRecommend(fm); }}
+                        aria-disabled={recBusy}
+                        title={recGate.reason}
+                        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-colors shrink-0 border ${
+                          recGate.ok
+                            ? 'bg-primary-50 border-primary-200 text-primary-700 hover:bg-primary-100'
+                            : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                        }`}
+                      >
+                        {recBusy ? <RefreshCw size={11} className="animate-spin" /> : recGate.ok ? <Sparkles size={11} /> : <Lock size={11} />}
+                        Specialist
+                      </button>
+                    );
+                  })()}
 
                   <div className="text-slate-400 shrink-0">
                     {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
@@ -188,7 +186,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                     <div className="flex items-center gap-2 p-3 bg-amber-50/60 border border-amber-200/50 rounded-xl">
                       <AlertTriangle size={14} className="text-amber-500 shrink-0" />
                       <span className="text-[10px] font-medium text-amber-700">
-                        No consequence classified yet — go to <strong>Functions & Failures</strong> tab to complete Q5.
+                        No consequence classified yet — answer Q5 on the <strong>Worksheet</strong> tab first. The strategy decision (and the Specialist) branch on it.
                       </span>
                     </div>
                   )}
@@ -312,12 +310,12 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                     </div>
                   </div>
 
-                  {/* AI Recommendation */}
+                  {/* Specialist recommendation */}
                   {decision?.ai_recommendation && (
                     <div className="bg-gradient-to-r from-primary-50 to-primary-50 border border-primary-200/60 rounded-xl p-4 animate-in fade-in duration-300">
                       <div className="flex items-center gap-2 text-xs font-bold text-primary-700">
                         <Sparkles size={14} />
-                        AI Recommendation
+                        Specialist Recommendation
                         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary-100 text-primary-600">
                           {((decision.ai_recommendation as any).confidence * 100).toFixed(0)}% confidence
                         </span>
@@ -330,7 +328,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                           const rec = decision.ai_recommendation as any;
                           onUpdateDecision(fm.id, {
                             recommended_strategy_code: rec.strategy,
-                            task_description: `AI: ${rec.reasoning?.substring(0, 200)}`,
+                            task_description: rec.reasoning?.substring(0, 200),
                             task_interval: rec.suggested_interval || '',
                             justification: rec.reasoning,
                           });

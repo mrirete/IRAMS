@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import { RCMContextualHelp } from './RCMContextualHelp';
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './types';
-import { EVIDENT_CONSEQUENCES, HIDDEN_CONSEQUENCES, CONSEQUENCE_OPTIONS, parseConsequenceCodes } from './types';
+import { EVIDENT_CONSEQUENCES, HIDDEN_CONSEQUENCES, CONSEQUENCE_OPTIONS, STRATEGY_LABELS, parseConsequenceCodes } from './types';
 import {
   canSpecialistCompleteRow, canSpecialistExpandFunction, isRowComplete,
 } from '../../eam/services/rcmReadiness';
@@ -182,7 +182,8 @@ const RowDetail: React.FC<{
   onUpdateDecision: (fmId: string, updates: Partial<RCMDecision>) => void;
   onSpecialistComplete: (fm: RCMFailureMode) => void;
   onBlocked: (reason: string) => void;
-}> = ({ fm, decision, gate, aiLoading, onUpdateDecision, onSpecialistComplete, onBlocked }) => {
+  onGoToStrategy: () => void;
+}> = ({ fm, decision, gate, aiLoading, onUpdateDecision, onSpecialistComplete, onBlocked, onGoToStrategy }) => {
   const rpn = (fm.severity || 0) * (fm.occurrence || 0);
   const band = rpnBand(rpn);
   const hidden = !!decision?.is_hidden_failure;
@@ -271,6 +272,33 @@ const RowDetail: React.FC<{
             <span className="text-[9px] text-red-700"><strong>SAE JA1012:</strong> Failure-Finding mandatory. No task → redesign compulsory.</span>
           </div>
         )}
+
+        {/* Where this row goes next — the whole point of the FMEA is the
+            maintenance strategy that answers it (Q6–Q7 on the Strategy tab). */}
+        {activeCodes.length > 0 && (
+          decision?.recommended_strategy_code && STRATEGY_LABELS[decision.recommended_strategy_code] ? (
+            <button
+              onClick={onGoToStrategy}
+              className="mt-2.5 flex items-center gap-2 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg hover:border-primary-300 transition-colors"
+              title="Open this failure mode on the Strategy tab"
+            >
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Strategy</span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${STRATEGY_LABELS[decision.recommended_strategy_code].color}`}>
+                {STRATEGY_LABELS[decision.recommended_strategy_code].icon} {STRATEGY_LABELS[decision.recommended_strategy_code].label}
+              </span>
+              {decision.task_interval && <span className="text-[10px] text-slate-500">{decision.task_interval}</span>}
+              <ChevronRight size={12} className="text-slate-400" />
+            </button>
+          ) : (
+            <button
+              onClick={onGoToStrategy}
+              className="mt-2.5 flex items-center gap-1.5 px-2.5 py-1.5 bg-accent-cyan/5 border border-dashed border-accent-cyan/40 rounded-lg text-[10px] font-bold text-slate-700 hover:bg-accent-cyan/10 transition-colors"
+            >
+              Next: choose the maintenance strategy (Q6–Q7)
+              <ChevronRight size={12} className="text-accent-cyan" />
+            </button>
+          )
+        )}
       </div>
 
       {/* Risk reading + Specialist action */}
@@ -304,8 +332,11 @@ const RowDetail: React.FC<{
           }`}
         >
           {busy ? <RefreshCw size={12} className="animate-spin" /> : gate.ok ? <Sparkles size={12} /> : <Lock size={12} />}
-          Specialist: complete this row
+          Specialist: fill this row's blanks
         </button>
+        <p className="text-[9px] text-slate-400 mt-1 text-center leading-relaxed">
+          Writes cause, effects, S·O and consequence into empty cells only — your entries are never overwritten.
+        </p>
         {fm.data_source !== 'manual' && (
           <p className="text-[9px] text-slate-400 mt-1.5 text-center">
             Source: {fm.data_source === 'ai_generated' ? 'Reliability Specialist' : fm.data_source === 'fmea_import' ? 'Imported FMEA' : 'Work order history'}
@@ -333,6 +364,8 @@ export interface RCMFMEATableProps {
   onSpecialistSuggestModes: (fn: RCMFunction) => void;
   onSpecialistCompleteRow: (fm: RCMFailureMode) => void;
   onBlocked: (reason: string) => void;
+  /** Jump to the Strategy tab (Q6–Q7) — where a classified row goes next. */
+  onGoToStrategy: () => void;
   /** Rendered above the worksheet — the Specialist bar. */
   header?: React.ReactNode;
 }
@@ -344,7 +377,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
   onAddFunction, onUpdateFunction, onDeleteFunction,
   onAddFailureMode, onUpdateFailureMode, onDeleteFailureMode,
   onUpdateDecision, onSpecialistSuggestModes, onSpecialistCompleteRow, onBlocked,
-  header,
+  onGoToStrategy, header,
 }) => {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
@@ -709,6 +742,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                   onUpdateDecision={onUpdateDecision}
                                   onSpecialistComplete={onSpecialistCompleteRow}
                                   onBlocked={onBlocked}
+                                  onGoToStrategy={onGoToStrategy}
                                 />
                               </td>
                             </tr>

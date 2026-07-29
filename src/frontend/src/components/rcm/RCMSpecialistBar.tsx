@@ -112,7 +112,7 @@ export const RCMSpecialistBar: React.FC<Props> = ({
               }`}
             >
               {filling ? <RefreshCw size={13} className="animate-spin" /> : locked ? <Lock size={13} /> : <Wand2 size={13} />}
-              Finish {completableCount} row{completableCount !== 1 ? 's' : ''}
+              Fill blanks in {completableCount} row{completableCount !== 1 ? 's' : ''}
             </button>
           )}
           <button

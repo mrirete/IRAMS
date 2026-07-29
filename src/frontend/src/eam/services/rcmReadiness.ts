@@ -164,6 +164,40 @@ export function canSpecialistCompleteRow(fn: RCMFunction | undefined, fm: RCMFai
   );
 }
 
+/**
+ * Recommend the maintenance strategy for one failure mode (Q6–Q7). JA1012
+ * hangs the strategy decision off the consequence class — recommending before
+ * Q5 is answered produces a strategy justified by nothing. NOT gated on
+ * effects/severity: useful context, but the consequence class is the input the
+ * decision logic actually branches on.
+ */
+export function canSpecialistRecommendStrategy(fm: RCMFailureMode, decision?: RCMDecision): ActionGate {
+  const missing: string[] = [];
+  if (!described(fm.failure_mode_description, 5)) missing.push('Failure mode named');
+  if (!text(decision?.consequence_code)) missing.push('Consequence classified (Q5, on the Worksheet)');
+  return gate(
+    missing,
+    'Have the Specialist recommend the maintenance strategy for this failure mode',
+    'The strategy decision hangs off the consequence class. Still missing',
+  );
+}
+
+/**
+ * Review the whole maintenance program — gaps, conflicts, consolidation,
+ * intervals. Needs at least one strategy actually chosen: reviewing an empty
+ * program would only read the unresolved list back to the team.
+ */
+export function canSpecialistReviewProgram(fmCount: number, strategyCount: number): ActionGate {
+  const missing: string[] = [];
+  if (fmCount === 0) missing.push('Failure modes on the Worksheet');
+  else if (strategyCount === 0) missing.push('At least one strategy chosen (Strategy tab)');
+  return gate(
+    missing,
+    'Have the Specialist review the program — gaps, conflicts, consolidation and intervals',
+    'There is no program to review yet. Still missing',
+  );
+}
+
 // ── Row completeness — what still needs finishing ────────────────────────────
 
 /** A worksheet row is complete when every FMEA column is filled and classified. */
