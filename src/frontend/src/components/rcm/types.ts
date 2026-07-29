@@ -105,21 +105,8 @@ export interface RCMDashboardProps {
   onDeleteStudy: (study: RCMStudy) => void;
 }
 
-export interface RCMFunctionPanelProps {
-  study: RCMStudy;
-  functions: RCMFunction[];
-  failureModes: RCMFailureMode[];
-  decisions: Map<string, RCMDecision>;
-  aiLoading: string | null;
-  onAddFunction: () => void;
-  onUpdateFunction: (id: string, updates: Partial<RCMFunction>) => void;
-  onDeleteFunction: (id: string, name: string) => void;
-  onAddFailureMode: (functionId: string) => void;
-  onUpdateFailureMode: (id: string, updates: Partial<RCMFailureMode>) => void;
-  onDeleteFailureMode: (id: string, name: string) => void;
-  onAISuggest: () => void;
-  onUpdateDecision: (failureModeId: string, updates: Partial<RCMDecision>) => void;
-}
+// The FMEA worksheet owns its own props (see RCMFMEATable.tsx) — they include
+// the Specialist callbacks, which are specific to that surface.
 
 /** Measured life data from Reliability Modelling — the study's latest saved Weibull fit. */
 export interface RCMLifeEvidence {

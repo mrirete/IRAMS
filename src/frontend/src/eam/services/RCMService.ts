@@ -898,6 +898,162 @@ Return ONLY valid JSON:
     }
   }
 
+  /**
+   * Asset header used to ground every Specialist call. Without it the model
+   * answers about a generic machine, which is exactly what the readiness gate
+   * in rcmReadiness.ts exists to prevent.
+   */
+  private async assetContextFor(study: RCMStudy): Promise<string> {
+    if (!study.asset_id) return '';
+    const { data: asset } = await supabase
+      .from('assets')
+      .select('tag, name, hierarchy_level, criticality, manufacturer, model')
+      .eq('id', study.asset_id)
+      .single();
+    if (!asset) return '';
+    return `Asset: ${asset.tag} - ${asset.name}
+Type: ${asset.hierarchy_level}
+Criticality: ${asset.criticality}
+Manufacturer: ${asset.manufacturer || 'Unknown'}
+Model: ${asset.model || 'Unknown'}`;
+  }
+
+  /**
+   * Specialist: propose the failure modes for ONE function. Narrower and far
+   * cheaper than a full draft — used when the team has written the function and
+   * its functional failure and wants the mode list filled underneath it.
+   */
+  async aiSuggestFailureModes(study: RCMStudy, fn: RCMFunction): Promise<Array<{
+    description: string;
+    cause: string;
+    effect_local: string;
+    effect_system: string;
+    effect_plant: string;
+    severity?: number;
+    occurrence?: number;
+  }> | null> {
+    if (!isAIAvailable()) return null;
+
+    const assetContext = await this.assetContextFor(study);
+    const existing = await this.getFailureModes(fn.id);
+
+    const prompt = `RCM study per SAE JA1011 — expand ONE function into its failure modes.
+${assetContext}
+Operating Context: ${study.operating_context || 'General industrial service'}
+
+Function (${fn.function_number}, ${fn.function_type}): ${fn.function_description}
+Performance Standard: ${fn.performance_standard || 'Not stated'}
+Functional Failure: ${fn.functional_failure || 'Not stated'}
+${existing.length > 0 ? `\nAlready listed (do NOT repeat these):\n${existing.map(fm => `- ${fm.failure_mode_description}`).join('\n')}` : ''}
+
+List the reasonably likely failure modes for THIS functional failure only, using ISO 14224
+coding conventions. 4–8 modes. Severity and occurrence are 1–10 FMEA scales.
+
+Return ONLY valid JSON:
+{
+  "failure_modes": [
+    {
+      "description": "Failure mode per ISO 14224",
+      "cause": "Mechanism / root cause",
+      "effect_local": "Component-level effect",
+      "effect_system": "System-level effect",
+      "effect_plant": "Plant / production end effect",
+      "severity": 1,
+      "occurrence": 1
+    }
+  ]
+}`;
+
+    try {
+      const raw = await callRCMGemini(prompt, 0.3);
+      const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return null;
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed?.error) {
+        console.error('[RCM] aiSuggestFailureModes AI error:', parsed.error);
+        return null;
+      }
+      return Array.isArray(parsed.failure_modes) ? parsed.failure_modes : null;
+    } catch (error) {
+      console.error('[RCM] aiSuggestFailureModes error:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Specialist: complete ONE worksheet row. Fills the columns the row is missing
+   * — cause, the three effect levels, severity/occurrence and the JA1012
+   * consequence class — leaving anything the team already wrote untouched.
+   */
+  async aiCompleteFailureMode(study: RCMStudy, fn: RCMFunction, fm: RCMFailureMode): Promise<{
+    failure_cause_description?: string;
+    failure_effect_local?: string;
+    failure_effect_system?: string;
+    end_effect?: string;
+    severity?: number;
+    occurrence?: number;
+    is_hidden_failure?: boolean;
+    consequence_codes?: string[];
+    rationale?: string;
+  } | null> {
+    if (!isAIAvailable()) return null;
+
+    const assetContext = await this.assetContextFor(study);
+
+    const prompt = `RCM / FMEA worksheet row completion per SAE JA1011 & JA1012.
+${assetContext}
+Operating Context: ${study.operating_context || 'General industrial service'}
+
+Function (${fn.function_number}): ${fn.function_description}
+Functional Failure: ${fn.functional_failure || 'Not stated'}
+Failure Mode: ${fm.failure_mode_description}
+Already recorded by the team (KEEP these values, do not contradict them):
+- Cause: ${fm.failure_cause_description || '(blank)'}
+- Local effect: ${fm.failure_effect_local || '(blank)'}
+- System effect: ${fm.failure_effect_system || '(blank)'}
+- End effect: ${fm.end_effect || fm.failure_effect_plant || '(blank)'}
+- Severity: ${fm.severity ?? '(blank)'} / Occurrence: ${fm.occurrence ?? '(blank)'}
+
+Complete the blank fields only. Severity and occurrence are 1–10 FMEA scales
+(severity = worst credible end effect; occurrence = likelihood in this context).
+is_hidden_failure is true when the failure is NOT evident to operating crew under
+normal circumstances (JA1012 Q5).
+
+consequence_codes must be chosen from:
+  evident failures  → SAFETY_ENV, OPERATIONAL, NON_OPERATIONAL, REPAIR_COST, REPUTATION
+  hidden failures   → HIDDEN_SAFETY (multiple failure could hurt people/environment), HIDDEN_NON_SAFETY
+
+Return ONLY valid JSON:
+{
+  "failure_cause_description": "",
+  "failure_effect_local": "",
+  "failure_effect_system": "",
+  "end_effect": "",
+  "severity": 1,
+  "occurrence": 1,
+  "is_hidden_failure": false,
+  "consequence_codes": ["OPERATIONAL"],
+  "rationale": "One sentence on why this consequence class"
+}`;
+
+    try {
+      const raw = await callRCMGemini(prompt, 0.3);
+      const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return null;
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed?.error) {
+        console.error('[RCM] aiCompleteFailureMode AI error:', parsed.error);
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      console.error('[RCM] aiCompleteFailureMode error:', error);
+      return null;
+    }
+  }
+
   /** AI Feature 3: Strategy optimization — review full study */
   async aiOptimizeStudy(studyId: string): Promise<string | null> {
     if (!isAIAvailable()) return null;

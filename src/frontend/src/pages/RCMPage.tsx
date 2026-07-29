@@ -28,11 +28,16 @@ import { useAssetLookup } from '../hooks/useAssetLookup';
 // Sub-components
 import { RCMStudyDashboard } from '../components/rcm/RCMStudyDashboard';
 import { RCMStudyOverview } from '../components/rcm/RCMStudyOverview';
-import { RCMFunctionPanel } from '../components/rcm/RCMFunctionPanel';
+import { RCMFMEATable } from '../components/rcm/RCMFMEATable';
+import { RCMSpecialistBar } from '../components/rcm/RCMSpecialistBar';
 import { RCMDecisionWizard } from '../components/rcm/RCMDecisionWizard';
 import { RCMTaskMatrix } from '../components/rcm/RCMTaskMatrix';
 import { RCMEvidencePanel } from '../components/rcm/RCMEvidencePanel';
-import { CRIT_COLORS } from '../components/rcm/types';
+import { CRIT_COLORS, CONSEQUENCE_OPTIONS } from '../components/rcm/types';
+import {
+  assessStudyData, canSpecialistDraft, canSpecialistCompleteRow,
+  canSpecialistExpandFunction, completableRows, isRowComplete,
+} from '../eam/services/rcmReadiness';
 
 // ── Types ─────────────────────────────────────────────────
 type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
@@ -120,6 +125,27 @@ export const RCMPage: React.FC = () => {
 
   // ── Decision Map (memoized) ────────────────────────────
   const decisionMap = useMemo(() => new Map(decisions.map(d => [d.failure_mode_id, d])), [decisions]);
+
+  // ── Specialist readiness ───────────────────────────────
+  // The Specialist only works from an asset and its operating context; these
+  // drive the chips on its bar and lock its actions until the study is worth
+  // spending an AI call on. See eam/services/rcmReadiness.ts.
+  const studyReadiness = useMemo(
+    () => selectedStudy ? assessStudyData(selectedStudy, functions, failureModes) : null,
+    [selectedStudy, functions, failureModes],
+  );
+  const draftGate = useMemo(
+    () => studyReadiness ? canSpecialistDraft(studyReadiness) : null,
+    [studyReadiness],
+  );
+  const openRows = useMemo(
+    () => completableRows(functions, failureModes, decisionMap),
+    [functions, failureModes, decisionMap],
+  );
+  const completedRows = useMemo(
+    () => failureModes.filter(fm => isRowComplete(fm, decisionMap.get(fm.id))).length,
+    [failureModes, decisionMap],
+  );
 
   // ── Tab Progress (memoized) ────────────────────────────
   const tabProgress = useMemo(() => {
@@ -430,9 +456,120 @@ export const RCMPage: React.FC = () => {
     }
   };
 
+  // ── Reliability Specialist handlers ────────────────────
+  // Every entry point re-checks its gate here as well as in the UI: the gate is
+  // the rule, the button is only its display.
+
+  const clampScore = (v: unknown): number | null => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.min(10, Math.max(1, Math.round(n)));
+  };
+  const isBlank = (v: unknown): boolean => !String(v ?? '').trim();
+  const VALID_CONSEQUENCE_CODES = new Set(CONSEQUENCE_OPTIONS.map(c => c.code as string));
+
+  /**
+   * Complete one worksheet row from the Specialist, writing only into the cells
+   * the team left blank — an answer already recorded by a human is never
+   * overwritten by the model.
+   */
+  const completeRowFromSpecialist = async (fm: RCMFailureMode, fn: RCMFunction): Promise<boolean> => {
+    if (!selectedStudy) return false;
+    const res = await rcmService.aiCompleteFailureMode(selectedStudy, fn, fm);
+    if (!res) return false;
+
+    const updates: Partial<RCMFailureMode> = {};
+    if (isBlank(fm.failure_cause_description) && !isBlank(res.failure_cause_description)) updates.failure_cause_description = res.failure_cause_description;
+    if (isBlank(fm.failure_effect_local) && !isBlank(res.failure_effect_local)) updates.failure_effect_local = res.failure_effect_local;
+    if (isBlank(fm.failure_effect_system) && !isBlank(res.failure_effect_system)) updates.failure_effect_system = res.failure_effect_system;
+    // The worksheet reads end_effect but older rows stored failure_effect_plant.
+    if (isBlank(fm.end_effect || fm.failure_effect_plant) && !isBlank(res.end_effect)) {
+      updates.end_effect = res.end_effect;
+      updates.failure_effect_plant = res.end_effect;
+    }
+    if (!fm.severity && clampScore(res.severity)) updates.severity = clampScore(res.severity);
+    if (!fm.occurrence && clampScore(res.occurrence)) updates.occurrence = clampScore(res.occurrence);
+    if (Object.keys(updates).length > 0) await handleUpdateFailureMode(fm.id, updates);
+
+    // Consequence class — only when the team hasn't classified it themselves.
+    const existing = decisions.find(d => d.failure_mode_id === fm.id);
+    const codes = (res.consequence_codes || []).filter(c => VALID_CONSEQUENCE_CODES.has(c));
+    if (!existing?.consequence_code && codes.length > 0) {
+      await handleUpdateDecision(fm.id, {
+        is_hidden_failure: !!res.is_hidden_failure,
+        consequence_code: codes.join(','),
+        consequence_description: res.rationale || null,
+      });
+    }
+    return Object.keys(updates).length > 0 || codes.length > 0;
+  };
+
+  const handleSpecialistCompleteRow = async (fm: RCMFailureMode) => {
+    const fn = functions.find(f => f.id === fm.function_id);
+    const gate = canSpecialistCompleteRow(fn, fm);
+    if (!gate.ok) { showToast(gate.reason, 'error'); return; }
+    setAiLoading(`complete-${fm.id}`);
+    const filled = await completeRowFromSpecialist(fm, fn!);
+    setAiLoading(null);
+    showToast(filled ? 'Specialist completed the row' : 'Specialist had nothing to add to this row', filled ? 'success' : 'error');
+  };
+
+  const handleSpecialistSuggestModes = async (fn: RCMFunction) => {
+    if (!selectedStudy) return;
+    const gate = canSpecialistExpandFunction(fn);
+    if (!gate.ok) { showToast(gate.reason, 'error'); return; }
+    setAiLoading(`modes-${fn.id}`);
+    const modes = await rcmService.aiSuggestFailureModes(selectedStudy, fn);
+    if (modes && modes.length > 0) {
+      const base = failureModes.filter(fm => fm.function_id === fn.id).length;
+      for (let i = 0; i < modes.length; i++) {
+        const m = modes[i];
+        await rcmService.createFailureMode({
+          function_id: fn.id,
+          failure_mode_description: m.description,
+          failure_cause_description: m.cause,
+          failure_effect_local: m.effect_local,
+          failure_effect_system: m.effect_system,
+          end_effect: m.effect_plant,
+          failure_effect_plant: m.effect_plant,
+          severity: clampScore(m.severity),
+          occurrence: clampScore(m.occurrence),
+          data_source: 'ai_generated',
+          sort_order: base + i + 1,
+        });
+      }
+      await loadStudyDetail(selectedStudy.id);
+      showToast(`Specialist added ${modes.length} failure mode${modes.length !== 1 ? 's' : ''}`);
+    } else {
+      showToast('Specialist could not propose failure modes — check the AI configuration', 'error');
+    }
+    setAiLoading(null);
+  };
+
+  /** Finish every row the team has started but not completed. */
+  const handleSpecialistFillGaps = async () => {
+    if (!selectedStudy || openRows.length === 0) return;
+    if (draftGate && !draftGate.ok) { showToast(draftGate.reason, 'error'); return; }
+    setAiLoading('fill-gaps');
+    const fnById = new Map(functions.map(f => [f.id, f]));
+    let filled = 0;
+    for (const fm of openRows) {
+      const fn = fnById.get(fm.function_id);
+      if (!fn) continue;
+      setAiLoading(`complete-${fm.id}`);
+      if (await completeRowFromSpecialist(fm, fn)) filled++;
+    }
+    setAiLoading(null);
+    showToast(
+      filled > 0 ? `Specialist completed ${filled} of ${openRows.length} rows` : 'Specialist had nothing to add',
+      filled > 0 ? 'success' : 'error',
+    );
+  };
+
   // AI handlers
   const handleAISuggest = async () => {
     if (!selectedStudy) return;
+    if (draftGate && !draftGate.ok) { showToast(draftGate.reason, 'error'); return; }
     setAiLoading('suggest');
     const result = await rcmService.aiSuggestFunctions(selectedStudy);
     if (result?.functions) {
@@ -447,7 +584,9 @@ export const RCMPage: React.FC = () => {
             await rcmService.createFailureMode({
               function_id: created.id, failure_mode_description: fm.description, failure_cause_description: fm.cause,
               failure_effect_local: fm.effect_local, failure_effect_system: fm.effect_system,
-              failure_effect_plant: fm.effect_plant, data_source: 'ai_generated', sort_order: 0,
+              // Both columns: end_effect is what the worksheet's End Effect cell reads.
+              failure_effect_plant: fm.effect_plant, end_effect: fm.effect_plant,
+              data_source: 'ai_generated', sort_order: 0,
             });
           }
         }
@@ -670,9 +809,9 @@ export const RCMPage: React.FC = () => {
         />
       )}
 
-      {/* Functions & Failures (Q1-Q5) */}
-      {activeTab === 'functions' && selectedStudy && (
-        <RCMFunctionPanel
+      {/* Functions & Failures (Q1-Q5) — the FMEA worksheet */}
+      {activeTab === 'functions' && selectedStudy && studyReadiness && draftGate && (
+        <RCMFMEATable
           study={selectedStudy}
           functions={functions}
           failureModes={failureModes}
@@ -684,8 +823,23 @@ export const RCMPage: React.FC = () => {
           onAddFailureMode={handleAddFailureMode}
           onUpdateFailureMode={handleUpdateFailureMode}
           onDeleteFailureMode={(id, name) => setConfirmDelete({ type: 'failure_mode', id, name })}
-          onAISuggest={handleAISuggest}
           onUpdateDecision={handleUpdateDecision}
+          onSpecialistSuggestModes={handleSpecialistSuggestModes}
+          onSpecialistCompleteRow={handleSpecialistCompleteRow}
+          onBlocked={reason => showToast(reason, 'error')}
+          header={
+            <RCMSpecialistBar
+              readiness={studyReadiness}
+              draftGate={draftGate}
+              completableCount={openRows.length}
+              completeCount={completedRows}
+              totalRows={failureModes.length}
+              aiLoading={aiLoading}
+              onDraft={handleAISuggest}
+              onFillGaps={handleSpecialistFillGaps}
+              onBlocked={reason => showToast(reason, 'error')}
+            />
+          }
         />
       )}
 
