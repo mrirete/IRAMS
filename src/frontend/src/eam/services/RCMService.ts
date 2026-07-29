@@ -477,10 +477,14 @@ class RCMServiceImpl {
     if (failureModes.length === 0) return [];
     const fmIds = failureModes.map(fm => fm.id);
 
+    // Ascending by updated_at so, if legacy duplicate rows survive anywhere
+    // (pre-0234 data), the page's by-failure-mode Map keeps the newest one
+    // rather than a random winner.
     const { data, error } = await supabase
       .from('ers_rcm_decisions')
       .select('*')
-      .in('failure_mode_id', fmIds);
+      .in('failure_mode_id', fmIds)
+      .order('updated_at', { ascending: true });
     if (error) { console.error('[RCM] getDecisions error:', error); return []; }
     return (data || []) as RCMDecision[];
   }

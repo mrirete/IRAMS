@@ -615,7 +615,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
 
                       return (
                         <React.Fragment key={fm.id}>
-                          <tr className={`${rowOpen ? 'bg-primary-50/30' : idx % 2 ? 'bg-slate-50/40' : 'bg-white'} hover:bg-primary-50/20 transition-colors group/row`}>
+                          <tr className={`${rowOpen ? 'bg-primary-50/40' : idx % 2 ? 'bg-slate-100/80' : 'bg-white'} hover:bg-primary-50/30 transition-colors group/row`}>
                             <td className={`${td} text-center`}>
                               <button
                                 onClick={() => toggleRow(fm.id)}

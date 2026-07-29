@@ -3,7 +3,7 @@
  * Strategy selection and task details per failure mode.
  * Consequence classification (Q5) is handled in RCMFunctionPanel.
  */
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   GitBranch, Sparkles, RefreshCw, ChevronDown, ChevronUp, Lock,
   Check, CheckCircle2, AlertTriangle, ShieldAlert,
@@ -16,6 +16,57 @@ import { canSpecialistRecommendStrategy } from '../../eam/services/rcmReadiness'
 
 
 
+// ── Synced task field ───────────────────────────────────────
+// Local state so the caret never jumps, debounced commit, and a re-sync when
+// the stored value changes underneath while the field isn't focused — which is
+// exactly what happens when the Specialist's recommendation (or "Use measured")
+// writes task_description/interval/justification. The old `defaultValue`
+// fields never re-rendered those writes, so the screen looked frozen even
+// though the decision had updated.
+const SyncedField: React.FC<{
+  value: string | null | undefined;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  rows?: number;
+  label: string;
+}> = ({ value, onCommit, placeholder, rows, label }) => {
+  const incoming = value ?? '';
+  const [local, setLocal] = useState(incoming);
+  const focused = useRef(false);
+  const committed = useRef(incoming);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!focused.current && incoming !== committed.current) {
+      committed.current = incoming;
+      setLocal(incoming);
+    }
+  }, [incoming]);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+
+  const commit = (v: string) => {
+    if (v === committed.current) return;
+    committed.current = v;
+    onCommit(v);
+  };
+  const handleChange = (v: string) => {
+    setLocal(v);
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => commit(v), 700);
+  };
+  const shared = {
+    value: local,
+    placeholder,
+    'aria-label': label,
+    onFocus: () => { focused.current = true; },
+    onBlur: () => { focused.current = false; if (timer.current) clearTimeout(timer.current); commit(local); },
+    className: 'w-full mt-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:outline-none',
+  };
+  return rows
+    ? <textarea {...shared} rows={rows} onChange={e => handleChange(e.target.value)} style={{ resize: 'none' }} />
+    : <input type="text" {...shared} onChange={e => handleChange(e.target.value)} />;
+};
+
 // ── Main Component ──────────────────────────────────────────
 export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   study, failureModes, functions, decisions, aiLoading, lifeEvidence, onUpdateDecision, onAIRecommend,
@@ -23,18 +74,6 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   const [expandedFM, setExpandedFM] = useState<string | null>(
     failureModes.length > 0 ? failureModes[0].id : null
   );
-  const debounceRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  // Bumped when "Use measured" is clicked, so ONLY then does the uncontrolled
-  // interval input remount and pick up the applied value.
-  const [evidenceApplied, setEvidenceApplied] = useState<Record<string, number>>({});
-
-  const debouncedUpdate = useCallback((fmId: string, field: string, value: any) => {
-    const key = `${fmId}-${field}`;
-    if (debounceRef.current[key]) clearTimeout(debounceRef.current[key]);
-    debounceRef.current[key] = setTimeout(() => {
-      onUpdateDecision(fmId, { [field]: value });
-    }, 800);
-  }, [onUpdateDecision]);
 
 
 
@@ -243,29 +282,32 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                     </div>
                   </div>
 
-                  {/* Step 3: Task Details */}
+                  {/* Step 3: Task Details — HOW the chosen strategy is executed */}
                   <div className="space-y-3 border-t border-slate-100 pt-5">
+                    <p className="text-[10px] text-slate-400 leading-relaxed">
+                      {decision?.recommended_strategy_code
+                        ? <>The task below is how <strong className="text-slate-600">{STRATEGY_LABELS[decision.recommended_strategy_code]?.label || 'the chosen strategy'}</strong> gets executed — switching strategy never rewrites your task text. Write it yourself, or use the <strong className="text-primary-600">Specialist</strong> button above to draft task, interval and justification together.</>
+                        : <>Pick the strategy above first — the task below describes how it will be executed. Everything here autosaves as you type.</>}
+                    </p>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Task Description</label>
-                        <textarea
-                          defaultValue={decision?.task_description || ''}
-                          onChange={e => debouncedUpdate(fm.id, 'task_description', e.target.value)}
+                        <SyncedField
+                          label="Task description"
+                          value={decision?.task_description}
+                          onCommit={v => onUpdateDecision(fm.id, { task_description: v || null })}
                           placeholder="Describe the maintenance task..."
                           rows={2}
-                          className="w-full mt-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:outline-none resize-none"
                         />
                       </div>
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Interval</label>
-                        <input
-                          type="text"
-                          key={`${fm.id}-ev${evidenceApplied[fm.id] || 0}`}
-                          defaultValue={decision?.task_interval || ''}
-                          onChange={e => debouncedUpdate(fm.id, 'task_interval', e.target.value)}
+                        <SyncedField
+                          label="Task interval"
+                          value={decision?.task_interval}
+                          onCommit={v => onUpdateDecision(fm.id, { task_interval: v || null })}
                           placeholder="e.g. Every 3 months"
-                          className="w-full mt-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:outline-none"
                         />
                         {lifeEvidence && decision?.task_interval !== `${lifeEvidence.interval.toLocaleString()} h` && (
                           <button
@@ -276,7 +318,6 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                                   ? decision.justification
                                   : `Interval from measured Weibull fit: β=${lifeEvidence.beta.toFixed(2)}, η=${Math.round(lifeEvidence.eta).toLocaleString()} h, B10=${lifeEvidence.b10.toLocaleString()} h ("${lifeEvidence.source}").`,
                               });
-                              setEvidenceApplied(p => ({ ...p, [fm.id]: (p[fm.id] || 0) + 1 }));
                             }}
                             title={`Set interval from the measured fit — β=${lifeEvidence.beta.toFixed(2)}, η=${Math.round(lifeEvidence.eta).toLocaleString()} h`}
                             className="mt-1 text-[10px] font-bold text-primary-600 hover:text-primary-700 hover:underline"
@@ -287,12 +328,11 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                       </div>
                       <div>
                         <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Task Owner / Craft</label>
-                        <input
-                          type="text"
-                          defaultValue={decision?.task_owner_craft || ''}
-                          onChange={e => debouncedUpdate(fm.id, 'task_owner_craft', e.target.value)}
+                        <SyncedField
+                          label="Task owner / craft"
+                          value={decision?.task_owner_craft}
+                          onCommit={v => onUpdateDecision(fm.id, { task_owner_craft: v || null })}
                           placeholder="e.g. Mechanical Technician"
-                          className="w-full mt-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:outline-none"
                         />
                       </div>
                     </div>
@@ -300,12 +340,12 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                     {/* Justification */}
                     <div>
                       <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Justification</label>
-                      <textarea
-                        defaultValue={decision?.justification || ''}
-                        onChange={e => debouncedUpdate(fm.id, 'justification', e.target.value)}
+                      <SyncedField
+                        label="Justification"
+                        value={decision?.justification}
+                        onCommit={v => onUpdateDecision(fm.id, { justification: v || null })}
                         placeholder="Cost-benefit rationale for chosen strategy..."
                         rows={2}
-                        className="w-full mt-1 px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:outline-none resize-none"
                       />
                     </div>
                   </div>

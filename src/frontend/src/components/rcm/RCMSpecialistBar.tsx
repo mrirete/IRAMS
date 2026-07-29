@@ -9,7 +9,7 @@
  * clickable — clicking explains what to fill instead of burning an AI call.
  */
 import React from 'react';
-import { Sparkles, Lock, RefreshCw, Check, BrainCircuit, Wand2 } from 'lucide-react';
+import { Sparkles, Lock, RefreshCw, Check, X, BrainCircuit, Wand2 } from 'lucide-react';
 import type { RCMReadinessResult, ActionGate } from '../../eam/services/rcmReadiness';
 
 interface Props {
@@ -76,6 +76,8 @@ export const RCMSpecialistBar: React.FC<Props> = ({
 
           {/* Data chips — what it has, what it still needs */}
           <div className="flex items-center gap-1.5 flex-wrap mt-2">
+            {/* Green tick = have it. Red ✕ = required and missing — these are
+                what the draft button is waiting on. Grey dot = optional. */}
             {readiness.items.map(it => (
               <span
                 key={it.id}
@@ -84,13 +86,19 @@ export const RCMSpecialistBar: React.FC<Props> = ({
                   it.met
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : it.severity === 'required'
-                      ? 'bg-white text-amber-700 border-amber-300'
+                      ? 'bg-red-50 text-red-700 border-red-300'
                       : 'bg-white text-slate-400 border-slate-200'
                 }`}
               >
-                {it.met ? <Check size={10} /> : <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />}
+                {it.met
+                  ? <Check size={10} />
+                  : it.severity === 'required'
+                    ? <X size={10} />
+                    : <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />}
                 {it.label}
-                {!it.met && it.severity === 'recommended' && <span className="opacity-60 font-normal">· optional</span>}
+                {!it.met && (it.severity === 'required'
+                  ? <span className="font-bold">· required</span>
+                  : <span className="opacity-60 font-normal">· optional</span>)}
               </span>
             ))}
           </div>

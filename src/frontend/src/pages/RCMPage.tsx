@@ -38,6 +38,7 @@ import {
   assessStudyData, canSpecialistDraft, canSpecialistCompleteRow,
   canSpecialistExpandFunction, canSpecialistRecommendStrategy,
   canSpecialistReviewProgram, completableRows, isRowComplete,
+  MIN_CONTEXT_CHARS,
 } from '../eam/services/rcmReadiness';
 
 // ── Types ─────────────────────────────────────────────────
@@ -123,6 +124,22 @@ export const RCMPage: React.FC = () => {
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [saving, setSaving] = useState(false);
   const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // ── Autosave visibility ────────────────────────────────
+  // Everything in the study saves automatically; this counts the writes in
+  // flight so the sticky bar can show "Saving…" / "All changes saved" instead
+  // of leaving the user to wonder whether a Save button is missing.
+  const [pendingSaves, setPendingSaves] = useState(0);
+  const [hasSavedOnce, setHasSavedOnce] = useState(false);
+  const trackSave = useCallback(async <T,>(op: Promise<T>): Promise<T> => {
+    setPendingSaves(n => n + 1);
+    try {
+      return await op;
+    } finally {
+      setPendingSaves(n => Math.max(0, n - 1));
+      setHasSavedOnce(true);
+    }
+  }, []);
 
   // Collaboration state
   const [showTeamPanel, setShowTeamPanel] = useState(false);
@@ -301,7 +318,7 @@ export const RCMPage: React.FC = () => {
   const handleInlineStudyUpdate = (field: string, value: any) => {
     if (!selectedStudy) return;
     setSelectedStudy(prev => prev ? { ...prev, [field]: value } : null);
-    debouncedSave(`study-${field}`, () => rcmService.updateStudy(selectedStudy.id, { [field]: value }));
+    debouncedSave(`study-${field}`, () => trackSave(rcmService.updateStudy(selectedStudy.id, { [field]: value })));
   };
 
   // Edit Study
@@ -379,8 +396,10 @@ export const RCMPage: React.FC = () => {
   };
 
   const handleUpdateFunction = async (id: string, updates: Partial<RCMFunction>) => {
-    const updated = await rcmService.updateFunction(id, updates);
-    if (updated) setFunctions(prev => prev.map(f => f.id === id ? { ...f, ...updated } : f));
+    // Optimistic like failure modes — the input already shows the typed value.
+    setFunctions(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+    const updated = await trackSave(rcmService.updateFunction(id, updates));
+    if (!updated) showToast('Failed to save the function — check your connection', 'error');
   };
 
   const handleUpdateFailureMode = async (id: string, updates: Partial<RCMFailureMode>) => {
@@ -397,76 +416,60 @@ export const RCMPage: React.FC = () => {
     failureModesRef.current = failureModesRef.current.map(fm => fm.id === id ? { ...fm, ...payload } : fm);
     setFailureModes(prev => prev.map(fm => fm.id === id ? { ...fm, ...payload } : fm));
 
-    const updated = await rcmService.updateFailureMode(id, payload);
+    const updated = await trackSave(rcmService.updateFailureMode(id, payload));
     if (!updated) showToast('Failed to save the change — check your connection', 'error');
   };
 
-  const handleUpdateDecision = async (fmId: string, updates: Partial<RCMDecision>) => {
-    const existing = decisions.find(d => d.failure_mode_id === fmId);
-    if (existing) {
-      // Optimistic update for instant UI response
-      setDecisions(prev => prev.map(d => d.failure_mode_id === fmId ? { ...d, ...updates } : d));
-      const updated = await rcmService.updateDecision(existing.id, updates);
-      if (updated) {
-        setDecisions(prev => prev.map(d => d.failure_mode_id === fmId ? { ...d, ...updated } : d));
-      } else {
-        // Revert on failure
-        setDecisions(prev => prev.map(d => d.failure_mode_id === fmId ? existing : d));
-        showToast('Failed to update decision', 'error');
-      }
-    } else {
-      // New decision — INSERT with minimal required fields + the user's changes
-      const payload: Record<string, any> = {
-        failure_mode_id: fmId,
-        is_hidden_failure: false,
-        spares_requirements: [],
-        ...updates,
-      };
-      // Optimistic: create a temporary decision in state so UI responds immediately
-      const tempDecision: RCMDecision = {
-        id: `temp-${fmId}`,
-        failure_mode_id: fmId,
-        is_hidden_failure: false,
-        consequence_code: null,
-        consequence_description: null,
-        on_condition_task: null,
-        on_condition_interval: null,
-        on_condition_applicable: null,
-        on_condition_technology: null,
-        scheduled_restoration_task: null,
-        restoration_interval: null,
-        restoration_applicable: null,
-        scheduled_discard_task: null,
-        discard_interval: null,
-        discard_applicable: null,
-        failure_finding_task: null,
-        failure_finding_interval: null,
-        failure_finding_applicable: null,
-        recommended_strategy_code: null,
-        task_description: null,
-        task_interval: null,
-        task_type_code: null,
-        task_owner_craft: null,
-        justification: null,
-        ai_recommendation: null,
-        recurring_work_id: null,
-        spares_requirements: [],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        ...updates,
-      };
-      setDecisions(prev => [...prev, tempDecision]);
+  // ── Decision writes — one row per failure mode, serialised ────────────
+  // UPSERT keyed on failure_mode_id (UNIQUE since 0234). The old
+  // create-or-update dance raced against its own optimistic temp row: a
+  // strategy click followed by task-description keystrokes inside the create
+  // window sent an UPDATE to a fake `temp-` id (400) or a second INSERT, and
+  // without the unique constraint those inserts minted DUPLICATE decisions —
+  // the UI then wrote to one row while displaying another, which is exactly
+  // "I keep changing strategies and the task description never sticks". A
+  // per-mode promise chain keeps writes in order; local state stays the
+  // source of truth for display.
+  const decisionChains = useRef<Map<string, Promise<void>>>(new Map());
 
-      const created = await rcmService.createDecision(payload as Partial<RCMDecision>);
-      if (created) {
-        // Replace temp with real DB record
-        setDecisions(prev => prev.map(d => d.failure_mode_id === fmId ? created : d));
+  const handleUpdateDecision = (fmId: string, updates: Partial<RCMDecision>): Promise<void> => {
+    // Optimistic: merge into the row, or seed a pending one, immediately.
+    setDecisions(prev => {
+      const existing = prev.find(d => d.failure_mode_id === fmId);
+      if (existing) return prev.map(d => d.failure_mode_id === fmId ? { ...d, ...updates } : d);
+      const seeded: RCMDecision = {
+        id: `pending-${fmId}`,
+        failure_mode_id: fmId,
+        is_hidden_failure: false,
+        consequence_code: null, consequence_description: null,
+        on_condition_task: null, on_condition_interval: null, on_condition_applicable: null, on_condition_technology: null,
+        scheduled_restoration_task: null, restoration_interval: null, restoration_applicable: null,
+        scheduled_discard_task: null, discard_interval: null, discard_applicable: null,
+        failure_finding_task: null, failure_finding_interval: null, failure_finding_applicable: null,
+        recommended_strategy_code: null, task_description: null, task_interval: null, task_type_code: null,
+        task_owner_craft: null, justification: null, ai_recommendation: null, recurring_work_id: null,
+        spares_requirements: [],
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        ...updates,
+      };
+      return [...prev, seeded];
+    });
+
+    const prevChain = decisionChains.current.get(fmId) ?? Promise.resolve();
+    const next = prevChain.then(async () => {
+      const saved = await trackSave(rcmService.upsertDecision({ failure_mode_id: fmId, ...updates }));
+      if (saved) {
+        // Adopt the real row id and timestamps only — field values stay
+        // optimistic, since later queued writes may already be in state.
+        setDecisions(prev => prev.map(d => d.failure_mode_id === fmId
+          ? { ...d, id: saved.id, created_at: saved.created_at, updated_at: saved.updated_at }
+          : d));
       } else {
-        // Remove temp on failure
-        setDecisions(prev => prev.filter(d => d.id !== `temp-${fmId}`));
-        showToast('Failed to create decision record', 'error');
+        showToast('Failed to save the decision — check your connection', 'error');
       }
-    }
+    });
+    decisionChains.current.set(fmId, next);
+    return next;
   };
 
   // ── Reliability Specialist handlers ────────────────────
@@ -605,6 +608,9 @@ export const RCMPage: React.FC = () => {
         }
       }
       await loadStudyDetail(selectedStudy.id);
+    } else {
+      // Never fail silently — a spinner that just stops reads as "the tool is broken".
+      showToast('The Specialist could not draft the worksheet — AI unavailable or returned nothing. Check the AI configuration.', 'error');
     }
     setAiLoading(null);
   };
@@ -759,7 +765,20 @@ export const RCMPage: React.FC = () => {
             <span>{studyCollaborators.length > 0 ? `Team (${studyCollaborators.length})` : 'Invite Team'}</span>
           </button>
           {studyCollaborators.length > 0 && <AvatarStack collaborators={studyCollaborators} max={3} size="sm" />}
-          <span className="ml-auto text-[10px] text-slate-400 font-medium truncate hidden sm:block">
+          {/* Autosave status — the study's "save function" made visible */}
+          <span
+            className={`ml-auto flex items-center gap-1.5 text-[10px] font-semibold shrink-0 ${
+              pendingSaves > 0 ? 'text-primary-600' : hasSavedOnce ? 'text-emerald-600' : 'text-slate-400'
+            }`}
+            title="Every edit saves automatically as you type — this shows the save status"
+          >
+            {pendingSaves > 0
+              ? <><RefreshCw size={11} className="animate-spin" /> Saving…</>
+              : hasSavedOnce
+                ? <><CheckCircle size={11} /> All changes saved</>
+                : 'Autosaves as you edit'}
+          </span>
+          <span className="text-[10px] text-slate-400 font-medium truncate hidden md:block max-w-[180px]">
             {selectedStudy.title}
           </span>
         </div>
@@ -943,22 +962,19 @@ export const RCMPage: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Asset <span className="text-red-400">*</span></label>
                   {hasAssetAccess && (
                     <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
+                      {/* Switching modes must NOT wipe a value already entered —
+                          losing the asset on a toggle is how "the asset doesn't
+                          register" happens. */}
                       <button
                         type="button"
-                        onClick={() => {
-                          setAssetInputMode('search');
-                          setNewStudyForm(f => ({ ...f, asset_id: '' }));
-                        }}
+                        onClick={() => setAssetInputMode('search')}
                         className={`px-2 py-0.5 rounded transition-colors ${assetInputMode === 'search' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                       >
                         Search Register
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setAssetInputMode('manual');
-                          setNewStudyForm(f => ({ ...f, asset_id: '' }));
-                        }}
+                        onClick={() => setAssetInputMode('manual')}
                         className={`px-2 py-0.5 rounded transition-colors ${assetInputMode === 'manual' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                       >
                         Manual Tag
@@ -1001,6 +1017,11 @@ export const RCMPage: React.FC = () => {
                 <textarea value={newStudyForm.operating_context} onChange={e => setNewStudyForm(f => ({ ...f, operating_context: e.target.value }))}
                   placeholder="Describe the duty cycle, environment, load profile, etc." rows={3}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-accent-cyan placeholder:text-slate-400 resize-none" />
+                <p className={`text-[10px] mt-1 ${newStudyForm.operating_context.trim().length >= MIN_CONTEXT_CHARS ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {newStudyForm.operating_context.trim().length >= MIN_CONTEXT_CHARS
+                    ? '✓ Enough context for the Reliability Specialist to draft from'
+                    : `${newStudyForm.operating_context.trim().length}/${MIN_CONTEXT_CHARS} characters — the Specialist needs at least ${MIN_CONTEXT_CHARS} to draft this study`}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Study Type</label>
@@ -1068,22 +1089,17 @@ export const RCMPage: React.FC = () => {
                   <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Asset ID</label>
                   {hasAssetAccess && (
                     <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-[10px] font-bold">
+                      {/* Mode switch preserves the entered value — see New Study note. */}
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditAssetInputMode('search');
-                          setEditStudyForm(f => ({ ...f, asset_id: '' }));
-                        }}
+                        onClick={() => setEditAssetInputMode('search')}
                         className={`px-2 py-0.5 rounded transition-colors ${editAssetInputMode === 'search' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                       >
                         Search Register
                       </button>
                       <button
                         type="button"
-                        onClick={() => {
-                          setEditAssetInputMode('manual');
-                          setEditStudyForm(f => ({ ...f, asset_id: '' }));
-                        }}
+                        onClick={() => setEditAssetInputMode('manual')}
                         className={`px-2 py-0.5 rounded transition-colors ${editAssetInputMode === 'manual' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                       >
                         Manual Tag
@@ -1125,6 +1141,11 @@ export const RCMPage: React.FC = () => {
                 <textarea value={editStudyForm.operating_context} onChange={e => setEditStudyForm(f => ({ ...f, operating_context: e.target.value }))}
                   placeholder="Describe the duty cycle, environment, load profile..." rows={3}
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-accent-cyan placeholder:text-slate-400 resize-none" />
+                <p className={`text-[10px] mt-1 ${editStudyForm.operating_context.trim().length >= MIN_CONTEXT_CHARS ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {editStudyForm.operating_context.trim().length >= MIN_CONTEXT_CHARS
+                    ? '✓ Enough context for the Reliability Specialist to draft from'
+                    : `${editStudyForm.operating_context.trim().length}/${MIN_CONTEXT_CHARS} characters — the Specialist needs at least ${MIN_CONTEXT_CHARS} to draft this study`}
+                </p>
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Study Type</label>
