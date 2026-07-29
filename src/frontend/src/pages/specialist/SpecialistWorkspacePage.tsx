@@ -29,6 +29,8 @@ import { computeRealization, type RealizationSummary } from '../../lib/valueReal
 import { computeBriefingAnalytics, type BriefingAnalytics } from '../../lib/briefingCharts';
 import { computeMissions, type DetMission } from '../../lib/missionEngine';
 import { messagingService } from '../../eam/services/MessagingService';
+import { analyzeService, type RCAInvestigation } from '../../eam/services/AnalyzeService';
+import { Search, GitBranch, Target, HeartPulse, FolderOpen } from 'lucide-react';
 import BriefingReport, { RichText, type BriefingAsset } from '../../components/specialist/BriefingReport';
 
 interface AuditRow {
@@ -61,6 +63,26 @@ const SUGGESTED = [
     'Which asset is costing us the most?',
     "What's overdue right now?",
     'How risky is P-101?',
+];
+
+/** Intent chips (moved home from the Tier's Start·Home) — deterministic
+ *  routes into the reliability loop; they work with the AI down. */
+const INTENTS: { icon: React.ReactNode; label: string; hint: string; path: string }[] = [
+    { icon: <Search size={14} />, label: 'Investigate a failure', hint: 'Start a root cause analysis', path: '/analyze/rca/new' },
+    { icon: <TrendingUp size={14} />, label: 'Find my bad actors', hint: 'Pareto — what drives 80% of cost', path: '/analyze' },
+    { icon: <Gauge size={14} />, label: 'Check asset health', hint: 'KPIs, Golden Spot & Success Rate', path: '/reliability-metrics' },
+    { icon: <GitBranch size={14} />, label: 'Model reliability', hint: 'Weibull, RBD, Monte Carlo', path: '/reliability-modelling' },
+    { icon: <Target size={14} />, label: 'Decide a strategy', hint: 'Fleet strategy verdicts + RCM logic', path: '/specialist/assessment' },
+    { icon: <HeartPulse size={14} />, label: 'Predict & monitor', hint: 'Live health, sensors & setup guide', path: '/predict' },
+];
+
+/** The reliability loop — the Tier's spine, footer-linked from the desk. */
+const LOOP = [
+    { label: 'Measure', path: '/reliability-metrics' },
+    { label: 'Diagnose', path: '/analyze' },
+    { label: 'Model', path: '/reliability-modelling' },
+    { label: 'Decide', path: '/rcm' },
+    { label: 'Forecast', path: '/predict' },
 ];
 
 // ── shared control classes — one definition each, so every button on the page
@@ -165,6 +187,12 @@ export const SpecialistWorkspacePage: React.FC = () => {
     const [input, setInput] = useState('');
     const [chatBusy, setChatBusy] = useState(false);
     const chatRef = useRef<HTMLDivElement>(null);
+    const chatCardRef = useRef<HTMLElement>(null);
+
+    // ── ask-first hero (one brain: submits into the chat below) ──
+    const [heroQ, setHeroQ] = useState('');
+    // ── continue where you left off (open RCAs — the Tier's live threads) ──
+    const [openRcas, setOpenRcas] = useState<RCAInvestigation[]>([]);
 
     /** estimated_savings (DE tasks) preferred; annual_cost as the stake proxy. */
     const draftValue = (a: AgentAction): number => {
@@ -354,6 +382,21 @@ export const SpecialistWorkspacePage: React.FC = () => {
     };
 
     const lastRun = useMemo(() => (log.length ? relTime(log[0].created_at) : '—'), [log]);
+    const firstName = (user?.username || '').split(/[._\s]/)[0] || '';
+
+    useEffect(() => {
+        void analyzeService.getRCAInvestigations().then((rcas) =>
+            setOpenRcas(rcas.filter((r) => r.status !== 'closed').slice(0, 3)));
+    }, []);
+
+    /** Hero submit: same governed brain — the answer lands in the chat panel. */
+    const askHero = () => {
+        const q = heroQ.trim();
+        if (!q) return;
+        setHeroQ('');
+        void send(q);
+        chatCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    };
 
     return (
         <div className="max-w-6xl mx-auto space-y-4 pb-24 animate-in fade-in duration-300">
@@ -387,28 +430,70 @@ export const SpecialistWorkspacePage: React.FC = () => {
                         </button>
                     </div>
                 </div>
+
+                {/* ── Ask-first start (moved home from the Tier's Start·Home):
+                     one question, ONE brain — submits into the governed chat
+                     below, never a second AI surface. Intent chips route
+                     deterministically and work with the AI down. ── */}
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                    <h2 className="text-[15px] sm:text-[17px] font-semibold text-slate-900 tracking-tight">
+                        What do you want to achieve today{firstName ? `, ${firstName}` : ''}?
+                    </h2>
+                    <div className="mt-2.5 flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-0.5 focus-within:border-primary-400 focus-within:ring-2 focus-within:ring-primary-500/15 transition-all">
+                        <input
+                            value={heroQ}
+                            onChange={(e) => setHeroQ(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') askHero(); }}
+                            placeholder='Ask anything — "why does P-101 keep failing?"'
+                            className="flex-1 min-w-0 py-2.5 text-[13px] text-slate-900 placeholder:text-slate-400 bg-transparent outline-none"
+                        />
+                        <button onClick={askHero} disabled={!heroQ.trim()} aria-label="Ask the Specialist"
+                            className="shrink-0 flex items-center justify-center w-9 h-9 rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 transition-colors">
+                            <Send size={14} />
+                        </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                        {INTENTS.map((i) => (
+                            <button key={i.label} onClick={() => navigate(i.path)} title={i.hint}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-200 bg-white text-[11.5px] font-semibold text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-colors">
+                                <span className="text-slate-400">{i.icon}</span>{i.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
             </header>
 
-            {/* ── KPI rail — the ledger, promoted out of a side card so the numbers
-                 that justify the Specialist read first ── */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {/* ── Value ledger ──
+                 Two tiles, not four. "Awaiting review" and "Approved" were counts
+                 of things the page already states a few hundred pixels lower — the
+                 proposals panel names its own backlog and the Deliver button carries
+                 the approved badge — so as tiles they spent the best real estate on
+                 the page repeating themselves. What survives is the part nothing else
+                 says: what the Specialist claims it found, and what actually landed.
+
+                 And while both are empty the rail collapses to one line. A grid of
+                 zeros above the fold is not a value story; it is four ways of saying
+                 nothing has happened yet. */}
+            {!loading && ledger && ledger.approved === 0 && ledger.pending === 0 && (realized?.assetsMeasured ?? 0) === 0 ? (
+                <div className={`${CARD} px-4 py-3 text-[12.5px] text-slate-500`}>
+                    Nothing on the value ledger yet — run a briefing or an assessment, and
+                    the proposals it drafts get costed here.
+                </div>
+            ) : (
+            <div className="grid grid-cols-2 gap-3">
                 <StatTile
-                    /* green only when there IS money on the board — a green $0 overstates the state */
+                    /* green only when there IS money on the board — a green $0 overstates
+                       the state, and "$0 across 1 proposals" reads as broken arithmetic
+                       rather than as an uncosted draft. No estimate shows as no number. */
                     label="Value identified" tone={(ledger?.valueIdentified ?? 0) > 0 ? 'money' : 'default'} loading={loading}
-                    value={ledger ? formatCurrency(ledger.valueIdentified) : '—'}
-                    sub={`across ${(ledger?.approved ?? 0) + (ledger?.pending ?? 0)} proposals`}
+                    value={ledger && ledger.valueIdentified > 0 ? formatCurrency(ledger.valueIdentified) : '—'}
+                    sub={(() => {
+                        const n = (ledger?.approved ?? 0) + (ledger?.pending ?? 0);
+                        const plural = `proposal${n === 1 ? '' : 's'}`;
+                        if (!ledger) return 'across 0 proposals';
+                        return ledger.valueIdentified > 0 ? `across ${n} ${plural}` : `${n} ${plural}, not yet costed`;
+                    })()}
                     icon={<BadgeDollarSign size={15} />}
-                />
-                <StatTile
-                    label="Awaiting review" loading={loading}
-                    tone={(ledger?.pending ?? 0) > 0 ? 'attention' : 'default'}
-                    value={ledger?.pending ?? '—'} sub="needs your decision"
-                    icon={<ClipboardList size={15} />}
-                />
-                <StatTile
-                    label="Approved" loading={loading}
-                    value={ledger?.approved ?? '—'} sub="queued for delivery"
-                    icon={<CheckCircle2 size={15} />}
                 />
                 <StatTile
                     /* Measured ≠ identified: before/after CM run-rate on approved
@@ -427,6 +512,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     icon={<TrendingUp size={15} />}
                 />
             </div>
+            )}
 
             {/* The two leadership artifacts: the renewal statement + the weekly pack. */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -630,7 +716,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
 
                 {/* ── Right: conversation + work log ── */}
                 <div className="space-y-4">
-                    <section className={`${CARD} flex flex-col h-[26rem] lg:h-[32rem] overflow-hidden`}>
+                    <section ref={chatCardRef} className={`${CARD} flex flex-col h-[26rem] lg:h-[32rem] overflow-hidden`}>
                         <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 shrink-0">
                             <Sparkles size={14} className="text-primary-600" />
                             <h2 className="text-[13px] font-semibold text-slate-900">Ask the Specialist</h2>
@@ -687,6 +773,26 @@ export const SpecialistWorkspacePage: React.FC = () => {
                         </div>
                     </section>
 
+                    {/* Continue where you left off — the Tier's open threads, on the desk */}
+                    {openRcas.length > 0 && (
+                        <Panel title="Continue where you left off" icon={<FolderOpen size={14} />} bodyClass="">
+                            <ul className="divide-y divide-slate-100">
+                                {openRcas.map((r) => (
+                                    <li key={r.id}>
+                                        <button onClick={() => navigate(`/analyze/rca/${r.id}`)}
+                                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left hover:bg-slate-50/70 transition-colors">
+                                            <span className="flex-1 min-w-0">
+                                                <span className="block text-[12.5px] font-medium text-slate-700 truncate">{r.title}</span>
+                                                <span className="block text-[10.5px] text-slate-400">RCA investigation · {r.status ?? 'draft'}</span>
+                                            </span>
+                                            <ChevronRight size={14} className="text-slate-300 shrink-0" />
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </Panel>
+                    )}
+
                     <Panel title="Work log" icon={<ScrollText size={14} />}
                         meta={log.length ? `Every agent run, audited · last activity ${lastRun}` : 'Every agent run, audited'} bodyClass="">
                         {log.length === 0 ? (
@@ -709,6 +815,19 @@ export const SpecialistWorkspacePage: React.FC = () => {
                         )}
                     </Panel>
                 </div>
+            </div>
+
+            {/* The reliability loop — the practitioner's spine, one hop away. */}
+            <div className="flex items-center justify-center gap-1 text-[11px] text-slate-400 pt-1">
+                {LOOP.map((s, i) => (
+                    <React.Fragment key={s.label}>
+                        {i > 0 && <span className="text-slate-300">→</span>}
+                        <button onClick={() => navigate(s.path)}
+                            className="px-1.5 py-0.5 rounded font-medium hover:text-primary-700 hover:bg-primary-50 transition-colors">
+                            {s.label}
+                        </button>
+                    </React.Fragment>
+                ))}
             </div>
         </div>
     );

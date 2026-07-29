@@ -145,7 +145,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         tier: 'reliability', icon: Shield, path: null,
         // Ordered as the reliability loop so the tier reads as one workflow, not 5 flat tools.
         children: [
-            { id: 'reliability-home', label: 'Start · Home', path: '/reliability' },
+            // Start·Home merged into the Specialist workspace (/reliability redirects there).
             { id: 'reliability-metrics', label: 'Measure · Metrics', path: '/reliability-metrics' },
             { id: 'analyze-dash', label: 'Diagnose · Analyze', path: '/analyze' },
             { id: 'reliability-modelling', label: 'Model · Reliability Modelling', path: '/reliability-modelling' },
