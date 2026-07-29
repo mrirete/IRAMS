@@ -60,7 +60,19 @@ export const ReportDrillDown: React.FC = () => {
     },
   });
 
-  // Also fetch from the RPC (same source as main Reports page chart)
+  // Canonical per-asset reliability (0234) — computed from 12 months of
+  // corrective work, the same definition Reports and the agents use.
+  const { data: assetReliability = [] } = useQuery({
+    queryKey: ['drilldown-asset-reliability'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('sem_asset_reliability')
+        .select('asset_id, asset_tag, criticality, failures_12mo, mtbf_days, mttr_hours, availability_pct, downtime_coverage_pct');
+      return data || [];
+    },
+  });
+
+  // Legacy RPC — kept only as a fallback for assets the view has no failures for
   const { data: rpcMtbfMttr = [] } = useQuery({
     queryKey: ['drilldown-rpc-mtbf-mttr'],
     queryFn: async () => {
@@ -96,45 +108,47 @@ export const ReportDrillDown: React.FC = () => {
       });
   }, [assets]);
 
-  // MTBF/MTTR grid data — merge stored asset columns with RPC-computed values
+  // MTBF/MTTR grid — canonical computed values (sem_asset_reliability).
+  // This used to PREFER assets.mtbf_days, a one-off backfill that migration
+  // 0108 froze and nothing recomputes, so the grid disagreed with Reports.
   const mtbfMttrData = useMemo(() => {
-    // Build a map from RPC data keyed by asset_id
-    const rpcMap = new Map<string, any>();
-    rpcMtbfMttr.forEach((r: any) => { rpcMap.set(r.asset_id, r); });
-
-    // Merge: prefer stored asset columns, fall back to RPC values
-    const merged = assets
-      .filter((a: any) => {
-        const hasLocal = a.mtbf_days || a.mttr_hours;
-        const hasRpc = rpcMap.has(a.id);
-        return hasLocal || hasRpc;
-      })
-      .map((a: any) => {
-        const rpc = rpcMap.get(a.id);
+    const nameById = new Map<string, any>((assets as any[]).map((a: any) => [a.id, a]));
+    return (assetReliability as any[])
+      .filter((r: any) => r.mtbf_days != null || r.mttr_hours != null)
+      .sort((a: any, b: any) => (a.mtbf_days ?? Infinity) - (b.mtbf_days ?? Infinity))
+      .map((r: any) => {
+        const a = nameById.get(r.asset_id);
         return {
-          asset_tag: a.tag, asset_name: a.name, criticality: a.criticality,
-          mtbf_days: a.mtbf_days || rpc?.mtbf_days || 0,
-          mttr_hours: a.mttr_hours || rpc?.mttr_hours || 0,
-          running_hours: a.running_hours || 0,
-          failure_count_ytd: a.failure_count_ytd || rpc?.wo_count || 0,
-          availability: (a.mtbf_days || rpc?.mtbf_days) && (a.mttr_hours || rpc?.mttr_hours)
-            ? (((a.mtbf_days || rpc?.mtbf_days) * 24) / ((a.mtbf_days || rpc?.mtbf_days) * 24 + (a.mttr_hours || rpc?.mttr_hours)) * 100).toFixed(1) + '%'
-            : '—',
+          asset_tag: r.asset_tag ?? a?.tag,
+          asset_name: a?.name ?? r.asset_tag,
+          criticality: r.criticality ?? a?.criticality,
+          mtbf_days: r.mtbf_days ?? 0,
+          mttr_hours: r.mttr_hours ?? 0,
+          running_hours: a?.running_hours || 0,
+          failure_count_ytd: r.failures_12mo ?? 0,
+          availability: r.availability_pct != null ? `${r.availability_pct}%` : '—',
         };
       });
-    return merged;
-  }, [assets, rpcMtbfMttr]);
+  }, [assets, assetReliability]);
 
-  // Downtime reasons breakdown
-  const downtimeReasons = useMemo(() => [
-    { reason: 'Mechanical Failure', hours: Math.round(downtimeByAsset.reduce((s, a) => s + a.Unplanned, 0) * 0.35), color: COLORS.red },
-    { reason: 'Electrical Fault', hours: Math.round(downtimeByAsset.reduce((s, a) => s + a.Unplanned, 0) * 0.20), color: COLORS.amber },
-    { reason: 'Planned Maintenance', hours: Math.round(downtimeByAsset.reduce((s, a) => s + a.Planned, 0) * 0.60), color: COLORS.blue },
-    { reason: 'Planned Shutdown', hours: Math.round(downtimeByAsset.reduce((s, a) => s + a.Planned, 0) * 0.40), color: COLORS.cyan },
-    { reason: 'Instrumentation', hours: Math.round(downtimeByAsset.reduce((s, a) => s + a.Unplanned, 0) * 0.15), color: COLORS.purple },
-    { reason: 'Process Upset', hours: Math.round(downtimeByAsset.reduce((s, a) => s + a.Unplanned, 0) * 0.18), color: COLORS.pink },
-    { reason: 'External', hours: Math.round(downtimeByAsset.reduce((s, a) => s + a.Unplanned, 0) * 0.12), color: COLORS.slate },
-  ].sort((a, b) => b.hours - a.hours), [downtimeByAsset]);
+  // Downtime by reason — from ACTUAL failure coding on the work orders.
+  // This block previously multiplied total downtime by hard-coded shares
+  // (35% mechanical, 20% electrical, …) and charted the result as analysis.
+  const downtimeReasons = useMemo(() => {
+    const palette = [COLORS.red, COLORS.amber, COLORS.blue, COLORS.cyan, COLORS.purple, COLORS.pink];
+    const byReason = new Map<string, number>();
+    for (const w of workOrders as any[]) {
+      const hrs = Number(w.actual_downtime_hrs) || 0;
+      if (hrs <= 0) continue;
+      const coded = String(w.failure_mode ?? '').trim();
+      const key = coded || (String(w.type ?? '').toUpperCase() === 'CM' ? 'Uncoded — unplanned' : 'Uncoded — planned');
+      byReason.set(key, (byReason.get(key) ?? 0) + hrs);
+    }
+    return [...byReason.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([reason, hours], i) => ({ reason, hours: Math.round(hours), color: palette[i % palette.length] }));
+  }, [workOrders]);
 
   // OEE data
   const oeeData = useMemo(() => {
