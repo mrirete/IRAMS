@@ -69,9 +69,11 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     supabase.from('work_orders')
       .select('status, type, due_date, closed_at')
       .in('type', ['PM', 'Preventive', 'Preventative', 'SCHEDULED']),
-    // 8. Asset MTBF for bad actors
-    supabase.from('assets')
-      .select('id, tag, name, mtbf_days, mttr_hours, criticality')
+    // 8. Per-asset reliability for bad actors — the CANONICAL computed view
+    //    (0234), not assets.mtbf_days, which migration 0108 froze in place
+    //    and nothing has recomputed since.
+    supabase.from('sem_asset_reliability')
+      .select('asset_id, asset_tag, criticality, mtbf_days, mttr_hours, failures_12mo')
       .not('mtbf_days', 'is', null)
       .order('mtbf_days', { ascending: true })
       .limit(20),
@@ -352,21 +354,33 @@ export const Dashboard: React.FC = () => {
   });
 
   // ── Top 5 Bad Actors (prefer API → fallback to MTBF) ──
-  const mtbfBadActors = assetMtbf
+  // Canonical per-asset reliability, keyed for the bad-actor list below.
+  const relByAsset = new Map<string, any>((assetMtbf as any[]).map((r: any) => [r.asset_id, r]));
+  const mtbfBadActors = (assetMtbf as any[])
     .filter((a: any) => a.mtbf_days !== null && a.mtbf_days > 0)
     .sort((a: any, b: any) => a.mtbf_days - b.mtbf_days)
-    .slice(0, 5);
+    .slice(0, 5)
+    .map((a: any) => ({
+      tag: a.asset_tag, name: a.asset_tag, id: a.asset_id,
+      mtbf_days: a.mtbf_days, mttr_hours: a.mttr_hours, criticality: a.criticality,
+    }));
   const badActors = apiBadActors && apiBadActors.length > 0
-    ? apiBadActors.map(a => ({
-        tag: a.asset_tag,
-        name: a.asset_name,
-        id: a.asset_id,
-        mtbf_days: Math.round(a.total_downtime_hours / Math.max(a.wo_count, 1)),
-        mttr_hours: a.total_downtime_hours,
-        criticality: null,
-        wo_count: a.wo_count,
-        total_cost: a.total_cost,
-      }))
+    ? apiBadActors.map(a => {
+        // MTBF/MTTR come from the canonical view. The previous code derived
+        // them here as total_downtime/wo_count and total_downtime — average
+        // downtime per job labelled MTBF, and TOTAL downtime labelled MTTR.
+        const rel = relByAsset.get(a.asset_id);
+        return {
+          tag: a.asset_tag,
+          name: a.asset_name,
+          id: a.asset_id,
+          mtbf_days: rel?.mtbf_days ?? null,
+          mttr_hours: rel?.mttr_hours ?? null,
+          criticality: rel?.criticality ?? null,
+          wo_count: a.wo_count,
+          total_cost: a.total_cost,
+        };
+      })
     : mtbfBadActors;
 
   // ── Defect Elimination Metrics ──
@@ -738,7 +752,7 @@ export const Dashboard: React.FC = () => {
           </div>
           <div className="space-y-2.5">
             {badActors.length > 0 ? (() => {
-              const maxMTBF = Math.max(...badActors.map((a: any) => a.mtbf_days || 1));
+              const maxMTBF = Math.max(1, ...badActors.map((a: any) => a.mtbf_days || 1));
               return badActors.map((a: any, i: number) => (
                 <div key={a.tag} className="group">
                   <div className="flex items-center gap-2">
@@ -761,12 +775,12 @@ export const Dashboard: React.FC = () => {
                           className={`h-full rounded-full transition-all ${
                             i === 0 ? 'bg-red-500' : i === 1 ? 'bg-amber-500' : 'bg-slate-400'
                           }`}
-                          style={{ width: `${Math.max(10, 100 - ((a.mtbf_days / maxMTBF) * 80))}%` }}
+                          style={{ width: `${Math.max(10, 100 - (((a.mtbf_days ?? maxMTBF) / maxMTBF) * 80))}%` }}
                         />
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-[10px] font-medium text-slate-500">{a.mtbf_days}d</span>
+                      <span className="text-[10px] font-medium text-slate-500" title="Mean time between failures — computed from the last 12 months of corrective work">{a.mtbf_days != null ? `${a.mtbf_days}d` : '—'}</span>
                       {/* Auto-draft DE Task */}
                       <button
                         onClick={async (e) => {
