@@ -2,27 +2,27 @@
  * RoiStatementPage — "Return on Reliability" (Phase C3,
  * docs/Specialist-150k-Replacement-Plan.md).
  *
- * The renewal artifact: what the Specialist cost vs what it measurably did,
- * printable like the assessment. The discipline is the same as everywhere
- * else — measured value (before/after CM run-rate, lib/valueRealization) is
- * NEVER mixed with identified value (draft estimates), and both sit beside
- * the plant-level corroboration (assessment-snapshot trend). No number on
- * this page is estimated by AI.
+ * The renewal artifact and the home of the VALUE LEDGER — the workspace no
+ * longer carries value tiles, because the numbers only mean something beside
+ * their methodology, which lives here. The discipline is unchanged: measured
+ * value (before/after CM run-rate, lib/valueRealization) is NEVER mixed with
+ * identified value (draft estimates), and both sit beside the plant-level
+ * corroboration (assessment-snapshot trend). No number here is estimated by
+ * AI. What the customer pays is deliberately NOT restated — they know their
+ * own contract, and a struck-through salary reads as a sales slide, not as
+ * an engineering record.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Printer, Loader2, BadgeDollarSign, TrendingUp, ShieldCheck,
-    ClipboardList, Scale, Layers,
+    ClipboardList, Layers,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { useSettings } from '../../contexts/SettingsContext';
 import { predictionService } from '../../eam/services/PredictionService';
 import { computeRealization, type RealizationSummary } from '../../lib/valueRealization';
 import type { AssessmentSnapshot } from '../../eam/services/assessmentSnapshotService';
-
-const SUB_KEY = 'specialist-subscription-monthly';
-const ENGINEER_ANNUAL = 150_000;
 
 interface RoiData {
     baseline: AssessmentSnapshot | null;
@@ -98,32 +98,12 @@ export const RoiStatementPage: React.FC = () => {
     const { formatCurrency } = useSettings();
     const [data, setData] = useState<RoiData | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [monthly, setMonthly] = useState<number>(() => {
-        const v = Number(localStorage.getItem(SUB_KEY));
-        return Number.isFinite(v) && v > 0 ? v : 2000;
-    });
 
     useEffect(() => {
         loadRoi().then(setData).catch((e) => setError(e instanceof Error ? e.message : String(e)));
     }, []);
 
-    const setSub = (v: number) => {
-        setMonthly(v);
-        try { localStorage.setItem(SUB_KEY, String(v)); } catch { /* private mode */ }
-    };
-
     const periodFrom = data?.baseline ? String(data.baseline.created_at).slice(0, 10) : null;
-    const annualSub = monthly * 12;
-    const measured = data?.realization.measuredToDate ?? 0;
-    const roiMultiple = useMemo(() => {
-        if (!data || annualSub <= 0 || measured <= 0 || !data.firstApprovalAt) return null;
-        // Cost accrued over the measurement window, not a full year: honest
-        // denominator for a program that started weeks ago.
-        const days = Math.max(1, (Date.now() - new Date(data.firstApprovalAt).getTime()) / 86_400_000);
-        const costToDate = (annualSub / 365) * days;
-        return Math.round((measured / costToDate) * 10) / 10;
-    }, [data, annualSub, measured]);
-
     if (error) {
         return <div className="max-w-xl mx-auto mt-20 rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-800 text-sm">{error}</div>;
     }
@@ -183,7 +163,7 @@ export const RoiStatementPage: React.FC = () => {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-px mt-6 bg-slate-200 border border-slate-200 rounded-lg overflow-hidden">
                             {[
                                 {
-                                    label: 'Value measured', value: data.realization.assetsMeasured > 0 ? formatCurrency(measured) : '—',
+                                    label: 'Value measured', value: data.realization.assetsMeasured > 0 ? formatCurrency(data.realization.measuredToDate) : '—',
                                     sub: data.realization.assetsMeasured > 0
                                         ? `Δ corrective run-rate · ${data.realization.assetsMeasured} asset${data.realization.assetsMeasured === 1 ? '' : 's'}`
                                         : data.realization.assetsMaturing > 0 ? `${data.realization.assetsMaturing} maturing (30-day window)` : 'measures 30 days after an approval',
@@ -204,51 +184,6 @@ export const RoiStatementPage: React.FC = () => {
                         </div>
                     </div>
                 </div>
-
-                {/* Cost vs value */}
-                <Section icon={<Scale size={15} className="text-emerald-600" />} title="What it costs vs what it returns">
-                    <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
-                        <div>
-                            <div className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Your subscription</div>
-                            <div className="flex items-baseline gap-1.5">
-                                <span className="text-2xl font-semibold text-slate-900 tabular-nums">{formatCurrency(annualSub)}</span>
-                                <span className="text-[11px] text-slate-400">/yr</span>
-                            </div>
-                            <label className="no-print mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                                monthly
-                                <input
-                                    type="number" min={0} value={monthly}
-                                    onChange={(e) => setSub(Number(e.target.value) || 0)}
-                                    className="w-24 rounded-md border border-slate-200 px-2 py-1 text-[12px] tabular-nums focus:outline-none focus:border-primary-400"
-                                />
-                            </label>
-                        </div>
-                        <div>
-                            <div className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">A staff reliability engineer</div>
-                            <div className="flex items-baseline gap-1.5">
-                                <span className="text-2xl font-semibold text-slate-400 tabular-nums line-through decoration-slate-300">{formatCurrency(ENGINEER_ANNUAL)}</span>
-                                <span className="text-[11px] text-slate-400">/yr + burden</span>
-                            </div>
-                            <div className="text-[11px] text-emerald-700 font-semibold mt-1.5">
-                                {Math.round((1 - annualSub / ENGINEER_ANNUAL) * 100)}% below the salary line
-                            </div>
-                        </div>
-                        {roiMultiple != null && (
-                            <div>
-                                <div className="text-[11px] text-slate-400 uppercase tracking-wide mb-1">Measured return to date</div>
-                                <div className="flex items-baseline gap-1.5">
-                                    <span className="text-2xl font-semibold text-emerald-700 tabular-nums">{roiMultiple}×</span>
-                                    <span className="text-[11px] text-slate-400">vs cost accrued over the measurement window</span>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                    <p className="text-xs text-slate-500 mt-4">
-                        Measured value is the change in corrective run-rate on assets whose Specialist proposals a human approved
-                        (30-day maturity, one count per asset, negatives included). Identified value is the proposals' own estimates
-                        and is reported separately — it is a pipeline, not a result.
-                    </p>
-                </Section>
 
                 {/* Per-asset measured record */}
                 <Section icon={<TrendingUp size={15} className="text-indigo-500" />} title="The measured record, asset by asset">

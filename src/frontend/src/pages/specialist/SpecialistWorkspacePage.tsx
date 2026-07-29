@@ -25,7 +25,6 @@ import { useSettings } from '../../contexts/SettingsContext';
 import AdvisoryAgentPanel from '../../eam/components/ui/AdvisoryAgentPanel';
 import { runSpecialist, runReliabilityDigest, runWeibullAnalyst, runRsaAnalyst, type AgentTurn } from '../../eam/services/agentRunClient';
 import { predictionService, type AgentAction } from '../../eam/services/PredictionService';
-import { computeRealization, type RealizationSummary } from '../../lib/valueRealization';
 import { computeBriefingAnalytics, type BriefingAnalytics } from '../../lib/briefingCharts';
 import { computeMissions, type DetMission } from '../../lib/missionEngine';
 import { messagingService } from '../../eam/services/MessagingService';
@@ -105,28 +104,6 @@ const relTime = (iso: string): string => {
     return days < 7 ? `${days}d ago` : new Date(iso).toLocaleDateString();
 };
 
-/** One KPI on the rail. Values are real reads — never a placeholder number. */
-const StatTile: React.FC<{
-    label: string;
-    value: React.ReactNode;
-    sub: string;
-    icon: React.ReactNode;
-    tone?: 'default' | 'money' | 'attention';
-    loading?: boolean;
-}> = ({ label, value, sub, icon, tone = 'default', loading }) => (
-    <div className={`${CARD} p-3.5 sm:p-4`}>
-        <div className="flex items-start justify-between gap-2">
-            <span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-slate-400 leading-tight">{label}</span>
-            <span className="text-slate-300 shrink-0">{icon}</span>
-        </div>
-        {loading
-            ? <div className="mt-2.5 h-6 w-20 skeleton-line" />
-            : <div className={`mt-1.5 text-xl sm:text-[26px] font-semibold tabular-nums tracking-tight leading-none ${tone === 'money' ? 'text-emerald-700' : tone === 'attention' ? 'text-amber-600' : 'text-slate-900'
-                }`}>{value}</div>}
-        <div className="mt-1.5 text-[11px] text-slate-400 truncate">{sub}</div>
-    </div>
-);
-
 /** Card shell: hairline header strip + body, used by every panel below. */
 const Panel: React.FC<{
     title: string;
@@ -180,7 +157,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
     // ── value ledger (identified = draft estimates; measured = before/after
     //    CM run-rate on assets with approved actions, lib/valueRealization) ──
     const [ledger, setLedger] = useState<{ approved: number; pending: number; valueIdentified: number } | null>(null);
-    const [realized, setRealized] = useState<RealizationSummary | null>(null);
 
     // ── chat ──
     const [msgs, setMsgs] = useState<AgentTurn[]>([]);
@@ -269,27 +245,10 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 .reduce((s, a) => s + draftValue(a), 0),
         });
         setLoading(false);
-
-        // Measured value: before/after corrective run-rate on the assets whose
-        // proposals a human actually approved — the number that has to beat
-        // the $150k engineer's annual-review slide.
-        const approved = actionsQ.filter((a) => a.status === 'approved' && a.asset_id);
-        if (approved.length === 0) { setRealized(computeRealization([], [], Date.now())); return; }
-        const assetIds = [...new Set(approved.map((a) => a.asset_id as string))];
-        const { data: realizationWoRows } = await supabase.from('work_orders')
-            .select('asset_id, type, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost')
-            .in('asset_id', assetIds)
-            .limit(20000);
-        setRealized(computeRealization(
-            approved.map((a) => ({ asset_id: a.asset_id, approved_at: a.reviewed_at ?? a.created_at })),
-            (realizationWoRows ?? []).map((w: Record<string, unknown>) => ({
-                asset_id: (w.asset_id as string) ?? null,
-                type: (w.type as string) ?? null,
-                created_at: String(w.created_at),
-                cost: ((Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0)) || Number(w.total_actual_cost) || 0,
-            })),
-            Date.now(),
-        ));
+        // Measured value is NOT computed here any more — the value story lives
+        // in the Return on Reliability statement, which owns both halves
+        // (identified vs measured) with the methodology beside them. The desk
+        // keeps only the approved COUNT, for the Deliver badge.
     };
     useEffect(() => { void loadAll(); }, []);
 
@@ -389,46 +348,35 @@ export const SpecialistWorkspacePage: React.FC = () => {
             setOpenRcas(rcas.filter((r) => r.status !== 'closed').slice(0, 3)));
     }, []);
 
-    /** Data-poor tenant: nothing imported yet, so migration IS the primary
-     *  action and its card leads the page; once real history exists it
-     *  demotes to the page foot — the daily flow starts at the ask box. */
-    const dataPoor = analytics != null
-        && assetsByTag.size < 10
-        && analytics.pareto.length === 0
-        && analytics.monthly.every((m) => m.cost === 0);
-
-    /** ONE data on-ramp, two jobs named plainly. The old layout offered
-     *  "Import data" (header) and "Migration Center" (card) as siblings —
-     *  but the wizard is phase 6 OF the migration, and two same-sounding
-     *  buttons at the top of a buyer's first page is where trust erodes. */
-    const migrationCard = (
-        <div className={`${CARD} p-4`}>
-            <div className="flex items-center gap-2.5 mb-3">
-                <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
-                    <Database size={16} />
-                </div>
-                <div className="min-w-0">
-                    <div className="text-[13px] font-semibold text-slate-800">Bring your data in</div>
-                    <div className="text-[11.5px] text-slate-500">From SAP PM, Maximo, MaintainX or any spreadsheet — pick the size of the move.</div>
-                </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Link to="/specialist/import"
-                    className="rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/40 px-3 py-2.5 transition-colors group">
-                    <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
-                        <UploadCloud size={13} className="text-primary-600" /> Quick import
-                        <ArrowRight size={12} className="text-slate-300 group-hover:text-primary-600 ml-auto transition-colors" />
+    /** The data on-ramp — promoted to primary-action class because every
+     *  answer this page gives is downstream of what is in here. One card,
+     *  two jobs named plainly: the evaluation motion (one export file) and
+     *  the adoption motion (the ordered migration). */
+    const dataOnRamp = (
+        <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-primary-600 text-white flex items-center justify-center shrink-0">
+                        <Database size={17} />
                     </div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">One CMMS export file — the Specialist maps it and you get an assessment in minutes.</div>
-                </Link>
-                <Link to="/admin/migration"
-                    className="rounded-lg border border-slate-200 hover:border-primary-300 hover:bg-primary-50/40 px-3 py-2.5 transition-colors group">
-                    <div className="flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-800">
-                        <Database size={13} className="text-primary-600" /> Full migration
-                        <ArrowRight size={12} className="text-slate-300 group-hover:text-primary-600 ml-auto transition-colors" />
+                    <div className="min-w-0">
+                        <div className="text-[14px] font-semibold text-slate-900">Bring your data in</div>
+                        <div className="text-[12px] text-slate-600 mt-0.5">
+                            Everything the Specialist tells you comes from your records — SAP PM, Maximo, MaintainX or any spreadsheet.
+                        </div>
                     </div>
-                    <div className="text-[11px] text-slate-500 mt-0.5">The Migration Center walks register, people, stock, schedules and history across in the right order.</div>
-                </Link>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => navigate('/specialist/import')} className={`${BTN_PRIMARY} flex-1 sm:flex-none`}
+                        title="One CMMS export file — mapped by the Specialist, assessment in minutes">
+                        <UploadCloud size={14} /> Quick import
+                    </button>
+                    <button onClick={() => navigate('/admin/migration')}
+                        title="Register, people, stock, schedules and history — moved across in the right order"
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-primary-300 bg-white px-3.5 h-10 sm:h-9 text-[13px] font-semibold text-primary-700 transition-colors hover:bg-primary-50 flex-1 sm:flex-none">
+                        Full migration
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -469,73 +417,18 @@ export const SpecialistWorkspacePage: React.FC = () => {
                         subset of it; the single data on-ramp card below owns both
                         paths (and the wizard stays one click away in the sidebar). */}
                     <div className="flex items-center gap-2 shrink-0">
-                        <button onClick={() => navigate('/specialist/assessment')} className={`${BTN_PRIMARY} flex-1 sm:flex-none`}>
+                        <button onClick={() => navigate('/specialist/assessment')} className={`${BTN_PRIMARY} flex-1 sm:flex-none`}
+                            title="The deep engineering report over your whole plant — Pareto, Weibull, PM, strategy, register quality. Printable, snapshotted, trended.">
                             <BarChart2 size={14} /> Run assessment
                         </button>
                     </div>
                 </div>
             </header>
 
-            {/* Onboarding position: with nothing imported, migration IS the
-                first move — it leads the page until real data exists. */}
-            {dataPoor && migrationCard}
-
-            {/* ── Value ledger ──
-                 Two tiles, not four. "Awaiting review" and "Approved" were counts
-                 of things the page already states a few hundred pixels lower — the
-                 proposals panel names its own backlog and the Deliver button carries
-                 the approved badge — so as tiles they spent the best real estate on
-                 the page repeating themselves. What survives is the part nothing else
-                 says: what the Specialist claims it found, and what actually landed.
-
-                 And while both are empty the rail collapses to one line. A grid of
-                 zeros above the fold is not a value story; it is four ways of saying
-                 nothing has happened yet. */}
-            {/* Tiles exist only when there are DOLLARS to show. Counts alone
-                ("1 proposal, not yet costed" + an em-dash) are two boxes of
-                nothing on the page's best real estate — until money lands,
-                one slim line keeps the ledger concept alive and the page
-                breathable. */}
-            {!loading && ledger && ledger.valueIdentified <= 0 && (realized?.measuredToDate ?? 0) <= 0 && (realized?.assetsMeasured ?? 0) === 0 ? (
-                <div className={`${CARD} px-4 py-3 text-[12.5px] text-slate-500`}>
-                    {ledger.pending > 0
-                        ? <>Value ledger: {ledger.pending} proposal{ledger.pending === 1 ? '' : 's'} awaiting review — approved work gets costed and measured here.</>
-                        : <>Nothing on the value ledger yet — run a briefing or an assessment, and the proposals it drafts get costed here.</>}
-                </div>
-            ) : (
-            <div className="grid grid-cols-2 gap-3">
-                <StatTile
-                    /* green only when there IS money on the board — a green $0 overstates
-                       the state, and "$0 across 1 proposals" reads as broken arithmetic
-                       rather than as an uncosted draft. No estimate shows as no number. */
-                    label="Value identified" tone={(ledger?.valueIdentified ?? 0) > 0 ? 'money' : 'default'} loading={loading}
-                    value={ledger && ledger.valueIdentified > 0 ? formatCurrency(ledger.valueIdentified) : '—'}
-                    sub={(() => {
-                        const n = (ledger?.approved ?? 0) + (ledger?.pending ?? 0);
-                        const plural = `proposal${n === 1 ? '' : 's'}`;
-                        if (!ledger) return 'across 0 proposals';
-                        return ledger.valueIdentified > 0 ? `across ${n} ${plural}` : `${n} ${plural}, not yet costed`;
-                    })()}
-                    icon={<BadgeDollarSign size={15} />}
-                />
-                <StatTile
-                    /* Measured ≠ identified: before/after CM run-rate on approved
-                       assets (30-day maturity). The renewal-slide number — the
-                       full story prints from /specialist/roi. */
-                    label="Value measured" loading={loading || realized === null}
-                    tone={(realized?.measuredToDate ?? 0) > 0 ? 'money' : (realized?.measuredToDate ?? 0) < 0 ? 'attention' : 'default'}
-                    value={realized && realized.assetsMeasured > 0 ? formatCurrency(realized.measuredToDate) : '—'}
-                    sub={!realized || (realized.assetsMeasured === 0 && realized.assetsMaturing === 0)
-                        ? 'measures 30 days after an approval'
-                        : realized.assetsMeasured === 0
-                            ? `${realized.assetsMaturing} asset${realized.assetsMaturing === 1 ? '' : 's'} maturing`
-                            : realized.measuredToDate < 0
-                                ? 'no measurable change yet'
-                                : `Δ corrective run-rate · ${realized.assetsMeasured} asset${realized.assetsMeasured === 1 ? '' : 's'}${realized.assetsMaturing ? ` · ${realized.assetsMaturing} maturing` : ''}`}
-                    icon={<TrendingUp size={15} />}
-                />
-            </div>
-            )}
+            {/* ── The data on-ramp — the page's most consequential action.
+                 Every answer the Specialist gives is downstream of what is in
+                 here, so it wears the primary colour and stands alone. ── */}
+            {dataOnRamp}
 
             {/* ── The heart of the page: ask-first, centered (the Tier's old
                  Start·Home look) — value reads first above, action starts here.
@@ -571,10 +464,9 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 </div>
             </div>
 
-            {/* The doors row: renewal statement + weekly pack + (for established
-                tenants) the compact data on-ramp — visible mid-page, never
-                buried at the foot, never shouting at the top. */}
-            <div className={`grid grid-cols-1 md:grid-cols-2 ${!dataPoor ? 'lg:grid-cols-3' : ''} gap-3`}>
+            {/* The two leadership artifacts. (The data on-ramp used to ride
+                here as a third card; it now leads the page in primary colour.) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <Link to="/specialist/roi"
                     className={`${CARD} flex items-center gap-3 px-4 py-3 hover:border-emerald-300 hover:bg-emerald-50/40 transition-colors group`}>
                     <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
@@ -601,21 +493,6 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     </div>
                     <ArrowRight size={16} className="text-slate-300 group-hover:text-violet-600 group-hover:translate-x-0.5 transition-all shrink-0" />
                 </Link>
-                {!dataPoor && (
-                    <div className={`${CARD} flex items-center gap-3 px-4 py-3`}>
-                        <div className="w-8 h-8 rounded-lg bg-primary-50 text-primary-600 flex items-center justify-center shrink-0">
-                            <Database size={16} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <div className="text-[13px] font-semibold text-slate-800">Bring your data in</div>
-                            <div className="text-[11.5px] mt-0.5 flex items-center gap-2">
-                                <Link to="/specialist/import" className="text-primary-600 hover:text-primary-700 hover:underline font-medium">Quick import</Link>
-                                <span className="text-slate-300">·</span>
-                                <Link to="/admin/migration" className="text-primary-600 hover:text-primary-700 hover:underline font-medium">Full migration</Link>
-                            </div>
-                        </div>
-                    </div>
-                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -624,7 +501,9 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     <Panel
                         title="Briefing"
                         icon={<Sparkles size={14} className="text-primary-600" />}
-                        meta={briefingWhen ? `Generated ${briefingWhen}` : 'Not run yet'}
+                        meta={briefingWhen
+                            ? `This week's digest · generated ${briefingWhen}`
+                            : "This week's digest — what changed and what to act on (the assessment is the deep report)"}
                         actions={<>
                             {briefingText && (
                                 <button onClick={() => void copyBriefing()} title="Copy briefing"
