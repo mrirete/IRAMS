@@ -23,6 +23,7 @@ import { WidgetData } from '../components/reports/WidgetRegistry';
 import { DictionaryEntry } from '../types';
 import { OEEDashboard } from '../components/reports/OEEDashboard';
 import { isOpenWo, isDoneWo } from '../../lib/woState';
+import { computeMtbfMttr, computePmCompliance, computePmRatio } from '../../lib/reliabilityKpis';
 
 // ─── Color Palette ──────────────────────────────────────
 const COLORS = {
@@ -269,6 +270,22 @@ export const Reports: React.FC = () => {
   const woSparkline = useMemo(() => woTrend.map(t => ({ v: t.Total })), [woTrend]);
 
   const kpis = reliabilityKPIs || { total_wos: 0, avg_mttr_hrs: 0, availability_pct: 0, total_cost: 0 };
+
+  // ── Canonical reliability KPIs (lib/reliabilityKpis) ──────────────────
+  // Computed from the SAME rows the rest of this page shows, so the cards
+  // honour the date range and hierarchy slicers. The old cards came from an
+  // all-time RPC (ignoring both) and "MTBF" was `(8760 − MTTR×12)/12` — an
+  // algebraic artifact that assumed 12 failures a year for every plant.
+  const windowDays = Math.max(1, Math.round((dateRange.end.getTime() - dateRange.start.getTime()) / 86_400_000));
+  const reliability = useMemo(
+    () => computeMtbfMttr(filteredWOs as any, windowDays, filteredAssets.length || 1),
+    [filteredWOs, windowDays, filteredAssets.length],
+  );
+  const pmComplianceKpi = useMemo(
+    () => computePmCompliance(filteredWOs as any, dateRange.start.getTime(), dateRange.end.getTime()),
+    [filteredWOs, dateRange],
+  );
+  const pmRatioCanonical = useMemo(() => computePmRatio(filteredWOs as any), [filteredWOs]);
 
   // ── OEE (data-driven via production_logs, fallback to proxy) ──
   const { data: plantOEEData } = useQuery({
@@ -592,10 +609,13 @@ export const Reports: React.FC = () => {
         <ReportKPICard title="Total WOs" value={totalWOs} format="number" sparkData={woSparkline} sparkColor={COLORS.blue} icon={<Wrench size={14} />} ragStatus="neutral" onClick={() => navigate('/work-orders')} clickLabel="View all Work Orders" />
         <ReportKPICard title="Requests" value={serviceRequests.length} format="number" icon={<Layers size={14} />} ragStatus="neutral" onClick={() => navigate('/requests')} clickLabel="View Work Requests" />
         <ReportKPICard title="Total PMs" value={recurringWork.length} format="number" icon={<Clock size={14} />} ragStatus="neutral" onClick={() => navigate('/recurring-work')} clickLabel="View Recurring Work" />
-        <ReportKPICard title="PM Compliance" value={pmRatio} format="percent" target={Math.round(pmRatio)} targetLabel="Target: 80%" icon={<CheckCircle2 size={14} />} ragStatus={pmRatio >= 80 ? 'green' : pmRatio >= 60 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/pm-compliance')} clickLabel="View PM Compliance details" />
-        <ReportKPICard title="MTBF" value={kpis.avg_mttr_hrs > 0 ? ((8760 - kpis.avg_mttr_hrs * 12) / 12).toFixed(0) : '—'} subtitle="hours" icon={<Timer size={14} />} ragStatus="neutral" onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
-        <ReportKPICard title="MTTR" value={kpis.avg_mttr_hrs || 0} format="hours" icon={<Clock size={14} />} ragStatus={kpis.avg_mttr_hrs <= 4 ? 'green' : kpis.avg_mttr_hrs <= 8 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
-        <ReportKPICard title="Availability" value={kpis.availability_pct || 0} format="percent" target={Math.round(kpis.availability_pct || 0)} targetLabel="Target: 95%" icon={<Gauge size={14} />} ragStatus={(kpis.availability_pct || 0) >= 95 ? 'green' : (kpis.availability_pct || 0) >= 85 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/availability')} clickLabel="View Availability trend" />
+        {/* Two DIFFERENT KPIs that used to share one name: proactive share
+            (SMRP ≈80% target) vs schedule adherence (PMs done by due date). */}
+        <ReportKPICard title="PM Ratio" value={pmRatioCanonical.ratioPct ?? '—'} format={pmRatioCanonical.ratioPct == null ? undefined : 'percent'} subtitle="preventive share of all work" target={80} targetLabel="Target: 80%" icon={<CheckCircle2 size={14} />} ragStatus={pmRatioCanonical.ratioPct == null ? 'neutral' : pmRatioCanonical.ratioPct >= 80 ? 'green' : pmRatioCanonical.ratioPct >= 60 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/pm-compliance')} clickLabel="View PM details" />
+        <ReportKPICard title="PM Compliance" value={pmComplianceKpi.compliancePct ?? '—'} format={pmComplianceKpi.compliancePct == null ? undefined : 'percent'} subtitle={pmComplianceKpi.compliancePct == null ? 'no PMs due in range' : `${pmComplianceKpi.onTime}/${pmComplianceKpi.due} done by due date`} target={90} targetLabel="Target: 90%" icon={<CheckCircle2 size={14} />} ragStatus={pmComplianceKpi.compliancePct == null ? 'neutral' : pmComplianceKpi.compliancePct >= 90 ? 'green' : pmComplianceKpi.compliancePct >= 70 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/pm-compliance')} clickLabel="View PM Compliance details" />
+        <ReportKPICard title="MTBF" value={reliability.mtbfHours ?? '—'} subtitle={reliability.mtbfHours == null ? 'no failures in range' : `hours · ${reliability.failures} failures`} icon={<Timer size={14} />} ragStatus="neutral" onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
+        <ReportKPICard title="MTTR" value={reliability.mttrHours ?? '—'} format={reliability.mttrHours == null ? undefined : 'hours'} subtitle={reliability.mttrHours == null ? 'no timed repairs' : `${reliability.downtimeCoveragePct}% of failures timed`} icon={<Clock size={14} />} ragStatus={reliability.mttrHours == null ? 'neutral' : reliability.mttrHours <= 4 ? 'green' : reliability.mttrHours <= 8 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/mtbf-mttr')} clickLabel="View MTBF/MTTR analysis" />
+        <ReportKPICard title="Availability" value={reliability.availabilityPct ?? '—'} format={reliability.availabilityPct == null ? undefined : 'percent'} subtitle={reliability.availabilityPct == null ? 'needs failures + downtime' : 'inherent — MTBF/(MTBF+MTTR)'} target={95} targetLabel="Target: 95%" icon={<Gauge size={14} />} ragStatus={reliability.availabilityPct == null ? 'neutral' : reliability.availabilityPct >= 95 ? 'green' : reliability.availabilityPct >= 85 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/availability')} clickLabel="View Availability trend" />
         <ReportKPICard title="OEE" value={Number((oeeData.oee * 100).toFixed(1))} format="percent" target={Math.round(oeeData.oee * 100)} targetLabel="Target: 85%" icon={<Activity size={14} />} ragStatus={oeeData.oee >= 0.85 ? 'green' : oeeData.oee >= 0.65 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/oee')} clickLabel="View OEE breakdown" />
         <ReportKPICard title="Total Downtime" value={totalDowntimeHrs} format="hours" icon={<AlertTriangle size={14} />} ragStatus={totalDowntimeHrs <= 200 ? 'green' : totalDowntimeHrs <= 500 ? 'amber' : 'red'} onClick={() => navigate('/reports/drilldown/downtime')} clickLabel="View Downtime analysis" />
         <ReportKPICard title="Total Cost" value={kpis.total_cost || 0} format="currency" icon={<DollarSign size={14} />} ragStatus="neutral" onClick={() => setActiveTab('costParts')} clickLabel="View Costs & Parts" />
