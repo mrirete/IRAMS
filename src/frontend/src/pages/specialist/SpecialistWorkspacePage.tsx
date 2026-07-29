@@ -491,10 +491,16 @@ export const SpecialistWorkspacePage: React.FC = () => {
                  And while both are empty the rail collapses to one line. A grid of
                  zeros above the fold is not a value story; it is four ways of saying
                  nothing has happened yet. */}
-            {!loading && ledger && ledger.approved === 0 && ledger.pending === 0 && (realized?.assetsMeasured ?? 0) === 0 ? (
+            {/* Tiles exist only when there are DOLLARS to show. Counts alone
+                ("1 proposal, not yet costed" + an em-dash) are two boxes of
+                nothing on the page's best real estate — until money lands,
+                one slim line keeps the ledger concept alive and the page
+                breathable. */}
+            {!loading && ledger && ledger.valueIdentified <= 0 && (realized?.measuredToDate ?? 0) <= 0 && (realized?.assetsMeasured ?? 0) === 0 ? (
                 <div className={`${CARD} px-4 py-3 text-[12.5px] text-slate-500`}>
-                    Nothing on the value ledger yet — run a briefing or an assessment, and
-                    the proposals it drafts get costed here.
+                    {ledger.pending > 0
+                        ? <>Value ledger: {ledger.pending} proposal{ledger.pending === 1 ? '' : 's'} awaiting review — approved work gets costed and measured here.</>
+                        : <>Nothing on the value ledger yet — run a briefing or an assessment, and the proposals it drafts get costed here.</>}
                 </div>
             ) : (
             <div className="grid grid-cols-2 gap-3">
