@@ -57,7 +57,14 @@ export function parseBriefing(text: string): ParsedBriefing {
         if (m) {
             sawHeading = true;
             if (current) current.body = current.body.trim();
-            current = { key: classify(m[1]), title: m[1].trim(), body: '' };
+            // Strip the agent's outline number. The digest prompt asks for
+            // "1. Headline, 2. Trend since baseline, …" as a writing scaffold,
+            // and carrying those into the card titles made the briefing appear
+            // to start at 2 — section 1 is the headline, which renders as the
+            // callout above without a title. Position already conveys order,
+            // and a number that skips is worse than no number.
+            const heading = m[1].replace(/^\s*\d+\s*[.)]\s*/, '').trim();
+            current = { key: classify(heading), title: heading, body: '' };
             sections.push(current);
         } else if (current) {
             current.body += line + '\n';

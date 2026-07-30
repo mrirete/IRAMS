@@ -160,3 +160,42 @@ describe('takeaway — the line a section card leads with', () => {
         expect(r.text).not.toMatch(/\s…$/);         // no space before the ellipsis
     });
 });
+
+describe('section numbering — the agent outlines, the UI does not parrot it', () => {
+    // The real digest form: bold headings, the outline ordinal INSIDE the bold
+    // (that is what put "2." on the cards).
+    const digest = [
+        '**1. Headline**', 'The fleet is stable but the backlog persists.',
+        '**2. Trend since baseline**', 'Register health held at 84%.',
+        '**3. Maintenance load**', '10 open work orders.',
+        '**10. Data quality**', 'Half the corrective work carries no failure code.',
+    ].join('\n');
+
+    it('strips the outline ordinal from every section title', () => {
+        const titles = parseBriefing(digest).sections.map((s) => s.title);
+        expect(titles).not.toContain('2. Trend since baseline');
+        expect(titles).toContain('Trend since baseline');
+        expect(titles).toContain('Maintenance load');
+        expect(titles).toContain('Data quality');       // double digits too
+    });
+
+    it('still classifies the section after the number is gone', () => {
+        const keys = parseBriefing(digest).sections.map((s) => s.key);
+        expect(keys).toContain('headline');
+        expect(keys).toContain('trend');
+        expect(keys).toContain('load');
+        expect(keys).toContain('data');
+    });
+
+    it('leaves a title that merely starts with a year alone', () => {
+        // No separator after the digits, so this is not an outline number.
+        const { sections } = parseBriefing('**2026 outlook**\nSpend is trending down.');
+        expect(sections[0].title).toBe('2026 outlook');
+    });
+
+    it('handles the ordinal outside the bold too, which the parser already ate', () => {
+        const { sections } = parseBriefing('## 4. **Top bad actors**\nK-601 leads.');
+        expect(sections[0].title).toBe('Top bad actors');
+        expect(sections[0].key).toBe('badActors');
+    });
+});
