@@ -103,20 +103,56 @@ export const ParetoChart: React.FC<{
     );
 };
 
-/** Charts slotted under a briefing section, keyed by section kind. */
+/**
+ * Whether a section has a real illustration to lead with.
+ *
+ * The card layout branches on this, so it must agree with SectionCharts
+ * exactly — a card that clears space for a chart that then renders nothing
+ * looks broken.
+ */
+export const hasSectionChart = (sectionKey: string, analytics: BriefingAnalytics | null): boolean => {
+    if (!analytics) return false;
+    if (sectionKey === 'load') return analytics.monthly.some((m) => m.cost > 0);
+    if (sectionKey === 'badActors') return analytics.pareto.length >= 2;
+    return false;
+};
+
+/** Charts slotted into a briefing section, keyed by section kind. */
 export const SectionCharts: React.FC<{
     sectionKey: string;
     analytics: BriefingAnalytics | null;
     formatCurrency: (n: number) => string;
-}> = ({ sectionKey, analytics, formatCurrency }) => {
+    /** Drop the top margin when the chart leads the card. */
+    flush?: boolean;
+}> = ({ sectionKey, analytics, formatCurrency, flush }) => {
     if (!analytics) return null;
-    if (sectionKey === 'load' && analytics.monthly.some((m) => m.cost > 0)) {
-        return <SpendTrendChart monthly={analytics.monthly} formatCurrency={formatCurrency} />;
-    }
-    if (sectionKey === 'badActors' && analytics.pareto.length >= 2) {
-        return <ParetoChart pareto={analytics.pareto} formatCurrency={formatCurrency} />;
-    }
-    return null;
+    const inner = sectionKey === 'load' && analytics.monthly.some((m) => m.cost > 0)
+        ? <SpendTrendChart monthly={analytics.monthly} formatCurrency={formatCurrency} />
+        : sectionKey === 'badActors' && analytics.pareto.length >= 2
+            ? <ParetoChart pareto={analytics.pareto} formatCurrency={formatCurrency} />
+            : null;
+    if (!inner) return null;
+    // The charts carry their own mt-3; cancel it when they come first.
+    return flush ? <div className="-mt-3">{inner}</div> : inner;
 };
+
+/**
+ * The two backlog figures, read straight off the computed analytics. The load
+ * section's prose opens with these; showing them as figures means the reader
+ * gets them without reading a sentence.
+ */
+export const BacklogFigures: React.FC<{ analytics: BriefingAnalytics }> = ({ analytics }) => (
+    <div className="flex gap-2">
+        {[
+            { label: 'Open work orders', value: analytics.openTotal },
+            { label: 'Of those, corrective', value: analytics.openCm },
+        ].map((f) => (
+            <div key={f.label} className="flex-1 rounded-lg border border-slate-200 bg-slate-50/60 px-2.5 py-2">
+                <div className="text-[16px] font-semibold tabular-nums leading-none text-slate-800">{f.value}</div>
+                <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">{f.label}</div>
+            </div>
+        ))}
+    </div>
+);
 
 export default SectionCharts;

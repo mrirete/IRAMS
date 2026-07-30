@@ -9,11 +9,19 @@
  * as "consumed, stock unknown" rather than silently dropped.
  */
 
+/**
+ * A row of work_order_parts, as the table actually is.
+ *
+ * This shape used to name `description` and `quantity_act`, neither of which
+ * exists — the assessment's spares query 400'd on every run, so this section
+ * was permanently empty rather than merely thin. The real columns are `notes`
+ * (free text, the only human label a part line carries) and `quantity`.
+ */
 export interface PartUseRow {
     wo_id: string;
     item_id: string | null;
-    description: string | null;
-    quantity_act: number | null;
+    notes: string | null;
+    quantity: number | null;
     date_used: string | null;
 }
 
@@ -65,14 +73,14 @@ export function computeSparesExposure(inp: SparesInputs): SparesReview {
     // Consumption on CRITICAL assets, last 12 months, grouped per item.
     const byItem = new Map<string, { label: string; qty: number; uses: number; tags: Set<string> }>();
     for (const p of inp.parts) {
-        const qty = Number(p.quantity_act) || 0;
+        const qty = Number(p.quantity) || 0;
         if (qty <= 0) continue;
         if (p.date_used && new Date(p.date_used).getTime() < cutoff) continue;
         const assetId = inp.woAsset.get(p.wo_id);
         const asset = assetId ? inp.assets.get(assetId) : undefined;
         if (!asset || !['A', 'B'].includes((asset.criticality ?? '').toUpperCase())) continue;
-        const key = p.item_id ? String(p.item_id) : `desc:${(p.description ?? 'unnamed part').toLowerCase()}`;
-        const cur = byItem.get(key) ?? { label: p.description || String(p.item_id ?? 'unnamed part'), qty: 0, uses: 0, tags: new Set<string>() };
+        const key = p.item_id ? String(p.item_id) : `desc:${(p.notes ?? 'unnamed part').toLowerCase()}`;
+        const cur = byItem.get(key) ?? { label: p.notes || String(p.item_id ?? 'unnamed part'), qty: 0, uses: 0, tags: new Set<string>() };
         cur.qty += qty; cur.uses += 1; cur.tags.add(asset.tag);
         byItem.set(key, cur);
     }

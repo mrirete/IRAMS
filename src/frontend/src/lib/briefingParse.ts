@@ -92,6 +92,47 @@ export function parseBriefing(text: string): ParsedBriefing {
 
 // ── entity linking ────────────────────────────────────────────────────────
 
+/**
+ * The one or two sentences a section card leads with, so the reader gets the
+ * point before deciding to open the full text.
+ *
+ * Takes prose only — a section that opens with a bullet list has no summarising
+ * sentence to lift, and inventing one would put words in the Specialist's
+ * mouth. Cuts on a sentence boundary; never mid-number ("$65,400" and "51.1%"
+ * must survive intact), and appends an ellipsis only when something was left.
+ */
+export function takeaway(body: string, maxChars = 190): { text: string; truncated: boolean } {
+    const paragraphs = body.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+    const isList = (b: string) => /^\s*[-*•]/.test(b) || /^\s*\d+[.)]\s/.test(b);
+    const firstProse = paragraphs.find((b) => !isList(b));
+    if (!firstProse) return { text: '', truncated: paragraphs.length > 0 };
+
+    const flat = firstProse.replace(/\s*\n\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+    // Sentence end = . ! ? followed by whitespace and a capital or digit, so
+    // "$65,400" and "51.1%" are never mistaken for a boundary.
+    const sentences = flat.split(/(?<=[.!?])(?=\s+["'(]?[A-Z0-9])/).map((s) => s.trim()).filter(Boolean);
+
+    // Two sentences at most: this is a card line, not a paragraph. A sentence
+    // is allowed to run 30% past the cap rather than be cut mid-clause — a line
+    // that ends cleanly reads better than one ending in a stub.
+    const grace = Math.round(maxChars * 1.3);
+    const kept: string[] = [];
+    for (const s of sentences.slice(0, 2)) {
+        const next = kept.length ? `${kept.join(' ')} ${s}` : s;
+        if (kept.length && next.length > maxChars) break;
+        if (!kept.length && s.length > grace) {
+            const window = s.slice(0, maxChars + 1);
+            const lastSpace = window.lastIndexOf(' ');
+            return { text: `${s.slice(0, lastSpace > 0 ? lastSpace : maxChars).trimEnd()}…`, truncated: true };
+        }
+        kept.push(s);
+    }
+
+    const text = kept.join(' ');
+    return { text, truncated: text.length < flat.length || paragraphs.length > 1 };
+}
+
 export type TextToken = { kind: 'text' | 'tag'; value: string };
 
 const TAG_BOUNDARY = /[A-Za-z0-9-]/;

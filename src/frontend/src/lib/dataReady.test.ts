@@ -56,8 +56,8 @@ describe('computeSparesExposure (B4)', () => {
         const r = computeSparesExposure({
             ...base,
             parts: [
-                { wo_id: 'w1', item_id: 'i1', description: 'Mech seal 3196', quantity_act: 2, date_used: new Date(NOW - 30 * DAY_MS).toISOString() },
-                { wo_id: 'w2', item_id: 'i2', description: 'Belt', quantity_act: 4, date_used: new Date(NOW - 30 * DAY_MS).toISOString() },
+                { wo_id: 'w1', item_id: 'i1', notes: 'Mech seal 3196', quantity: 2, date_used: new Date(NOW - 30 * DAY_MS).toISOString() },
+                { wo_id: 'w2', item_id: 'i2', notes: 'Belt', quantity: 4, date_used: new Date(NOW - 30 * DAY_MS).toISOString() },
             ],
             stock: [{ item_id: 'i1', quantity: 0, min_level: 2 }, { item_id: 'i2', quantity: 0, min_level: 1 }],
         });
@@ -69,8 +69,8 @@ describe('computeSparesExposure (B4)', () => {
         const r = computeSparesExposure({
             ...base,
             parts: [
-                { wo_id: 'w1', item_id: 'legacy-99', description: 'Coupling insert', quantity_act: 1, date_used: new Date(NOW - 10 * DAY_MS).toISOString() },
-                { wo_id: 'w1', item_id: 'i1', description: 'Gasket', quantity_act: 1, date_used: new Date(NOW - 10 * DAY_MS).toISOString() },
+                { wo_id: 'w1', item_id: 'legacy-99', notes: 'Coupling insert', quantity: 1, date_used: new Date(NOW - 10 * DAY_MS).toISOString() },
+                { wo_id: 'w1', item_id: 'i1', notes: 'Gasket', quantity: 1, date_used: new Date(NOW - 10 * DAY_MS).toISOString() },
             ],
             stock: [{ item_id: 'i1', quantity: 10, min_level: 2 }],
         });
@@ -81,7 +81,7 @@ describe('computeSparesExposure (B4)', () => {
     it('excludes consumption older than 12 months', () => {
         const r = computeSparesExposure({
             ...base,
-            parts: [{ wo_id: 'w1', item_id: 'i1', description: 'Seal', quantity_act: 1, date_used: new Date(NOW - 400 * DAY_MS).toISOString() }],
+            parts: [{ wo_id: 'w1', item_id: 'i1', notes: 'Seal', quantity: 1, date_used: new Date(NOW - 400 * DAY_MS).toISOString() }],
             stock: [],
         });
         expect(r.exposures).toHaveLength(0);

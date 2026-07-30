@@ -12,6 +12,7 @@ import {
     ArrowLeft, Printer, Sparkles, Loader2, AlertTriangle, TrendingDown,
     BadgeDollarSign, Activity, Wrench, ShieldCheck, Database, RefreshCw,
     Layers, FolderPlus, Check, Route, SendHorizonal, Users, PackageSearch, Footprints,
+    FileSpreadsheet, Maximize2,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -27,6 +28,81 @@ import { analyzeService } from '../../eam/services/AnalyzeService';
 import BriefingReport, { type BriefingAsset } from '../../components/specialist/BriefingReport';
 import PmOptimizationModal from '../../components/specialist/PmOptimizationModal';
 import AreaAssessmentModal from '../../components/specialist/AreaAssessmentModal';
+import ReportModal from '../../components/specialist/ReportModal';
+import {
+    ScoreRing, MetricBars, MagnitudeBars, StatusSplit, BetaStrip, NoData, scoreTone,
+} from '../../components/specialist/AssessmentCharts';
+import { ParetoChart } from '../../components/specialist/BriefingCharts';
+import { exportAssessmentWorkbook } from '../../lib/assessmentExport';
+
+/** Enum → words. Charts are read by people, not by the database. */
+const REGIME_LABEL: Record<string, string> = {
+    run_to_failure: 'Run to failure',
+    fixed_interval: 'Fixed interval',
+    condition_based: 'Condition based',
+    defect_elimination: 'Defect elimination',
+    rcm_study: 'RCM study',
+};
+const PM_VERDICT_LABEL: Record<string, string> = {
+    redundant: 'Redundant',
+    over_maintenance: 'Too frequent',
+    under_maintenance: 'Not frequent enough',
+    ineffective: 'Not preventing failures',
+};
+
+const Empty: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <p className="text-sm text-slate-400 italic">{children}</p>
+);
+
+/**
+ * A report section: illustration first, then the detail.
+ *
+ * The figure goes above the table because a reader deciding whether this
+ * section concerns them should not have to parse rows to find out. `detail`
+ * opens the same content in a wide overlay — the useful move for the long
+ * tables, which are cramped inside a 4xl column.
+ *
+ * Declared at module scope on purpose: as a nested component it was a fresh
+ * type on every render, remounting each section (and resetting its state).
+ */
+const Section: React.FC<{
+    icon: React.ReactNode;
+    title: string;
+    /** Rendered above the body, and repeated at the top of the detail overlay. */
+    chart?: React.ReactNode;
+    /** Offers a wide overlay of this same section. Omit where it fits as-is. */
+    expand?: { label: string; subtitle?: string };
+    children: React.ReactNode;
+}> = ({ icon, title, chart, expand, children }) => {
+    const [open, setOpen] = useState(false);
+    return (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 print:border-0 print:p-0 print:mb-6 break-inside-avoid">
+            <div className="flex items-start justify-between gap-3 mb-4">
+                <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 uppercase tracking-wide">{icon}{title}</h2>
+                {expand && (
+                    <button
+                        onClick={() => setOpen(true)}
+                        title={expand.label}
+                        className="no-print shrink-0 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 h-6 text-[10.5px] font-semibold text-slate-500 transition-colors hover:border-primary-300 hover:text-primary-700"
+                    >
+                        <Maximize2 size={10} /> {expand.label}
+                    </button>
+                )}
+            </div>
+            {chart && <div className="mb-4">{chart}</div>}
+            {children}
+            {/* The overlay renders the same children — one source of truth for
+                the content, and the wide column is the only difference. */}
+            {expand && open && (
+                <ReportModal open onClose={() => setOpen(false)} title={title}
+                    subtitle={expand.subtitle} icon={icon} width="xl">
+                    {chart && <div className="mb-5">{chart}</div>}
+                    {children}
+                </ReportModal>
+            )}
+        </section>
+    );
+};
 
 // ── page (engine lives in eam/services/assessmentEngine) ──────────────────────────────────────────────────────────────────
 export const AssessmentReportPage: React.FC = () => {
@@ -53,6 +129,7 @@ export const AssessmentReportPage: React.FC = () => {
     const [draftedStrategies, setDraftedStrategies] = useState<Set<string>>(new Set());
     // Operator-care route planner (Phase F1)
     const [careOpen, setCareOpen] = useState(false);
+    const [exporting, setExporting] = useState(false);
 
     const load = async () => {
         setLoading(true); setError(null); setSnapshotSaved(false);
@@ -234,15 +311,32 @@ export const AssessmentReportPage: React.FC = () => {
     }
     const a = assessment;
 
-    const Section: React.FC<{ icon: React.ReactNode; title: string; children: React.ReactNode }> = ({ icon, title, children }) => (
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 print:border-0 print:p-0 print:mb-6 break-inside-avoid">
-            <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 uppercase tracking-wide mb-4">{icon}{title}</h2>
-            {children}
-        </section>
-    );
-    const Empty: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-        <p className="text-sm text-slate-400 italic">{children}</p>
-    );
+    // ── Illustration series, all from figures the engine already computed ──
+    const idByTag = new Map(a.assetIndex.map((x) => [x.tag, x.id]));
+    const badActorPareto = a.badActors.slice(0, 6).map((b) => ({
+        assetId: idByTag.get(b.tag) ?? '', tag: b.tag, name: b.name,
+        cost: Math.round(b.cost12mo), cumPct: b.cumulativePct,
+    }));
+    const countBy = <T,>(rows: T[], key: (r: T) => string) => {
+        const m = new Map<string, number>();
+        for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + 1);
+        return [...m.entries()].sort((x, y) => y[1] - x[1]);
+    };
+    const regimeRows = countBy(a.strategy.verdicts, (v) => v.recommended)
+        .map(([k, count]) => ({ label: REGIME_LABEL[k] ?? k, value: count }));
+    const pmVerdictRows = countBy(a.pmWaste, (w) => w.category)
+        .map(([k, count]) => ({ label: PM_VERDICT_LABEL[k] ?? k.replace(/_/g, ' '), value: count }));
+    const warrantyRows = a.warranty.items.slice(0, 6)
+        .map((w) => ({ label: w.tag, value: Math.round(w.recoverable), sub: `WO ${w.woNumber} · ${w.date?.slice(0, 10) ?? ''}` }));
+    const spareRows = [
+        { label: 'No stock at all', tone: 'bad' as const, count: a.spares.exposures.filter((x) => x.severity === 'stockout').length, hint: 'Consumed by a critical asset and nothing on hand' },
+        { label: 'Below minimum', tone: 'warn' as const, count: a.spares.exposures.filter((x) => x.severity === 'below_min').length, hint: 'On hand but under the reorder level' },
+        { label: 'Stock unknown', tone: 'idle' as const, count: a.spares.exposures.filter((x) => x.severity === 'unknown_stock').length, hint: 'Part is not in the stock records at all' },
+    ];
+    const skillRows = [
+        { label: 'Capabilities covered', tone: 'good' as const, count: a.skills.areas.filter((x) => !x.gap).length },
+        { label: 'Capability gaps', tone: 'bad' as const, count: a.skills.areas.filter((x) => x.gap).length, hint: 'The strategy needs this skill and nobody holds it' },
+    ];
 
     return (
         <>
@@ -264,6 +358,17 @@ export const AssessmentReportPage: React.FC = () => {
                     </button>
                     <button onClick={() => void load()} className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2">
                         <RefreshCw size={13} /> Recompute
+                    </button>
+                    {/* Two channels on purpose: print carries the narrative,
+                        the workbook carries the rows behind every figure so a
+                        reviewer can audit them. */}
+                    <button
+                        onClick={() => { setExporting(true); void exportAssessmentWorkbook(a).finally(() => setExporting(false)); }}
+                        aria-disabled={exporting}
+                        title="Every figure in this report as a multi-sheet workbook — summary, bad actors, Weibull fits, strategy, PM programme, Golden Spot, spares, workforce, register quality"
+                        className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-2"
+                    >
+                        {exporting ? <Loader2 size={13} className="animate-spin" /> : <FileSpreadsheet size={13} />} Export data
                     </button>
                     <button onClick={() => window.print()} className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-4 py-2">
                         <Printer size={13} /> Print / PDF
@@ -331,7 +436,11 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Bad actors */}
-                <Section icon={<TrendingDown size={15} className="text-rose-500" />} title="Where the money is going — bad actors (12 months)">
+                <Section icon={<TrendingDown size={15} className="text-rose-500" />} title="Where the money is going — bad actors (12 months)"
+                    chart={badActorPareto.length >= 2
+                        ? <ParetoChart pareto={badActorPareto} formatCurrency={formatCurrency} />
+                        : null}
+                    expand={{ label: 'Full table', subtitle: 'Ranked by 12-month cost. The right-hand figure is the cumulative share of spend — where it reaches 80%, the rest of the fleet is noise by comparison.' }}>
                     {a.badActors.length === 0 ? <Empty>No costed work-order history in the last 12 months.</Empty> : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
@@ -363,7 +472,8 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Weibull */}
-                <Section icon={<Activity size={15} className="text-indigo-500" />} title="Failure behaviour — Weibull analysis (censored, full history)">
+                <Section icon={<Activity size={15} className="text-indigo-500" />} title="Failure behaviour — Weibull analysis (censored, full history)"
+                    chart={<BetaStrip rows={a.weibull.map((w) => ({ tag: w.tag, beta: w.beta, interpretation: w.interpretation }))} />}>
                     {a.weibull.length === 0 ? <Empty>Not enough repeated corrective failures on any single asset for a statistically meaningful fit (needs ≥3). This unlocks as history accumulates.</Empty> : (
                         <div className="space-y-3">
                             {a.weibull.map((w) => (
@@ -398,7 +508,10 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Warranty */}
-                <Section icon={<BadgeDollarSign size={15} className="text-emerald-600" />} title="Money on the table — warranty recovery">
+                <Section icon={<BadgeDollarSign size={15} className="text-emerald-600" />} title="Money on the table — warranty recovery"
+                    chart={warrantyRows.length
+                        ? <MagnitudeBars rows={warrantyRows} format={formatCurrency} mono />
+                        : null}>
                     {a.warranty.total === 0 ? <Empty>No completed work fell inside an active warranty window (or no warranty records exist in the data provided).</Empty> : (
                         <div className="space-y-2">
                             <p className="text-sm text-slate-700">
@@ -416,7 +529,11 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* PM waste */}
-                <Section icon={<Wrench size={15} className="text-amber-500" />} title="PM programme health">
+                <Section icon={<Wrench size={15} className="text-amber-500" />} title="PM programme health"
+                    chart={pmVerdictRows.length
+                        ? <MagnitudeBars rows={pmVerdictRows} />
+                        : <NoData>Every active PM programme matches its asset's failure history.</NoData>}
+                    expand={{ label: 'Full list', subtitle: 'Programmes whose frequency does not match what the asset actually does.' }}>
                     <div className="no-print mb-3">
                         <button onClick={() => setPmOptOpen(true)}
                             className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-700 text-[12px] font-semibold px-3 py-1.5 transition-colors">
@@ -449,7 +566,15 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Maintenance strategy (Phase D1/D2) */}
-                <Section icon={<Route size={15} className="text-violet-600" />} title="Maintenance strategy — every asset a deliberate regime">
+                <Section icon={<Route size={15} className="text-violet-600" />} title="Maintenance strategy — every asset a deliberate regime"
+                    chart={<div className="grid gap-5 md:grid-cols-[auto_1fr] md:items-center">
+                        <ScoreRing pct={a.strategy.coveragePct} label="Critical coverage"
+                            caption={`${a.strategy.criticalCovered} of ${a.strategy.criticalTotal} A/B assets carry a live PM or monitoring`} />
+                        {regimeRows.length
+                            ? <MagnitudeBars rows={regimeRows} format={(v) => `${v} assets`} />
+                            : <NoData>No assets scored yet.</NoData>}
+                    </div>}
+                    expand={{ label: 'Full list', subtitle: 'The recommended regime for every asset, and whether what is deployed today already matches it.' }}>
                     {(() => {
                         const st = a.strategy;
                         // D4 — living strategies: verdicts that CHANGED since the
@@ -561,7 +686,8 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Workforce readiness (Phase F5) */}
-                <Section icon={<Users size={15} className="text-teal-600" />} title="Workforce readiness — can this roster execute the strategy?">
+                <Section icon={<Users size={15} className="text-teal-600" />} title="Workforce readiness — can this roster execute the strategy?"
+                    chart={<StatusSplit segments={skillRows} unitLabel="capability areas" />}>
                     {a.skills.totalQualifications === 0 ? (
                         <Empty>
                             No qualifications are recorded yet — the strategy above needs {a.skills.areas.filter((x) => x.demand > 0).length} capability
@@ -593,7 +719,19 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Success layer — PSC / Golden Spot (Phase E1) */}
-                <Section icon={<Activity size={15} className="text-emerald-600" />} title="Success layer — Golden-Spot residency (PSC)">
+                <Section icon={<Activity size={15} className="text-emerald-600" />} title="Success layer — Golden-Spot residency (PSC)"
+                    chart={<div className="grid gap-5 md:grid-cols-[auto_1fr] md:items-center">
+                        <ScoreRing pct={a.success.fleetSuccessRate} label="Fleet success rate"
+                            tone={a.success.fleetSuccessRate == null ? 'idle' : scoreTone(a.success.fleetSuccessRate, a.success.targets.srTarget)}
+                            caption={`Target ${a.success.targets.srTarget}% · world class ${a.success.targets.srWorldClass}%`} />
+                        <StatusSplit
+                            segments={[
+                                { label: 'in the Golden Spot', tone: 'good', count: a.success.zoneCounts.inSpot },
+                                { label: 'drifting', tone: 'warn', count: a.success.zoneCounts.drift, hint: 'Still inside the band but heading out' },
+                                { label: 'in critical departure', tone: 'bad', count: a.success.zoneCounts.critical },
+                                { label: 'not yet measurable', tone: 'idle', count: a.success.zoneCounts.unknown, hint: 'No banded measurement points on the asset' },
+                            ]} />
+                    </div>}>
                     {a.success.assetsWithBands === 0 ? (
                         <Empty>
                             No measurement points carry warning bands yet — set bands on reading points (Condition Data) and the
@@ -694,7 +832,9 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Spares exposure (Phase B4) */}
-                <Section icon={<PackageSearch size={15} className="text-orange-500" />} title="Spares exposure — parts the criticals already needed once">
+                <Section icon={<PackageSearch size={15} className="text-orange-500" />} title="Spares exposure — parts the criticals already needed once"
+                    chart={<StatusSplit segments={spareRows} unitLabel="parts" />}
+                    expand={{ label: 'Full list', subtitle: 'Parts consumed by critical assets in the window, and what is on the shelf today.' }}>
                     {a.spares.criticalPartsTracked === 0 ? (
                         <Empty>
                             No parts consumption is recorded against A/B-criticality assets yet
@@ -739,7 +879,17 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Asset register quality (Phase A2) */}
-                <Section icon={<Layers size={15} className="text-sky-600" />} title="Asset register quality — the foundation layer">
+                <Section icon={<Layers size={15} className="text-sky-600" />} title="Asset register quality — the foundation layer"
+                    chart={<div className="grid gap-5 md:grid-cols-[auto_1fr] md:items-center">
+                        <ScoreRing pct={a.register.healthPct} label="Register health"
+                            caption="ISO 14224 composite of the measures beside it" />
+                        <MetricBars rows={[
+                            { label: 'Sits under a parent (hierarchy)', pct: a.register.structuredPct, hint: 'A flat list cannot be rolled up, scoped or costed by unit' },
+                            { label: 'Criticality actually varied', pct: a.register.criticalitySpreadPct, target: 40, hint: 'One class for everything means criticality was never assessed' },
+                            { label: 'Nameplate (make and model)', pct: a.register.nameplatePct, target: 60, hint: 'No nameplate, no benchmark and no parts interchangeability' },
+                            { label: 'Work orders resolve to an asset', pct: a.register.woLinkedPct, target: 95, hint: 'Unlinked work cannot be attributed to anything' },
+                        ]} />
+                    </div>}>
                     <div className="flex flex-col sm:flex-row gap-3 mb-3">
                         <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-center sm:w-40 shrink-0 flex flex-col justify-center">
                             <div className={`text-3xl font-bold ${a.register.healthPct >= 70 ? 'text-emerald-600' : a.register.healthPct >= 40 ? 'text-amber-500' : 'text-rose-500'}`}>
@@ -781,7 +931,12 @@ export const AssessmentReportPage: React.FC = () => {
                 </Section>
 
                 {/* Data quality */}
-                <Section icon={<Database size={15} className="text-slate-500" />} title="Data quality — what this assessment rests on">
+                <Section icon={<Database size={15} className="text-slate-500" />} title="Data quality — what this assessment rests on"
+                    chart={<MetricBars rows={[
+                        { label: 'Work orders carrying a cost', pct: a.coverage.cost_pct, target: 90 },
+                        { label: 'Corrective work with a coded failure mode', pct: a.coverage.failure_code_pct, target: 80, hint: 'Without codes there is no Pareto by cause and no RCM evidence' },
+                        { label: 'Corrective work with a downtime figure', pct: a.coverage.downtime_pct, target: 80, hint: 'MTTR and availability rest on this denominator' },
+                    ]} />}>
                     <div className="grid grid-cols-3 gap-3 mb-3">
                         {[
                             { label: 'WOs with cost data', pct: a.coverage.cost_pct },

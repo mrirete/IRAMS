@@ -148,7 +148,7 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
         supabase.from('ers_smea_worksheets').select('id, asset_id, status').neq('status', 'closed').limit(2000),
         supabase.from('ers_smea_items').select('worksheet_id, success_mode, spn, status').neq('status', 'dropped').limit(5000),
         supabase.from('qualifications').select('contact_id, name, type, status, date_expires').limit(5000),
-        supabase.from('work_order_parts').select('wo_id, item_id, description, quantity_act, date_used').limit(20000),
+        supabase.from('work_order_parts').select('wo_id, item_id, notes, quantity, date_used').limit(20000),
         supabase.from('inventory_stock').select('item_id, quantity, min_level').limit(20000),
     ]);
 

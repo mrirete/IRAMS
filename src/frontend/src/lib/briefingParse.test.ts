@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBriefing, tokenizeTags, routeForAction, guideForMission, deepLink } from './briefingParse';
+import { parseBriefing, tokenizeTags, routeForAction, guideForMission, deepLink, takeaway } from './briefingParse';
 
 // Shape the live reliability_digest actually produced (2026-07-28 run).
 const SAMPLE = `**Reliability & Integrity Digest: Fleet Overview**
@@ -118,5 +118,45 @@ describe('guideForMission', () => {
     it('falls back gracefully with no tags and unknown paths', () => {
         expect(guideForMission('/analyze', []).steps[0]).toContain('the flagged asset');
         expect(guideForMission('/somewhere-new', []).steps.length).toBeGreaterThanOrEqual(2);
+    });
+});
+
+describe('takeaway — the line a section card leads with', () => {
+    it('lifts the first sentence of prose', () => {
+        const r = takeaway('There are currently 10 open work orders across the fleet, with 2 active PM programs past due. The assets with the most open work are listed below.');
+        // Two sentences is the cap: enough to carry the point onto the card.
+        expect(r.text).toBe('There are currently 10 open work orders across the fleet, with 2 active PM programs past due. The assets with the most open work are listed below.');
+        expect(r.truncated).toBe(false);
+    });
+
+    it('keeps a short section whole and does not claim truncation', () => {
+        const r = takeaway('This area looks clear.');
+        expect(r).toEqual({ text: 'This area looks clear.', truncated: false });
+    });
+
+    it('never breaks a decimal or a currency figure', () => {
+        const r = takeaway('K-601 cost $65,400 (51.1% of total spend) across 8 work orders. It is the first thing to look at.', 60);
+        expect(r.text).toContain('$65,400');
+        expect(r.text).toContain('51.1%');
+        expect(r.text.endsWith('…')).toBe(false);   // cut on the sentence, not mid-number
+    });
+
+    it('skips a leading bullet list rather than inventing a summary', () => {
+        const r = takeaway('- P-101-A: 5 open work orders\n- K-601: 3 open work orders\n\nThe backlog is concentrated.');
+        expect(r.text).toBe('The backlog is concentrated.');
+    });
+
+    it('reports emptiness when there is no prose at all', () => {
+        expect(takeaway('- only\n- bullets')).toEqual({ text: '', truncated: true });
+        expect(takeaway('')).toEqual({ text: '', truncated: false });
+    });
+
+    it('falls back to a word boundary with an ellipsis when one sentence is too long', () => {
+        const long = `The fleet ${'shows a persistent maintenance backlog '.repeat(8)}across every unit`;
+        const r = takeaway(long, 120);
+        expect(r.truncated).toBe(true);
+        expect(r.text.endsWith('…')).toBe(true);
+        expect(r.text.length).toBeLessThanOrEqual(122);
+        expect(r.text).not.toMatch(/\s…$/);         // no space before the ellipsis
     });
 });

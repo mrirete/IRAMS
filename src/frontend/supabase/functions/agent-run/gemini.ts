@@ -60,14 +60,29 @@ export async function runToolLoop(
       generationConfig: { temperature: 0.2 },
     };
 
-    const resp = await fetch(ENDPOINT(apiKey), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) {
-      const txt = await resp.text();
-      throw new Error(`Gemini API ${resp.status}: ${txt.slice(0, 500)}`);
+    // Transient upstream failures are retried before the run is abandoned.
+    // Gemini answers 503 "this model is currently experiencing high demand"
+    // often enough that a single one was losing whole assessment narratives,
+    // and the caller has no way to distinguish that from a real fault.
+    // Backoff is short and capped: an edge function has a wall clock, and a
+    // user waiting on a report would rather be told than kept hanging.
+    const TRANSIENT = new Set([429, 500, 502, 503, 504]);
+    let resp!: Response;
+    for (let attempt = 0; ; attempt++) {
+      resp = await fetch(ENDPOINT(apiKey), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (resp.ok) break;
+      const retriable = TRANSIENT.has(resp.status) && attempt < 2;
+      if (!retriable) {
+        const txt = await resp.text();
+        throw new Error(`Gemini API ${resp.status}: ${txt.slice(0, 500)}`);
+      }
+      // Drain the body so the connection is released before sleeping.
+      await resp.text().catch(() => undefined);
+      await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
     }
     const json = await resp.json();
     tokensUsed += json?.usageMetadata?.totalTokenCount ?? 0;

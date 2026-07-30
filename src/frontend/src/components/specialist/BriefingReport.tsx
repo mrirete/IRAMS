@@ -22,10 +22,11 @@ import {
     BadgeDollarSign, Database,
 } from 'lucide-react';
 import {
-    parseBriefing, tokenizeTags, routeForAction, deepLink, MISSION_HANDOFF_KEY,
+    parseBriefing, tokenizeTags, routeForAction, deepLink, takeaway, MISSION_HANDOFF_KEY,
     type ActiveMission, type BriefingSection, type SectionKey,
 } from '../../lib/briefingParse';
-import SectionCharts from './BriefingCharts';
+import SectionCharts, { hasSectionChart, BacklogFigures } from './BriefingCharts';
+import ReportModal from './ReportModal';
 import type { BriefingAnalytics } from '../../lib/briefingCharts';
 import type { DetMission } from '../../lib/missionEngine';
 
@@ -189,6 +190,16 @@ const SECTION_META: Record<Exclude<SectionKey, 'title' | 'headline' | 'act'>, { 
     other: { icon: <Sparkles size={14} />, tint: 'text-slate-500 bg-slate-50 border-slate-100' },
 };
 
+/**
+ * A briefing section: the picture first, one line of the Specialist's own
+ * words, and the full text a click away.
+ *
+ * Why this shape — the digest used to open every section with a paragraph, so
+ * reading it was the only way to find out whether it mattered. Now the figure
+ * carries the magnitude, the takeaway carries the point, and anyone who wants
+ * the reasoning opens it. Nothing is hidden: "Read the full section" states how
+ * much more there is, and the full prose is the same text, unedited.
+ */
 const SectionCard: React.FC<{
     section: BriefingSection;
     assetsByTag: Map<string, BriefingAsset>;
@@ -196,22 +207,78 @@ const SectionCard: React.FC<{
     analytics?: BriefingAnalytics | null;
     formatCurrency?: (n: number) => string;
 }> = ({ section, assetsByTag, onAsk, analytics, formatCurrency }) => {
+    const [open, setOpen] = useState(false);
     // Integrity reads calm when the agent reports it clear.
     const clear = section.key === 'integrity' && /no cml|clear|none|nothing/i.test(section.body);
     const meta = clear
         ? { icon: <ShieldCheck size={14} />, tint: 'text-emerald-600 bg-emerald-50 border-emerald-100' }
         : SECTION_META[section.key as keyof typeof SECTION_META] ?? SECTION_META.other;
+
+    const charted = formatCurrency ? hasSectionChart(section.key, analytics ?? null) : false;
+    const figures = section.key === 'load' && analytics ? <BacklogFigures analytics={analytics} /> : null;
+    const lead = takeaway(section.body);
+    // With no illustration and nothing to hold back, the section is short
+    // enough to simply read where it stands.
+    const inlineOnly = !charted && !figures && !lead.truncated;
+
+    const header = (
+        <h3 className="flex items-center gap-2">
+            <span className={`w-6 h-6 rounded-md border flex items-center justify-center ${meta.tint}`}>{meta.icon}</span>
+            <span className="text-[12px] font-semibold text-slate-800 uppercase tracking-[0.05em]">{section.title}</span>
+        </h3>
+    );
+
     return (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
-            <h3 className="flex items-center gap-2 mb-2.5">
-                <span className={`w-6 h-6 rounded-md border flex items-center justify-center ${meta.tint}`}>{meta.icon}</span>
-                <span className="text-[12px] font-semibold text-slate-800 uppercase tracking-[0.05em]">{section.title}</span>
-            </h3>
-            <RichText text={section.body} assetsByTag={assetsByTag} onAsk={onAsk} />
-            {formatCurrency && (
-                <SectionCharts sectionKey={section.key} analytics={analytics ?? null} formatCurrency={formatCurrency} />
-            )}
-        </section>
+        <>
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+                {/* One affordance per card. A header button AND a footer link
+                    for the same overlay is two signs pointing the same way. */}
+                <div className="mb-2.5">{header}</div>
+
+                {/* Illustration first — magnitude before narration. */}
+                {figures && <div className={charted ? 'mb-3' : 'mb-3'}>{figures}</div>}
+                {charted && formatCurrency && (
+                    <SectionCharts sectionKey={section.key} analytics={analytics ?? null}
+                        formatCurrency={formatCurrency} flush={!figures} />
+                )}
+
+                {inlineOnly ? (
+                    <RichText text={section.body} assetsByTag={assetsByTag} onAsk={onAsk} />
+                ) : (
+                    <div className={charted || figures ? 'mt-3' : ''}>
+                        {lead.text
+                            ? <p className="text-[13px] leading-[1.65] text-slate-600">
+                                <InlineText text={lead.text} assetsByTag={assetsByTag} onAsk={onAsk} />
+                            </p>
+                            : <p className="text-[12px] italic text-slate-400">The Specialist's detail for this section is in the full text.</p>}
+                        <button
+                            onClick={() => setOpen(true)}
+                            className="mt-2 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary-600 transition-colors hover:text-primary-700"
+                        >
+                            Read the full section <ChevronRight size={12} />
+                        </button>
+                    </div>
+                )}
+            </section>
+
+            <ReportModal
+                open={open}
+                onClose={() => setOpen(false)}
+                title={section.title}
+                subtitle="The Specialist's full read on this section — same text, nothing summarised away."
+                icon={meta.icon}
+                width="lg"
+            >
+                {figures && <div className="mb-4">{figures}</div>}
+                {charted && formatCurrency && (
+                    <div className="mb-4">
+                        <SectionCharts sectionKey={section.key} analytics={analytics ?? null}
+                            formatCurrency={formatCurrency} flush={!figures} />
+                    </div>
+                )}
+                <RichText text={section.body} assetsByTag={assetsByTag} onAsk={onAsk} />
+            </ReportModal>
+        </>
     );
 };
 
