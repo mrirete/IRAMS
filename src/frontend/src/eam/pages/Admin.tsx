@@ -525,7 +525,11 @@ const DictionaryManager: React.FC = () => {
     };
 
     return (
-        <div className="flex h-full animate-in fade-in duration-300 relative">
+        /* flex-col on a phone. As a plain `flex` row the mobile type selector below
+           was a flex *sibling* of the entries panel rather than a header above it,
+           so it grew to ~660px and pushed the entries — the whole point of the tab —
+           off the right edge of a 390px screen. */
+        <div className="flex flex-col md:flex-row h-full min-h-0 animate-in fade-in duration-300 relative">
             {showModal && (
                 <DictionaryModal
                     isOpen={showModal}
@@ -538,7 +542,7 @@ const DictionaryManager: React.FC = () => {
             )}
 
             {/* Mobile Dictionary Type Selector */}
-            <div className="md:hidden p-3 border-b border-slate-200 bg-slate-50">
+            <div className="md:hidden p-3 border-b border-slate-200 bg-slate-50 shrink-0">
                 <select
                     value={selectedType}
                     onChange={(e) => setSelectedType(e.target.value as DictionaryType)}
@@ -567,7 +571,7 @@ const DictionaryManager: React.FC = () => {
             </div>
 
             {/* Entries List */}
-            <div className="flex-1 bg-white flex flex-col p-4 md:p-6 min-w-0">
+            <div className="flex-1 min-h-0 bg-white flex flex-col p-4 md:p-6 min-w-0">
                 <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
                     <div>
                         <h2 className="text-xl font-bold text-slate-900">{DICTIONARY_TYPES.find(t => t.key === selectedType)?.label}</h2>
@@ -622,8 +626,126 @@ const DictionaryManager: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="border border-slate-200 rounded-lg overflow-y-auto overflow-x-auto flex-1 flex flex-col max-h-[calc(100vh-280px)]">
-                    <table className="min-w-full divide-y divide-slate-200">
+                <div className="border border-slate-200 rounded-lg overflow-y-auto overflow-x-auto flex-1 flex flex-col max-h-[calc(100dvh-22rem)] md:max-h-[calc(100vh-280px)]">
+                    {/* ── Phone: one card per entry ──
+                         The table runs to four–seven type-dependent columns (~835px),
+                         so on a phone the Status chip and every row action — lock,
+                         edit, delete — lived off the right edge. Cards put the actions
+                         beside the code they act on. */}
+                    <div className="md:hidden divide-y divide-slate-200 bg-white">
+                        {entries.map(entry => {
+                            const locked = !!(entry.is_locked || entry.locked);
+                            return (
+                                <div key={entry.id} className="p-3.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                {isPriorityType && entry.colorCode && (
+                                                    <span className="inline-block w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: entry.colorCode }} />
+                                                )}
+                                                <span className="font-mono font-semibold text-[14px] text-slate-900 truncate">{entry.code}</span>
+                                            </div>
+                                            <p className="text-[13px] text-slate-600 mt-0.5 break-words">{entry.description}</p>
+                                        </div>
+                                        <div className="flex items-center gap-0.5 shrink-0">
+                                            <button onClick={() => handleEditClick(entry)} aria-label="Edit entry"
+                                                className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-slate-400 active:bg-slate-100"><Edit2 size={16} /></button>
+                                            <button onClick={() => handleDeleteClick(entry)} aria-label="Delete entry"
+                                                className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-slate-400 active:text-red-600 active:bg-red-50"><Trash2 size={16} /></button>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                                        <span className={`px-2 py-0.5 rounded font-medium ${entry.active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                            {entry.active ? 'Active' : 'Inactive'}
+                                        </span>
+                                        {locked && (
+                                            <span className="px-2 py-0.5 rounded font-medium bg-amber-100 text-amber-700 inline-flex items-center gap-1">
+                                                <Shield size={10} /> Locked
+                                            </span>
+                                        )}
+                                        {isContactType && entry.hourlyRate != null && (
+                                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium tabular-nums">${entry.hourlyRate.toFixed(2)}/hr</span>
+                                        )}
+                                        {isContactType && entry.isManufacturer && (
+                                            <span className="px-2 py-0.5 rounded bg-primary-100 text-primary-800 font-medium">Manufacturer</span>
+                                        )}
+                                        {isReadingType && entry.categoryCode && (
+                                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">{entry.categoryCode}</span>
+                                        )}
+                                        {isReadingType && entry.suppression !== undefined && (
+                                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium tabular-nums">{entry.suppression.toFixed(2)}% suppression</span>
+                                        )}
+                                    </div>
+
+                                    {/* Priority colour + order stay editable in place — they are
+                                        the reason an admin opens this dictionary on a phone. */}
+                                    {isPriorityType && (
+                                        <div className="mt-2.5 flex items-center gap-4">
+                                            <label className="flex items-center gap-2 text-[12px] text-slate-500">
+                                                Colour
+                                                <input type="color" value={entry.colorCode || '#3B82F6'}
+                                                    onChange={(e) => handleInlineColorChange(entry.id, e.target.value)}
+                                                    className="w-9 h-9 rounded border border-slate-300" />
+                                            </label>
+                                            <label className="flex items-center gap-2 text-[12px] text-slate-500">
+                                                Order
+                                                <input type="number" min="1" value={entry.sequence ?? ''}
+                                                    onChange={(e) => handleInlineSequenceChange(entry.id, e.target.value)}
+                                                    className="w-16 h-9 px-2 border border-slate-300 rounded text-sm text-center font-mono" />
+                                            </label>
+                                        </div>
+                                    )}
+
+                                    <div className="mt-2.5 flex flex-wrap gap-2">
+                                        {selectedType === 'COST_CENTRE' && (
+                                            <button onClick={() => navigate(`/finops?tab=cost-centers&id=${entry.id}`)}
+                                                className="h-9 px-3 rounded-lg border border-green-200 text-green-700 text-[12.5px] font-semibold inline-flex items-center gap-1.5 active:bg-green-50">
+                                                <DollarSign size={13} /> Budget
+                                            </button>
+                                        )}
+                                        {locked ? (
+                                            <button
+                                                onClick={async () => {
+                                                    if (!confirm(`Unlock "${entry.code}"? This will allow editing and deletion of this entry.`)) return;
+                                                    try {
+                                                        await DatabaseService.getInstance().updateDictionary(entry.id, { is_locked: false, locked: false });
+                                                        setDictionaries(prev => prev.map(d => d.id === entry.id ? { ...d, is_locked: false, locked: false } : d));
+                                                    } catch (e: any) { showToast('Error unlocking: ' + e.message, 'error'); }
+                                                }}
+                                                className="h-9 px-3 rounded-lg border border-amber-200 text-amber-600 text-[12.5px] font-semibold inline-flex items-center gap-1.5 active:bg-amber-50">
+                                                <ShieldOff size={13} /> Unlock
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        await DatabaseService.getInstance().updateDictionary(entry.id, { is_locked: true, locked: true });
+                                                        setDictionaries(prev => prev.map(d => d.id === entry.id ? { ...d, is_locked: true, locked: true } : d));
+                                                    } catch (e: any) { showToast('Error locking: ' + e.message, 'error'); }
+                                                }}
+                                                className="h-9 px-3 rounded-lg border border-slate-200 text-slate-500 text-[12.5px] font-semibold inline-flex items-center gap-1.5 active:bg-slate-50">
+                                                <Shield size={13} /> Lock
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {entries.length === 0 && (
+                            <div className="px-4 py-10 text-center text-slate-400 text-sm flex flex-col items-center gap-3">
+                                <p>No entries found. Tap "Add Entry" to create one.</p>
+                                <p className="text-xs">Or initialize with standard defaults:</p>
+                                <button onClick={handleSeed} disabled={isSeeding}
+                                    className="h-10 px-4 bg-slate-100 active:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium inline-flex items-center gap-2 border border-slate-300">
+                                    {isSeeding ? <Activity className="animate-spin text-primary-600" size={16} /> : <Database size={16} />}
+                                    {isSeeding ? 'Seeding Database…' : 'Seed Default Dictionaries'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    <table className="min-w-full divide-y divide-slate-200 hidden md:table">
                         <thead className="bg-slate-50 sticky top-0 z-10">
                             <tr>
                                 <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase">Code</th>
@@ -1994,11 +2116,15 @@ export const Admin: React.FC = () => {
     }
 
     return (
-        <div className="flex flex-col h-[calc(100vh-6rem)]">
-            <div className="mb-6 flex flex-wrap justify-between items-center gap-3">
+        /* The mobile height also subtracts the fixed bottom tab bar. 100vh-6rem
+           covers the top bar and main's padding but not the nav, so on a phone the
+           bottom ~70px of every admin tab — table rows, Save buttons — sat
+           underneath it. dvh rather than vh so mobile browser chrome counts. */
+        <div className="flex flex-col h-[calc(100dvh-11rem)] md:h-[calc(100vh-6rem)]">
+            <div className="mb-4 md:mb-6 flex flex-wrap justify-between items-center gap-3">
                 <div>
-                    <h1 className="text-2xl font-bold text-slate-900">System Administration</h1>
-                    <p className="text-sm text-slate-500">Configure dictionaries, role permissions, and system settings.</p>
+                    <h1 className="text-xl md:text-2xl font-bold text-slate-900">System Administration</h1>
+                    <p className="text-[12.5px] md:text-sm text-slate-500">Configure dictionaries, role permissions, and system settings.</p>
                 </div>
             </div>
 

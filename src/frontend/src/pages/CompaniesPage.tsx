@@ -92,6 +92,10 @@ export const CompaniesPage: React.FC = () => {
     };
 
     const inputCls = 'w-full text-sm px-2 py-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none';
+    // Phone card fields: taller than the table's inputs so they are thumb-sized,
+    // and labelled, since the card list has no column headers to inherit from.
+    const mInput = 'w-full h-11 text-[15px] px-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none';
+    const mLabel = 'block text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 mb-1';
 
     return (
         <div className="space-y-5 max-w-5xl mx-auto">
@@ -125,7 +129,63 @@ export const CompaniesPage: React.FC = () => {
                     </div>
                 </div>
             ) : (
-                <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+                <>
+                {/* ── Phone: one stacked card per company ──
+                     The table is an editable seven-column grid ~700px wide. Inside a
+                     sideways scroller that means editing one company by dragging the
+                     viewport field to field, with the column headers scrolled out of
+                     sight, so you cannot see which box you are typing into. Cards
+                     label every field and keep the row's delete on screen. */}
+                <div className="sm:hidden bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+                    {rows.length === 0 && (
+                        <p className="px-4 py-8 text-center text-slate-400 text-sm">No companies yet — tap Add.</p>
+                    )}
+                    {rows.map((r, idx) => (
+                        <div key={r.id || `m-new-${idx}`} className="p-4 space-y-3">
+                            <div className="flex items-start gap-2">
+                                <div className="w-24 shrink-0">
+                                    <label className={mLabel}>Code</label>
+                                    <input className={mInput + ' font-mono uppercase'} value={r.code}
+                                        onChange={e => update(idx, { code: e.target.value })} placeholder="1000" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <label className={mLabel}>Name</label>
+                                    <input className={mInput} value={r.name}
+                                        onChange={e => update(idx, { name: e.target.value })} placeholder="Cainergy Nigeria Ltd" />
+                                </div>
+                                <button onClick={() => removeRow(idx)} title="Deactivate"
+                                    className="mt-5 h-11 w-9 shrink-0 inline-flex items-center justify-center text-slate-400 active:text-red-600">
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                            <div>
+                                <label className={mLabel}>Description</label>
+                                <input className={mInput} value={r.description || ''}
+                                    onChange={e => update(idx, { description: e.target.value })} placeholder="Optional" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className={mLabel}>Country</label>
+                                    <input className={mInput} value={r.country || ''}
+                                        onChange={e => update(idx, { country: e.target.value })} placeholder="NG" />
+                                </div>
+                                <div>
+                                    <label className={mLabel}>Currency</label>
+                                    <input className={mInput + ' font-mono uppercase'} maxLength={3} value={r.currency || ''}
+                                        onChange={e => update(idx, { currency: e.target.value })} placeholder="NGN" />
+                                </div>
+                            </div>
+                            <label className="flex items-center gap-2 text-[13px] font-medium text-slate-600 pt-0.5">
+                                <input type="checkbox" checked={r.active !== false}
+                                    onChange={e => update(idx, { active: e.target.checked })}
+                                    className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-400" />
+                                Active
+                            </label>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="hidden sm:block bg-white border border-slate-200 rounded-xl overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-100">
@@ -156,6 +216,7 @@ export const CompaniesPage: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
+                </>
             )}
         </div>
     );

@@ -35,22 +35,23 @@ export const GlobalSettingsPage: React.FC = () => {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-300">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            {/* Header — stacks on a phone. Side by side, "Global Settings" wrapped
+                to two lines and pushed Save Changes off the right edge. */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
                         <Settings size={22} className="text-white" />
                     </div>
-                    <div>
-                        <h1 className="text-2xl font-black text-slate-900 tracking-tight">Global Settings</h1>
-                        <p className="text-slate-500 text-sm font-medium">Enterprise-wide configuration &amp; preferences</p>
+                    <div className="min-w-0">
+                        <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Global Settings</h1>
+                        <p className="text-slate-500 text-[12.5px] sm:text-sm font-medium">Enterprise-wide configuration &amp; preferences</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={resetSettings} className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-lg text-sm font-semibold transition-all shadow-sm">
+                <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={resetSettings} className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 h-11 sm:h-auto sm:py-2.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-lg text-sm font-semibold transition-all shadow-sm whitespace-nowrap">
                         <RotateCcw size={14} /> Reset Defaults
                     </button>
-                    <button onClick={handleSave} className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm ${saved ? 'bg-emerald-500 text-white' : 'bg-accent-cyan hover:bg-primary-400 text-brand-900 shadow-[0_0_15px_rgba(6,182,212,0.25)]'}`}>
+                    <button onClick={handleSave} className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 h-11 sm:h-auto sm:py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm whitespace-nowrap ${saved ? 'bg-emerald-500 text-white' : 'bg-accent-cyan hover:bg-primary-400 text-brand-900 shadow-[0_0_15px_rgba(6,182,212,0.25)]'}`}>
                         {saved ? <><Check size={14} /> Saved</> : <><Save size={14} /> Save Changes</>}
                     </button>
                 </div>
@@ -64,7 +65,11 @@ export const GlobalSettingsPage: React.FC = () => {
                         <button
                             key={t.key}
                             onClick={() => setTab(t.key)}
-                            className={`w-full shrink-0 whitespace-nowrap flex items-center gap-2.5 px-4 py-3 rounded-lg text-sm font-semibold transition-all text-left ${tab === t.key
+                            /* w-auto on a phone: w-full made every tab fill the
+                               viewport, so the scroller showed exactly one tab and
+                               the other five were invisible rather than merely
+                               off-screen. */
+                            className={`w-auto md:w-full shrink-0 whitespace-nowrap flex items-center gap-2.5 px-4 py-3 rounded-lg text-sm font-semibold transition-all text-left ${tab === t.key
                                 ? 'bg-accent-cyan/10 text-primary-700 border border-accent-cyan/30 shadow-sm'
                                 : 'text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-transparent'
                                 }`}

@@ -42,6 +42,24 @@ const STATUS_CHIP: Record<string, string> = {
 const effectiveStatus = (inv: InviteRow): InviteRow['status'] =>
     inv.status === 'pending' && new Date(inv.expires_at) <= new Date() ? 'expired' : inv.status;
 
+/**
+ * One derivation feeding both the desktop table and the phone card list, so the
+ * two renderings cannot drift into disagreeing about the same invite.
+ */
+const inviteView = (inv: InviteRow, inviterNames: Record<string, string>) => {
+    const status = effectiveStatus(inv);
+    return {
+        status,
+        isLive: status === 'pending',
+        name: inv.invited_name || inv.email || inv.phone || '—',
+        roleLabel: INVITE_ROLES.find(r => r.code === inv.role)?.label || inv.role,
+        inviter: inv.invited_by ? (inviterNames[inv.invited_by] || '—') : '—',
+        when: status === 'accepted' && inv.accepted_at
+            ? `Joined ${new Date(inv.accepted_at).toLocaleDateString()}`
+            : new Date(inv.expires_at).toLocaleDateString(),
+    };
+};
+
 export const InvitationsPage: React.FC = () => {
     const { showToast } = useToast();
     const confirm = useConfirm();
@@ -107,28 +125,31 @@ export const InvitationsPage: React.FC = () => {
 
     return (
         <div className="h-full flex flex-col overflow-hidden bg-white rounded-xl border border-slate-200 shadow-sm">
-            {/* ── Header ── */}
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-3">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+            {/* ── Header ──
+                 Stacks on a phone. Side by side, the title wrapped to three lines
+                 while "Invite Colleague" was squeezed and clipped off the right
+                 edge — the one action the page exists for. */}
+            <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
                         <Send size={20} className="text-white" />
                     </div>
-                    <div>
-                        <h1 className="text-xl font-black text-slate-900 tracking-tight">Invitations</h1>
-                        <p className="text-sm text-slate-500 font-medium">Invite colleagues by email or phone — they set up their own login</p>
+                    <div className="min-w-0">
+                        <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">Invitations</h1>
+                        <p className="text-[12.5px] sm:text-sm text-slate-500 font-medium">Invite colleagues by email or phone — they set up their own login</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                     <button
                         onClick={load}
-                        className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                        className="p-2 h-10 w-10 sm:h-9 sm:w-9 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50 shrink-0"
                         title="Refresh"
                     >
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </button>
                     <button
                         onClick={() => setShowModal(true)}
-                        className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-500 shadow-sm flex items-center gap-2"
+                        className="flex-1 sm:flex-none px-4 h-10 sm:h-9 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-500 shadow-sm inline-flex items-center justify-center gap-2 whitespace-nowrap"
                     >
                         <UserPlus size={16} /> Invite Colleague
                     </button>
@@ -159,7 +180,62 @@ export const InvitationsPage: React.FC = () => {
                         </button>
                     </div>
                 ) : (
-                    <table className="w-full text-sm">
+                    <>
+                    {/* ── Phone: one card per invite ──
+                         A six-column table at 390px put Role, Status and both
+                         actions behind a sideways scroll inside a scrolling page.
+                         Cards keep every field and both buttons on screen. */}
+                    <ul className="sm:hidden divide-y divide-slate-100">
+                        {invites.map(inv => {
+                            const v = inviteView(inv, inviterNames);
+                            return (
+                                <li key={inv.id} className="px-4 py-3.5">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <div className="font-semibold text-slate-800 text-[14px] truncate">{v.name}</div>
+                                            <div className="text-[12px] text-slate-500 mt-1 space-y-0.5">
+                                                {inv.email && <div className="flex items-center gap-1.5 truncate"><Mail size={11} className="shrink-0" />{inv.email}</div>}
+                                                {inv.phone && <div className="flex items-center gap-1.5"><Phone size={11} className="shrink-0" />{inv.phone}</div>}
+                                            </div>
+                                        </div>
+                                        <span className={`shrink-0 inline-block px-2 py-0.5 rounded-full border text-[11px] font-bold capitalize ${STATUS_CHIP[v.status]}`}>
+                                            {v.status}
+                                        </span>
+                                    </div>
+                                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-slate-500">
+                                        <span className="font-medium text-slate-600">{v.roleLabel}</span>
+                                        <span className="text-slate-300">·</span>
+                                        <span>{v.status === 'accepted' ? v.when : `Expires ${v.when}`}</span>
+                                        {v.inviter !== '—' && <><span className="text-slate-300">·</span><span>by {v.inviter}</span></>}
+                                    </div>
+                                    {v.isLive && (
+                                        <div className="mt-3 flex gap-2">
+                                            <button
+                                                onClick={() => copyLink(inv)}
+                                                className="flex-1 h-10 rounded-lg border border-slate-200 text-[13px] font-semibold text-slate-700 active:bg-slate-50 inline-flex items-center justify-center gap-1.5"
+                                            >
+                                                {copiedId === inv.id
+                                                    ? <><Check size={14} className="text-green-600" /> Copied</>
+                                                    : <><Copy size={14} /> Copy link</>}
+                                            </button>
+                                            <button
+                                                onClick={() => revoke(inv)}
+                                                disabled={revokingId === inv.id}
+                                                className="h-10 px-4 rounded-lg border border-red-200 text-[13px] font-semibold text-red-600 active:bg-red-50 inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                            >
+                                                {revokingId === inv.id
+                                                    ? <Loader2 size={14} className="animate-spin" />
+                                                    : <Ban size={14} />}
+                                                Revoke
+                                            </button>
+                                        </div>
+                                    )}
+                                </li>
+                            );
+                        })}
+                    </ul>
+
+                    <table className="w-full text-sm hidden sm:table">
                         <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
                             <tr className="text-left text-[11px] font-bold text-slate-500 uppercase tracking-wide">
                                 <th className="px-6 py-3">Invitee</th>
@@ -234,6 +310,7 @@ export const InvitationsPage: React.FC = () => {
                             })}
                         </tbody>
                     </table>
+                    </>
                 )}
             </div>
 

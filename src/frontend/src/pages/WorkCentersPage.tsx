@@ -87,6 +87,10 @@ export const WorkCentersPage: React.FC = () => {
     };
 
     const inputCls = 'w-full text-sm px-2 py-1.5 border border-slate-200 rounded-md focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none';
+    // Phone card fields: thumb-sized, and labelled, since the card list has no
+    // column headers to inherit meaning from.
+    const mInput = 'w-full h-11 text-[15px] px-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none';
+    const mLabel = 'block text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 mb-1';
 
     return (
         <div className="space-y-5 max-w-6xl mx-auto">
@@ -110,7 +114,77 @@ export const WorkCentersPage: React.FC = () => {
             {loading ? (
                 <div className="flex items-center gap-2 text-slate-400 text-sm py-10 justify-center"><Loader2 size={16} className="animate-spin" /> Loading…</div>
             ) : (
-                <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
+                <>
+                {/* ── Phone: one stacked card per work center ──
+                     Nine editable columns is ~710px. In a sideways scroller you would
+                     set a rate with the "Rate /hr" header dragged out of view, next to
+                     an identical-looking capacity box. Cards label every field. */}
+                <div className="sm:hidden bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
+                    {rows.length === 0 && (
+                        <p className="px-4 py-8 text-center text-slate-400 text-sm">No work centers yet — tap Add.</p>
+                    )}
+                    {rows.map((r, idx) => (
+                        <div key={r.id || `m-new-${idx}`} className="p-4 space-y-3">
+                            <div className="flex items-start gap-2">
+                                <div className="w-28 shrink-0">
+                                    <label className={mLabel}>Code</label>
+                                    <input className={mInput + ' font-mono uppercase'} value={r.code}
+                                        onChange={e => update(idx, { code: e.target.value })} placeholder="MECH-01" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <label className={mLabel}>Name</label>
+                                    <input className={mInput} value={r.name}
+                                        onChange={e => update(idx, { name: e.target.value })} placeholder="Mechanical Maintenance" />
+                                </div>
+                                <button onClick={() => removeRow(idx)} title="Deactivate"
+                                    className="mt-5 h-11 w-9 shrink-0 inline-flex items-center justify-center text-slate-400 active:text-red-600">
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                            <div>
+                                <label className={mLabel}>Category</label>
+                                <input className={mInput} value={r.category || ''}
+                                    onChange={e => update(idx, { category: e.target.value })} placeholder="MECHANICAL" />
+                            </div>
+                            <div>
+                                <label className={mLabel}>Site</label>
+                                <select className={mInput} value={r.siteId || ''}
+                                    onChange={e => update(idx, { siteId: e.target.value || undefined })}>
+                                    <option value="">—</option>
+                                    {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className={mLabel}>Cost Center</label>
+                                <select className={mInput} value={r.costCenterId || ''}
+                                    onChange={e => update(idx, { costCenterId: e.target.value || undefined })}>
+                                    <option value="">—</option>
+                                    {costCenters.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className={mLabel}>Rate /hr</label>
+                                    <input type="number" min={0} step="0.01" className={mInput} value={r.activityRate}
+                                        onChange={e => update(idx, { activityRate: Number(e.target.value) })} />
+                                </div>
+                                <div>
+                                    <label className={mLabel}>Capacity h/day</label>
+                                    <input type="number" min={0} step="0.5" className={mInput} value={r.capacityHoursPerDay}
+                                        onChange={e => update(idx, { capacityHoursPerDay: Number(e.target.value) })} />
+                                </div>
+                            </div>
+                            <label className="flex items-center gap-2 text-[13px] font-medium text-slate-600 pt-0.5">
+                                <input type="checkbox" checked={r.active !== false}
+                                    onChange={e => update(idx, { active: e.target.checked })}
+                                    className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-400" />
+                                Active
+                            </label>
+                        </div>
+                    ))}
+                </div>
+
+                <div className="hidden sm:block bg-white border border-slate-200 rounded-xl overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-100">
@@ -155,6 +229,7 @@ export const WorkCentersPage: React.FC = () => {
                         </tbody>
                     </table>
                 </div>
+                </>
             )}
 
             {/* ── Crew: the people ↔ work-center intersection (0191) ──
@@ -227,8 +302,11 @@ const CrewPanel: React.FC<{
                     <h3 className="text-sm font-extrabold text-slate-900">Crew</h3>
                     <p className="text-[11px] text-slate-500">Assign people to this work center. Their org-chart home stays untouched — a person can serve on several crews.</p>
                 </div>
+                {/* Full width on a phone: the select sizes to its longest option
+                    ("ELEC-01 — Electrical Maintenance"), which pushed it past the
+                    card's right edge. */}
                 <select value={wcId} onChange={e => setWcId(e.target.value)}
-                    className="px-2.5 py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white">
+                    className="w-full sm:w-auto max-w-full min-w-0 truncate px-2.5 h-10 sm:h-auto sm:py-1.5 text-xs font-semibold border border-slate-300 rounded-lg bg-white">
                     {workCenters.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
                 </select>
             </div>
