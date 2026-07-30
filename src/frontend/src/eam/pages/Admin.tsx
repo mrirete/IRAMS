@@ -3,7 +3,8 @@ import React, { useState, useMemo } from 'react';
 import {
     Search, Plus, Edit2, Trash2, Settings, Database, Shield, ShieldOff, Activity,
     X as XIcon, Users, Save, AlertCircle, User as UserIcon, UserPlus,
-    Globe, MapPin, Briefcase, Bell, BookOpen, AlertTriangle, DollarSign, Layers, Eye, EyeOff, ArrowLeft
+    Globe, MapPin, Briefcase, Bell, BookOpen, AlertTriangle, DollarSign, Layers, Eye, EyeOff, ArrowLeft,
+    ChevronRight
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -344,6 +345,8 @@ const ADMIN_MODULES: { key: ModuleName; label: string; tier?: string }[] = [
 const DictionaryManager: React.FC = () => {
     const navigate = useNavigate();
     const [selectedType, setSelectedType] = useState<DictionaryType>('READING_TYPE');
+    /** Phone only — desktop shows the type list and its entries side by side. */
+    const [mobileEntriesOpen, setMobileEntriesOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [dictionaries, setDictionaries] = useState<DictionaryEntry[]>([]);
     const { showToast } = useToast();
@@ -541,17 +544,22 @@ const DictionaryManager: React.FC = () => {
                 />
             )}
 
-            {/* Mobile Dictionary Type Selector */}
-            <div className="md:hidden p-3 border-b border-slate-200 bg-slate-50 shrink-0">
-                <select
-                    value={selectedType}
-                    onChange={(e) => setSelectedType(e.target.value as DictionaryType)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white"
-                >
-                    {DICTIONARY_TYPES.map(type => (
-                        <option key={type.key} value={type.key}>{type.label}</option>
-                    ))}
-                </select>
+            {/* Mobile: the dictionary types as a master list.
+                This was a <select> sitting above the entries, which left the
+                entries themselves about half a screen to live in. Now picking a
+                type opens the entries full-screen, the same master-detail move
+                User Access already makes. */}
+            <div className="md:hidden flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 bg-white">
+                {DICTIONARY_TYPES.map(type => (
+                    <button
+                        key={type.key}
+                        onClick={() => { setSelectedType(type.key as DictionaryType); setMobileEntriesOpen(true); }}
+                        className="w-full flex items-center justify-between gap-3 px-4 py-3.5 text-left active:bg-slate-50"
+                    >
+                        <span className="text-[14px] font-medium text-slate-800">{type.label}</span>
+                        <ChevronRight size={16} className="text-slate-300 shrink-0" />
+                    </button>
+                ))}
             </div>
 
             {/* Type List (Desktop Sidebar) */}
@@ -570,13 +578,24 @@ const DictionaryManager: React.FC = () => {
                 ))}
             </div>
 
-            {/* Entries List */}
-            <div className="flex-1 min-h-0 bg-white flex flex-col p-4 md:p-6 min-w-0">
-                <div className="flex flex-wrap justify-between items-center mb-6 gap-3">
-                    <div>
-                        <h2 className="text-xl font-bold text-slate-900">{DICTIONARY_TYPES.find(t => t.key === selectedType)?.label}</h2>
-                        <p className="text-sm text-slate-500">Manage standard codes for this attribute.</p>
-                        <div className="mt-2 flex items-center gap-2">
+            {/* Entries List — full-screen overlay on a phone, right-hand pane on desktop */}
+            <div className={`${mobileEntriesOpen ? 'flex' : 'hidden md:flex'} md:flex-1 min-h-0 bg-white flex-col p-4 md:p-6 min-w-0
+                max-md:fixed max-md:inset-0 max-md:z-[60]`}>
+                <button
+                    onClick={() => setMobileEntriesOpen(false)}
+                    className="md:hidden flex items-center gap-1.5 -mx-4 -mt-4 mb-4 px-4 py-3 text-sm font-medium text-primary-600 border-b border-slate-200 bg-slate-50 shrink-0"
+                >
+                    <ArrowLeft size={16} /> All dictionaries
+                </button>
+                {/* Toolbar. On a phone every control used to wrap onto its own line,
+                    spending ~290px before the first entry — the same cramping the
+                    full-screen overlay was meant to cure. Search takes the width,
+                    Add sits beside it, and the two rarely-used controls share a row. */}
+                <div className="flex flex-wrap justify-between items-center mb-4 md:mb-6 gap-3 shrink-0">
+                    <div className="w-full md:w-auto">
+                        <h2 className="text-lg md:text-xl font-bold text-slate-900">{DICTIONARY_TYPES.find(t => t.key === selectedType)?.label}</h2>
+                        <p className="hidden md:block text-sm text-slate-500">Manage standard codes for this attribute.</p>
+                        <div className="mt-2 hidden md:flex items-center gap-2">
                             <input
                                 type="checkbox"
                                 id="show_inactive"
@@ -587,29 +606,48 @@ const DictionaryManager: React.FC = () => {
                             <label htmlFor="show_inactive" className="text-xs text-slate-600">Show Inactive</label>
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-xs font-medium transition-colors border border-slate-300 shadow-sm"
-                            title="Reload Application to refresh data"
-                        >
-                            <Database size={14} /> Refresh App
-                        </button>
-
-                        <div className="relative">
-                            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                    <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                        <div className="relative flex-1 min-w-0 md:flex-none">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                             <input
                                 type="text"
                                 placeholder="Search codes..."
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
-                                className="pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm"
+                                className="w-full md:w-auto h-11 md:h-auto pl-9 pr-3 md:py-2 border border-slate-300 rounded-lg text-sm"
                             />
                         </div>
                         <button
                             onClick={handleAddClick}
-                            className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium transition-colors shadow-sm">
-                            <Plus size={16} /> Add Entry
+                            className="flex items-center gap-2 px-4 h-11 md:h-auto md:py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium transition-colors shadow-sm shrink-0 whitespace-nowrap">
+                            <Plus size={16} /> <span className="hidden xs:inline md:inline">Add Entry</span><span className="xs:hidden md:hidden">Add</span>
+                        </button>
+
+                        {/* Phone: the two low-frequency controls share one short row. */}
+                        <div className="md:hidden flex items-center gap-3 w-full">
+                            <label className="flex items-center gap-2 text-[12.5px] text-slate-600">
+                                <input
+                                    type="checkbox"
+                                    checked={showInactive}
+                                    onChange={e => setShowInactive(e.target.checked)}
+                                    className="w-4 h-4 text-primary-600 rounded border-slate-300"
+                                />
+                                Show inactive
+                            </label>
+                            <button
+                                onClick={() => window.location.reload()}
+                                className="ml-auto flex items-center gap-1.5 px-2.5 h-9 text-slate-500 rounded-lg text-[12px] font-medium border border-slate-200 active:bg-slate-50"
+                            >
+                                <Database size={13} /> Refresh
+                            </button>
+                        </div>
+
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="hidden md:flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 text-xs font-medium transition-colors border border-slate-300 shadow-sm"
+                            title="Reload Application to refresh data"
+                        >
+                            <Database size={14} /> Refresh App
                         </button>
 
                         {isPriorityType && pendingChanges.size > 0 && (
@@ -626,7 +664,10 @@ const DictionaryManager: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="border border-slate-200 rounded-lg overflow-y-auto overflow-x-auto flex-1 flex flex-col max-h-[calc(100dvh-22rem)] md:max-h-[calc(100vh-280px)]">
+                {/* No max-height on a phone: inside the full-screen overlay the cap
+                    left ~200px of dead space below the last entry. flex-1 + min-h-0
+                    lets the list run to the bottom of the screen. */}
+                <div className="border border-slate-200 rounded-lg overflow-y-auto overflow-x-auto flex-1 min-h-0 flex flex-col md:max-h-[calc(100vh-280px)]">
                     {/* ── Phone: one card per entry ──
                          The table runs to four–seven type-dependent columns (~835px),
                          so on a phone the Status chip and every row action — lock,
@@ -1310,8 +1351,16 @@ const UserPermissionManager: React.FC = () => {
                 </div>
             </div>
 
-            {/* Detail Editor */}
-            <div className={`${selectedId ? 'flex' : 'hidden md:flex'} flex-1 flex-col bg-white overflow-hidden`}>
+            {/* Detail Editor
+                On a phone this is a full-screen overlay rather than a pane inside
+                the tab. Eight permission actions across a dozen module suites do
+                not fit the ~495px window the admin page leaves on an 844px screen,
+                and editing them there meant scrolling a long matrix inside a short
+                box inside a page. Fixed + inset-0 hands it the whole viewport;
+                z-[60] clears the bottom tab bar at 50. Desktop is untouched — it
+                stays the right-hand pane of the master-detail split. */}
+            <div className={`${selectedId ? 'flex' : 'hidden md:flex'} md:flex-1 flex-col bg-white overflow-hidden
+                max-md:fixed max-md:inset-0 max-md:z-[60]`}>
                 {/* Mobile: back to the directory list */}
                 <button
                     onClick={() => setSelectedId(null)}
