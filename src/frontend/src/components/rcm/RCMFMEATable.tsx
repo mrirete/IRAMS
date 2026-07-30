@@ -18,7 +18,7 @@ import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMe
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Layers, Sparkles, Lock,
   RefreshCw, EyeOff, ShieldAlert, CheckCircle2, Info, ChevronsDownUp, ChevronsUpDown,
-  ArrowDown10, Download,
+  ArrowDown10, Download, Wand2,
 } from 'lucide-react';
 import { RCMContextualHelp } from './RCMContextualHelp';
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './types';
@@ -384,8 +384,24 @@ export interface RCMFMEATableProps {
   onBlocked: (reason: string) => void;
   /** Jump to the Strategy tab (Q6–Q7) — where a classified row goes next. */
   onGoToStrategy: () => void;
-  /** Rendered above the worksheet — the Specialist bar. */
-  header?: React.ReactNode;
+
+  // ── Specialist work on the whole worksheet ────────────────────────────────
+  // These used to live in a separate RCMSpecialistBar above the table, which
+  // put a second Reliability Specialist on screen — score ring, "needs data"
+  // badge, its own first-person voice — while the product has exactly one, the
+  // Ask-anything panel. The readiness narrative moved there (RCMPage registers
+  // it as page context and skills); the two ACTIONS stay here, where the work
+  // is, as ordinary toolbar buttons.
+  /** Draft functions, failure modes and effects for the whole asset. */
+  onSpecialistDraft: () => void;
+  /** Finish every row the team has started but not completed. */
+  onSpecialistFillGaps: () => void;
+  /** Rows that are named but unfinished — what "fill blanks" would cost. */
+  completableCount: number;
+  /** True when readiness blocks drafting; the button stays clickable and explains. */
+  specialistLocked: boolean;
+  /** What to say when a locked action is clicked. */
+  specialistBlockedReason: string;
 }
 
 const COL_COUNT = 12;
@@ -395,7 +411,9 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
   onAddFunction, onUpdateFunction, onDeleteFunction,
   onAddFailureMode, onUpdateFailureMode, onDeleteFailureMode,
   onUpdateDecision, onSpecialistSuggestModes, onSpecialistCompleteRow, onBlocked,
-  onGoToStrategy, header,
+  onGoToStrategy,
+  onSpecialistDraft, onSpecialistFillGaps, completableCount,
+  specialistLocked, specialistBlockedReason,
 }) => {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [openRows, setOpenRows] = useState<Set<string>>(new Set());
@@ -488,8 +506,6 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
-      {header}
-
       {/* Worksheet toolbar */}
       <div className="flex items-center gap-2 flex-wrap">
         <h3 className="text-sm font-bold text-slate-700">FMEA Worksheet</h3>
@@ -498,6 +514,43 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
           <span className="text-xs text-slate-400">
             {functions.length} function{functions.length !== 1 ? 's' : ''} · {failureModes.length} failure mode{failureModes.length !== 1 ? 's' : ''}
           </span>
+          {/* Specialist work, as worksheet actions. A locked button stays
+              clickable on purpose — clicking explains what to fill rather than
+              burning an AI call (eam/services/rcmReadiness.ts). */}
+          {completableCount > 0 && (
+            <button
+              onClick={() => (specialistLocked ? onBlocked(specialistBlockedReason) : onSpecialistFillGaps())}
+              aria-disabled={!!aiLoading}
+              title={specialistLocked
+                ? specialistBlockedReason
+                : `Have the Specialist complete ${completableCount} started row${completableCount !== 1 ? 's' : ''} — cause, effects, severity and consequence`}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${
+                specialistLocked
+                  ? 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'
+                  : 'bg-white border-primary-200 text-primary-700 hover:bg-primary-50'
+              }`}
+            >
+              {aiLoading === 'fill-gaps'
+                ? <RefreshCw size={12} className="animate-spin" />
+                : specialistLocked ? <Lock size={12} /> : <Wand2 size={12} />}
+              Fill blanks in {completableCount} row{completableCount !== 1 ? 's' : ''}
+            </button>
+          )}
+          <button
+            onClick={() => (specialistLocked ? onBlocked(specialistBlockedReason) : onSpecialistDraft())}
+            aria-disabled={!!aiLoading}
+            title={specialistBlockedReason}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${
+              specialistLocked
+                ? 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'
+                : 'bg-primary-600 border-primary-600 text-white hover:bg-primary-700'
+            }`}
+          >
+            {aiLoading === 'suggest'
+              ? <RefreshCw size={12} className="animate-spin" />
+              : specialistLocked ? <Lock size={12} /> : <Sparkles size={12} />}
+            {failureModes.length === 0 ? 'Draft the worksheet' : 'Draft more functions'}
+          </button>
           {failureModes.length > 1 && (
             <button
               onClick={() => setRankByRpn(v => !v)}

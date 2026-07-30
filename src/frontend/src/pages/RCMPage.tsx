@@ -24,12 +24,12 @@ import type { StudyCollaborator } from '../eam/services/AnalyzeService';
 import type { RCMLifeEvidence } from '../components/rcm/types';
 import { useAuth } from '../contexts/AuthContext';
 import { useAssetLookup } from '../hooks/useAssetLookup';
+import { usePageRelanternContext, type SpecialistAction } from '../eam/contexts/RelanternContext';
 
 // Sub-components
 import { RCMStudyDashboard } from '../components/rcm/RCMStudyDashboard';
 import { RCMStudyOverview } from '../components/rcm/RCMStudyOverview';
 import { RCMFMEATable } from '../components/rcm/RCMFMEATable';
-import { RCMSpecialistBar } from '../components/rcm/RCMSpecialistBar';
 import { RCMAddFunctionModal } from '../components/rcm/RCMAddFunctionModal';
 import { RCMDecisionWizard } from '../components/rcm/RCMDecisionWizard';
 import { RCMTaskMatrix } from '../components/rcm/RCMTaskMatrix';
@@ -615,10 +615,10 @@ export const RCMPage: React.FC = () => {
     setAiLoading(null);
   };
 
-  /** Finish every row the team has started but not completed. */
-  const handleSpecialistFillGaps = async () => {
-    if (!selectedStudy || openRows.length === 0) return;
-    if (draftGate && !draftGate.ok) { showToast(draftGate.reason, 'error'); return; }
+  /** Finish every row the team has started but not completed. Returns how many. */
+  const handleSpecialistFillGaps = async (): Promise<{ filled: number; of: number }> => {
+    if (!selectedStudy || openRows.length === 0) return { filled: 0, of: 0 };
+    if (draftGate && !draftGate.ok) { showToast(draftGate.reason, 'error'); return { filled: 0, of: openRows.length }; }
     setAiLoading('fill-gaps');
     const fnById = new Map(functions.map(f => [f.id, f]));
     let filled = 0;
@@ -633,13 +633,109 @@ export const RCMPage: React.FC = () => {
       filled > 0 ? `Specialist completed ${filled} of ${openRows.length} rows` : 'Specialist had nothing to add',
       filled > 0 ? 'success' : 'error',
     );
+    return { filled, of: openRows.length };
   };
 
+  // ── Ground the ONE Reliability Specialist in this study ───────────────────
+  // The worksheet used to carry its own Specialist bar: a score ring, a
+  // "needs data" badge and a first-person headline, i.e. a second Specialist
+  // on screen. There is one — the Ask-anything panel (RelanternAI in
+  // AppLayout) — so the same readiness the bar rendered is handed to it as
+  // context, and its two skills are registered as page actions. Analyze did
+  // this first; see the note in AnalyzePage.
+  const specialistContext = useMemo(() => {
+    if (!selectedStudy) return null;
+    const asset = selectedStudy.asset_id ? assetOptions.find(a => a.id === selectedStudy.asset_id) : null;
+    const parts = [
+      `RCM study: "${selectedStudy.title || 'untitled'}" (status ${selectedStudy.status || 'draft'}).`,
+      asset
+        ? `Asset: ${asset.tag} — ${asset.name}${asset.criticality ? `, criticality ${asset.criticality}` : ''}.`
+        : 'No asset linked to this study yet.',
+    ];
+    const ctx = String(selectedStudy.operating_context || '').trim();
+    parts.push(ctx.length >= MIN_CONTEXT_CHARS
+      ? `Operating context: ${ctx}`
+      : ctx.length === 0
+        ? 'Operating context: NOT WRITTEN. Failure modes drafted without it are generic.'
+        : `Operating context is too brief to draft from (${ctx.length}/${MIN_CONTEXT_CHARS} chars): "${ctx}"`);
+    parts.push(`Worksheet: ${functions.length} function(s), ${failureModes.length} failure mode(s), ` +
+      `${completedRows} row(s) complete, ${openRows.length} started but unfinished.`);
+    if (studyReadiness) {
+      parts.push(`Specialist readiness ${studyReadiness.score}% — ` +
+        (studyReadiness.requiredMet
+          ? 'everything required is present, drafting is unlocked.'
+          : `blocked on: ${studyReadiness.blockers.map(b => b.label).join(', ')}.`));
+    }
+    return parts.join('\n');
+  }, [selectedStudy, assetOptions, functions, failureModes, completedRows, openRows.length, studyReadiness]);
+
+  const specialistActions = useMemo<SpecialistAction[]>(() => {
+    if (!selectedStudy || !studyReadiness || !draftGate) return [];
+    const acts: SpecialistAction[] = [
+      {
+        // The readiness readout the bar's chips and score ring used to show —
+        // same engine, no AI call, and now in the Specialist's own voice.
+        label: 'What do you still need?',
+        description: 'What the Specialist has to work with on this study, and what is missing',
+        userMessage: 'What do you still need before you can draft this study?',
+        run: async () => {
+          const lines = studyReadiness.items.map(it => {
+            const mark = it.met ? '✓' : it.severity === 'required' ? '✕' : '·';
+            const tail = it.met ? '' : it.severity === 'required' ? ' — **required**' : ' — optional';
+            return `${mark} ${it.label}${tail}\n   ${it.hint}`;
+          });
+          return `**This study is ${studyReadiness.score}% of the way to what I need.**\n\n${lines.join('\n')}\n\n` +
+            (studyReadiness.requiredMet
+              ? 'I have enough to draft the worksheet — say the word.'
+              : `${draftGate.reason} Open **Edit study** on the Overview tab to add them.`);
+        },
+      },
+      {
+        label: failureModes.length === 0 ? 'Draft the worksheet' : 'Draft more functions',
+        description: 'Functions, functional failures, failure modes and effects for this asset',
+        userMessage: failureModes.length === 0
+          ? 'Draft the worksheet for this study.'
+          : 'Draft more functions for this study.',
+        run: async () => {
+          // Locked actions explain themselves instead of spending a call.
+          if (!draftGate.ok) return `${draftGate.reason}\n\nOpen **Edit study** on the Overview tab to add them.`;
+          const { functions: fns, modes } = await handleAISuggest();
+          return fns === 0
+            ? 'I could not draft anything — the AI call returned nothing. Check the AI configuration.'
+            : `Drafted **${fns} function${fns !== 1 ? 's' : ''}** and **${modes} failure mode${modes !== 1 ? 's' : ''}** onto the worksheet. ` +
+              'Every row is marked AI-generated — review the effects and severities before you classify Q5.';
+        },
+      },
+    ];
+    if (openRows.length > 0) {
+      acts.push({
+        label: `Fill blanks in ${openRows.length} row${openRows.length !== 1 ? 's' : ''}`,
+        description: 'Cause, effects, severity and consequence for rows the team has started',
+        userMessage: `Finish the ${openRows.length} unfinished row${openRows.length !== 1 ? 's' : ''} on this worksheet.`,
+        run: async () => {
+          if (!draftGate.ok) return `${draftGate.reason}\n\nOpen **Edit study** on the Overview tab to add them.`;
+          const { filled, of } = await handleSpecialistFillGaps();
+          return filled === 0
+            ? 'I had nothing to add to those rows.'
+            : `Completed **${filled} of ${of}** started rows — cause, the three effect levels, severity, occurrence and consequence class.`;
+        },
+      });
+    }
+    return acts;
+    // handleAISuggest / handleSpecialistFillGaps are stable enough for this:
+    // they read the same state this memo already depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStudy, studyReadiness, draftGate, failureModes.length, openRows.length]);
+
+  usePageRelanternContext(specialistContext, 'rcm', specialistActions);
+
   // AI handlers
-  const handleAISuggest = async () => {
-    if (!selectedStudy) return;
-    if (draftGate && !draftGate.ok) { showToast(draftGate.reason, 'error'); return; }
+  /** Draft the worksheet. Returns how many functions and modes were written. */
+  const handleAISuggest = async (): Promise<{ functions: number; modes: number }> => {
+    if (!selectedStudy) return { functions: 0, modes: 0 };
+    if (draftGate && !draftGate.ok) { showToast(draftGate.reason, 'error'); return { functions: 0, modes: 0 }; }
     setAiLoading('suggest');
+    let wroteFns = 0, wroteModes = 0;
     const result = await rcmService.aiSuggestFunctions(selectedStudy);
     if (result?.functions) {
       for (const fn of result.functions) {
@@ -649,7 +745,9 @@ export const RCMPage: React.FC = () => {
           functional_failure: fn.functional_failure, sort_order: functions.length + 1,
         });
         if (created) {
+          wroteFns++;
           for (const fm of fn.failure_modes || []) {
+            wroteModes++;
             await rcmService.createFailureMode({
               function_id: created.id, failure_mode_description: fm.description, failure_cause_description: fm.cause,
               failure_effect_local: fm.effect_local, failure_effect_system: fm.effect_system,
@@ -666,6 +764,7 @@ export const RCMPage: React.FC = () => {
       showToast('The Specialist could not draft the worksheet — AI unavailable or returned nothing. Check the AI configuration.', 'error');
     }
     setAiLoading(null);
+    return { functions: wroteFns, modes: wroteModes };
   };
 
   const handleAIRecommend = async (fm: RCMFailureMode) => {
@@ -941,19 +1040,11 @@ export const RCMPage: React.FC = () => {
           onSpecialistCompleteRow={handleSpecialistCompleteRow}
           onBlocked={reason => showToast(reason, 'error')}
           onGoToStrategy={() => setActiveTab('decisions')}
-          header={
-            <RCMSpecialistBar
-              readiness={studyReadiness}
-              draftGate={draftGate}
-              completableCount={openRows.length}
-              completeCount={completedRows}
-              totalRows={failureModes.length}
-              aiLoading={aiLoading}
-              onDraft={handleAISuggest}
-              onFillGaps={handleSpecialistFillGaps}
-              onBlocked={reason => showToast(reason, 'error')}
-            />
-          }
+          onSpecialistDraft={() => void handleAISuggest()}
+          onSpecialistFillGaps={() => void handleSpecialistFillGaps()}
+          completableCount={openRows.length}
+          specialistLocked={!draftGate.ok}
+          specialistBlockedReason={draftGate.reason}
         />
       )}
 
