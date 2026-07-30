@@ -177,12 +177,24 @@ export const SpecialistWorkspacePage: React.FC = () => {
     };
 
     const loadAll = async () => {
-        const [logQ, actionsQ, assetQ, woQ, overdueQ] = await Promise.all([
+        const [logQ, digestQ, actionsQ, assetQ, woQ, overdueQ] = await Promise.all([
             supabase.from('ers_ai_audit_log')
                 .select('id, module, context_type, query_text, response_text, created_at, duration_ms')
                 .eq('action_type', 'agent_run')
                 .order('created_at', { ascending: false })
                 .limit(15),
+            // The digest is fetched BY NAME, not hunted for in the work log.
+            // It used to be whichever reliability_digest happened to fall in
+            // the last 15 agent runs, so a busy day of other agents pushed it
+            // out of the window and the briefing silently read "No briefing
+            // yet" — with the digest sitting in the table untouched.
+            supabase.from('ers_ai_audit_log')
+                .select('id, module, context_type, query_text, response_text, created_at, duration_ms')
+                .eq('action_type', 'agent_run')
+                .eq('context_type', 'reliability_digest')
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle(),
             predictionService.getAgentActions(),
             supabase.from('assets').select('id, tag, name, criticality').limit(10000),
             supabase.from('work_orders')
@@ -222,7 +234,8 @@ export const SpecialistWorkspacePage: React.FC = () => {
             // Canonical backlog rule (lib/woState) — same as dashboard/reports/digest.
             if (w.asset_id && isOpenWo(w.status)) openByAsset.set(w.asset_id, (openByAsset.get(w.asset_id) ?? 0) + 1);
         }
-        const missionKey = `specialist-mission-baseline:${rows.find((r) => r.context_type === 'reliability_digest')?.created_at ?? 'none'}`;
+        const digest = (digestQ.data ?? null) as AuditRow | null;
+        const missionKey = `specialist-mission-baseline:${digest?.created_at ?? 'none'}`;
         let prevBaseline: Record<string, number> | null = null;
         try { prevBaseline = JSON.parse(localStorage.getItem(missionKey) ?? 'null'); } catch { /* ignore */ }
         const computed = computeMissions({
@@ -233,7 +246,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
         }, prevBaseline);
         try { localStorage.setItem(missionKey, JSON.stringify(computed.baseline)); } catch { /* private mode */ }
         setMissions(computed.missions);
-        setBriefing(rows.find((r) => r.context_type === 'reliability_digest') ?? null);
+        setBriefing(digest);
         setProposals(actionsQ.filter((a) => a.status === 'pending_review'));
 
         // Identified value: what the Specialist's proposals put on the table.
