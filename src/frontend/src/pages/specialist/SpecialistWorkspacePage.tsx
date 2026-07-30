@@ -513,8 +513,12 @@ export const SpecialistWorkspacePage: React.FC = () => {
                     <Panel
                         title="Briefing"
                         icon={<Sparkles size={14} className="text-primary-600" />}
+                        // The briefing/assessment distinction used to be stated
+                        // only in the empty state, so it vanished the moment a
+                        // briefing existed — and the question kept coming back.
+                        // It is short enough to always carry.
                         meta={briefingWhen
-                            ? `This week's digest · generated ${briefingWhen}`
+                            ? `This week's digest · generated ${briefingWhen} — movement since the assessment baseline`
                             : "This week's digest — what changed and what to act on (the assessment is the deep report)"}
                         actions={<>
                             {briefingText && (
