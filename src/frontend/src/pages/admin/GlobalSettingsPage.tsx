@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, DollarSign, Bell, Shield, Info, Save, RotateCcw, Check, Globe, Layers } from 'lucide-react';
+import { Settings, DollarSign, Bell, Shield, Info, Save, RotateCcw, Check, Globe, Layers, AlertTriangle } from 'lucide-react';
 import { useSettings, CURRENCY_OPTIONS, TIMEZONE_OPTIONS } from '../../contexts/SettingsContext';
 import type { Currency, DateFormatOption } from '../../contexts/SettingsContext';
 import { ModuleLicensingPanel } from '../../components/admin/ModuleLicensingPanel';
@@ -24,13 +24,26 @@ const TABS: { key: SettingsTab; label: string; icon: React.ReactNode }[] = [
 // ─────────────────────────────────────────────────────────
 
 export const GlobalSettingsPage: React.FC = () => {
-    const { resetSettings } = useSettings();
+    const { resetSettings, saveSettings, loading, dirty } = useSettings();
     const [tab, setTab] = useState<SettingsTab>('general');
     const [saved, setSaved] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSave = () => {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
+    // This button used to flip its own label to "Saved" for two seconds and
+    // write nothing at all, on a page headed "Enterprise-wide configuration".
+    // It now persists and reports the truth either way — a refused save says so.
+    const handleSave = async () => {
+        setSaving(true);
+        setError(null);
+        const result = await saveSettings();
+        setSaving(false);
+        if (result.ok) {
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+        } else {
+            setError(result.reason);
+        }
     };
 
     return (
@@ -51,11 +64,26 @@ export const GlobalSettingsPage: React.FC = () => {
                     <button onClick={resetSettings} className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 h-11 sm:h-auto sm:py-2.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-800 rounded-lg text-sm font-semibold transition-all shadow-sm whitespace-nowrap">
                         <RotateCcw size={14} /> Reset Defaults
                     </button>
-                    <button onClick={handleSave} className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 h-11 sm:h-auto sm:py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm whitespace-nowrap ${saved ? 'bg-emerald-500 text-white' : 'bg-accent-cyan hover:bg-primary-400 text-brand-900 shadow-[0_0_15px_rgba(6,182,212,0.25)]'}`}>
-                        {saved ? <><Check size={14} /> Saved</> : <><Save size={14} /> Save Changes</>}
+                    <button onClick={handleSave} disabled={saving || loading}
+                        className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 h-11 sm:h-auto sm:py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm whitespace-nowrap disabled:opacity-60 ${saved ? 'bg-emerald-500 text-white' : 'bg-accent-cyan hover:bg-primary-400 text-brand-900 shadow-[0_0_15px_rgba(6,182,212,0.25)]'}`}>
+                        {saving ? <><Save size={14} /> Saving…</>
+                            : saved ? <><Check size={14} /> Saved</>
+                                : <><Save size={14} /> Save Changes{dirty ? ' •' : ''}</>}
                     </button>
                 </div>
             </div>
+
+            {/* A refused or failed save has to be visible. The whole reason this
+                page was rewritten is that it reported success it never had. */}
+            {error && (
+                <div className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                    <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                        <p className="text-sm font-bold text-red-800">Not saved</p>
+                        <p className="text-[13px] text-red-700 break-words">{error}</p>
+                    </div>
+                </div>
+            )}
 
             {/* Tab Bar + Content */}
             <div className="flex flex-col md:flex-row gap-4 md:gap-6">
