@@ -382,10 +382,27 @@ class. Launch on instances; schedule the class.
 
 Logged here so they aren't rediscovered as "new" during execution.
 
-### 11.0 P0 — role gating is not applied to the analytics or Specialist surface
+### 11.0 P0 — role gating not applied to the analytics or Specialist surface — ✅ FIXED (6455c75)
 
 Found by the first real multi-role sweep (§9.1), 2026-07-31. **This is the finding that justifies
 the multi-role harness.**
+
+**Resolution.** `Gated` now applies `PermissionGate` as well as `ModuleGate`, with the licence-module
+→ permission-key map shared with the sidebar (`config/modulePermissions.ts`) so the nav and the route
+cannot disagree. Product ruling applied: the Specialist is open to **all** roles by default
+(`reliability` moved from `NO_ACCESS` to `VIEW_ONLY` on the five roles that lacked it), so nobody
+loses access on deploy; withdrawing it is a per-user override. `integrity`/`sustain` keep their
+stated `NO_ACCESS`, so `/comply/*` is now closed to TECHNICIAN, PLANNER, SUPERVISOR, REQUESTER and
+INTERNAL — the policy the matrix always declared and the router never enforced.
+
+Verified in a browser: technician keeps the Specialist and the whole reliability suite, loses
+`/comply/evaluate`; admin sets `reliability.view=false` for one technician → route refuses; original
+overrides restored. The per-user control finally does what the admin UI always implied.
+
+**Still open:** this was a UI-surface fix. Whether the *data* is readable underneath remains a
+question only §9.3 (L2) can answer.
+
+The original finding, for the record:
 
 `TECHNICIAN`'s matrix is explicit: `analytics: NO_ACCESS_PERM`, `reliability: NO_ACCESS_PERM`,
 `integrity: NO_ACCESS_PERM` ([rolePermissions.ts:224-241](src/frontend/src/eam/constants/rolePermissions.ts#L224-L241)).
@@ -433,6 +450,7 @@ safe because the UI is fixed.
 | Smoke asserted on **first paint**, not settled content — `/requests` was 237 chars vs 1010 settled | `tests/e2e/smoke.mjs` | R2 | ✅ fixed with the settle poll |
 | `/requests` phone shows 42% of desktop text | [ServiceRequests.tsx:374-390](src/frontend/src/eam/pages/ServiceRequests.tsx#L374-L390) | M5 | **Not a defect** — `MobileRequestGroup` collapsibles, only "New" `defaultOpen`. Marked `parityOk` |
 | `notificationRoute` documents "Assets / Requests / POs / Inventory / PMs open by `?id=`" — only **Assets** implements it. The other four land on a list, not the record | [notificationNav.ts:22-31](src/frontend/src/lib/notificationNav.ts#L22-L31) vs ServiceRequests / PurchaseOrders / Inventory / RecurringWork | H2 | Tracked in `KNOWN_GAPS`; decide fix-or-drop before launch |
+| **Global Settings saved nothing.** `handleSave` set its own label to "Saved" for 2s and wrote nowhere; values lived in `localStorage`, so "Enterprise-wide configuration" was per-browser — two users could see the same costs in different currencies | GlobalSettingsPage / SettingsContext | R1 | ✅ **FIXED** (e585754 + migration 0235) — persisted to `companies.app_settings`, admin-only via existing RLS, save reports refusals. An RLS denial returns HTTP 200 with 0 rows, so the code checks row count, not just `error` |
 | No L2 (data/RLS) layer exists | — | R10 | §9.3 — **now the top gap**, since §11.0 is UI-only |
 
 ### 11.2 Multi-role test credentials
