@@ -8,6 +8,11 @@
 # Requires repository secrets for the authenticated sweep (otherwise only the
 # public /login check runs):
 #   SMOKE_EMAIL / SMOKE_PASSWORD — a dedicated low-privilege smoke login.
+#   SMOKE_LOGINS_JSON (optional)  — sweep once per role instead of once per app:
+#       [{"label":"RELIABILITY_ENG","email":"…","password":"…"},
+#        {"label":"TECHNICIAN","email":"…","password":"…"}]
+#     Overrides the single login. Role gating is a launch risk in its own right —
+#     a route that renders for an admin can still be blank for a technician.
 name: Production Smoke
 
 on:
@@ -23,8 +28,10 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     # Vercel publish can take 15–20 min under load; the smoke waits up to
-    # SMOKE_DEPLOY_WAIT_MIN (18) for the SHA, so give the job headroom.
-    timeout-minutes: 30
+    # SMOKE_DEPLOY_WAIT_MIN (18) for the SHA. The sweep itself is ~4 min per
+    # login (26 desktop routes + 13 at phone width), so headroom scales with
+    # how many logins SMOKE_LOGINS_JSON carries.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -46,4 +53,5 @@ jobs:
           EXPECT_SHA: ${{ github.sha }}
           SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+          SMOKE_LOGINS_JSON: ${{ secrets.SMOKE_LOGINS_JSON }}
         run: node tests/e2e/smoke.mjs
