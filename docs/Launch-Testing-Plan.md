@@ -336,10 +336,16 @@ Run Phase 1 continuously in CI from Phase 0 onward — it is cheap and it protec
 Baseline against production: **39/39 pass**, no stuck spinners, no horizontal overflow, no uncaught
 errors. Runtime ~4 min per login.
 
-### 9.2 Handoff contract test (L1, new)
-A unit test that imports the route table and asserts every `routeForMission`/`missionEngine` path
-matches a live `<Route>`, and that each documented query param appears in the destination's
-`useSearchParams` usage. This makes H1/H2 permanent instead of a one-off.
+### 9.2 Handoff contract test — ✅ DONE (2026-07-31)
+[src/lib/handoffContract.test.ts](src/frontend/src/lib/handoffContract.test.ts) parses App.tsx as the
+source of truth (route table + element map + `lazyWithReload` import map) and **runs the real
+emitters** rather than grepping for literals, so runtime-built paths are covered too:
+`missionEngine`, `briefingParse.routeForAction` + `deepLink`, `notificationNav`, and the workspace's
+own path tables. **45 emitted paths, all resolving.** H1/H2 are now permanent.
+
+It immediately found the `?id=` gap (§11). Known-broken handoffs live in a `KNOWN_GAPS` map that is
+asserted to *stay* broken — fix one and the test fails telling you to delete its line, so the
+allowlist cannot rot into permanent silence.
 
 ### 9.3 L2 role/RLS script (new)
 Per role: authenticate, attempt the full CRUD matrix against seeded records, assert
@@ -374,7 +380,47 @@ class. Launch on instances; schedule the class.
 
 ## 11. Known items already surfaced by this plan's preparation
 
-Logged here so they aren't rediscovered as "new" during execution:
+Logged here so they aren't rediscovered as "new" during execution.
+
+### 11.0 P0 — role gating is not applied to the analytics or Specialist surface
+
+Found by the first real multi-role sweep (§9.1), 2026-07-31. **This is the finding that justifies
+the multi-role harness.**
+
+`TECHNICIAN`'s matrix is explicit: `analytics: NO_ACCESS_PERM`, `reliability: NO_ACCESS_PERM`,
+`integrity: NO_ACCESS_PERM` ([rolePermissions.ts:224-241](src/frontend/src/eam/constants/rolePermissions.ts#L224-L241)).
+But most of those routes are wrapped in `Gated` (= `ModuleGate`), which is a **licence paywall with
+no role awareness at all** — its denial copy is literally *"This module requires an active license."*
+Only `PermissionGate` consults the role matrix.
+
+The result, measured against production as a real TECHNICIAN:
+
+| Route | Gate | TECHNICIAN gets | Matrix says |
+|---|---|---|---|
+| `/reports` | `PermissionGate module="analytics"` | 🔒 Access Restricted | NO_ACCESS ✅ correct |
+| `/reliability-metrics` | `Gated moduleId="predict"` | **2245 chars — byte-identical to SUPER_ADMIN** | NO_ACCESS ❌ |
+| `/reliability-modelling` | `Gated moduleId="predict"` | 750 chars, full page | NO_ACCESS ❌ |
+| `/analyze`, `/analyze?tab=rca` | `Gated moduleId="predict"` | renders | NO_ACCESS ❌ |
+| `/predict` | `Gated moduleId="predict"` | 1235 chars, full page | NO_ACCESS ❌ |
+| `/comply/evaluate` | `Gated moduleId="comply"` | renders | `integrity: NO_ACCESS` ❌ |
+| `/specialist` + all 6 sub-pages | `Gated moduleId="specialist"` | **whole workspace, incl. Import Wizard, ROI statement, Meeting Pack** | no role gate exists ❌ |
+
+Two things make this launch-relevant rather than cosmetic:
+
+- **`/specialist/import` is a data-mutating surface.** A technician can open the CMMS Import Wizard.
+- **`/specialist/roi` and `/specialist/meeting` are financial/exec-facing**, and `viewCosts` is a
+  permission the matrix deliberately withholds from most roles.
+
+The fix pattern already exists in the codebase and is simply applied unevenly —
+`/comply/inspections/:id` and the `/audits/*` routes correctly compose both gates
+(`<Gated moduleId><PermissionGate module>`). The remedy is to compose the two everywhere, and to
+decide deliberately which roles may see the Specialist.
+
+**Caveat on scope:** this is a *UI-surface* finding. Whether the underlying data is also readable is
+a separate question that only the L2 layer (§9.3, not built) can answer. Do not assume the DB is
+safe because the UI is fixed.
+
+### 11.1 Other items
 
 | Item | Location | Class | Action |
 |---|---|---|---|
@@ -386,4 +432,15 @@ Logged here so they aren't rediscovered as "new" during execution:
 | ~~Prod smoke covers 10 routes, none of them Specialist~~ — now 26 routes + phone sweep + multi-role | `tests/e2e/smoke.mjs` | — | ✅ §9.1 done |
 | Smoke asserted on **first paint**, not settled content — `/requests` was 237 chars vs 1010 settled | `tests/e2e/smoke.mjs` | R2 | ✅ fixed with the settle poll |
 | `/requests` phone shows 42% of desktop text | [ServiceRequests.tsx:374-390](src/frontend/src/eam/pages/ServiceRequests.tsx#L374-L390) | M5 | **Not a defect** — `MobileRequestGroup` collapsibles, only "New" `defaultOpen`. Marked `parityOk` |
-| No L2 (data/RLS) layer exists | — | R10 | §9.3 |
+| `notificationRoute` documents "Assets / Requests / POs / Inventory / PMs open by `?id=`" — only **Assets** implements it. The other four land on a list, not the record | [notificationNav.ts:22-31](src/frontend/src/lib/notificationNav.ts#L22-L31) vs ServiceRequests / PurchaseOrders / Inventory / RecurringWork | H2 | Tracked in `KNOWN_GAPS`; decide fix-or-drop before launch |
+| No L2 (data/RLS) layer exists | — | R10 | §9.3 — **now the top gap**, since §11.0 is UI-only |
+
+### 11.2 Multi-role test credentials
+
+The sweep runs on existing accounts; nothing was provisioned. Verified working 2026-07-31 with the
+shared dev password: `admin001@cainergy.com` (SUPER_ADMIN), `k.syrus@cainergy.com` and
+`john.doe@cainergy.com` (RELIABILITY_ENG), `bea@cainergy.com` and `alex@cainergy.com` (TECHNICIAN).
+
+**Gap: there is no REQUESTER account.** REQUESTER is the widest and least-trained population at
+launch (§5.1) and is currently untestable. `smoke-ci@irams.app` exists as a TECHNICIAN but its
+password is not the shared one — that is the account CI should use once its secret is set.
