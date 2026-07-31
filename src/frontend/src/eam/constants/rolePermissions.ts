@@ -46,6 +46,16 @@ export const NO_ACCESS_PERM: ModulePermissions = {
 };
 
 // ═══ Role Permission Templates (Authoritative Baselines) ═══
+//
+// `reliability` is VIEW_ONLY for every role rather than NO_ACCESS for some.
+// The AI Reliability Specialist is the product's front door and a technician is
+// expected to reach it from work management, so open-by-default is the intended
+// posture. Withdrawing it is a per-user override in Admin → Access Control,
+// which now actually reaches the routes (see config/modulePermissions).
+//
+// `integrity` and `sustain` keep their stated NO_ACCESS values. Those were
+// always the policy; until the router honoured the matrix they simply were not
+// enforced, so roles could open pages the matrix already said they could not.
 
 export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePermissions>> = {
 
@@ -104,7 +114,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         // Premium — Blocked
         finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
-        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 
@@ -157,7 +167,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         // Premium — Blocked
         finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
-        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 
@@ -236,7 +246,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         contacts: NO_ACCESS_PERM, vendors: NO_ACCESS_PERM,
         finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
-        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 
@@ -254,7 +264,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         analytics: NO_ACCESS_PERM, contacts: NO_ACCESS_PERM, vendors: NO_ACCESS_PERM,
         finops: NO_ACCESS_PERM, taskLibrary: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
         moc: NO_ACCESS_PERM, notifications: VIEW_ONLY_PERM, admin: NO_ACCESS_PERM,
-        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 
@@ -274,7 +284,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         vendors: NO_ACCESS_PERM, finops: NO_ACCESS_PERM, taskLibrary: NO_ACCESS_PERM,
         safety: NO_ACCESS_PERM, moc: NO_ACCESS_PERM, notifications: VIEW_ONLY_PERM,
         admin: NO_ACCESS_PERM,
-        reliability: NO_ACCESS_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
     },
 };

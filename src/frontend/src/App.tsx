@@ -13,6 +13,7 @@ import { RelanternProvider } from './eam/contexts/RelanternContext';
 import { DashboardProvider } from './eam/stores/DashboardStore';
 import { AppLayout } from './shell/AppLayout';
 import { ModuleGate } from './components/ModuleGate';
+import { permKeyForModule } from './config/modulePermissions';
 import { UpdateBanner } from './components/UpdateBanner';
 import { PermissionGate } from './eam/components/PermissionGate';
 import { ErrorBoundary } from './eam/components/ErrorBoundary';
@@ -108,11 +109,29 @@ const InspectionDetailPage = lazyWithReload(() => import('./pages/InspectionDeta
 const Loading = () => <LoadingState label="Loading page…" />;
 
 // ── Gated Route Helper ──────────────────────────────────
-const Gated = ({ moduleId, children }: { moduleId: string; children: React.ReactNode }) => (
-  <ModuleGate moduleId={moduleId as any}>
-    <Suspense fallback={<Loading />}>{children}</Suspense>
-  </ModuleGate>
-);
+/**
+ * Applies BOTH gates a premium route needs:
+ *   ModuleGate      — has this deployment licensed the module?
+ *   PermissionGate  — is this user allowed to view it?
+ *
+ * It used to apply only the first. The role matrix governed the sidebar but not
+ * the router, so a role with `reliability: NO_ACCESS` lost the nav item and kept
+ * the URL — and a per-user override an admin had set could never reach the page
+ * it was set for. The RBAC key comes from the shared map, so the route and the
+ * nav pointing at it cannot disagree.
+ *
+ * A few routes still name PermissionGate inline (audits, comply/inspections).
+ * That is now redundant rather than wrong — same key, same answer.
+ */
+const Gated = ({ moduleId, children }: { moduleId: string; children: React.ReactNode }) => {
+  const permKey = permKeyForModule(moduleId as any);
+  const inner = <Suspense fallback={<Loading />}>{children}</Suspense>;
+  return (
+    <ModuleGate moduleId={moduleId as any}>
+      {permKey ? <PermissionGate module={permKey}>{inner}</PermissionGate> : inner}
+    </ModuleGate>
+  );
+};
 
 // ── Role-based landing ──────────────────────────────────
 // Field roles open on "My Work" (their jobs, one tap to execute) instead of the

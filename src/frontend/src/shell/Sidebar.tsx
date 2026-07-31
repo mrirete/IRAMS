@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ChevronDown, ChevronRight, Lock, Database, X, Flame } from 'lucide-react';
-import { MODULE_REGISTRY, type ModuleDefinition, type SidebarChild } from '../config/moduleRegistry';
+import { MODULE_REGISTRY, type ModuleDefinition, type SidebarChild, type ModuleId } from '../config/moduleRegistry';
+import { MODULE_ID_TO_PERM_KEY } from '../config/modulePermissions';
 import { useLicense } from '../contexts/LicenseContext';
 import { useAuth } from '../eam/contexts/AuthContext';
 import { useEdition } from '../lib/useEdition';
@@ -117,21 +118,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
     /**
      * ═══ Module-Level RBAC Gate ═══
-     * Maps MODULE_REGISTRY module IDs to their RBAC permission keys.
-     * For premium suites, we check the permission key directly at the
-     * module level — if view is explicitly false, the entire sidebar
-     * section is hidden even if individual children might pass.
+     * For premium suites, check the permission key directly at the module
+     * level — if view is explicitly false, the entire sidebar section is
+     * hidden even if individual children might pass.
+     *
+     * The map lives in config/modulePermissions and is shared with the router's
+     * Gated helper, so what the nav hides and what the route refuses can never
+     * drift apart.
      */
-    const MODULE_ID_TO_PERM_KEY: Partial<Record<string, ModuleName>> = {
-        'specialist': 'reliability', // Reliability Specialist → reliability permission
-        'predict': 'reliability',    // Reliability Tier → reliability permission
-        'comply': 'integrity',       // Integrity → integrity permission
-        'audits': 'audits',          // Audit Suite → audits permission
-        'sustain': 'sustain',        // Sustain → sustain permission
-    };
-
     const isModulePermitted = (moduleId: string): boolean => {
-        const permKey = MODULE_ID_TO_PERM_KEY[moduleId];
+        const permKey = MODULE_ID_TO_PERM_KEY[moduleId as ModuleId];
         if (!permKey) return true; // Core modules don't have a module-level gate
         if (authLoading || !permissions) return false;
         return permissions[permKey]?.view === true;

@@ -23,6 +23,8 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { permKeyForModule } from '../config/modulePermissions';
+import { ROLE_PERMISSION_TEMPLATES } from '../eam/constants/rolePermissions';
 import { computeMissions } from './missionEngine';
 import { routeForAction, deepLink } from './briefingParse';
 import { notificationRoute } from './notificationNav';
@@ -126,6 +128,43 @@ describe('route table', () => {
     expect(ROUTE_PATTERNS).toContain('/work-orders');
     expect(COMPONENT_FILE.size).toBeGreaterThan(20);
     expect(ROUTE_COMPONENT.size).toBeGreaterThan(20);
+  });
+});
+
+describe('every licence-gated route also has a role gate', () => {
+  // The defect this prevents: a premium route wrapped in ModuleGate alone. The
+  // licence check passes for everyone, so the role matrix never runs — the nav
+  // item vanishes for an unpermitted role while the URL stays open, and a
+  // per-user override an admin set cannot reach the page it was set for.
+  const gatedModuleIds = [...new Set(
+    [...APP.matchAll(/<Gated\s+moduleId="([^"]+)"/g)].map(m => m[1]),
+  )];
+
+  it('finds the Gated routes', () => {
+    expect(gatedModuleIds.length).toBeGreaterThan(3);
+  });
+
+  it('maps every gated module to an RBAC permission key', () => {
+    const unmapped = gatedModuleIds.filter(id => !permKeyForModule(id as never));
+    expect(
+      unmapped,
+      `these licence modules have no RBAC key, so their routes are licence-only: ${unmapped.join(', ')}. ` +
+      `Add them to MODULE_ID_TO_PERM_KEY in config/modulePermissions.ts.`,
+    ).toEqual([]);
+  });
+
+  it('keeps the Specialist open to every role by default', () => {
+    // The product decision: the Specialist is the front door, and a technician
+    // reaches it from work management. Withdrawing access is a per-user
+    // override, not a role default — so no template may ship with it closed.
+    const closed = Object.entries(ROLE_PERMISSION_TEMPLATES)
+      .filter(([, perms]) => perms.reliability?.view !== true)
+      .map(([role]) => role);
+    expect(
+      closed,
+      `these roles cannot view the Specialist: ${closed.join(', ')}. ` +
+      `Gating /specialist on 'reliability' would lock them out of the front door.`,
+    ).toEqual([]);
   });
 });
 
