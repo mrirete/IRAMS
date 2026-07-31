@@ -87,8 +87,21 @@ const ROUTES = [
   { path: '/predict' },
 
   // ── Admin ──
+  // The whole admin surface, because it is where access, licensing and
+  // enterprise config are supposed to be set — and a broken admin page is
+  // invisible to everyone except the one person who needs it.
+  { path: '/admin/settings' },
   { path: '/admin/migration' },
   { path: '/admin/connectors' },
+  { path: '/admin/invitations' },
+  { path: '/admin/hierarchy' },
+  { path: '/admin/manufacturers' },
+  { path: '/admin/work-centers' },
+  { path: '/admin/companies' },
+  { path: '/admin/error-logs' },
+  { path: '/admin/activity-log' },
+  { path: '/eam-admin' },
+  { path: '/system-health' },
 ];
 
 const SPINE = ROUTES.filter(r => r.spine);
