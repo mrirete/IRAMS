@@ -1711,10 +1711,19 @@ export class DatabaseService {
         if (asset.companyId) row.company_id = asset.companyId;
 
         console.log('[updateAsset] Saving row:', { id: asset.id, ...row });
-        const { error } = await supabase.from('assets').update(row).eq('id', asset.id);
+        // .select('id') is not cosmetic: it is what makes the row count
+        // observable. An RLS UPDATE policy is a USING filter, not a rejection —
+        // a caller who may not touch this row gets error === null and zero rows,
+        // which is indistinguishable from success unless the rows are counted.
+        const { data: updated, error } = await supabase
+            .from('assets').update(row).eq('id', asset.id).select('id');
         if (error) {
             console.error('[updateAsset] Supabase ERROR:', error.message, error.details, error.hint);
             errorLog.apiError('assets', `[updateAsset] Failed for ${asset.tag || asset.id}`, error, 'asset', asset.id);
+        } else if (!updated?.length) {
+            console.error('[updateAsset] No row updated for asset:', asset.id, '— refused or missing');
+            errorLog.apiError('assets', `[updateAsset] Updated 0 rows for ${asset.tag || asset.id} (RLS refusal or missing row)`,
+                { message: 'update affected 0 rows' } as any, 'asset', asset.id);
         } else {
             console.log('[updateAsset] ✅ Saved successfully for asset:', asset.id);
         }
