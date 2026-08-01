@@ -8,6 +8,7 @@ import {
     Briefcase, RefreshCcw, Camera, AlertTriangle, Image as ImageIcon,
     Tag, ClipboardCheck, ShieldCheck, RefreshCw, Calculator, Upload
 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
 import { ImageCapture } from '../components/ui/ImageCapture';
 import { ConfirmationModal, ConfirmationType } from '../components/modals/ConfirmationModal';
 import {
@@ -2103,6 +2104,23 @@ export function Inventory({ onAnalyze }: InventoryProps) {
     );
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [bulkDeleteModal, setBulkDeleteModal] = useState(false);
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Deep link from a notification: /inventory?id=<item_id> (notificationNav).
+    // Low-stock alerts are the common case, and they were landing on the full
+    // registry rather than the part that had run down.
+    useEffect(() => {
+        const targetId = searchParams.get('id');
+        if (!targetId || selectedItem || inventoryItems.length === 0) return;
+        const match = inventoryItems.find(i => i.id === targetId);
+        if (!match) return;
+        setSelectedItem(match);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.delete('id');
+            return next;
+        }, { replace: true });
+    }, [searchParams, inventoryItems, selectedItem, setSearchParams]);
 
     useEffect(() => {
         loadInventory();

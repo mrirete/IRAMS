@@ -12,6 +12,7 @@ import {
 
 type TabId = 'details' | 'items' | 'properties' | 'authorise';
 
+import { useSearchParams } from 'react-router-dom';
 import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
 import { downloadPOItemsTemplate, parsePOItemsFile } from '../services/assetTemplates';
@@ -47,6 +48,7 @@ export const PurchaseOrders: React.FC = () => {
     const { showToast } = useToast();
     const [orders, setOrders] = useState<PurchaseOrder[]>([]);
     const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
+    const [searchParams, setSearchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState<TabId>('details');
     const [searchTerm, setSearchTerm] = useState('');
     const [contacts, setContacts] = useState<Contact[]>([]);
@@ -61,6 +63,22 @@ export const PurchaseOrders: React.FC = () => {
     useEffect(() => {
         loadData();
     }, []);
+
+    // Deep link from a notification: /purchase-orders?id=<po_id> (notificationNav).
+    // This page read no query params at all, so every PO approval alert landed
+    // on the list and left the approver to find the order themselves.
+    useEffect(() => {
+        const targetId = searchParams.get('id');
+        if (!targetId || selectedPO || orders.length === 0) return;
+        const match = orders.find(o => o.id === targetId);
+        if (!match) return;
+        setSelectedPO(match);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.delete('id');
+            return next;
+        }, { replace: true });
+    }, [searchParams, orders, selectedPO, setSearchParams]);
 
     const loadData = async () => {
         try {

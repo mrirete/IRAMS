@@ -155,6 +155,24 @@ export const ServiceRequests: React.FC = () => {
         }
     }, [searchParams, setSearchParams]);
 
+    // Deep link from a notification: /requests?id=<request_id> (notificationNav).
+    // Without this the alert lands you on the board with the request it was
+    // about nowhere in sight — the link looks like it worked, so nobody reports it.
+    useEffect(() => {
+        const targetId = searchParams.get('id');
+        if (!targetId || selectedRequest || requests.length === 0) return;
+        const match = requests.find(r => r.id === targetId);
+        if (!match) return;
+        setSelectedRequest(match);
+        // Drop only the id so filter params survive, and back-navigation
+        // doesn't immediately reopen what the user just closed.
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.delete('id');
+            return next;
+        }, { replace: true });
+    }, [searchParams, requests, selectedRequest, setSearchParams]);
+
     // Reflect search / filter / sort into the URL (replace, defaults omitted).
     useEffect(() => {
         setSearchParams(prev => {

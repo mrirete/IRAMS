@@ -200,24 +200,18 @@ describe('every emitted deep link resolves to a route', () => {
 });
 
 /**
- * Handoffs that are known-broken today, keyed `routePattern?param`.
+ * Handoffs that are known-broken, keyed `routePattern?param`.
  *
- * notificationNav documents the convention "Assets / Requests / POs / Inventory
- * / PMs open by ?id= query" — but only Assets implements it. Clicking a PO
- * notification lands you on the PO list, not the PO, and nothing says so.
- *
- * These are recorded rather than fixed because each destination opens a record
- * differently, and that is product work, not test work. The entries are
- * asserted to STILL be broken: fix one and this test fails, telling you to
- * delete its line. A stale allowlist is how known gaps quietly become
+ * Entries are asserted to STILL be broken: fix one and this test fails, telling
+ * you to delete its line. A stale allowlist is how known gaps quietly become
  * permanent, so this one cannot go stale.
+ *
+ * Empty as of 2026-08-02. notificationNav's documented convention — "Assets /
+ * Requests / POs / Inventory / PMs open by ?id=" — was implemented on Assets
+ * alone; the other four now honour it too, so every notification opens the
+ * record it is about instead of the list it lives in.
  */
-const KNOWN_GAPS = new Map<string, string>([
-  ['/requests?id', 'ServiceRequests reads q/plant/type/sort/action — never id'],
-  ['/purchase-orders?id', 'PurchaseOrders reads no query params at all'],
-  ['/inventory?id', "Inventory reads only ?action=import from window.location.search"],
-  ['/recurring-work?id', 'RecurringWork reads q/due/action — never id'],
-]);
+const KNOWN_GAPS = new Map<string, string>([]);
 
 describe('every emitted query param is read by its destination', () => {
   // Landing somewhere that ignores your param is the quiet failure: the page

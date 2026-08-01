@@ -66,7 +66,7 @@ export const RecurringWork: React.FC = () => {
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
     const [isFullscreen, setIsFullscreen] = useState(false);
     // Deep link (e.g. RCM task matrix → /recurring-work?q=RCM-xxxx) seeds the search box
-    const [urlParams] = useSearchParams();
+    const [urlParams, setUrlParams] = useSearchParams();
     const [searchQuery, setSearchQuery] = useState(urlParams.get('q') || '');
     // Deep link from Specialist missions: ?due=overdue lands the plan already
     // scoped to past-due programmes (clearable chip in the toolbar).
@@ -92,6 +92,22 @@ export const RecurringWork: React.FC = () => {
         loadInventoryItems();
         loadAssets();
     }, []);
+
+    // Deep link from a notification: /recurring-work?id=<pm_id> (notificationNav).
+    // PM-due alerts are raised from this page, so landing on the unfiltered list
+    // was the one place the alert's own programme could get lost.
+    useEffect(() => {
+        const targetId = urlParams.get('id');
+        if (!targetId || selectedJob || jobs.length === 0) return;
+        const match = jobs.find(j => j.id === targetId);
+        if (!match) return;
+        setSelectedJob(match);
+        setUrlParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.delete('id');
+            return next;
+        }, { replace: true });
+    }, [urlParams, jobs, selectedJob, setUrlParams]);
 
     // PM-Due Notification Trigger — 4-tier escalation (ISO 55000)
     useEffect(() => {
