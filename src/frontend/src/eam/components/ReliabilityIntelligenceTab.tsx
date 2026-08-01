@@ -373,7 +373,7 @@ Type: ${asset.assetType || (asset as any).category || 'N/A'} | Criticality: ${as
   ${failStr}
   ${dqsStr}
 
-▸ IRAMS MODULE: Reliability Intelligence Tab
+▸ IREAMS MODULE: Reliability Intelligence Tab
   This data comes from the predictive analytics engine. Ask about reliability strategy, maintenance optimization, or failure pattern analysis.`;
                             openRelantern(richContext, 'reliability');
                         }}

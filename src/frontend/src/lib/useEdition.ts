@@ -1,6 +1,6 @@
 /**
  * useEdition — the tenant's product edition (packaging ruling, strategy §5.2):
- *   'platform'   — full IRAMS (EAM + Reliability suite + Specialist)
+ *   'platform'   — full IREAMS (EAM + Reliability suite + Specialist)
  *   'specialist' — Specialist-only: EAM navigation hidden, workspace is home.
  *
  * Single-tenant deployment model (0173): the edition lives on the first active

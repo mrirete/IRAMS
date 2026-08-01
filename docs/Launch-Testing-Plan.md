@@ -1,4 +1,4 @@
-# IRAMS Launch Testing Plan
+# IREAMS Launch Testing Plan
 
 **Status:** draft for execution · **Owner:** product/eng · **Target:** launch readiness sign-off
 **Scope:** the whole shipping surface, weighted toward the journey most users will actually take —

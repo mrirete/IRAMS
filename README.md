@@ -1,4 +1,4 @@
-# IRAMS — Intelligent Reliability & Asset Management System
+# IREAMS — Integrated Reliability and Enterprise Management System
 
 > AI-Powered Enterprise Asset Management (EAM) platform — the single source of truth for assets, maintenance, inventory, people, and performance.
 

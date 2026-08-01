@@ -72,7 +72,7 @@ export const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ childr
                     </div>
                     <style>{`@keyframes authProgress { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }`}</style>
                     {!isInIframe && (
-                        <p className="text-xs font-medium" style={{ color: '#94a3b8' }}>Loading IRAMS…</p>
+                        <p className="text-xs font-medium" style={{ color: '#94a3b8' }}>Loading IREAMS…</p>
                     )}
                 </div>
             </div>

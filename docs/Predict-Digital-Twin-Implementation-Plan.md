@@ -116,7 +116,7 @@ Goal: the RUL, confidence bands, P(failure) and Weibull curve become **real fits
 | **Augury** | Fleet-learned diagnostics (baselines from thousands of similar machines) + prescriptive advice as a managed service. |
 | Common thread | *The user almost never invents a number. The system proposes; the human approves.* |
 
-**IRAMS differentiator:** standards-first transparency — every suggested limit cites an auditable source (ISO 20816-3 zone, learned baseline stats, OEM datasheet), then refines from data. That beats black-box scores for a governance-minded EAM.
+**IREAMS differentiator:** standards-first transparency — every suggested limit cites an auditable source (ISO 20816-3 zone, learned baseline stats, OEM datasheet), then refines from data. That beats black-box scores for a governance-minded EAM.
 
 **1.5.1 Standards-based limit library.** New `lib/predict/limitLibrary.ts` encoding ISO 20816-3 zone boundaries per machine group — G1 (large, rigid): A/B 2.3, B/C 4.5, C/D 7.1 mm/s · G2 (medium 15–300 kW, rigid): 1.4 / 2.8 / 4.5 · G3 (large, flexible): 3.5 / 7.1 / 11.2 · G4 (medium, flexible): 2.3 / 4.5 / 7.1 — plus temperature classes and hooks for static-equipment limits (t-min, design pressure — consumed by Phases 2.4/5). Convention: **warning = B/C boundary, critical (trip) = C/D**. SetupJourney step 2 gains a two-question picker (power >300 kW? rigid or flexible mount?) that resolves the group instead of the blanket 7.1; `PointDraft` gains warning levels (schema already has `max_warning`/`min_warning` — currently unused by the journey).
 - Files: `SetupJourney.tsx` (TEMPLATES + step-2 UI), new `lib/predict/limitLibrary.ts`.

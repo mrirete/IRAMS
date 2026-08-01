@@ -67,7 +67,7 @@ const BLOCK_TYPES: { type: InstructionBlockType; label: string; icon: React.Comp
 
 const CATEGORIES = ['Structure', 'Input', 'Inspection', 'Evidence', 'Safety'];
 
-// IRAMS category accents — colored dot + tinted icon chip per family
+// IREAMS category accents — colored dot + tinted icon chip per family
 const CATEGORY_STYLES: Record<string, { dot: string; chip: string }> = {
     Structure: { dot: 'bg-slate-400', chip: 'bg-slate-100 text-slate-500' },
     Input: { dot: 'bg-blue-500', chip: 'bg-blue-50 text-blue-600' },

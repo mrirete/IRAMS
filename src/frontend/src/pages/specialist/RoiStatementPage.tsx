@@ -277,7 +277,7 @@ export const RoiStatementPage: React.FC = () => {
                 </Section>
 
                 <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1.5">
-                    <BadgeDollarSign size={11} /> IRAMS · Reliability Specialist by Relantern — Return on Reliability statement, generated {new Date().toISOString().slice(0, 10)}.
+                    <BadgeDollarSign size={11} /> IREAMS · Reliability Specialist by Relantern — Return on Reliability statement, generated {new Date().toISOString().slice(0, 10)}.
                 </p>
             </div>
         </>

@@ -123,12 +123,12 @@ describe('buildAssessmentSheets', () => {
 
 describe('assessmentFilename', () => {
     it('stamps the date and names the scope', () => {
-        expect(assessmentFilename(base(), '2026-07-30T10:00:00.000Z')).toBe('IRAMS_Assessment_Fleet_2026-07-30');
+        expect(assessmentFilename(base(), '2026-07-30T10:00:00.000Z')).toBe('IREAMS_Assessment_Fleet_2026-07-30');
     });
 
     it('strips characters a filesystem would reject', () => {
         const name = assessmentFilename(base({ scope: { rootId: 'x', rootTag: 'U 200/A', rootName: 'n' } }), '2026-07-30T00:00:00Z');
-        expect(name).toBe('IRAMS_Assessment_U_200_A_2026-07-30');
+        expect(name).toBe('IREAMS_Assessment_U_200_A_2026-07-30');
     });
 });
 

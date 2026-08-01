@@ -44,17 +44,17 @@ if str(PROJECT_ROOT) not in sys.path:
 # ── Lifecycle ────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    logger.info("🚀 IRAMS Gateway starting …")
+    logger.info("🚀 IREAMS Gateway starting …")
     logger.info("   OpenAPI docs → http://localhost:8000/docs")
     yield
-    logger.info("🛑 IRAMS Gateway shutting down …")
+    logger.info("🛑 IREAMS Gateway shutting down …")
 
 
 # ── Application ──────────────────────────────────────────────
 app = FastAPI(
-    title="IRAMS — Integrated Reliability & Asset Management Specialist",
+    title="IREAMS — Integrated Reliability and Enterprise Management System",
     description=(
-        "IRAMS by Relantern — AI-powered modern Enterprise Asset Management (EAM) platform.\n\n"
+        "IREAMS by Relantern — AI-powered modern Enterprise Asset Management (EAM) platform.\n\n"
         "Single source of truth for assets, maintenance, inventory, "
         "people, and performance — optimized for Oil & Gas.\n\n"
         "ISO 55000 · ISO 14224 · SAE JA1011 · API 580/581"

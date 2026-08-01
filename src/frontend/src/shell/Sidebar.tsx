@@ -293,17 +293,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
 
     const sidebarContent = (
         <div className="w-64 h-full bg-white border-r border-slate-200/80 flex flex-col overflow-y-auto">
-            {/* ── IRAMS Logo ── */}
+            {/* ── IREAMS Logo ── */}
             <div className="px-5 py-5 flex items-center justify-between border-b border-slate-200/80">
                 <div
                     className="flex items-center gap-3 group cursor-default"
-                    title="IRAMS — Integrated Reliability & Asset Management Specialist by Relantern"
+                    title="IREAMS — Integrated Reliability and Enterprise Management System by Relantern"
                 >
                     <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-relantern-400 to-relantern-600 flex items-center justify-center shadow-lg shadow-relantern-500/25 group-hover:shadow-relantern-500/40 transition-shadow">
                         <Flame size={20} className="text-white" />
                     </div>
                     <div className="flex flex-col min-w-0">
-                        <span className="font-bold text-[16px] tracking-wide text-slate-800 whitespace-nowrap">IRAMS</span>
+                        <span className="font-bold text-[16px] tracking-wide text-slate-800 whitespace-nowrap">IREAMS</span>
                         <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-[0.08em] group-hover:text-relantern-600 transition-colors whitespace-nowrap">by Relantern</span>
                     </div>
                 </div>
@@ -437,7 +437,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 className="px-5 py-3 border-t border-slate-200/80 text-[10px] text-slate-400 font-medium"
                 title={`Built ${__BUILD_TIME__}`}
             >
-                IRAMS by Relantern · v2.0 · <span className="font-mono text-slate-500">{__BUILD_SHA__}</span>
+                IREAMS by Relantern · v2.0 · <span className="font-mono text-slate-500">{__BUILD_SHA__}</span>
             </div>
         </div>
     );

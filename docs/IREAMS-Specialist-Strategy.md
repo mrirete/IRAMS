@@ -1,20 +1,20 @@
-# IRAMS Specialist-Led Strategy — "Hire Your Reliability Specialist"
+# IREAMS Specialist-Led Strategy — "Hire Your Reliability Specialist"
 
-_Status: strategy (2026-07-24). Supersedes the EAM-first positioning in `IRAMS-Product-Description.md` §1. Companion docs: `reliability-ai-agents-design.md` (technical design), `Market-Gap-Closure-Plan.md` (loop-closing work)._
+_Status: strategy (2026-07-24). Supersedes the EAM-first positioning in `IREAMS-Product-Description.md` §1. Companion docs: `reliability-ai-agents-design.md` (technical design), `Market-Gap-Closure-Plan.md` (loop-closing work)._
 
 ---
 
 ## 0. Executive summary
 
-**The thesis.** The scarcest resource in industrial maintenance is not software — it is reliability engineering skill. Plants sit on years of CMMS history that nobody on staff is qualified to read, and they cannot hire the person who could: the skills gap is a top-three downtime driver in the industry's own survey data. IRAMS stops selling "an EAM with AI features" and starts selling **an AI Reliability Specialist any organization can employ** — on top of whatever CMMS they already run, or inside the IRAMS platform for those who want one system. We price it like the labor it replaces, not like the software it resembles.
+**The thesis.** The scarcest resource in industrial maintenance is not software — it is reliability engineering skill. Plants sit on years of CMMS history that nobody on staff is qualified to read, and they cannot hire the person who could: the skills gap is a top-three downtime driver in the industry's own survey data. IREAMS stops selling "an EAM with AI features" and starts selling **an AI Reliability Specialist any organization can employ** — on top of whatever CMMS they already run, or inside the IREAMS platform for those who want one system. We price it like the labor it replaces, not like the software it resembles.
 
 **Why this wins now — three verified facts (2026-07-24):**
 
-1. **The engineering layer of the market's AI is empty.** Maximo's watsonx assistant is chat-over-data. MaintainX AI ($2.5B valuation, #1 on G2) does anomaly flags, parts prediction, and natural-language analytics. Limble's Winter-2026 AI does scheduling and photo-to-asset. None of them do engineering: no censored Weibull, no RCM logic, no evidence-graded RCA, no API-570 remaining life. IRAMS already has all of it, built and live.
+1. **The engineering layer of the market's AI is empty.** Maximo's watsonx assistant is chat-over-data. MaintainX AI ($2.5B valuation, #1 on G2) does anomaly flags, parts prediction, and natural-language analytics. Limble's Winter-2026 AI does scheduling and photo-to-asset. None of them do engineering: no censored Weibull, no RCM logic, no evidence-graded RCA, no API-570 remaining life. IREAMS already has all of it, built and live.
 2. **The category is unclaimed.** No product anywhere markets an "AI reliability engineer" for physical assets (the phrase today means humans babysitting AI systems). Whoever names the category owns its search results, its analyst coverage, and its buyer vocabulary.
 3. **The delivery model is being validated by others — so the window is finite.** Facilio's "Atom" already sells AI agents layered on IBM Maximo "without replacing, migrating, or reconfiguring your existing setup." The agents-on-top pattern works; nobody has aimed it at reliability engineering yet. Assume 12–18 months before someone does.
 
-**The play in one sentence:** land with a same-day reliability assessment run on the prospect's own CMMS export, convert to a monthly "the Specialist stays employed" subscription, and expand to the IRAMS platform when the customer is ready to consolidate.
+**The play in one sentence:** land with a same-day reliability assessment run on the prospect's own CMMS export, convert to a monthly "the Specialist stays employed" subscription, and expand to the IREAMS platform when the customer is ready to consolidate.
 
 **What changes:** positioning inverts (Specialist is the product; EAM is a deployment mode), pricing re-anchors (per-site fraction-of-a-salary, not per-user seats), and the build queue re-sequences to revenue (import agent + assessment report first). **What does not change:** the Gemini provider decision, the Tier-2 autonomy ceiling (human approves every write), the semantic-layer strategy, and the EAM itself — which becomes the closed-loop rail and the second deployment mode, not a regret.
 
@@ -36,7 +36,7 @@ Building the EAM was not a deviation; it was the apprenticeship. A reliability e
 - a **system of action** so recommendations become work orders and outcomes, which the market demands (Verdantix 2026: buyers reject advice-only tools);
 - a **semantic layer** that abstracts the agents from the schema — the portability hinge.
 
-The error was not building the EAM. The error was letting the EAM become the noun and the Specialist the adjective. `IRAMS-Product-Description.md` currently leads with "the first **EAM platform** built around a Reliability Specialist." This strategy inverts that sentence.
+The error was not building the EAM. The error was letting the EAM become the noun and the Specialist the adjective. `IREAMS-Product-Description.md` currently leads with "the first **EAM platform** built around a Reliability Specialist." This strategy inverts that sentence.
 
 ### 1.3 The core commercial insight: sell labor, not software
 
@@ -60,7 +60,7 @@ Strategy must be built on strengths that are real, scarce, and hard to copy. Eve
 | S2 | **Deterministic engineering core — "agents orchestrate, tools compute."** Censored Weibull (median-rank regression, Johnson-adjusted ranks, suspensions handled), Monte Carlo RAM (inverse-CDF sampling, Box-Muller repair times, convergence checks), JA1011-aligned RCM/FMEA, API 510/570/653 corrosion-rate + remaining-life, bearing-fault spectral diagnosis (FFT/envelope, named fault frequencies). The LLM never performs the math. | Every incumbent's "AI" is an LLM talking about data. Ours is an LLM *driving verified engines*. This is the difference between a chatbot that sounds like an engineer and an employee whose calculations are defensible in a reliability review. It took years of domain knowledge to encode; it cannot be prompt-engineered into existence. | The moat. Lead every proof conversation with it ("ask our Specialist to show its math — it can, because it didn't do the math; the engine did"). |
 | S3 | **Evidence-graded RCA** — quality ladder (fact > inference > opinion > hearsay), node↔evidence citations, evidenced/assumed tagging on every cause node, Physical → Human → Latent causal ladder with a soft root-cause gate. | No CMMS-tier product structures investigation evidence at all. This mirrors how real incident investigators work and produces **auditable** root-cause cases — insurance, regulatory, and corporate-HSE value. | Flagship differentiation for the RCA Copilot; a wedge into regulated industries. |
 | S4 | **Semantic layer** — `sem_*` canonical views + `semantic_catalog` (descriptions, lineage, ISO 14224 annotations); agents consume the semantic contract, not raw tables. | This is the same architectural bet SAP paid for when it acquired Dremio — built natively, small, and domain-annotated. | **The portability hinge.** Any foreign CMMS data mapped into `sem_*` shapes makes the entire agent roster work unchanged. "Employable by any organisation" is a data-mapping problem, not a rewrite. |
-| S5 | **PSC framework — published research.** Percentage-of-Success-Centred maintenance (Olorunfemi, *Science, Technology & Public Policy*, 2026): D-I-S-G curve, Golden Spot, MTOP/MTTRg/SR/OPE, SMEA. IRAMS is the reference implementation (engine + metrics live). | Competitors have features; we have a **methodology with a citation**. Categories are built on named frameworks (RCM had Nowlan & Heap; TPM had Nakajima). | Category-creation ammunition: talks, papers, training. The Specialist doesn't just work like an engineer — it practices a published discipline. |
+| S5 | **PSC framework — published research.** Percentage-of-Success-Centred maintenance (Olorunfemi, *Science, Technology & Public Policy*, 2026): D-I-S-G curve, Golden Spot, MTOP/MTTRg/SR/OPE, SMEA. IREAMS is the reference implementation (engine + metrics live). | Competitors have features; we have a **methodology with a citation**. Categories are built on named frameworks (RCM had Nowlan & Heap; TPM had Nakajima). | Category-creation ammunition: talks, papers, training. The Specialist doesn't just work like an engineer — it practices a published discipline. |
 | S6 | **A complete system of action** — full EAM: work orders, PM/scheduling with frozen zones, inventory with ATP, requests, condition monitoring/readings, FinOps (budgets, RAV, depreciation, warranty), people/competency, multi-company enterprise structure, offline-first mobile, anchored team messaging, email delivery rails, webhook ingestion, connector hub. | The market rejects advice-only tools (Verdantix: closed loop or nothing). Most AI startups have no action rail; most CMMS vendors have no engineering. We have both, in one codebase. | Deployment Mode B (§5.2), the expansion tier, and the fallback for the no-CMMS segment. Also the demo environment where the Specialist's full loop is visible. |
 | S7 | **Sensor-free predictive entry.** Weibull/bad-actor/PM analysis run on work-order history alone; spectral diagnosis is additive when sensor data exists (webhook + REST connectors already live). | Predictive maintenance adoption is stuck at 27–30% because of sensor cost and skills. Hardware-dependent competitors (Augury-class) structurally cannot serve the unsensored 70%. | The wedge into the majority of the market: "start with the data you already have." |
 | S8 | **Integrity module (API 510/570/653)** — CML thickness tracking, short/long-term corrosion rates, controlling rate, remaining life, code-capped inspection dates. | No CMMS-tier or mobile-first player has mechanical-integrity engineering. It is a statutory need in process industry. | Beachhead vertical moat (§5.4): oil & gas, chemicals, terminals — where the hiring gap is also most acute. |
@@ -94,7 +94,7 @@ Verified 2026-07-24 unless noted.
 | Enterprise EAM | IBM Maximo 9.1 (watsonx assistant, ~$250/user/mo), SAP (Dremio-powered BDC feeding agents) | Chat-over-data + IoT condition monitoring at platform scale | Agility, mid-market price, and independence — their agents exist to defend their platform and only see their data | Sets the "agentic" narrative at the top of the market; not a mid-market competitor. |
 | Sensor-AI / PdM | Augury, UptimeAI, Nanoprecise, Tractian | Hardware + ML diagnosis (vibration/acoustic), strong at fault detection | The engineering *discipline* (Weibull programs, RCM, RCA facilitation, integrity) and the unsensored 70% of the market | Adjacent, not overlapping; potential partners/channel later. |
 | Agents-on-top | **Facilio "Atom"** (agents on Maximo via REST, "without replacing, migrating, or reconfiguring") | Autonomous operational intelligence for facilities | Reliability engineering focus; heavy-industry domain depth | **The pattern-prover.** Validates our delivery model and starts the clock on the window. |
-| **The empty cell** | — | **Engineering-grade, system-independent, sensor-optional AI reliability specialist** | — | **This is IRAMS's position. Nobody occupies it. Search-verified: no product markets an "AI reliability engineer" for physical assets.** |
+| **The empty cell** | — | **Engineering-grade, system-independent, sensor-optional AI reliability specialist** | — | **This is IREAMS's position. Nobody occupies it. Search-verified: no product markets an "AI reliability engineer" for physical assets.** |
 
 **Structural note on incumbent bundling (the most-cited risk):** platform vendors' agents are strategically *captive* — MaintainX will never build agents for Maximo customers, and vice versa, because their agents exist to lock in their platforms. Independence is not a feature we defend; it is a position they structurally cannot take. Our depth (S2, S3, S8) is the second wall: administrative AI does not become censored-Weibull engineering by adding a bigger model.
 
@@ -104,7 +104,7 @@ Verified 2026-07-24 unless noted.
 
 ### 5.1 Category creation: name the job, not the software
 
-We create and own the category **"AI Reliability Specialist"**. Brand hierarchy (fixed 2026-07-25): **Relantern** is the parent company, **IRAMS** is the integrated system (EAM + Reliability suite — deployment Mode B below), and the **Reliability Specialist** is the hero product, sold under its own name. The category claim: *reliability engineering as an employable AI — works with the CMMS you have, supervised like a member of your team.*
+We create and own the category **"AI Reliability Specialist"**. Brand hierarchy (fixed 2026-07-25): **Relantern** is the parent company, **IREAMS** is the integrated system (EAM + Reliability suite — deployment Mode B below), and the **Reliability Specialist** is the hero product, sold under its own name. The category claim: *reliability engineering as an employable AI — works with the CMMS you have, supervised like a member of your team.*
 
 Category mechanics:
 
@@ -118,22 +118,22 @@ Category mechanics:
 **The Specialist is a single product** (the dream's "purchasable as a single product") consisting of: the agent roster, the deterministic tool plane, the semantic contract, the governance frame, and one workspace. It deploys two ways:
 
 - **Mode A — Specialist on your CMMS.** Customer data enters via (1) file import — the CMMS Analyst agent ingests any export (SAP PM, Maximo, MaintainX, eMaint, spreadsheets), maps it to `sem_*` shapes with a data-quality report, and stages it; later (2) live connectors (REST rails already exist). Outputs return as drafted work (write-back where the host CMMS API allows; clean export where it doesn't). The customer keeps their system; the Specialist is simply staffed onto it.
-- **Mode B — the IRAMS Platform.** Full EAM with the Specialist embedded — for organizations with no real CMMS (spreadsheets), those who outgrow mobile-first tools, or Mode-A customers ready to consolidate. This is the expansion tier and the complete closed loop.
+- **Mode B — the IREAMS Platform.** Full EAM with the Specialist embedded — for organizations with no real CMMS (spreadsheets), those who outgrow mobile-first tools, or Mode-A customers ready to consolidate. This is the expansion tier and the complete closed loop.
 
 **The semantic layer is the hinge (S4):** both modes feed the same `sem_*` contract, so agents, reports, and the workspace are identical across modes. Every new import mapping is a reusable template, compounding coverage of the CMMS installed base.
 
-**Packaging ruling — standalone commercially, one platform technically (decided 2026-07-25).** The Reliability Specialist is a standalone *product*: its own name, price, and front door, purchasable without ever seeing or configuring the EAM — the wedge fails the moment hiring the Specialist requires adopting IRAMS. But it is not a separate *system*: one codebase, one backend, with a per-tenant **edition flag** (`specialist` | `platform`) gating entitlements and navigation. "Standalone" is achieved by turning the EAM off, not by moving the Specialist out.
+**Packaging ruling — standalone commercially, one platform technically (decided 2026-07-25).** The Reliability Specialist is a standalone *product*: its own name, price, and front door, purchasable without ever seeing or configuring the EAM — the wedge fails the moment hiring the Specialist requires adopting IREAMS. But it is not a separate *system*: one codebase, one backend, with a per-tenant **edition flag** (`specialist` | `platform`) gating entitlements and navigation. "Standalone" is achieved by turning the EAM off, not by moving the Specialist out.
 
 | | Specialist edition (Mode A) | Platform edition (Mode B) |
 |---|---|---|
-| Customer sees | Specialist workspace only: briefing, proposals queue, chat, value ledger, imports/connectors, assessment reports | Full IRAMS (EAM + Reliability suite) with the same Specialist embedded |
-| Data source | CMMS export / live connector, loaded into the **same tables** | IRAMS's own transactions |
-| Proposals sink | Export package, or the host CMMS API where it allows write-back | IRAMS work orders directly |
+| Customer sees | Specialist workspace only: briefing, proposals queue, chat, value ledger, imports/connectors, assessment reports | Full IREAMS (EAM + Reliability suite) with the same Specialist embedded |
+| Data source | CMMS export / live connector, loaded into the **same tables** | IREAMS's own transactions |
+| Proposals sink | Export package, or the host CMMS API where it allows write-back | IREAMS work orders directly |
 | EAM modules | Hidden by entitlement | On |
 
 The agents never know the difference — they read `sem_*` either way. Three strategic consequences: (1) **upgrade is a switch, not a migration** — a Mode-A customer's imported history is already home, so Motion 3 (§5.4) works by architecture: the lowest-friction EAM migration they will ever be offered; (2) **one build serves both sales** — every agent, report, and workspace improvement ships to both editions simultaneously, which a separate standalone app would fork instantly (and capacity is risk R6); (3) **the assessment motion depends on it** — "send us your export" provisions a Specialist-edition tenant in minutes, which a full EAM implementation never could.
 
-**Brand architecture:** **Relantern** (parent company) → **IRAMS** (the integrated system: EAM + Reliability suite = Mode B) → **Reliability Specialist** (the hero product — standalone in Mode A, embedded in Mode B). The marketing site has two doors; the software has one.
+**Brand architecture:** **Relantern** (parent company) → **IREAMS** (the integrated system: EAM + Reliability suite = Mode B) → **Reliability Specialist** (the hero product — standalone in Mode A, embedded in Mode B). The marketing site has two doors; the software has one.
 
 **The employment metaphor is product design, not marketing.** The Specialist needs what an employee has:
 
@@ -151,7 +151,7 @@ Anchor: a loaded reliability engineer is $150k–220k/yr and unfillable. Price t
 |---|---|---|
 | **Reliability Assessment** | Free for qualified prospects (or $2.5k credited against year 1) | The assessment-led sale (§5.4): same-day report from their CMMS export. The demo *is* the deliverable. |
 | **Specialist (Mode A)** | **$1,500–3,000 / site / month** | The Specialist employed on their CMMS: weekly briefings, full agent roster, RCA facilitation, proposals queue, value ledger. Reads as ~10–15% of the salary they cannot fill. |
-| **Platform (Mode B)** | Per-user EAM pricing (market-normal $20–40/user/mo) **+ Specialist per site** | Full IRAMS with the Specialist embedded. The EAM is priced like the market expects; the Specialist premium is preserved — never given away as a feature. |
+| **Platform (Mode B)** | Per-user EAM pricing (market-normal $20–40/user/mo) **+ Specialist per site** | Full IREAMS with the Specialist embedded. The EAM is priced like the market expects; the Specialist premium is preserved — never given away as a feature. |
 
 Rules: the Specialist is **never free and never per-seat** (labor is priced per employee-on-site, and unlimited human colleagues may talk to it). Warranty recovery gives the sale a self-funding story — the assessment routinely finds recoverable money before the first invoice. Gross margin is structurally ~90%+ (S9): inference is cents per run because the math is deterministic.
 
@@ -165,14 +165,14 @@ Why it wins: zero deployment friction, no rip-and-replace, ROI demonstrated on *
 
 **Motion 2 — enterprise layer (phase 2).** The Specialist on top of SAP PM / Maximo installed bases — Facilio has validated the appetite. Enter via the same assessment (an export costs the enterprise nothing to share), not via RFP. The semantic layer's Iceberg/open-catalog export (already strategized) becomes relevant here when a real prospect asks.
 
-**Motion 3 — platform consolidation (pull, not push).** Mode-A customers who tire of their CMMS migrate to Mode B; their data is already in `sem_*` shapes, making IRAMS the lowest-friction migration they will ever be offered. The EAM sells itself as the Specialist's preferred habitat — we never lead with it.
+**Motion 3 — platform consolidation (pull, not push).** Mode-A customers who tire of their CMMS migrate to Mode B; their data is already in `sem_*` shapes, making IREAMS the lowest-friction migration they will ever be offered. The EAM sells itself as the Specialist's preferred habitat — we never lead with it.
 
 **Channels:** founder-led direct sales off the assessment motion first. Content/SEO on the unclaimed category terms. Later: reliability consultancies as a channel (§7-O3), OEM/insurer partnerships (§7-O2).
 
 ### 5.5 Positioning and message house
 
 **Headline:** *Hire your Reliability Specialist. Keep your CMMS.*
-**Sub:** *The Reliability Specialist is an AI reliability engineer you employ, not software you implement. It reads the maintenance history you already have, finds what failure is costing you, and drafts the work to fix it — every number cited, every action approved by you. Runs on your CMMS today; comes with IRAMS, the full EAM platform, when you want one system.*
+**Sub:** *The Reliability Specialist is an AI reliability engineer you employ, not software you implement. It reads the maintenance history you already have, finds what failure is costing you, and drafts the work to fix it — every number cited, every action approved by you. Runs on your CMMS today; comes with IREAMS, the full EAM platform, when you want one system.*
 
 | Element | Content |
 |---|---|
@@ -222,7 +222,7 @@ Discipline rule carried over from the market-gap plan: **EAM investment only whe
 - **O3 — Consultancies as channel, not competitor.** Reliability consultants face the same labor shortage. A white-label / per-engagement Specialist makes every consultant a distributor and converts the most credible potential detractors into advocates.
 - **O4 — Education and certification.** The skills gap that creates our market also creates demand for training. PSC courses with the Specialist as the teaching instrument monetize the methodology twice and deepen category ownership.
 - **O5 — Geographic arbitrage.** The pitch is strongest where reliability engineers are scarcest — industrializing markets with growing asset bases and thin specialist labor pools. Cloud delivery makes these markets reachable without presence.
-- **O6 — Strategic optionality (M&A).** Category ownership + a published methodology + an engineering layer that mobile-first CMMS vendors demonstrably lack (their own comparison pages admit it) makes IRAMS a natural acquisition for a MaintainX/Limble-class player the day agentic depth becomes their competitive necessity. Not the goal; a real backstop.
+- **O6 — Strategic optionality (M&A).** Category ownership + a published methodology + an engineering layer that mobile-first CMMS vendors demonstrably lack (their own comparison pages admit it) makes IREAMS a natural acquisition for a MaintainX/Limble-class player the day agentic depth becomes their competitive necessity. Not the goal; a real backstop.
 
 ---
 
@@ -274,4 +274,4 @@ The value ledger is deliberately both a KPI and a product feature: the Specialis
 
 The original dream was a Reliability Specialist AI that works like a real reliability engineer and can be employed by any organization, sold as a single product. The detour built its body: the engines, the governance, the data substrate, the action rail. This strategy gives it the rest — a name, a desk, a work rhythm, a salary-anchored price, and a hiring process that starts with one email: *"send us your CMMS export."*
 
-The EAM was never the deviation. Leading with it was. From today, Relantern sells the engineer — standalone when the customer keeps their CMMS, inside IRAMS when they want one system.
+The EAM was never the deviation. Leading with it was. From today, Relantern sells the engineer — standalone when the customer keeps their CMMS, inside IREAMS when they want one system.

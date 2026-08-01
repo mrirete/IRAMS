@@ -1,5 +1,5 @@
 /**
- * ERSApiClient — Typed client for the IRAMS FastAPI backend (Railway)
+ * ERSApiClient — Typed client for the IREAMS FastAPI backend (Railway)
  * ═══════════════════════════════════════════════════════════════════
  * 
  * Connects the React frontend to all Layer 2/3 backend endpoints:

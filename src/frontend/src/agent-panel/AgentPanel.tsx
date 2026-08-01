@@ -210,7 +210,7 @@ export const AgentPanel: React.FC<AgentPanelProps> = ({ onClose }) => {
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        placeholder="Ask IRAMS AI…"
+                        placeholder="Ask IREAMS AI…"
                         className="flex-1 bg-slate-50 border border-slate-300 rounded-control pl-4 pr-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-100"
                     />
                     <Button

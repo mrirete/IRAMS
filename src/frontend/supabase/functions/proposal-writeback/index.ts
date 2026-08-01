@@ -169,7 +169,7 @@ serve(async (req) => {
           draft_payload: proposal.draft_payload,
           approved_by: proposal.reviewed_by,
           approved_at: proposal.reviewed_at,
-          origin: "IRAMS Reliability Specialist",
+          origin: "IREAMS Reliability Specialist",
         },
       };
       const payload = cfg.wrap_key ? { [cfg.wrap_key]: envelope } : envelope;

@@ -91,7 +91,7 @@ function notificationEmail(row: OutboxRow): string {
   <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff">
     <div style="background:#0f172a;padding:24px 28px">
       <div style="color:#fff;font-size:18px;font-weight:800">Relantern</div>
-      <div style="color:#94a3b8;font-size:12px">IRAMS — Reliability &amp; Asset Management</div>
+      <div style="color:#94a3b8;font-size:12px">IREAMS — Reliability &amp; Enterprise Management</div>
     </div>
     <div style="padding:28px">
       <div style="margin-bottom:14px">
@@ -101,10 +101,10 @@ function notificationEmail(row: OutboxRow): string {
       <p style="font-size:16px;color:#0f172a;font-weight:700;margin:0 0 10px">${esc(row.subject)}</p>
       <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 22px">${esc(row.message)}</p>
       <div style="text-align:center;margin:26px 0">
-        <a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:13px 24px;border-radius:10px">Open in IRAMS →</a>
+        <a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:13px 24px;border-radius:10px">Open in IREAMS →</a>
       </div>
       <p style="font-size:12px;color:#94a3b8;margin-top:16px">
-        You're receiving this because a notification was addressed to you in IRAMS.
+        You're receiving this because a notification was addressed to you in IREAMS.
         Delivery channels can be adjusted by your administrator under Admin › Notifications.</p>
     </div>
     <div style="background:#f8fafc;padding:16px 28px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px">

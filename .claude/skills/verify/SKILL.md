@@ -1,4 +1,4 @@
-# Verify — ERS / IRAMS frontend
+# Verify — ERS / IREAMS frontend
 
 How to observe a change running in the real app.
 

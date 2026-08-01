@@ -4,7 +4,7 @@
  * Shown immediately after Step 1 intake. Turns the ordinal intake selections into
  * an instant, directional maturity read + prioritized quick wins — the free,
  * lead-magnet "first-line assessment". Creates the reason to proceed into the full
- * 5-step wizard (which produces the evidence-based report that showcases IRAMS).
+ * 5-step wizard (which produces the evidence-based report that showcases IREAMS).
  *
  * No backend call: scoring is a pure function over the intake data already in state.
  */

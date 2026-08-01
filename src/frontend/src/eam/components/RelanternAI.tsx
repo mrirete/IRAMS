@@ -91,7 +91,7 @@ interface RelanternAIProps {
   contextType?: string;
   /** Optional question to auto-send once after the panel opens & context is primed. */
   initialPrompt?: string;
-  /** Engine-backed skills supplied by the active page. These call IRAMS engines
+  /** Engine-backed skills supplied by the active page. These call IREAMS engines
    *  directly and render their result — they never round-trip through the chat
    *  model, so the numbers are computed, not generated. Shown instead of the
    *  prompt chips when present. */
@@ -271,7 +271,7 @@ export const RelanternAI: React.FC<RelanternAIProps> = ({ isOpen, onClose, conte
     handleSend(prompt);
   };
 
-  // Engine-backed skill: calls an IRAMS engine on the active page and renders what
+  // Engine-backed skill: calls an IREAMS engine on the active page and renders what
   // it returns. Deliberately does NOT go through handleSend — no chat round-trip, so
   // the model can't restate (or invent) the numbers the engine computed.
   const handlePageAction = async (action: SpecialistAction) => {

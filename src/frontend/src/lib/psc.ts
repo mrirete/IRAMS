@@ -212,7 +212,7 @@ export function computePSC(
 
 /**
  * Overall Performance Excellence (Eq. 4): OPE = SR × PQ × EE.
- * PQ/EE are fractions (0..1). Returns null unless BOTH are provided — IRAMS has
+ * PQ/EE are fractions (0..1). Returns null unless BOTH are provided — IREAMS has
  * no production-quality or energy feed yet and we do not fabricate inputs.
  */
 export function computeOPE(successRatePct: number | null, pq?: number | null, ee?: number | null): number | null {

@@ -47,7 +47,7 @@ function breadcrumbFor(pathname: string): { section: string; page: string } {
     // Fallback: humanize the first path segment
     const seg = pathname.split('/').filter(Boolean)[0] || '';
     const page = seg.replace(/-/g, ' ').replace(/\b\w/g, ch => ch.toUpperCase());
-    return { section: 'IRAMS', page: page || 'Home' };
+    return { section: 'IREAMS', page: page || 'Home' };
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview }) => {
@@ -106,7 +106,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                     <Menu size={20} />
                 </button>
                 {/* Mobile: compact brand */}
-                <span className="sm:hidden text-sm font-bold text-slate-800 tracking-wide truncate">IRAMS</span>
+                <span className="sm:hidden text-sm font-bold text-slate-800 tracking-wide truncate">IREAMS</span>
                 {/* Desktop: breadcrumb (derived from the current route) */}
                 <h2 className="hidden sm:block text-sm md:text-lg font-medium tracking-wide text-slate-800 truncate">
                     {crumb.section === crumb.page ? crumb.page : (
@@ -124,7 +124,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                     aria-label="Search (Ctrl+K)"
                 >
                     <Search size={14} className="flex-shrink-0" />
-                    <span className="flex-1 text-left truncate">Search IRAMS...</span>
+                    <span className="flex-1 text-left truncate">Search IREAMS...</span>
                     <kbd className="hidden md:inline text-[10px] font-semibold text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 bg-white">⌘K</kbd>
                 </button>
                 {/* Mobile search icon — also opens the palette */}

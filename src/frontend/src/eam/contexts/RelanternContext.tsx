@@ -20,7 +20,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 /**
  * A page-supplied Specialist skill.
  *
- * `run` MUST call a deterministic IRAMS engine (aiEngine / Weibull / Monte Carlo /
+ * `run` MUST call a deterministic IREAMS engine (aiEngine / Weibull / Monte Carlo /
  * criticality) and return the formatted result. It must NOT ask the chat model to
  * compute anything: the Specialist cites our engines, it does not do the reliability
  * maths itself. The panel renders whatever markdown `run` returns, verbatim.

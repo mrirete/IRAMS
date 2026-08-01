@@ -257,7 +257,7 @@ export const AnalyzePage: React.FC = () => {
         return parts.join(' ');
     }, [activeDivision, contextAsset, paretoData, paretoCriteria, rcas.length, deTasks.length]);
 
-    // Engine-backed Specialist skills. Each one calls a deterministic IRAMS engine
+    // Engine-backed Specialist skills. Each one calls a deterministic IREAMS engine
     // (aiEngine) with this page's real data and renders what it returns — the chat
     // model is never asked to compute a failure rate, a cost, or a payback period.
     // Ported from the retired Analyze-only Specialist bubble.

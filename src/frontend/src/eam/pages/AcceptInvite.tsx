@@ -124,7 +124,7 @@ export const AcceptInvite: React.FC = () => {
                         </svg>
                     </div>
                     <div>
-                        <div className="text-[17px] font-extrabold tracking-tight" style={{ color: '#1e293b' }}>IRAMS</div>
+                        <div className="text-[17px] font-extrabold tracking-tight" style={{ color: '#1e293b' }}>IREAMS</div>
                         <div className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#94a3b8' }}>by Relantern</div>
                     </div>
                 </div>
@@ -169,7 +169,7 @@ export const AcceptInvite: React.FC = () => {
         <>
             <div className="mb-6">
                 <h1 className="text-[28px] font-extrabold tracking-tight leading-tight" style={{ color: '#1e293b' }}>
-                    Join your team on IRAMS
+                    Join your team on IREAMS
                 </h1>
                 <p className="text-[14px] font-medium mt-2" style={{ color: '#64748b' }}>
                     <strong>{invite.invited_by}</strong> invited you to join as{' '}

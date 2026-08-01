@@ -324,7 +324,7 @@ export const MeetingPackPage: React.FC = () => {
                 </Section>
 
                 <p className="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1.5">
-                    <ShieldCheck size={11} /> IRAMS · Reliability Specialist by Relantern — weekly leadership pack, drafted {new Date().toISOString().slice(0, 10)}. Deterministic; nothing estimated by AI.
+                    <ShieldCheck size={11} /> IREAMS · Reliability Specialist by Relantern — weekly leadership pack, drafted {new Date().toISOString().slice(0, 10)}. Deterministic; nothing estimated by AI.
                 </p>
             </div>
         </>

@@ -2,9 +2,9 @@
 
 **Date:** 2026-07-22
 **Status:** Slices 1–4 BUILT (2026-07-22, migration 0215 applied). Slice 5 (learning loop) open — needs field data first.
-**Context:** Competitive audit vs. UptimeAI (detect → diagnose → prescribe). IRAMS Predict has real detection (ISA-18.2 alert scan, class-aware health index, FFT/envelope DSP), real prediction (censored Weibull → conditional MRL RUL), and real prescription (alert → HITL WR draft → work order). The gap is **diagnosis**: nothing deterministically answers *"what is failing and why"* between detection and the Gemini narration. Vibration gets ISO 13373 screening heuristics only; threshold alerts diagnose nothing; the ISO 14224 failure-mode taxonomy (70+ codes) is used for WO coding but never matched against live evidence.
+**Context:** Competitive audit vs. UptimeAI (detect → diagnose → prescribe). IREAMS Predict has real detection (ISA-18.2 alert scan, class-aware health index, FFT/envelope DSP), real prediction (censored Weibull → conditional MRL RUL), and real prescription (alert → HITL WR draft → work order). The gap is **diagnosis**: nothing deterministically answers *"what is failing and why"* between detection and the Gemini narration. Vibration gets ISO 13373 screening heuristics only; threshold alerts diagnose nothing; the ISO 14224 failure-mode taxonomy (70+ codes) is used for WO coding but never matched against live evidence.
 
-**Goal:** an explainable, evidence-ranked diagnosis layer — every high-signal detection carries *ranked failure-mode hypotheses with traceable evidence*, drawn from the codified taxonomy, asset FMEA/RCM data, and failure history; Gemini narrates that structure instead of inferring from scratch. This is UptimeAI's "Root Cause Agent" axis, built on data IRAMS already owns.
+**Goal:** an explainable, evidence-ranked diagnosis layer — every high-signal detection carries *ranked failure-mode hypotheses with traceable evidence*, drawn from the codified taxonomy, asset FMEA/RCM data, and failure history; Gemini narrates that structure instead of inferring from scratch. This is UptimeAI's "Root Cause Agent" axis, built on data IREAMS already owns.
 
 **Design rules (carried from Predict conventions):**
 - Pure-TS math in `src/frontend/src/lib/predict/*`, no I/O, unit-tested.
@@ -69,7 +69,7 @@ Rule base — per equipment class (`category_ref` groups in the taxonomy), start
 - electrical: current imbalance/thermal → winding & connection modes
 - instrument: flatline/stuck reading (persistence scan already sees this) → `CAL`/`SEL`
 
-Scoring = rule base weight × evidence strength, **boosted by asset priors**: a hypothesis matching a documented FMEA/RCM mode for that asset (or a mode the asset has actually failed with, per `wo_failure_data`) ranks above generic matches — this is the "reasons like an engineer who knows this asset" behavior, done with data IRAMS already has.
+Scoring = rule base weight × evidence strength, **boosted by asset priors**: a hypothesis matching a documented FMEA/RCM mode for that asset (or a mode the asset has actually failed with, per `wo_failure_data`) ranks above generic matches — this is the "reasons like an engineer who knows this asset" behavior, done with data IREAMS already has.
 
 Every hypothesis carries its evidence citations — the explainability parity point ("which sensors triggered, which historical patterns support it").
 
@@ -126,4 +126,4 @@ Every hypothesis carries its evidence citations — the explainability parity po
 
 **Non-goals (deferred):** plant-wide causal/propagation graph (upstream cause suppresses downstream symptom alerts — revisit using `assets.parent_id` hierarchy once slices 1–4 are live); trained ML models (XGBoost/LSTM stubs stay stubs); autonomous parameter adjustment (HITL stays).
 
-**Positioning:** closes the one axis UptimeAI leads on, using the explainable-evidence framing the Jul 2026 market research says the market rewards — and IRAMS keeps its edges (real censored-Weibull RUL, API 570 integrity, PSC engine, HITL governance).
+**Positioning:** closes the one axis UptimeAI leads on, using the explainable-evidence framing the Jul 2026 market research says the market rewards — and IREAMS keeps its edges (real censored-Weibull RUL, API 570 integrity, PSC engine, HITL governance).

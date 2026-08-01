@@ -176,7 +176,7 @@ export const Login: React.FC = () => {
                         </svg>
                     </div>
                     <div>
-                        <div className="text-[17px] font-extrabold tracking-tight" style={{ color: '#1e293b' }}>IRAMS</div>
+                        <div className="text-[17px] font-extrabold tracking-tight" style={{ color: '#1e293b' }}>IREAMS</div>
                         <div className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: '#94a3b8' }}>by Relantern</div>
                     </div>
                 </div>
@@ -199,7 +199,7 @@ export const Login: React.FC = () => {
                             Welcome back
                         </h1>
                         <p className="text-[15px] font-medium mt-2" style={{ color: '#64748b' }}>
-                            Integrated Reliability &amp; Asset Management Specialist
+                            Integrated Reliability and Enterprise Management System
                         </p>
                     </div>
 

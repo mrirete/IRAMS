@@ -235,7 +235,7 @@ export function buildAssessmentSheets(a: Assessment): SheetSpec[] {
 /** Filename stem, safe on every OS and stamped so two exports never collide. */
 export function assessmentFilename(a: Assessment, nowIso: string): string {
     const scope = a.scope ? a.scope.rootTag.replace(/[^\w.-]+/g, '_') : 'Fleet';
-    return `IRAMS_Assessment_${scope}_${nowIso.slice(0, 10)}`;
+    return `IREAMS_Assessment_${scope}_${nowIso.slice(0, 10)}`;
 }
 
 /** One CSV per sheet is a poor substitute, so the fallback concatenates them. */

@@ -65,7 +65,7 @@ export const UpdateBanner: React.FC = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                     <h4 className="font-bold text-sm text-slate-800">Update available</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">A newer version of IRAMS is ready.</p>
+                    <p className="text-xs text-slate-500 mt-0.5">A newer version of IREAMS is ready.</p>
                     <div className="flex gap-2 mt-3">
                         <button
                             onClick={() => window.location.reload()}

@@ -1,4 +1,4 @@
-# IRAMS — Request Visibility Scoping (launch-fit slice)
+# IREAMS — Request Visibility Scoping (launch-fit slice)
 
 **Status:** Draft for review · **Scope:** `service_requests` read visibility only
 **Relationship to the big phase:** This is the **first table of T‑3** in

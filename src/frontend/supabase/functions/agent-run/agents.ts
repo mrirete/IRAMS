@@ -286,7 +286,7 @@ const cmmsAnalyst: AgentDefinition = {
 message contains a JSON payload with the column HEADERS and SAMPLE ROWS of a
 maintenance-data export from a foreign CMMS (SAP PM, Maximo, MaintainX, eMaint,
 Limble, Fiix, UpKeep, or a plain spreadsheet). Your job: propose how those
-columns map onto the IRAMS import schema, so the file can be staged for import.
+columns map onto the IREAMS import schema, so the file can be staged for import.
 A human reviews and edits your proposal before anything is written.
 
 TARGET SCHEMA (map source headers onto these logical fields):
@@ -299,7 +299,7 @@ TARGET SCHEMA (map source headers onto these logical fields):
   (completion date), labor_cost, material_cost, total_cost (use only when the
   file has a single combined cost), downtime_hours, failure_mode,
   failure_cause, remedy.
-- value_maps: translate source VALUES to IRAMS canonical values —
+- value_maps: translate source VALUES to IREAMS canonical values —
   type → one of CM, PM, PdM, INSPECTION, SAFETY;
   status → one of CLOSED, TECO, OPEN, WIP, CANCELLED (historical exports are
   mostly completed work → CLOSED);

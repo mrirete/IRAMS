@@ -1,4 +1,4 @@
-# IRAMS — Multi-Tenancy & Enterprise Structure Design (SAP-modeled)
+# IREAMS — Multi-Tenancy & Enterprise Structure Design (SAP-modeled)
 
 **Status:** Draft for review · **Scope:** platform-wide (every module & table)
 **Goal:** let one deployment serve a parent company with multiple **sub-companies** and **sites**, each running its **own asset register, work management, numbering framework and configuration**, with **group-level rollup** for the parent.
@@ -9,7 +9,7 @@
 
 ## 1. Problem statement
 
-Today IRAMS is effectively **single-tenant with cosmetic filtering**:
+Today IREAMS is effectively **single-tenant with cosmetic filtering**:
 
 - Row Level Security is **permissive** — every policy is `USING (true) TO authenticated` (`0150_reenable_core_rls`, `0155`). Any authenticated user can read/write **all** rows directly; scoping is not a security boundary.
 - Scoping that exists is **client-side only** — `DatabaseService.filterAssetsBySiteScope()` walks the asset tree to a `site`/`area` root and filters by `DataScope.siteIds`. It's a convenience filter, bypassable by any direct query.
@@ -20,9 +20,9 @@ We need real, enforced separation with parent rollup — the problem SAP solved 
 
 ---
 
-## 2. SAP enterprise structure → IRAMS
+## 2. SAP enterprise structure → IREAMS
 
-| SAP org level | Meaning | IRAMS target |
+| SAP org level | Meaning | IREAMS target |
 |---|---|---|
 | **Client (Mandant)** | hard data isolation; the tenant | deployment boundary / logical `tenant_id` |
 | **Company Code (BUKRS)** | legal entity — a **sub-company**, own P&L & rollup | new **`company_id`** |

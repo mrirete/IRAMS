@@ -41,7 +41,7 @@ export class ErrorBoundary extends Component<Props, State> {
     private details(): string {
         const { error, errorInfo } = this.state;
         return [
-            `IRAMS error report — ${errorCode(error?.message || 'unknown')}`,
+            `IREAMS error report — ${errorCode(error?.message || 'unknown')}`,
             `Time:  ${new Date().toISOString()}`,
             `Build: ${buildSha}`,
             `Page:  ${window.location.href}`,
@@ -89,7 +89,7 @@ export class ErrorBoundary extends Component<Props, State> {
                         </div>
                         <h1 className="text-xl font-bold text-slate-800 mb-2">Something went wrong on this page</h1>
                         <p className="text-sm text-slate-500 mb-1">
-                            The rest of IRAMS is unaffected. Reloading usually fixes it — your unsent field work is kept safe either way.
+                            The rest of IREAMS is unaffected. Reloading usually fixes it — your unsent field work is kept safe either way.
                         </p>
                         <p className="text-xs text-slate-400 font-mono mb-5">
                             Reference {code} · build {buildSha}

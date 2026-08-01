@@ -3,7 +3,7 @@
  *
  * Every EAM built for field rounds tells the technician what to read today
  * (SAP maintenance plan calls / Maximo PM due list / MaintainX & Fiix rounds).
- * IRAMS doesn't persist a per-point frequency yet, so we derive the interval
+ * IREAMS doesn't persist a per-point frequency yet, so we derive the interval
  * from the asset's criticality (recommendMonitoringCadence: A weekly … D
  * half-yearly) and the last logged reading to compute each point's due date.
  * Pure and deterministic — no I/O — so due/overdue logic is unit-testable.

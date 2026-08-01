@@ -1,6 +1,6 @@
 # The $150k Replacement Plan — Reliability Specialist
 
-**Date:** 2026-07-27 (rev. 2 — strategy, PSC/Golden Spot and culture layers added) · **Status:** Phase A SHIPPED · **Owner:** Specialist-led strategy (see `IRAMS-Specialist-Strategy.md`)
+**Date:** 2026-07-27 (rev. 2 — strategy, PSC/Golden Spot and culture layers added) · **Status:** Phase A SHIPPED · **Owner:** Specialist-led strategy (see `IREAMS-Specialist-Strategy.md`)
 
 ## 1. The claim we have to be able to defend
 
@@ -112,7 +112,7 @@ Identified value (draft `estimated_savings`) stays, but is always labeled distin
 > rationalization) and D4 (living strategy re-opens) remain.
 
 A $150k engineer's signature artifact is the **maintenance strategy**: for each asset, a
-deliberate, documented decision about *how* it will be maintained. IRAMS already owns every
+deliberate, documented decision about *how* it will be maintained. IREAMS already owns every
 input — criticality assessments (0088), FMECA + RCM (0118), censored Weibull fits, meter-based PM,
 condition monitoring, spares data. Phase D composes them:
 
@@ -145,7 +145,7 @@ condition monitoring, spares data. Phase D composes them:
 > positive deviance, honest when no class qualifies) with a workspace panel.
 > E5 (D-I-S-G front-of-life gates) remains.
 
-IRAMS is the reference implementation of the user's published PSC framework (Olorunfemi 2026,
+IREAMS is the reference implementation of the user's published PSC framework (Olorunfemi 2026,
 *A Success-Centric Evolution of RCM*). Everything else in this plan, competitors can eventually
 imitate; **a published, peer-reviewed framework with its engines already shipped
 (`lib/psc.ts`, SMEA, D-I-S-G forecasting) is a defensible category position: the Specialist
@@ -203,7 +203,7 @@ Specialist becomes the **cadence engine**:
 ## 6. World-class program elements — adoption map
 
 Benchmarks the majors sell against (SMRP Body of Knowledge, Uptime Elements, ISO 55000/55001,
-TPM pillars, RCM-II). Status: ✅ shipped in IRAMS · ⚠️ partial · ❌ roadmap.
+TPM pillars, RCM-II). Status: ✅ shipped in IREAMS · ⚠️ partial · ❌ roadmap.
 
 | Program element | Status | Where / next |
 |---|---|---|

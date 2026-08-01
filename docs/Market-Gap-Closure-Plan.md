@@ -1,10 +1,10 @@
 # Market Gap Closure Plan
 
 **Date:** 2026-07-17
-**Input:** July 2026 market research (Verdantix 2026 APM Green Quadrant; MaintainX 2026 State of Industrial Maintenance, n=2,234) mapped against IRAMS current state.
+**Input:** July 2026 market research (Verdantix 2026 APM Green Quadrant; MaintainX 2026 State of Industrial Maintenance, n=2,234) mapped against IREAMS current state.
 **Positioning being defended:** *APM-grade reliability thinking at CMMS-tier simplicity — closed-loop, sensor-optional, agent-ready.*
 
-The market's three buying criteria are (1) predictions that end in executed, verified work; (2) software a shrinking deskless workforce adopts; (3) AI on trustworthy, well-modeled data. IRAMS is architecturally aligned on all three. The gaps are **delivery plumbing**: notifications that never leave the app, parts disconnected from work orders, a mock connector hub, and knowledge capture that exists but isn't surfaced. This plan closes them in three waves.
+The market's three buying criteria are (1) predictions that end in executed, verified work; (2) software a shrinking deskless workforce adopts; (3) AI on trustworthy, well-modeled data. IREAMS is architecturally aligned on all three. The gaps are **delivery plumbing**: notifications that never leave the app, parts disconnected from work orders, a mock connector hub, and knowledge capture that exists but isn't surfaced. This plan closes them in three waves.
 
 ---
 

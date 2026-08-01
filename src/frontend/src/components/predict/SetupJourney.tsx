@@ -123,16 +123,16 @@ const MAINTAINABLE = new Set(['equipment', 'subunit', 'component']);
 const STEP_LABELS = ['Equipment', 'Measurements', 'Data source', 'First reading'];
 
 // The copy-paste brief for the live-feed route — honest about what exists.
-const IT_BRIEF = `Request: connect our plant sensor data to IRAMS (Predict module)
+const IT_BRIEF = `Request: connect our plant sensor data to IREAMS (Predict module)
 
 What we need today (works now):
 - A recurring CSV export from the historian/SCADA with columns:
   asset, tag, value, unit, timestamp, alarm_high, alarm_low
-- We upload it in IRAMS → Predict → Setup guide → "Upload from my existing system"
+- We upload it in IREAMS → Predict → Setup guide → "Upload from my existing system"
 
 What we want next (needs IT/vendor setup):
-- A live feed (REST push or MQTT) into IRAMS' sensor ingestion
-- Contact the IRAMS administrator to schedule this — streaming
+- A live feed (REST push or MQTT) into IREAMS' sensor ingestion
+- Contact the IREAMS administrator to schedule this — streaming
   connectors are on the roadmap and not yet live in this deployment.`;
 
 interface SetupJourneyProps {
@@ -470,7 +470,7 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
                                     className="group bg-white border-2 border-primary-200 rounded-xl p-5 text-left hover:border-primary-400 hover:shadow-md transition-all">
                                     <div className="p-2.5 bg-primary-50 rounded-lg text-primary-600 w-fit mb-3 group-hover:bg-primary-100 transition-colors"><Upload size={20} /></div>
                                     <p className="text-sm font-bold text-slate-800">Upload your equipment list</p>
-                                    <p className="text-xs text-slate-500 mt-1">Have it in Excel or a CMMS export? Import it once — everything in IRAMS builds on it.</p>
+                                    <p className="text-xs text-slate-500 mt-1">Have it in Excel or a CMMS export? Import it once — everything in IREAMS builds on it.</p>
                                     <span className="inline-flex items-center gap-1 text-[11px] font-bold text-primary-600 mt-2">Recommended <ArrowRight size={11} /></span>
                                 </button>
                                 <button onClick={() => setIntake('pick')}

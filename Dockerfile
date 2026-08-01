@@ -1,5 +1,5 @@
 # Dockerfile for Railway deployment
-# Deploys the IRAMS FastAPI API Gateway with all Layer 2/3 modules
+# Deploys the IREAMS FastAPI API Gateway with all Layer 2/3 modules
 
 FROM python:3.11-slim AS builder
 

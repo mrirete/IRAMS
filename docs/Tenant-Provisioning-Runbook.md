@@ -1,6 +1,6 @@
 # Tenant Provisioning Runbook
 
-_Status: operational · Model: **one Supabase project per customer** (deployment-per-tenant) · Companion: `IRAMS-Specialist-Strategy.md`_
+_Status: operational · Model: **one Supabase project per customer** (deployment-per-tenant) · Companion: `IREAMS-Specialist-Strategy.md`_
 
 ---
 
@@ -124,7 +124,7 @@ npx --no-install supabase functions deploy specialist-briefing --no-verify-jwt  
 
 ```sql
 -- 'specialist' hides EAM navigation and lands users in the Specialist workspace;
--- 'platform' is the full IRAMS.
+-- 'platform' is the full IREAMS.
 UPDATE companies SET edition = 'specialist' WHERE code = 'MAIN';
 ```
 

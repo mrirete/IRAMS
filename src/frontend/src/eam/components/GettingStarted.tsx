@@ -71,7 +71,7 @@ export const GettingStarted: React.FC = () => {
             <div className="flex items-start gap-3 p-4 sm:p-5 border-b border-slate-100 bg-gradient-to-r from-primary-50 to-white">
                 <div className="p-2 rounded-lg bg-primary-600 text-white flex-shrink-0"><Rocket size={18} /></div>
                 <div className="flex-1 min-w-0">
-                    <h2 className="text-base font-bold text-slate-800">Get IRAMS running</h2>
+                    <h2 className="text-base font-bold text-slate-800">Get IREAMS running</h2>
                     <p className="text-sm text-slate-500">{completed} of {STEPS.length} done — a few steps to a live maintenance system.</p>
                     <div className="mt-2 h-1.5 w-full max-w-xs bg-slate-200 rounded-full overflow-hidden">
                         <div className="h-full bg-primary-600 rounded-full transition-all" style={{ width: `${(completed / STEPS.length) * 100}%` }} />

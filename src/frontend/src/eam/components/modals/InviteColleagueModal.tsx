@@ -36,7 +36,7 @@ export const INVITE_ROLES: { code: string; label: string }[] = [
 export const inviteLinkFor = (token: string) => `${window.location.origin}/invite/${token}`;
 
 const inviteMessage = (link: string, name?: string | null) =>
-    `Hi${name ? ` ${name.split(' ')[0]}` : ''}, you've been invited to join IRAMS (Reliability & Asset Management). ` +
+    `Hi${name ? ` ${name.split(' ')[0]}` : ''}, you've been invited to join IREAMS (Integrated Reliability and Enterprise Management System). ` +
     `Set up your account here: ${link}`;
 
 interface InviteColleagueModalProps {
@@ -204,7 +204,7 @@ export const InviteColleagueModal: React.FC<InviteColleagueModalProps> = ({ onCl
                             <label className="block text-xs font-bold text-slate-700 uppercase mb-2">Send Via</label>
                             <div className="grid grid-cols-3 gap-2">
                                 <a
-                                    href={invite.email ? `mailto:${invite.email}?subject=${encodeURIComponent('Your IRAMS account invite')}&body=${encodeURIComponent(message)}` : undefined}
+                                    href={invite.email ? `mailto:${invite.email}?subject=${encodeURIComponent('Your IREAMS account invite')}&body=${encodeURIComponent(message)}` : undefined}
                                     aria-disabled={!invite.email}
                                     className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border text-xs font-semibold transition-colors ${invite.email
                                         ? 'border-slate-200 text-slate-700 hover:border-primary-300 hover:bg-primary-50'

@@ -1,4 +1,4 @@
-# IRAMS — SAP Parity Gap Assessment & Improvement Design
+# IREAMS — SAP Parity Gap Assessment & Improvement Design
 
 **Status:** Draft for review · **Audience:** product + engineering, ahead of the SAP-background UAT reviewer
 **Scope:** Work Management (SAP **PM**), Inventory (SAP **MM/IM**), People & Org (SAP **HR/OM/BP**), Financial Ops (SAP **FI-CO**)

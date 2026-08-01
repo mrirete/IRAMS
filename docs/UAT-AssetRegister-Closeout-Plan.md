@@ -1,4 +1,4 @@
-# IRAMS EAM — Asset Register UAT Closeout Plan
+# IREAMS EAM — Asset Register UAT Closeout Plan
 
 **Responds to:** AgileAsset Reliability Solutions — *UAT Report v1.0* (28 Jun 2026) **and** *UAT Follow-Up Report Rev 2* (1 Jul 2026)
 **Scope:** Asset Register (FLOC hierarchy, creation, numbering, hierarchy panel) + People & Org + Work Management (Requests)
@@ -11,7 +11,7 @@
 
 ## 1. Unifying Diagnosis
 
-Ten of the eleven findings are **downstream symptoms of a single architectural gap (F-010)**: IRAMS persists the *master-data columns* for a level-aware technical-object model, but **no engine governs behaviour by level**, and **Equipment is not modelled as a distinct object** — it is merely a deeper node of the same `assets` tree.
+Ten of the eleven findings are **downstream symptoms of a single architectural gap (F-010)**: IREAMS persists the *master-data columns* for a level-aware technical-object model, but **no engine governs behaviour by level**, and **Equipment is not modelled as a distinct object** — it is merely a deeper node of the same `assets` tree.
 
 What already exists in the schema ([`schema.ts`](../src/frontend/src/eam/schema.ts)):
 

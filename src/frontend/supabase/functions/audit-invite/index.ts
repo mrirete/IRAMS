@@ -1,5 +1,5 @@
 /**
- * audit-invite — Self-serve IRAMS access from the marketing website (IRAMS Supabase).
+ * audit-invite — Self-serve IREAMS access from the marketing website (IREAMS Supabase).
  *
  * The Relantern website's assessment funnel POSTs a prospect's contact details
  * here; we mint a one-time invite (same `user_invites` machinery admins use —
@@ -86,7 +86,7 @@ function shell(inner: string): string {
   <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background:#ffffff">
     <div style="background:#0f172a;padding:24px 28px">
       <div style="color:#fff;font-size:18px;font-weight:800">Relantern</div>
-      <div style="color:#94a3b8;font-size:12px">IRAMS — Reliability &amp; Asset Management</div>
+      <div style="color:#94a3b8;font-size:12px">IREAMS — Reliability &amp; Enterprise Management</div>
     </div>
     <div style="padding:28px">${inner}</div>
     <div style="background:#f8fafc;padding:16px 28px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px">
@@ -100,17 +100,17 @@ function inviteEmail(firstName: string, link: string, expiresAt: string): string
     return shell(`
       <p style="font-size:15px;color:#0f172a">Hi ${esc(firstName || "there")},</p>
       <p style="font-size:14px;color:#475569;line-height:1.6">
-        Here's your personal access link to the <strong>IRAMS Audit Module</strong> —
+        Here's your personal access link to the <strong>IREAMS Audit Module</strong> —
         run a full, evidence-based ISO 55001 / PSM / RBI maturity audit with an
         executive report and a prioritized improvement roadmap.</p>
       <div style="text-align:center;margin:26px 0">
-        <a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:13px 24px;border-radius:10px">Set Up My IRAMS Access →</a>
+        <a href="${esc(link)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:13px 24px;border-radius:10px">Set Up My IREAMS Access →</a>
       </div>
       <table style="width:100%;border-collapse:collapse;margin:6px 0 2px">
         <tr><td style="padding:7px 10px 7px 0;font-size:13px;color:#334155;vertical-align:top;white-space:nowrap"><strong style="color:#2563eb">1.</strong></td>
             <td style="padding:7px 0;font-size:13px;color:#475569">Open the link and choose your username and password — takes under a minute.</td></tr>
         <tr><td style="padding:7px 10px 7px 0;font-size:13px;color:#334155;vertical-align:top"><strong style="color:#2563eb">2.</strong></td>
-            <td style="padding:7px 0;font-size:13px;color:#475569">In IRAMS, open <strong>Audits</strong> from the sidebar and start your first audit from a standard template.</td></tr>
+            <td style="padding:7px 0;font-size:13px;color:#475569">In IREAMS, open <strong>Audits</strong> from the sidebar and start your first audit from a standard template.</td></tr>
       </table>
       <p style="font-size:12px;color:#94a3b8;margin-top:16px">
         This link works once and expires on ${esc(expires)}. If it expires, just request
@@ -121,10 +121,10 @@ function existingUserEmail(firstName: string): string {
     return shell(`
       <p style="font-size:15px;color:#0f172a">Hi ${esc(firstName || "there")},</p>
       <p style="font-size:14px;color:#475569;line-height:1.6">
-        Good news — you already have an IRAMS account under this email address.
+        Good news — you already have an IREAMS account under this email address.
         Log in and open <strong>Audits</strong> from the sidebar to continue.</p>
       <div style="text-align:center;margin:26px 0">
-        <a href="${esc(`${APP_URL}/login`)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:13px 24px;border-radius:10px">Log In to IRAMS →</a>
+        <a href="${esc(`${APP_URL}/login`)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-weight:700;font-size:14px;padding:13px 24px;border-radius:10px">Log In to IREAMS →</a>
       </div>
       <p style="font-size:12px;color:#94a3b8">Forgot your password? Reply to this email and we'll help you out.</p>`);
 }
@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
             `users?select=id&email=eq.${encodeURIComponent(email)}&limit=1`,
         ) as { id: string }[];
         if (existing.length > 0) {
-            await sendEmail(email, "You already have IRAMS access — log in", existingUserEmail(firstName));
+            await sendEmail(email, "You already have IREAMS access — log in", existingUserEmail(firstName));
             return json(req, { ok: true, existing: true });
         }
 
@@ -190,16 +190,16 @@ Deno.serve(async (req) => {
         }
 
         const link = `${APP_URL}/invite/${token}`;
-        await sendEmail(email, "Your IRAMS Audit Module access", inviteEmail(firstName, link, expiresAt));
+        await sendEmail(email, "Your IREAMS Audit Module access", inviteEmail(firstName, link, expiresAt));
 
         if (SALES_EMAIL) {
             try {
                 await sendEmail(
                     SALES_EMAIL,
-                    `IRAMS access requested: ${fullName || email}${body.company ? ` (${body.company})` : ""}`,
+                    `IREAMS access requested: ${fullName || email}${body.company ? ` (${body.company})` : ""}`,
                     shell(`<p style="font-size:14px;color:#475569;line-height:1.7">
                       <strong>${esc(fullName || "—")}</strong> (${esc(email)})${body.company ? ` from <strong>${esc(body.company)}</strong>` : ""}
-                      requested IRAMS audit access via <strong>${esc(body.source || "website")}</strong>.
+                      requested IREAMS audit access via <strong>${esc(body.source || "website")}</strong>.
                       Invite sent as ${esc(INVITE_ROLE)}, expires ${esc(new Date(expiresAt).toLocaleDateString())}.</p>`),
                 );
             } catch (e) {
