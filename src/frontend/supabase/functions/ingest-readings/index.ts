@@ -7,7 +7,7 @@
  * the same feed Predict, the digital twin, and the CSV importer use.
  *
  *   POST /functions/v1/ingest-readings
- *   Headers: x-api-key: <INGEST_API_KEY>
+ *   Headers: x-api-key: <collector key>
  *   Body: { "readings": [
  *     { "asset": "P-101A", "tag": "vibration_de", "value": 4.2,
  *       "unit": "mm/s", "timestamp": "2026-07-17T10:00:00Z",
@@ -16,22 +16,37 @@
  *
  * Unlike sensor-sync (which replaces each series with the window it pulled),
  * this APPENDS each point to the existing series (last 50 kept) — the right
- * semantics for incremental pushes.
+ * semantics for incremental pushes. It also appends to
+ * ers_sensor_reading_points (0236), the real history behind that projection.
  *
- * Env: INGEST_API_KEY (required — requests are rejected until it is set)
- *      + injected SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+ * AUTH — per-collector keys (0236), not one shared secret. Each Collector
+ * install gets its own key: hashed at rest, revocable on its own, and stamped
+ * with a last-seen heartbeat so a silent collector is visible. There is
+ * deliberately no global-key fallback; a single key shared across customers
+ * cannot be revoked or attributed.
+ *
+ * Mint one:
+ *   node scripts/provision/mint-collector-key.mjs --name "Bonny Island"
+ * Revoke:
+ *   update ers_collector_keys set is_active = false where key_prefix = '...';
+ *
+ * Env: injected SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
  * Deploy: supabase functions deploy ingest-readings --no-verify-jwt
- *         supabase secrets set INGEST_API_KEY=<long random string>
  *         (--no-verify-jwt lets devices call without a Supabase JWT; the
- *          shared key is the gate, so make it long and rotate it if leaked)
+ *          collector key is the gate)
  */
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const INGEST_API_KEY = Deno.env.get("INGEST_API_KEY") ?? "";
 
 const MAX_BATCH = 500;
 const SERIES_KEEP = 50;
+
+/** Lowercase hex SHA-256 — must match the mint script's hashing exactly. */
+async function sha256Hex(input: string): Promise<string> {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 async function rest(path: string, init: RequestInit = {}): Promise<unknown> {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -59,12 +74,22 @@ const json = (body: unknown, status = 200) =>
 Deno.serve(async (req: Request) => {
     if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-    if (!INGEST_API_KEY) {
-        return json({ error: "Ingestion disabled: INGEST_API_KEY secret is not set on this deployment" }, 503);
+    // ── Authenticate the collector ──────────────────────────────────────
+    const presented = req.headers.get("x-api-key") ?? "";
+    if (!presented) return json({ error: "Missing x-api-key" }, 401);
+
+    let collector: { id: string; name: string; readings_count: number } | null = null;
+    try {
+        const hash = await sha256Hex(presented);
+        const rows = await rest(
+            `ers_collector_keys?select=id,name,readings_count&key_hash=eq.${hash}&is_active=eq.true`,
+        ) as { id: string; name: string; readings_count: number }[];
+        collector = rows?.[0] ?? null;
+    } catch (e) {
+        console.error("collector key lookup failed (0236 applied?):", e);
+        return json({ error: "Ingestion unavailable: collector key store unreachable" }, 503);
     }
-    if (req.headers.get("x-api-key") !== INGEST_API_KEY) {
-        return json({ error: "Invalid or missing x-api-key" }, 401);
-    }
+    if (!collector) return json({ error: "Invalid or revoked collector key" }, 401);
 
     try {
         const body = await req.json().catch(() => null);
@@ -119,20 +144,72 @@ Deno.serve(async (req: Request) => {
             return json({ accepted: 0, rejected, unknownAssets: [...unknownAssets] }, 422);
         }
 
-        // Append to existing series (push semantics — sensor-sync replaces instead).
         const assetIds = [...new Set([...groups.values()].map((g) => g.asset_id))];
+
+        // ── History first: the points table is the source of truth ─────────
+        // A replayed batch (the store-and-forward retry every collector does)
+        // re-sends identical instants, so collide on (asset, tag, ts) and
+        // ignore duplicates. The projection below is then DERIVED from this,
+        // which is what stops a retry from inflating the sparkline.
+        const seriesRows = [...groups.values()].flatMap((g) =>
+            g.pts.map((p) => ({
+                asset_id: g.asset_id,
+                tag: g.tag,
+                ts: p.ts && !Number.isNaN(Date.parse(p.ts)) ? new Date(p.ts).toISOString() : new Date().toISOString(),
+                value: p.v,
+                unit: g.unit || null,
+                source: "ingest",
+            }))
+        );
+        let historyWritten = 0;
+        try {
+            if (seriesRows.length > 0) {
+                await rest(`ers_sensor_reading_points?on_conflict=asset_id,tag,ts`, {
+                    method: "POST",
+                    headers: { "Prefer": "resolution=ignore-duplicates" },
+                    body: JSON.stringify(seriesRows),
+                });
+                historyWritten = seriesRows.length;
+            }
+        } catch (e) {
+            // History is additive — never fail an ingest over it.
+            console.warn("time-series append failed (0236 applied?):", e);
+        }
+
+        // ── Projection: rebuild each series from the stored history ────────
         const existing = await rest(
             `ers_sensor_readings?select=id,asset_id,tag,readings,unit,alarm_high,alarm_low&asset_id=in.(${assetIds.join(",")})`,
         ) as Record<string, any>[];
         const existingByKey = new Map(existing.map((e) => [`${e.asset_id}|${e.tag}`, e]));
 
+        // Last SERIES_KEEP points per touched (asset, tag), oldest → newest.
+        const storedSeries = new Map<string, number[]>();
+        if (historyWritten > 0) {
+            await Promise.all([...groups.values()].map(async (g) => {
+                try {
+                    const rows = await rest(
+                        `ers_sensor_reading_points?select=value,ts&asset_id=eq.${g.asset_id}` +
+                        `&tag=eq.${encodeURIComponent(g.tag)}&order=ts.desc&limit=${SERIES_KEEP}`,
+                    ) as { value: number | string }[];
+                    if (rows?.length) {
+                        storedSeries.set(`${g.asset_id}|${g.tag}`, rows.map((r) => Number(r.value)).reverse());
+                    }
+                } catch { /* fall back to the in-memory append below */ }
+            }));
+        }
+
         const payload = [...groups.values()].map((g) => {
+            const key = `${g.asset_id}|${g.tag}`;
+            const prior = existingByKey.get(key);
             const ordered = g.pts.every((p) => p.ts)
                 ? [...g.pts].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
                 : g.pts;
-            const prior = existingByKey.get(`${g.asset_id}|${g.tag}`);
-            const priorVals: number[] = Array.isArray(prior?.readings) ? prior.readings : [];
-            const vals = [...priorVals, ...ordered.map((p) => p.v)].slice(-SERIES_KEEP);
+            // Derived from history when we have it; otherwise the legacy
+            // in-memory append, so ingestion still works if 0236 is missing.
+            const vals = storedSeries.get(key) ?? (() => {
+                const priorVals: number[] = Array.isArray(prior?.readings) ? prior.readings : [];
+                return [...priorVals, ...ordered.map((p) => p.v)].slice(-SERIES_KEEP);
+            })();
             const last = vals[vals.length - 1];
             const prev = vals.length > 1 ? vals[vals.length - 2] : undefined;
             return {
@@ -154,9 +231,24 @@ Deno.serve(async (req: Request) => {
             body: JSON.stringify(payload),
         });
 
+        // Heartbeat: makes a silent collector visible without extra plumbing.
+        try {
+            await rest(`ers_collector_keys?id=eq.${collector.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({
+                    last_seen_at: new Date().toISOString(),
+                    readings_count: (Number(collector.readings_count) || 0) + seriesRows.length,
+                }),
+            });
+        } catch (e) {
+            console.warn("collector heartbeat failed:", e);
+        }
+
         return json({
+            collector: collector.name,
             accepted: payload.length,
             points: valid.length - [...unknownAssets].length,
+            historyWritten,
             rejected,
             unknownAssets: [...unknownAssets],
         });

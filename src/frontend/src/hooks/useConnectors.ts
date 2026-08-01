@@ -6,10 +6,10 @@ import type { ConnectorHealth, ConnectorSyncLog, AnyConnectorConfig, SyncMode, C
  * Connector Hub data layer — DB-backed (0202) after a long life as mock.
  *
  * Rows live in `connectors`; the sensor-sync edge function reads active
- * REST connectors from the same table, pulls each source, and upserts
- * ers_sensor_readings (the feed Predict and the twin read). `config` holds
- * the sensor-sync shape (url/method/headers/root/map) plus `source` — the
- * raw wizard fields — so the wizard can round-trip edits.
+ * cloud-route connectors (REST, historian, weather) from the same table, pulls
+ * each source, and upserts ers_sensor_readings (the feed Predict and the twin
+ * read). `config` holds the sensor-sync shape (kind + url/map or provider)
+ * plus `source` — the raw wizard fields — so the wizard can round-trip edits.
  *
  * No DQS scores are fabricated: dqs_score stays undefined until a real
  * quality engine exists.
@@ -50,29 +50,82 @@ function rowToHealth(row: ConnectorRow): ConnectorHealth {
     };
 }
 
-/** Wizard config → the `config` jsonb sensor-sync executes. */
+/** The reading map both REST and historian connectors carry. */
+function readingMap(c: any) {
+    return {
+        asset: c.map_asset || 'asset',
+        tag: c.map_tag || 'tag',
+        value: c.map_value || 'value',
+        unit: c.map_unit || undefined,
+        timestamp: c.map_timestamp || undefined,
+    };
+}
+
+/** Join a base URL and a query path without doubling or dropping the slash. */
+function joinUrl(base: string, path?: string): string {
+    const b = (base || '').replace(/\/+$/, '');
+    const p = (path || '').replace(/^\/+/, '');
+    return p ? `${b}/${p}` : b;
+}
+
+/**
+ * Wizard config → the `config` jsonb sensor-sync executes.
+ *
+ * `kind` picks the execution path in the worker: 'rest' fetches a JSON array
+ * and walks the reading map; 'weather' calls a provider adapter. Types with no
+ * kind run on the ERS Collector, which pushes to ingest-readings instead — we
+ * store their wizard fields so the config survives, but the cloud worker skips
+ * them.
+ */
 function buildSyncConfig(config: Partial<AnyConnectorConfig>): any {
     const c = config as any;
+
     if (config.type === 'rest_api') {
         const headers: Record<string, string> = {};
         if (c.auth_type === 'bearer' && c.auth_token) headers['Authorization'] = `Bearer ${c.auth_token}`;
         if (c.auth_type === 'basic' && c.auth_user) headers['Authorization'] = `Basic ${btoa(`${c.auth_user}:${c.auth_pass || ''}`)}`;
         return {
+            kind: 'rest',
             url: c.base_url,
             method: 'GET',
             headers,
             root: c.records_path || undefined,
-            map: {
-                asset: c.map_asset || 'asset',
-                tag: c.map_tag || 'tag',
-                value: c.map_value || 'value',
-                unit: c.map_unit || undefined,
-                timestamp: c.map_timestamp || undefined,
-            },
+            map: readingMap(c),
             source: config, // wizard fields, for round-trip editing
         };
     }
-    // Non-REST types are not executable yet — store the wizard fields only.
+
+    // A historian is REST with Basic auth and a query path — same engine.
+    if (config.type === 'historian') {
+        const headers: Record<string, string> = {};
+        if (c.username) headers['Authorization'] = `Basic ${btoa(`${c.username}:${c.password || ''}`)}`;
+        return {
+            kind: 'rest',
+            url: joinUrl(c.api_url, c.query_path),
+            method: 'GET',
+            headers,
+            root: c.records_path || undefined,
+            map: readingMap(c),
+            source: config,
+        };
+    }
+
+    if (config.type === 'weather_api') {
+        return {
+            kind: 'weather',
+            provider: c.provider || 'openmeteo',
+            api_key: c.api_key || undefined,
+            latitude: Number(c.latitude),
+            longitude: Number(c.longitude),
+            units: c.units || 'metric',
+            data_points: c.data_points?.length ? c.data_points : ['temperature', 'humidity', 'wind_speed', 'precipitation'],
+            asset: c.asset_tag,
+            source: config,
+        };
+    }
+
+    // Collector-route types (OPC-UA, MQTT, on-prem SQL, file drop): keep the
+    // wizard fields, but emit no `kind` — the cloud worker won't try to run it.
     return { source: config };
 }
 

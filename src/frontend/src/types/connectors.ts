@@ -70,13 +70,24 @@ export interface CSVConfig extends BaseConnectorConfig {
     has_header: boolean;
 }
 
+/** A historian is REST underneath — PI Web API and Aspen both speak HTTPS/JSON.
+ *  It carries the same reading map as RESTConfig; sensor-sync executes both
+ *  through the identical `kind: 'rest'` path. */
 export interface HistorianConfig extends BaseConnectorConfig {
     type: 'historian';
     server_name: string;
     api_url: string;
+    /** appended to api_url — the query that returns the readings array */
+    query_path?: string;
     username: string;
     password: string;
     tag_prefix: string;
+    records_path?: string;
+    map_asset?: string;
+    map_tag?: string;
+    map_value?: string;
+    map_unit?: string;
+    map_timestamp?: string;
 }
 
 export interface DocumentStoreConfig extends BaseConnectorConfig {
@@ -94,18 +105,43 @@ export interface DocumentStoreConfig extends BaseConnectorConfig {
 
 export interface WeatherAPIConfig extends BaseConnectorConfig {
     type: 'weather_api';
-    provider: 'openweather' | 'noaa' | 'weatherapi' | 'custom';
-    api_key: string;
-    api_url?: string; // for custom provider
+    /** Providers sensor-sync has adapters for. Open-Meteo needs no key. */
+    provider: 'openmeteo' | 'openweather' | 'weatherapi';
+    api_key?: string;
     latitude: number;
     longitude: number;
     location_name: string;
+    /** asset tag or id these environmental readings attach to */
+    asset_tag: string;
     data_points: string[]; // e.g. ['temperature', 'humidity', 'wind_speed', 'precipitation']
-    forecast_days: number;
     units: 'metric' | 'imperial';
 }
 
 export type AnyConnectorConfig = RESTConfig | OPCUAConfig | DatabaseConfig | MQTTConfig | CSVConfig | HistorianConfig | DocumentStoreConfig | WeatherAPIConfig;
+
+/** Every measurement the weather form can offer. */
+export const ALL_WEATHER_POINTS = [
+    'temperature', 'humidity', 'wind_speed', 'precipitation',
+    'pressure', 'uv_index', 'visibility', 'dew_point',
+] as const;
+
+/**
+ * What each provider's current-conditions endpoint actually serves. Mirrors the
+ * adapter table in supabase/functions/sensor-sync — keep the two in step, or
+ * the form will offer a measurement the worker has to skip.
+ */
+export const WEATHER_SUPPORT: Record<string, string[]> = {
+    openmeteo: ['temperature', 'humidity', 'wind_speed', 'precipitation', 'pressure'],
+    openweather: ['temperature', 'humidity', 'wind_speed', 'precipitation', 'pressure', 'visibility'],
+    weatherapi: [...ALL_WEATHER_POINTS],
+};
+
+/** Providers that require an API key (Open-Meteo is open). */
+export const WEATHER_NEEDS_KEY: Record<string, boolean> = {
+    openmeteo: false, openweather: true, weatherapi: true,
+};
+
+export const DEFAULT_WEATHER_POINTS = ['temperature', 'humidity', 'wind_speed', 'precipitation'];
 
 
 export interface ConnectorHealth {

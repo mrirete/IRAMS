@@ -6,8 +6,17 @@ import { ConfigForm } from '../../components/connectors/ConfigForm';
 import { FieldMapper } from '../../components/connectors/FieldMapper';
 import { useConnectors } from '../../hooks/useConnectors';
 import type { ConnectorType, AnyConnectorConfig } from '../../types/connectors';
+import { WEATHER_NEEDS_KEY, DEFAULT_WEATHER_POINTS } from '../../types/connectors';
 
 const STEPS = ['Select Type', 'Configure', 'Test Connection', 'Field Mapping', 'Activate'];
+
+/**
+ * Sensor-feed connectors define their own reading map (or, for weather, a fixed
+ * one) during Configure — the asset-schema Field Mapping step doesn't apply, so
+ * they jump straight from Test to Activate.
+ */
+const SKIPS_FIELD_MAPPING: ConnectorType[] = ['rest_api', 'historian', 'weather_api'];
+const skipsMapping = (t: ConnectorType | null) => !!t && SKIPS_FIELD_MAPPING.includes(t);
 
 const getTypeIcon = (type: ConnectorType | null) => {
     switch (type) {
@@ -63,8 +72,13 @@ export const ConnectorWizard: React.FC = () => {
         if (selectedType === 'database') {
             if (!(config as any).connection_url?.trim()) errors.connection_url = 'Connection URL is required';
         }
+        // Historian runs the REST engine — it needs a reachable URL and a map.
         if (selectedType === 'historian') {
             if (!(config as any).server_name?.trim()) errors.server_name = 'Server name is required';
+            if (!(config as any).api_url?.trim()) errors.api_url = 'API URL is required';
+            if (!(config as any).map_asset?.trim()) errors.map_asset = 'Asset field is required';
+            if (!(config as any).map_tag?.trim()) errors.map_tag = 'Tag field is required';
+            if (!(config as any).map_value?.trim()) errors.map_value = 'Value field is required';
         }
         if (selectedType === 'mqtt') {
             if (!(config as any).broker_url?.trim()) errors.broker_url = 'Broker URL is required';
@@ -73,7 +87,16 @@ export const ConnectorWizard: React.FC = () => {
             if (!(config as any).endpoint_url?.trim()) errors.endpoint_url = 'Endpoint / Site URL is required';
         }
         if (selectedType === 'weather_api') {
-            if (!(config as any).api_key?.trim()) errors.api_key = 'API key is required';
+            const c = config as any;
+            const provider = c.provider || 'openmeteo';
+            if ((WEATHER_NEEDS_KEY[provider] ?? true) && !c.api_key?.trim()) {
+                errors.api_key = 'API key is required for this provider';
+            }
+            if (!c.asset_tag?.trim()) errors.asset_tag = 'Pick the asset these readings attach to';
+            if (!Number.isFinite(Number(c.latitude))) errors.latitude = 'Latitude is required';
+            if (!Number.isFinite(Number(c.longitude))) errors.longitude = 'Longitude is required';
+            const points = c.data_points ?? DEFAULT_WEATHER_POINTS;
+            if (points.length === 0) errors.data_points = 'Select at least one measurement';
         }
 
         setConfigErrors(errors);
@@ -102,9 +125,7 @@ export const ConnectorWizard: React.FC = () => {
             return;
         }
 
-        // REST configures its reading map in step 1 — skip the (asset-schema)
-        // mapping step, which doesn't apply to sensor feeds.
-        if (currentStep === 2 && selectedType === 'rest_api') {
+        if (currentStep === 2 && skipsMapping(selectedType)) {
             setCurrentStep(4);
             return;
         }
@@ -129,7 +150,7 @@ export const ConnectorWizard: React.FC = () => {
             setTestResult('success');
             setTestRecords(result.records);
             setIsTesting(false);
-            setTimeout(() => setCurrentStep(selectedType === 'rest_api' ? 4 : 3), 1200);
+            setTimeout(() => setCurrentStep(skipsMapping(selectedType) ? 4 : 3), 1200);
         } else {
             setTestResult('error');
             setTestError(result.error || 'Unknown error');
@@ -145,8 +166,8 @@ export const ConnectorWizard: React.FC = () => {
                 setTestResult(null);
                 setTestError(null);
             }
-            // REST skips the mapping step in both directions
-            if (currentStep === 4 && selectedType === 'rest_api') {
+            // Sensor-feed types skip the mapping step in both directions
+            if (currentStep === 4 && skipsMapping(selectedType)) {
                 setCurrentStep(2);
                 return;
             }
@@ -245,7 +266,7 @@ export const ConnectorWizard: React.FC = () => {
                                     </button>
                                 </div>
                                 <button
-                                    onClick={() => { setTestResult(null); setTestError(null); setCurrentStep(selectedType === 'rest_api' ? 4 : 3); }}
+                                    onClick={() => { setTestResult(null); setTestError(null); setCurrentStep(skipsMapping(selectedType) ? 4 : 3); }}
                                     className="block mx-auto text-xs text-slate-500 hover:text-slate-700 underline transition-colors font-medium"
                                 >
                                     Continue anyway (sync may fail)
@@ -287,9 +308,11 @@ export const ConnectorWizard: React.FC = () => {
                                 { label: 'Connector Name', value: config.name },
                                 { label: 'Type', value: selectedType?.replace('_', ' ')?.toUpperCase() },
                                 { label: 'Sync Interval', value: `${config.sync_interval_seconds || 3600}s` },
-                                selectedType === 'rest_api'
-                                    ? { label: 'Reading Map', value: `${(config as any).map_asset || 'asset'} / ${(config as any).map_tag || 'tag'} / ${(config as any).map_value || 'value'}` }
-                                    : { label: 'Fields Mapped', value: `${Object.keys(mapping).length} / ${mockInternalFields.length}` },
+                                selectedType === 'weather_api'
+                                    ? { label: 'Measurements', value: `${((config as any).data_points ?? DEFAULT_WEATHER_POINTS).length} → ${(config as any).asset_tag || '—'}` }
+                                    : skipsMapping(selectedType)
+                                        ? { label: 'Reading Map', value: `${(config as any).map_asset || 'asset'} / ${(config as any).map_tag || 'tag'} / ${(config as any).map_value || 'value'}` }
+                                        : { label: 'Fields Mapped', value: `${Object.keys(mapping).length} / ${mockInternalFields.length}` },
                                 { label: 'Connection Test', value: testResult === 'success' ? `✅ Passed (${testRecords} points)` : '⚠️ Skipped / Failed' },
                             ].map((row, i, arr) => (
                                 <div key={row.label} className={`flex justify-between items-center ${i < arr.length - 1 ? 'border-b border-slate-100 pb-4' : ''}`}>
@@ -343,17 +366,23 @@ export const ConnectorWizard: React.FC = () => {
                         />
 
                         {STEPS.map((step, idx) => {
-                            const isCompleted = idx < currentStep;
+                            // Step 3 doesn't happen for sensor-feed types — show
+                            // it as skipped rather than ticking it off as done.
+                            const isSkipped = idx === 3 && skipsMapping(selectedType);
+                            const isCompleted = idx < currentStep && !isSkipped;
                             const isCurrent = idx === currentStep;
                             return (
                                 <div key={step} className="flex flex-col items-center">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-white transition-all duration-300 ${isCompleted ? 'border-2 border-accent-cyan text-primary-600' :
-                                        isCurrent ? 'border-2 border-accent-cyan bg-primary-50 text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.3)]' :
-                                            'border-2 border-slate-300 text-slate-400'
-                                        }`}>
-                                        {isCompleted ? <CheckCircle2 size={20} /> : (idx + 1)}
+                                    <div
+                                        title={isSkipped ? 'Not needed for this connector type' : undefined}
+                                        className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm bg-white transition-all duration-300 ${isSkipped ? 'border-2 border-dashed border-slate-300 text-slate-300' :
+                                            isCompleted ? 'border-2 border-accent-cyan text-primary-600' :
+                                                isCurrent ? 'border-2 border-accent-cyan bg-primary-50 text-slate-900 shadow-[0_0_15px_rgba(6,182,212,0.3)]' :
+                                                    'border-2 border-slate-300 text-slate-400'
+                                            }`}>
+                                        {isSkipped ? '–' : isCompleted ? <CheckCircle2 size={20} /> : (idx + 1)}
                                     </div>
-                                    <span className={`mt-2 text-xs font-semibold hidden sm:block ${isCurrent ? 'text-slate-900' : isCompleted ? 'text-primary-600' : 'text-slate-400'}`}>
+                                    <span className={`mt-2 text-xs font-semibold hidden sm:block ${isSkipped ? 'text-slate-300 line-through' : isCurrent ? 'text-slate-900' : isCompleted ? 'text-primary-600' : 'text-slate-400'}`}>
                                         {step}
                                     </span>
                                 </div>
@@ -429,18 +458,37 @@ export const ConnectorWizard: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="border-t border-slate-100 pt-3">
-                                <div className="text-xs text-slate-500 mb-1 font-semibold">Fields Mapped</div>
-                                <div className="text-sm font-bold text-slate-800">
-                                    {Object.keys(mapping).length} / {mockInternalFields.length}
+                            {/* Sensor-feed types never reach the Field Mapping
+                                step — showing them a 0/7 progress bar reads as
+                                unfinished work that doesn't exist. */}
+                            {selectedType === 'weather_api' ? (
+                                <div className="border-t border-slate-100 pt-3">
+                                    <div className="text-xs text-slate-500 mb-1 font-semibold">Measurements</div>
+                                    <div className="text-sm font-bold text-slate-800">
+                                        {((config as any).data_points ?? DEFAULT_WEATHER_POINTS).length} selected
+                                    </div>
                                 </div>
-                                <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1.5">
-                                    <div
-                                        className="h-1.5 rounded-full bg-accent-cyan transition-all duration-300"
-                                        style={{ width: `${(Object.keys(mapping).length / mockInternalFields.length) * 100}%` }}
-                                    />
+                            ) : skipsMapping(selectedType) ? (
+                                <div className="border-t border-slate-100 pt-3">
+                                    <div className="text-xs text-slate-500 mb-1 font-semibold">Reading Map</div>
+                                    <div className="text-sm font-bold text-slate-800 truncate">
+                                        {(config as any).map_asset || 'asset'} / {(config as any).map_tag || 'tag'} / {(config as any).map_value || 'value'}
+                                    </div>
                                 </div>
-                            </div>
+                            ) : selectedType ? (
+                                <div className="border-t border-slate-100 pt-3">
+                                    <div className="text-xs text-slate-500 mb-1 font-semibold">Fields Mapped</div>
+                                    <div className="text-sm font-bold text-slate-800">
+                                        {Object.keys(mapping).length} / {mockInternalFields.length}
+                                    </div>
+                                    <div className="mt-1.5 w-full bg-slate-100 rounded-full h-1.5">
+                                        <div
+                                            className="h-1.5 rounded-full bg-accent-cyan transition-all duration-300"
+                                            style={{ width: `${(Object.keys(mapping).length / mockInternalFields.length) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            ) : null}
                         </div>
                     </div>
                 </div>

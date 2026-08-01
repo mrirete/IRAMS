@@ -112,11 +112,15 @@ export const ConnectorHub: React.FC = () => {
                 </div>
             </div>
 
-            {/* Live routes today: REST API polling (sensor-sync) + CSV import.
-                MQTT/OPC-UA/historian stay honestly gated as Coming soon. */}
+            {/* Cloud route (sensor-sync): REST, historian, weather. Plus manual
+                CSV import. Plant-local protocols run on the Collector agent. */}
             <div className="flex items-start gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
                 <Info size={14} className="shrink-0 mt-0.5 text-blue-600" />
-                <span><strong>REST API polling</strong> and <strong>CSV import</strong> are live — both write real rows into the sensor feed that Predict reads. MQTT, OPC-UA, and historian connectors are coming soon.</span>
+                <span>
+                    <strong>REST API</strong>, <strong>Historian</strong>, and <strong>Weather</strong> connectors run in the cloud with nothing to install,
+                    alongside <strong>CSV import</strong> — all write real rows into the sensor feed Predict reads.
+                    OPC-UA, MQTT, on-prem databases, and file drops run on the ERS Collector inside your network.
+                </span>
             </div>
 
             {/* High-Level System Stats */}

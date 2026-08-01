@@ -1,6 +1,9 @@
 import React from 'react';
 import { HelpCircle } from 'lucide-react';
 import type { ConnectorType } from '../../types/connectors';
+import {
+    ALL_WEATHER_POINTS, WEATHER_SUPPORT, WEATHER_NEEDS_KEY, DEFAULT_WEATHER_POINTS,
+} from '../../types/connectors';
 
 interface Props {
     type: ConnectorType;
@@ -33,6 +36,11 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
 
     const inputClass = (fieldName: string) =>
         `w-full bg-slate-50 border rounded-md px-3 py-2.5 text-sm text-slate-800 focus:outline-none transition-colors ${errors[fieldName] ? 'border-red-500 focus:border-red-400' : 'border-slate-200 focus:border-relantern-500'}`;
+
+    // Weather form state — Open-Meteo is the default because it needs no key.
+    const provider: string = config.provider || 'openmeteo';
+    const providerNeedsKey = WEATHER_NEEDS_KEY[provider] ?? true;
+    const selectedPoints: string[] = config.data_points ?? DEFAULT_WEATHER_POINTS;
 
     const renderCommonFields = () => (
         <div className="space-y-4 mb-6">
@@ -88,6 +96,74 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                 </div>
             </div>
         </div>
+    );
+
+    /**
+     * How the sync worker turns a JSON response into (asset, tag, value)
+     * points. REST and historian connectors run the same engine, so they share
+     * this block rather than each growing their own copy.
+     */
+    const renderReadingMap = (hint: string) => (
+        <>
+            <h3 className="text-base font-semibold text-slate-800 border-b border-slate-200 pb-2 pt-2">Reading Map</h3>
+            <p className="text-xs text-slate-500 -mt-2">{hint}</p>
+            <div>
+                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                    Records Path
+                    <Tooltip text="Dotted path to the ARRAY of readings in the response, e.g. 'data.items'. Leave empty if the response body is the array itself." />
+                </label>
+                <input type="text" name="records_path" value={config.records_path || ''} onChange={handleChange}
+                    placeholder="data.readings (optional)"
+                    className={inputClass('records_path')} />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+                <div>
+                    <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                        Asset Field <span className="text-red-400 ml-0.5">*</span>
+                        <Tooltip text="Field holding the asset tag or id each reading belongs to." />
+                    </label>
+                    <input type="text" name="map_asset" value={config.map_asset || ''} onChange={handleChange}
+                        placeholder="asset" className={inputClass('map_asset')} />
+                    <FieldError error={errors.map_asset} />
+                </div>
+                <div>
+                    <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                        Tag Field <span className="text-red-400 ml-0.5">*</span>
+                        <Tooltip text="Field naming the measurement, e.g. 'vibration_de' or 'discharge_pressure'." />
+                    </label>
+                    <input type="text" name="map_tag" value={config.map_tag || ''} onChange={handleChange}
+                        placeholder="tag" className={inputClass('map_tag')} />
+                    <FieldError error={errors.map_tag} />
+                </div>
+                <div>
+                    <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                        Value Field <span className="text-red-400 ml-0.5">*</span>
+                        <Tooltip text="Field holding the numeric reading value." />
+                    </label>
+                    <input type="text" name="map_value" value={config.map_value || ''} onChange={handleChange}
+                        placeholder="value" className={inputClass('map_value')} />
+                    <FieldError error={errors.map_value} />
+                </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+                <div>
+                    <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                        Unit Field
+                        <Tooltip text="Optional field holding the engineering unit, e.g. 'mm/s'." />
+                    </label>
+                    <input type="text" name="map_unit" value={config.map_unit || ''} onChange={handleChange}
+                        placeholder="unit (optional)" className={inputClass('map_unit')} />
+                </div>
+                <div>
+                    <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                        Timestamp Field
+                        <Tooltip text="Optional field holding the reading time — used to order the series." />
+                    </label>
+                    <input type="text" name="map_timestamp" value={config.map_timestamp || ''} onChange={handleChange}
+                        placeholder="timestamp (optional)" className={inputClass('map_timestamp')} />
+                </div>
+            </div>
+        </>
     );
 
     const renderTypeSpecificFields = () => {
@@ -154,66 +230,7 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                             </div>
                         </div>
 
-                        {/* Reading map — how sensor-sync turns the JSON response
-                            into (asset, tag, value) points. Dotted paths. */}
-                        <h3 className="text-base font-semibold text-slate-800 border-b border-slate-200 pb-2 pt-2">Reading Map</h3>
-                        <p className="text-xs text-slate-500 -mt-2">Tell the sync worker where each reading's fields live in the response JSON (dotted paths). The asset field should hold your asset tag or id.</p>
-                        <div>
-                            <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                Records Path
-                                <Tooltip text="Dotted path to the ARRAY of readings in the response, e.g. 'data.items'. Leave empty if the response body is the array itself." />
-                            </label>
-                            <input type="text" name="records_path" value={config.records_path || ''} onChange={handleChange}
-                                placeholder="data.readings (optional)"
-                                className={inputClass('records_path')} />
-                        </div>
-                        <div className="grid grid-cols-3 gap-4">
-                            <div>
-                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Asset Field <span className="text-red-400 ml-0.5">*</span>
-                                    <Tooltip text="Field holding the asset tag or id each reading belongs to." />
-                                </label>
-                                <input type="text" name="map_asset" value={config.map_asset || ''} onChange={handleChange}
-                                    placeholder="asset" className={inputClass('map_asset')} />
-                                <FieldError error={errors.map_asset} />
-                            </div>
-                            <div>
-                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Tag Field <span className="text-red-400 ml-0.5">*</span>
-                                    <Tooltip text="Field naming the measurement, e.g. 'vibration_de' or 'discharge_pressure'." />
-                                </label>
-                                <input type="text" name="map_tag" value={config.map_tag || ''} onChange={handleChange}
-                                    placeholder="tag" className={inputClass('map_tag')} />
-                                <FieldError error={errors.map_tag} />
-                            </div>
-                            <div>
-                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Value Field <span className="text-red-400 ml-0.5">*</span>
-                                    <Tooltip text="Field holding the numeric reading value." />
-                                </label>
-                                <input type="text" name="map_value" value={config.map_value || ''} onChange={handleChange}
-                                    placeholder="value" className={inputClass('map_value')} />
-                                <FieldError error={errors.map_value} />
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Unit Field
-                                    <Tooltip text="Optional field holding the engineering unit, e.g. 'mm/s'." />
-                                </label>
-                                <input type="text" name="map_unit" value={config.map_unit || ''} onChange={handleChange}
-                                    placeholder="unit (optional)" className={inputClass('map_unit')} />
-                            </div>
-                            <div>
-                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Timestamp Field
-                                    <Tooltip text="Optional field holding the reading time — used to order the series." />
-                                </label>
-                                <input type="text" name="map_timestamp" value={config.map_timestamp || ''} onChange={handleChange}
-                                    placeholder="timestamp (optional)" className={inputClass('map_timestamp')} />
-                            </div>
-                        </div>
+                        {renderReadingMap("Tell the sync worker where each reading's fields live in the response JSON (dotted paths). The asset field should hold your asset tag or id.")}
                     </div>
                 );
             case 'database':
@@ -346,10 +363,16 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                 return (
                     <div className="space-y-4">
                         <h3 className="text-base font-semibold text-slate-800 border-b border-slate-200 pb-2">Historian Configuration</h3>
+                        <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs text-sky-800 leading-relaxed">
+                            Historians are read over their HTTPS/JSON interface (PI Web API, Aspen REST). ERS calls
+                            <strong> API URL + Query Path</strong> and reads the response with the map below. If your historian
+                            sits on an isolated plant network, run the ERS Collector inside that network instead.
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
                                     Server Name <span className="text-red-400 ml-0.5">*</span>
+                                    <Tooltip text="A label for the historian this connector reads — shown in the Hub." />
                                 </label>
                                 <input type="text" name="server_name" value={config.server_name || ''} onChange={handleChange}
                                     placeholder="PI-PROD-01"
@@ -358,17 +381,30 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                             </div>
                             <div>
                                 <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    API URL
-                                    <Tooltip text="The PI Web API or AF SDK endpoint." />
+                                    API URL <span className="text-red-400 ml-0.5">*</span>
+                                    <Tooltip text="Base URL of the historian's web API, e.g. the PI Web API root." />
                                 </label>
                                 <input type="text" name="api_url" value={config.api_url || ''} onChange={handleChange}
                                     placeholder="https://piwebapi.example.com/piwebapi"
                                     className={inputClass('api_url')} />
+                                <FieldError error={errors.api_url} />
                             </div>
+                        </div>
+                        <div>
+                            <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                Query Path
+                                <Tooltip text="Appended to the API URL — the endpoint that returns your readings, including any query string." />
+                            </label>
+                            <input type="text" name="query_path" value={config.query_path || ''} onChange={handleChange}
+                                placeholder="streamsets/value?path=\\PI-PROD-01\UNIT-01.*"
+                                className={inputClass('query_path')} />
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <label className="text-sm font-medium text-slate-600 mb-1.5 block">Username</label>
+                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                    Username
+                                    <Tooltip text="Sent as HTTP Basic auth. Leave blank if the endpoint is unauthenticated." />
+                                </label>
                                 <input type="text" name="username" value={config.username || ''} onChange={handleChange}
                                     className={inputClass('username')} />
                             </div>
@@ -381,12 +417,13 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                         <div>
                             <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
                                 Tag Prefix
-                                <Tooltip text="Filter tags by prefix to limit scope (e.g. 'UNIT-01.')." />
+                                <Tooltip text="Optional note recording which tag namespace this connector covers." />
                             </label>
                             <input type="text" name="tag_prefix" value={config.tag_prefix || ''} onChange={handleChange}
                                 placeholder="UNIT-01."
                                 className={inputClass('tag_prefix')} />
                         </div>
+                        {renderReadingMap('Point the worker at the readings in your historian\'s response (dotted paths). The asset field should hold the ERS asset tag or id.')}
                     </div>
                 );
             case 'csv':
@@ -537,41 +574,60 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                 return (
                     <div className="space-y-4">
                         <h3 className="text-base font-semibold text-slate-800 border-b border-slate-200 pb-2">Weather & Environment Configuration</h3>
+                        <div className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-xs text-sky-800 leading-relaxed">
+                            Each sync appends one sample per selected measurement to the asset below, tagged
+                            <code className="mx-1 px-1 py-0.5 bg-white border border-sky-200 rounded">weather_temperature</code>,
+                            <code className="mx-1 px-1 py-0.5 bg-white border border-sky-200 rounded">weather_humidity</code>, and so on —
+                            the same feed Predict reads, so environmental history builds up for corrosion and outdoor scheduling.
+                        </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
                                     Provider <span className="text-red-400 ml-0.5">*</span>
-                                    <Tooltip text="Select a weather data provider. Choose 'Custom' for proprietary APIs." />
+                                    <Tooltip text="Open-Meteo needs no API key — the quickest way to prove the connector works. For any provider not listed, use the REST API connector." />
                                 </label>
-                                <select name="provider" value={config.provider || 'openweather'} onChange={handleChange} className={inputClass('provider')}>
+                                <select
+                                    name="provider"
+                                    value={provider}
+                                    onChange={(e) => {
+                                        // Keep only the measurements the new provider can actually serve.
+                                        const next = e.target.value;
+                                        const allowed = WEATHER_SUPPORT[next] || [];
+                                        onChange({
+                                            ...config,
+                                            provider: next,
+                                            data_points: selectedPoints.filter((p: string) => allowed.includes(p)),
+                                        });
+                                    }}
+                                    className={inputClass('provider')}
+                                >
+                                    <option value="openmeteo">Open-Meteo (no API key)</option>
                                     <option value="openweather">OpenWeatherMap</option>
-                                    <option value="noaa">NOAA (US Gov)</option>
                                     <option value="weatherapi">WeatherAPI.com</option>
-                                    <option value="custom">Custom Endpoint</option>
                                 </select>
                             </div>
                             <div>
                                 <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    API Key <span className="text-red-400 ml-0.5">*</span>
-                                    <Tooltip text="API key from your weather provider. Stored securely." />
+                                    API Key {providerNeedsKey && <span className="text-red-400 ml-0.5">*</span>}
+                                    <Tooltip text="API key from your weather provider. Open-Meteo does not use one." />
                                 </label>
                                 <input type="password" name="api_key" value={config.api_key || ''} onChange={handleChange}
-                                    placeholder="••••••••••••"
-                                    className={inputClass('api_key')} />
+                                    disabled={!providerNeedsKey}
+                                    placeholder={providerNeedsKey ? '••••••••••••' : 'Not required for Open-Meteo'}
+                                    className={`${inputClass('api_key')} disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed`} />
                                 <FieldError error={errors.api_key} />
                             </div>
                         </div>
-                        {config.provider === 'custom' && (
-                            <div>
-                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Custom API URL
-                                    <Tooltip text="Full URL to your custom weather API endpoint." />
-                                </label>
-                                <input type="text" name="api_url" value={config.api_url || ''} onChange={handleChange}
-                                    placeholder="https://weather.example.com/api/v1"
-                                    className={inputClass('api_url')} />
-                            </div>
-                        )}
+                        <div>
+                            <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                Attach Readings To Asset <span className="text-red-400 ml-0.5">*</span>
+                                <Tooltip text="The ERS asset tag (or id) these environmental readings belong to — usually the site's weather station or the exposed asset you're tracking." />
+                            </label>
+                            <input type="text" name="asset_tag" value={config.asset_tag || ''} onChange={handleChange}
+                                placeholder="e.g. WS-001 or the tag of the exposed asset"
+                                className={inputClass('asset_tag')} />
+                            <FieldError error={errors.asset_tag} />
+                        </div>
                         <div className="grid grid-cols-3 gap-4">
                             <div>
                                 <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
@@ -584,63 +640,65 @@ export const ConfigForm: React.FC<Props> = ({ type, config, onChange, errors = {
                             </div>
                             <div>
                                 <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Latitude
+                                    Latitude <span className="text-red-400 ml-0.5">*</span>
                                     <Tooltip text="GPS latitude of the monitoring location." />
                                 </label>
                                 <input type="number" step="0.0001" name="latitude" value={config.latitude ?? ''} onChange={handleChange}
                                     placeholder="4.4397"
                                     className={inputClass('latitude')} />
+                                <FieldError error={errors.latitude} />
                             </div>
                             <div>
                                 <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Longitude
+                                    Longitude <span className="text-red-400 ml-0.5">*</span>
                                     <Tooltip text="GPS longitude of the monitoring location." />
                                 </label>
                                 <input type="number" step="0.0001" name="longitude" value={config.longitude ?? ''} onChange={handleChange}
                                     placeholder="7.1534"
                                     className={inputClass('longitude')} />
+                                <FieldError error={errors.longitude} />
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Forecast Days
-                                    <Tooltip text="Number of forecast days to retrieve (1-14). Useful for maintenance scheduling." />
-                                </label>
-                                <input type="number" name="forecast_days" value={config.forecast_days || 7} onChange={handleChange}
-                                    min={1} max={14}
-                                    className={inputClass('forecast_days')} />
-                            </div>
-                            <div>
-                                <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
-                                    Units
-                                </label>
-                                <select name="units" value={config.units || 'metric'} onChange={handleChange} className={inputClass('units')}>
-                                    <option value="metric">Metric (°C, m/s, mm)</option>
-                                    <option value="imperial">Imperial (°F, mph, in)</option>
-                                </select>
-                            </div>
+                        <div>
+                            <label className="flex items-center text-sm font-medium text-slate-600 mb-1.5">
+                                Units
+                            </label>
+                            <select name="units" value={config.units || 'metric'} onChange={handleChange} className={`${inputClass('units')} md:w-1/2`}>
+                                <option value="metric">Metric (°C, km/h, mm)</option>
+                                <option value="imperial">Imperial (°F, mph, in)</option>
+                            </select>
                         </div>
                         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                            <h4 className="text-sm font-medium text-slate-700 mb-3">Data Points to Collect</h4>
+                            <h4 className="text-sm font-medium text-slate-700 mb-1">Data Points to Collect</h4>
+                            <p className="text-xs text-slate-500 mb-3">
+                                Greyed-out measurements aren't served by this provider's current-conditions endpoint.
+                            </p>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                {['temperature', 'humidity', 'wind_speed', 'precipitation', 'pressure', 'uv_index', 'visibility', 'dew_point'].map(point => (
-                                    <label key={point} className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                                        <input type="checkbox"
-                                            checked={(config.data_points || ['temperature', 'humidity', 'wind_speed', 'precipitation']).includes(point)}
-                                            onChange={(e) => {
-                                                const current = config.data_points || ['temperature', 'humidity', 'wind_speed', 'precipitation'];
-                                                const updated = e.target.checked
-                                                    ? [...current, point]
-                                                    : current.filter((p: string) => p !== point);
-                                                onChange({ ...config, data_points: updated });
-                                            }}
-                                            className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-primary-500"
-                                        />
-                                        {point.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
-                                    </label>
-                                ))}
+                                {ALL_WEATHER_POINTS.map(point => {
+                                    const supported = (WEATHER_SUPPORT[provider] || []).includes(point);
+                                    return (
+                                        <label
+                                            key={point}
+                                            title={supported ? undefined : `${provider} does not serve ${point.replace(/_/g, ' ')}`}
+                                            className={`flex items-center gap-2 text-sm ${supported ? 'text-slate-600 cursor-pointer' : 'text-slate-400 cursor-not-allowed'}`}
+                                        >
+                                            <input type="checkbox"
+                                                disabled={!supported}
+                                                checked={supported && selectedPoints.includes(point)}
+                                                onChange={(e) => {
+                                                    const updated = e.target.checked
+                                                        ? [...selectedPoints, point]
+                                                        : selectedPoints.filter((p: string) => p !== point);
+                                                    onChange({ ...config, data_points: updated });
+                                                }}
+                                                className="rounded bg-slate-50 border-slate-200 text-accent-cyan focus:ring-primary-500 disabled:opacity-40"
+                                            />
+                                            {point.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                        </label>
+                                    );
+                                })}
                             </div>
+                            <FieldError error={errors.data_points} />
                         </div>
                     </div>
                 );
