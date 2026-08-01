@@ -28,7 +28,27 @@ export interface ParsedBriefing {
 }
 
 /** A whole line that is a heading: optional ##/1. prefix, then **Title**. */
-const HEADING_RE = /^\s*(?:#{1,4}\s*)?(?:\d+\.\s*)?\*\*(.+?)\*\*[:.]?\s*$/;
+const HEADING_RE = /^\s*(?:#{1,6}\s*)?(?:\d+\.\s*)?\*\*(.+?)\*\*[:.]?\s*$/;
+/** The same heading written the other way the models actually emit it: `### Title`. */
+const HASH_HEADING_RE = /^\s*#{1,6}\s+(\S.*?)[:.]?\s*$/;
+
+/**
+ * The heading title on this line, or null.
+ *
+ * Both forms have to be accepted: the prompts ask for `**Bold**` headings, and
+ * the narrator obeys about half the time — the rest of the time it writes
+ * `### Where the money is going`. When only the bold form matched, a whole
+ * hash-headed summary parsed as ZERO sections, so the report fell back to plain
+ * text and printed the literal `###` on screen.
+ */
+function headingOf(line: string): string | null {
+    const bold = line.match(HEADING_RE);
+    if (bold) return bold[1];
+    const hash = line.match(HASH_HEADING_RE);
+    // `**Title**` inside a hash heading is redundant emphasis, not content.
+    if (hash) return hash[1].replace(/\*\*/g, '').trim() || null;
+    return null;
+}
 
 function classify(title: string): SectionKey {
     const t = title.toLowerCase();
@@ -53,7 +73,7 @@ export function parseBriefing(text: string): ParsedBriefing {
     let sawHeading = false;
 
     for (const line of lines) {
-        const m = line.match(HEADING_RE);
+        const m = headingOf(line);
         if (m) {
             sawHeading = true;
             if (current) current.body = current.body.trim();
@@ -63,7 +83,7 @@ export function parseBriefing(text: string): ParsedBriefing {
             // to start at 2 — section 1 is the headline, which renders as the
             // callout above without a title. Position already conveys order,
             // and a number that skips is worse than no number.
-            const heading = m[1].replace(/^\s*\d+\s*[.)]\s*/, '').trim();
+            const heading = m.replace(/^\s*\d+\s*[.)]\s*/, '').trim();
             current = { key: classify(heading), title: heading, body: '' };
             sections.push(current);
         } else if (current) {
@@ -286,6 +306,46 @@ export function guideForMission(path: string, tags: string[]): { title: string; 
                 'Open Evaluate and review any CML trending toward t-min.',
                 `Schedule the inspection${tags.length ? ` for ${tagList}` : ''} before the projected breach date, not after.`,
                 'Record the reading — the corrosion-rate model sharpens with every point.',
+            ],
+        };
+    }
+    if (path.startsWith('/readings')) {
+        return {
+            title: 'Put the asset on condition',
+            steps: [
+                `Open Condition Data and check which measurement points exist on ${tagList}.`,
+                'Set warning and critical bands on the points that matter — without bands a reading is a number, not a signal.',
+                'Record a reading now so the trend has a starting point the Specialist can watch.',
+            ],
+        };
+    }
+    if (path.startsWith('/inventory')) {
+        return {
+            title: 'Cover the spares exposure',
+            steps: [
+                'Find the part flagged below and check its on-hand quantity against its minimum level.',
+                `Raise a replenishment (or set a reorder level) before the next failure on ${tagList} needs it.`,
+                'A part consumed once on a critical asset will be needed again — stock it deliberately, not reactively.',
+            ],
+        };
+    }
+    if (path.startsWith('/assets')) {
+        return {
+            title: 'Repair the register',
+            steps: [
+                'Open the flagged assets and fill the missing fields — parent, criticality, manufacturer and model.',
+                'Fix the hierarchy first: nothing rolls up, scopes or costs by unit until assets sit under a parent.',
+                'Every analysis in the assessment sharpens as this improves — it is the foundation layer.',
+            ],
+        };
+    }
+    if (path.startsWith('/contacts')) {
+        return {
+            title: 'Staff the capability',
+            steps: [
+                'Open People & Org and record the qualifications your team already holds — most gaps are unrecorded, not real.',
+                'For a genuine gap, decide now: train, hire or contract. A strategy nobody can execute is a document.',
+                'Renew anything expiring within 90 days before the capability lapses.',
             ],
         };
     }

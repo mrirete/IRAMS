@@ -143,10 +143,18 @@ const InlineText: React.FC<{ text: string; assetsByTag: Map<string, BriefingAsse
 /** Paragraphs + bullet groups for a section body (or a chat message). */
 export const RichText: React.FC<{ text: string; assetsByTag: Map<string, BriefingAsset>; onAsk?: (q: string) => void; className?: string }> = ({ text, assetsByTag, onAsk, className }) => {
     const blocks = useMemo(() => {
-        const out: Array<{ kind: 'p' | 'ul'; lines: string[] }> = [];
+        const out: Array<{ kind: 'p' | 'ul' | 'h'; lines: string[] }> = [];
         for (const raw of text.split('\n')) {
             const line = raw.trimEnd();
             if (!line.trim()) continue;
+            // A markdown heading that reached this far (unstructured fallback,
+            // a chat reply) is rendered AS a heading. Printing the literal `###`
+            // is the one thing it must never do.
+            const heading = line.match(/^\s*#{1,6}\s+(\S.*?)\s*$/);
+            if (heading) {
+                out.push({ kind: 'h', lines: [heading[1].replace(/\*\*/g, '').replace(/[:.]$/, '')] });
+                continue;
+            }
             const bullet = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
             if (bullet) {
                 if (out.length === 0 || out[out.length - 1].kind !== 'ul') out.push({ kind: 'ul', lines: [] });
@@ -160,7 +168,11 @@ export const RichText: React.FC<{ text: string; assetsByTag: Map<string, Briefin
 
     return (
         <div className={className ?? 'space-y-2'}>
-            {blocks.map((b, i) => b.kind === 'p' ? (
+            {blocks.map((b, i) => b.kind === 'h' ? (
+                <h4 key={i} className="pt-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                    {b.lines[0]}
+                </h4>
+            ) : b.kind === 'p' ? (
                 <p key={i} className="text-[13px] text-slate-600 leading-[1.65]">
                     <InlineText text={b.lines[0]} assetsByTag={assetsByTag} onAsk={onAsk} />
                 </p>

@@ -52,6 +52,62 @@ describe('parseBriefing', () => {
     });
 });
 
+// The shape the assessment_narrator actually produced (2026-08-01 run): hash
+// headings, no bold. The parser used to require **bold**, so this parsed as
+// ZERO sections and the report printed the literal "###" on screen.
+const HASH_SAMPLE = `This assessment highlights a significant opportunity. Total maintenance spend across 69 assets was $126,250.
+
+### Where the money is going
+
+Three critical assets are responsible for 83% of the total maintenance expenditure:
+*   **Gas Compressor** (K-601): $65,400 (51.8% of total spend)
+
+### Quick wins
+
+*   **PM Waste**: The 'Pump Inspection' on P-101-A is ineffective.
+
+### Data quality
+
+Coverage is 65% for cost and downtime data.
+
+### Act this month
+
+1.  **Investigate Gas Compressor K-601**: wear-out pattern, B10 of 20 days.
+2.  **Improve Data Capture**: nameplate data is 32% complete.`;
+
+describe('parseBriefing — hash headings, the other half of what LLMs emit', () => {
+    it('structures a summary written with ### instead of **bold**', () => {
+        const p = parseBriefing(HASH_SAMPLE);
+        expect(p.sections.map((s) => s.key)).toEqual(['headline', 'badActors', 'wins', 'data', 'act']);
+        expect(p.sections[0].body).toContain('$126,250');
+    });
+
+    it('never leaks a heading marker into a title or a body', () => {
+        const p = parseBriefing(HASH_SAMPLE);
+        expect(p.sections.map((s) => s.title)).toContain('Where the money is going');
+        for (const s of p.sections) {
+            expect(s.title).not.toContain('#');
+            expect(s.body).not.toMatch(/^\s*#/m);
+        }
+    });
+
+    it('reads its act items the same way', () => {
+        const p = parseBriefing(HASH_SAMPLE);
+        expect(p.actions).toHaveLength(2);
+        expect(p.actions[0]).toContain('K-601');
+    });
+
+    it('accepts the belt-and-braces form (### **Title**) without doubling up', () => {
+        const { sections } = parseBriefing('### **Quick wins**\nWarranty money is recoverable.');
+        expect(sections[0].title).toBe('Quick wins');
+        expect(sections[0].key).toBe('wins');
+    });
+
+    it('still refuses to structure text with no headings at all', () => {
+        expect(parseBriefing('One paragraph, no structure.').sections).toHaveLength(0);
+    });
+});
+
 describe('tokenizeTags', () => {
     const TAGS = ['GT-301', 'K-601', 'P-101-A', 'P-101', 'PMP-411', '20000001'];
 

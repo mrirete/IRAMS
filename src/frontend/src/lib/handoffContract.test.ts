@@ -28,6 +28,8 @@ import { ROLE_PERMISSION_TEMPLATES } from '../eam/constants/rolePermissions';
 import { computeMissions } from './missionEngine';
 import { routeForAction, deepLink } from './briefingParse';
 import { notificationRoute } from './notificationNav';
+import { computeQuickWins } from './assessmentQuickWins';
+import { QUICK_WIN_FIXTURE } from './assessmentQuickWins.fixture';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel: string) => readFileSync(join(SRC, rel), 'utf8');
@@ -97,6 +99,16 @@ const actionRoutes = ACTION_PHRASES.map(routeForAction).filter((r): r is NonNull
 /** deepLink sharpens those routes with the mission's own asset. */
 const ASSETS = [{ tag: 'K-601', id: 'uuid-k601' }];
 const deepLinked = actionRoutes.map(r => deepLink(r, ASSETS));
+
+/**
+ * assessmentQuickWins: the Go button under every chart in the assessment
+ * report. The fixture is built to trip every branch, so this covers each
+ * destination the report can send a reader to.
+ */
+const quickWinPaths = Object.values(computeQuickWins(QUICK_WIN_FIXTURE))
+  .flat()
+  .map(w => w.path)
+  .filter((p): p is string => !!p);
 
 /** notificationNav: every entityType branch. */
 const NOTIFICATION_TYPES = [
@@ -173,6 +185,7 @@ describe('every emitted deep link resolves to a route', () => {
     ['missionEngine', missionPaths],
     ['briefingParse.routeForAction', actionRoutes.map(r => r.path)],
     ['briefingParse.deepLink', deepLinked],
+    ['assessmentQuickWins', quickWinPaths],
     ['notificationNav', notificationPaths],
     ['SpecialistWorkspacePage', workspacePaths],
   ];
@@ -210,7 +223,7 @@ describe('every emitted query param is read by its destination', () => {
   // Landing somewhere that ignores your param is the quiet failure: the page
   // renders fine, just unfiltered, and nothing tells the user their context
   // was dropped.
-  const withParams = [...missionPaths, ...deepLinked, ...notificationPaths]
+  const withParams = [...missionPaths, ...deepLinked, ...quickWinPaths, ...notificationPaths]
     .filter(p => p.includes('?'));
 
   it('has query-carrying links to check', () => {

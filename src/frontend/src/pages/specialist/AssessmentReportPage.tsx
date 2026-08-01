@@ -12,7 +12,7 @@ import {
     ArrowLeft, Printer, Sparkles, Loader2, AlertTriangle, TrendingDown,
     BadgeDollarSign, Activity, Wrench, ShieldCheck, Database, RefreshCw,
     Layers, FolderPlus, Check, Route, SendHorizonal, Users, PackageSearch, Footprints,
-    FileSpreadsheet, Maximize2,
+    FileSpreadsheet, Maximize2, ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useSettings } from '../../contexts/SettingsContext';
@@ -33,6 +33,8 @@ import {
     ScoreRing, MetricBars, MagnitudeBars, StatusSplit, BetaStrip, NoData, scoreTone,
 } from '../../components/specialist/AssessmentCharts';
 import { ParetoChart } from '../../components/specialist/BriefingCharts';
+import QuickWinsStrip from '../../components/specialist/QuickWins';
+import { computeQuickWins, type WinSection } from '../../lib/assessmentQuickWins';
 import { exportAssessmentWorkbook } from '../../lib/assessmentExport';
 
 /** Enum → words. Charts are read by people, not by the database. */
@@ -55,12 +57,19 @@ const Empty: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 );
 
 /**
- * A report section: illustration first, then the detail.
+ * A report section: illustration first, the actions it implies, then the detail.
  *
  * The figure goes above the table because a reader deciding whether this
- * section concerns them should not have to parse rows to find out. `detail`
- * opens the same content in a wide overlay — the useful move for the long
- * tables, which are cramped inside a 4xl column.
+ * section concerns them should not have to parse rows to find out. Quick wins
+ * sit directly under the figure for the same reason: a chart states a
+ * magnitude, and the next question is always "so what do I do?" — answering it
+ * two inches lower beats burying it in a summary at the top of the page.
+ * `expand` opens the same content in a wide overlay — the useful move for the
+ * long tables, which are cramped inside a 4xl column.
+ *
+ * `collapsed` folds the whole body behind its header (the summary opens on a
+ * click). Collapsed content is hidden on screen but restored for print: a PDF
+ * has no click.
  *
  * Declared at module scope on purpose: as a nested component it was a fresh
  * type on every render, remounting each section (and resetting its state).
@@ -70,15 +79,31 @@ const Section: React.FC<{
     title: string;
     /** Rendered above the body, and repeated at the top of the detail overlay. */
     chart?: React.ReactNode;
+    /** Actions this section's figures imply — rendered under the chart. */
+    wins?: React.ReactNode;
     /** Offers a wide overlay of this same section. Omit where it fits as-is. */
     expand?: { label: string; subtitle?: string };
+    /** Makes the section a disclosure. The string is the closed-state teaser. */
+    collapsible?: { teaser: string; openLabel?: string };
     children: React.ReactNode;
-}> = ({ icon, title, chart, expand, children }) => {
+}> = ({ icon, title, chart, wins, expand, collapsible, children }) => {
     const [open, setOpen] = useState(false);
+    const [shown, setShown] = useState(!collapsible);
     return (
         <section className="rounded-2xl border border-slate-200 bg-white p-6 print:border-0 print:p-0 print:mb-6 break-inside-avoid">
             <div className="flex items-start justify-between gap-3 mb-4">
-                <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 uppercase tracking-wide">{icon}{title}</h2>
+                {collapsible ? (
+                    <button
+                        onClick={() => setShown((s) => !s)}
+                        aria-expanded={shown}
+                        className="group flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                        <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-800 transition-colors group-hover:text-primary-700">{icon}{title}</h2>
+                        <ChevronDown size={14} className={`no-print shrink-0 text-slate-400 transition-transform ${shown ? 'rotate-180' : ''}`} />
+                    </button>
+                ) : (
+                    <h2 className="flex items-center gap-2 text-sm font-bold text-slate-800 uppercase tracking-wide">{icon}{title}</h2>
+                )}
                 {expand && (
                     <button
                         onClick={() => setOpen(true)}
@@ -89,14 +114,31 @@ const Section: React.FC<{
                     </button>
                 )}
             </div>
-            {chart && <div className="mb-4">{chart}</div>}
-            {children}
+
+            {collapsible && !shown && (
+                <button onClick={() => setShown(true)} className="no-print w-full rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-left transition-colors hover:border-primary-200 hover:bg-primary-50/40">
+                    <p className="text-[12.5px] leading-relaxed text-slate-500">{collapsible.teaser}</p>
+                    <span className="mt-1.5 inline-flex items-center gap-1 text-[11.5px] font-semibold text-primary-600">
+                        {collapsible.openLabel ?? 'Read the summary'} <ChevronDown size={12} />
+                    </span>
+                </button>
+            )}
+
+            {/* Kept mounted rather than unmounted: print must carry the full
+                report whatever the reader last clicked. */}
+            <div className={collapsible && !shown ? 'hidden print:block' : ''}>
+                {chart && <div className="mb-4">{chart}</div>}
+                {wins}
+                <div className={wins ? 'mt-4' : ''}>{children}</div>
+            </div>
+
             {/* The overlay renders the same children — one source of truth for
                 the content, and the wide column is the only difference. */}
             {expand && open && (
                 <ReportModal open onClose={() => setOpen(false)} title={title}
                     subtitle={expand.subtitle} icon={icon} width="xl">
                     {chart && <div className="mb-5">{chart}</div>}
+                    {wins && <div className="mb-5">{wins}</div>}
                     {children}
                 </ReportModal>
             )}
@@ -284,6 +326,9 @@ export const AssessmentReportPage: React.FC = () => {
         (assessment?.assetIndex ?? []).map((x) => [x.tag.toLowerCase(), x]),
     ), [assessment]);
 
+    /** Per-section actions, from the same numbers the charts are drawn from. */
+    const quickWins = useMemo(() => (assessment ? computeQuickWins(assessment) : {}), [assessment]);
+
     /** Run-over-run delta chip. `goodWhenDown` colours direction (spend); others stay neutral. */
     const deltaChip = (cur: number, prev: number | null | undefined, fmt: (n: number) => string, goodWhenDown = false) => {
         if (prev == null) return null;
@@ -310,6 +355,15 @@ export const AssessmentReportPage: React.FC = () => {
         );
     }
     const a = assessment;
+
+    /** The quick-win strip for a section, or nothing when there is nothing to do. */
+    const winsKey = `assessment-wins:${a.dataTo ?? 'na'}`;
+    const wins = (section: WinSection) => {
+        const list = quickWins[section];
+        return list?.length
+            ? <QuickWinsStrip wins={list} briefingKey={winsKey} formatCurrency={formatCurrency} />
+            : undefined;
+    };
 
     // ── Illustration series, all from figures the engine already computed ──
     const idByTag = new Map(a.assetIndex.map((x) => [x.tag, x.id]));
@@ -414,7 +468,7 @@ export const AssessmentReportPage: React.FC = () => {
                             ))}
                         </div>
                         <p className="text-[10.5px] text-slate-400 mt-5 leading-relaxed">
-                            IRAMS · Reliability Specialist by Relantern — every figure computed deterministically from your records; nothing estimated by AI.
+                            IREAMS · Reliability Specialist by Relantern — every figure computed deterministically from your records; nothing estimated by AI.
                             {previous && <> Deltas compare with the assessment of {new Date(previous.created_at).toLocaleDateString()}.</>}
                             {snapshotSaved && <> This run has been added to the trend record.</>}
                         </p>
@@ -422,8 +476,20 @@ export const AssessmentReportPage: React.FC = () => {
                 </div>
 
                 {/* Executive summary — same interactive treatment as the briefing:
-                    sections, asset-tag chips, "Act this month" as guided missions. */}
-                <Section icon={<Sparkles size={15} className="text-primary-600" />} title="Executive summary">
+                    sections, asset-tag chips, "Act this month" as guided missions.
+                    Folded away by default: the cover states the position, each
+                    section below carries its own figure and its own quick wins,
+                    so the narrative is the thing you open when you want the
+                    reasoning — not the wall you scroll past to reach the report. */}
+                <Section icon={<Sparkles size={15} className="text-primary-600" />} title="Executive summary"
+                    collapsible={{
+                        teaser: narrating
+                            ? 'Your Specialist is writing the summary…'
+                            : narrative
+                                ? `The Specialist's read on ${formatCurrency(a.totalSpend12mo)} of maintenance spend across ${a.assetCount.toLocaleString()} assets — where the money went, what to fix first, and what the data can and cannot yet support.`
+                                : 'No narrative was produced for this run — every finding below stands on its own numbers.',
+                        openLabel: narrative ? 'Read the summary' : 'Open anyway',
+                    }}>
                     {narrating
                         ? <p className="flex items-center gap-2 text-sm text-slate-400"><Loader2 size={14} className="animate-spin" /> The Specialist is writing the summary…</p>
                         : narrative
@@ -440,6 +506,7 @@ export const AssessmentReportPage: React.FC = () => {
                     chart={badActorPareto.length >= 2
                         ? <ParetoChart pareto={badActorPareto} formatCurrency={formatCurrency} />
                         : null}
+                    wins={wins('badActors')}
                     expand={{ label: 'Full table', subtitle: 'Ranked by 12-month cost. The right-hand figure is the cumulative share of spend — where it reaches 80%, the rest of the fleet is noise by comparison.' }}>
                     {a.badActors.length === 0 ? <Empty>No costed work-order history in the last 12 months.</Empty> : (
                         <div className="overflow-x-auto">
@@ -473,7 +540,8 @@ export const AssessmentReportPage: React.FC = () => {
 
                 {/* Weibull */}
                 <Section icon={<Activity size={15} className="text-indigo-500" />} title="Failure behaviour — Weibull analysis (censored, full history)"
-                    chart={<BetaStrip rows={a.weibull.map((w) => ({ tag: w.tag, beta: w.beta, interpretation: w.interpretation }))} />}>
+                    chart={<BetaStrip rows={a.weibull.map((w) => ({ tag: w.tag, beta: w.beta, interpretation: w.interpretation }))} />}
+                    wins={wins('weibull')}>
                     {a.weibull.length === 0 ? <Empty>Not enough repeated corrective failures on any single asset for a statistically meaningful fit (needs ≥3). This unlocks as history accumulates.</Empty> : (
                         <div className="space-y-3">
                             {a.weibull.map((w) => (
@@ -511,7 +579,8 @@ export const AssessmentReportPage: React.FC = () => {
                 <Section icon={<BadgeDollarSign size={15} className="text-emerald-600" />} title="Money on the table — warranty recovery"
                     chart={warrantyRows.length
                         ? <MagnitudeBars rows={warrantyRows} format={formatCurrency} mono />
-                        : null}>
+                        : null}
+                    wins={wins('warranty')}>
                     {a.warranty.total === 0 ? <Empty>No completed work fell inside an active warranty window (or no warranty records exist in the data provided).</Empty> : (
                         <div className="space-y-2">
                             <p className="text-sm text-slate-700">
@@ -533,6 +602,7 @@ export const AssessmentReportPage: React.FC = () => {
                     chart={pmVerdictRows.length
                         ? <MagnitudeBars rows={pmVerdictRows} />
                         : <NoData>Every active PM programme matches its asset's failure history.</NoData>}
+                    wins={wins('pmWaste')}
                     expand={{ label: 'Full list', subtitle: 'Programmes whose frequency does not match what the asset actually does.' }}>
                     <div className="no-print mb-3">
                         <button onClick={() => setPmOptOpen(true)}
@@ -574,6 +644,7 @@ export const AssessmentReportPage: React.FC = () => {
                             ? <MagnitudeBars rows={regimeRows} format={(v) => `${v} assets`} />
                             : <NoData>No assets scored yet.</NoData>}
                     </div>}
+                    wins={wins('strategy')}
                     expand={{ label: 'Full list', subtitle: 'The recommended regime for every asset, and whether what is deployed today already matches it.' }}>
                     {(() => {
                         const st = a.strategy;
@@ -687,7 +758,8 @@ export const AssessmentReportPage: React.FC = () => {
 
                 {/* Workforce readiness (Phase F5) */}
                 <Section icon={<Users size={15} className="text-teal-600" />} title="Workforce readiness — can this roster execute the strategy?"
-                    chart={<StatusSplit segments={skillRows} unitLabel="capability areas" />}>
+                    chart={<StatusSplit segments={skillRows} unitLabel="capability areas" />}
+                    wins={wins('workforce')}>
                     {a.skills.totalQualifications === 0 ? (
                         <Empty>
                             No qualifications are recorded yet — the strategy above needs {a.skills.areas.filter((x) => x.demand > 0).length} capability
@@ -731,12 +803,13 @@ export const AssessmentReportPage: React.FC = () => {
                                 { label: 'in critical departure', tone: 'bad', count: a.success.zoneCounts.critical },
                                 { label: 'not yet measurable', tone: 'idle', count: a.success.zoneCounts.unknown, hint: 'No banded measurement points on the asset' },
                             ]} />
-                    </div>}>
+                    </div>}
+                    wins={wins('success')}>
                     {a.success.assetsWithBands === 0 ? (
                         <Empty>
                             No measurement points carry warning bands yet — set bands on reading points (Condition Data) and the
                             Specialist starts measuring time-in-optimal, not just time-to-failure. This is the PSC framework's
-                            success-side lens (Olorunfemi 2026); IRAMS is its reference implementation.
+                            success-side lens (Olorunfemi 2026); IREAMS is its reference implementation.
                         </Empty>
                     ) : (
                         <>
@@ -834,6 +907,7 @@ export const AssessmentReportPage: React.FC = () => {
                 {/* Spares exposure (Phase B4) */}
                 <Section icon={<PackageSearch size={15} className="text-orange-500" />} title="Spares exposure — parts the criticals already needed once"
                     chart={<StatusSplit segments={spareRows} unitLabel="parts" />}
+                    wins={wins('spares')}
                     expand={{ label: 'Full list', subtitle: 'Parts consumed by critical assets in the window, and what is on the shelf today.' }}>
                     {a.spares.criticalPartsTracked === 0 ? (
                         <Empty>
@@ -889,7 +963,8 @@ export const AssessmentReportPage: React.FC = () => {
                             { label: 'Nameplate (make and model)', pct: a.register.nameplatePct, target: 60, hint: 'No nameplate, no benchmark and no parts interchangeability' },
                             { label: 'Work orders resolve to an asset', pct: a.register.woLinkedPct, target: 95, hint: 'Unlinked work cannot be attributed to anything' },
                         ]} />
-                    </div>}>
+                    </div>}
+                    wins={wins('register')}>
                     <div className="flex flex-col sm:flex-row gap-3 mb-3">
                         <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4 text-center sm:w-40 shrink-0 flex flex-col justify-center">
                             <div className={`text-3xl font-bold ${a.register.healthPct >= 70 ? 'text-emerald-600' : a.register.healthPct >= 40 ? 'text-amber-500' : 'text-rose-500'}`}>
@@ -936,7 +1011,8 @@ export const AssessmentReportPage: React.FC = () => {
                         { label: 'Work orders carrying a cost', pct: a.coverage.cost_pct, target: 90 },
                         { label: 'Corrective work with a coded failure mode', pct: a.coverage.failure_code_pct, target: 80, hint: 'Without codes there is no Pareto by cause and no RCM evidence' },
                         { label: 'Corrective work with a downtime figure', pct: a.coverage.downtime_pct, target: 80, hint: 'MTTR and availability rest on this denominator' },
-                    ]} />}>
+                    ]} />}
+                    wins={wins('dataQuality')}>
                     <div className="grid grid-cols-3 gap-3 mb-3">
                         {[
                             { label: 'WOs with cost data', pct: a.coverage.cost_pct },
