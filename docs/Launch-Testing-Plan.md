@@ -117,9 +117,10 @@ stuck-spinner incident happened *because* green L0–L1 was mistaken for a worki
 | **L3 Browser E2E** | Playwright, real session, real deploy — extend `tests/e2e/smoke.mjs` | stuck spinners, blank pages, uncaught errors, mobile layout, the spine | ~10 min | post-deploy + pre-release |
 | **L4 Exploratory** | timeboxed human charters (§7) | judgement, "feels wrong", UX friction, novel breakage | 2h/charter | pre-release |
 
-Current state: **L0 and L1 exist and are healthy. L2 does not exist. L3 exists but covers 10 routes
-and zero Specialist routes.** Closing those two gaps is the single biggest testing investment in
-this plan (§9).
+Current state (2026-08-02): **all five layers now exist.** L0/L1 healthy; L2 built (§9.3) and it
+immediately proved the RBAC fix was UI-only (§11.3); L3 extended to 38 routes across roles and two
+viewports (§9.1). L4 charters remain to be run by a human — they are the one layer no harness
+replaces.
 
 ---
 
@@ -347,7 +348,15 @@ It immediately found the `?id=` gap (§11). Known-broken handoffs live in a `KNO
 asserted to *stay* broken — fix one and the test fails telling you to delete its line, so the
 allowlist cannot rot into permanent silence.
 
-### 9.3 L2 role/RLS script (new)
+### 9.3 L2 role/RLS harness — ✅ BUILT (2026-08-02)
+[tests/rls/rls-matrix.mjs](src/frontend/tests/rls/rls-matrix.mjs) — `npm run test:rls`
+(`test:rls:writes` adds a same-value UPDATE probe). Signs in as each role for real, reads every
+sensitive table, and reports where the **database** is more permissive than the matrix. Takes an
+admin baseline first, so an empty table is reported INCONCLUSIVE rather than counted as a successful
+denial. **This layer is what answers "is the RBAC fix real or cosmetic?" — and the answer was
+cosmetic.** See §11.3.
+
+### 9.3b Original spec (superseded by the above)
 Per role: authenticate, attempt the full CRUD matrix against seeded records, assert
 allow/deny at the database. This is the only layer that catches P3-class permission leaks, and it
 does not exist today.
@@ -437,6 +446,45 @@ decide deliberately which roles may see the Specialist.
 a separate question that only the L2 layer (§9.3, not built) can answer. Do not assume the DB is
 safe because the UI is fixed.
 
+### 11.3 P0 — the database does not enforce the permission matrix
+
+Found 2026-08-02 by the new L2 harness (§9.3), against production, using real role tokens.
+
+**§11.0 fixed the UI. This is the same question asked of Postgres, and the answer is different.**
+A user who opens devtools, or calls the REST API with their own token, is not subject to
+`PermissionGate` at all.
+
+**Fixed already** — `user_invites` had `FOR SELECT USING (true)` while its writes were admin-only.
+The table holds the invite `token` and the `role` it grants, and `accept_invite()` authenticates on
+nothing but that token. Any logged-in account — including REQUESTER — could list pending invites,
+take a SYS_ADMIN invitation's token and redeem it. **Read access was a privilege-escalation path.**
+Closed by [0237](src/frontend/supabase/migrations/0237_user_invites_admin_read.sql), applied and
+verified. Anonymous access was already refused, so this was authenticated-only — invisible to every
+UI-level test we have.
+
+**Still open**, grouped by who is exposed. Each needs a policy ruling before a migration; guessing
+at ~20 tables' RLS on production is how you break an app to fix a report.
+
+| Exposure | Tables | Matrix says |
+|---|---|---|
+| **Every role, incl. REQUESTER** | `companies`, `error_logs`, `hierarchy_config` | `admin: NO_ACCESS` |
+| **Every role** | `audit_logs` | `activityLog: NO_ACCESS` |
+| **Every role** | `cost_centers`, `depreciation_books`, `capital_events` | `finops: NO_ACCESS` |
+| **Every role** | `ers_carbon_metrics`, `ers_climate_risks` | `sustain: NO_ACCESS` |
+| TECHNICIAN + REQUESTER | `contacts`, `users`, `qualifications` | `contacts: NO_ACCESS` |
+| TECHNICIAN + REQUESTER | `purchase_orders`, `vendors` | `purchasing`/`vendors: NO_ACCESS` |
+| TECHNICIAN + REQUESTER | `ers_inspections`, `ers_rbi_assessments`, `jsa_assessments` | `integrity`/`safety: NO_ACCESS` |
+| REQUESTER | `work_orders`, `work_order_labor`, `work_order_parts`, `job_tasks` | `workOrders: NO_ACCESS` |
+| REQUESTER | `inventory_items`, `inventory_stock`, `recurring_work` | `inventory`/`pm: NO_ACCESS` |
+
+Two that deserve naming: **`users`** is readable by REQUESTER (emails, usernames,
+`permission_overrides`), and **`audit_logs`** is readable by everyone, which undermines the audit
+trail's purpose.
+
+**69 tables were INCONCLUSIVE** because they hold no rows — the harness cannot tell a working policy
+from an empty table, and says so rather than passing them. Seed a row in each before trusting a
+clean result there.
+
 ### 11.1 Other items
 
 | Item | Location | Class | Action |
@@ -459,6 +507,6 @@ The sweep runs on existing accounts; nothing was provisioned. Verified working 2
 shared dev password: `admin001@cainergy.com` (SUPER_ADMIN), `k.syrus@cainergy.com` and
 `john.doe@cainergy.com` (RELIABILITY_ENG), `bea@cainergy.com` and `alex@cainergy.com` (TECHNICIAN).
 
-**Gap: there is no REQUESTER account.** REQUESTER is the widest and least-trained population at
+**REQUESTER**: `requester01@cainergy.com` / `Password123!` — created 2026-08-02 via the production invite flow (`create_user_invite` → `accept_invite`). Sweep verified: sees requests/assets/notifications/Specialist, gated everywhere else.
 launch (§5.1) and is currently untestable. `smoke-ci@irams.app` exists as a TECHNICIAN but its
 password is not the shared one — that is the account CI should use once its secret is set.
