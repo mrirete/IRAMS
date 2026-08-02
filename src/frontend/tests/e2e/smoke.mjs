@@ -268,8 +268,18 @@ async function sweepRoute(page, pageErrors, route, { checkOverflow, label }) {
       const s = await page.evaluate(() => {
         const main = document.querySelector('main');
         const text = (main ? main.innerText : document.body.innerText).trim();
-        return { len: text.length, gated: text.includes('Access Restricted'), spinner: !!document.querySelector('main .animate-spin') };
+        return {
+          len: text.length,
+          gated: text.includes('Access Restricted'),
+          spinner: !!document.querySelector('main .animate-spin'),
+          // A Vercel deployment-protection page is short, static, spinner-free
+          // text — it satisfies every "is this rendered?" check below. Smoking a
+          // protected preview once returned an identical 218 chars for all 38
+          // routes and reported PASS. An auth wall must never read as the app.
+          wall: /Authentication Required|Vercel Authentication|deployment protection|Log in to Vercel/i.test(text),
+        };
       });
+      if (s.wall) { verdict = 'BLOCKED — deployment protection, not the app'; break; }
       if (s.gated) { ok = true; verdict = 'gated (ok)'; break; }
       if (s.len > 20) {
         stable = s.len === prev ? stable + 1 : 0;
