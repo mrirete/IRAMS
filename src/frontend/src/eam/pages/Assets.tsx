@@ -726,7 +726,13 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
         { id: 'reliability', label: 'Reliability', icon: Cpu, show: !isLocation(selectedAsset) },
         { id: 'jobs', label: 'Work & History', icon: Wrench, show: true },
         { id: 'files', label: 'Files', icon: FolderPlus, show: true },
-        { id: 'financials', label: 'Financials', icon: DollarSign, show: true },
+        // Financials shows depreciation, insurance and warranty values, which the
+        // matrix withholds from most roles (finops: NO_ACCESS for everyone but
+        // admins, MANAGER and EXECUTIVE). The tab was unconditional, so a
+        // technician could open it on any asset. Since 0246 the database refuses
+        // those reads, and an ungated tab would render permanently empty with no
+        // explanation — worse than not offering it.
+        { id: 'financials', label: 'Financials', icon: DollarSign, show: permissions?.finops?.view === true },
         { id: 'tracking', label: 'Tracking', icon: History, show: true },
     ] : [];
 
