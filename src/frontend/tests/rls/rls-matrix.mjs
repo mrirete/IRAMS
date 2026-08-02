@@ -93,6 +93,30 @@ const TABLES = {
     activityLog: ['audit_logs'],
 };
 
+/**
+ * Tables where the UI permission matrix is the WRONG yardstick.
+ *
+ * The matrix describes modules a user may open. Some tables are infrastructure
+ * every session needs regardless of role, and reporting them as leaks forever
+ * would train everyone to skim past this output — which is how a real finding
+ * gets missed. Each entry states the intended posture and why, so the exemption
+ * is a decision on record rather than a silence.
+ */
+const EXPECTED_OPEN = {
+    companies: 'useEdition + SettingsContext read this on every page load for every user ' +
+        '(edition, app_settings). Admin-only would break routing and settings for everyone. ' +
+        'Sensitive columns here would need column grants, not RLS.',
+    users: 'AuthContext resolves your own profile from it at login, and DatabaseService looks up ' +
+        'OTHER users to render assignee names. Admin-only breaks login; self-or-admin breaks every ' +
+        'assignee label. Proper fix is a directory view exposing (id, username) — needs a code change.',
+    notifications: 'Every user reads their own; row scoping is the recipient filter, not the module gate.',
+    audit_logs: 'Deliberately PART-open since 0238: change history on business records stays readable ' +
+        '(Assets.tsx renders the per-asset Audit Trail tab for TECHNICIAN/REQUESTER), while rows auditing ' +
+        'users/companies/user_invites/contacts are admin-only. This check is binary and cannot express ' +
+        'row-level scoping, so it sees "readable" and calls it a leak. Verify the scoping directly: a ' +
+        'non-admin reading ?table_name=eq.users must get 0 rows.',
+};
+
 const signIn = async (email, password) => {
     const res = await fetch(`${SB}/auth/v1/token?grant_type=password`, {
         method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
@@ -159,6 +183,7 @@ console.log('(tables with no rows cannot yield a verdict and are reported inconc
 
 const leaks = [];
 const inconclusive = [];
+const exempt = new Set();   // tables in EXPECTED_OPEN that were seen open
 
 for (const login of LOGINS) {
     const template = ROLE_PERMISSION_TEMPLATES[login.label];
@@ -180,7 +205,10 @@ for (const login of LOGINS) {
             const r = await probeSelect(token, table);
             const dbCanRead = !r.denied && r.rows > 0;
 
-            if (!uiCanView && dbCanRead) {
+            if (!uiCanView && dbCanRead && EXPECTED_OPEN[table]) {
+                exempt.add(table);
+                console.log(`  ~ open   ${table.padEnd(28)} intentionally readable — see EXPECTED_OPEN`);
+            } else if (!uiCanView && dbCanRead) {
                 leaks.push({ role: login.label, table, permKey, op: 'SELECT',
                     detail: `UI says ${permKey}.view=false but the API returned ${r.rows} row(s)` });
                 console.log(`  ✗ LEAK  ${table.padEnd(28)} ${permKey}.view=false → API returned ${r.rows} row(s)`);
@@ -211,6 +239,11 @@ if (leaks.length === 0) {
     console.log(`${leaks.length} LEAK(S) — the API is more permissive than the UI:\n`);
     for (const l of leaks) console.log(`  ${l.role.padEnd(17)} ${l.op.padEnd(7)} ${l.table.padEnd(28)} ${l.detail}`);
     console.log('\nA user with this role can reach the data directly, whatever the UI shows.');
+}
+if (exempt.size) {
+    console.log(`
+${exempt.size} table(s) intentionally readable (EXPECTED_OPEN — reviewed, not leaks):`);
+    for (const t of exempt) console.log(`  ${t.padEnd(16)} ${EXPECTED_OPEN[t]}`);
 }
 if (inconclusive.length) {
     console.log(`\n${inconclusive.length} inconclusive (table empty — seed it to get a verdict):`);

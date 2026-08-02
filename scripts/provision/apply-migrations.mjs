@@ -59,7 +59,20 @@ CREATE POLICY auth_select_schema_migrations ON public.schema_migrations
 
 // ── plumbing ──────────────────────────────────────────────────────────────
 
-const sha256 = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
+/**
+ * Checksum a migration by its CONTENT, not its bytes.
+ *
+ * Line endings are normalised first because git rewrites them. A migration
+ * written and applied on Windows lands as LF, gets committed, and comes back
+ * from checkout as CRLF — identical SQL, different bytes, and the drift check
+ * then blocks every later run with "repo and database have diverged". That
+ * fired for real on 0237 and would have fired for every migration after it.
+ *
+ * Ledger rows written before this change stay valid: they were hashed from
+ * freshly-written LF content, which is exactly what this now reproduces.
+ */
+const sha256 = (text) =>
+    createHash('sha256').update(String(text).replace(/\r\n/g, '\n'), 'utf8').digest('hex');
 const sqlLiteral = (s) => `'${String(s).replace(/'/g, "''")}'`;
 
 function parseArgs(argv) {
@@ -135,14 +148,25 @@ async function readLedger(projectRef, token) {
     }
 }
 
-async function loadMigrations() {
+/**
+ * @param applied ledger rows, so a checksum recorded before line-ending
+ *        normalisation can still be recognised as unchanged.
+ */
+async function loadMigrations(applied = []) {
     const files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.toLowerCase().endsWith('.sql'));
+    const byName = new Map(applied.map((r) => [r.name, r.checksum]));
     const contents = {};
     const checksums = {};
     for (const f of files) {
         const sql = await readFile(join(MIGRATIONS_DIR, f), 'utf8');
         contents[f] = sql;
-        checksums[f] = sha256(sql);
+        // Two cohorts exist in the ledger, both legitimate: migrations applied
+        // from a freshly-written LF file, and migrations applied from a CRLF
+        // checkout. Normalising alone just moves the false alarm from one
+        // cohort to the other. So a file counts as unchanged if EITHER form
+        // matches what was recorded; anything new is recorded normalised.
+        const raw = createHash('sha256').update(sql, 'utf8').digest('hex');
+        checksums[f] = byName.get(f) === raw ? raw : sha256(sql);
     }
     return { files, contents, checksums };
 }
@@ -193,8 +217,10 @@ async function main() {
     if (!token) throw new Error('SUPABASE_ACCESS_TOKEN is not set (a personal access token, sbp_…).');
     if (!projectRef) throw new Error('Pass --project-ref <ref> (or set SUPABASE_PROJECT_REF).');
 
-    const { files, contents, checksums } = await loadMigrations();
+    // Ledger first: loadMigrations needs the recorded checksums to tell a
+    // line-ending rewrite from a real edit.
     const ledger = await readLedger(projectRef, token);
+    const { files, contents, checksums } = await loadMigrations(ledger.rows);
     const plan = planMigrations(files, ledger.rows, checksums);
 
     console.log(`Project      ${projectRef}`);

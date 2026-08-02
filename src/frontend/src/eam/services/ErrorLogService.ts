@@ -426,23 +426,32 @@ export class ErrorLogService {
                 created_at: e.createdAt || new Date().toISOString(),
             }));
 
-            const { data, error } = await supabase
+            // Deliberately no .select() here.
+            //
+            // Reading rows back turns this into INSERT … RETURNING, which needs
+            // SELECT permission on the result — and since 0238 that is
+            // admin-only. Asking for the id would make error logging fail with
+            // 403 for every non-admin, silencing reports from exactly the users
+            // whose problems are hardest to reproduce.
+            //
+            // Nothing is lost by not checking a row count: an INSERT refused by
+            // RLS violates WITH CHECK and raises 42501, so `error` catches it.
+            // (UPDATE and DELETE are the ones that refuse silently via USING —
+            // see scan-silent-success pattern 3.)
+            //
+            // The old code backfilled ids into the shared buffer for
+            // resolveError's local update. That path is admin-only and
+            // fetchErrors already supplies ids from the database, so the loss is
+            // an in-session nicety, not a feature.
+            const { error } = await supabase
                 .from('error_logs')
-                .insert(rows)
-                .select('id');
+                .insert(rows);
 
             if (error) {
                 console.error('[ErrorLogService] Flush failed:', error);
                 // Put back for retry (once)
                 // Don't retry infinitely to avoid memory leak
                 return;
-            }
-
-            // Backfill IDs into buffer
-            if (data) {
-                for (let i = 0; i < data.length && i < batch.length; i++) {
-                    batch[i].id = data[i].id;
-                }
             }
         } catch (e) {
             console.error('[ErrorLogService] Flush exception:', e);
