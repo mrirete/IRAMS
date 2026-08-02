@@ -110,6 +110,13 @@ const EXPECTED_OPEN = {
         'OTHER users to render assignee names. Admin-only breaks login; self-or-admin breaks every ' +
         'assignee label. Proper fix is a directory view exposing (id, username) — needs a code change.',
     notifications: 'Every user reads their own; row scoping is the recipient filter, not the module gate.',
+    hierarchy_config: 'AppLayout reads it for EVERY user on EVERY page load — it defines the asset ' +
+        'hierarchy level names the whole shell renders. Infrastructure, not an admin module; gating it ' +
+        'on admin.view would blank hierarchy labels app-wide.',
+    cost_centers: 'Work-order costing master data, not finance-module data. WorkOrders.tsx and ' +
+        'WorkCentersPage read it for costing and settlement, and PLANNER/SUPERVISOR/TECHNICIAN all hold ' +
+        'work-order access with finops: NO_ACCESS. Released deliberately in 0247 after 0246 emptied ' +
+        'their cost-centre dropdown live. Gating it needs a work-management permission, not a finance one.',
     audit_logs: 'Deliberately PART-open since 0238: change history on business records stays readable ' +
         '(Assets.tsx renders the per-asset Audit Trail tab for TECHNICIAN/REQUESTER), while rows auditing ' +
         'users/companies/user_invites/contacts are admin-only. This check is binary and cannot express ' +
