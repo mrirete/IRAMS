@@ -197,15 +197,21 @@ export const SpecialistWorkspacePage: React.FC = () => {
                 .maybeSingle(),
             predictionService.getAgentActions(),
             supabase.from('assets').select('id, tag, name, criticality').limit(10000),
-            supabase.from('work_orders')
+            // Narrow projections, not the work-order table (0254). The briefing
+            // needs asset, type, status, date and cost — never a title, an
+            // assignee or a description — and every role that can see the
+            // Specialist must be able to build it, including REQUESTER, who has
+            // workOrders: NO_ACCESS. The views are gated on reliability.view,
+            // so the permission that admits you to the Specialist is the one
+            // that fills it in.
+            supabase.from('sem_specialist_briefing_wo')
                 .select('asset_id, type, status, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost')
                 .order('created_at', { ascending: false })
                 .limit(20000),
-            // Same overdue definition the digest agent's tool uses.
-            supabase.from('recurring_work')
+            // Same overdue definition the digest agent's tool uses — now applied
+            // inside the view rather than restated here.
+            supabase.from('sem_specialist_overdue_pm')
                 .select('id, asset_id')
-                .eq('active', true)
-                .lt('next_due_date', new Date().toISOString())
                 .limit(5000),
         ]);
         const rows = (logQ.data ?? []) as AuditRow[];
