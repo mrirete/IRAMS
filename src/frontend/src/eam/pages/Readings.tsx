@@ -26,7 +26,6 @@ import { recommendMonitoringCadence } from '../../lib/monitoringCadence';
 import { evaluateMeterPMs, forecastMeterPM, isMeterSchedule, matchesReading, type MeterPM, type MeterReadingCtx, type MeterPMDue, type MeterPMForecast } from '../../lib/meterPM';
 import { computeReadingDue, summariseDue } from '../../lib/readingDue';
 import { RaiseWorkModal, type RaiseKind } from '../components/RaiseWorkModal';
-import { buildWorkOrder } from '../lib/workOrder';
 import { VALUATION_CODES, valuationByCode, VALUATION_TONE_CLASSES } from '../../lib/valuationCodes';
 import { AddReadingPointModal } from '../components/modals/AddReadingPointModal';
 import { saveReadings, withLastReadings, type BreachInfo } from '../services/readingEntry';
@@ -371,11 +370,15 @@ export const Readings: React.FC = () => {
             const autoTargets = autoRaiseCritical ? result.breaches.filter(b => b.level === 'CRITICAL') : [];
             const toBanner = result.breaches.filter(b => !autoTargets.includes(b));
             if (autoTargets.length > 0) {
-                const results = await Promise.allSettled(autoTargets.map(b => createWOForBreach(b, true)));
+                const results = await Promise.allSettled(autoTargets.map(b => createRequestForBreach(b, true)));
                 const ok = results.filter(r => r.status === 'fulfilled').length;
-                if (ok > 0) showToast(`${ok} critical alarm${ok > 1 ? 's' : ''} auto-raised as corrective work order${ok > 1 ? 's' : ''}.`, 'success');
-                const failed = results.length - ok;
-                if (failed > 0) showToast(`${failed} auto-raise${failed > 1 ? 's' : ''} failed — raise manually.`, 'error');
+                if (ok > 0) showToast(`${ok} critical alarm${ok > 1 ? 's' : ''} auto-raised as maintenance request${ok > 1 ? 's' : ''}.`, 'success');
+                // Say WHY, not just that it failed: the usual cause is a
+                // Criticality A asset with no fault type available to assign.
+                const rejected = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[];
+                if (rejected.length > 0) {
+                    showToast(`${rejected.length} auto-raise${rejected.length > 1 ? 's' : ''} failed — ${(rejected[0].reason as Error)?.message || 'unknown'}`, 'error');
+                }
             }
             if (toBanner.length > 0) setAlarmBreaches(toBanner);
         }
@@ -410,28 +413,55 @@ export const Readings: React.FC = () => {
         } finally { setGeneratingPM(false); }
     };
 
-    // Shared corrective-WO creator from a condition breach (used by one-tap + auto).
-    const createWOForBreach = (b: BreachInfo, auto: boolean) =>
-        DatabaseService.getInstance().createWorkOrder(buildWorkOrder({
-            title: `Investigate ${b.defName} ${b.level.toLowerCase()} alarm on ${b.assetName}`,
-            description: `Condition alarm: ${b.defName} = ${b.value}${b.unit ? ' ' + b.unit : ''} (${b.detail}). ${auto ? 'Auto-raised on critical breach from condition monitoring.' : 'Raised from readings.'}`,
-            assetId: b.assetId,
-            type: 'CM',
-            status: 'OPEN',
-            priorityCode: b.level === 'CRITICAL' ? 'HIGH' : 'MEDIUM',
-        }), profile?.username || profile?.fullName || 'user');
+    /**
+     * Raise a maintenance REQUEST from a condition breach (one-tap + auto).
+     *
+     * This used to create a work order directly. SAP splits the two — an
+     * operator or a measurement document raises a Notification, a planner turns
+     * it into an Order — and this codebase already models that as Request →
+     * Work Order. Creating the order here skipped triage entirely and demanded
+     * workOrders.create from technicians, which the matrix does not give them.
+     * Closes gap X-4 ("threshold alarms → auto-notification").
+     *
+     * functional_failure_id falls back to the seeded COND_ALARM code (0249):
+     * createRequest refuses a Criticality A asset without one, and a machine
+     * has no way to know the failure mode. Once reading points carry their own
+     * default fault type this picks that up instead — hence looking it up by
+     * code rather than hard-coding an id.
+     */
+    const createRequestForBreach = (b: BreachInfo, auto: boolean) => {
+        const now = new Date().toISOString();
+        const actor = profile?.username || profile?.fullName || 'user';
+        const fallbackFault = faultTypes.find(f => f.code === 'COND_ALARM')?.id
+            || faultTypes[0]?.id
+            || null;
+        return DatabaseService.getInstance().createRequest({
+            id: crypto.randomUUID(),
+            request_number: `REQ-${Date.now().toString(36).toUpperCase()}`,
+            status: 'NEW' as any,
+            description: `Condition alarm on ${b.assetName}: ${b.defName} = ${b.value}${b.unit ? ' ' + b.unit : ''} (${b.detail}). ${auto ? 'Auto-raised on critical breach from condition monitoring.' : 'Raised from readings.'}`,
+            asset_id: b.assetId,
+            requester_id: profile?.id || actor,
+            functional_failure_id: fallbackFault,
+            risk_score: b.level === 'CRITICAL' ? 80 : 50,
+            created_at: now,
+            updated_at: now,
+        } as any, actor);
+    };
 
-    // R-4: one-tap corrective work order from a condition alarm.
+    // R-4: one-tap maintenance request from a condition alarm.
     const raiseWOFromAlarm = async (b: BreachInfo) => {
         setRaisingWO(true);
         try {
-            const wo = await createWOForBreach(b, false);
-            showToast('Work order raised from alarm.', 'success');
+            const req = await createRequestForBreach(b, false);
+            showToast('Maintenance request raised from alarm.', 'success');
             setAlarmBreaches([]);
-            const id = (wo as any)?.id;
-            if (id) navigate(`/work-orders/${id}`);
+            // Lands on the request itself — /requests?id= opens the record
+            // rather than dropping the user on the board to hunt for it.
+            const id = (req as any)?.id;
+            if (id) navigate(`/requests?id=${id}`);
         } catch (e: any) {
-            showToast('Failed to raise work order: ' + (e?.message || 'unknown'), 'error');
+            showToast('Failed to raise request: ' + (e?.message || 'unknown'), 'error');
         } finally { setRaisingWO(false); }
     };
 
@@ -909,15 +939,15 @@ export const Readings: React.FC = () => {
                                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${b.level === 'CRITICAL' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{b.level}</span>
                                     </div>
                                     <Button variant="primary" size="sm" fullWidth className="mt-2" loading={raisingWO} leftIcon={<Plus size={14} />} onClick={() => raiseWOFromAlarm(b)}>
-                                        Raise Work Order
+                                        Raise Request
                                     </Button>
                                 </div>
                             ))}
                         </div>
                         <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                            <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer select-none" title="Automatically raise a corrective work order whenever a reading breaches its critical band">
+                            <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer select-none" title="Automatically raise a maintenance request whenever a reading breaches its critical band. A planner triages it into a work order.">
                                 <input type="checkbox" checked={autoRaiseCritical} onChange={e => toggleAutoRaise(e.target.checked)} className="rounded text-primary-600 focus:ring-primary-500 h-3.5 w-3.5" />
-                                Auto-raise WO on critical
+                                Auto-raise request on critical
                             </label>
                             <Button variant="secondary" size="sm" onClick={() => setAlarmBreaches([])}>Dismiss</Button>
                         </div>
