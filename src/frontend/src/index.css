@@ -918,6 +918,16 @@ select {
   }
 }
 
+/* Row actions across the app are revealed on hover (`opacity-0 group-hover:opacity-100`).
+   A touch screen never hovers, so on phones and tablets those controls — edit, delete,
+   duplicate — are invisible and unreachable. Reveal them permanently where there is no
+   hover to give. Two classes beat the single-class .opacity-0, so no !important needed. */
+@media (hover: none) {
+  .opacity-0.group-hover\:opacity-100 {
+    opacity: 1;
+  }
+}
+
 /* ═══════════════════════════════════════════════
    Mobile Detail Footer — Fixed above bottom nav
    ═══════════════════════════════════════════════ */

@@ -453,7 +453,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             {isOpen && (
                 <>
                     <div
-                        className="fixed inset-0 bg-black/20 z-40 md:hidden backdrop-enter backdrop-blur-sm"
+                        className="fixed inset-0 bg-black/20 z-[45] md:hidden backdrop-enter backdrop-blur-sm"
                         onClick={onClose}
                     />
                     <div className="fixed inset-y-0 left-0 z-50 md:hidden sidebar-enter">

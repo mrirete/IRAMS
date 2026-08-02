@@ -83,14 +83,16 @@ export const AdvisoryAgentPanel: React.FC<AdvisoryAgentPanelProps> = ({
                         <p className="text-[11px] text-slate-400 truncate">{subtitle}</p>
                     </div>
                 </div>
-                <div className="flex gap-2 sm:items-center shrink-0">
+                {/* shrink-0 only from sm up: on a phone this row must be allowed to
+                    shrink, or the card's overflow-hidden clips the run button. */}
+                <div className="flex gap-2 sm:items-center sm:shrink-0">
                     {inputPlaceholder && (
                         <input
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter' && !loading) void run(); }}
                             placeholder={inputPlaceholder}
-                            className={`flex-1 sm:w-44 h-10 sm:h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${a.ring}`}
+                            className={`flex-1 min-w-0 sm:w-44 h-10 sm:h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${a.ring}`}
                         />
                     )}
                     <button

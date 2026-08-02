@@ -190,13 +190,21 @@ export const NotificationCenter: React.FC = () => {
     return (
         <div className="relative" ref={ref}>
             {/* Bell Button */}
-            <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-slate-800 relative transition-colors">
-                <Bell size={20} />
-                {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.5)]">
-                        {unreadCount > 99 ? '99+' : unreadCount}
-                    </span>
-                )}
+            {/* 40px hit area (the bare 20px glyph was a miss-prone tap target on phones);
+                the badge stays pinned to the glyph, not to the padded box. */}
+            <button
+                onClick={() => setOpen(!open)}
+                aria-label="Notifications"
+                className="flex items-center justify-center w-10 h-10 -m-2 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors"
+            >
+                <span className="relative flex items-center justify-center">
+                    <Bell size={20} />
+                    {unreadCount > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1 animate-pulse shadow-[0_0_6px_rgba(239,68,68,0.5)]">
+                            {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                    )}
+                </span>
             </button>
 
             {/* Dropdown */}

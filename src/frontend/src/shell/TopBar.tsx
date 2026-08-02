@@ -94,8 +94,12 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
         ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
         : '??';
 
+    // z-40, not z-10: as a flex item the z-index makes this header a stacking context,
+    // so everything it opens — notification panel, user menu — is capped at that level
+    // no matter how high their own z-index is. Page headers stick at z-30, so a lower
+    // value here lets a page header paint over the open panels.
     return (
-        <header className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 md:px-6 z-10 w-full shadow-sm">
+        <header className="h-14 md:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 md:px-6 z-40 w-full shadow-sm">
             {/* Left: Hamburger (mobile) + Breadcrumb */}
             <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                 <button
@@ -130,10 +134,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                 {/* Mobile search icon — also opens the palette */}
                 <button
                     onClick={() => window.dispatchEvent(new CustomEvent('open-command-palette'))}
-                    className="sm:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
+                    className="sm:hidden flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
                     aria-label="Search"
                 >
-                    <Search size={18} />
+                    <Search size={20} />
                 </button>
 
                 <NotificationCenter />
@@ -145,8 +149,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onTogglePreview
                     page registered; pages that register nothing fall back to general. */}
                 <button
                     onClick={() => openRelantern()}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
+                    className="flex items-center justify-center gap-1.5 min-h-[40px] px-2.5 py-1.5 rounded-lg bg-relantern-50 hover:bg-relantern-100 border border-relantern-200 text-relantern-700 hover:text-relantern-800 transition-all shadow-sm"
                     title="Reliability Specialist · AI"
+                    aria-label="Reliability Specialist"
                 >
                     <Sparkles size={15} />
                     <span className="font-bold text-xs hidden md:inline">Specialist</span>

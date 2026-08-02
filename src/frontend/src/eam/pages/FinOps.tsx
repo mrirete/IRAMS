@@ -847,36 +847,42 @@ export const FinOps: React.FC = () => {
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50/30">
             {/* Header */}
             <div className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-                <div className="px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-primary-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <div className="px-4 md:px-6 py-3 md:py-4">
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-3 md:gap-4 min-w-0">
+                            <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-primary-600 flex items-center justify-center shadow-lg shadow-emerald-500/20 flex-shrink-0">
                                 <DollarSign size={24} className="text-white" />
                             </div>
-                            <div>
-                                <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-primary-600 bg-clip-text text-transparent">
+                            <div className="min-w-0">
+                                <h1 className="text-lg md:text-2xl font-bold bg-gradient-to-r from-emerald-600 to-primary-600 bg-clip-text text-transparent truncate">
                                     FinOps Core
                                 </h1>
-                                <p className="text-sm text-slate-500">Financial Operations & Asset Lifecycle</p>
+                                <p className="hidden sm:block text-sm text-slate-500 truncate">Financial Operations & Asset Lifecycle</p>
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        {/* Labels collapse to icons on phones — the full row is 286px wide,
+                            which is most of a 393px viewport on its own. */}
+                        <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
                             <AskRelanternButton
                                 contextType="finops"
                                 contextSummary={`FinOps Overview: Active Tab: ${activeTab}. Financial Operations & Asset Lifecycle Cost analysis. Modules: Cost Centers, Budget Control, Forecasting, Depreciation, Warranties, Claims, Supply Chain, Insurance. Ask about cost optimization, ROI analysis, depreciation strategies, warranty coverage gaps, budget compliance, or financial KPIs.`}
                                 compact
                             />
-                            <button className="flex items-center gap-2 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+                            <button
+                                className="flex items-center justify-center gap-2 min-h-[40px] px-2.5 md:px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                aria-label="Export"
+                            >
                                 <Download size={16} />
-                                Export
+                                <span className="hidden md:inline">Export</span>
                             </button>
                             <button
                                 onClick={() => setIsNewTransactionOpen(true)}
-                                className="flex items-center gap-2 px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/20"
+                                className="flex items-center justify-center gap-2 min-h-[40px] px-2.5 md:px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-500/20"
+                                aria-label="New Transaction"
                             >
                                 <Plus size={16} />
-                                New Transaction
+                                <span className="hidden md:inline">New Transaction</span>
                             </button>
                         </div>
                     </div>
