@@ -16,6 +16,7 @@
     "scan:silent:selftest": "node scripts/scan-silent-success.mjs --self-test",
     "gen:role-permissions": "vite-node scripts/write-role-permissions.mjs",
     "test:journeys": "node tests/e2e/journeys.mjs",
+    "test:import": "node tests/e2e/import-journey.mjs",
     "test:rls": "vite-node tests/rls/rls-matrix.mjs",
     "test:rls:writes": "vite-node tests/rls/rls-matrix.mjs --writes"
   },
