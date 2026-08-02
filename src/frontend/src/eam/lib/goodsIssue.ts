@@ -83,6 +83,12 @@ export async function issueWorkOrderParts(woId: string, actor: string): Promise<
                 supabase.from('inventory_transactions').insert({
                     item_id: part.item_id,
                     transaction_type: 'ISSUE',
+                    // IN-3 (0245): a goods issue to an order is a 261. The order
+                    // link is what makes it one — without wo_id the same movement
+                    // is a 201 to a cost center and settles nowhere.
+                    movement_type: '261',
+                    wo_id: woId,
+                    location_id: t.locationId,
                     quantity: t.take,
                     cost_at_time: Number(part.unit_cost) || 0,
                     timestamp: new Date().toISOString(),
@@ -107,6 +113,17 @@ export async function issueWorkOrderParts(woId: string, actor: string): Promise<
     if (result.issuedParts > 0) {
         console.log(`[GoodsIssue] WO ${woId}: issued ${result.issuedParts} part line(s) (${result.issuedQty} qty) by ${actor};` +
             (result.shortfalls.length ? ` shortfalls: ${result.shortfalls.map(s => `${s.description} -${s.short}`).join(', ')}` : ' no shortfalls'));
+
+        // Material only becomes actual cost once it is issued (0245), and the
+        // settlement trigger fired on the status change a moment BEFORE these
+        // rows flipped — so it saw no material. Re-settle now that they have.
+        // Called by RPC rather than through FinOpsService to keep lib/ free of
+        // a dependency on services/. A delta posting, so this cannot double up,
+        // and ers_settlement_run() would catch it anyway if this call is lost.
+        const { error: settleErr } = await supabase.rpc('ers_settle_work_order', { p_wo_id: woId });
+        if (settleErr) {
+            console.warn('[GoodsIssue] material settlement deferred to the next run:', settleErr.message);
+        }
     }
     return result;
 }

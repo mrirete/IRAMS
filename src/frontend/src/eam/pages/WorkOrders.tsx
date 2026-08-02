@@ -36,7 +36,7 @@ import {
     DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2, Check, Factory
 } from 'lucide-react';
 import { InventoryPicker } from '../components/pickers/InventoryPicker';
-import { FinOpsService, type CostAllocation, type WarrantyCheckResult, type CostAnomalyResult } from '../services/FinOpsService';
+import { FinOpsService, type CostAllocation, type WarrantyCheckResult, type CostAnomalyResult, type WorkOrderSettlement } from '../services/FinOpsService';
 import { MOCK_WORK_ORDERS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_RECURRING_JOBS } from '../constants';
 import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, OrderActuals, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
 import { LoadingState } from '../components/ui';
@@ -4136,6 +4136,16 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
     const [allocations, setAllocations] = useState<CostAllocation[]>([]);
     const [warrantyCheck, setWarrantyCheck] = useState<WarrantyCheckResult | null>(null);
     const [anomaly, setAnomaly] = useState<CostAnomalyResult | null>(null);
+    // FI-1 (0244) — how much of the actual has reached the ledger.
+    const [settlement, setSettlement] = useState<WorkOrderSettlement | null>(null);
+    const [settling, setSettling] = useState(false);
+    const [postKey, setPostKey] = useState(0);
+    const { showToast } = useToast();
+    // Posting to the cost ledger is a finance write, not a maintenance one.
+    // The trigger still settles automatically when the order finishes — this
+    // gates only the manual re-run.
+    const { permissions: costPermissions } = useAuth();
+    const canSettle = costPermissions?.finops?.edit === true;
 
     useEffect(() => {
         if (!job.id || job.id.startsWith('new-')) return;
@@ -4144,14 +4154,34 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
             FinOpsService.getCostAllocations(job.id),
             job.assetId ? FinOpsService.checkWarrantyStatus(job.assetId) : Promise.resolve(null),
             job.assetId ? FinOpsService.detectCostAnomaly(job.assetId, job.type, plannedTotal) : Promise.resolve(null),
-        ]).then(([alloc, warranty, anom]) => {
+            FinOpsService.getWorkOrderSettlement(job.id),
+        ]).then(([alloc, warranty, anom, settled]) => {
             if (!active) return;
             setAllocations(alloc);
             setWarrantyCheck(warranty);
             setAnomaly(anom);
+            setSettlement(settled);
         }).catch(() => { /* advisory only — never block the cost roll-up */ });
         return () => { active = false; };
-    }, [job.id, job.assetId, job.type, plannedTotal]);
+    }, [job.id, job.assetId, job.type, plannedTotal, postKey]);
+
+    const handleSettle = async () => {
+        setSettling(true);
+        try {
+            const posted = await FinOpsService.settleWorkOrder(job.id);
+            showToast(
+                posted.length === 0
+                    ? 'Already settled — no cost movement to post.'
+                    : `Settled: ${posted.length} posting${posted.length === 1 ? '' : 's'} to the cost ledger.`,
+                'success',
+            );
+            setPostKey(k => k + 1);
+        } catch (e: any) {
+            showToast('Settlement failed: ' + (e?.message || 'unknown error'), 'error');
+        } finally {
+            setSettling(false);
+        }
+    };
 
     const SummaryCard = ({ label, planned, actual }: { label: string; planned: number; actual: number }) => {
         const variance = actual - planned;
@@ -4240,6 +4270,48 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                         </div>
                     </div>
 
+                    {/* FI-1 — settlement status. The order-to-cost spine ends here:
+                        cost confirmed on the order vs cost the ledger actually has. */}
+                    {settlement && (() => {
+                        const unsettled = settlement.unsettledVariance;
+                        const clear = Math.abs(unsettled) < 0.01;
+                        const done = settlement.woState === 'done';
+                        return (
+                            <div className={`rounded-card border px-3 py-2.5 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs ${clear ? 'bg-emerald-50 border-emerald-200' : done ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                                <div className="flex items-center gap-1.5 font-bold uppercase text-[10px] tracking-wide">
+                                    {clear ? <CheckCircle size={13} className="text-emerald-600" /> : <TrendingUp size={13} className="text-amber-600" />}
+                                    <span className={clear ? 'text-emerald-700' : done ? 'text-amber-700' : 'text-slate-600'}>
+                                        {clear ? 'Settled to ledger' : done ? 'Awaiting settlement' : 'Accruing'}
+                                    </span>
+                                </div>
+                                <span className="text-slate-600 tabular-nums">
+                                    Posted <strong className="text-slate-800">{money(settlement.settledCost)}</strong> of {money(settlement.actualCost)}
+                                </span>
+                                {!clear && (
+                                    <span className="text-amber-800 tabular-nums font-semibold">
+                                        {money(unsettled)} not yet in the books
+                                    </span>
+                                )}
+                                {settlement.lastSettledAt && (
+                                    <span className="text-slate-400">last posted {new Date(settlement.lastSettledAt).toLocaleDateString()}</span>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={handleSettle}
+                                    disabled={settling || clear || !canSettle}
+                                    className="ml-auto px-2.5 py-1 rounded-md border border-slate-300 bg-white text-slate-700 font-semibold hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                                    title={
+                                        !canSettle ? 'Your role cannot post to the cost ledger (FinOps edit required)'
+                                            : clear ? 'Nothing to post — the ledger matches the order'
+                                                : 'Post the outstanding cost to the cost ledger'
+                                    }
+                                >
+                                    {settling ? 'Posting…' : 'Post settlement'}
+                                </button>
+                            </div>
+                        );
+                    })()}
+
                     {!anyWorkCenters && (
                         <div className="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">
                             No operations have a work center assigned yet — assign one on the Tasks tab so labour is costed at the work-center rate and settles to its cost center.
@@ -4309,23 +4381,36 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
 
                     {allocations.length > 0 && (
                         <div className="bg-white border border-slate-200 rounded-card overflow-hidden">
-                            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">Cost Centre Allocations</div>
+                            <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">Cost Ledger Postings</div>
                             <table className="w-full text-left text-xs">
                                 <thead className="bg-slate-50 font-bold text-slate-600">
                                     <tr>
+                                        <th className="p-2 border-b">Date</th>
                                         <th className="p-2 border-b">Type</th>
                                         <th className="p-2 border-b">Cost Centre</th>
+                                        <th className="p-2 border-b">Posted by</th>
                                         <th className="p-2 border-b text-right">Amount</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {allocations.map(a => (
-                                        <tr key={a.id} className="border-b last:border-0 hover:bg-slate-50">
-                                            <td className="p-2">{a.costType}</td>
-                                            <td className="p-2 font-mono">{a.costCenterId || '-'}</td>
-                                            <td className="p-2 text-right tabular-nums">${a.amount.toFixed(2)}</td>
-                                        </tr>
-                                    ))}
+                                    {allocations.map(a => {
+                                        // A settlement run posts deltas, so a reversal is a
+                                        // legitimate negative line — show it as one.
+                                        const cc = a.costCenterId ? ccById.get(a.costCenterId) : undefined;
+                                        return (
+                                            <tr key={a.id} className="border-b last:border-0 hover:bg-slate-50">
+                                                <td className="p-2 text-slate-500 whitespace-nowrap">{a.postingDate}</td>
+                                                <td className="p-2">{a.costType}</td>
+                                                <td className="p-2" title={a.costCenterId || undefined}>
+                                                    {cc ? `${cc.code} · ${cc.name}` : (a.costCenterId ? 'Unknown cost centre' : <span className="text-red-600">No receiver</span>)}
+                                                </td>
+                                                <td className="p-2 text-slate-500">{a.source === 'WO_SETTLEMENT' ? 'Settlement' : a.source === 'WARRANTY_CREDIT' ? 'Warranty credit' : 'Manual'}</td>
+                                                <td className={`p-2 text-right tabular-nums font-medium ${a.amount < 0 ? 'text-emerald-700' : 'text-slate-800'}`}>
+                                                    {a.amount < 0 ? '−' : ''}{money(Math.abs(a.amount))}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -4827,7 +4912,12 @@ const TaskEditor: React.FC<{
                 newLocationQty,
                 'ADJUSTMENT',
                 `Return to Stores from WO ${jobContext.woNumber || jobContext.id}`,
-                (user as any)?.username || 'unknown'
+                (user as any)?.username || 'unknown',
+                // Returning an unused part to stores is a 262 (0245) — the
+                // reversal of the 261 that issued it — not a stocktake
+                // adjustment. Step 2 below drops the quantity on the order, so
+                // settlement posts the credit; the movement is the stock record.
+                { woId: jobContext.id, movementType: '262' }
             );
 
             // 2. Decrement actual quantity used on WO

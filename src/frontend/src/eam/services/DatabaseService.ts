@@ -25,6 +25,7 @@ import {
 } from '../types';
 import type { MaintenanceStrategy, StrategyPackage } from '../../lib/maintenanceStrategy';
 import { evaluateReading } from '../../lib/readingAlarm';
+import { movementTypeFor } from '../lib/movementType';
 import {
     OperationActual,
     OrderActuals,
@@ -3770,12 +3771,25 @@ export class DatabaseService {
             .eq('inventory_item_id', id);
         if (stockErr) console.warn('Non-fatal: stock location cleanup:', stockErr.message);
 
-        // 2. Remove inventory transactions
-        const { error: txErr } = await supabase
+        // 2. Movement history is NOT purged.
+        //
+        // This step used to delete on `inventory_item_id`, a column that does
+        // not exist — so it always errored and the error was swallowed as
+        // "non-fatal". It was never removing anything. That accident is now
+        // the intended behaviour: since 0245 a movement carries an account
+        // assignment and may point at a posted financial document, so deleting
+        // it would destroy the evidence behind a ledger entry. The item_id
+        // foreign key blocks the delete below, and the message says why.
+        const { count: movements } = await supabase
             .from('inventory_transactions')
-            .delete()
-            .eq('inventory_item_id', id);
-        if (txErr) console.warn('Non-fatal: transaction cleanup:', txErr.message);
+            .select('id', { count: 'exact', head: true })
+            .eq('item_id', id);
+        if ((movements || 0) > 0) {
+            throw new Error(
+                `Cannot delete this item: it has ${movements} stock movement${movements === 1 ? '' : 's'} on record. ` +
+                `Movement history is financial evidence — deactivate the item instead.`,
+            );
+        }
 
         // 3. Delete the item itself
         const { error } = await supabase
@@ -3857,7 +3871,13 @@ export class DatabaseService {
         newLocationQty: number,
         transactionType: 'ISSUE' | 'RECEIPT' | 'ADJUSTMENT' | 'STOCKTAKE',
         reason: string,
-        actor: string
+        actor: string,
+        /**
+         * IN-3 (0245) — what this movement actually is. Without the order or PO
+         * reference the same physical act is a different movement type and
+         * settles to a different receiver, so callers that know should say.
+         */
+        opts?: { poId?: string; woId?: string; movementType?: string }
     ): Promise<void> {
         // 1. Get current stock at this location
         const { data: currentStock, error: fetchError } = await supabase
@@ -3912,14 +3932,40 @@ export class DatabaseService {
         // Trigger might do this, but lets do it to be sure if we rely on stock_on_hand col
         // const { error: updateItemError } = await supabase.rpc('recalculate_stock_on_hand', { item_uuid: itemId });
 
-        // 5. Create Transaction Record
+        // 5. Create the movement record (IN-3 / 0245).
+        //
+        // This used to write ADJUST for everything — a PO receipt included —
+        // with quantity abs(delta) and cost_at_time 0. Three consequences: a
+        // receipt was indistinguishable from a stocktake, a count gain from a
+        // loss, and no movement could ever be valued, so none could post to
+        // FI. All three are what a movement type carries.
+        const isReceipt = transactionType === 'RECEIPT';
+        const isIssue = transactionType === 'ISSUE';
+        const movementType = opts?.movementType ?? movementTypeFor({
+            transactionType, poId: opts?.poId, woId: opts?.woId, delta,
+        });
+
+        // A movement with no value cannot reach the ledger, so value it here.
+        const { data: costRow } = await supabase
+            .from('inventory_items').select('unit_cost').eq('id', itemId).maybeSingle();
+
         const { error: txError } = await supabase.from('inventory_transactions').insert({
             item_id: itemId,
-            transaction_type: transactionType === 'STOCKTAKE' ? 'ADJUST' : 'ADJUST', // Map to DB Enum
+            transaction_type: isReceipt ? 'RECEIPT' : isIssue ? 'ISSUE' : 'ADJUST',
+            movement_type: movementType,
+            location_id: locationId,
+            wo_id: opts?.woId ?? null,
+            po_id: opts?.poId ?? null,
             quantity: Math.abs(delta),
-            cost_at_time: 0, // Should fetch item cost
+            cost_at_time: Number(costRow?.unit_cost) || 0,
             timestamp: new Date().toISOString()
         });
+        // The stock level has already moved. A lost movement row leaves on-hand
+        // and the transaction history disagreeing with nothing to say which is
+        // right — the same rule goodsIssue.ts applies via mustWrite.
+        if (txError) {
+            throw new Error(`Stock updated but the movement record failed (${reason} by ${actor}): ${txError.message}`);
+        }
     }
 
     // --- JOB TASKS ---
@@ -4122,11 +4168,19 @@ export class DatabaseService {
         const orderLevelLabour = (unlinked || []).reduce(
             (s: number, l: any) => s + (Number(l.hours_worked) || 0) * (Number(l.rate_per_hour) || 0), 0);
 
+        // Material is actual cost only once it has been ISSUED (0245). A part
+        // still flagged is_planned is a reservation — 0201 has already netted
+        // it out of ATP; charging it as spend as well would bill the plant for
+        // a decision, not a consumption. is_planned NULL counts as issued:
+        // those rows predate the flag, when a part row meant consumption.
+        // Filtered here rather than in the query so it reads the same way as
+        // the `is_planned IS DISTINCT FROM TRUE` in sem_wo_actual_lines.
         const { data: parts } = await supabase.from('work_order_parts')
-            .select('quantity, unit_cost')
+            .select('quantity, unit_cost, is_planned')
             .eq('wo_id', woId);
-        const partsCost = (parts || []).reduce(
-            (s: number, p: any) => s + (Number(p.quantity) || 0) * (Number(p.unit_cost) || 0), 0);
+        const partsCost = (parts || [])
+            .filter((p: any) => p.is_planned !== true)
+            .reduce((s: number, p: any) => s + (Number(p.quantity) || 0) * (Number(p.unit_cost) || 0), 0);
 
         const labourCost = Number((operationLabour + orderLevelLabour).toFixed(2));
         const partsTotal = Number(partsCost.toFixed(2));

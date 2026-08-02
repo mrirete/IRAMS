@@ -44,7 +44,7 @@ Three of our biggest gaps — **WM confirmations**, **Inventory ATP/reservation 
 |---|---|---|---|---|---|
 | IN-1 | **Reservation netting / ATP** — available = on-hand − reserved | `qtyOnHand`, `qtyOnOrder`; **no `qtyReserved`/`qtyAvailable`** | WO reservations don't reduce available → two orders commit the same part | **M** | 🔴 |
 | IN-2 | **Stock types** — unrestricted / quality-inspection / blocked / in-transit | All stock is "available" | No quality/blocked segregation | **M** | 🟡 |
-| IN-3 | **Movement types** — 101/201/261/311/561 with account assignment, auto-post to FI | Generic transaction labels | Movements don't carry account assignment or post to FinOps | **M–L** | 🟡 |
+| IN-3 | **Movement types** — 101/201/261/311/561 with account assignment, auto-post to FI | ✅ **Shipped (`0245`)** — `movement_types` catalog (101/102/201/202/261/262/311/501/551/552/561/701/702), every movement carries type + storage location + cost centre + asset + value, direct FI posting for non-order movements, `sem_stock_movements` register | Remaining: G/L accounts are unseeded by design (mapped per tenant at ERP onboarding); stock-account valuation postings still out of scope | **M–L** | 🟢 |
 | IN-4 | **MRP / reorder proposal** — min/max → PR/PO proposal, safety stock, lead time | Min/max/reorder stored; manual | No auto reorder-to-PO proposal | **M** | 🟡 |
 | IN-5 | **Batch management** | Serial yes, batch no | No batch/lot tracking (shelf-life, recalls) | **M** | 🟢 |
 
@@ -66,7 +66,7 @@ Three of our biggest gaps — **WM confirmations**, **Inventory ATP/reservation 
 
 | # | SAP object / concept | Current state | Gap | Effort | Pri |
 |---|---|---|---|---|---|
-| FI-1 | **Order settlement** — WO cost (labour+material+service) settles to cost center/asset via settlement rule | Budgets have committed/actual fields | Verify actuals **auto-roll-up from WOs/confirmations/goods-issues**; if manual, the CO backbone is missing | **L** | 🔴 |
+| FI-1 | **Order settlement** — WO cost (labour+material+service) settles to cost center/asset via settlement rule | ✅ **Shipped (`0244`)** — finishing an order posts labour + material actuals to `cost_allocations` against both receivers (cost center + asset); delta posting, so re-runs and late costs are safe; `budgets.actual` recomputed from the ledger | Remaining: SERVICE cost type (needs PO/service entry), settlement rules configurable per order type (WM-4) | **L** | 🟡 |
 | FI-2 | **RAV-based cost KPIs** — maintenance cost % of RAV, stores % of RAV, %contractor | RAV stored; ratios not surfaced | One plug into the reliability metrics cockpit | **S** | 🟡 |
 | FI-3 | **3-way match** — PO ↔ GR ↔ Invoice, tolerance, block | `invoiceMatched` flag | Full match + tolerance/block partial | **M** | 🟡 |
 | FI-4 | **Cost element accounting** — primary/secondary elements | Cost centers only | No cost-element granularity | **M** | 🟢 |
@@ -98,9 +98,17 @@ Beyond the four-module gaps, these SAP-EAM capabilities would materially raise t
 - ✅ **WM-1** Catalog code-groups — Object Part (B) + Activity (A) code-groups added, admin-manageable + seeded (`4b34a29`). *Follow-up: object-part/activity coding fields on the WO/notification (files under concurrent edit).*
 
 **Wave 2 — the order-to-cost spine (the strategic core):**
-- **WM-2** Operations + work centers + confirmations. **L**
-- **FI-1** Actual-cost roll-up + settlement to cost center/asset. **L**
-- **IN-3** Movement types with account assignment → FI posting. **M–L**
+- ✅ **WM-2** Operations + work centers + confirmations (`0168`/`0169`/`0170`).
+- ✅ **FI-1** Actual-cost roll-up + settlement to cost center/asset (`0244`) — trigger on order completion, delta postings, `sem_wo_settlement` reconciliation view, `ers_settlement_run()` for the periodic run (SAP KO8G). Also fixed `budgets.actual`, which never moved: the old path called an `increment_budget_actual` RPC that exists in no migration.
+- ✅ **IN-3** Movement types with account assignment → FI posting (`0245`).
+
+**The spine is closed.** Confirmations → labour actual, goods issues → material actual, both settling to a cost centre and an asset, with budget actuals recomputed from the ledger.
+
+**Decisions settled in `0245`:**
+1. **Material actual = issued parts only.** A planned part is a commitment — `0201` has already netted it out of ATP; charging it as spend as well bills the plant for a decision rather than a consumption. The goods-issue engine already flips `is_planned → false` at TECO, so the distinction is real data. `sem_wo_actual_lines` and `getOrderActuals` changed together; orders settled under the old definition self-correct on their next run, and the correction posts as a visible negative line.
+2. **Backfill is preview-then-run.** `ers_settlement_preview(n)` shows exactly what would post, largest variance first, without posting it. Runbook: total it → eyeball the largest → prove one order → batch with `ers_settlement_run(100)`. Safe to re-run at every step, because postings are deltas.
+
+**Where `0245` deviates from SAP, deliberately:** SAP posts a 261 to FI *and* to the order, then settles the order — two documents. We have one ledger, so a work-order movement carries its account assignment but does not post; settlement is the single poster for anything with an order, which makes double counting structurally impossible. `movement_types.fi_posting` records which rule each type follows (`NONE` / `DIRECT` / `VIA_SETTLEMENT`).
 
 **Wave 3 — structural depth:**
 - **X-1** Maintenance strategies/packages · **X-2** Classification/characteristics · **WM-3/4** object list + order types · **IN-2/4** stock types + MRP · **PO-2/3** positions + work-center capacity.

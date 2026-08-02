@@ -655,7 +655,11 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                     currentQty + qtyReceiving,
                     'RECEIPT',
                     `PO Receipt: ${po.poCode} — ${targetItem.description}`,
-                    profile?.username || profile?.fullName || 'Unknown User'
+                    profile?.username || profile?.fullName || 'Unknown User',
+                    // Goods receipt against a purchase order is a 101 (0245).
+                    // The PO reference is what distinguishes it from a 501
+                    // receipt with no order behind it.
+                    { poId: po.id }
                 );
 
                 // Decrement qty_on_order

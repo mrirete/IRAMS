@@ -195,6 +195,7 @@ export interface InsuranceIncident {
 export interface CostAllocation {
     id: string;
     workOrderId: string;
+    assetId?: string;
     costCenterId?: string;
     wbsElementId?: string;
     costType: 'LABOR' | 'MATERIAL' | 'SERVICE' | 'OVERHEAD';
@@ -202,6 +203,23 @@ export interface CostAllocation {
     quantity?: number;
     unit?: string;
     postingDate: string;
+    /** Who posted it (0244). Settlement only ever nets against WO_SETTLEMENT rows. */
+    source?: 'MANUAL' | 'WO_SETTLEMENT' | 'WARRANTY_CREDIT' | 'ERP_INBOUND';
+}
+
+/**
+ * FI-1 — where an order's actual cost has got to on its way to the books.
+ * `unsettledVariance` is the money confirmed on the order that the ledger has
+ * not yet been told about; on a finished order it is the finance backlog.
+ */
+export interface WorkOrderSettlement {
+    workOrderId: string;
+    woNumber?: string;
+    woState: 'open' | 'done' | 'void' | 'unknown';
+    actualCost: number;
+    settledCost: number;
+    unsettledVariance: number;
+    lastSettledAt?: string;
 }
 
 export interface ThreeWayMatchResult {
@@ -639,7 +657,10 @@ class FinOpsServiceClass {
                 amount: allocation.amount,
                 quantity: allocation.quantity,
                 unit: allocation.unit,
-                posting_date: allocation.postingDate || new Date().toISOString().split('T')[0]
+                posting_date: allocation.postingDate || new Date().toISOString().split('T')[0],
+                // Hand-typed. Settlement nets only against its own postings, so
+                // this can never be mistaken for cost the ledger already has.
+                source: 'MANUAL'
             })
             .select()
             .single();
@@ -648,10 +669,56 @@ class FinOpsServiceClass {
 
         // Update budget actuals
         if (allocation.costCenterId) {
-            await this.updateBudgetActuals(allocation.costCenterId, allocation.amount);
+            await this.updateBudgetActuals(allocation.costCenterId);
         }
 
         return this.mapCostAllocation(data);
+    }
+
+    /**
+     * FI-1 — post an order's actual cost to the ledger (SAP KO88).
+     *
+     * Normally the work_orders trigger does this the moment an order reaches a
+     * finished state; this is the manual re-run for costs confirmed afterwards.
+     * Posting is a delta, so calling it twice on unchanged actuals posts nothing.
+     * Returns the postings it made — empty means "already settled".
+     */
+    async settleWorkOrder(workOrderId: string): Promise<{ costType: string; costCenterId?: string; amount: number }[]> {
+        const { data, error } = await supabase.rpc('ers_settle_work_order', { p_wo_id: workOrderId });
+        if (error) throw error;
+        return (data || []).map((row: any) => ({
+            costType: row.cost_type,
+            costCenterId: row.cost_center_id || undefined,
+            amount: parseFloat(row.delta_amount) || 0,
+        }));
+    }
+
+    /**
+     * Actual vs settled for one order. Null when 0244 has not been applied yet,
+     * so callers can degrade to the plain cost roll-up instead of erroring.
+     */
+    async getWorkOrderSettlement(workOrderId: string): Promise<WorkOrderSettlement | null> {
+        const { data, error } = await supabase
+            .from('sem_wo_settlement')
+            .select('*')
+            .eq('work_order_id', workOrderId)
+            .maybeSingle();
+
+        if (error) {
+            console.warn('[finops] settlement read failed (0244 applied?):', error.message);
+            return null;
+        }
+        if (!data) return null;
+
+        return {
+            workOrderId: data.work_order_id,
+            woNumber: data.wo_number || undefined,
+            woState: data.wo_state,
+            actualCost: parseFloat(data.actual_cost) || 0,
+            settledCost: parseFloat(data.settled_cost) || 0,
+            unsettledVariance: parseFloat(data.unsettled_variance) || 0,
+            lastSettledAt: data.last_settled_at || undefined,
+        };
     }
 
     /**
@@ -2612,13 +2679,18 @@ class FinOpsServiceClass {
         return {
             id: row.id,
             workOrderId: row.work_order_id,
+            assetId: row.asset_id || undefined,
             costCenterId: row.cost_center_id,
             wbsElementId: row.wbs_element_id,
             costType: row.cost_type,
             amount: parseFloat(row.amount),
-            quantity: parseFloat(row.quantity),
-            unit: row.unit,
-            postingDate: row.posting_date
+            // A material posting has no meaningful quantity (mixed units), so
+            // the column is null — parseFloat(null) is NaN, which renders as
+            // "NaN" on screen. Undefined is the honest answer.
+            quantity: row.quantity == null ? undefined : parseFloat(row.quantity),
+            unit: row.unit || undefined,
+            postingDate: row.posting_date,
+            source: row.source || undefined
         };
     }
 
@@ -2733,14 +2805,23 @@ class FinOpsServiceClass {
         };
     }
 
-    private async updateBudgetActuals(costCenterId: string, amount: number): Promise<void> {
-        const year = new Date().getFullYear();
-
-        await supabase
-            .from('budgets')
-            .update({ actual: supabase.rpc('increment_budget_actual', { amount }) })
-            .eq('cost_center_id', costCenterId)
-            .eq('fiscal_year', year);
+    /**
+     * Bring a cost center's budget actual back in line with the ledger.
+     *
+     * This used to read `actual: supabase.rpc('increment_budget_actual', …)`,
+     * which assigned a query builder to a numeric column against an RPC that
+     * exists in no migration — budget actuals never moved. 0244 replaces the
+     * increment with a recompute: the answer is always whatever
+     * cost_allocations says, so a missed or repeated call cannot drift it.
+     */
+    private async updateBudgetActuals(costCenterId: string, fiscalYear?: number): Promise<void> {
+        const { error } = await supabase.rpc('ers_refresh_budget_actual', {
+            p_cost_center_id: costCenterId,
+            p_fiscal_year: fiscalYear ?? null,
+        });
+        // Advisory: a stale budget actual must not fail the posting that
+        // caused it — the next settlement or refresh corrects it.
+        if (error) console.warn('[finops] budget actual refresh failed (0244 applied?):', error.message);
     }
 
     /**
