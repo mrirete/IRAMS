@@ -14,6 +14,8 @@
  * migration with `npm run gen:role-permissions`; the drift guard lives in
  * src/lib/rolePermissionsMirror.test.ts.
  */
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ROLE_PERMISSION_TEMPLATES, BASE_PACKAGE_DEFAULTS } from '../src/eam/constants/rolePermissions.ts';
 
 /** Role name used for anyone whose role has no template (fail-closed baseline). */
@@ -63,5 +65,21 @@ export function extractSeed(sql) {
     return sql.slice(a, b + END_MARK.length).replace(/\r\n/g, '\n');
 }
 
-/** Path of the migration carrying the generated block. */
-export const MIGRATION_FILE = 'supabase/migrations/0241_role_permissions.sql';
+/**
+ * The migration carrying the generated block — the NEWEST one that has the
+ * markers, not a fixed filename.
+ *
+ * The seed lives in a migration, and migrations are immutable once applied: the
+ * runner refuses to proceed when an applied file's checksum changes. So a matrix
+ * edit cannot rewrite 0241 in place; it adds a reseed migration instead, and
+ * this resolves to whichever is latest.
+ */
+export function migrationFile() {
+    const dir = 'supabase/migrations';
+    const withMarkers = readdirSync(dir)
+        .filter(f => f.endsWith('.sql'))
+        .sort()
+        .filter(f => readFileSync(join(dir, f), 'utf8').includes(BEGIN_MARK));
+    if (!withMarkers.length) throw new Error('no migration carries the generated-seed markers');
+    return join(dir, withMarkers[withMarkers.length - 1]).replace(/\\/g, '/');
+}

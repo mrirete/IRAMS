@@ -6,7 +6,7 @@
 export declare const DEFAULT_ROLE_KEY: string;
 export declare const BEGIN_MARK: string;
 export declare const END_MARK: string;
-export declare const MIGRATION_FILE: string;
+export declare function migrationFile(): string;
 
 /** Deterministic SQL seed block built from ROLE_PERMISSION_TEMPLATES. */
 export declare function generateSeedSql(): string;

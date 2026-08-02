@@ -8,7 +8,9 @@
  * database mirror is not allowed to drift from the TypeScript source.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { generateSeedSql, extractSeed, MIGRATION_FILE } from './gen-role-permissions.mjs';
+import { generateSeedSql, extractSeed, migrationFile } from './gen-role-permissions.mjs';
+
+const MIGRATION_FILE = migrationFile();
 
 const sql = readFileSync(MIGRATION_FILE, 'utf8');
 const current = extractSeed(sql);

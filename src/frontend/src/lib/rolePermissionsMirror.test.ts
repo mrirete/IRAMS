@@ -14,11 +14,14 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { generateSeedSql, extractSeed, DEFAULT_ROLE_KEY } from '../../scripts/gen-role-permissions.mjs';
+import { generateSeedSql, extractSeed, migrationFile, DEFAULT_ROLE_KEY } from '../../scripts/gen-role-permissions.mjs';
 import { ROLE_PERMISSION_TEMPLATES, BASE_PACKAGE_DEFAULTS } from '../eam/constants/rolePermissions';
 
 const FRONTEND = join(dirname(fileURLToPath(import.meta.url)), '../..');
-const MIGRATION = join(FRONTEND, 'supabase/migrations/0241_role_permissions.sql');
+// Resolved, not hard-coded: a matrix change adds a reseed migration rather
+// than editing an applied one, so the newest file with the markers is the
+// authority.
+const MIGRATION = join(FRONTEND, (() => { const cwd = process.cwd(); process.chdir(FRONTEND); try { return migrationFile(); } finally { process.chdir(cwd); } })());
 
 describe('role_permissions mirror', () => {
     const sql = readFileSync(MIGRATION, 'utf8');

@@ -244,7 +244,11 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         // Blocked
         purchasing: NO_ACCESS_PERM, analytics: NO_ACCESS_PERM,
         contacts: NO_ACCESS_PERM, vendors: NO_ACCESS_PERM,
-        finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
+        // safety is VIEW_ONLY, not NO_ACCESS: a technician completes the JSA on
+        // their own job and performs the lockout/tagout. Withholding it was a
+        // matrix error, not a policy — JSATab, WorkOrders and RecurringWork all
+        // read jsa_assessments from surfaces technicians live on.
+        finops: NO_ACCESS_PERM, safety: VIEW_ONLY_PERM,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
         reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
