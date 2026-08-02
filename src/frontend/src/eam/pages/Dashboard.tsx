@@ -576,13 +576,13 @@ export const Dashboard: React.FC = () => {
           <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center">
             <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
               <button onClick={() => setWorkTab('active')}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${workTab === 'active' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-3 py-1.5 min-h-[36px] md:min-h-0 rounded-md text-xs font-semibold transition-all ${workTab === 'active' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >Active ({myWork.length})</button>
               <button onClick={() => setWorkTab('recent')}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${workTab === 'recent' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                className={`px-3 py-1.5 min-h-[36px] md:min-h-0 rounded-md text-xs font-semibold transition-all ${workTab === 'recent' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >Recent ({recent.length})</button>
             </div>
-            <button onClick={() => navigate('/work-orders')} className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 transition">
+            <button onClick={() => navigate('/work-orders')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
               View All <ArrowRight size={12} />
             </button>
           </div>
@@ -653,7 +653,7 @@ export const Dashboard: React.FC = () => {
                 <span className="text-xs font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">{notifications.length}</span>
               )}
             </div>
-            <button onClick={() => navigate('/notifications')} className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 transition">
+            <button onClick={() => navigate('/notifications')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
               View All <ArrowRight size={12} />
             </button>
           </div>
@@ -716,7 +716,7 @@ export const Dashboard: React.FC = () => {
               <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-200" /> Open: {totalPM - pmClosed}</div>
             </div>
           </div>
-          <button onClick={() => navigate('/reports')} className="mt-3 text-[10px] font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 transition">
+          <button onClick={() => navigate('/reports')} className="mt-3 text-[10px] font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
             View in Reports <ArrowRight size={10} />
           </button>
         </div>
@@ -741,7 +741,7 @@ export const Dashboard: React.FC = () => {
             </ResponsiveContainer>
           </div>
           <div className="text-xs text-slate-500 mt-1">{openWOsList.length} open WOs in backlog</div>
-          <button onClick={() => navigate('/reports/drilldown/backlog')} className="mt-2 text-[10px] font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 transition">
+          <button onClick={() => navigate('/reports/drilldown/backlog')} className="mt-2 text-[10px] font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
             View in Reports <ArrowRight size={10} />
           </button>
         </div>
@@ -806,7 +806,7 @@ export const Dashboard: React.FC = () => {
                             showToast(`Failed to create DE task: ${err.message}`, 'error');
                           }
                         }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-blue-50 text-blue-500 hover:text-blue-700"
+                        className="relative opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-blue-50 text-blue-500 hover:text-blue-700 before:absolute before:-inset-2.5 before:content-[''] md:before:hidden"
                         title="Auto-draft Defect Elimination task"
                       >
                         <Target size={12} />
@@ -820,7 +820,7 @@ export const Dashboard: React.FC = () => {
             )}
           </div>
           <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
-            <button onClick={() => navigate('/reports')} className="text-[10px] font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 transition">
+            <button onClick={() => navigate('/reports')} className="text-[10px] font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
               View in Reports <ArrowRight size={10} />
             </button>
             <button
@@ -845,7 +845,7 @@ export const Dashboard: React.FC = () => {
                 }
                 showToast(`${created} DE task(s) created. Navigate to Analyze → Defect Elimination.`, 'success');
               }}
-              className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition bg-blue-50 px-2 py-1 rounded-md hover:bg-blue-100"
+              className="text-[10px] font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[36px] md:min-h-0 transition bg-blue-50 px-2.5 py-1 rounded-md hover:bg-blue-100"
             >
               <Target size={10} /> Draft All DE Tasks
             </button>
@@ -912,7 +912,7 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
           </div>
-          <button onClick={() => navigate('/reports/drilldown/mtbf-mttr')} className="mt-3 text-[10px] font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 transition">
+          <button onClick={() => navigate('/reports/drilldown/mtbf-mttr')} className="mt-3 text-[10px] font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
             View MTBF/MTTR Analysis <ArrowRight size={10} />
           </button>
         </div>

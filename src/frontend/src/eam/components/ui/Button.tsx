@@ -13,7 +13,8 @@ import { cn } from './cn';
  *   danger    — destructive (delete, cancel)
  *   cta       — Relantern amber, reserved for AI / signature CTAs only
  *
- * Sizes: sm | md | lg. On mobile, md/lg meet the 44px touch-target minimum.
+ * Sizes: sm | md | lg. On mobile every size gets a floor on its hit area —
+ * sm 36px, md 40px, lg 48px — released at md: where a pointer is doing the aiming.
  */
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'cta';
@@ -28,7 +29,7 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const SIZES: Record<ButtonSize, string> = {
-    sm: 'text-xs px-2.5 py-1.5 gap-1.5 rounded-lg',
+    sm: 'text-xs px-2.5 py-1.5 gap-1.5 rounded-lg min-h-[36px] md:min-h-0',
     md: 'text-sm px-3.5 py-2 gap-2 rounded-lg min-h-[40px] md:min-h-0',
     lg: 'text-base px-5 py-3 gap-2 rounded-xl min-h-[48px]',
 };

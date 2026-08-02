@@ -43,7 +43,7 @@ export const AskRelanternButton: React.FC<AskRelanternButtonProps> = ({
             <button
                 onClick={handleClick}
                 title={tooltip}
-                className={`p-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all ${className}`}
+                className={`inline-flex items-center justify-center min-h-[36px] min-w-[36px] p-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 shadow-sm hover:shadow-md transition-all ${className}`}
             >
                 <Sparkles size={16} />
             </button>

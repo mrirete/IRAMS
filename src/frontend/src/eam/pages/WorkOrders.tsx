@@ -824,7 +824,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                         <div className="relative" ref={viewsRef}>
                             <button
                                 onClick={() => setViewsOpen(o => !o)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 max-w-[190px]"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 min-h-[36px] md:min-h-0 rounded-lg text-xs font-semibold border border-slate-200 text-slate-600 hover:bg-slate-50 max-w-[190px]"
                                 title="Saved views — filter + sort presets"
                             >
                                 <Layers size={13} className="flex-shrink-0 text-slate-400" />
@@ -888,7 +888,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                             <button
                                 key={status.code}
                                 onClick={() => { setStatusFilter(status.code as any); setActiveViewId(''); }}
-                                className={`whitespace-nowrap px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border transition-all ${statusFilter === status.code
+                                className={`whitespace-nowrap inline-flex items-center min-h-[32px] md:min-h-0 px-2.5 py-1 md:py-0.5 rounded-full text-[9px] font-bold uppercase border transition-all ${statusFilter === status.code
                                     ? 'bg-primary-600 text-white border-primary-600 shadow-sm'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                                     }`}
@@ -916,7 +916,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
                             <button
                                 key={val}
                                 onClick={() => { setClassFilter(val); setActiveViewId(''); }}
-                                className={`whitespace-nowrap px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border transition-all ${classFilter === val
+                                className={`whitespace-nowrap inline-flex items-center min-h-[32px] md:min-h-0 px-2.5 py-1 md:py-0.5 rounded-full text-[9px] font-bold uppercase border transition-all ${classFilter === val
                                     ? (val === 'REACTIVE' ? 'bg-red-600 text-white border-red-600' : val === 'PROACTIVE' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-primary-600 text-white border-primary-600')
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                                     }`}

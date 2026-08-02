@@ -821,7 +821,9 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                                 {hasChildren ? (
                                                     <button
                                                         onClick={(e) => toggleExpansion(asset.id, e)}
-                                                        className={`w-5 h-5 flex items-center justify-center rounded border transition-all duration-150 ${
+                                                        // before: ring extends the tap area to 44px on touch
+                                                        // without growing the 20px box the tree's rhythm depends on
+                                                        className={`relative w-5 h-5 flex items-center justify-center rounded border transition-all duration-150 before:absolute before:-inset-3 before:content-[''] md:before:hidden ${
                                                             isExpanded
                                                                 ? 'bg-slate-100 border-slate-300 text-slate-600'
                                                                 : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50 hover:border-slate-400'
@@ -1209,7 +1211,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                         {hasChildren ? (
                                             <button
                                                 onClick={(e) => toggleExpansion(asset.id, e)}
-                                                className={`w-5 h-5 flex items-center justify-center rounded border transition-all duration-150
+                                                className={`relative w-5 h-5 flex items-center justify-center rounded border transition-all duration-150 before:absolute before:-inset-3 before:content-[''] md:before:hidden
                                                     ${isExpanded
                                                         ? 'bg-emerald-50 border-emerald-300 text-emerald-700 shadow-sm'
                                                         : 'bg-white border-slate-300 text-slate-500 hover:bg-slate-50 hover:border-slate-400'
@@ -1258,7 +1260,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                             {childCount > 0 && (
                                                 <button
                                                     onClick={(e) => toggleExpansion(asset.id, e)}
-                                                    className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full flex-shrink-0 hover:bg-blue-100 hover:text-blue-700 transition-colors border border-blue-100"
+                                                    className="relative text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full flex-shrink-0 hover:bg-blue-100 hover:text-blue-700 transition-colors border border-blue-100 before:absolute before:-inset-y-2.5 before:-inset-x-1 before:content-[''] md:before:hidden"
                                                     title={isExpanded ? 'Collapse children' : 'Expand children'}
                                                 >
                                                     {childCount} {childCount === 1 ? 'child' : 'children'}
