@@ -166,15 +166,40 @@ Every phase ends at a gate. **Do not start a phase until the previous gate is gr
 failures on 2026-08-02 (a migration that applied and changed nothing; a fix that broke error logging)
 both came from moving on without checking.
 
-### Phase 0 — Audit what is actually there
-Dump `pg_policies` and diff against the migrations.
+### Phase 0 — Audit what is actually there ✅ DONE (2026-08-02)
+`node scripts/provision/audit-policies.mjs --project-ref <ref>` — replays every migration
+(CREATE/DROP POLICY, ENABLE/DISABLE RLS) and diffs the result against `pg_policies`.
 
-`p2_select_error_logs` and `p2_select_audit_logs` exist in production and in **no migration file**.
-They silently defeated 0238, which applied cleanly and changed nothing. Until this diff is clean the
-repo cannot be trusted to describe the database, and every policy written from here is guesswork.
+**Result: 2 genuine orphans out of 486 live policies, now captured in 0240. Gate G0 green.**
 
-**Gate G0:** every policy in production is accounted for — either it comes from a migration, or it is
-captured in a new one that records it.
+Correction to what prompted this phase: `p2_select_error_logs` and `p2_select_audit_logs` are **not**
+out-of-band. [0186](src/frontend/supabase/migrations/0186_phase2_rls_hardening.sql#L74-L88) generates
+them in a PL/pgSQL loop via `EXECUTE format(...)`, which a literal `CREATE POLICY` grep cannot see.
+They were authored and deliberate. What defeated 0238 was RLS being permissive, not a rogue policy.
+
+Building the audit took three parser corrections, each of which had silently inflated the count:
+
+| Bug | Wrong answer | Cause |
+|---|---|---|
+| Ignored `EXECUTE format` loops | 465 orphans | 21 migrations generate policies dynamically; 416 of 418 unmatched policies come from them |
+| Applied all CREATEs then all DROPs | 274 orphans | `DROP IF EXISTS x; CREATE x;` — the commonest shape here — netted to "absent". Must replay in source order |
+| Parsed SQL comments | 3 orphans | 0197 documents its own rollback as `-- DROP POLICY …`, which deleted a live policy from the expected set |
+
+**What it found:**
+
+- **0 tables with RLS disabled** — the one genuinely bad outcome, and it is clean.
+- `ers_agent_actions` — a single `FOR ALL USING (true)` policy replaced the three narrow ones 0149
+  authored (`SELECT` / `INSERT` / `UPDATE`, deliberately **no DELETE**). The AI action queue is
+  deletable by any logged-in user, and nothing in the repo recorded the change.
+- `ers_prediction_feedback` — **the table itself is in no migration.** Created out-of-band, so the
+  repo has never described it. Empty today. 0240 captures its policy; its *schema* is still
+  unversioned (use `export-schema.mjs`).
+
+Both captured verbatim in [0240](src/frontend/supabase/migrations/0240_capture_orphan_policies.sql)
+with no behaviour change — Phase 0 audits, Phase 3 decides.
+
+**Re-run this after every phase** (step 5 of §6). It is now a two-orphan-to-zero check, so any new
+number is a real signal.
 
 ### Phase 1 — Mechanism, applied to nothing
 Migration: `role_permissions` table + generator + seed + `caller_can()`. No policy uses it yet.
