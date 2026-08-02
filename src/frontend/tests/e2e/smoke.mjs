@@ -285,7 +285,12 @@ async function sweepRoute(page, pageErrors, route, { checkOverflow, label }) {
         stable = s.len === prev ? stable + 1 : 0;
         prev = s.len;
         sawSpinner = s.spinner;
-        if (stable >= 1 && !s.spinner) { ok = true; verdict = `settled len=${s.len}`; break; }
+        // THREE consecutive identical samples, not two. A page that fetches in
+        // stages can hold one length for longer than a single poll interval and
+        // look settled: /specialist reported 2,028 chars this way when the real
+        // figure was 43,045 — the briefing simply had not arrived yet. Two
+        // samples is a pause; three is a plateau.
+        if (stable >= 2 && !s.spinner) { ok = true; verdict = `settled len=${s.len}`; break; }
       }
       await sleep(1_200);
     }
