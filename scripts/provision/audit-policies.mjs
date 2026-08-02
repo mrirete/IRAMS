@@ -211,17 +211,19 @@ section('RLS on but NO policies (deny-all — usually unintended)', denyAll,
 // Invisible on small tables, which is exactly why it needs a detector: the
 // symptom only appears once a customer has real data.
 const FN = /\b(is_admin|caller_can|caller_can_view_all_requests|caller_work_centers|caller_user_id)\s*\(/;
-const perRow = live.pols.filter(p => {
-    const expr = `${p.qual ?? ''} ${p.with_check ?? ''}`;
-    if (!FN.test(expr)) return false;
-    // Postgres renders a wrapped call as `(SELECT is_admin() AS is_admin)`.
-    // Anything still calling the function outside a SELECT is per-row.
-    const unwrapped = expr.replace(/\(\s*SELECT[^)]*\)/gi, '');
-    return FN.test(unwrapped);
-});
 
-section('PER-ROW function calls in policies (wrap in (SELECT …) — see 0243)', perRow, (p) => {
-    const which = FN.exec(`${p.qual ?? ''} ${p.with_check ?? ''}`)?.[1];
+// Remove already-wrapped calls before looking for bare ones. The pattern has to
+// account for the function's OWN parentheses — `[^)]*` stops at the first `)`,
+// which is the inner one, so `(SELECT is_admin())` was only half-stripped and
+// the finding got attributed to the wrong function.
+const stripWrapped = (expr) => expr.replace(/\(\s*SELECT\s+[^()]*\([^()]*\)[^()]*\)/gi, '');
+
+const perRow = live.pols
+    .map(p => ({ p, bare: stripWrapped(`${p.qual ?? ''} ${p.with_check ?? ''}`) }))
+    .filter(({ bare }) => FN.test(bare));
+
+section('PER-ROW function calls in policies (wrap in (SELECT …) — see 0243)', perRow, ({ p, bare }) => {
+    const which = FN.exec(bare)?.[1];
     console.log(`   ✗ ${p.tablename}.${p.policyname}  ${p.cmd}  calls ${which}() bare`);
 });
 
