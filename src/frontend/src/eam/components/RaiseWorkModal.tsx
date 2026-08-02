@@ -11,6 +11,7 @@ import { NotificationService } from '../services/NotificationService';
 import { buildWorkOrder } from '../lib/workOrder';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import { useToast } from '../contexts/ToastContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import type { Asset, WorkCenter } from '../types';
 
@@ -46,6 +47,7 @@ const unitToDays: Record<string, number> = { Days: 1, Weeks: 7, Months: 30, Year
 
 export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, initialPmIntervalDays }) => {
     const { showToast } = useToast();
+    const { permissions } = useAuth();
     const navigate = useNavigate();
     const [kind, setKind] = useState<RaiseKind>(initialKind);
     const [saving, setSaving] = useState(false);
@@ -130,11 +132,29 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
         } finally { setSaving(false); }
     };
 
-    const KIND_TABS: { k: RaiseKind; label: string; icon: React.ReactNode; sub: string }[] = [
-        { k: 'REQUEST', label: 'Request', icon: <FileText size={14} />, sub: 'For approval → WO' },
-        { k: 'WO', label: 'Work Order', icon: <Wrench size={14} />, sub: 'Corrective, direct' },
-        { k: 'PM', label: 'PM', icon: <Clock size={14} />, sub: 'Recurring strategy' },
-    ];
+    // Only offer what the role may actually create.
+    //
+    // SAP models this as Notification → Order: an operator reports a problem, a
+    // planner commits the labour and budget. That is the same split as Request →
+    // Work Order here, and the matrix already encodes it — TECHNICIAN holds
+    // requests.create but not workOrders.create. The selector offered all three
+    // regardless, so a technician could raise an order directly and skip triage.
+    const KIND_TABS = ([
+        { k: 'REQUEST', label: 'Request', icon: <FileText size={14} />, sub: 'For approval → WO', perm: 'requests' },
+        { k: 'WO', label: 'Work Order', icon: <Wrench size={14} />, sub: 'Corrective, direct', perm: 'workOrders' },
+        { k: 'PM', label: 'PM', icon: <Clock size={14} />, sub: 'Recurring strategy', perm: 'pm' },
+    ] as const).filter(t => permissions?.[t.perm]?.create === true);
+
+    // Callers open this modal on a specific kind — Predict and RCA both open
+    // straight to "Work Order". If the role cannot create that, land on the
+    // first kind it CAN create rather than showing a selector with nothing
+    // chosen and a submit that fails at the database.
+    useEffect(() => {
+        if (KIND_TABS.length > 0 && !KIND_TABS.some(t => t.k === kind)) {
+            setKindAndDefaults(KIND_TABS[0].k);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [KIND_TABS.length, kind]);
     const inputCls = 'w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/40 focus:border-primary-500 outline-none';
 
     return (
@@ -148,8 +168,17 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 </div>
 
                 <div className="p-5 space-y-4 overflow-y-auto">
-                    {/* Kind selector */}
-                    <div className="grid grid-cols-3 gap-2">
+                    {/* Kind selector — only what this role may create */}
+                    {KIND_TABS.length === 0 && (
+                        <div className="flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3">
+                            <AlertTriangle size={16} className="text-amber-500 mt-0.5 shrink-0" />
+                            <p className="text-[13px] text-amber-800">
+                                Your role cannot raise work directly. Ask a planner or supervisor to
+                                raise it, or contact an administrator if you think you should have access.
+                            </p>
+                        </div>
+                    )}
+                    <div className={`grid gap-2 ${KIND_TABS.length === 1 ? 'grid-cols-1' : KIND_TABS.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
                         {KIND_TABS.map(t => (
                             <button key={t.k} onClick={() => setKindAndDefaults(t.k)}
                                 className={`text-left p-2.5 rounded-xl border-2 transition ${kind === t.k ? 'border-primary-400 bg-primary-50' : 'border-slate-200 hover:border-slate-300'}`}>
@@ -237,7 +266,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
 
                 <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2 flex-shrink-0">
                     <button onClick={onClose} className="text-sm font-semibold text-slate-500 hover:bg-slate-50 px-3 py-2 rounded-lg">Cancel</button>
-                    <button onClick={submit} disabled={saving || !title.trim() && kind !== 'REQUEST'}
+                    <button onClick={submit} disabled={saving || KIND_TABS.length === 0 || (!title.trim() && kind !== 'REQUEST')}
                         className="inline-flex items-center gap-1.5 text-sm font-semibold text-white bg-primary-600 hover:bg-primary-500 disabled:opacity-50 px-4 py-2 rounded-lg">
                         {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
                         {kind === 'REQUEST' ? 'Raise request' : kind === 'WO' ? 'Raise work order' : 'Create PM'}
