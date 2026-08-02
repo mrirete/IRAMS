@@ -37,7 +37,8 @@ Three pieces. Each is independently verifiable, and none of them is useful alone
   users.permission_overrides ────────────────────────────────────── ┘             │
   reference_codes.properties.permissions (custom roles) ───────────┘              │
                                                                                   ▼
-                                                          RLS:  USING (public.caller_can('finops','view'))
+                                    RLS:  USING ((SELECT public.caller_can('finops','view')))
+                                          ^^^^^^ the (SELECT …) wrap is mandatory — see 3.2
 ```
 
 ### 2.1 `role_permissions` — the DB mirror
@@ -135,13 +136,19 @@ non-obvious.
 RLS policies are evaluated per row. A function that does a subquery per row on a 20k-row work-order
 list would be a visible outage.
 
-Postgres treats a `STABLE` function with **constant arguments** as an InitPlan — evaluated once per
-statement, not per row. `caller_can('finops','view')` qualifies. `is_admin()` already depends on this
-and performs acceptably, which is the precedent.
+**This section originally claimed Postgres hoists a `STABLE` function with constant arguments to an
+InitPlan. That is false, and Gate G2 disproved it — see Phase 2.** A bare call is evaluated once per
+row: 18,969 ms versus 33 ms on 200k rows.
 
-**This must be proved, not assumed.** Gate G2 below is an `EXPLAIN (ANALYZE, BUFFERS)` on the
-largest gated table before and after, comparing execution time and confirming the function appears
-as an InitPlan rather than a per-row filter.
+The fix is to wrap every call in an uncorrelated scalar subquery, which Postgres *does* evaluate
+once:
+
+```sql
+USING ((SELECT public.caller_can('finops', 'view')))
+```
+
+Never write the bare form. It is 72x slower and nothing warns you — the policy is correct, the tests
+pass, and only a customer with real data ever finds out.
 
 ---
 
@@ -208,12 +215,42 @@ Migration: `role_permissions` table + generator + seed + `caller_can()`. No poli
 (role × module × action) triple, plus the four override cases: absent, `true`, `false`, and a module
 the role has no entry for. Zero behaviour change in the app — nothing consumes the function.
 
-### Phase 2 — Prove performance
-Apply one policy, to the largest gated table available, behind a flag or on a branch.
+### Phase 2 — Prove performance ✅ DONE (2026-08-02) — **it failed, and the fix is one line**
 
-**Gate G2:** `EXPLAIN (ANALYZE, BUFFERS)` shows the function as an InitPlan, and p95 list-load time
-is within 10% of baseline. If it degrades, stop — the fix is a materialised per-session claim, not
-more indexes, and that is a different plan.
+**§3.2 of this plan was wrong.** A `STABLE` function with constant arguments is *not* hoisted to an
+InitPlan in an RLS qual. Postgres evaluates it **once per row**.
+
+Production tables are too small to show it (largest is 1,965 rows), so the benchmark builds a
+200,000-row table inside a transaction that rolls back, with `SET LOCAL ROLE authenticated` — without
+that the Management API connects as a superuser, which **bypasses RLS entirely** and would have
+produced a beautiful, meaningless plan.
+
+| Policy | Execution | Buffers | Plan |
+|---|---|---|---|
+| `USING (true)` | 265 ms | 1,870 | — |
+| `USING (caller_can(…))` | **18,969 ms** | 602,112 | per-row ❌ |
+| `USING ((SELECT caller_can(…)))` | **33 ms** | 2,127 | `InitPlan 1` ✅ |
+| `USING (is_admin())` | **3,013 ms** | 68,706 | per-row ❌ |
+| `USING ((SELECT is_admin()))` | 20 ms | 2,041 | `InitPlan 1` ✅ |
+
+An **uncorrelated scalar subquery** is what makes the difference — Postgres evaluates it once and
+reuses it. The wrapped plan reads `Filter: ((InitPlan 1).col1 AND …)`.
+
+**Gate G2: GREEN, conditional on always writing the wrapped form.**
+
+```sql
+USING ((SELECT public.caller_can('finops', 'view')))   -- correct
+USING (public.caller_can('finops', 'view'))            -- 72× slower, silently
+```
+
+**This was never a `caller_can()` problem.** `is_admin()` has the identical defect and has been in
+production since 0171, generated across dozens of tables by 0186. It is invisible at current volume
+and would be an outage on a real tenant.
+
+[0243](src/frontend/supabase/migrations/0243_wrap_rls_function_calls.sql) fixes the five policies
+from this workstream. **83 pre-existing policies still call a function bare** (6 of them `SELECT`,
+which is where it hurts most). `audit-policies.mjs` now lists them — that sweep is its own task, and
+mostly means regenerating 0186's loop with the wrapped form.
 
 ### Phase 3 — Tier 2 (money and procurement)
 Narrow readers, unambiguous policy, highest indefensibility.

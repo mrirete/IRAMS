@@ -201,6 +201,30 @@ section('MISSING policies (in a migration, not in the database — mostly supers
 section('RLS on but NO policies (deny-all — usually unintended)', denyAll,
     (t) => console.log(`   · ${t.tablename}`));
 
+// ── Per-row function calls ──────────────────────────────────────────────────
+// A STABLE function called bare in a policy is evaluated ONCE PER ROW; Postgres
+// does not hoist it, even with constant arguments. Wrapping it in an
+// uncorrelated scalar subquery — USING ((SELECT f())) — makes it an InitPlan,
+// evaluated once. Measured on 200k rows: is_admin() bare 3,013 ms vs 20 ms
+// wrapped; caller_can() bare 18,969 ms vs 33 ms (0243).
+//
+// Invisible on small tables, which is exactly why it needs a detector: the
+// symptom only appears once a customer has real data.
+const FN = /\b(is_admin|caller_can|caller_can_view_all_requests|caller_work_centers|caller_user_id)\s*\(/;
+const perRow = live.pols.filter(p => {
+    const expr = `${p.qual ?? ''} ${p.with_check ?? ''}`;
+    if (!FN.test(expr)) return false;
+    // Postgres renders a wrapped call as `(SELECT is_admin() AS is_admin)`.
+    // Anything still calling the function outside a SELECT is per-row.
+    const unwrapped = expr.replace(/\(\s*SELECT[^)]*\)/gi, '');
+    return FN.test(unwrapped);
+});
+
+section('PER-ROW function calls in policies (wrap in (SELECT …) — see 0243)', perRow, (p) => {
+    const which = FN.exec(`${p.qual ?? ''} ${p.with_check ?? ''}`)?.[1];
+    console.log(`   ✗ ${p.tablename}.${p.policyname}  ${p.cmd}  calls ${which}() bare`);
+});
+
 const blocking = disabled.length + orphans.filter(p => /^true$/i.test((p.qual ?? '').toString().trim())).length;
 console.log('═'.repeat(72));
 console.log(blocking === 0
