@@ -4127,6 +4127,7 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
     const plannedLabour = rows.reduce((s, r) => s + r.plannedCost, 0);
     const actualLabour = actuals?.labourCost ?? rows.reduce((s, r) => s + r.actualCost, 0);
     const partsCost = actuals?.partsCost ?? 0;
+    const serviceCost = actuals?.serviceCost ?? 0;
     const anyWorkCenters = rows.some(r => r.wcLabel !== '—');
     const plannedParts = (job.inventory || []).reduce((s, i) => s + ((i.estQty || 0) * (i.estUnitCost || 0)), 0);
     const plannedTotal = plannedLabour + plannedParts;
@@ -4253,7 +4254,7 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                         <SummaryCard label="Labour" planned={plannedLabour} actual={actualLabour} />
                         <div className="bg-white border border-slate-200 rounded-card p-4">
                             <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Parts</div>
@@ -4263,10 +4264,23 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                             </div>
                             <div className="mt-1 text-xs text-slate-500 tabular-nums">Plan {money(plannedParts)}</div>
                         </div>
+                        {/* SERVICE (0249) — contractor and service-PO cost. Shown as
+                            "received" because ordering a service is a commitment;
+                            only what has been received is cost. */}
+                        <div className="bg-white border border-slate-200 rounded-card p-4">
+                            <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Services</div>
+                            <div className="mt-1 flex items-baseline gap-2">
+                                <span className="text-2xl font-bold text-slate-800 tabular-nums">{money(serviceCost)}</span>
+                                <span className="text-xs text-slate-400">received</span>
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">
+                                {serviceCost > 0 ? 'From service PO lines on this order' : 'No service PO lines on this order'}
+                            </div>
+                        </div>
                         <div className="bg-primary-50 border border-primary-200 rounded-card p-4">
                             <div className="text-[11px] uppercase font-semibold tracking-wide text-primary-700">Total actual</div>
-                            <div className="mt-1 text-2xl font-bold text-primary-700 tabular-nums">{money(actualLabour + partsCost)}</div>
-                            <div className="mt-1 text-xs text-primary-600/70 tabular-nums">Plan {money(plannedTotal)} · labour + parts · settlement basis</div>
+                            <div className="mt-1 text-2xl font-bold text-primary-700 tabular-nums">{money(actualLabour + partsCost + serviceCost)}</div>
+                            <div className="mt-1 text-xs text-primary-600/70 tabular-nums">Plan {money(plannedTotal)} · labour + parts + services · settlement basis</div>
                         </div>
                     </div>
 
@@ -4351,7 +4365,7 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                         </div>
                     </div>
                     {(job as any).scope === 'PROJECT' && (() => {
-                        const spent = actualLabour + partsCost;
+                        const spent = actualLabour + partsCost + serviceCost;
                         const budget = (job as any).budgetApproved || plannedTotal || 1;
                         const pct = Math.min(100, (spent / budget) * 100);
                         return (

@@ -2248,21 +2248,36 @@ class FinOpsServiceClass {
 
         if (error) throw error;
 
-        // All three legs of the match live on the PO line items: the receiving and
-        // invoice-matching flows in Purchase Orders write back into `items`.
-        // (The SAP-shaped goods_receipts / invoice_matches tables are never written.)
-        return (data || []).map(po => {
-            const items: any[] = Array.isArray(po.items) ? po.items : [];
-            const received = items.filter(i => Number(i.qtyReceivedTotal || 0) > 0);
-            const invoiced = items.filter(i => i.invoiceMatched);
+        // The three legs come off purchase_order_lines (0248). They used to be
+        // read out of the `items` JSONB on the header, which is now frozen —
+        // reading it here would show every order as empty.
+        const poIds = (data || []).map((po: any) => po.id);
+        const { data: lineRows } = poIds.length === 0
+            ? { data: [] as any[] }
+            : await supabase
+                .from('purchase_order_lines')
+                .select('po_id, qty_ordered, qty_received, unit_cost, line_total, invoice_matched')
+                .in('po_id', poIds);
 
-            const poAmount = items.reduce((sum, i) => sum + Number(i.lineTotal || 0), 0);
+        const linesByPo = new Map<string, any[]>();
+        for (const l of lineRows || []) {
+            const list = linesByPo.get(l.po_id) || [];
+            list.push(l);
+            linesByPo.set(l.po_id, list);
+        }
+
+        return (data || []).map(po => {
+            const items: any[] = linesByPo.get(po.id) || [];
+            const received = items.filter(i => Number(i.qty_received || 0) > 0);
+            const invoiced = items.filter(i => i.invoice_matched);
+
+            const poAmount = items.reduce((sum, i) => sum + Number(i.line_total || 0), 0);
             // null (not 0) when nothing has been received/invoiced yet — the UI shows
             // that as "—" so missing paperwork never reads as a zero-value variance.
             const grnAmount = received.length === 0 ? null
-                : received.reduce((sum, i) => sum + Number(i.qtyReceivedTotal || 0) * Number(i.unitCost || 0), 0);
+                : received.reduce((sum, i) => sum + Number(i.qty_received || 0) * Number(i.unit_cost || 0), 0);
             const invoiceAmount = invoiced.length === 0 ? null
-                : invoiced.reduce((sum, i) => sum + Number(i.lineTotal || 0), 0);
+                : invoiced.reduce((sum, i) => sum + Number(i.line_total || 0), 0);
 
             return {
                 id: po.id,

@@ -4182,12 +4182,25 @@ export class DatabaseService {
             .filter((p: any) => p.is_planned !== true)
             .reduce((s: number, p: any) => s + (Number(p.quantity) || 0) * (Number(p.unit_cost) || 0), 0);
 
+        // SERVICE (0249): received service-PO lines carrying this order. A
+        // service never enters stock, so no goods issue will ever charge it —
+        // receipt is the consumption. Ordered-but-not-received is a commitment
+        // and is excluded, exactly as a planned part is.
+        const { data: serviceLines } = await supabase.from('purchase_order_lines')
+            .select('qty_received, unit_cost')
+            .eq('work_order_id', woId)
+            .eq('line_type', 'SERVICE');
+        const serviceCost = (serviceLines || [])
+            .reduce((s: number, l: any) => s + (Number(l.qty_received) || 0) * (Number(l.unit_cost) || 0), 0);
+
         const labourCost = Number((operationLabour + orderLevelLabour).toFixed(2));
         const partsTotal = Number(partsCost.toFixed(2));
+        const serviceTotal = Number(serviceCost.toFixed(2));
         return {
             labourCost,
             partsCost: partsTotal,
-            total: Number((labourCost + partsTotal).toFixed(2)),
+            serviceCost: serviceTotal,
+            total: Number((labourCost + partsTotal + serviceTotal).toFixed(2)),
             operations,
         };
     }
@@ -4249,10 +4262,60 @@ export class DatabaseService {
     }
 
     // --- PURCHASE ORDER LOGIC ---
+    /**
+     * A PO line is MATERIAL when it names a stock item and SERVICE otherwise.
+     *
+     * The rule holds in both directions, which is why it can be derived rather
+     * than asked for: a line with a stock item is received into stores and only
+     * becomes cost when it is issued to an order, while a line without one
+     * never enters stock, so nothing downstream will ever charge it and receipt
+     * IS its consumption (0249). A free-text line for a real part behaves like
+     * a service for exactly the same reason.
+     */
+    private poLineType(inventoryId?: string | null): 'MATERIAL' | 'SERVICE' {
+        return inventoryId ? 'MATERIAL' : 'SERVICE';
+    }
+
+    /** purchase_order_lines row → the PurchaseOrderItem shape the UI edits. */
+    private mapPOLine(row: any): any {
+        return {
+            id: row.id,
+            lineNo: row.line_no,
+            lineType: row.line_type,
+            inventoryId: row.inventory_id || undefined,
+            description: row.description || '',
+            uom: row.uom || 'EA',
+            qtyOrdered: Number(row.qty_ordered) || 0,
+            qtyReceivedTotal: Number(row.qty_received) || 0,
+            unitCost: Number(row.unit_cost) || 0,
+            taxAmount: Number(row.tax_amount) || 0,
+            lineTotal: Number(row.line_total) || 0,
+            jobId: row.work_order_id || undefined,
+            glCode: row.gl_account || undefined,
+            costCenterId: row.cost_center_id || undefined,
+            invoiceNumber: row.invoice_number || undefined,
+            invoiceMatched: !!row.invoice_matched,
+        };
+    }
+
     public async getPurchaseOrders(): Promise<any[]> {
-        const { data, error } = await supabase.from('purchase_orders').select('*');
-        if (error) return [];
-        return (data || []).map(row => ({
+        // Lines live in purchase_order_lines since 0248; purchase_orders.items
+        // is frozen legacy and deliberately not read.
+        const [poRes, lineRes] = await Promise.all([
+            supabase.from('purchase_orders').select('*'),
+            supabase.from('purchase_order_lines').select('*').order('line_no', { ascending: true }),
+        ]);
+        if (poRes.error) return [];
+        if (lineRes.error) console.warn('[po] line read failed (0248 applied?):', lineRes.error.message);
+
+        const linesByPo = new Map<string, any[]>();
+        for (const row of lineRes.data || []) {
+            const list = linesByPo.get(row.po_id) || [];
+            list.push(this.mapPOLine(row));
+            linesByPo.set(row.po_id, list);
+        }
+
+        return (poRes.data || []).map(row => ({
             id: row.id,
             poCode: row.po_code,
             status: row.status,
@@ -4262,7 +4325,7 @@ export class DatabaseService {
             taxInclusive: row.tax_inclusive,
             currency: row.currency,
             createdById: row.created_by,
-            items: row.items,
+            items: linesByPo.get(row.id) || [],
             supplierContactName: row.supplier_contact_name,
             deliveryContactId: row.delivery_contact_id,
             invoiceContactId: row.invoice_contact_id,
@@ -4270,6 +4333,49 @@ export class DatabaseService {
             comments: row.comments,
             dateFinished: row.date_finished
         }));
+    }
+
+    /**
+     * Persist a PO's lines. Upsert by id and delete what the user removed —
+     * never delete-and-reinsert, because a goods receipt points at a line id
+     * and re-creating the row would orphan every receipt taken against it.
+     */
+    private async syncPurchaseOrderLines(poId: string, items: any[]): Promise<void> {
+        const lines = (items || []).filter(Boolean);
+
+        const rows = lines.map((it: any, idx: number) => ({
+            // A line created before 0248 carries a `pi-…` id, which is not a
+            // uuid; give those a real one on their first save.
+            id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(it.id || ''))
+                ? it.id : crypto.randomUUID(),
+            po_id: poId,
+            line_no: (idx + 1) * 10,
+            legacy_ref: String(it.id || '').startsWith('pi-') ? it.id : null,
+            line_type: it.lineType || this.poLineType(it.inventoryId),
+            inventory_id: it.inventoryId || null,
+            description: it.description || '',
+            uom: it.uom || 'EA',
+            qty_ordered: Number(it.qtyOrdered) || 0,
+            qty_received: Number(it.qtyReceivedTotal) || 0,
+            unit_cost: Number(it.unitCost) || 0,
+            tax_amount: Number(it.taxAmount) || 0,
+            work_order_id: it.jobId || null,
+            cost_center_id: it.costCenterId || null,
+            gl_account: it.glCode || null,
+            invoice_number: it.invoiceNumber || null,
+            invoice_matched: !!it.invoiceMatched,
+            updated_at: new Date().toISOString(),
+        }));
+
+        const keep = rows.map(r => r.id);
+        let del = supabase.from('purchase_order_lines').delete().eq('po_id', poId);
+        if (keep.length > 0) del = del.not('id', 'in', `(${keep.join(',')})`);
+        const { error: delErr } = await del;
+        if (delErr) throw new Error(`Failed to remove deleted PO lines: ${delErr.message}`);
+
+        if (rows.length === 0) return;
+        const { error } = await supabase.from('purchase_order_lines').upsert(rows, { onConflict: 'id' });
+        if (error) throw new Error(`Failed to save PO lines: ${error.message}`);
     }
 
     public async createPurchaseOrder(po: any): Promise<any> {
@@ -4283,7 +4389,9 @@ export class DatabaseService {
             tax_inclusive: po.taxInclusive,
             currency: po.currency,
             created_by: po.createdById,
-            items: po.items || [],
+            // Legacy column, frozen at 0248. Written empty so a new order never
+            // carries a second, divergent copy of its own lines.
+            items: [],
             supplier_contact_name: po.supplierContactName,
             delivery_contact_id: po.deliveryContactId,
             invoice_contact_id: po.invoiceContactId,
@@ -4294,6 +4402,10 @@ export class DatabaseService {
 
         const { data, error } = await supabase.from('purchase_orders').insert(dbRow).select().single();
         if (error) throw error;
+
+        if ((po.items || []).length > 0) {
+            await this.syncPurchaseOrderLines(data.id, po.items);
+        }
 
         // Return mapped back
         return {
@@ -4313,7 +4425,7 @@ export class DatabaseService {
         if (updates.dateRequired !== undefined) dbUpdates.date_required = updates.dateRequired;
         if (updates.taxInclusive !== undefined) dbUpdates.tax_inclusive = updates.taxInclusive;
         if (updates.currency !== undefined) dbUpdates.currency = updates.currency;
-        if (updates.items !== undefined) dbUpdates.items = updates.items;
+        // `items` is no longer written to the header — lines are rows (0248).
         if (updates.supplierContactName !== undefined) dbUpdates.supplier_contact_name = updates.supplierContactName;
         if (updates.deliveryContactId !== undefined) dbUpdates.delivery_contact_id = updates.deliveryContactId;
         if (updates.invoiceContactId !== undefined) dbUpdates.invoice_contact_id = updates.invoiceContactId;
@@ -4330,7 +4442,93 @@ export class DatabaseService {
             .single();
 
         if (error) throw error;
+
+        if (updates.items !== undefined) {
+            await this.syncPurchaseOrderLines(id, updates.items);
+        }
         return data;
+    }
+
+    /**
+     * Receive against a PO line, as one durable operation (0248).
+     *
+     * Receiving used to move stock immediately but leave the received quantity
+     * in a React state object until somebody pressed Save — so an abandoned tab
+     * left stores holding parts the order still showed as outstanding. Stock,
+     * the line, and the goods receipt now move together.
+     *
+     * The GRN number comes from the database sequence, not from here: a receipt
+     * is a numbered document and two clients receiving at once must not be able
+     * to mint the same number.
+     */
+    public async receivePOLine(params: {
+        poId: string;
+        lineId: string;
+        quantity: number;
+        locationId?: string;
+        actor?: string;
+    }): Promise<{ grnNumber: string; qtyReceivedTotal: number }> {
+        const { poId, lineId, quantity } = params;
+        if (!(quantity > 0)) throw new Error('Receive quantity must be greater than zero.');
+
+        const { data: line, error: lineErr } = await supabase
+            .from('purchase_order_lines').select('*').eq('id', lineId).single();
+        if (lineErr || !line) throw new Error(`PO line not found: ${lineErr?.message || lineId}`);
+
+        // 1. Stock first for a material line — it is the physical fact, and the
+        //    movement type carries the PO so it is a 101 rather than a 501.
+        if (line.inventory_id) {
+            if (!params.locationId) {
+                throw new Error('Set a delivery location on the Details tab before receiving stock lines.');
+            }
+            const { data: stock } = await supabase
+                .from('inventory_stock').select('quantity')
+                .eq('item_id', line.inventory_id).eq('location_id', params.locationId).maybeSingle();
+            await this.adjustInventoryStock(
+                line.inventory_id,
+                params.locationId,
+                (Number(stock?.quantity) || 0) + quantity,
+                'RECEIPT',
+                `PO receipt against line ${line.line_no}`,
+                params.actor || 'Unknown User',
+                { poId },
+            );
+        }
+
+        // 2. The receipt document. Nothing wrote this table before 0248 because
+        //    there was no stable line to point at and no number to give it.
+        const { data: grn, error: grnErr } = await supabase
+            .from('goods_receipts')
+            .insert({
+                po_id: poId,
+                po_line_id: lineId,
+                inventory_id: line.inventory_id,
+                quantity,
+                unit_cost: Number(line.unit_cost) || 0,
+                total_cost: Number((quantity * (Number(line.unit_cost) || 0)).toFixed(2)),
+                storage_location: params.locationId || null,
+                received_date: new Date().toISOString().split('T')[0],
+            })
+            .select('grn_number')
+            .single();
+        if (grnErr) throw new Error(`Goods receipt failed: ${grnErr.message}`);
+
+        // 3. The line's received quantity.
+        const newTotal = Number((Number(line.qty_received || 0) + quantity).toFixed(3));
+        const { error: updErr } = await supabase
+            .from('purchase_order_lines')
+            .update({ qty_received: newTotal, updated_at: new Date().toISOString() })
+            .eq('id', lineId);
+        if (updErr) throw new Error(`Receipt recorded but the line did not update: ${updErr.message}`);
+
+        // 4. A received SERVICE line is actual cost on its work order the moment
+        //    it lands (0249) — nothing downstream will ever issue it.
+        if (line.work_order_id && line.line_type === 'SERVICE') {
+            const { error: settleErr } = await supabase.rpc('ers_settle_work_order', { p_wo_id: line.work_order_id });
+            if (settleErr) console.warn('[po] service settlement deferred to the next run:', settleErr.message);
+        }
+
+        return { grnNumber: grn?.grn_number, qtyReceivedTotal: newTotal };
     }
 
     public async deletePurchaseOrder(id: string): Promise<void> {

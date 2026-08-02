@@ -587,7 +587,10 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
         }
 
         const item: PurchaseOrderItem = {
-            id: `pi-${Date.now()}`,
+            // A real uuid, not `pi-` + Date.now(): the line is a row now (0248)
+            // and a goods receipt points at this id. Two lines added inside the
+            // same millisecond used to collide.
+            id: crypto.randomUUID(),
             description: newItem.description,
             inventoryId: newItem.inventoryId,
             uom: newItem.uom || 'EA',
@@ -632,54 +635,61 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
         if (!targetItem || !targetItem.qtyReceivedNow || targetItem.qtyReceivedNow <= 0) return;
 
         const qtyReceiving = targetItem.qtyReceivedNow;
+        const db = DatabaseService.getInstance();
+        const deliveryLocationId = po.deliveryContactId;
 
-        // E: Update inventory stock when receiving items
-        if (targetItem.inventoryId) {
-            const deliveryLocationId = po.deliveryContactId;
-            if (!deliveryLocationId) {
-                showToast('Please set a Delivery Location on the Details tab before receiving items.', 'warning');
-                return;
-            }
+        if (targetItem.inventoryId && !deliveryLocationId) {
+            showToast('Please set a Delivery Location on the Details tab before receiving items.', 'warning');
+            return;
+        }
+
+        // One durable operation (0248): stock, the goods receipt document and
+        // the line's received quantity move together. Previously stock moved
+        // here and the quantity only reached the database if someone pressed
+        // Save afterwards — so an abandoned tab left stores holding parts the
+        // order still showed as outstanding.
+        let grnNumber: string | undefined;
+        try {
+            const result = await db.receivePOLine({
+                poId: po.id,
+                lineId: itemId,
+                quantity: qtyReceiving,
+                locationId: deliveryLocationId,
+                actor: profile?.username || profile?.fullName || 'Unknown User',
+            });
+            grnNumber = result.grnNumber;
+        } catch (e: any) {
+            showToast('Receipt failed: ' + e.message, 'error');
+            return;
+        }
+
+        // Stock planning: what arrived is no longer on order.
+        if (targetItem.inventoryId && deliveryLocationId) {
             try {
-                const db = DatabaseService.getInstance();
-                // Find current stock at this location
                 const invItem = inventoryItems.find(i => i.id === targetItem.inventoryId);
                 const stockLoc = invItem?.stockLocations?.find((sl: any) => sl.id === deliveryLocationId);
-                const currentQty = stockLoc?.qtyOnHand || 0;
                 const currentOnOrder = stockLoc?.qtyOnOrder || 0;
-
-                // Create RECEIPT transaction and increase stock
-                await db.adjustInventoryStock(
-                    targetItem.inventoryId,
-                    deliveryLocationId,
-                    currentQty + qtyReceiving,
-                    'RECEIPT',
-                    `PO Receipt: ${po.poCode} — ${targetItem.description}`,
-                    profile?.username || profile?.fullName || 'Unknown User',
-                    // Goods receipt against a purchase order is a 101 (0245).
-                    // The PO reference is what distinguishes it from a 501
-                    // receipt with no order behind it.
-                    { poId: po.id }
-                );
-
-                // Decrement qty_on_order
                 if (currentOnOrder > 0) {
-                    const newOnOrder = Math.max(0, currentOnOrder - qtyReceiving);
                     await db.updateInventoryItem(targetItem.inventoryId, {}, [{
                         id: deliveryLocationId,
-                        qtyOnHand: currentQty + qtyReceiving,
+                        qtyOnHand: (stockLoc?.qtyOnHand || 0) + qtyReceiving,
                         minQty: stockLoc?.minQty || 0,
                         maxQty: stockLoc?.maxQty || 0,
                         reorderQty: stockLoc?.reorderQty || 0,
-                        qtyOnOrder: newOnOrder,
+                        qtyOnOrder: Math.max(0, currentOnOrder - qtyReceiving),
                         binLocation: stockLoc?.binLocation || ''
                     }]);
                 }
             } catch (e: any) {
-                console.error('Stock update failed:', e.message);
-                showToast('Item received but stock update failed: ' + e.message, 'warning');
+                // Advisory: the receipt itself is already recorded.
+                console.warn('[po] qty_on_order not decremented:', e.message);
             }
         }
+
+        showToast(
+            `Received ${qtyReceiving} × ${targetItem.description}${grnNumber ? ` — ${grnNumber}` : ''}`,
+            'success',
+        );
 
         const updatedItems = po.items.map(i => {
             if (i.id === itemId) {

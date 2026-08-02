@@ -1005,6 +1005,8 @@ export interface OperationActual {
 export interface OrderActuals {
   labourCost: number;
   partsCost: number;
+  /** Received service-PO lines (0249). Ordering is a commitment; receipt is the cost. */
+  serviceCost: number;
   total: number;
   operations: OperationActual[];
 }

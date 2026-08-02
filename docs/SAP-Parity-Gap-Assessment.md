@@ -66,9 +66,9 @@ Three of our biggest gaps — **WM confirmations**, **Inventory ATP/reservation 
 
 | # | SAP object / concept | Current state | Gap | Effort | Pri |
 |---|---|---|---|---|---|
-| FI-1 | **Order settlement** — WO cost (labour+material+service) settles to cost center/asset via settlement rule | ✅ **Shipped (`0244`)** — finishing an order posts labour + material actuals to `cost_allocations` against both receivers (cost center + asset); delta posting, so re-runs and late costs are safe; `budgets.actual` recomputed from the ledger | Remaining: SERVICE cost type (needs PO/service entry), settlement rules configurable per order type (WM-4) | **L** | 🟡 |
+| FI-1 | **Order settlement** — WO cost (labour+material+service) settles to cost center/asset via settlement rule | ✅ **Shipped (`0244` + `0249`)** — finishing an order posts labour, material **and service** actuals to `cost_allocations` against both receivers (cost center + asset); delta posting, so re-runs, late costs and reversals are all safe; `budgets.actual` recomputed from the ledger | Remaining: settlement rules configurable per order type (WM-4) | **L** | 🟢 |
 | FI-2 | **RAV-based cost KPIs** — maintenance cost % of RAV, stores % of RAV, %contractor | RAV stored; ratios not surfaced | One plug into the reliability metrics cockpit | **S** | 🟡 |
-| FI-3 | **3-way match** — PO ↔ GR ↔ Invoice, tolerance, block | `invoiceMatched` flag | Full match + tolerance/block partial | **M** | 🟡 |
+| FI-3 | **3-way match** — PO ↔ GR ↔ Invoice, tolerance, block | 🟡 **Two of three legs real (`0248`)** — PO lines are rows and `goods_receipts` is written on receipt with a sequence-issued GRN number pointing at a line id; the match queue reads lines, not the JSONB that crashed production | Remaining: the invoice leg (`invoice_matches` still never written), tolerance/block rules | **M** | 🟡 |
 | FI-4 | **Cost element accounting** — primary/secondary elements | Cost centers only | No cost-element granularity | **M** | 🟢 |
 
 ---
@@ -101,8 +101,15 @@ Beyond the four-module gaps, these SAP-EAM capabilities would materially raise t
 - ✅ **WM-2** Operations + work centers + confirmations (`0168`/`0169`/`0170`).
 - ✅ **FI-1** Actual-cost roll-up + settlement to cost center/asset (`0244`) — trigger on order completion, delta postings, `sem_wo_settlement` reconciliation view, `ers_settlement_run()` for the periodic run (SAP KO8G). Also fixed `budgets.actual`, which never moved: the old path called an `increment_budget_actual` RPC that exists in no migration.
 - ✅ **IN-3** Movement types with account assignment → FI posting (`0245`).
+- ✅ **PO lines as rows** (`0248`) — `purchase_orders.items` JSONB replaced by `purchase_order_lines` (SAP EKPO), line numbers spaced by 10, receipts pointing at a line id instead of an array position. The JSONB column is frozen, not dropped, until the table has run in anger.
+- ✅ **SERVICE settlement** (`0249`) — the third input to the spine.
+- ✅ **ERP external keys** (`0250`) — `erp_object_map`, the identity layer an adapter needs to be idempotent. Inert until something writes to it.
 
-**The spine is closed.** Confirmations → labour actual, goods issues → material actual, both settling to a cost centre and an asset, with budget actuals recomputed from the ledger.
+**The spine is closed, all three inputs.** Confirmations → labour actual, goods issues → material actual, received service-PO lines → service actual; all settling to a cost centre and an asset, with budget actuals recomputed from the ledger.
+
+**The recognition rule, stated once:** *ordering is a commitment, receipt or issue is the cost.* A planned part, an ordered service and an outstanding PO line are all excluded from actuals for the same reason. It is why `sem_wo_actual_lines` filters on `is_planned` for material and on `qty_received` for service.
+
+**Why a MATERIAL PO line never posts to its work order:** it is received into stock (101), then issued to the order (261), and the issue is what makes it cost. Posting the line as well would charge the order twice for one part. Same guard shape as `movement_types.fi_posting` — a `line_type` filter, so double counting is structurally impossible rather than merely avoided.
 
 **Decisions settled in `0245`:**
 1. **Material actual = issued parts only.** A planned part is a commitment — `0201` has already netted it out of ATP; charging it as spend as well bills the plant for a decision rather than a consumption. The goods-issue engine already flips `is_planned → false` at TECO, so the distinction is real data. `sem_wo_actual_lines` and `getOrderActuals` changed together; orders settled under the old definition self-correct on their next run, and the correction posts as a visible negative line.
