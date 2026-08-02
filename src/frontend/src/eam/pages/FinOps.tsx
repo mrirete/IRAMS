@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import {
     FinOpsService, CostCenter, Budget, Warranty, WarrantyCheckResult,
-    WarrantyClaim, DepreciationBook, MaintenanceForecast
+    WarrantyClaim, DepreciationBook, MaintenanceForecast, SupplyChainMatch
 } from '../services/FinOpsService';
 import { DatabaseService } from '../services/DatabaseService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
@@ -763,7 +763,7 @@ export const FinOps: React.FC = () => {
     const [fleetDepreciation, setFleetDepreciation] = useState<any[]>([]);
     const [warranties, setWarranties] = useState<Warranty[]>([]);
     const [claims, setClaims] = useState<WarrantyClaim[]>([]);
-    const [supplyChainData, setSupplyChainData] = useState<any[]>([]);
+    const [supplyChainData, setSupplyChainData] = useState<SupplyChainMatch[]>([]);
     const [insurancePolicies, setInsurancePolicies] = useState<any[]>([]);
     const [vendorKPIs, setVendorKPIs] = useState<any[]>([]);
     const [dashboardMetrics, setDashboardMetrics] = useState<any>({
@@ -2680,7 +2680,7 @@ const VendorIntelTab: React.FC<VendorIntelTabProps> = ({ vendorKPIs, onRefresh }
 // =====================================================
 
 interface SupplyChainTabProps {
-    data: any[];
+    data: SupplyChainMatch[];
 }
 
 const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
@@ -2706,6 +2706,14 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
         if (val >= 1_000) return `$${(val / 1_000).toFixed(1)}K`;
         return `$${val.toLocaleString()}`;
     };
+
+    // Null = the document has not been received; show a dash, not a fake $0.
+    const amountOrDash = (val: number | null | undefined) =>
+        val === null || val === undefined ? '—' : `$${val.toLocaleString()}`;
+
+    // A missing document is not a variance — only flag amounts we actually have.
+    const hasVariance = (val: number | null | undefined, poAmount: number) =>
+        val !== null && val !== undefined && val !== poAmount;
 
     return (
         <div className="space-y-6">
@@ -2741,7 +2749,7 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
                                 <div className="text-sm text-slate-500">{item.vendor}</div>
                             </div>
                             <div className="text-right">
-                                <div>${item.poAmount?.toLocaleString()}</div>
+                                <div>{amountOrDash(item.poAmount)}</div>
                                 <div className={`text-xs px-2 py-0.5 rounded ${item.status === 'MATCHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{item.status}</div>
                             </div>
                         </div>
@@ -2775,16 +2783,22 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {data.map(match => (
+                            {data.length === 0 ? (
+                                <tr>
+                                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                                        No purchase orders to match
+                                    </td>
+                                </tr>
+                            ) : data.map(match => (
                                 <tr key={match.id} className="hover:bg-slate-50">
                                     <td className="px-4 py-3 font-medium text-slate-800">{match.poNumber}</td>
                                     <td className="px-4 py-3 text-slate-600">{match.vendor}</td>
-                                    <td className="px-4 py-3 text-right text-slate-600">${match.poAmount.toLocaleString()}</td>
-                                    <td className={`px-4 py-3 text-right ${match.grnAmount !== match.poAmount ? 'text-amber-600 font-medium' : 'text-slate-600'}`}>
-                                        ${match.grnAmount.toLocaleString()}
+                                    <td className="px-4 py-3 text-right text-slate-600">{amountOrDash(match.poAmount)}</td>
+                                    <td className={`px-4 py-3 text-right ${hasVariance(match.grnAmount, match.poAmount) ? 'text-amber-600 font-medium' : 'text-slate-600'}`}>
+                                        {amountOrDash(match.grnAmount)}
                                     </td>
-                                    <td className={`px-4 py-3 text-right ${match.invoiceAmount !== match.poAmount ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
-                                        ${match.invoiceAmount.toLocaleString()}
+                                    <td className={`px-4 py-3 text-right ${hasVariance(match.invoiceAmount, match.poAmount) ? 'text-red-600 font-medium' : 'text-slate-600'}`}>
+                                        {amountOrDash(match.invoiceAmount)}
                                     </td>
                                     <td className="px-4 py-3 text-center">
                                         <span className={`px-2 py-1 text-xs rounded-full font-medium ${statusColors[match.status]}`}>

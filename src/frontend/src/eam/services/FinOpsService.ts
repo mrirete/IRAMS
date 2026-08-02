@@ -216,6 +216,17 @@ export interface ThreeWayMatchResult {
     blockReason?: string;
 }
 
+/** A PO row in the three-way match queue. Null amount = nothing received/invoiced yet. */
+export interface SupplyChainMatch {
+    id: string;
+    poNumber: string;
+    vendor: string;
+    poAmount: number;
+    grnAmount: number | null;
+    invoiceAmount: number | null;
+    status: 'MATCHED' | 'VARIANCE' | 'BLOCKED' | 'PENDING';
+}
+
 export interface CostAnomalyResult {
     isAnomaly: boolean;
     severity: 'LOW' | 'MEDIUM' | 'HIGH';
@@ -2161,9 +2172,7 @@ class FinOpsServiceClass {
     // 4. SUPPLY CHAIN FINANCE
     // =====================================================
 
-    async getSupplyChainOverview(): Promise<any[]> {
-        // Mocking this query as we don't have a dedicated 'matches' table yet, usually derived from PO/GRN/Invoice
-        // We'll return empty or fetch POs for now
+    async getSupplyChainOverview(): Promise<SupplyChainMatch[]> {
         const { data, error } = await supabase
             .from('purchase_orders')
             .select('*, vendors(name)')
@@ -2172,14 +2181,54 @@ class FinOpsServiceClass {
 
         if (error) throw error;
 
-        // Transform to "match" view format roughly
-        return (data || []).map(po => ({
-            id: po.id,
-            poNumber: po.po_code,
-            vendor: po.vendors?.name,
-            poAmount: po.total_amount,
-            status: po.status === 'CLOSED' ? 'MATCHED' : 'PENDING'
-        }));
+        // All three legs of the match live on the PO line items: the receiving and
+        // invoice-matching flows in Purchase Orders write back into `items`.
+        // (The SAP-shaped goods_receipts / invoice_matches tables are never written.)
+        return (data || []).map(po => {
+            const items: any[] = Array.isArray(po.items) ? po.items : [];
+            const received = items.filter(i => Number(i.qtyReceivedTotal || 0) > 0);
+            const invoiced = items.filter(i => i.invoiceMatched);
+
+            const poAmount = items.reduce((sum, i) => sum + Number(i.lineTotal || 0), 0);
+            // null (not 0) when nothing has been received/invoiced yet — the UI shows
+            // that as "—" so missing paperwork never reads as a zero-value variance.
+            const grnAmount = received.length === 0 ? null
+                : received.reduce((sum, i) => sum + Number(i.qtyReceivedTotal || 0) * Number(i.unitCost || 0), 0);
+            const invoiceAmount = invoiced.length === 0 ? null
+                : invoiced.reduce((sum, i) => sum + Number(i.lineTotal || 0), 0);
+
+            return {
+                id: po.id,
+                poNumber: po.po_code,
+                vendor: po.vendors?.name || 'Unknown',
+                poAmount,
+                grnAmount,
+                invoiceAmount,
+                status: this.deriveMatchStatus(poAmount, grnAmount, invoiceAmount)
+            };
+        });
+    }
+
+    /**
+     * Three-way match verdict for a PO. Nothing is scored until an invoice exists —
+     * a part-received open PO is in progress, not a variance.
+     */
+    private deriveMatchStatus(
+        poAmount: number,
+        grnAmount: number | null,
+        invoiceAmount: number | null,
+        tolerance = 1.00
+    ): 'MATCHED' | 'VARIANCE' | 'BLOCKED' | 'PENDING' {
+        if (invoiceAmount === null) return 'PENDING';
+        if (invoiceAmount - poAmount > tolerance) return 'BLOCKED';
+        if (grnAmount === null) return 'VARIANCE'; // invoiced, nothing received
+
+        const maxVariance = Math.max(
+            Math.abs(grnAmount - poAmount),
+            Math.abs(invoiceAmount - poAmount),
+            Math.abs(invoiceAmount - grnAmount)
+        );
+        return maxVariance > tolerance ? 'VARIANCE' : 'MATCHED';
     }
 
     /**
