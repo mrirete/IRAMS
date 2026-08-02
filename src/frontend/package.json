@@ -13,7 +13,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "scan:silent": "node scripts/scan-silent-success.mjs",
-    "scan:silent:selftest": "node scripts/scan-silent-success.mjs --self-test"
+    "scan:silent:selftest": "node scripts/scan-silent-success.mjs --self-test",
+    "test:rls": "vite-node tests/rls/rls-matrix.mjs",
+    "test:rls:writes": "vite-node tests/rls/rls-matrix.mjs --writes"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
