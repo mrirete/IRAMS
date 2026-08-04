@@ -246,6 +246,18 @@ not need rewriting. That single design choice removes the bulk of what looked li
 
 - **Do not fork the schema.** One tenancy model, enterprise runs at N = 1.
 - **Do not derive tenancy through joins.** Denormalise; the performance evidence is unambiguous.
-- **Do not start before the enterprise launch is stable.** This touches every table in the system.
-  It is a new revenue tier, not a launch blocker, and doing it under launch pressure is how the
-  cross-tenant leak gets shipped.
+- **Sequencing — corrected 2026-08-03.** This section originally said "not a launch blocker, do not
+  start before the enterprise launch is stable". That assumed enterprise customers came first. The
+  marketing plan is the opposite: **SMBs are the opening cohort, larger clients follow.**
+
+  If SMBs land first, they land on a shared database, and Phases 0–3 become **launch-blocking** —
+  there is no SMB tier to sell until cross-tenant isolation is proven. Phases 4–6 make it sellable
+  (per-tenant config, self-serve signup, pricing tiers) and are also on the critical path for a
+  self-serve product.
+
+  What does *not* change: **Phase 3 is still the gate with no acceptable partial result.** Shipping
+  an SMB tier whose isolation has not been proven table-by-table is the one mistake that ends the
+  product rather than embarrassing it. Under launch pressure the temptation is to accept "we tested
+  the main tables" — don't.
+
+  The enterprise deployments are unaffected either way: they run the same schema at N = 1.
