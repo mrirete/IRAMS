@@ -363,6 +363,25 @@ The only change the Migration Center needs for this is that a **master-data impo
 
 **Recommendation: quote Tier 1, design for Tier 2.** Start where the value is provable and the risk is low, keep the canonical documents and emitter interface that make Tier 2 an upgrade rather than a rebuild, and let a real operational pain — not an assumption — justify the move.
 
+### Running this alongside the shared-DB tenant tier
+
+The two can run concurrently — the tenancy plan's column sweep and policy regeneration are *generated* over whatever tables exist, so new ERP tables are picked up automatically. But this stream owes tenancy four things, three of them defects introduced here.
+
+| Interference | Status |
+|---|---|
+| **`sem_*` views bypassed RLS as owner.** `0183` set the rule (`security_invoker = true`) and 0244–0255 did not follow it. Live effect: `sem_wo_settlement` walked around the `0246` FinOps read gate. Under tenancy it would have been a **cross-tenant read of every object the semantic layer covers**. | ✅ **fixed, `0259`** |
+| **`SECURITY DEFINER` functions bypass RLS entirely.** `ers_settle_work_order`, `ers_refresh_budget_actual` and `ers_match_invoice` take a UUID from an `authenticated` caller; `ers_settlement_run` takes none and would settle **every tenant's** orders. Harmless at N=1, a cross-tenant write vector at N>1. | ⚠️ **needs a tenant predicate in tenancy Phase 2** |
+| **Uniqueness keys that ignore the tenant** — `erp_object_map (system, entity_type, external_key)` collides the moment two tenants both map SAP vendor 100234; `invoice_tolerances (name)` collides on the seeded `DEFAULT`. Exactly the class the tenancy plan flags for `dictionaries (type, code)`. | ⚠️ **widen with `company_id` in tenancy Phase 4** |
+| **`goods_receipt_seq` is one global number range.** Tenants would share GRN numbering — not a data leak, but it leaks volume and breaks the per-company-code convention. `numbering_config_overrides` keyed `(company_id, object_class)` is the pattern already in this codebase. | ⚠️ **re-key in tenancy Phase 4** |
+
+Also: `movement_types` is a global catalog carrying `gl_account`, which is per-tenant. It needs the plan's §3.5 shape — a global default with a per-tenant override — not a column on a shared row.
+
+**The sequencing rule that matters:** a table created *between* the tenancy column sweep (Phase 1) and the isolation gate (Phase 3) misses both. So either land the sweep first, or add `company_id` explicitly to every new table from here.
+
+**Recommended order.** Tenancy Phases 0–3 are about two weeks and end at the isolation gate — treat that as a freeze on new ERP tables. Run **ERP Phase A (the read-only pilot) straight through it**: it adds no tables and touches no policies, so it cannot interfere. Resume Phase B onward on a tenant-aware schema, which is cheaper than retrofitting it.
+
+**One process note.** Three streams are now writing migrations against one repo, and migration numbers have collided three times in two days (`0237`, `0246`, `0250`). Always run `--status` before choosing a number.
+
 ### One risk to name in phase B
 
 `writeback_log`'s partial unique index is what makes delivery exactly-once. Generalising it is a refactor of correctness-critical code on a live path. Do it with the existing tests green before and after, and add a test that proves a retried send still cannot deliver twice — the failure mode here is silent and expensive.
