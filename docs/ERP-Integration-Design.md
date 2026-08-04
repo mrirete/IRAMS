@@ -296,16 +296,44 @@ No writes means no change control, no Basis risk, no audit scope, and no need to
 
 ---
 
-## 9. What Phase 1 actually builds
+## 9. The revised plan
 
-Unchanged from the earlier estimate; this is the shape of it.
+The original plan was a straight line: build foundations, build an adapter, connect to their sandbox, run in parallel. Four findings since then change it — not the total duration, but **the critical path and the order**.
 
-1. **Canonical document contracts** — movement, PO, GR, invoice, cost posting, *joined to the existing `NormalizedAction`* as one versioned set. Typed, tested against fixtures. Nothing SAP-specific.
-2. **Generalise `writeback_log` into `erp_outbox`** — all document families, keeping its partial-unique exactly-once index, adding supersede-by-key for advisory documents, and writing `erp_object_map` in the same transaction as the send.
-3. **`erp-sync` edge function** — the second worker on the connector registry, reusing its scheduling, health and logging; `proposal-writeback` folds into it rather than living beside it.
-4. **Emitter: S/4 OData**, behind the interface `writebackPackage` already demonstrates with `sap_pm`/`maximo`/`maintainx`.
-5. **Reconciliation UI** — the dead-letter queue someone in stores or AP actually works, fed by `unsettled_variance`, `fi_status` and `payables_status`, which already exist.
+### What changed, and why it matters
 
-**Sequencing note.** Step 2 is a refactor of working, tested code, not new invention — do it first and the finance documents become additions to a proven path rather than a parallel one.
+| Finding | Effect on the plan |
+|---|---|
+| **Phase 0 is complete** (`0244`–`0256`) | Removes 3–5 weeks that were still in the estimate |
+| **`0221` already implements the outbound spine** | The adapter phase is a *refactor of tested code*, not new invention — and it retires a divergence instead of creating one |
+| **A read-only pilot needs nothing from their Basis team** | Time-to-first-value drops from months to weeks, and it does not need the ECC-or-S/4 answer |
+| **Equipment master should precede finance** (D1) | Reordered — and it is the same data the pilot needs, so it is no longer an extra step |
 
-**Do not start any of it until:** the equipment master direction is agreed (D1), the per-object ownership rules are written down, and their CPI team has confirmed a sandbox. Those three answers change the build; guessing them wastes the phase.
+**The critical path used to run through their sandbox.** Everything queued behind a Basis team we do not control. It no longer does: there is now a three-week path to something demonstrable that needs only a data extract.
+
+### Revised phases
+
+| | Phase | Weeks | Needs from them | Blocked on Basis? |
+|---|---|---|---|---|
+| ~~0~~ | ~~Foundations — order-to-cost spine, PO lines, external keys~~ | — | — | ✅ **done** |
+| **A** | **Read-only pilot** — import equipment master + WO history, seed `erp_object_map` from their own numbers, run the assessment, deliver findings on their data | **2–3** | a file export | **No** |
+| **B** | **Unify the spine** — `writeback_log` → `erp_outbox`, one target registry, `NormalizedAction` joins the canonical set, per-family toggles | **2–3** | nothing | **No** |
+| **C** | **First emitter + first family** — S/4 OData, goods movements only, dry-run end to end | **2–3** | field mapping | **No** (dry-run) |
+| **D** | **Master data inbound** — vendors, cost centres, G/L, materials | **1–2** | extracts + ownership rules | Partly |
+| **E** | **Remaining families** — PR/PO, invoices, cost postings | **2–3** | — | No |
+| **F** | **Sandbox connect + UAT** | **3–6** | sandbox, Basis time | **Yes** |
+| **G** | **Parallel run** — both systems live, daily reconciliation | **4+** | their operations | **Yes** |
+
+**Still 4–6 months end to end.** Do not shorten that number — F and G are where estimates die, and skipping the parallel run is how garbage reaches a live GL. What changed is that **A delivers value in week three**, and A→E — about three months of work — needs nothing from their Basis team but a data extract and a field mapping.
+
+### The sequencing rule
+
+**Do A regardless.** It is the assessment you would run to win the deal anyway, it seeds the identity map as a side effect, and it is the only phase whose value survives the client saying no.
+
+**Do B next, regardless.** It retires a divergence in your own codebase — two half-built outbound paths — and it is worth doing even if this client walks.
+
+**Do not start C until three answers exist:** the equipment-master direction agreed, the per-object ownership rules written down, and a confirmed sandbox. Those change the build; guessing them wastes the phase. Note that A and B are unaffected by all three — which is precisely why they go first.
+
+### One risk to name in phase B
+
+`writeback_log`'s partial unique index is what makes delivery exactly-once. Generalising it is a refactor of correctness-critical code on a live path. Do it with the existing tests green before and after, and add a test that proves a retried send still cannot deliver twice — the failure mode here is silent and expensive.
