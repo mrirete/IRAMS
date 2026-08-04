@@ -334,6 +334,35 @@ The original plan was a straight line: build foundations, build an adapter, conn
 
 **Do not start C until three answers exist:** the equipment-master direction agreed, the per-object ownership rules written down, and a confirmed sandbox. Those change the build; guessing them wastes the phase. Note that A and B are unaffected by all three — which is precisely why they go first.
 
+### Scoping down: the 4–6 months is one option, not the only one
+
+**4–6 months buys continuous, bidirectional, API-level integration.** That is what the client described, but it is rarely what they need. Most organisations that ask for "continuous both ways" actually need **"correct by tomorrow morning"** — and finance is the domain where that is most true, because a nightly posting run is how SAP shops have always worked.
+
+Deciding what must be *live* versus what can be *nightly* or *once* collapses the cost far more than trimming features does.
+
+| Tier | What it is | Weeks | Basis involvement |
+|---|---|---|---|
+| **1** | **Migration Center + nightly file exchange.** Outbound: a daily file of cost postings and goods movements into their CPI. Inbound: a nightly master-data file (vendors, cost centres, G/L, materials). Everything else loaded once at onboarding. | **6–10** | **Minimal** — a file drop is standard and low change-control |
+| **2** | **+ API for the hot path.** Real-time goods movements and PO/GR, where next-morning latency actually hurts stores. | **+6–8** | Moderate — sandbox, auth, UAT |
+| **3** | **+ Full bidirectional.** Work-order lifecycle sync, master data both ways. Only if they are keeping SAP PM running in parallel. | **+8–12** | Heavy |
+
+**Tier 1 covers the client's stated business need**: keep finance in SAP, run spares and POs in IREAMS, and have the numbers agree. What it gives up is latency — corrections land the next day, and there is no live PO status inside SAP. For a maintenance storeroom that is almost always acceptable, and it is worth asking rather than assuming.
+
+**Tier 1's outbound half is already demonstrated.** `writebackPackage` renders a `columns`/`rows` export package precisely so a customer can bulk-import it, alongside the live-API path — *"Export package — always available; the customer bulk-imports the file."* A finance file emitter is the same pattern with different documents, not a new mechanism.
+
+**Where the Migration Center handles it instead of the integration:**
+
+| Data | Mechanism | Cadence |
+|---|---|---|
+| Equipment master, hierarchy | Migration Center | Once, then re-run when they restructure |
+| Work-order history, failure codes, meter history | Migration Center | Once |
+| Vendors, cost centres, G/L, materials | Migration Center, **re-runnable** | Nightly or monthly file |
+| Cost postings, goods movements | Integration | Nightly (T1) or live (T2) |
+
+The only change the Migration Center needs for this is that a **master-data import must be safely repeatable** — upsert on the external key rather than insert — which is a small change and is the same `erp_object_map` seeding described in §4.
+
+**Recommendation: quote Tier 1, design for Tier 2.** Start where the value is provable and the risk is low, keep the canonical documents and emitter interface that make Tier 2 an upgrade rather than a rebuild, and let a real operational pain — not an assumption — justify the move.
+
 ### One risk to name in phase B
 
 `writeback_log`'s partial unique index is what makes delivery exactly-once. Generalising it is a refactor of correctness-critical code on a live path. Do it with the existing tests green before and after, and add a test that proves a retried send still cannot deliver twice — the failure mode here is silent and expensive.
