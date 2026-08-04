@@ -223,7 +223,7 @@ const SPARKLINE_COLORS = { created: '#1E4FDB', closed: '#22c55e' };
 // ──────────────────────────────── Dashboard ────────────────────────────────
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, profile, dataScope, role } = useAuth();
+  const { user, profile, dataScope, role, permissions } = useAuth();
   const { showToast } = useToast();
   const userName = (profile as any)?.fullName || (profile as any)?.username || 'Operator';
   const userRole = role || '';
@@ -442,11 +442,14 @@ export const Dashboard: React.FC = () => {
       icon: <Activity size={18} />, bgIcon: 'bg-emerald-50 text-emerald-600',
       trend: 'neutral' as const, path: '/assets',
     },
-    {
+    // Inventory is gated on inventory.view (0257). Without it the query returns
+    // zero rows, and this tile would read "0 Low Stock Alerts" — a confident
+    // wrong number, which is worse than not showing it. Drop the tile instead.
+    ...(permissions?.inventory?.view === true ? [{
       label: 'Low Stock Alerts', value: lowStockItems, sub: `of ${inventory.length} items`,
       icon: <Package size={18} />, bgIcon: 'bg-rose-50 text-rose-600',
       trend: lowStockItems > 0 ? 'down' as const : 'neutral' as const, path: '/inventory',
-    },
+    }] : []),
   ];
 
   return (

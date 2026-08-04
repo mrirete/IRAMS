@@ -112,6 +112,30 @@ export class DatabaseService {
 
     // --- CONTACTS ---
 
+    /**
+     * Names only, for rendering a label — readable by every role.
+     *
+     * `contacts` and `vendors` hold emails, phones and commercial detail that
+     * the matrix withholds from most roles, but almost every page needs to turn
+     * an id into a NAME ("Responsible: Jane Smith"). Gating the base tables and
+     * leaving it there would blank those labels everywhere.
+     *
+     * So the base tables answer to the matrix, and these narrow views expose
+     * (id, name) to everyone. Use these anywhere you are only displaying a
+     * label; use getContacts/getVendors where the record itself is the subject.
+     */
+    public async getContactDirectory(): Promise<{ id: string; name: string }[]> {
+        const { data, error } = await supabase.from('contact_directory').select('id, name');
+        if (error) { console.error('Supabase Error (getContactDirectory):', error); return []; }
+        return (data || []) as { id: string; name: string }[];
+    }
+
+    public async getVendorDirectory(): Promise<{ id: string; name: string }[]> {
+        const { data, error } = await supabase.from('vendor_directory').select('id, name');
+        if (error) { console.error('Supabase Error (getVendorDirectory):', error); return []; }
+        return (data || []) as { id: string; name: string }[];
+    }
+
     public async getContacts(): Promise<Contact[]> {
         try {
             const { data, error } = await supabase.from('contacts').select('*, organization_unit_members(organization_unit_id)');
@@ -156,6 +180,23 @@ export class DatabaseService {
                 parentId: row.parent_id,
                 costCenterId: row.cost_center_id
             }));
+
+            // RLS gates `contacts` on contacts.view, but almost every page needs
+            // to turn an id into a NAME. A role without the permission gets zero
+            // rows here — not an error — so fall back to the name-only directory
+            // rather than blanking every "Responsible: …" label in the app.
+            // Pages that are ABOUT a contact are permission-gated anyway, so they
+            // take the full read above.
+            if (mappedContacts.length === 0) {
+                const stubs = (await this.getContactDirectory()).map((d) => ({
+                    id: d.id, name: d.name,
+                    firstName: (d.name || '').split(' ')[0],
+                    lastName: (d.name || '').split(' ').slice(1).join(' '),
+                    types: [], defaultType: 'GUEST', active: true,
+                } as unknown as Contact));
+                this._cachedContacts = stubs;
+                return stubs;
+            }
 
             this._cachedContacts = mappedContacts;
             return mappedContacts;
@@ -410,6 +451,15 @@ export class DatabaseService {
             console.error("Supabase Error (getVendors):", error);
             // Fallback for logic if table doesn't exist yet in real DB but we want to simulate
             return [];
+        }
+
+        // Same reasoning as getContacts: `vendors` is gated on vendors.view, but
+        // supplier NAMES appear in pickers on Assets and Inventory, which other
+        // roles legitimately open. Zero rows means denied, not empty — fall back
+        // to the name-only directory so the label still renders.
+        if ((data || []).length === 0) {
+            return (await this.getVendorDirectory())
+                .map((d) => ({ id: d.id, name: d.name, active: true } as unknown as Vendor));
         }
 
         return (data || []).map((row: any) => ({
