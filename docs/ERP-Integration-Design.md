@@ -169,14 +169,81 @@ Get that wrong and the canonical layer becomes SAP-with-extra-steps, and the sec
 
 ---
 
-## 6. What Phase 1 actually builds
+## 6. Three integration modes — finance is the narrowest one
+
+Finance was the client's ask, not the shape of the problem. There are three modes, and **they have genuinely different engineering requirements**. Treating them as one thing is a mistake in both directions.
+
+| | **Financial documents** | **Operational work** | **Reliability intelligence** |
+|---|---|---|---|
+| Direction | outbound | **bidirectional** | outbound, advisory |
+| Guarantee needed | **exactly-once, immutable** | state convergence | **supersession** — latest wins |
+| Correcting a mistake | post a reversal | reconcile the state | just send a better one |
+| Cost of failure | money posted twice | duplicate work; a technician on stale instructions | a stale recommendation |
+| Cadence | per document / daily run | near real-time | per study |
+| Difficulty | medium | **hardest** | low |
+| Status | ✅ built (`0244`–`0256`) | 🟡 partly (`0221`) | 🟡 partly (`0221`) |
+
+**Reliability must not be forced through the finance pipe.** A settlement is immutable and must land exactly once. A recommendation is the opposite: recomputing β and η next quarter *should* overwrite last quarter's advice. Push recommendations through an exactly-once outbox and you accumulate stale documents nobody can retract.
+
+### The work-management half is already prototyped
+
+`0221` + `lib/writebackPackage.ts` + the `proposal-writeback` function are **already the architecture proposed in §3**, built for work management before it was designed for finance:
+
+| §3 concept | Already exists as |
+|---|---|
+| Canonical document | `NormalizedAction` — explicitly system-neutral: *"vendor columns never read draft_payload directly"* |
+| Swappable emitters | `TargetSystem = 'generic' \| 'sap_pm' \| 'maximo' \| 'maintainx'` |
+| Per-tenant ERP profile | `writeback_targets` |
+| Exactly-once outbox | `writeback_log` with a **partial unique index on successful sends** — retryable on failure, never delivered twice |
+| Dry run before committing | `dry_run` builds and logs the payload with no outbound call |
+
+It even independently arrived at the guardrail from §5 — the vendor mapping renders from the neutral action, never from the raw payload. Its scope is narrower than the name suggests: **approved Specialist proposals only**, not full work-order lifecycle sync. But the spine is right.
+
+**`ers_wo_state` (`0233`) is the other half of mode 2, already built.** It normalises SAP PM (`CRTD`/`REL`/`TECO`/`CLSD`) and Maximo (`WAPPR`/`INPRG`/`COMP`) vocabularies into one canonical state. Bidirectional work sync fails on exactly this — two state machines that disagree about what "done" means — and that translation already exists and is tested.
+
+### Where reliability lands in SAP
+
+This is the loop the client cannot build themselves, and it is the commercial argument for IREAMS sitting alongside SAP rather than inside it:
+
+```
+SAP PM history ──▶ IREAMS ──▶ Weibull / RCM / FMEA / criticality ──▶ recommendation ──▶ SAP PM
+```
+
+| Our output | Where it lands in SAP PM |
+|---|---|
+| Weibull β/η, B10 → interval change | Maintenance plan cycle (IP02) — *the highest-value flow: it changes what their planners actually do* |
+| RCM decision, task selection | Task list operations |
+| Criticality assessment | Equipment ABC indicator |
+| FMEA / RPN, failure modes | Classification characteristics; catalog codes |
+| Alert diagnosis, inspection finding | PM notification (IW21) |
+| PSC / reliability metrics | Usually **not** SAP — a BI sink is the right destination |
+
+Note the last row. Not everything should go to SAP; some of it has nowhere sensible to land there, and pushing it anyway produces data their team ignores.
+
+### Recommendation: one spine, three document families
+
+Do **not** build a second outbound mechanism for finance. Two half-built integration spines is precisely the drift this codebase keeps paying for.
+
+Generalise what `0221` proved:
+
+- `writeback_log` → `erp_outbox`, carrying **all** document families, keeping the partial-unique exactly-once index for finance and work, and a supersede-by-key rule for reliability.
+- `writeback_targets` + `connectors` + the per-tenant ERP profile → **one** target registry with a mode per target.
+- `NormalizedAction` → one member of a canonical document set alongside movement, PO, GR, invoice and cost posting.
+
+That reframes Phase 1 from "build an integration" to "**generalise the one that exists and add the finance documents to it**" — cheaper, and it retires a divergence rather than creating one.
+
+---
+
+## 7. What Phase 1 actually builds
 
 Unchanged from the earlier estimate; this is the shape of it.
 
-1. **Canonical document contracts** — movement, PO, GR, invoice, cost posting. Typed, versioned, tested against fixtures. Nothing SAP-specific.
-2. **Outbox** (`erp_outbox`) — one row per document, with status, attempts, last error, and the `erp_object_map` write in the same transaction as the send.
-3. **`erp-sync` edge function** — the second worker on the existing connector registry, reusing its scheduling, health and logging.
-4. **Emitter: S/4 OData**, behind an interface a second emitter can implement.
+1. **Canonical document contracts** — movement, PO, GR, invoice, cost posting, *joined to the existing `NormalizedAction`* as one versioned set. Typed, tested against fixtures. Nothing SAP-specific.
+2. **Generalise `writeback_log` into `erp_outbox`** — all document families, keeping its partial-unique exactly-once index, adding supersede-by-key for advisory documents, and writing `erp_object_map` in the same transaction as the send.
+3. **`erp-sync` edge function** — the second worker on the connector registry, reusing its scheduling, health and logging; `proposal-writeback` folds into it rather than living beside it.
+4. **Emitter: S/4 OData**, behind the interface `writebackPackage` already demonstrates with `sap_pm`/`maximo`/`maintainx`.
 5. **Reconciliation UI** — the dead-letter queue someone in stores or AP actually works, fed by `unsettled_variance`, `fi_status` and `payables_status`, which already exist.
+
+**Sequencing note.** Step 2 is a refactor of working, tested code, not new invention — do it first and the finance documents become additions to a proven path rather than a parallel one.
 
 **Do not start any of it until:** the equipment master direction is agreed (D1), the per-object ownership rules are written down, and their CPI team has confirmed a sandbox. Those three answers change the build; guessing them wastes the phase.
