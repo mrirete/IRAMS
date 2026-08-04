@@ -2266,18 +2266,35 @@ class FinOpsServiceClass {
             linesByPo.set(l.po_id, list);
         }
 
+        // The invoice leg comes from real invoices since 0255, not from a
+        // boolean on the line. A blocked invoice must show its amount — that
+        // is the variance the queue exists to surface.
+        const { data: invoiceRows } = poIds.length === 0
+            ? { data: [] as any[] }
+            : await supabase
+                .from('sem_invoice_matches')
+                .select('po_id, invoice_amount, match_status, payment_block')
+                .in('po_id', poIds);
+
+        const invoicesByPo = new Map<string, any[]>();
+        for (const inv of invoiceRows || []) {
+            const list = invoicesByPo.get(inv.po_id) || [];
+            list.push(inv);
+            invoicesByPo.set(inv.po_id, list);
+        }
+
         return (data || []).map(po => {
             const items: any[] = linesByPo.get(po.id) || [];
             const received = items.filter(i => Number(i.qty_received || 0) > 0);
-            const invoiced = items.filter(i => i.invoice_matched);
+            const invoices: any[] = invoicesByPo.get(po.id) || [];
 
             const poAmount = items.reduce((sum, i) => sum + Number(i.line_total || 0), 0);
             // null (not 0) when nothing has been received/invoiced yet — the UI shows
             // that as "—" so missing paperwork never reads as a zero-value variance.
             const grnAmount = received.length === 0 ? null
                 : received.reduce((sum, i) => sum + Number(i.qty_received || 0) * Number(i.unit_cost || 0), 0);
-            const invoiceAmount = invoiced.length === 0 ? null
-                : invoiced.reduce((sum, i) => sum + Number(i.line_total || 0), 0);
+            const invoiceAmount = invoices.length === 0 ? null
+                : invoices.reduce((sum, i) => sum + Number(i.invoice_amount || 0), 0);
 
             return {
                 id: po.id,
@@ -2286,7 +2303,15 @@ class FinOpsServiceClass {
                 poAmount,
                 grnAmount,
                 invoiceAmount,
-                status: this.deriveMatchStatus(poAmount, grnAmount, invoiceAmount)
+                // The database has already scored each invoice line by line
+                // (0255). Only fall back to comparing totals when no invoice
+                // has been entered — a header comparison can net a price error
+                // against a quantity error, which is what the line-level match
+                // exists to prevent.
+                status: invoices.length > 0
+                    ? (invoices.some(i => i.match_status === 'BLOCKED') ? 'BLOCKED'
+                        : invoices.every(i => i.match_status === 'MATCHED') ? 'MATCHED' : 'VARIANCE')
+                    : this.deriveMatchStatus(poAmount, grnAmount, invoiceAmount)
             };
         });
     }
@@ -2350,63 +2375,141 @@ class FinOpsServiceClass {
     }
 
     /**
-     * Perform three-way match (PO + GRN + Invoice)
+     * Enter a vendor invoice against a PO and three-way match it (0255).
+     *
+     * Lines default to what is still outstanding on each PO line at the PO
+     * price, because that is what a correct invoice looks like — the clerk
+     * then changes only what the vendor actually disputed, so a discrepancy
+     * has to be typed in rather than accepted by default.
+     *
+     * The duplicate-invoice constraint surfaces as a plain message: paying the
+     * same invoice twice is the most common loss in accounts payable.
      */
-    async performThreeWayMatch(
-        poId: string,
-        grnId: string,
-        invoiceAmount: number,
-        toleranceAmount: number = 1.00
-    ): Promise<ThreeWayMatchResult> {
-        // Get PO total
-        const { data: po } = await supabase
-            .from('purchase_orders')
-            .select('total_amount')
-            .eq('id', poId)
-            .single();
-
-        // Get GRN total
-        const { data: grn } = await supabase
-            .from('goods_receipts')
-            .select('total_cost')
-            .eq('id', grnId)
-            .single();
-
-        const poAmount = po?.total_amount || 0;
-        const grnAmount = grn?.total_cost || 0;
-
-        const maxVariance = Math.max(
-            Math.abs(invoiceAmount - poAmount),
-            Math.abs(invoiceAmount - grnAmount),
-            Math.abs(poAmount - grnAmount)
-        );
-
-        const variancePct = poAmount > 0 ? (maxVariance / poAmount) * 100 : 0;
-        const withinTolerance = maxVariance <= toleranceAmount;
-
-        let status: 'MATCHED' | 'VARIANCE' | 'BLOCKED' = 'MATCHED';
-        let blockReason: string | undefined;
-
-        if (!withinTolerance) {
-            if (invoiceAmount > poAmount) {
-                status = 'BLOCKED';
-                blockReason = 'PRICE - Invoice exceeds PO amount';
-            } else if (grnAmount !== poAmount) {
-                status = 'VARIANCE';
-                blockReason = 'QUANTITY - GRN does not match PO quantity';
-            }
+    async createInvoice(params: {
+        poId: string;
+        vendorId?: string;
+        invoiceNumber: string;
+        invoiceDate: string;
+        invoiceAmount: number;
+        currency?: string;
+        lines?: { poLineId: string; quantity: number; unitPrice: number }[];
+    }): Promise<{ invoiceId: string; status: string; block?: string; variance: number }> {
+        let lines = params.lines;
+        if (!lines || lines.length === 0) {
+            const { data: poLines } = await supabase
+                .from('purchase_order_lines')
+                .select('id, qty_ordered, qty_received, unit_cost')
+                .eq('po_id', params.poId);
+            lines = (poLines || [])
+                .map((l: any) => ({
+                    poLineId: l.id,
+                    // Invoice what has been receipted; nothing has been proven
+                    // to have arrived beyond that.
+                    quantity: Number(l.qty_received) || 0,
+                    unitPrice: Number(l.unit_cost) || 0,
+                }))
+                .filter(l => l.quantity > 0);
         }
 
+        const { data: invoice, error } = await supabase
+            .from('invoice_matches')
+            .insert({
+                po_id: params.poId,
+                vendor_id: params.vendorId || null,
+                invoice_number: params.invoiceNumber,
+                invoice_date: params.invoiceDate,
+                invoice_amount: params.invoiceAmount,
+                currency: params.currency || 'USD',
+            })
+            .select('id')
+            .single();
+
+        if (error) {
+            if (error.code === '23505') {
+                throw new Error(`Invoice ${params.invoiceNumber} has already been entered for this vendor.`);
+            }
+            throw error;
+        }
+
+        if (lines.length > 0) {
+            const { error: lineErr } = await supabase.from('invoice_match_lines').insert(
+                lines.map(l => ({
+                    invoice_id: invoice.id,
+                    po_line_id: l.poLineId,
+                    quantity: l.quantity,
+                    unit_price: l.unitPrice,
+                })),
+            );
+            if (lineErr) throw new Error(`Invoice saved but its lines did not: ${lineErr.message}`);
+        }
+
+        const verdict = await this.matchInvoice(invoice.id);
+        return { invoiceId: invoice.id, ...verdict };
+    }
+
+    /**
+     * Re-run the three-way match. Idempotent, and worth re-running after a late
+     * goods receipt — an invoice blocked for quantity clears itself once the
+     * delivery it was ahead of actually arrives.
+     */
+    async matchInvoice(invoiceId: string): Promise<{ status: string; block?: string; variance: number }> {
+        const { data, error } = await supabase.rpc('ers_match_invoice', { p_invoice_id: invoiceId });
+        if (error) throw error;
+        const row = Array.isArray(data) ? data[0] : data;
         return {
-            matched: withinTolerance,
-            status,
+            status: row?.match_status || 'PENDING',
+            block: row?.payment_block || undefined,
+            variance: parseFloat(row?.variance_amount) || 0,
+        };
+    }
+
+    /** Invoices raised against one PO, with their verdicts. */
+    async getInvoicesForPO(poId: string): Promise<any[]> {
+        const { data, error } = await supabase
+            .from('sem_invoice_matches')
+            .select('*')
+            .eq('po_id', poId)
+            .order('invoice_date', { ascending: false });
+        if (error) {
+            console.warn('[finops] invoice read failed (0255 applied?):', error.message);
+            return [];
+        }
+        return data || [];
+    }
+
+    /**
+     * Three-way match verdict for one invoice, read back from the ledger.
+     *
+     * This used to compute a verdict in TypeScript from `purchase_orders.
+     * total_amount` — a column that does not exist — and nothing called it,
+     * which is the only reason it never crashed a second screen. The match now
+     * happens in one place, the database, so the invoice queue and this call
+     * cannot disagree.
+     */
+    async performThreeWayMatch(invoiceId: string): Promise<ThreeWayMatchResult> {
+        const { data, error } = await supabase
+            .from('sem_invoice_matches')
+            .select('*')
+            .eq('invoice_id', invoiceId)
+            .single();
+        if (error) throw error;
+
+        const poAmount = parseFloat(data.po_amount) || 0;
+        const grnAmount = parseFloat(data.grn_amount) || 0;
+        const invoiceAmount = parseFloat(data.invoice_amount) || 0;
+        const variance = parseFloat(data.variance_amount) || 0;
+        const matched = data.match_status === 'MATCHED';
+
+        return {
+            matched,
+            status: data.match_status === 'BLOCKED' ? 'BLOCKED' : matched ? 'MATCHED' : 'VARIANCE',
             poAmount,
             grnAmount,
             invoiceAmount,
-            variance: maxVariance,
-            variancePct,
-            withinTolerance,
-            blockReason
+            variance,
+            variancePct: poAmount > 0 ? (variance / poAmount) * 100 : 0,
+            withinTolerance: matched,
+            blockReason: data.payment_block || undefined,
         };
     }
 

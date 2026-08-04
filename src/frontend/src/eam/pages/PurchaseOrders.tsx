@@ -15,6 +15,7 @@ type TabId = 'details' | 'items' | 'properties' | 'authorise';
 import { useSearchParams } from 'react-router-dom';
 import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
+import { FinOpsService } from '../services/FinOpsService';
 import { downloadPOItemsTemplate, parsePOItemsFile } from '../services/assetTemplates';
 import { emptyResult, tally, errMessage, type ImportResult } from '../services/importTypes';
 import { ImageGallery } from '../components/ui/ImageGallery';
@@ -569,6 +570,21 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
     const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
     const [invoiceMatchId, setInvoiceMatchId] = useState<string | null>(null);
     const [invoiceInput, setInvoiceInput] = useState('');
+    // FI-3 (0255) — real invoice entry and its three-way match verdict.
+    const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+    const [invoiceAmount, setInvoiceAmount] = useState('');
+    const [invoicing, setInvoicing] = useState(false);
+    const [invoices, setInvoices] = useState<any[]>([]);
+
+    // Value actually receipted — what a correct invoice should come to.
+    const receivedValue = useMemo(
+        () => (po.items || []).reduce((s, i) => s + (Number(i.qtyReceivedTotal) || 0) * (Number(i.unitCost) || 0), 0),
+        [po.items],
+    );
+
+    useEffect(() => {
+        FinOpsService.getInvoicesForPO(po.id).then(setInvoices).catch(() => setInvoices([]));
+    }, [po.id]);
 
     // Helper to calculate status based on items
     const calculateStatus = (items: PurchaseOrderItem[]): POStatus => {
@@ -819,17 +835,68 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
         }
     };
 
-    const handleInvoiceMatch = (id: string) => {
-        setInvoiceMatchId(id);
+    // FI-3 (0255) — entering an invoice is a document-level act, so the old
+    // per-line "mark this matched" affordance opens the invoice dialog for the
+    // whole order. It never did anything anyway: confirmInvoiceMatch was
+    // declared and never rendered, so the button set some state and stopped.
+    const handleInvoiceMatch = () => {
+        setInvoiceMatchId(po.id);
         setInvoiceInput('');
+        setInvoiceDate(new Date().toISOString().split('T')[0]);
+        setInvoiceAmount(receivedValue.toFixed(2));
     };
 
-    const confirmInvoiceMatch = () => {
-        if (invoiceMatchId && invoiceInput.trim()) {
-            handleItemChange(invoiceMatchId, 'invoiceNumber', invoiceInput.trim());
-            handleItemChange(invoiceMatchId, 'invoiceMatched', true);
+    const confirmInvoiceMatch = async () => {
+        if (!invoiceInput.trim()) {
+            showToast('Enter the vendor invoice number.', 'warning');
+            return;
+        }
+        setInvoicing(true);
+        try {
+            const verdict = await FinOpsService.createInvoice({
+                poId: po.id,
+                vendorId: po.supplierId || undefined,
+                invoiceNumber: invoiceInput.trim(),
+                invoiceDate,
+                invoiceAmount: parseFloat(invoiceAmount) || 0,
+                currency: po.currency,
+            });
+            if (verdict.status === 'BLOCKED') {
+                showToast(
+                    `Invoice ${invoiceInput.trim()} BLOCKED for payment — ${(verdict.block || 'variance').toLowerCase()}. Variance ${verdict.variance.toFixed(2)}.`,
+                    'error',
+                );
+            } else if (verdict.status === 'MATCHED') {
+                showToast(`Invoice ${invoiceInput.trim()} matched — cleared for payment.`, 'success');
+            } else {
+                showToast(`Invoice ${invoiceInput.trim()} saved, but nothing has been receipted to match it against.`, 'warning');
+            }
             setInvoiceMatchId(null);
             setInvoiceInput('');
+            await loadInvoices();
+        } catch (e: any) {
+            showToast(e.message || 'Could not enter the invoice.', 'error');
+        } finally {
+            setInvoicing(false);
+        }
+    };
+
+    const loadInvoices = async () => {
+        setInvoices(await FinOpsService.getInvoicesForPO(po.id));
+    };
+
+    const handleRematch = async (invoiceId: string) => {
+        try {
+            const verdict = await FinOpsService.matchInvoice(invoiceId);
+            showToast(
+                verdict.status === 'BLOCKED'
+                    ? `Still blocked — ${(verdict.block || 'variance').toLowerCase()}.`
+                    : verdict.status === 'MATCHED' ? 'Now matched — cleared for payment.' : 'Nothing to match against yet.',
+                verdict.status === 'BLOCKED' ? 'warning' : 'success',
+            );
+            await loadInvoices();
+        } catch (e: any) {
+            showToast('Re-match failed: ' + e.message, 'error');
         }
     };
 
@@ -839,6 +906,16 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
             <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
                 <div className="text-sm font-bold text-slate-700">Line Items ({po.items.length})</div>
                 <div className="flex gap-2">
+                    <button
+                        onClick={handleInvoiceMatch}
+                        disabled={receivedValue <= 0}
+                        title={receivedValue <= 0
+                            ? 'Receive something first — an invoice is matched against what arrived'
+                            : 'Enter a vendor invoice and three-way match it'}
+                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                    >
+                        <FileText size={14} /> Enter Invoice
+                    </button>
                     <button
                         onClick={() => setImportOpen(true)}
                         className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded hover:bg-slate-50 flex items-center gap-2"
@@ -1006,7 +1083,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                                     <td className="px-4 py-3 text-center relative group-hover:visible">
                                         <div className="flex justify-center gap-1">
                                             <button
-                                                onClick={() => handleInvoiceMatch(item.id)}
+                                                onClick={() => handleInvoiceMatch()}
                                                 className="p-1 text-slate-400 hover:text-green-600"
                                                 title="Invoice Match"
                                             >
@@ -1065,6 +1142,109 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                     </table>
                 </div>
             </div>
+
+            {/* FI-3 (0255) — invoices against this order, with their verdicts. */}
+            {invoices.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
+                        Invoices &amp; Three-Way Match
+                    </div>
+                    <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-50 text-slate-600 font-bold">
+                            <tr>
+                                <th className="p-2 border-b">Invoice</th>
+                                <th className="p-2 border-b">Date</th>
+                                <th className="p-2 border-b text-right">Invoiced</th>
+                                <th className="p-2 border-b text-right">Received</th>
+                                <th className="p-2 border-b">Status</th>
+                                <th className="p-2 border-b"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {invoices.map(inv => {
+                                const blocked = inv.match_status === 'BLOCKED';
+                                return (
+                                    <tr key={inv.invoice_id} className="border-b last:border-0">
+                                        <td className="p-2 font-medium text-slate-700">{inv.invoice_number}</td>
+                                        <td className="p-2 text-slate-500">{inv.invoice_date}</td>
+                                        <td className="p-2 text-right tabular-nums">{Number(inv.invoice_amount || 0).toFixed(2)}</td>
+                                        <td className="p-2 text-right tabular-nums text-slate-500">{Number(inv.grn_amount || 0).toFixed(2)}</td>
+                                        <td className="p-2">
+                                            <span className={`px-1.5 py-0.5 rounded font-bold ${blocked ? 'bg-red-100 text-red-700'
+                                                : inv.match_status === 'MATCHED' ? 'bg-emerald-100 text-emerald-700'
+                                                    : 'bg-slate-100 text-slate-600'}`}>
+                                                {inv.payables_status}
+                                            </span>
+                                            {blocked && Number(inv.variance_amount) > 0 && (
+                                                <span className="ml-1 text-red-600 tabular-nums">
+                                                    ({Number(inv.variance_amount).toFixed(2)})
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="p-2 text-right">
+                                            <button
+                                                onClick={() => handleRematch(inv.invoice_id)}
+                                                className="text-primary-600 hover:underline font-semibold"
+                                                title="Re-run the match — a late delivery can clear a quantity block"
+                                            >
+                                                Re-match
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* Invoice entry. Defaults to the received value, so a discrepancy
+                has to be typed in rather than accepted by default. */}
+            {invoiceMatchId && (
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-5 space-y-4">
+                        <div>
+                            <h3 className="font-bold text-slate-800">Enter Vendor Invoice</h3>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Matched line by line against what was ordered and what was received.
+                                Received to date: <strong className="tabular-nums">{receivedValue.toFixed(2)}</strong>
+                            </p>
+                        </div>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoice Number</label>
+                                <input
+                                    autoFocus
+                                    className="w-full border border-slate-300 rounded p-2 text-sm"
+                                    value={invoiceInput}
+                                    onChange={(e) => setInvoiceInput(e.target.value)}
+                                    placeholder="Vendor's invoice number"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Invoice Date</label>
+                                    <input type="date" className="w-full border border-slate-300 rounded p-2 text-sm"
+                                        value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Amount</label>
+                                    <input type="number" className="w-full border border-slate-300 rounded p-2 text-sm text-right"
+                                        value={invoiceAmount} onChange={(e) => setInvoiceAmount(e.target.value)} />
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 pt-2">
+                            <button onClick={() => setInvoiceMatchId(null)}
+                                className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded">Cancel</button>
+                            <button onClick={confirmInvoiceMatch} disabled={invoicing}
+                                className="px-3 py-1.5 text-sm bg-primary-600 text-white font-bold rounded hover:bg-primary-500 disabled:opacity-50">
+                                {invoicing ? 'Matching…' : 'Enter & Match'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
