@@ -234,7 +234,69 @@ That reframes Phase 1 from "build an integration" to "**generalise the one that 
 
 ---
 
-## 7. What Phase 1 actually builds
+## 7. What this can and cannot carry
+
+"Anything" is too strong, and the distinction is worth holding because getting it wrong is expensive.
+
+**It carries documents.** A document has three properties: a definite moment it happened, a stable identity, and a state you can ask about later. Goods movements, receipts, invoices, cost postings, work orders, notifications, inspection results, meter readings, recommendations — all documents.
+
+**It must not carry bulk history.** This is the maintenance/inspection-history case specifically:
+
+> **History migrates once. Events integrate forever.** Same data, different mechanism, and the cutover date is the boundary between them.
+
+Ten years of work-order history is not 400,000 documents to push through an outbox one at a time — it is a bulk load. Force it through the document pipe and you get a slow, expensive run that produces 400,000 dead-letter candidates and an exception queue nobody can work. That is the Migration Center's job, and it already has the phases for it: work-order history (6), failure-code catalogs (7), meter and condition history (8).
+
+**It should not carry** high-frequency telemetry (Connector Hub already does, correctly), large binaries such as drawings and certificates (send a pointer, not the payload), or free-form analytics (a BI sink, not SAP).
+
+### Maintenance and inspection history, concretely
+
+| Data | Direction | Mechanism | Notes |
+|---|---|---|---|
+| Their SAP PM work-order history | in | **Migration Center** | *The most valuable inbound data there is* — Weibull needs failures, and their history is where the failures are |
+| Their failure/damage/cause codes | in | Migration Center | Maps to the ISO 14224 coding already in the schema |
+| Their meter and condition history | in | Migration Center | Feeds degradation models |
+| Ongoing completed work orders | out | outbox | Order confirmation / TECO |
+| Ongoing inspection results | out | outbox | As a PM notification, or a measurement document |
+| CML thickness readings, design basis (`ers_cmls`, `0213`) | — | **stays here** | SAP PM has nowhere good to put these. Not a gap — a reason they need IREAMS |
+| Audit findings and corrective actions | out | outbox, as notifications | Only if they want them in SAP; often they do not |
+
+The last two rows are worth saying out loud in a client meeting. Some of what IREAMS holds has **no sensible SAP home**, and that is the argument for the product, not a limitation of the integration.
+
+---
+
+## 8. What actually gets a client to yes
+
+Most of this exists already and simply is not being said.
+
+**Already built — name it in the proposal:**
+
+| Concern they will raise | The answer, already in the code |
+|---|---|
+| "What will it write into our system?" | **Dry run.** `proposal-writeback` builds and logs the exact payload with no outbound call. They can see every write before any write happens. |
+| "Where do our credentials live?" | **Not in a table.** `writeback_targets.config.auth.secret_env` stores the *name* of a secret the edge function reads at send time. |
+| "Can your software post to SAP on its own?" | **No.** Every proposal is re-read server-side and must be human-approved. A client cannot deliver work a person never approved, whatever the request body says. Segregation of duties, which their auditor will ask about. |
+| "Prove what you sent us." | `writeback_log` holds the exact payload per delivery; the cost ledger is append-only and corrections are visible reversals. That is a SOX evidence pack. |
+| "What if we stop?" | SAP keeps everything it was sent; IREAMS exports. Say it plainly — an exit story they can verify beats a lock-in claim they cannot. |
+
+**The single biggest unlock, and it needs no answers to the open questions:**
+
+> **A read-only pilot that writes nothing to SAP.** Pull their equipment master and work-order history, run the reliability assessment, hand them findings on *their own data*.
+
+No writes means no change control, no Basis risk, no audit scope, and no need to know whether they are on ECC or S/4 yet. It is roughly **2–3 weeks**, mostly using the Migration Center and the Specialist assessment that already exist — and it converts a 4–6 month integration decision into something a manager can approve alone. It also demonstrates the differentiator rather than describing it: their history, their failures, their Weibull curves, their bad actors.
+
+**Worth adding before the conversation:**
+
+1. **Per-document-family toggles.** Let them switch on goods receipts only, then add invoices, then costs. Incremental is far easier to approve than all-or-nothing, and it caps the blast radius of a first mistake.
+2. **A named owner for the exception queue, written into the SOW.** Integrations die in week three because nobody owns failed documents. Naming the person is worth more than any amount of retry logic.
+3. **A one-page data-flow diagram** for their security review — what leaves their network, to where, over what, holding what. It gets asked for every time; having it ready reads as competence.
+4. **The list of what you need from them, given early.** Sandbox, a Basis contact, cost-centre and G/L extracts, movement-type account mapping, tolerance policy. A client who sees the ask up front trusts the estimate; one who discovers it in week four does not.
+5. **An ROI line their champion can take to a CFO.** Not "integration" — eliminated double-keying (countable), stock accuracy, and maintenance cost per asset, which their SAP cannot produce today. The champion needs a number to defend internally.
+
+**And one risk to raise before they do:** if they are SOX-scoped, your posting path becomes an audited system. Offer the evidence pack proactively. Being asked for it and improvising is a much worse meeting.
+
+---
+
+## 9. What Phase 1 actually builds
 
 Unchanged from the earlier estimate; this is the shape of it.
 
