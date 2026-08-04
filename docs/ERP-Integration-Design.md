@@ -108,7 +108,68 @@ The canonical document is ours and stable. Only the **emitter** differs, selecte
 
 ---
 
-## 4. What Phase 1 actually builds
+## 4. This is not the Migration Center
+
+Both move data from another system, and that is where the similarity ends.
+
+**The Migration Center is how a customer moves in. This is how they stay married.**
+
+| | Migration Center (`0219`) | ERP integration |
+|---|---|---|
+| Trigger | a person uploads a file | an event, or a schedule |
+| Direction | one way, in | both ways |
+| Frequency | once per phase, at onboarding | continuously, forever |
+| Grain | whole entities — *all* the assets | one document — *this* goods receipt |
+| Identity | matched on tag/code during the import | a permanent map (`erp_object_map`) |
+| Getting it wrong | roll the batch back | post a reversal; the ledger is append-only |
+| On failure | the import fails, fix the file, re-run | dead-letter queue someone works |
+| Who operates it | an onboarding consultant, once | nobody — it runs |
+| Lifetime | weeks | years |
+
+The Migration Center's nine phases (assets → people → inventory → vendors → PM schedules → WO history → failure codes → meter history → live feeds) exist to enforce an ordering constraint, because importing work-order history before the asset register creates flat, level-less rows the hierarchy can never absorb. That is a **one-time correctness problem**. The integration's problem is the opposite: *given that both systems will keep changing forever, how do we never double-post and never lose a document?*
+
+They are complementary, and phase 9 already proves the pattern — it hands off to the Connector Hub for ongoing telemetry rather than trying to own it. Three distinct jobs:
+
+- **Migration Center** — one-time, file-based, bulk, human-supervised
+- **Connector Hub** — ongoing, high-frequency, low-value-per-message telemetry
+- **`erp-sync`** — ongoing, low-frequency, high-value-per-message business documents
+
+### One concrete improvement worth making early
+
+**The Migration Center should seed `erp_object_map`.** `import_batches.source_system` already records `sap_pm`, and a SAP PM export carries SAP's own equipment and material numbers. Those are precisely the `external_key` values the integration will need. Today they are used to match a row and then discarded.
+
+Writing an `erp_object_map` row per imported record — when the source system is an ERP — means the integration begins life **already mapped**, instead of opening with a reconciliation project against the very data we just loaded. It is a small change to the import path and it removes the largest source of week-one integration pain.
+
+---
+
+## 5. Other systems, not just SAP
+
+Yes — by construction, and this matters commercially. The architecture in §3 is provider-agnostic; SAP lives only in the emitter.
+
+**Generic — reused by every target, built already or in Phase 1:**
+`erp_object_map` (its `system` column is free text with no constraint — multi-system is possible today, `'SAP'` is only a default), the canonical documents, the outbox with retry and dead-letter, the ownership/conflict model, the reconciliation views, and the connector registry with its scheduling, health and logging.
+
+**SAP-specific — confined to one replaceable layer:**
+the OData/BAPI/IDoc transport, the field maps, ETag concurrency, deep-insert payload shapes, and field-length limits.
+
+Plausible second and third emitters:
+
+| Target | Why | Emitter effort |
+|---|---|---|
+| **QuickBooks / Xero** | The SMB tier's finance system. Simple REST, well-documented. Commercially the highest-value second emitter — it makes finance integration a *product feature*, not an enterprise engagement. | **S** |
+| Microsoft Dynamics 365 BC / F&O | Common mid-market EAM neighbour; OData, so close to the S/4 emitter | **M** |
+| NetSuite, Odoo, Sage Intacct | Mid-market ERP | **M** |
+| Oracle Fusion / EBS, Infor, IFS | Tier-1 alternatives | **M–L** |
+| Coupa / Ariba | Procurement only — POs and invoices, no cost postings | **M** |
+| Data warehouse / BI | Nearly free once documents are canonical — it is the same document, written to a different sink | **S** |
+
+**The guardrail that makes this true, and the one way to lose it:** the canonical document must carry *semantics*, not SAP codes. `movement_types` is keyed on SAP's BWART (`101`, `261`, `701`) — a deliberate choice, because BWART is the lingua franca of maintenance materials management and it gave the schema a vocabulary that was already thought through. But the **canonical document must say `issue_to_order`, not `261`**, with BWART as one mapping among several. Likewise ETags, deep inserts and 18-character field limits must never leak above the emitter.
+
+Get that wrong and the canonical layer becomes SAP-with-extra-steps, and the second emitter costs as much as the first. Get it right and the honest description of this investment is not "an SAP integration" — it is **a finance-integration platform whose first and hardest emitter happens to be SAP**. Doing the hardest one first is the right order; everything after it is easier.
+
+---
+
+## 6. What Phase 1 actually builds
 
 Unchanged from the earlier estimate; this is the shape of it.
 
