@@ -71,12 +71,40 @@ Step 3 matters: `--baseline` marks every existing migration as applied without r
 
 ### 3.2a Refreshing the baseline
 
-Regenerate whenever the origin schema changes materially:
+> **The baseline is the product a customer receives, not the migrations directory.**
+> It went stale exactly once, silently, and it is worth knowing how. Generated
+> 2026-08-01; RBAC gating (`0241`–`0257`) and tenancy (`0258`–`0264`) landed
+> after it. For four days, provisioning a customer would have handed them a
+> database with **no tenant isolation and almost no write gating** —
+> `caller_company` appeared **zero** times in `schema.sql`. Nothing failed and
+> nothing warned. The file just described an older database.
+>
+> **Regenerate after any migration that changes schema, then verify.** Not "when
+> it changes materially" — that judgement is what went wrong.
 
 ```bash
 node scripts/provision/export-schema.mjs --project-ref hacrebcfvyqdnjvilhqc
 node scripts/provision/export-seed.mjs   --project-ref hacrebcfvyqdnjvilhqc
+
+# Refuses to be quiet about a difference. Run it before provisioning anyone.
+node scripts/provision/verify-baseline.mjs --project-ref hacrebcfvyqdnjvilhqc
 ```
+
+`verify-baseline.mjs` compares the exported files against the live origin:
+tables, policies, views, standalone indexes, `company_id` columns and their
+defaults, tenant-scoped policy expressions, and that the seed creates the
+company its own tenant-owned rows point at.
+
+One trap it encodes: `pg_indexes` reports 688 but the baseline emits 479
+`CREATE INDEX`. The 209 difference is indexes Postgres creates implicitly for
+PRIMARY KEY and UNIQUE constraints, which the exporter emits as `ADD
+CONSTRAINT` — emitting both would create each twice. The comparison is against
+**standalone** indexes. Comparing the raw catalog number produces a confident
+false alarm, which is what it did the first time.
+
+**Last verified 2026-08-05** — structurally, against the origin, all seven
+counts matching. The 2026-07-25 full-load verification below predates tenancy
+and no longer covers what ships.
 
 `export-seed.mjs` carries an explicit allowlist of reference tables. **Anything not on that list is never exported** — adding a table means asserting it holds no customer data. `schema_migrations` is deliberately excluded, since each project owns its own ledger.
 
@@ -199,7 +227,32 @@ node scripts/provision/apply-migrations.mjs --project-ref <scratch> --apply --al
 | 9 | `0201_atp_reservation_netting.sql` | `column wop.quantity does not exist` | Ordering. |
 | 10 | `0216_schema_drift_repair.sql` | FK violation on `warranties` | Seed-data ordering. |
 
-The **23 duplicate migration numbers** (0001, 0002, 0003, 0022, 0025, 0026, 0029, 0031, 0032, 0033, 0036, 0037, 0038, 0049, 0050, 0051, 0052, 0053, 0072, 0073, 0074, 0102, 0141 — 0141 has four files) are a real hazard but were **not** the main cause; ordering and the corrupted file were.
+The duplicate migration numbers were a real hazard but were **not** the main
+cause; ordering and the corrupted file were.
+
+**Resolved 2026-08-05.** 30 numbers were double-claimed (0141 by four files).
+Every migration now holds its own order slot: the second and later file in a
+group takes a letter — `0052_` then `0052a_`, still before `0053_` — so it keeps
+its original position instead of being renumbered to the end of the sequence.
+`orderMigrations()` sorts on number **then suffix**, and the runner still treats
+a genuine collision as fatal.
+
+The suffix order was not invented. Where the ledger had a distinct `applied_at`
+for every file in a group it was used as the record it is — three groups (0234,
+0248, 0249) had actually been applied in the *reverse* of alphabetical order.
+The other 22 groups were all added in the repo's first commit and baselined at a
+single instant, so 218 ledger rows share one timestamp and nothing can separate
+them; those kept alphabetical, which is what a fresh replay already did, after
+checking that 29 of 30 groups touch disjoint objects and that 0141's two
+definitions of `create_auth_user` are byte-identical.
+
+```bash
+node scripts/provision/resolve-duplicate-numbers.mjs --plan --project-ref <ref>
+```
+
+Reports any new collision and the evidence it would order it by. The ledger is
+keyed on filename, so it moves in the same pass as the rename — otherwise 35
+migrations look pending and replay against a schema that already has them.
 
 ### 6.2 The fix that shipped — squash to a verified baseline
 
