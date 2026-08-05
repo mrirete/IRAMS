@@ -77,7 +77,79 @@ interface AssetDraft {
     data: Row;
 }
 
-export async function importAssets(rows: Row[], opts: { withBatch?: boolean } = {}): Promise<ImportResult> {
+/**
+ * Sync mode: carry a file's changes onto assets that already exist.
+ *
+ * Only the columns the file actually carries are written. That is the whole
+ * difference between this and an upsert: an upsert sends the full row, so
+ * every column absent from the sheet would be overwritten with null and a
+ * master-data feed carrying tag + manufacturer would quietly erase criticality,
+ * serial numbers and cost centres across the register.
+ *
+ * Never touched, whatever the file says:
+ *   tag         the key we matched on
+ *   company_id  the tenant — an import must not move a record between customers
+ *   parent_id / hierarchy_level
+ *               structural, and re-parenting mid-sync would reorder the tree
+ *               under work orders that reference it. A hierarchy change is a
+ *               deliberate act, not a side effect of a nightly file.
+ */
+async function applyAssetUpdates(
+    targets: { draft: AssetDraft; id: string }[],
+    ccByCode: Map<string, string>,
+    res: ImportResult,
+): Promise<void> {
+    for (const { draft, id } of targets) {
+        const d = draft.data;
+        const patch: Record<string, unknown> = {};
+        const set = (col: string, val: unknown) => {
+            if (val !== undefined && val !== null && String(val).trim() !== '') patch[col] = val;
+        };
+
+        set('name', d['name']);
+        set('criticality', (d['criticality'] || '').toUpperCase() || undefined);
+        set('status_code', (d['status'] || '').toUpperCase() || undefined);
+        set('equipment_number', d['equipmentnumber']);
+        set('serial_number', d['serialnumber']);
+        set('manufacturer', d['manufacturer']);
+        set('model', d['model']);
+        set('asset_category', d['assettype']);
+        set('asset_type_code', d['assettype']);
+
+        const ccCode = (d['costcenter'] || '').toUpperCase();
+        if (ccCode) {
+            const ccId = ccByCode.get(ccCode);
+            if (ccId) set('cost_center_id', ccId);
+            else res.notes!.push(`Cost centre "${d['costcenter']}" not found — row ${draft.row} updated without it.`);
+        }
+
+        if (Object.keys(patch).length === 0) {
+            tally(res, { row: draft.row, key: draft.tag, status: 'skipped', reason: 'Already present, and the file carried nothing to change' });
+            continue;
+        }
+
+        const { error } = await supabase.from('assets').update(patch).eq('id', id);
+        if (error) {
+            tally(res, { row: draft.row, key: draft.tag, status: 'failed', reason: error.message });
+        } else {
+            tally(res, { row: draft.row, key: draft.tag, status: 'updated' });
+        }
+    }
+}
+
+export async function importAssets(
+    rows: Row[],
+    opts: {
+        withBatch?: boolean;
+        /**
+         * 'insert' (default) — a one-time migration: rows that already exist
+         * are left untouched. 'sync' — a repeatable master-data feed: rows that
+         * already exist are updated from the file. Opt-in, because a re-run
+         * under the default must never overwrite work done in the app.
+         */
+        mode?: 'insert' | 'sync';
+    } = {},
+): Promise<ImportResult> {
     const res = emptyResult();
     if (rows.length === 0) return res;
 
@@ -124,14 +196,42 @@ export async function importAssets(rows: Row[], opts: { withBatch?: boolean } = 
 
     const inFile = new Map<string, AssetDraft>();
     const pending: AssetDraft[] = [];
+    const toUpdate: { draft: AssetDraft; id: string }[] = [];
     for (const d of drafts) {
-        if (d.tag && existing.has(d.tag.toUpperCase())) {
-            tally(res, { row: d.row, key: d.tag, status: 'skipped', reason: 'Tag already exists — left untouched' });
+        const hit = d.tag ? existing.get(d.tag.toUpperCase()) : undefined;
+        if (hit) {
+            // A one-time migration leaves what it finds alone; a master-data
+            // sync is re-run precisely to carry changes across, so the same
+            // row means "update" there and "skip" here. Sync is opt-in for
+            // that reason — a re-run under the default must never overwrite
+            // work someone did in the app after the first import.
+            if (opts.mode === 'sync') {
+                toUpdate.push({ draft: d, id: hit.id });
+            } else {
+                tally(res, { row: d.row, key: d.tag, status: 'skipped', reason: 'Tag already exists — left untouched' });
+            }
+            // Either way the row is not re-created, and it is a known tag that
+            // later rows may legitimately name as their parent.
+            if (d.tag) inFile.set(d.tag.toUpperCase(), d);
             continue;
         }
         if (d.tag) inFile.set(d.tag.toUpperCase(), d);
         pending.push(d);
     }
+
+    // ── Cost centres (codes in the sheet → uuid FK) ──
+    // Resolved here rather than after the sort because BOTH updates and
+    // inserts need it, and a pure sync re-run has nothing to sort.
+    const ccByCode = new Map<string, string>();
+    if (drafts.some(d => d.data['costcenter'])) {
+        const { data } = await supabase.from('cost_centers').select('id, code');
+        for (const c of data ?? []) ccByCode.set(String(c.code).toUpperCase(), c.id);
+    }
+
+    // Applied before the sort, and before the "nothing to insert" early return
+    // below — a re-run where every row already exists is the NORMAL shape of a
+    // master-data sync, and returning early would silently do nothing.
+    await applyAssetUpdates(toUpdate, ccByCode, res);
 
     // ── 3. Resolve parents; topological sort (Kahn) ──
     const blocked = new Set<AssetDraft>();
@@ -168,14 +268,6 @@ export async function importAssets(rows: Row[], opts: { withBatch?: boolean } = 
         tally(res, { row: d.row, key: d.tag, status: 'failed', reason: 'Circular parent reference' });
     }
     if (layers.length === 0) return res;
-
-    // ── 4. Cost centres (codes in the sheet → uuid FK) ──
-    const ccByCode = new Map<string, string>();
-    const wantsCc = layers.some(l => l.some(d => d.data['costcenter']));
-    if (wantsCc) {
-        const { data } = await supabase.from('cost_centers').select('id, code');
-        for (const c of data ?? []) ccByCode.set(String(c.code).toUpperCase(), c.id);
-    }
 
     // ── 5. Provenance batch (optional — import_batches is admin-only by RLS) ──
     let batchId: string | null = null;

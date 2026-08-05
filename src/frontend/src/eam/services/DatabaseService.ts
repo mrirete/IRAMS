@@ -681,16 +681,32 @@ export class DatabaseService {
     }
 
     // ── Hierarchy configuration (UAT F-010) — the editable level model ──
+    // Per-tenant since 0273: company_id NULL is the product default, a tenant
+    // row shadows it. The _effective view returns the one row that applies to
+    // the caller, so `.eq('id', 1)` — the single-tenant assumption — is gone.
     public async getHierarchyConfig(): Promise<any[] | null> {
-        const { data, error } = await supabase.from('hierarchy_config').select('levels').eq('id', 1).maybeSingle();
+        const { data, error } = await supabase.from('hierarchy_config_effective').select('levels').limit(1).maybeSingle();
         if (error) { console.error('DatabaseService.getHierarchyConfig:', error); return null; }
         return (data?.levels as any[]) || null;
     }
 
+    /**
+     * Copy-on-write, like every config table since 0267: try to update the
+     * tenant's own row — `.not('company_id','is',null)` narrows to non-global
+     * rows and RLS narrows those to ours — and if that touches nothing, the
+     * tenant has no row yet, so the save INSERTS their copy (id and company_id
+     * both filled by column defaults). Editing must never target the global
+     * row: that is the product's, and under RLS the attempt would "succeed"
+     * with zero rows — the silent-success bug again.
+     */
     public async saveHierarchyConfig(levels: any[]): Promise<void> {
-        const { error } = await supabase.from('hierarchy_config')
-            .upsert({ id: 1, levels, updated_at: new Date().toISOString() });
+        const patch = { levels, updated_at: new Date().toISOString() };
+        const { data, error } = await supabase.from('hierarchy_config')
+            .update(patch).not('company_id', 'is', null).select('id');
         if (error) { console.error('DatabaseService.saveHierarchyConfig:', error); throw error; }
+        if (data && data.length > 0) return;
+        const { error: insErr } = await supabase.from('hierarchy_config').insert(patch);
+        if (insErr) { console.error('DatabaseService.saveHierarchyConfig(insert):', insErr); throw insErr; }
     }
 
     // ── Work Center master (WM-2a, SAP CR) ──
@@ -906,8 +922,9 @@ export class DatabaseService {
     }
 
     // ── Numbering configuration (SAP NRIV-style ranges) ──
+    // Per-tenant since 0273 — see saveHierarchyConfig for the pattern.
     public async getNumberingConfig(): Promise<any | null> {
-        const { data, error } = await supabase.from('numbering_config').select('*').eq('id', 1).maybeSingle();
+        const { data, error } = await supabase.from('numbering_config_effective').select('*').limit(1).maybeSingle();
         if (error) { console.error('DatabaseService.getNumberingConfig:', error); return null; }
         return data;
     }
@@ -962,9 +979,19 @@ export class DatabaseService {
     }
 
     public async saveNumberingConfig(cfg: Record<string, any>): Promise<void> {
-        const { error } = await supabase.from('numbering_config')
-            .upsert({ id: 1, ...cfg, updated_at: new Date().toISOString() });
+        // Copy-on-write; never target the global row. The tenant's first save
+        // must carry a complete row, so the insert path merges the current
+        // effective config (global defaults) under the patch.
+        const patch = { ...cfg, updated_at: new Date().toISOString() };
+        delete (patch as any).id; delete (patch as any).company_id;
+        const { data, error } = await supabase.from('numbering_config')
+            .update(patch).not('company_id', 'is', null).select('id');
         if (error) { console.error('DatabaseService.saveNumberingConfig:', error); throw error; }
+        if (data && data.length > 0) return;
+        const current = await this.getNumberingConfig() ?? {};
+        delete (current as any).id; delete (current as any).company_id;
+        const { error: insErr } = await supabase.from('numbering_config').insert({ ...current, ...patch });
+        if (insErr) { console.error('DatabaseService.saveNumberingConfig(insert):', insErr); throw insErr; }
     }
 
     // Qualifications

@@ -7,7 +7,7 @@
  * actually happened, row by row, and the modal renders those numbers.
  */
 
-export type RowStatus = 'inserted' | 'skipped' | 'failed';
+export type RowStatus = 'inserted' | 'updated' | 'skipped' | 'failed';
 
 export interface RowOutcome {
     /** 1-based row number as it appears in the spreadsheet (header is row 1). */
@@ -21,6 +21,14 @@ export interface RowOutcome {
 
 export interface ImportResult {
     inserted: number;
+    /**
+     * Rows that matched an existing record and were changed rather than
+     * created. Only a sync-mode import produces these — a one-time migration
+     * skips what already exists. Counted apart from `inserted` because
+     * "352 imported" reads as 352 new records, and reporting 340 overwrites
+     * that way is exactly the dishonesty this contract exists to stop.
+     */
+    updated: number;
     skipped: number;
     failed: number;
     outcomes: RowOutcome[];
@@ -28,12 +36,14 @@ export interface ImportResult {
     notes?: string[];
 }
 
-export const emptyResult = (): ImportResult => ({ inserted: 0, skipped: 0, failed: 0, outcomes: [], notes: [] });
+export const emptyResult = (): ImportResult =>
+    ({ inserted: 0, updated: 0, skipped: 0, failed: 0, outcomes: [], notes: [] });
 
 /** Tally outcomes into a result. Mutates and returns `res` for chaining. */
 export const tally = (res: ImportResult, outcome: RowOutcome): ImportResult => {
     res.outcomes.push(outcome);
     if (outcome.status === 'inserted') res.inserted += 1;
+    else if (outcome.status === 'updated') res.updated += 1;
     else if (outcome.status === 'skipped') res.skipped += 1;
     else res.failed += 1;
     return res;

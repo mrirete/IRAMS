@@ -201,6 +201,26 @@ for (const t of SEED_TABLES) {
         r.ok ? `got ${r.body.length}${fresh ? '' : ', REUSED SEED IDS'}` : `HTTP ${r.status}`);
 }
 
+// Phase 5: the caller's company row is the ONLY visible one — this is what
+// makes every "oldest active company" reader correct — and the origin's row
+// must be unwritable. That UPDATE was a real hole: companies was exempt from
+// the 0261 sweep, so until 0273 any tenant's admin could edit any company row.
+const myCo = await as('companies?select=id,code');
+check(myCo.ok && myCo.body.length === 1 && myCo.body[0].id === companyId,
+    'companies: sees exactly its own row', myCo.ok ? `got ${myCo.body.length}` : `HTTP ${myCo.status}`);
+const [origin] = await mgmt(`SELECT id::text FROM public.companies WHERE active ORDER BY created_at LIMIT 1`);
+const coWrite = await as(`companies?id=eq.${origin.id}&select=id`, {
+    method: 'PATCH', body: JSON.stringify({ description: 'cross-tenant probe' }),
+});
+check(coWrite.ok && coWrite.body.length === 0, "cannot UPDATE the origin's company row", `rows ${coWrite.body?.length}`);
+
+// the singletons resolve to the global default for a tenant with no override
+for (const v of ['hierarchy_config_effective', 'numbering_config_effective']) {
+    const r = await as(`${v}?select=company_id`);
+    check(r.ok && r.body.length === 1 && r.body[0].company_id === null,
+        `${v}: resolves to the product global`, r.ok ? `got ${r.body.length}` : `HTTP ${r.status}`);
+}
+
 // a write lands in the new tenant without naming it (the column default)…
 const ins = await as('dictionaries?select=id,company_id', {
     method: 'POST',
