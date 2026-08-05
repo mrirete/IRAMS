@@ -220,7 +220,41 @@ alone is the guarantee, and G4 is the one that catches tomorrow's migration.
 keys; seeding step in provisioning so a new tenant starts with the ISO 14224 catalogue rather than
 an empty dropdown (see §6 — that catalogue is empty today).
 
-**Gate G4:** two tenants hold different fault codes and neither sees the other's; a fresh tenant is
+> **Note:** "G4" in this section predates the gate now called G4
+> (`tests/rls/tenant-completeness.mjs`, the structural tenancy proof). This one is the
+> per-tenant-config gate; keep them straight.
+
+#### Phase 4a — uniqueness keys ✅ SHIPPED (0265 / 0266)
+
+`assets.tag` was UNIQUE, so one customer's "P-101" forbade every other customer from ever
+having a "P-101". Same for work order numbers, cost centre codes, part numbers. Customer #2
+would have hit it on their first import.
+
+44 unique keys, **23 widened** — this is where a blind sweep does damage, so all 44 were
+classified:
+
+| Class | Count | Action | Why |
+|---|---|---|---|
+| A · customer-chosen natural keys | 23 | widen to `(company_id, …)` | `tag`, `wo_number`, `code`, `part_number` — two customers picking the same string is normal |
+| B · unique through a parent | 15 | **leave** | `audit_responses (audit_id, question_id)` — `audit_id` is a uuid on a tenant-scoped table, so the pair cannot collide. All ten parent PKs verified uuid. Widening would also break their upserts |
+| C · secrets | 3 | **must stay global** | `invite_token`, `key_hash`, `user_invites.token`. Widening a secret is a security regression: two tenants could hold the same invite token and it would stop identifying one row |
+
+**Expand → deploy → contract.** Widening a key changes `ON CONFLICT` inference, and three
+deployed call sites inferred against class-A keys (`cost_centers` `code`, `jsa_templates`
+`name` ×2, `notification_channels` `type`). 0265 added the widened key *alongside* the narrow
+one, the frontend shipped, then 0266 dropped the narrow ones. Migrating before deploying broke
+this app twice earlier in this workstream; this is that lesson applied in advance.
+
+NULL semantics deliberately unchanged — plain `UNIQUE`, not `NULLS NOT DISTINCT`. 0262 uses the
+latter, but `assets.equipment_number` is NULL on 27 of 69 rows and `NULLS NOT DISTINCT` would
+permit one such row per tenant and reject the other 26.
+
+**Still open in Phase 4:** the config tables themselves (`dictionaries`, `hierarchy_config`,
+`reference_codes`) still need the global-default + per-tenant-override treatment, and
+provisioning needs a seeding step so a new tenant opens with the ISO 14224 catalogue rather
+than an empty dropdown (§6 — that catalogue is empty today).
+
+**Gate:** two tenants hold different fault codes and neither sees the other's; a fresh tenant is
 usable immediately after provisioning.
 
 ### Phase 5 — Remove the single-tenant assumptions (2–3 days)
