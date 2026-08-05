@@ -446,6 +446,12 @@ export default function BulkImportModal({
                                                 <div className="flex items-center gap-3 mt-4">
                                                     {[
                                                         { label: 'Imported', value: result.inserted, cls: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
+                                                        // Only a sync-mode run produces updates. Shown apart from
+                                                        // "Imported" because an overwritten record is not a new one,
+                                                        // and hidden at zero so a one-time migration reads as before.
+                                                        ...(result.updated > 0
+                                                            ? [{ label: 'Updated', value: result.updated, cls: 'bg-blue-50 border-blue-200 text-blue-700' }]
+                                                            : []),
                                                         { label: 'Skipped', value: result.skipped, cls: 'bg-slate-50 border-slate-200 text-slate-600' },
                                                         { label: 'Failed', value: result.failed, cls: result.failed > 0 ? 'bg-red-50 border-red-200 text-red-700' : 'bg-slate-50 border-slate-200 text-slate-400' },
                                                     ].map(s => (

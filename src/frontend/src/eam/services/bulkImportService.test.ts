@@ -14,10 +14,12 @@ interface TableState {
 }
 const db: Record<string, TableState> = {};
 const inserted: Record<string, Record<string, unknown>[]> = {};
+const updates: Record<string, Record<string, unknown>[]> = {};
 
 const resetDb = () => {
     for (const k of Object.keys(db)) delete db[k];
     for (const k of Object.keys(inserted)) delete inserted[k];
+    for (const k of Object.keys(updates)) delete updates[k];
     db.assets = { rows: [] };
     db.cost_centers = { rows: [] };
     db.import_batches = { rows: [], insertError: { message: 'permission denied' } };
@@ -31,12 +33,30 @@ const nextId = () => `id-${++idSeq}`;
 function makeQuery(table: string) {
     const state = () => (db[table] ??= { rows: [] });
     let pendingInsert: Record<string, unknown>[] | null = null;
+    let pendingUpdate: Record<string, unknown> | null = null;
+    let eqFilter: { col: string; val: unknown } | null = null;
+
+    const applyUpdate = () => {
+        const target = state().rows.find(r => !eqFilter || r[eqFilter.col] === eqFilter.val);
+        if (target) {
+            Object.assign(target, pendingUpdate);
+            (updates[table] ??= []).push({ ...pendingUpdate, __id: target.id });
+        }
+        pendingUpdate = null;
+        return { data: null, error: null };
+    };
 
     const builder: Record<string, unknown> = {
         select: () => builder,
-        eq: () => builder,
+        eq: (col: string, val: unknown) => { eqFilter = { col, val }; return builder; },
         order: () => builder,
-        update: () => builder,
+        // Records the patch and applies it on await, so sync-mode updates are
+        // observable. The old no-op stub returned the builder and resolved to
+        // `{ error: null }`, which made every update look like it worked.
+        update: (patch: Record<string, unknown>) => {
+            pendingUpdate = patch;
+            return builder;
+        },
         // `.in('tag', [...])` — the only filter the service uses for lookups.
         in: (col: string, vals: unknown[]) => {
             const hits = state().rows.filter(r => vals.includes(r[col]));
@@ -55,7 +75,9 @@ function makeQuery(table: string) {
             return Promise.resolve({ data: row, error: null });
         },
         then: (resolve: (v: unknown) => unknown) => {
-            // Awaiting the builder directly = an insert, or an unfiltered select.
+            // Awaiting the builder directly = an update, an insert, or an
+            // unfiltered select — in that order of precedence.
+            if (pendingUpdate) return resolve(applyUpdate());
             if (!pendingInsert) return resolve({ data: state().rows, error: null });
             const err = state().insertError;
             if (err) return resolve({ data: null, error: err });
@@ -258,7 +280,7 @@ describe('field carry-through', () => {
         expect('company_id' in byTag('GT-11')!).toBe(false);
     });
 
-    it('sends no null company_id anywhere in a mixed hierarchy import', async () => {
+    it('sends no null company_id anywhere in a mixed hierarchy import (regression)', async () => {
         await importAssets([
             row({ tag: 'SITE-M', hierarchylevel: 'SITE' }),
             row({ tag: 'U-M', hierarchylevel: 'UNIT', parenttag: 'SITE-M' }),
@@ -294,5 +316,108 @@ describe('provenance batching', () => {
         const res = await importAssets([row({ tag: 'SITE-6', hierarchylevel: 'SITE' })], { withBatch: true });
         expect(res.inserted).toBe(1);
         expect(byTag('SITE-6')?.import_batch_id).toBeTruthy();
+    });
+});
+
+// ── Sync mode (Tier-1 inbound master data) ───────────────────────────────────
+// A one-time migration and a repeatable master-data feed want opposite things
+// from a row that already exists, so the behaviour is a mode rather than a
+// guess. These pin both halves.
+describe('sync mode', () => {
+    const seedExisting = () => {
+        db.assets.rows.push({
+            id: 'ex-1', tag: 'PMP-1', hierarchy_level: 'EQUIPMENT', company_id: 'co-1',
+            name: 'Old name', manufacturer: 'OldCo', criticality: 'C',
+            serial_number: 'SN-OLD', cost_center_id: 'cc-old',
+        });
+    };
+
+    it('leaves an existing row untouched by default — a re-run must not overwrite the app', async () => {
+        seedExisting();
+        const res = await importAssets([row({ tag: 'PMP-1', hierarchylevel: 'EQUIPMENT', criticality: 'A', name: 'New name' })]);
+        expect(res.skipped).toBe(1);
+        expect(res.updated).toBe(0);
+        expect(updates.assets ?? []).toEqual([]);
+        expect(db.assets.rows.find(r => r.id === 'ex-1')?.name).toBe('Old name');
+    });
+
+    it('updates the existing row in sync mode, and counts it apart from inserts', async () => {
+        seedExisting();
+        const res = await importAssets(
+            [row({ tag: 'PMP-1', hierarchylevel: 'EQUIPMENT', criticality: 'A', name: 'New name', manufacturer: 'NewCo' })],
+            { mode: 'sync' },
+        );
+        expect(res.updated).toBe(1);
+        expect(res.inserted).toBe(0);
+        expect(res.skipped).toBe(0);
+        const after = db.assets.rows.find(r => r.id === 'ex-1')!;
+        expect(after.name).toBe('New name');
+        expect(after.manufacturer).toBe('NewCo');
+        expect(after.criticality).toBe('A');
+    });
+
+    // The reason this is an UPDATE of provided columns and not an upsert.
+    it('never blanks a column the file does not carry', async () => {
+        seedExisting();
+        await importAssets(
+            [row({ tag: 'PMP-1', hierarchylevel: 'EQUIPMENT', manufacturer: 'NewCo' })],
+            { mode: 'sync' },
+        );
+        const after = db.assets.rows.find(r => r.id === 'ex-1')!;
+        expect(after.serial_number).toBe('SN-OLD');   // absent from the file
+        expect(after.criticality).toBe('C');          // absent from the file
+        expect(after.cost_center_id).toBe('cc-old');  // absent from the file
+    });
+
+    it('never moves a record between tenants, whatever the file says', async () => {
+        seedExisting();
+        await importAssets([row({ tag: 'PMP-1', hierarchylevel: 'EQUIPMENT', name: 'X' })], { mode: 'sync' });
+        const patch = (updates.assets ?? [])[0] ?? {};
+        expect('company_id' in patch).toBe(false);
+        expect(db.assets.rows.find(r => r.id === 'ex-1')?.company_id).toBe('co-1');
+    });
+
+    // Re-parenting under a nightly feed would reorder the tree beneath work
+    // orders that reference it — a deliberate act, not an import side effect.
+    it('never re-parents or re-levels an existing record', async () => {
+        seedExisting();
+        await importAssets([row({ tag: 'PMP-1', hierarchylevel: 'SITE', name: 'X' })], { mode: 'sync' });
+        const patch = (updates.assets ?? [])[0] ?? {};
+        expect('hierarchy_level' in patch).toBe(false);
+        expect('parent_id' in patch).toBe(false);
+    });
+
+    it('reports a row it could not change rather than claiming an update', async () => {
+        seedExisting();
+        // name: '' matters — the row() helper defaults name to the tag, which
+        // would itself be a change and make this assert nothing.
+        const res = await importAssets([row({ tag: 'PMP-1', hierarchylevel: 'EQUIPMENT', name: '' })], { mode: 'sync' });
+        expect(res.updated).toBe(0);
+        expect(res.skipped).toBe(1);
+        expect(outcomeFor(res, 'PMP-1')?.reason).toMatch(/nothing to change/i);
+    });
+
+    // A re-run where every row already exists is the normal shape of a sync,
+    // and there is nothing to insert — so nothing may short-circuit first.
+    it('still applies updates when the file contains no new rows at all', async () => {
+        seedExisting();
+        db.assets.rows.push({ id: 'ex-2', tag: 'PMP-2', hierarchy_level: 'EQUIPMENT', company_id: 'co-1', name: 'Old 2' });
+        const res = await importAssets([
+            row({ tag: 'PMP-1', hierarchylevel: 'EQUIPMENT', name: 'A' }),
+            row({ tag: 'PMP-2', hierarchylevel: 'EQUIPMENT', name: 'B' }),
+        ], { mode: 'sync' });
+        expect(res.updated).toBe(2);
+        expect(res.inserted).toBe(0);
+    });
+
+    it('handles a file that mixes new rows with existing ones', async () => {
+        seedExisting();
+        const res = await importAssets([
+            row({ tag: 'PMP-1', hierarchylevel: 'EQUIPMENT', name: 'Updated' }),
+            row({ tag: 'PMP-NEW', hierarchylevel: 'EQUIPMENT', criticality: 'B' }),
+        ], { mode: 'sync' });
+        expect(res.updated).toBe(1);
+        expect(res.inserted).toBe(1);
+        expect(byTag('PMP-NEW')).toBeDefined();
     });
 });
