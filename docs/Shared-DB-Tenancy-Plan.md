@@ -186,7 +186,7 @@ can reach, and it cannot reach two kinds:
 | Empty — no row to borrow | 70 | Yes, reported inconclusive |
 | No `id` column (composite PK) — the probe addresses rows as `?id=eq.…` | 6 | **No — absent from the denominator entirely** |
 
-`movement_type_gl_overrides` sat in both. It was created by **0262**, *after* 0261's one-shot policy
+`movement_type_gl_overrides` sat in both. It was created by **0262**, *after* 0261a's one-shot policy
 sweep had already run, with `USING (true)` on its read policy — in a schema G3 had just called green.
 Its own table comment says "the chart of accounts is the customer's", so the design was tenant-correct
 and only the policy was a placeholder. Every tenant would have read every other tenant's G/L account
