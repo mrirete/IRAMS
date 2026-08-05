@@ -96,7 +96,7 @@ export const Reports: React.FC = () => {
   const { data: dictionaries = [] } = useQuery<DictionaryEntry[]>({
     queryKey: ['report-dictionaries'],
     queryFn: async () => {
-      const { data } = await supabase.from('reference_codes').select('*').eq('active', true);
+      const { data } = await supabase.from('reference_codes_effective').select('*').eq('active', true);
       return (data || []).map((d: any) => ({
         id: d.id, type: d.category, code: d.code, description: d.description,
         active: d.active, colorCode: d.color_code, sequence: d.sort_order,

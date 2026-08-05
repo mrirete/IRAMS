@@ -232,7 +232,7 @@ export const ProductionLogEntry: React.FC<{
     queryKey: ['downtime-reasons'],
     queryFn: async () => {
       const { data } = await supabase
-        .from('dictionaries')
+        .from('dictionaries_effective')
         .select('code, description')
         .eq('type', 'DOWNTIME_REASON')
         .eq('active', true);

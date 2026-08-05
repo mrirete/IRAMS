@@ -452,7 +452,7 @@ export interface UnresolvedCode { category: string; code: string; uses: number }
 export async function findUnresolvedFailureCodes(): Promise<UnresolvedCode[]> {
     const [{ data: coded }, { data: catalog }] = await Promise.all([
         supabase.from('wo_failure_data').select('failure_mode_code, failure_cause_code, remedy_code'),
-        supabase.from('reference_codes').select('category, code'),
+        supabase.from('reference_codes_effective').select('category, code'),
     ]);
 
     const known = new Set((catalog ?? []).map(c => `${c.category}|${c.code}`));
@@ -487,7 +487,7 @@ export async function importFailureCodes(rows: Row[]): Promise<ImportResult> {
 
     const unresolvedBefore = await findUnresolvedFailureCodes().catch(() => []);
 
-    const { data: existing } = await supabase.from('reference_codes').select('category, code');
+    const { data: existing } = await supabase.from('reference_codes_effective').select('category, code');
     const known = new Set((existing ?? []).map(c => `${c.category}|${c.code}`));
 
     interface Draft { row: number; key: string; payload: Record<string, unknown> }
@@ -519,7 +519,7 @@ export async function importFailureCodes(rows: Row[]): Promise<ImportResult> {
     for (const part of chunk(drafts, LOOKUP_CHUNK)) {
         const { error } = await supabase
             .from('reference_codes')
-            .upsert(part.map(d => d.payload), { onConflict: 'category,code' });
+            .upsert(part.map(d => d.payload), { onConflict: 'company_id,category,code' });
 
         if (error) {
             // reference_codes writes are admin-only; say so rather than

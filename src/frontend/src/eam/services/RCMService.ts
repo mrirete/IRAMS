@@ -858,7 +858,7 @@ class RCMServiceImpl {
   /** Get dictionary codes for a given type */
   async getDictionaryCodes(type: string): Promise<{ code: string; description: string; properties: any }[]> {
     const { data, error } = await supabase
-      .from('dictionaries')
+      .from('dictionaries_effective')
       .select('code, description, properties')
       .eq('type', type)
       .eq('active', true)

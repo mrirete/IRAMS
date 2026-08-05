@@ -624,7 +624,7 @@ export class DatabaseService {
     // A manufacturer is a business partner with its own master record; models and
     // assets reference it by id. Replaces the contacts/vendors dual source.
     public async getManufacturers(): Promise<any[]> {
-        const { data, error } = await supabase.from('manufacturers').select('*').eq('active', true).order('name');
+        const { data, error } = await supabase.from('manufacturers_effective').select('*').eq('active', true).order('name');
         if (error) { console.error('DatabaseService.getManufacturers:', error); return []; }
         return data || [];
     }
@@ -644,8 +644,10 @@ export class DatabaseService {
     }
 
     public async updateManufacturer(id: string, patch: Record<string, any>): Promise<void> {
-        const { error } = await supabase.from('manufacturers').update({ ...patch, updated_at: new Date().toISOString() }).eq('id', id);
-        if (error) { console.error('DatabaseService.updateManufacturer:', error); throw error; }
+        // Copy-on-write: the 15 seeded manufacturers are global defaults, so
+        // editing one produces this tenant's own copy rather than silently
+        // touching nothing. See writeConfigRow.
+        await this.writeConfigRow('manufacturers', id, { ...patch, updated_at: new Date().toISOString() });
     }
 
     public async getManufacturerModels(manufacturerId: string): Promise<any[]> {
@@ -1311,7 +1313,7 @@ export class DatabaseService {
             // 4a. Scope from Roles (via Contact Type Dictionaries)
             if (userRoles.length > 0) {
                 const { data: rolesData } = await supabase
-                    .from('reference_codes')
+                    .from('reference_codes_effective')
                     .select('properties')
                     .eq('category', 'CONTACT_TYPE')
                     .in('code', userRoles);
@@ -1816,7 +1818,7 @@ export class DatabaseService {
     // --- DICTIONARIES ---
 
     public async getDictionaries(): Promise<DictionaryEntry[]> {
-        const { data, error } = await supabase.from('reference_codes').select('*'); // Removed .eq('active', true) to allow management of inactive codes
+        const { data, error } = await supabase.from('reference_codes_effective').select('*'); // Removed .eq('active', true) to allow management of inactive codes
         if (error) {
             console.error("Supabase Error (getDictionaries):", error);
             return [];
@@ -1978,15 +1980,9 @@ export class DatabaseService {
                 dbRecord.properties = { ...(currentRow?.properties || {}), ...dbRecord.properties };
             }
             console.log('[DatabaseService] upsertDictionary: UPDATING id=', existing.id, dbRecord);
-            const { error: updateError } = await supabase
-                .from('reference_codes')
-                .update(dbRecord)
-                .eq('id', existing.id);
-
-            if (updateError) {
-                console.error('[DatabaseService] upsertDictionary update error:', updateError);
-                throw new Error(updateError.message);
-            }
+            // Copy-on-write when `existing` turns out to be a global default —
+            // the plain update would match zero rows and report success.
+            await this.writeConfigRow('reference_codes', existing.id, dbRecord);
             return { ...entry, id: existing.id };
         } else {
             // INSERT new
@@ -2154,9 +2150,56 @@ export class DatabaseService {
             coreUpdates.properties = newProps;
         }
 
-        const { error } = await supabase.from('reference_codes').update(coreUpdates).eq('id', id);
+        await this.writeConfigRow('reference_codes', id, coreUpdates);
+    }
 
+    /**
+     * Write to a config table that carries global defaults alongside tenant rows.
+     *
+     * Since 0267 these tables hold BOTH: `company_id IS NULL` is the product's
+     * default, shared by every customer, and a row with a company_id is that
+     * tenant's own. RLS lets you read both and write only your own — so an
+     * UPDATE aimed at a global row matches zero rows and returns HTTP 200 with
+     * `error: null`. Checking only `error` would report success to precisely the
+     * edit that did not happen, which is the bug this whole workstream started
+     * with.
+     *
+     * So: try the update; if it touched nothing, the row is a global default and
+     * the edit becomes a COPY. That is what the override pattern is for — the
+     * customer gets their own version, everyone else keeps the standard one, and
+     * the product's seed data stays intact.
+     */
+    private async writeConfigRow(
+        table: 'reference_codes' | 'dictionaries' | 'manufacturers',
+        id: string,
+        patch: Record<string, any>,
+    ): Promise<void> {
+        const { data, error } = await supabase.from(table).update(patch).eq('id', id).select('id');
         if (error) throw new Error(error.message);
+        if (data && data.length > 0) return;                    // it was already ours
+
+        // Zero rows: either a global default, or gone, or the role cannot write.
+        const { data: source, error: readErr } = await supabase
+            .from(table).select('*').eq('id', id).maybeSingle();
+        if (readErr) throw new Error(readErr.message);
+        if (!source) throw new Error(`That ${table} entry no longer exists.`);
+        if (source.company_id) {
+            // Ours, yet the update did nothing — that is the role gate, not tenancy.
+            throw new Error('Not saved — your role cannot change configuration (admins only).');
+        }
+
+        // Copy-on-write. company_id is omitted on purpose: its DEFAULT is
+        // caller_company(), so the copy lands in the caller's tenant without the
+        // client having to know its own id.
+        const { id: _drop, company_id: _drop2, ...rest } = source as Record<string, any>;
+        const { error: insErr } = await supabase.from(table).insert({ ...rest, ...patch });
+        if (insErr) {
+            throw new Error(
+                insErr.message.includes('duplicate')
+                    ? 'You already have a custom version of this entry.'
+                    : insErr.message,
+            );
+        }
     }
 
     // Helper to get raw for updates
@@ -2186,8 +2229,16 @@ export class DatabaseService {
             }
         }
 
-        const { error } = await supabase.from('reference_codes').delete().eq('id', id);
+        // A global default cannot be deleted — it belongs to the product, not to
+        // one customer. Deactivating it via copy-on-write is the tenant-local
+        // equivalent: the entry stops appearing for this customer and stays
+        // untouched for everyone else. Silently deleting nothing was the other
+        // option, and that is the failure mode this codebase keeps relearning.
+        const { data, error } = await supabase.from('reference_codes').delete().eq('id', id).select('id');
         if (error) throw new Error(error.message);
+        if (!data || data.length === 0) {
+            await this.writeConfigRow('reference_codes', id, { active: false });
+        }
     }
 
 

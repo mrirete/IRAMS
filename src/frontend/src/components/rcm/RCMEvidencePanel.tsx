@@ -57,7 +57,7 @@ export const RCMEvidencePanel: React.FC<Props> = ({ study, functions, failureMod
                     supabase.from('work_orders')
                         .select('id, wo_failure_data(failure_mode_code)')
                         .eq('asset_id', study.asset_id),
-                    supabase.from('dictionaries')
+                    supabase.from('dictionaries_effective')
                         .select('code, description')
                         .eq('type', 'FAILURE_MODE'),
                 ]);

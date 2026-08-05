@@ -281,7 +281,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             // 2. Custom-role permission dict — only when no code template exists.
             if (!templatePerms) {
                 supabase
-                    .from('reference_codes')
+                    .from('reference_codes_effective')
                     .select('properties')
                     .eq('category', 'CONTACT_TYPE')
                     .eq('code', roleCode)
