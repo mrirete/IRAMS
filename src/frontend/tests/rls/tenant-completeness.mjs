@@ -83,8 +83,30 @@ if (process.argv.includes('--self-test')) {
             `CREATE TABLE public._g4_probe_t (id uuid PRIMARY KEY, company_id uuid);
              ALTER TABLE public._g4_probe_t ENABLE ROW LEVEL SECURITY;
              CREATE POLICY _g4_t_read ON public._g4_probe_t FOR SELECT TO authenticated USING (true);`],
+        // Present-but-neutered. 0269 checked the tenant test came FIRST and let
+        // this through, because it does come first — and `OR true` makes it
+        // decorative. 0270 requires it to BIND: followed by AND, or by nothing.
+        ['tenant test OR-defeated — leading but not binding',
+            `CREATE POLICY _g4_probe ON public.work_orders FOR SELECT TO authenticated
+                 USING (company_id = (SELECT public.caller_company()) OR true);`],
+        ['tenant test behind an admin escape hatch',
+            `CREATE POLICY _g4_probe ON public.work_orders FOR SELECT TO authenticated
+                 USING ((SELECT public.is_admin()) OR company_id = (SELECT public.caller_company()));`],
     ];
-    let caught = 0;
+
+    // The other half of a working detector: shapes it must stay QUIET on. A
+    // checker that flags everything passes every "can it go red" test and is
+    // useless, and the config form (0267) is exactly the kind of legitimate OR
+    // a careless rule would reject.
+    const MUST_NOT_FLAG = [
+        ['the 0267 config shape — global defaults plus own rows',
+            `CREATE POLICY _g4_probe ON public.assets FOR SELECT TO authenticated
+                 USING (company_id IS NULL OR company_id = (SELECT public.caller_company()));`],
+        ['the ordinary shape — tenant AND role',
+            `CREATE POLICY _g4_probe ON public.assets FOR SELECT TO authenticated
+                 USING (company_id = (SELECT public.caller_company()) AND (SELECT public.is_admin()));`],
+    ];
+    let caught = 0, quiet = 0;
     console.log('self-test — deliberate gaps, each rolled back:');
     for (const [label, sql] of CASES) {
         const rows = await mgmt(`BEGIN; ${sql} SELECT kind, object_name FROM public.tenancy_policy_gaps(); ROLLBACK;`);
@@ -92,13 +114,20 @@ if (process.argv.includes('--self-test')) {
         if (ok) caught++;
         console.log(`  ${ok ? '✓ caught ' : '✗ MISSED '} ${label}`);
     }
+    console.log('  — and shapes it must stay quiet on:');
+    for (const [label, sql] of MUST_NOT_FLAG) {
+        const rows = await mgmt(`BEGIN; ${sql} SELECT kind, object_name FROM public.tenancy_policy_gaps(); ROLLBACK;`);
+        const silent = !Array.isArray(rows) || rows.length === 0;
+        if (silent) quiet++;
+        console.log(`  ${silent ? '✓ quiet  ' : '✗ FALSE POSITIVE'} ${label}`);
+    }
     const residue = await mgmt(`SELECT kind, object_name FROM public.tenancy_policy_gaps()`);
     if (residue.length) { console.error('\n✖ self-test left gaps behind — investigate before trusting this run.'); process.exit(1); }
-    if (caught !== CASES.length) {
-        console.error(`\n✖ self-test ${caught}/${CASES.length} — the detector is blind to a real gap shape. Fix it before reading the result below.`);
+    if (caught !== CASES.length || quiet !== MUST_NOT_FLAG.length) {
+        console.error(`\n✖ self-test ${caught}/${CASES.length} caught, ${quiet}/${MUST_NOT_FLAG.length} quiet — the detector is wrong in one direction or the other. Fix it before reading the result below.`);
         process.exit(1);
     }
-    console.log(`  ${caught}/${CASES.length} detected, nothing left behind — the gate can go red.\n`);
+    console.log(`  ${caught}/${CASES.length} caught, ${quiet}/${MUST_NOT_FLAG.length} correctly ignored — the gate discriminates.\n`);
 }
 
 const gaps = await mgmt(`SELECT kind, object_name, detail FROM public.tenancy_policy_gaps() ORDER BY kind, object_name`);

@@ -2019,53 +2019,62 @@ CREATE OR REPLACE FUNCTION public.tenancy_policy_gaps()
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-    -- (a) a tenant-owned table with RLS off, or with no policy at all.
-    --     Nothing to OR against and nothing to inspect: wide open, silently.
-    SELECT 'rls_disabled'::text,
-           c.relname::text,
+    WITH tenant_tables AS (
+        SELECT c.oid, c.relname
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = 'public'
+           AND c.relkind = 'r'
+           AND EXISTS (SELECT 1 FROM information_schema.columns col
+                        WHERE col.table_schema = 'public'
+                          AND col.table_name = c.relname
+                          AND col.column_name = 'company_id')
+           AND c.relname NOT IN ('users', 'companies')
+    )
+    SELECT 'rls_disabled'::text, t.relname::text,
            format('rls_enabled=%s policies=%s', c.relrowsecurity,
                   (SELECT count(*) FROM pg_policies p
-                    WHERE p.schemaname = 'public' AND p.tablename = c.relname))
-      FROM pg_class c
-      JOIN pg_namespace n ON n.oid = c.relnamespace
-     WHERE n.nspname = 'public'
-       AND c.relkind = 'r'
-       AND EXISTS (SELECT 1 FROM information_schema.columns col
-                    WHERE col.table_schema = 'public'
-                      AND col.table_name = c.relname
-                      AND col.column_name = 'company_id')
-       AND c.relname NOT IN ('users', 'companies')
-       AND (c.relrowsecurity = false
-            OR NOT EXISTS (SELECT 1 FROM pg_policies p
-                            WHERE p.schemaname = 'public' AND p.tablename = c.relname))
+                    WHERE p.schemaname = 'public' AND p.tablename = t.relname))
+      FROM tenant_tables t
+      JOIN pg_class c ON c.oid = t.oid
+     WHERE c.relrowsecurity = false
+        OR NOT EXISTS (SELECT 1 FROM pg_policies p
+                        WHERE p.schemaname = 'public' AND p.tablename = t.relname)
 
     UNION ALL
 
-    -- (b) a PERMISSIVE policy on a tenant-owned table with no tenant test.
-    --     Because permissive policies OR together, one of these defeats all of
-    --     its siblings. `users` is exempt by design: gating it would break the
-    --     login path that resolves the caller's tenant in the first place.
     SELECT 'policy_ungated'::text,
            format('%s.%s', p.tablename, p.policyname)::text,
            format('cmd=%s', p.cmd)
       FROM pg_policies p
+      JOIN tenant_tables t ON t.relname = p.tablename
      WHERE p.schemaname = 'public'
        AND p.permissive = 'PERMISSIVE'
-       AND p.tablename NOT IN ('users', 'companies')
-       AND EXISTS (SELECT 1 FROM information_schema.columns col
-                    WHERE col.table_schema = 'public'
-                      AND col.table_name = p.tablename
-                      AND col.column_name = 'company_id')
        AND coalesce(p.qual, '') || coalesce(p.with_check, '') NOT LIKE '%caller_company%'
 
     UNION ALL
 
-    -- (c) a view that reads past RLS (security_invoker off, the default) with no
-    --     tenant filter of its own. Six such views exist on purpose — they
-    --     bypass the ROLE gate so names render for roles that cannot read the
-    --     base table — but bypassing the role must never bypass the tenant.
-    SELECT 'view_unfiltered'::text,
-           c.relname::text,
+    -- The tenant test must BIND: followed by AND, or by nothing.
+    SELECT 'tenant_test_not_binding'::text,
+           format('%s.%s', p.tablename, p.policyname)::text,
+           format('cmd=%s expr=%s', p.cmd, left(e.flat, 90))
+      FROM pg_policies p
+      JOIN tenant_tables t ON t.relname = p.tablename
+      CROSS JOIN LATERAL (
+          SELECT coalesce(p.qual, p.with_check, '') AS expr,
+                 btrim(regexp_replace(
+                     regexp_replace(coalesce(p.qual, p.with_check, ''), '[()]', '', 'g'),
+                     '\s+', ' ', 'g')) AS flat
+      ) AS e
+     WHERE p.schemaname = 'public'
+       AND p.permissive = 'PERMISSIVE'
+       AND e.expr LIKE '%caller_company%'
+       AND e.flat !~ ('^company_id = SELECT caller_company AS caller_company( AND |$)'
+                      '|^company_id IS NULL OR company_id = SELECT caller_company AS caller_company( AND |$)')
+
+    UNION ALL
+
+    SELECT 'view_unfiltered'::text, c.relname::text,
            'definer view, no caller_company() filter'::text
       FROM pg_class c
       JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -2755,7 +2764,8 @@ CREATE TABLE IF NOT EXISTS public.dictionaries (
     is_locked boolean DEFAULT false,
     active boolean DEFAULT true,
     properties jsonb DEFAULT '{}'::jsonb,
-    updated_at timestamp with time zone DEFAULT now()
+    updated_at timestamp with time zone DEFAULT now(),
+    company_id uuid DEFAULT caller_company()
 );
 
 CREATE TABLE IF NOT EXISTS public.entity_files (
@@ -4174,7 +4184,8 @@ CREATE TABLE IF NOT EXISTS public.manufacturers (
     notes text,
     active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    company_id uuid DEFAULT caller_company()
 );
 
 CREATE TABLE IF NOT EXISTS public.message_templates (
@@ -4626,7 +4637,8 @@ CREATE TABLE IF NOT EXISTS public.reference_codes (
     category_ref text,
     metadata jsonb DEFAULT '{}'::jsonb,
     color_code text,
-    sort_order integer
+    sort_order integer,
+    company_id uuid DEFAULT caller_company()
 );
 
 CREATE TABLE IF NOT EXISTS public.role_permissions (
@@ -4752,7 +4764,8 @@ CREATE TABLE IF NOT EXISTS public.tax_codes (
     effective_from date DEFAULT CURRENT_DATE,
     effective_to date,
     active boolean DEFAULT true,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    company_id uuid DEFAULT caller_company()
 );
 
 CREATE TABLE IF NOT EXISTS public.thread_reads (
@@ -5206,7 +5219,7 @@ DO $$ BEGIN
     ALTER TABLE public.dictionaries ADD CONSTRAINT dictionaries_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.dictionaries ADD CONSTRAINT dictionaries_type_code_key UNIQUE (type, code);
+    ALTER TABLE public.dictionaries ADD CONSTRAINT uq_dictionaries_tenant_type_code UNIQUE NULLS NOT DISTINCT (company_id, type, code);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.entity_files ADD CONSTRAINT entity_files_pkey PRIMARY KEY (id);
@@ -5875,10 +5888,10 @@ DO $$ BEGIN
     ALTER TABLE public.manufacturer_models ADD CONSTRAINT manufacturer_models_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.manufacturers ADD CONSTRAINT manufacturers_name_key UNIQUE (name);
+    ALTER TABLE public.manufacturers ADD CONSTRAINT manufacturers_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.manufacturers ADD CONSTRAINT manufacturers_pkey PRIMARY KEY (id);
+    ALTER TABLE public.manufacturers ADD CONSTRAINT uq_manufacturers_tenant_name UNIQUE NULLS NOT DISTINCT (company_id, name);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.message_templates ADD CONSTRAINT message_templates_pkey PRIMARY KEY (id);
@@ -6001,6 +6014,9 @@ DO $$ BEGIN
     ALTER TABLE public.reference_codes ADD CONSTRAINT reference_codes_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE public.reference_codes ADD CONSTRAINT uq_reference_codes_tenant_category_code UNIQUE NULLS NOT DISTINCT (company_id, category, code);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE public.role_permissions ADD CONSTRAINT role_permissions_pkey PRIMARY KEY (role, module, action);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
@@ -6037,10 +6053,10 @@ DO $$ BEGIN
     ALTER TABLE public.task_library_roles ADD CONSTRAINT task_library_roles_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.tax_codes ADD CONSTRAINT tax_codes_code_key UNIQUE (code);
+    ALTER TABLE public.tax_codes ADD CONSTRAINT tax_codes_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.tax_codes ADD CONSTRAINT tax_codes_pkey PRIMARY KEY (id);
+    ALTER TABLE public.tax_codes ADD CONSTRAINT uq_tax_codes_tenant_code UNIQUE NULLS NOT DISTINCT (company_id, code);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.thread_reads ADD CONSTRAINT thread_reads_pkey PRIMARY KEY (user_id, thread_type, thread_id);
@@ -6368,6 +6384,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.depreciation_schedules ADD CONSTRAINT fk_depreciation_schedules_company FOREIGN KEY (company_id) REFERENCES companies(id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE public.dictionaries ADD CONSTRAINT fk_dictionaries_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.entity_files ADD CONSTRAINT entity_files_uploaded_by_fkey FOREIGN KEY (uploaded_by) REFERENCES users(id);
@@ -6877,6 +6896,9 @@ DO $$ BEGIN
     ALTER TABLE public.manufacturer_models ADD CONSTRAINT manufacturer_models_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE public.manufacturers ADD CONSTRAINT fk_manufacturers_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE public.message_templates ADD CONSTRAINT fk_message_templates_company FOREIGN KEY (company_id) REFERENCES companies(id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
@@ -7027,6 +7049,9 @@ DO $$ BEGIN
     ALTER TABLE public.recurring_work ADD CONSTRAINT recurring_work_work_center_id_fkey FOREIGN KEY (work_center_id) REFERENCES work_centers(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE public.reference_codes ADD CONSTRAINT fk_reference_codes_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE public.service_requests ADD CONSTRAINT fk_service_requests_company FOREIGN KEY (company_id) REFERENCES companies(id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
@@ -7070,6 +7095,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.task_library_roles ADD CONSTRAINT task_library_roles_task_id_fkey FOREIGN KEY (task_id) REFERENCES task_library_items(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE public.tax_codes ADD CONSTRAINT fk_tax_codes_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.thread_reads ADD CONSTRAINT fk_thread_reads_company FOREIGN KEY (company_id) REFERENCES companies(id);
@@ -7287,6 +7315,7 @@ CREATE INDEX IF NOT EXISTS idx_depreciation_books_asset_financial_id ON public.d
 CREATE INDEX IF NOT EXISTS idx_depreciation_books_company_id ON public.depreciation_books USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_depreciation_schedules_book_id ON public.depreciation_schedules USING btree (book_id);
 CREATE INDEX IF NOT EXISTS idx_depreciation_schedules_company_id ON public.depreciation_schedules USING btree (company_id);
+CREATE INDEX IF NOT EXISTS idx_dictionaries_company_id ON public.dictionaries USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_entity_files_category ON public.entity_files USING btree (category) WHERE (category IS NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_entity_files_company_id ON public.entity_files USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_entity_files_entity ON public.entity_files USING btree (entity_type, entity_id);
@@ -7550,6 +7579,7 @@ CREATE INDEX IF NOT EXISTS idx_manufacturer_models_company_id ON public.manufact
 CREATE INDEX IF NOT EXISTS idx_manufacturer_models_contact_id ON public.manufacturer_models USING btree (contact_id);
 CREATE INDEX IF NOT EXISTS idx_manufacturer_models_manufacturer_id ON public.manufacturer_models USING btree (manufacturer_id);
 CREATE INDEX IF NOT EXISTS idx_manufacturer_models_vendor_id ON public.manufacturer_models USING btree (vendor_id);
+CREATE INDEX IF NOT EXISTS idx_manufacturers_company_id ON public.manufacturers USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_message_templates_company_id ON public.message_templates USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_messages_company_id ON public.messages USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_messages_sender ON public.messages USING btree (sender_id);
@@ -7608,6 +7638,7 @@ CREATE INDEX IF NOT EXISTS idx_reading_logs_company_id ON public.reading_logs US
 CREATE INDEX IF NOT EXISTS idx_reading_logs_definition_id ON public.reading_logs USING btree (definition_id);
 CREATE INDEX IF NOT EXISTS idx_recurring_work_company_id ON public.recurring_work USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_recurring_work_work_center ON public.recurring_work USING btree (work_center_id);
+CREATE INDEX IF NOT EXISTS idx_reference_codes_company_id ON public.reference_codes USING btree (company_id);
 CREATE UNIQUE INDEX IF NOT EXISTS reference_codes_category_code_key ON public.reference_codes USING btree (category, code);
 CREATE UNIQUE INDEX IF NOT EXISTS semantic_catalog_object_column_uq ON public.semantic_catalog USING btree (object_name, COALESCE(column_name, '·'::text));
 CREATE INDEX IF NOT EXISTS idx_service_requests_asset_id ON public.service_requests USING btree (asset_id);
@@ -7627,6 +7658,7 @@ CREATE INDEX IF NOT EXISTS idx_task_library_items_company_id ON public.task_libr
 CREATE UNIQUE INDEX IF NOT EXISTS task_library_items_code_key ON public.task_library_items USING btree (company_id, code);
 CREATE INDEX IF NOT EXISTS idx_task_library_roles_company_id ON public.task_library_roles USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_task_library_roles_task_id ON public.task_library_roles USING btree (task_id);
+CREATE INDEX IF NOT EXISTS idx_tax_codes_company_id ON public.tax_codes USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_thread_reads_company_id ON public.thread_reads USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_user_invites_company_id ON public.user_invites USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_user_invites_status ON public.user_invites USING btree (status);
@@ -7787,6 +7819,20 @@ CREATE OR REPLACE VIEW public.contact_directory AS
    FROM contacts
   WHERE company_id = (( SELECT caller_company() AS caller_company));
 
+CREATE OR REPLACE VIEW public.dictionaries_effective WITH (security_invoker = true) AS
+ SELECT DISTINCT ON (type, code) id,
+    type,
+    code,
+    description,
+    is_locked,
+    active,
+    properties,
+    updated_at,
+    company_id
+   FROM dictionaries
+  WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
+  ORDER BY type, code, (company_id IS NULL);
+
 CREATE OR REPLACE VIEW public.maintenance_forecasts AS
  SELECT id,
     code,
@@ -7815,6 +7861,40 @@ CREATE OR REPLACE VIEW public.maintenance_forecasts AS
     next_due_date
    FROM recurring_work rw
   WHERE company_id = (( SELECT caller_company() AS caller_company)) AND active = true AND status = 'ACTIVE'::text;
+
+CREATE OR REPLACE VIEW public.manufacturers_effective WITH (security_invoker = true) AS
+ SELECT DISTINCT ON (name) id,
+    name,
+    country,
+    website,
+    phone,
+    email,
+    notes,
+    active,
+    created_at,
+    updated_at,
+    company_id
+   FROM manufacturers
+  WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
+  ORDER BY name, (company_id IS NULL);
+
+CREATE OR REPLACE VIEW public.reference_codes_effective WITH (security_invoker = true) AS
+ SELECT DISTINCT ON (category, code) id,
+    category,
+    code,
+    description,
+    is_locked,
+    active,
+    properties,
+    updated_at,
+    category_ref,
+    metadata,
+    color_code,
+    sort_order,
+    company_id
+   FROM reference_codes
+  WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
+  ORDER BY category, code, (company_id IS NULL);
 
 CREATE OR REPLACE VIEW public.sem_asset_health WITH (security_invoker = true) AS
  SELECT a.id AS asset_id,
@@ -8187,6 +8267,24 @@ CREATE OR REPLACE VIEW public.sem_work_orders AS
     ers_wo_state(status::text) = 'done'::text AS is_done
    FROM work_orders w
   WHERE company_id = (( SELECT caller_company() AS caller_company));
+
+CREATE OR REPLACE VIEW public.tax_codes_effective WITH (security_invoker = true) AS
+ SELECT DISTINCT ON (code) id,
+    code,
+    description,
+    tax_type,
+    rate,
+    jurisdiction,
+    applies_to,
+    deductible,
+    effective_from,
+    effective_to,
+    active,
+    created_at,
+    company_id
+   FROM tax_codes
+  WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
+  ORDER BY code, (company_id IS NULL);
 
 CREATE OR REPLACE VIEW public.vendor_directory AS
  SELECT id,
@@ -8722,19 +8820,19 @@ DROP POLICY IF EXISTS "finops_update_depreciation_schedules" ON public.depreciat
 CREATE POLICY "finops_update_depreciation_schedules" ON public.depreciation_schedules FOR UPDATE TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true))
     WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
-DROP POLICY IF EXISTS "p2_admin_delete_dictionaries" ON public.dictionaries;
-CREATE POLICY "p2_admin_delete_dictionaries" ON public.dictionaries FOR DELETE TO authenticated
-    USING (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_insert_dictionaries" ON public.dictionaries;
-CREATE POLICY "p2_admin_insert_dictionaries" ON public.dictionaries FOR INSERT TO authenticated
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_update_dictionaries" ON public.dictionaries;
-CREATE POLICY "p2_admin_update_dictionaries" ON public.dictionaries FOR UPDATE TO authenticated
-    USING (( SELECT is_admin() AS is_admin))
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_select_dictionaries" ON public.dictionaries;
-CREATE POLICY "p2_select_dictionaries" ON public.dictionaries FOR SELECT TO authenticated
-    USING (true);
+DROP POLICY IF EXISTS "dictionaries_delete_own" ON public.dictionaries;
+CREATE POLICY "dictionaries_delete_own" ON public.dictionaries FOR DELETE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "dictionaries_insert_own" ON public.dictionaries;
+CREATE POLICY "dictionaries_insert_own" ON public.dictionaries FOR INSERT TO authenticated
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "dictionaries_read_global_or_own" ON public.dictionaries;
+CREATE POLICY "dictionaries_read_global_or_own" ON public.dictionaries FOR SELECT TO authenticated
+    USING (((company_id IS NULL) OR (company_id = ( SELECT caller_company() AS caller_company))));
+DROP POLICY IF EXISTS "dictionaries_update_own" ON public.dictionaries;
+CREATE POLICY "dictionaries_update_own" ON public.dictionaries FOR UPDATE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)))
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
 DROP POLICY IF EXISTS "auth_delete_entity_files" ON public.entity_files;
 CREATE POLICY "auth_delete_entity_files" ON public.entity_files FOR DELETE TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
@@ -9150,23 +9248,13 @@ DROP POLICY IF EXISTS "authenticated_access" ON public.ers_rca_barriers;
 CREATE POLICY "authenticated_access" ON public.ers_rca_barriers FOR ALL TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true))
     WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
-DROP POLICY IF EXISTS "auth_delete_ers_rca_cause_taxonomy" ON public.ers_rca_cause_taxonomy;
-CREATE POLICY "auth_delete_ers_rca_cause_taxonomy" ON public.ers_rca_cause_taxonomy FOR DELETE TO authenticated
+DROP POLICY IF EXISTS "ers_rca_cause_taxonomy_admin_write" ON public.ers_rca_cause_taxonomy;
+CREATE POLICY "ers_rca_cause_taxonomy_admin_write" ON public.ers_rca_cause_taxonomy FOR ALL TO authenticated
+    USING (( SELECT is_admin() AS is_admin))
+    WITH CHECK (( SELECT is_admin() AS is_admin));
+DROP POLICY IF EXISTS "ers_rca_cause_taxonomy_read" ON public.ers_rca_cause_taxonomy;
+CREATE POLICY "ers_rca_cause_taxonomy_read" ON public.ers_rca_cause_taxonomy FOR SELECT TO authenticated
     USING (true);
-DROP POLICY IF EXISTS "auth_insert_ers_rca_cause_taxonomy" ON public.ers_rca_cause_taxonomy;
-CREATE POLICY "auth_insert_ers_rca_cause_taxonomy" ON public.ers_rca_cause_taxonomy FOR INSERT TO authenticated
-    WITH CHECK (true);
-DROP POLICY IF EXISTS "auth_select_ers_rca_cause_taxonomy" ON public.ers_rca_cause_taxonomy;
-CREATE POLICY "auth_select_ers_rca_cause_taxonomy" ON public.ers_rca_cause_taxonomy FOR SELECT TO authenticated
-    USING (true);
-DROP POLICY IF EXISTS "auth_update_ers_rca_cause_taxonomy" ON public.ers_rca_cause_taxonomy;
-CREATE POLICY "auth_update_ers_rca_cause_taxonomy" ON public.ers_rca_cause_taxonomy FOR UPDATE TO authenticated
-    USING (true)
-    WITH CHECK (true);
-DROP POLICY IF EXISTS "authenticated_access" ON public.ers_rca_cause_taxonomy;
-CREATE POLICY "authenticated_access" ON public.ers_rca_cause_taxonomy FOR ALL TO authenticated
-    USING (true)
-    WITH CHECK (true);
 DROP POLICY IF EXISTS "authenticated_access" ON public.ers_rca_corrective_actions;
 CREATE POLICY "authenticated_access" ON public.ers_rca_corrective_actions FOR ALL TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true))
@@ -9660,19 +9748,19 @@ DROP POLICY IF EXISTS "authenticated_access" ON public.manufacturer_models;
 CREATE POLICY "authenticated_access" ON public.manufacturer_models FOR ALL TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true))
     WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
-DROP POLICY IF EXISTS "p2_admin_delete_manufacturers" ON public.manufacturers;
-CREATE POLICY "p2_admin_delete_manufacturers" ON public.manufacturers FOR DELETE TO authenticated
-    USING (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_insert_manufacturers" ON public.manufacturers;
-CREATE POLICY "p2_admin_insert_manufacturers" ON public.manufacturers FOR INSERT TO authenticated
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_update_manufacturers" ON public.manufacturers;
-CREATE POLICY "p2_admin_update_manufacturers" ON public.manufacturers FOR UPDATE TO authenticated
-    USING (( SELECT is_admin() AS is_admin))
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_select_manufacturers" ON public.manufacturers;
-CREATE POLICY "p2_select_manufacturers" ON public.manufacturers FOR SELECT TO authenticated
-    USING (true);
+DROP POLICY IF EXISTS "manufacturers_delete_own" ON public.manufacturers;
+CREATE POLICY "manufacturers_delete_own" ON public.manufacturers FOR DELETE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "manufacturers_insert_own" ON public.manufacturers;
+CREATE POLICY "manufacturers_insert_own" ON public.manufacturers FOR INSERT TO authenticated
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "manufacturers_read_global_or_own" ON public.manufacturers;
+CREATE POLICY "manufacturers_read_global_or_own" ON public.manufacturers FOR SELECT TO authenticated
+    USING (((company_id IS NULL) OR (company_id = ( SELECT caller_company() AS caller_company))));
+DROP POLICY IF EXISTS "manufacturers_update_own" ON public.manufacturers;
+CREATE POLICY "manufacturers_update_own" ON public.manufacturers FOR UPDATE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)))
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
 DROP POLICY IF EXISTS "p2_admin_delete_message_templates" ON public.message_templates;
 CREATE POLICY "p2_admin_delete_message_templates" ON public.message_templates FOR DELETE TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
@@ -9717,9 +9805,9 @@ DROP POLICY IF EXISTS "mt_gl_overrides_read" ON public.movement_type_gl_override
 CREATE POLICY "mt_gl_overrides_read" ON public.movement_type_gl_overrides FOR SELECT TO authenticated
     USING ((company_id = ( SELECT caller_company() AS caller_company)));
 DROP POLICY IF EXISTS "movement_types_admin_write" ON public.movement_types;
-CREATE POLICY "movement_types_admin_write" ON public.movement_types FOR ALL TO service_role
-    USING (true)
-    WITH CHECK (true);
+CREATE POLICY "movement_types_admin_write" ON public.movement_types FOR ALL TO authenticated
+    USING (( SELECT is_admin() AS is_admin))
+    WITH CHECK (( SELECT is_admin() AS is_admin));
 DROP POLICY IF EXISTS "movement_types_read" ON public.movement_types;
 CREATE POLICY "movement_types_read" ON public.movement_types FOR SELECT TO authenticated
     USING (true);
@@ -9927,19 +10015,19 @@ CREATE POLICY "p2_update_recurring_work" ON public.recurring_work FOR UPDATE TO 
 DROP POLICY IF EXISTS "rbac_select_recurring_work" ON public.recurring_work;
 CREATE POLICY "rbac_select_recurring_work" ON public.recurring_work FOR SELECT TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT caller_can('pm'::text, 'view'::text) AS caller_can)));
-DROP POLICY IF EXISTS "p2_admin_delete_reference_codes" ON public.reference_codes;
-CREATE POLICY "p2_admin_delete_reference_codes" ON public.reference_codes FOR DELETE TO authenticated
-    USING (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_insert_reference_codes" ON public.reference_codes;
-CREATE POLICY "p2_admin_insert_reference_codes" ON public.reference_codes FOR INSERT TO authenticated
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_update_reference_codes" ON public.reference_codes;
-CREATE POLICY "p2_admin_update_reference_codes" ON public.reference_codes FOR UPDATE TO authenticated
-    USING (( SELECT is_admin() AS is_admin))
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_select_reference_codes" ON public.reference_codes;
-CREATE POLICY "p2_select_reference_codes" ON public.reference_codes FOR SELECT TO authenticated
-    USING (true);
+DROP POLICY IF EXISTS "reference_codes_delete_own" ON public.reference_codes;
+CREATE POLICY "reference_codes_delete_own" ON public.reference_codes FOR DELETE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "reference_codes_insert_own" ON public.reference_codes;
+CREATE POLICY "reference_codes_insert_own" ON public.reference_codes FOR INSERT TO authenticated
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "reference_codes_read_global_or_own" ON public.reference_codes;
+CREATE POLICY "reference_codes_read_global_or_own" ON public.reference_codes FOR SELECT TO authenticated
+    USING (((company_id IS NULL) OR (company_id = ( SELECT caller_company() AS caller_company))));
+DROP POLICY IF EXISTS "reference_codes_update_own" ON public.reference_codes;
+CREATE POLICY "reference_codes_update_own" ON public.reference_codes FOR UPDATE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)))
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
 DROP POLICY IF EXISTS "admin_select_role_permissions" ON public.role_permissions;
 CREATE POLICY "admin_select_role_permissions" ON public.role_permissions FOR SELECT TO authenticated
     USING (( SELECT is_admin() AS is_admin));
@@ -10053,10 +10141,19 @@ DROP POLICY IF EXISTS "authenticated_access" ON public.task_library_roles;
 CREATE POLICY "authenticated_access" ON public.task_library_roles FOR ALL TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true))
     WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
-DROP POLICY IF EXISTS "authenticated_access" ON public.tax_codes;
-CREATE POLICY "authenticated_access" ON public.tax_codes FOR ALL TO authenticated
-    USING (true)
-    WITH CHECK (true);
+DROP POLICY IF EXISTS "tax_codes_delete_own" ON public.tax_codes;
+CREATE POLICY "tax_codes_delete_own" ON public.tax_codes FOR DELETE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "tax_codes_insert_own" ON public.tax_codes;
+CREATE POLICY "tax_codes_insert_own" ON public.tax_codes FOR INSERT TO authenticated
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "tax_codes_read_global_or_own" ON public.tax_codes;
+CREATE POLICY "tax_codes_read_global_or_own" ON public.tax_codes FOR SELECT TO authenticated
+    USING (((company_id IS NULL) OR (company_id = ( SELECT caller_company() AS caller_company))));
+DROP POLICY IF EXISTS "tax_codes_update_own" ON public.tax_codes;
+CREATE POLICY "tax_codes_update_own" ON public.tax_codes FOR UPDATE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)))
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
 DROP POLICY IF EXISTS "p2_own_thread_reads" ON public.thread_reads;
 CREATE POLICY "p2_own_thread_reads" ON public.thread_reads FOR ALL TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND (user_id = auth.uid())))
@@ -10277,6 +10374,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.de
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.depreciation_schedules TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.dictionaries TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.dictionaries TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.dictionaries_effective TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.dictionaries_effective TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.entity_files TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.entity_files TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.equipment_installations TO authenticated;
@@ -10451,6 +10550,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ma
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.manufacturer_models TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.manufacturers TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.manufacturers TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.manufacturers_effective TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.manufacturers_effective TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.message_templates TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.message_templates TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.messages TO authenticated;
@@ -10503,6 +10604,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.re
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.recurring_work TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.reference_codes TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.reference_codes TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.reference_codes_effective TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.reference_codes_effective TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.role_permissions TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.role_permissions TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.schema_migrations TO authenticated;
@@ -10555,6 +10658,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.ta
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.task_library_roles TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.tax_codes TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.tax_codes TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.tax_codes_effective TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.tax_codes_effective TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.thread_reads TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.thread_reads TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.user_invites TO authenticated;

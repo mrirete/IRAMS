@@ -67,11 +67,21 @@ const [live] = await sql(`SELECT
        JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE n.nspname = 'public'
         AND NOT EXISTS (SELECT 1 FROM pg_constraint k WHERE k.conindid = i.indexrelid))::int AS indexes,
-    (SELECT count(*) FROM information_schema.columns
-      WHERE table_schema = 'public' AND column_name = 'company_id')::int AS company_cols,
-    (SELECT count(*) FROM information_schema.columns
-      WHERE table_schema = 'public' AND column_name = 'company_id'
-        AND column_default LIKE '%caller_company%')::int AS company_defaults,
+    -- BASE TABLES ONLY. information_schema.columns includes views, while the
+    -- baseline side counts company_id declarations in CREATE TABLE text — so
+    -- the four *_effective views 0267 added appeared live but not in the file
+    -- and reported a 157-vs-161 mismatch that was entirely this query's fault.
+    (SELECT count(*) FROM information_schema.columns c
+       JOIN pg_class t ON t.relname = c.table_name
+       JOIN pg_namespace n ON n.oid = t.relnamespace AND n.nspname = 'public'
+      WHERE c.table_schema = 'public' AND c.column_name = 'company_id'
+        AND t.relkind = 'r')::int AS company_cols,
+    (SELECT count(*) FROM information_schema.columns c
+       JOIN pg_class t ON t.relname = c.table_name
+       JOIN pg_namespace n ON n.oid = t.relnamespace AND n.nspname = 'public'
+      WHERE c.table_schema = 'public' AND c.column_name = 'company_id'
+        AND t.relkind = 'r'
+        AND c.column_default LIKE '%caller_company%')::int AS company_defaults,
     (SELECT count(*) FROM pg_policies
       WHERE schemaname = 'public'
         AND coalesce(qual, '') || coalesce(with_check, '') LIKE '%caller_company%')::int AS tenant_policies`);
