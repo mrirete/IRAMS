@@ -173,6 +173,48 @@ cannot write them.
 one gate with no acceptable partial result, and it belongs in CI permanently — it is the test that
 stands between you and the incident that ends the product.
 
+**Result:** G3 green — 76 tables probed, zero cross-tenant reads, zero cross-tenant writes, no rows
+stranded in the probe tenant. But 76 is not 146, and the shortfall turned out to matter.
+
+#### Gate G4 — the part G3 structurally cannot reach
+
+G3 borrows an existing row and hands it to a probe tenant. That design can only speak about tables it
+can reach, and it cannot reach two kinds:
+
+| Blind spot | Count | Visible in G3's output? |
+|---|---|---|
+| Empty — no row to borrow | 70 | Yes, reported inconclusive |
+| No `id` column (composite PK) — the probe addresses rows as `?id=eq.…` | 6 | **No — absent from the denominator entirely** |
+
+`movement_type_gl_overrides` sat in both. It was created by **0262**, *after* 0261's one-shot policy
+sweep had already run, with `USING (true)` on its read policy — in a schema G3 had just called green.
+Its own table comment says "the chart of accounts is the customer's", so the design was tenant-correct
+and only the policy was a placeholder. Every tenant would have read every other tenant's G/L account
+mapping the moment that table held data.
+
+**Seeding the 70 empty tables was the obvious fix and the wrong one.** It is buildable — the FK chains
+are only two deep (`ers_hazop_deviations → ers_hazop_nodes → ers_psm_studies`), the hardest table needs
+six values, and 53 of the 76 CHECK constraints are value-lists a generator can parse. But it is the
+expensive way to learn less: it would have raised coverage to 146, still missed all six no-`id` tables,
+and still proved nothing about the *next* table a migration adds.
+
+The claim being made — *every tenant-owned table carries the conjunct* — is **static**. It is a fact
+about `pg_policies`, not about data. Checking it needs no rows, covers all 152 tables, and an empty
+table cannot hide from it.
+
+**Gate G4** (`tests/rls/tenant-completeness.mjs`, backed by `public.tenancy_policy_gaps()` in **0264**)
+asserts three things across every tenant-owned table: RLS is on and at least one policy exists; every
+*permissive* policy carries the tenant test (permissive policies OR together, so one bare policy defeats
+all its siblings — the 0238 bug, verbatim); and no DEFINER view reads past RLS unfiltered.
+
+The query lives in the database, not in the test, so it cannot drift from the schema it describes.
+`--self-test` introduces each gap shape on purpose inside a rolled-back transaction and fails if the
+detector stays quiet — four detectors in this workstream returned a confident wrong answer, so a check
+that has never gone red is not yet evidence.
+
+**Both gates belong in CI.** G3 proves the conjunct *works*; G4 proves every table *has* one. Neither
+alone is the guarantee, and G4 is the one that catches tomorrow's migration.
+
 ### Phase 4 — Per-tenant config (3–4 days)
 `dictionaries`, `hierarchy_config`, `reference_codes` to the override pattern; widen the uniqueness
 keys; seeding step in provisioning so a new tenant starts with the ISO 14224 catalogue rather than
@@ -202,7 +244,7 @@ access — and G3 still passes with three tenants.
 
 | Risk | Why it is real here | Mitigation |
 |---|---|---|
-| A policy misses the tenant conjunct | 504 policies; 0238 proved a migration can apply cleanly and change nothing | Phase 2 is generated, not hand-written; G3 tests every table |
+| A policy misses the tenant conjunct | 504 policies; 0238 proved a migration can apply cleanly and change nothing | Phase 2 is generated, not hand-written; **G4** proves statically that every table has one — G3 alone missed `movement_type_gl_overrides` |
 | Permissive policy survives beside a tenant-scoped one | Exactly how 0238 became a no-op — RLS is OR-ed | `audit-policies.mjs` already detects orphans; extend it to flag any policy on a tenant-owned table lacking the conjunct |
 | Per-row tenant predicate | Proven 72× penalty for a bare function call | Indexed column comparison, tenant test first, `EXPLAIN` in G2 |
 | Child row points at another tenant's parent | Denormalisation permits it | Composite FK on `(id, company_id)` |

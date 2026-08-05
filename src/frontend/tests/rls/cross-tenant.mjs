@@ -29,6 +29,20 @@
  * Tables with no rows yield no verdict and are reported INCONCLUSIVE rather
  * than counted as passes.
  *
+ * ── What this gate structurally CANNOT see — run G4 as well ─────────────────
+ * Two blind spots, and only the first is visible in the output:
+ *
+ *   • empty tables — no row to borrow, reported inconclusive (70 of them)
+ *   • tables with NO `id` column — composite primary keys, so a probe that
+ *     addresses rows as `?id=eq.…` cannot name them. These were silently
+ *     absent from the denominator entirely until this was written down.
+ *
+ * movement_type_gl_overrides sat in both: created by 0262 AFTER 0261's one-shot
+ * policy sweep, carrying `USING (true)`, in a schema this gate had just called
+ * green. tests/rls/tenant-completeness.mjs (G4) is the complement — it proves
+ * statically, over all 152 tables, that each one HAS the conjunct. This gate
+ * proves the conjunct WORKS. Neither alone is the guarantee.
+ *
  * Usage: SUPABASE_ACCESS_TOKEN=sbp_… npx vite-node tests/rls/cross-tenant.mjs
  */
 const SB = 'https://hacrebcfvyqdnjvilhqc.supabase.co';
@@ -144,7 +158,22 @@ END $$;`);
 const all = (await mgmt(TABLES)).map(r => r.t);
 const inconclusive = all.filter(t => !probes.some(p => p.t === t));
 
-console.log(`tables probed: ${probes.length} of ${all.length}   (${inconclusive.length} empty — no verdict)\n`);
+// Tables this gate cannot address at all. Reporting them matters more than it
+// looks: excluded from `all`, they were excluded from the denominator too, so
+// "76 of 146" quietly described a smaller universe than "every tenant table".
+const unreachable = await mgmt(`
+    SELECT c.relname AS t FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname='public' AND c.relkind='r'
+       AND EXISTS (SELECT 1 FROM information_schema.columns col
+                    WHERE col.table_schema='public' AND col.table_name=c.relname AND col.column_name='company_id')
+       AND NOT EXISTS (SELECT 1 FROM information_schema.columns col
+                        WHERE col.table_schema='public' AND col.table_name=c.relname AND col.column_name='id')
+       AND c.relname NOT IN ('users','companies')
+     ORDER BY c.relname`);
+
+console.log(`tables probed: ${probes.length} of ${all.length}   (${inconclusive.length} empty — no verdict)`);
+console.log(`plus ${unreachable.length} table(s) this gate cannot address at all (no 'id' column): ${unreachable.map(r => r.t).join(', ')}`);
+console.log(`→ those are G4's job: node tests/rls/tenant-completeness.mjs --self-test\n`);
 console.log(`cross-tenant READS  : ${readLeaks.length === 0 ? '0 ✅' : `${readLeaks.length} ❌  ${readLeaks.join(', ')}`}`);
 console.log(`cross-tenant WRITES : ${writeLeaks.length === 0 ? '0 ✅' : `${writeLeaks.length} ❌  ${writeLeaks.join(', ')}`}`);
 
