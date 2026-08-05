@@ -16,8 +16,22 @@
  * No I/O here — file names and contents in, a plan out.
  */
 
-/** `0221_writeback.sql` → matches; `master_seed.sql` → does not. */
-export const MIGRATION_FILE_RE = /^(\d{4})_(.+)\.sql$/i;
+/**
+ * `0221_writeback.sql` → matches; `master_seed.sql` → does not.
+ *
+ * The optional letter is how a collision gets resolved. Thirty numbers in this
+ * repo were claimed twice (0141 four times) because parallel sessions grabbed
+ * the same one. Renumbering the later file to the end of the sequence would be
+ * wrong — it would move it hundreds of positions and change what it runs after
+ * — so it takes a suffix instead and stays exactly where it was: 0052_ then
+ * 0052a_, before 0053_.
+ *
+ * Every one of those thirty was checked before the suffixes were assigned: 29
+ * groups touch disjoint objects, and 0141's two definitions of
+ * create_auth_user are byte-identical. The suffix order is the alphabetical
+ * order that was already running, now declared instead of incidental.
+ */
+export const MIGRATION_FILE_RE = /^(\d{4})([a-z]?)_(.+)\.sql$/i;
 
 /**
  * Statements Postgres refuses to run inside an explicit transaction block.
@@ -80,15 +94,28 @@ export function transactionMode(sql) {
 export function parseMigrationName(file) {
     const m = MIGRATION_FILE_RE.exec(file);
     if (!m) return null;
-    return { file, number: Number(m[1]), slug: m[2] };
+    return { file, number: Number(m[1]), suffix: (m[2] ?? '').toLowerCase(), slug: m[3] };
 }
 
-/** Numbered migrations only, in numeric order. Non-migration .sql is ignored. */
+/**
+ * Numbered migrations only, in numeric order, then by suffix.
+ *
+ * The empty suffix sorts before 'a' by plain string comparison, so `0052_x`
+ * runs before `0052a_y` — which is the whole point: the suffixed file keeps its
+ * original position instead of being pushed to the end of the sequence.
+ *
+ * The filename tiebreak stays as a backstop. It should now be unreachable —
+ * findDuplicateNumbers() is what proves that rather than assuming it, and the
+ * runner still refuses to apply when it fires.
+ */
 export function orderMigrations(files) {
     return files
         .map(parseMigrationName)
         .filter(Boolean)
-        .sort((a, b) => a.number - b.number || a.file.localeCompare(b.file));
+        .sort((a, b) =>
+            a.number - b.number ||
+            a.suffix.localeCompare(b.suffix) ||
+            a.file.localeCompare(b.file));
 }
 
 /** Files ignored because they are not numbered migrations (seeds, cleanups). */
@@ -96,17 +123,25 @@ export function ignoredFiles(files) {
     return files.filter((f) => f.toLowerCase().endsWith('.sql') && !MIGRATION_FILE_RE.test(f));
 }
 
-/** Two files claiming the same number — one of them will never run. */
+/**
+ * Two files claiming the same ORDER SLOT — number plus suffix. `0052_x` and
+ * `0052a_y` are distinct slots and run in a defined order; `0052_x` and
+ * `0052_y` are the same slot, and which one runs first is decided by whatever
+ * localeCompare happens to say about their names.
+ */
 export function findDuplicateNumbers(files) {
-    const byNumber = new Map();
+    const bySlot = new Map();
     for (const m of orderMigrations(files)) {
-        const list = byNumber.get(m.number) ?? [];
+        // Zero-padded so the caller's own padStart(4) is a no-op — otherwise
+        // slot "52a" renders as "052a" in the blocker report.
+        const slot = `${String(m.number).padStart(4, '0')}${m.suffix}`;
+        const list = bySlot.get(slot) ?? [];
         list.push(m.file);
-        byNumber.set(m.number, list);
+        bySlot.set(slot, list);
     }
-    return [...byNumber.entries()]
+    return [...bySlot.entries()]
         .filter(([, list]) => list.length > 1)
-        .map(([number, list]) => ({ number, files: list }));
+        .map(([slot, list]) => ({ number: slot, files: list }));
 }
 
 /**
