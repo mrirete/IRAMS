@@ -46,6 +46,22 @@ const chunk = <T,>(arr: T[], size: number): T[][] => {
     return out;
 };
 
+/**
+ * The `import_batches.source_system` vocabulary → the name the identity map
+ * files their ids under. Deliberately coarse: a customer running SAP PM and
+ * SAP MM is on ONE system as far as an adapter is concerned, and splitting
+ * them would mean two mappings for one vendor.
+ */
+const EXTERNAL_SYSTEM: Record<string, string> = {
+    sap_pm: 'SAP',
+    maximo: 'MAXIMO',
+    maintainx: 'MAINTAINX',
+    emaint: 'EMAINT',
+    limble: 'LIMBLE',
+    fiix: 'FIIX',
+    upkeep: 'UPKEEP',
+};
+
 interface ExistingAsset { id: string; tag: string; level?: string; companyId: string | null }
 
 /** Look up assets by tag in chunks (the `.in()` list has practical limits). */
@@ -148,6 +164,13 @@ export async function importAssets(
          * under the default must never overwrite work done in the app.
          */
         mode?: 'insert' | 'sync';
+        /**
+         * Which system the file came out of (`import_batches.source_system`
+         * vocabulary). Recorded on the batch, and — for anything other than a
+         * spreadsheet — used to keep their ids in `erp_object_map` so a later
+         * integration starts already mapped.
+         */
+        sourceSystem?: string;
     } = {},
 ): Promise<ImportResult> {
     const res = emptyResult();
@@ -267,16 +290,24 @@ export async function importAssets(
     for (const d of remaining) {
         tally(res, { row: d.row, key: d.tag, status: 'failed', reason: 'Circular parent reference' });
     }
-    if (layers.length === 0) return res;
+    // No early return when there is nothing to insert: a sync re-run where
+    // every row already exists is the normal case, and the identity-map step
+    // at the end still has work to do. The insert loops below iterate
+    // `layers`, so they no-op on their own.
 
     // ── 5. Provenance batch (optional — import_batches is admin-only by RLS) ──
     let batchId: string | null = null;
-    if (opts.withBatch) {
+    if (opts.withBatch && layers.length > 0) {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             const { data, error } = await supabase
                 .from('import_batches')
-                .insert({ source_system: 'spreadsheet', file_name: 'Asset register import', status: 'draft', created_by: user?.id ?? null })
+                .insert({
+                    source_system: opts.sourceSystem || 'spreadsheet',
+                    file_name: 'Asset register import',
+                    status: 'draft',
+                    created_by: user?.id ?? null,
+                })
                 .select('id')
                 .single();
             if (error) throw new Error(error.message);
@@ -415,11 +446,38 @@ export async function importAssets(
       }
     }
 
-    // ── 7. Seal the batch ──
+    // ── 7. Keep their ids (0275) ──
+    // A SAP PM or Maximo export carries the equipment numbers THEIR system
+    // knows these assets by. Used only to match a row and then dropped, an
+    // integration built later has to rediscover the same mapping by name —
+    // which breaks the first time someone renames something. Recorded here,
+    // it starts already mapped. A spreadsheet is skipped: hand-keyed rows
+    // have no stable identity on the other side to map to.
+    if (opts.sourceSystem && opts.sourceSystem !== 'spreadsheet' && opts.sourceSystem !== 'unknown') {
+        const pairs = drafts
+            .map(d => ({
+                entity_id: d.tag ? idByTag.get(d.tag.toUpperCase()) : undefined,
+                external_key: (d.data['equipmentnumber'] || '').trim(),
+            }))
+            .filter(p => p.entity_id && p.external_key);
+        if (pairs.length > 0) {
+            const { data: mapped, error } = await supabase.rpc('ers_map_external_ids', {
+                p_entity_type: 'asset',
+                p_system: EXTERNAL_SYSTEM[opts.sourceSystem] ?? opts.sourceSystem.toUpperCase(),
+                p_pairs: pairs,
+            });
+            // Advisory: the rows are imported either way, and the mapping can
+            // be rebuilt from the same file. Never fail an import over it.
+            if (error) res.notes!.push(`External ids not recorded (${error.message}) — the import itself is unaffected.`);
+            else if (mapped) res.notes!.push(`${mapped} external id(s) recorded for ${opts.sourceSystem}.`);
+        }
+    }
+
+    // ── 8. Seal the batch ──
     if (batchId) {
         await supabase.from('import_batches').update({
             status: 'committed',
-            row_counts: { assets: res.inserted, skipped: res.skipped + res.failed },
+            row_counts: { assets: res.inserted, updated: res.updated, skipped: res.skipped + res.failed },
             committed_at: new Date().toISOString(),
         }).eq('id', batchId);
     }

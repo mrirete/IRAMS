@@ -89,10 +89,21 @@ function makeQuery(table: string) {
     return builder;
 }
 
+/** RPC calls the service makes, so the identity-map seeding is observable. */
+const rpcCalls: { fn: string; args: Record<string, unknown> }[] = [];
+let rpcError: { message: string } | null = null;
+
 vi.mock('../lib/supabase', () => ({
     supabase: {
         from: (table: string) => makeQuery(table),
         auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
+        rpc: (fn: string, args: Record<string, unknown>) => {
+            rpcCalls.push({ fn, args });
+            if (rpcError) return Promise.resolve({ data: null, error: rpcError });
+            // The real function returns how many mappings it wrote.
+            const pairs = (args?.p_pairs as unknown[]) ?? [];
+            return Promise.resolve({ data: pairs.length, error: null });
+        },
     },
 }));
 
@@ -112,7 +123,7 @@ const byTag = (tag: string) => assetRows().find(a => a.tag === tag);
 const outcomeFor = (res: { outcomes: { key?: string; status: string; reason?: string }[] }, key: string) =>
     res.outcomes.find(o => o.key === key);
 
-beforeEach(() => { resetDb(); idSeq = 0; });
+beforeEach(() => { resetDb(); idSeq = 0; rpcCalls.length = 0; rpcError = null; });
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -419,5 +430,90 @@ describe('sync mode', () => {
         expect(res.updated).toBe(1);
         expect(res.inserted).toBe(1);
         expect(byTag('PMP-NEW')).toBeDefined();
+    });
+});
+
+// ── External id capture (Tier-1 inbound identity layer) ──────────────────────
+// A foreign CMMS export carries the ids THEIR system knows these assets by.
+// Used to match a row and then dropped, a later integration has to rediscover
+// the same mapping by name — which breaks the first time something is renamed.
+describe('external id capture', () => {
+    const mapCall = () => rpcCalls.find(c => c.fn === 'ers_map_external_ids');
+
+    it('records their equipment numbers when the file came from a foreign CMMS', async () => {
+        const res = await importAssets(
+            [row({ tag: 'GT-20', hierarchylevel: 'EQUIPMENT', criticality: 'A', equipmentnumber: 'EQ-1001' })],
+            { sourceSystem: 'sap_pm' },
+        );
+        expect(res.inserted).toBe(1);
+        const call = mapCall()!;
+        expect(call).toBeDefined();
+        expect(call.args.p_entity_type).toBe('asset');
+        expect(call.args.p_system).toBe('SAP');
+        expect(call.args.p_pairs).toEqual([{ entity_id: byTag('GT-20')!.id, external_key: 'EQ-1001' }]);
+    });
+
+    // A hand-keyed sheet has no stable identity on the other side to map to.
+    it('records nothing for a spreadsheet', async () => {
+        await importAssets(
+            [row({ tag: 'GT-21', hierarchylevel: 'EQUIPMENT', criticality: 'A', equipmentnumber: 'EQ-1002' })],
+            { sourceSystem: 'spreadsheet' },
+        );
+        expect(mapCall()).toBeUndefined();
+    });
+
+    it('records nothing when no source system is given at all (unchanged default)', async () => {
+        await importAssets([row({ tag: 'GT-22', hierarchylevel: 'EQUIPMENT', criticality: 'A', equipmentnumber: 'EQ-1003' })]);
+        expect(mapCall()).toBeUndefined();
+    });
+
+    it('skips rows with no external id rather than mapping a blank', async () => {
+        await importAssets([
+            row({ tag: 'GT-23', hierarchylevel: 'EQUIPMENT', criticality: 'A', equipmentnumber: 'EQ-1004' }),
+            row({ tag: 'GT-24', hierarchylevel: 'EQUIPMENT', criticality: 'A' }),
+        ], { sourceSystem: 'maximo' });
+        const pairs = mapCall()!.args.p_pairs as { external_key: string }[];
+        expect(pairs).toHaveLength(1);
+        expect(pairs[0].external_key).toBe('EQ-1004');
+    });
+
+    it('does not call out at all when nothing in the file carries an id', async () => {
+        await importAssets([row({ tag: 'GT-25', hierarchylevel: 'EQUIPMENT', criticality: 'A' })], { sourceSystem: 'sap_pm' });
+        expect(mapCall()).toBeUndefined();
+    });
+
+    it('maps each vendor to its own system name', async () => {
+        await importAssets([row({ tag: 'GT-26', hierarchylevel: 'EQUIPMENT', criticality: 'A', equipmentnumber: 'X1' })], { sourceSystem: 'maintainx' });
+        expect(mapCall()!.args.p_system).toBe('MAINTAINX');
+    });
+
+    // The import is the point; the mapping is provenance and can be rebuilt
+    // from the same file, so it must never be able to fail the run.
+    it('still imports, with a note, when the mapping call fails', async () => {
+        rpcError = { message: 'permission denied' };
+        const res = await importAssets(
+            [row({ tag: 'GT-27', hierarchylevel: 'EQUIPMENT', criticality: 'A', equipmentnumber: 'EQ-9' })],
+            { sourceSystem: 'sap_pm' },
+        );
+        expect(res.inserted).toBe(1);
+        expect(res.failed).toBe(0);
+        expect(res.notes?.join(' ')).toMatch(/External ids not recorded/);
+    });
+
+    it('records the real source system on the batch instead of always saying spreadsheet', async () => {
+        db.import_batches.insertError = null;
+        await importAssets([row({ tag: 'GT-28', hierarchylevel: 'EQUIPMENT', criticality: 'A' })], { withBatch: true, sourceSystem: 'sap_pm' });
+        expect((inserted.import_batches ?? [])[0]?.source_system).toBe('sap_pm');
+    });
+
+    // Sync mode touches rows that already exist; their ids are just as worth
+    // keeping as a new row's.
+    it('maps existing rows too on a sync run', async () => {
+        db.assets.rows.push({ id: 'ex-9', tag: 'GT-29', hierarchy_level: 'EQUIPMENT', company_id: 'co-1', name: 'Old' });
+        await importAssets(
+            [row({ tag: 'GT-29', hierarchylevel: 'EQUIPMENT', name: 'New', equipmentnumber: 'EQ-77' })],
+            { sourceSystem: 'sap_pm', mode: 'sync' },
+        );
+        expect(mapCall()!.args.p_pairs).toEqual([{ entity_id: 'ex-9', external_key: 'EQ-77' }]);
     });
 });
