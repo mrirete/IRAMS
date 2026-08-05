@@ -87,11 +87,36 @@ describe('ordering and filtering', () => {
 });
 
 describe('findDuplicateNumbers', () => {
-    it('catches two files claiming one number', () => {
+    // A collision is on the ORDER SLOT, not the bare integer — the slot is the
+    // zero-padded number plus its suffix, so it is a string ('0210', '0265a').
+    // It has to be: once suffixes exist, 0265 and 0265a are different slots and
+    // no integer can tell them apart.
+    it('catches two files claiming one slot', () => {
         const dupes = findDuplicateNumbers(['0210_integrity.sql', '0210_jsa.sql', '0211_ok.sql']);
         expect(dupes).toHaveLength(1);
-        expect(dupes[0].number).toBe(210);
+        expect(dupes[0].number).toBe('0210');
         expect(dupes[0].files).toEqual(['0210_integrity.sql', '0210_jsa.sql']);
+    });
+
+    // The reason suffixes were introduced: two streams that raced for a number
+    // resolve it by taking a suffix, and that must stop being a collision.
+    it('treats a suffixed file as its own slot, not a duplicate', () => {
+        expect(findDuplicateNumbers(['0265_widen.sql', '0265a_receipts.sql'])).toEqual([]);
+    });
+
+    it('still catches two files claiming the same suffixed slot', () => {
+        const dupes = findDuplicateNumbers(['0265a_one.sql', '0265a_two.sql']);
+        expect(dupes).toHaveLength(1);
+        expect(dupes[0].number).toBe('0265a');
+    });
+
+    // The runner prints `String(d.number).padStart(4, '0')`. If the slot were
+    // reported unpadded, slot 52a would render as '052a' and read as a
+    // different migration than the one that actually collided.
+    it('reports a slot already padded, so the runner does not pad it twice', () => {
+        const dupes = findDuplicateNumbers(['0052a_x.sql', '0052a_y.sql']);
+        expect(dupes[0].number).toBe('0052a');
+        expect(String(dupes[0].number).padStart(4, '0')).toBe('0052a');
     });
 
     it('reports none when numbering is clean', () => {
