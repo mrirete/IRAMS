@@ -4002,9 +4002,10 @@ CREATE TABLE IF NOT EXISTS public.goods_receipts (
 );
 
 CREATE TABLE IF NOT EXISTS public.hierarchy_config (
-    id integer DEFAULT 1 NOT NULL,
+    id integer DEFAULT nextval('hierarchy_config_id_seq'::regclass) NOT NULL,
     levels jsonb NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    company_id uuid DEFAULT caller_company()
 );
 
 CREATE TABLE IF NOT EXISTS public.import_batches (
@@ -4505,7 +4506,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
 );
 
 CREATE TABLE IF NOT EXISTS public.numbering_config (
-    id integer DEFAULT 1 NOT NULL,
+    id integer DEFAULT nextval('numbering_config_id_seq'::regclass) NOT NULL,
     floc_prefix text DEFAULT 'FL-'::text NOT NULL,
     floc_pad integer DEFAULT 6 NOT NULL,
     floc_next bigint DEFAULT 1 NOT NULL,
@@ -4513,7 +4514,8 @@ CREATE TABLE IF NOT EXISTS public.numbering_config (
     equip_pad integer DEFAULT 6 NOT NULL,
     equip_next bigint DEFAULT 1 NOT NULL,
     auto_number_untagged boolean DEFAULT true NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    company_id uuid DEFAULT caller_company()
 );
 
 CREATE TABLE IF NOT EXISTS public.numbering_config_overrides (
@@ -5941,6 +5943,9 @@ DO $$ BEGIN
     ALTER TABLE public.hierarchy_config ADD CONSTRAINT hierarchy_config_singleton CHECK ((id = 1));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE public.hierarchy_config ADD CONSTRAINT uq_hierarchy_config_tenant UNIQUE NULLS NOT DISTINCT (company_id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE public.import_batches ADD CONSTRAINT import_batches_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
@@ -6101,6 +6106,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.numbering_config ADD CONSTRAINT numbering_config_singleton CHECK ((id = 1));
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE public.numbering_config ADD CONSTRAINT uq_numbering_config_tenant UNIQUE NULLS NOT DISTINCT (company_id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.numbering_config_overrides ADD CONSTRAINT numbering_config_overrides_object_class_check CHECK ((object_class = ANY (ARRAY['EQUIPMENT'::text, 'FLOC'::text, 'GOODS_RECEIPT'::text])));
@@ -6922,6 +6930,9 @@ DO $$ BEGIN
     ALTER TABLE public.goods_receipts ADD CONSTRAINT goods_receipts_po_line_id_fkey FOREIGN KEY (po_line_id) REFERENCES purchase_order_lines(id) ON DELETE SET NULL;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE public.hierarchy_config ADD CONSTRAINT fk_hierarchy_config_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE public.import_batches ADD CONSTRAINT fk_import_batches_company FOREIGN KEY (company_id) REFERENCES companies(id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
@@ -7094,6 +7105,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.notifications ADD CONSTRAINT notifications_parent_notification_id_fkey FOREIGN KEY (parent_notification_id) REFERENCES notifications(id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE public.numbering_config ADD CONSTRAINT fk_numbering_config_company FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.numbering_config_overrides ADD CONSTRAINT numbering_config_overrides_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
@@ -7985,6 +7999,16 @@ CREATE OR REPLACE VIEW public.dictionaries_effective WITH (security_invoker = tr
   WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
   ORDER BY type, code, (company_id IS NULL);
 
+CREATE OR REPLACE VIEW public.hierarchy_config_effective WITH (security_invoker = true) AS
+ SELECT id,
+    levels,
+    updated_at,
+    company_id
+   FROM hierarchy_config
+  WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
+  ORDER BY (company_id IS NULL)
+ LIMIT 1;
+
 CREATE OR REPLACE VIEW public.maintenance_forecasts AS
  SELECT id,
     code,
@@ -8029,6 +8053,22 @@ CREATE OR REPLACE VIEW public.manufacturers_effective WITH (security_invoker = t
    FROM manufacturers
   WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
   ORDER BY name, (company_id IS NULL);
+
+CREATE OR REPLACE VIEW public.numbering_config_effective WITH (security_invoker = true) AS
+ SELECT id,
+    floc_prefix,
+    floc_pad,
+    floc_next,
+    equip_prefix,
+    equip_pad,
+    equip_next,
+    auto_number_untagged,
+    updated_at,
+    company_id
+   FROM numbering_config
+  WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
+  ORDER BY (company_id IS NULL)
+ LIMIT 1;
 
 CREATE OR REPLACE VIEW public.reference_codes_effective WITH (security_invoker = true) AS
  SELECT DISTINCT ON (category, code) id,
@@ -8869,11 +8909,11 @@ CREATE POLICY "p2_admin_insert_companies" ON public.companies FOR INSERT TO auth
     WITH CHECK (( SELECT is_admin() AS is_admin));
 DROP POLICY IF EXISTS "p2_admin_update_companies" ON public.companies;
 CREATE POLICY "p2_admin_update_companies" ON public.companies FOR UPDATE TO authenticated
-    USING (( SELECT is_admin() AS is_admin))
-    WITH CHECK (( SELECT is_admin() AS is_admin));
+    USING (((id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)))
+    WITH CHECK (((id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
 DROP POLICY IF EXISTS "p2_select_companies" ON public.companies;
 CREATE POLICY "p2_select_companies" ON public.companies FOR SELECT TO authenticated
-    USING (true);
+    USING ((id = ( SELECT caller_company() AS caller_company)));
 DROP POLICY IF EXISTS "connector_sync_logs_auth_read" ON public.connector_sync_logs;
 CREATE POLICY "connector_sync_logs_auth_read" ON public.connector_sync_logs FOR SELECT TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
@@ -9679,19 +9719,19 @@ DROP POLICY IF EXISTS "authenticated_access" ON public.goods_receipts;
 CREATE POLICY "authenticated_access" ON public.goods_receipts FOR ALL TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true))
     WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
-DROP POLICY IF EXISTS "p2_admin_delete_hierarchy_config" ON public.hierarchy_config;
-CREATE POLICY "p2_admin_delete_hierarchy_config" ON public.hierarchy_config FOR DELETE TO authenticated
-    USING (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_insert_hierarchy_config" ON public.hierarchy_config;
-CREATE POLICY "p2_admin_insert_hierarchy_config" ON public.hierarchy_config FOR INSERT TO authenticated
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_update_hierarchy_config" ON public.hierarchy_config;
-CREATE POLICY "p2_admin_update_hierarchy_config" ON public.hierarchy_config FOR UPDATE TO authenticated
-    USING (( SELECT is_admin() AS is_admin))
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_select_hierarchy_config" ON public.hierarchy_config;
-CREATE POLICY "p2_select_hierarchy_config" ON public.hierarchy_config FOR SELECT TO authenticated
-    USING (true);
+DROP POLICY IF EXISTS "hierarchy_config_delete_own" ON public.hierarchy_config;
+CREATE POLICY "hierarchy_config_delete_own" ON public.hierarchy_config FOR DELETE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "hierarchy_config_insert_own" ON public.hierarchy_config;
+CREATE POLICY "hierarchy_config_insert_own" ON public.hierarchy_config FOR INSERT TO authenticated
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "hierarchy_config_read_global_or_own" ON public.hierarchy_config;
+CREATE POLICY "hierarchy_config_read_global_or_own" ON public.hierarchy_config FOR SELECT TO authenticated
+    USING (((company_id IS NULL) OR (company_id = ( SELECT caller_company() AS caller_company))));
+DROP POLICY IF EXISTS "hierarchy_config_update_own" ON public.hierarchy_config;
+CREATE POLICY "hierarchy_config_update_own" ON public.hierarchy_config FOR UPDATE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)))
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
 DROP POLICY IF EXISTS "admin_delete_import_batches" ON public.import_batches;
 CREATE POLICY "admin_delete_import_batches" ON public.import_batches FOR DELETE TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
@@ -10014,19 +10054,19 @@ DROP POLICY IF EXISTS "p2_update_notifications" ON public.notifications;
 CREATE POLICY "p2_update_notifications" ON public.notifications FOR UPDATE TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ((recipient_id = (auth.uid())::text) OR ( SELECT is_admin() AS is_admin))))
     WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ((recipient_id = (auth.uid())::text) OR ( SELECT is_admin() AS is_admin))));
-DROP POLICY IF EXISTS "p2_admin_delete_numbering_config" ON public.numbering_config;
-CREATE POLICY "p2_admin_delete_numbering_config" ON public.numbering_config FOR DELETE TO authenticated
-    USING (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_insert_numbering_config" ON public.numbering_config;
-CREATE POLICY "p2_admin_insert_numbering_config" ON public.numbering_config FOR INSERT TO authenticated
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_admin_update_numbering_config" ON public.numbering_config;
-CREATE POLICY "p2_admin_update_numbering_config" ON public.numbering_config FOR UPDATE TO authenticated
-    USING (( SELECT is_admin() AS is_admin))
-    WITH CHECK (( SELECT is_admin() AS is_admin));
-DROP POLICY IF EXISTS "p2_select_numbering_config" ON public.numbering_config;
-CREATE POLICY "p2_select_numbering_config" ON public.numbering_config FOR SELECT TO authenticated
-    USING (true);
+DROP POLICY IF EXISTS "numbering_config_delete_own" ON public.numbering_config;
+CREATE POLICY "numbering_config_delete_own" ON public.numbering_config FOR DELETE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "numbering_config_insert_own" ON public.numbering_config;
+CREATE POLICY "numbering_config_insert_own" ON public.numbering_config FOR INSERT TO authenticated
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
+DROP POLICY IF EXISTS "numbering_config_read_global_or_own" ON public.numbering_config;
+CREATE POLICY "numbering_config_read_global_or_own" ON public.numbering_config FOR SELECT TO authenticated
+    USING (((company_id IS NULL) OR (company_id = ( SELECT caller_company() AS caller_company))));
+DROP POLICY IF EXISTS "numbering_config_update_own" ON public.numbering_config;
+CREATE POLICY "numbering_config_update_own" ON public.numbering_config FOR UPDATE TO authenticated
+    USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)))
+    WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
 DROP POLICY IF EXISTS "p2_admin_delete_numbering_config_overrides" ON public.numbering_config_overrides;
 CREATE POLICY "p2_admin_delete_numbering_config_overrides" ON public.numbering_config_overrides FOR DELETE TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND ( SELECT is_admin() AS is_admin)));
@@ -10662,6 +10702,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.go
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.goods_receipts TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.hierarchy_config TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.hierarchy_config TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.hierarchy_config_effective TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.hierarchy_config_effective TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.import_batches TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.import_batches TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.insurance_incidents TO authenticated;
@@ -10726,6 +10768,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.no
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.notifications TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.numbering_config TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.numbering_config TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.numbering_config_effective TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.numbering_config_effective TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.numbering_config_overrides TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.numbering_config_overrides TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.organization_unit_members TO authenticated;

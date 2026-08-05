@@ -308,12 +308,34 @@ maintenance engineer, not a migration).
 **Gate:** two tenants hold different fault codes and neither sees the other's; a fresh tenant is
 usable immediately after provisioning.
 
-### Phase 5 — Remove the single-tenant assumptions (2–3 days)
-The handful of places that read "the first active company row":
-`useEdition`, `SettingsContext` (`companies.app_settings`), `hierarchy_config` (`.eq('id', 1)`).
-Each becomes tenant-scoped.
+### Phase 5 — Remove the single-tenant assumptions ✅ SHIPPED (0273 / 0274)
 
-**Gate G5:** two tenants hold different editions and different settings simultaneously.
+The assumptions were: "the oldest active company" (`SettingsContext`, `useEdition`,
+`ErpExportService.tenantCurrency`) and `.eq('id', 1)` on the `hierarchy_config` /
+`numbering_config` singletons.
+
+**The find that mattered more:** `companies`' UPDATE policy was `USING (is_admin())` with **no
+tenant test**. The table was exempted from the 0261 sweep alongside `users` — justified for SELECT
+(the login path), never re-examined for UPDATE. Once Phase 6a made a second tenant real, tenant B's
+admin could have **updated origin's `app_settings`**. A cross-tenant write, sitting in the one table
+G4 is told not to look at.
+
+**The fix that cost zero client changes:** scoping `companies` SELECT to `id = caller_company()`
+makes the caller's row the *only* visible row — so every "oldest active company" reader becomes
+correct as-is. The Phase 1 trick (fix beneath the call sites), applied a third time. UPDATE scoped
+the same way; no INSERT/DELETE policies exist, tenants are created only by `provision_tenant()`.
+
+The singletons got the 0267 config treatment: `company_id` NULL = product global, tenant row shadows
+it, `UNIQUE NULLS NOT DISTINCT (company_id)` replaces the id=1 convention, reads via `*_effective`
+views, saves copy-on-write. Expand→deploy→contract once more: 0273 kept a transitional
+global-write branch (written in the exact leading shape G4's binding check allows, so the gate
+stayed green through the window *by design*), the copy-on-write frontend shipped and was verified in
+the served bundle, then 0274 dropped the branch — proving inline that an admin request context can
+no longer touch the global rows. Product defaults now change only by migration.
+
+**Gate:** the provisioning verification carries the Phase 5 probes permanently — a fresh tenant sees
+exactly one `companies` row (its own), cannot UPDATE origin's, and both singletons resolve to the
+product global. **23/23 with real tokens**, run live and torn down pristine.
 
 ### Phase 6 — Self-serve signup and tiering (4–5 days)
 The SMB tier needs what enterprise never did: a signup that creates a company, its first admin, and

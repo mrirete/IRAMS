@@ -251,5 +251,4 @@ if (process.exitCode) {
 } else {
     console.log(`\n✔ Tenant ${code} provisioned and PROVEN isolated.`);
     console.log(`   login: ${adminEmail} / ${password}`);
-    console.log(`   note: Phase 5 pending — the UI may show origin app-settings cosmetics until then.`);
 }
