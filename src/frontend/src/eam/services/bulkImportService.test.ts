@@ -240,6 +240,34 @@ describe('field carry-through', () => {
         expect(byTag('GT-8')?.company_id).toBe('co-9');
     });
 
+    // Since the shared-DB tenancy work, company_id defaults to caller_company()
+    // and every insert policy carries WITH CHECK (company_id = caller_company()).
+    // An explicit null suppresses the default AND evaluates the check to NULL,
+    // which Postgres rejects — so sending one does not import an untenanted row,
+    // it refuses the row. The key must be ABSENT, not null.
+    it('never sends an explicit null company_id — it omits the key so the default applies', async () => {
+        await importAssets([row({ tag: 'SITE-ROOT', hierarchylevel: 'SITE' })]);
+        const sent = byTag('SITE-ROOT')!;
+        expect(sent).toBeDefined();
+        expect('company_id' in sent).toBe(false);
+    });
+
+    it('omits company_id when the parent resolves without one', async () => {
+        db.assets.rows.push({ id: 'p-2', tag: 'SYS-NOCO', hierarchy_level: 'SYSTEM', company_id: null });
+        await importAssets([row({ tag: 'GT-11', hierarchylevel: 'EQUIPMENT', criticality: 'A', parenttag: 'SYS-NOCO' })]);
+        expect('company_id' in byTag('GT-11')!).toBe(false);
+    });
+
+    it('sends no null company_id anywhere in a mixed hierarchy import', async () => {
+        await importAssets([
+            row({ tag: 'SITE-M', hierarchylevel: 'SITE' }),
+            row({ tag: 'U-M', hierarchylevel: 'UNIT', parenttag: 'SITE-M' }),
+            row({ tag: 'GT-M', hierarchylevel: 'EQUIPMENT', criticality: 'A', parenttag: 'U-M' }),
+        ]);
+        const nulls = (inserted.assets ?? []).filter(r => 'company_id' in r && r.company_id === null);
+        expect(nulls).toEqual([]);
+    });
+
     it('resolves a cost-centre code to its id, and notes a miss without failing the row', async () => {
         db.cost_centers.rows.push({ id: 'cc-1', code: 'CC-003' });
         const hit = await importAssets([row({ tag: 'GT-9', hierarchylevel: 'EQUIPMENT', criticality: 'A', costcenter: 'CC-003' })]);

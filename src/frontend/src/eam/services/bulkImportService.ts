@@ -259,7 +259,21 @@ export async function importAssets(rows: Row[], opts: { withBatch?: boolean } = 
                     asset_category: d.data['assettype'] || null,
                     asset_type_code: d.data['assettype'] || null,
                     cost_center_id: ccId ?? null,
-                    company_id: d.parentTag ? (companyByTag.get(pk) ?? null) : null,
+                    // Inherit the parent's company when there is one, and
+                    // OMIT the key otherwise — never send an explicit null.
+                    //
+                    // Since the shared-DB tenancy work, company_id defaults to
+                    // caller_company() and every insert policy carries
+                    // WITH CHECK (company_id = caller_company()). An explicit
+                    // null suppresses the default AND evaluates the check to
+                    // NULL, which Postgres treats as a violation — so sending
+                    // `company_id: null` does not import an untenanted row, it
+                    // refuses the row outright. Every root-level asset went
+                    // down that path, which is Migration Center phase 1 and the
+                    // first thing a new customer does.
+                    ...(d.parentTag && companyByTag.get(pk)
+                        ? { company_id: companyByTag.get(pk) }
+                        : {}),
                     import_batch_id: batchId,
                     properties: props,
                 },
