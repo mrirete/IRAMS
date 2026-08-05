@@ -421,7 +421,7 @@ DECLARE
   encrypted_pw text;
 BEGIN
   -- Only administrators may provision accounts (0181).
-  IF NOT public.is_admin() THEN
+  IF auth.uid() IS NOT NULL AND NOT public.is_admin() THEN
     RAISE EXCEPTION 'Not authorized: administrators only';
   END IF;
 
@@ -552,6 +552,64 @@ CREATE OR REPLACE FUNCTION public.delete_auth_user(p_user_id uuid)
  LANGUAGE plpgsql
  SECURITY DEFINER
 AS $function$ BEGIN DELETE FROM auth.users WHERE id = p_user_id; END; $function$
+;
+
+CREATE OR REPLACE FUNCTION public.deprovision_tenant(p_company uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+    v_origin    uuid;
+    t           record;
+    v_pass      int := 0;
+    v_deleted   int;
+    v_progress  boolean := true;
+BEGIN
+    SELECT id INTO v_origin FROM public.companies WHERE active IS TRUE ORDER BY created_at ASC LIMIT 1;
+    IF p_company = v_origin THEN
+        RAISE EXCEPTION 'deprovision_tenant: refusing to destroy the origin company';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM public.companies WHERE id = p_company) THEN
+        RAISE EXCEPTION 'deprovision_tenant: company % does not exist', p_company;
+    END IF;
+
+    -- Auth first: identities cascade from auth.users (verified 'c'), and
+    -- public.users carries the company FK.
+    DELETE FROM auth.users   WHERE id IN (SELECT id FROM public.users WHERE company_id = p_company);
+    DELETE FROM public.users WHERE company_id = p_company;
+
+    -- Sweep every tenant-owned table. FKs between them (work_orders → assets…)
+    -- make single-pass ordering fragile, so loop until a pass deletes nothing.
+    WHILE v_progress AND v_pass < 6 LOOP
+        v_progress := false;
+        v_pass := v_pass + 1;
+        FOR t IN
+            SELECT c.relname FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+              AND c.relname NOT IN ('companies', 'users')
+              AND EXISTS (SELECT 1 FROM information_schema.columns col
+                           WHERE col.table_schema = 'public'
+                             AND col.table_name = c.relname
+                             AND col.column_name = 'company_id')
+        LOOP
+            BEGIN
+                EXECUTE format('DELETE FROM public.%I WHERE company_id = $1', t.relname) USING p_company;
+                GET DIAGNOSTICS v_deleted = ROW_COUNT;
+                IF v_deleted > 0 THEN v_progress := true; END IF;
+            EXCEPTION WHEN foreign_key_violation THEN
+                v_progress := true;   -- children remain; a later pass clears them
+            END;
+        END LOOP;
+    END LOOP;
+
+    -- If anything still references the company, this DELETE raises a foreign
+    -- key violation — loud and specific, which is exactly what we want. It only
+    -- succeeds when the sweep genuinely got everything.
+    DELETE FROM public.companies WHERE id = p_company;
+END $function$
 ;
 
 CREATE OR REPLACE FUNCTION public.ers_ai_budget_record(p_user_id uuid, p_tokens integer)
@@ -1724,6 +1782,100 @@ BEGIN
     RETURN NULL;
 END;
 $function$
+;
+
+CREATE OR REPLACE FUNCTION public.provision_tenant(p_name text, p_code text, p_seed_ids uuid[], p_currency text DEFAULT NULL::text, p_country text DEFAULT NULL::text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+    v_origin   uuid;
+    v_new      uuid := gen_random_uuid();
+    v_expected int  := coalesce(array_length(p_seed_ids, 1), 0);
+    v_cloned   int  := 0;
+    v_n        int;
+    t          text;
+    cols       text;
+    exprs      text;
+BEGIN
+    IF p_code IS NULL OR btrim(p_code) = '' OR p_name IS NULL OR btrim(p_name) = '' THEN
+        RAISE EXCEPTION 'provision_tenant: name and code are required';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.companies WHERE code = p_code) THEN
+        RAISE EXCEPTION 'provision_tenant: company code % already exists', p_code;
+    END IF;
+
+    -- The clone source: the product owner's company, oldest active — the same
+    -- row every seed and backfill in this repo treats as "the" company.
+    SELECT id INTO v_origin FROM public.companies WHERE active IS TRUE ORDER BY created_at ASC LIMIT 1;
+    IF v_origin IS NULL THEN
+        RAISE EXCEPTION 'provision_tenant: no active origin company to clone seeds from';
+    END IF;
+
+    INSERT INTO public.companies (id, code, name, active, edition, currency, country)
+    SELECT v_new, p_code, p_name, true, edition, coalesce(p_currency, currency), coalesce(p_country, country)
+      FROM public.companies WHERE id = v_origin;
+
+    -- ── id maps, built up front so self- and cross-references both resolve ──
+    CREATE TEMP TABLE _map (old_id uuid PRIMARY KEY, new_id uuid NOT NULL) ON COMMIT DROP;
+    INSERT INTO _map
+    SELECT id, gen_random_uuid() FROM public.audit_templates          WHERE company_id = v_origin AND id = ANY (p_seed_ids)
+    UNION ALL
+    SELECT id, gen_random_uuid() FROM public.audit_template_sections  WHERE company_id = v_origin AND id = ANY (p_seed_ids)
+    UNION ALL
+    SELECT id, gen_random_uuid() FROM public.audit_template_questions WHERE company_id = v_origin AND id = ANY (p_seed_ids)
+    UNION ALL
+    SELECT id, gen_random_uuid() FROM public.notification_rules       WHERE company_id = v_origin AND id = ANY (p_seed_ids)
+    UNION ALL
+    SELECT id, gen_random_uuid() FROM public.notification_channels    WHERE company_id = v_origin AND id = ANY (p_seed_ids)
+    UNION ALL
+    SELECT id, gen_random_uuid() FROM public.message_templates        WHERE company_id = v_origin AND id = ANY (p_seed_ids);
+
+    -- ── clone, in FK dependency order ───────────────────────────────────────
+    -- Every column comes from information_schema; the overridden ones are the
+    -- id (remapped), company_id (the new tenant), uuid FKs (remapped through
+    -- _map, LEFT JOIN semantics via scalar subquery so NULLs stay NULL), and
+    -- created_by (NULL — never leak a user across the boundary).
+    FOREACH t IN ARRAY ARRAY['audit_templates', 'audit_template_sections',
+                             'audit_template_questions', 'notification_rules',
+                             'notification_channels', 'message_templates'] LOOP
+        SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position),
+               string_agg(
+                   CASE column_name
+                       WHEN 'id'                THEN 'm.new_id'
+                       WHEN 'company_id'        THEN '$1'
+                       WHEN 'created_by'        THEN 'NULL'
+                       WHEN 'template_id'       THEN '(SELECT new_id FROM _map WHERE old_id = s.template_id)'
+                       WHEN 'section_id'        THEN '(SELECT new_id FROM _map WHERE old_id = s.section_id)'
+                       WHEN 'parent_section_id' THEN '(SELECT new_id FROM _map WHERE old_id = s.parent_section_id)'
+                       ELSE 's.' || quote_ident(column_name)
+                   END, ', ' ORDER BY ordinal_position)
+          INTO cols, exprs
+          FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = t AND is_generated = 'NEVER';
+
+        EXECUTE format(
+            'INSERT INTO public.%I (%s)
+             SELECT %s FROM public.%I s JOIN _map m ON m.old_id = s.id
+              WHERE s.company_id = $2 AND s.id = ANY ($3)',
+            t, cols, exprs, t)
+        USING v_new, v_origin, p_seed_ids;
+
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+        v_cloned := v_cloned + v_n;
+    END LOOP;
+
+    -- A stale id list must fail loudly, not provision a subset. If this fires,
+    -- regenerate baseline/seed.sql and re-extract the ids.
+    IF v_cloned <> v_expected THEN
+        RAISE EXCEPTION 'provision_tenant: % seed id(s) passed but % row(s) cloned — the id list does not match the live seed rows',
+            v_expected, v_cloned;
+    END IF;
+
+    RETURN v_new;
+END $function$
 ;
 
 CREATE OR REPLACE FUNCTION public.refresh_asset_reliability_stats()

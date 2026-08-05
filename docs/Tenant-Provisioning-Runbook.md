@@ -45,7 +45,42 @@ $env:SUPABASE_ACCESS_TOKEN = "sbp_..."
 
 Create it in the Supabase dashboard (or Management API). Record the **project ref** and the database password.
 
-### 3.2 Load the baseline schema and reference data
+### 3.1a Which kind of tenant are you provisioning?
+
+There are two provisioning paths and they are **not interchangeable**:
+
+| | Enterprise (deployment-per-tenant) | SMB (shared database) |
+|---|---|---|
+| What | A fresh Supabase project | A new company **inside the existing database** |
+| How | §3.2 baseline load below | `scripts/provision/create-tenant.mjs` |
+| Why not the other one | — | The baseline seed hardcodes the origin company's uuid and creates that company row; loading it into the shared DB collides with tenant #1 on **every primary key** |
+
+**SMB path** — one command, which also proves the isolation before reporting success:
+
+```bash
+node scripts/provision/create-tenant.mjs --create \
+     --name "Acme Industrial" --code ACME --admin-email ops@acme.com \
+     --project-ref hacrebcfvyqdnjvilhqc
+
+node scripts/provision/create-tenant.mjs --destroy ACME --project-ref …   # complete removal
+```
+
+It clones the product seed set (audit templates/sections/questions, notification
+rules/channels, message templates — 118 rows) with **fresh uuids**, FKs remapped,
+sourced by id list from `baseline/seed.sql` rather than "whatever the origin
+company has" — so the origin tenant's own authored rows never leak to new
+customers. The admin is created through `create_auth_user()` (request contexts
+still require an admin; the sessionless DBA context is allowed since `0272`).
+The run then verifies with **real tokens**: the new admin sees zero origin rows,
+all global config, its own seeds; a write lands in the new tenant via the column
+default; and the origin admin cannot see any of it. 20 checks — a run that
+reports success has proven isolation, not assumed it.
+
+Known cosmetic gap until Phase 5: `SettingsContext`/`useEdition` read "the first
+active company", so a second tenant's UI may render origin app-settings. The
+database boundary is enforced regardless — that is what the 20 checks prove.
+
+### 3.2 Load the baseline schema and reference data (enterprise path)
 
 **Do not replay migration history** — it does not work (§6). New tenants load a baseline generated from the known-good origin project:
 

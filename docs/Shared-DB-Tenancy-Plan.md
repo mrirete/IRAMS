@@ -323,6 +323,35 @@ its seed config in one transaction. Plus `companies.tier` driving what the prici
 **Gate G6:** a signup from a clean browser produces a working, isolated tenant with correct module
 access — and G3 still passes with three tenants.
 
+#### 6a — the provisioning engine ✅ SHIPPED (0271 / 0272 + create-tenant.mjs)
+
+Until this, the SMB tier had **no way to onboard its first customer**: the only provisioning path
+was the §3.2 baseline load, which is deployment-per-tenant by construction (hardcoded origin uuid,
+creates the origin company row — pointed at the shared DB, tenant #2 collides on every PK).
+
+`provision_tenant(name, code, seed_ids[])` creates the company and clones the 118 product seed rows
+with **fresh uuids** (shared tables, globally unique PKs), FKs remapped through mapping tables,
+column lists built from `information_schema` at runtime so an `ALTER TABLE` can never silently drop
+a column from clones. Seeds are selected **by id list extracted from `baseline/seed.sql`**, not
+"whatever origin has" — origin is a real operating tenant, and the day it authors a private
+template, cloning everything would hand that to every new customer. `deprovision_tenant()` is the
+inverse: auth users, the tenant's rows across all `company_id` tables (multi-pass for FK ordering),
+then the company; it refuses the origin unconditionally. Both service-role only — this is the
+building block the self-serve flow will call, not the feature.
+
+0272 taught `create_auth_user`'s guard who it actually guards against: request contexts still
+require an admin; the sessionless DBA context is allowed, because postgres can write `auth.users`
+directly and blocking it only pushes scripts toward claim-impersonation hacks. Proven in both
+directions inside the migration.
+
+**Proven live**: PROBE1 provisioned alongside the origin — 20/20 checks with real tokens (claim
+resolves, zero origin rows visible, all 269 global config rows visible, 118 seeds with fresh uuids,
+a write lands via the column default, origin cannot see the probe's override) — then destroyed,
+database verified pristine. The first time this database has held two real tenants.
+
+**Still open for 6b:** the signup surface itself, `companies.tier`, and Phase 5's single-tenant
+frontend assumptions (a second tenant's UI reads origin app-settings until then).
+
 ---
 
 ## 5. Risks, from this codebase specifically
