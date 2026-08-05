@@ -2957,11 +2957,15 @@ class FinOpsServiceClass {
         if (assetErr) console.error('Asset seed error:', assetErr);
 
         // 2. Cost Centers
+        // Conflict target is (company_id, code) since 0265 — cost centre codes are
+        // the customer's, so two tenants may both use CC-MNT-01. company_id is not
+        // in the payload; the column default supplies it. The conflict target names
+        // the INDEX, not the insert columns, so it must list company_id regardless.
         const { error: ccErr } = await supabase.from('cost_centers').upsert([
             { id: 'c0cc4738-9c0b-4ef8-bb6d-6bb9bd380c01', code: 'CC-MNT-01', name: 'Plant Maintenance', cost_center_type: 'MAINTENANCE', description: 'Core maintenance team budget', active: true },
             { id: 'c0cc4738-9c0b-4ef8-bb6d-6bb9bd380c02', code: 'CC-OPS-01', name: 'Plant Operations', cost_center_type: 'OPERATIONS', description: 'Production usage and consumables', active: true },
             { id: 'c0cc4738-9c0b-4ef8-bb6d-6bb9bd380c03', code: 'CC-ADM-01', name: 'Corporate Admin', cost_center_type: 'ADMINISTRATION', description: 'HQ Overhead and IT', active: true }
-        ], { onConflict: 'code' });
+        ], { onConflict: 'company_id,code' });
         if (ccErr) console.error('Cost Center seed error:', ccErr);
 
         // 3. Budgets

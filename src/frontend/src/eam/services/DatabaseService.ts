@@ -4955,10 +4955,17 @@ export class DatabaseService {
         return data || [];
     }
 
-    /** Upsert by name — saving under an existing name replaces that template. */
+    /**
+     * Upsert by name — saving under an existing name replaces that template.
+     * Scoped to the tenant since 0265: the name is unique per company, not
+     * globally, so one customer naming a template "Hot Work" no longer stops
+     * every other customer from doing the same. The conflict target names the
+     * index, so company_id appears here even though the payload omits it (the
+     * column default supplies the value).
+     */
     public async saveJSATemplate(name: string, hazards: any[], actor?: string): Promise<void> {
         const { error } = await supabase.from('jsa_templates')
-            .upsert({ name, hazards, created_by: actor || null }, { onConflict: 'name' });
+            .upsert({ name, hazards, created_by: actor || null }, { onConflict: 'company_id,name' });
         if (error) throw error;
     }
 
@@ -4977,7 +4984,7 @@ export class DatabaseService {
             .map(t => ({ name: t.name, hazards: t.hazards || [], created_by: actor || null }));
         if (!rows.length) return;
         const { error } = await supabase.from('jsa_templates')
-            .upsert(rows, { onConflict: 'name', ignoreDuplicates: true });
+            .upsert(rows, { onConflict: 'company_id,name', ignoreDuplicates: true });
         if (error) throw error;
     }
 
@@ -5347,13 +5354,18 @@ export class DatabaseService {
         }));
     }
 
+    /**
+     * One channel of each type PER TENANT since 0265, not one globally. The
+     * conflict target names the index, so company_id is listed even though the
+     * payload omits it — the column default fills that in.
+     */
     public async saveNotificationChannel(config: NotificationChannelConfig): Promise<void> {
         const { error } = await supabase.from('notification_channels').upsert({
             type: config.type,
             is_active: config.isActive,
             config_json: config.config,
             updated_at: new Date().toISOString()
-        }, { onConflict: 'type' });
+        }, { onConflict: 'company_id,type' });
 
         if (error) throw error;
     }
