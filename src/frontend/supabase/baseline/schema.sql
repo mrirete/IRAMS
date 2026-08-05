@@ -666,6 +666,27 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION public.ers_goods_receipt_number()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+BEGIN
+    IF NEW.grn_number IS NULL OR btrim(NEW.grn_number) = '' THEN
+        NEW.grn_number := COALESCE(
+            public.ers_next_document_number(NEW.company_id, 'GOODS_RECEIPT', 'GRN-', 6),
+            -- No tenant yet: the pre-0265 global sequence, so an insert
+            -- during the tenancy transition still gets a number.
+            'GRN-' || to_char(CURRENT_DATE, 'YYYY') || '-'
+                   || lpad(nextval('public.goods_receipt_seq')::TEXT, 6, '0')
+        );
+    END IF;
+    RETURN NEW;
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION public.ers_match_invoice(p_invoice_id uuid)
  RETURNS TABLE(match_status text, payment_block text, variance_amount numeric)
  LANGUAGE plpgsql
@@ -900,6 +921,40 @@ BEGIN
     END IF;
 
     RETURN NEW;
+END;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.ers_next_document_number(p_company uuid, p_object_class text, p_prefix text DEFAULT ''::text, p_pad integer DEFAULT 6)
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+    v_allocated BIGINT;
+    v_prefix    TEXT;
+    v_pad       INT;
+BEGIN
+    -- No tenant, no range. The caller decides what to do about that.
+    IF p_company IS NULL THEN RETURN NULL; END IF;
+
+    -- next_number means "the next one to hand out", so the row starts at 2
+    -- having just handed out 1, and RETURNING next_number - 1 is the number
+    -- allocated on both the insert and the conflict path. One statement, so
+    -- two concurrent receipts cannot take the same number.
+    INSERT INTO public.numbering_config_overrides
+        (company_id, object_class, prefix, pad, next_number)
+    VALUES (p_company, p_object_class, COALESCE(p_prefix, ''), COALESCE(p_pad, 6), 2)
+    ON CONFLICT (company_id, object_class) DO UPDATE
+        SET next_number = public.numbering_config_overrides.next_number + 1,
+            updated_at  = NOW()
+    RETURNING next_number - 1, prefix, pad
+    INTO v_allocated, v_prefix, v_pad;
+
+    RETURN v_prefix
+        || to_char(CURRENT_DATE, 'YYYY') || '-'
+        || lpad(v_allocated::TEXT, GREATEST(COALESCE(v_pad, 6), 1), '0');
 END;
 $function$
 ;
@@ -3764,7 +3819,7 @@ CREATE TABLE IF NOT EXISTS public.ers_waveforms (
 
 CREATE TABLE IF NOT EXISTS public.goods_receipts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    grn_number character varying(20) DEFAULT ((('GRN-'::text || to_char((CURRENT_DATE)::timestamp with time zone, 'YYYY'::text)) || '-'::text) || lpad((nextval('goods_receipt_seq'::regclass))::text, 6, '0'::text)) NOT NULL,
+    grn_number character varying(20) NOT NULL,
     po_id uuid,
     po_line_item integer,
     inventory_id uuid,
@@ -4986,13 +5041,13 @@ DO $$ BEGIN
     ALTER TABLE public.asset_production_config ADD CONSTRAINT asset_production_config_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.assets ADD CONSTRAINT assets_equipment_number_key UNIQUE (equipment_number);
+    ALTER TABLE public.assets ADD CONSTRAINT assets_equipment_number_key UNIQUE (company_id, equipment_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.assets ADD CONSTRAINT assets_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.assets ADD CONSTRAINT assets_tag_key UNIQUE (tag);
+    ALTER TABLE public.assets ADD CONSTRAINT assets_tag_key UNIQUE (company_id, tag);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.audit_assessment_collaborators ADD CONSTRAINT audit_assessment_collaborators_invite_token_key UNIQUE (invite_token);
@@ -5007,7 +5062,7 @@ DO $$ BEGIN
     ALTER TABLE public.audit_assessment_collaborators ADD CONSTRAINT audit_assessment_collaborators_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'accepted'::text, 'declined'::text])));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.audit_assessments ADD CONSTRAINT audit_assessments_assessment_number_key UNIQUE (assessment_number);
+    ALTER TABLE public.audit_assessments ADD CONSTRAINT audit_assessments_assessment_number_key UNIQUE (company_id, assessment_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.audit_assessments ADD CONSTRAINT audit_assessments_pkey PRIMARY KEY (id);
@@ -5079,13 +5134,13 @@ DO $$ BEGIN
     ALTER TABLE public.audit_template_sections ADD CONSTRAINT audit_template_sections_template_id_code_key UNIQUE (template_id, code);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.audit_templates ADD CONSTRAINT audit_templates_code_key UNIQUE (code);
+    ALTER TABLE public.audit_templates ADD CONSTRAINT audit_templates_code_key UNIQUE (company_id, code);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.audit_templates ADD CONSTRAINT audit_templates_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.audits ADD CONSTRAINT audits_audit_number_key UNIQUE (audit_number);
+    ALTER TABLE public.audits ADD CONSTRAINT audits_audit_number_key UNIQUE (company_id, audit_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.audits ADD CONSTRAINT audits_audit_type_check CHECK ((audit_type = ANY (ARRAY['routine'::text, 'regulatory'::text, 'surveillance'::text, 'certification'::text, 'turnaround'::text, 'incident'::text, 'management'::text, 'self_assessment'::text])));
@@ -5121,7 +5176,7 @@ DO $$ BEGIN
     ALTER TABLE public.connectors ADD CONSTRAINT connectors_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.contacts ADD CONSTRAINT contacts_code_key UNIQUE (code);
+    ALTER TABLE public.contacts ADD CONSTRAINT contacts_code_key UNIQUE (company_id, code);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.contacts ADD CONSTRAINT contacts_pkey PRIMARY KEY (id);
@@ -5133,10 +5188,10 @@ DO $$ BEGIN
     ALTER TABLE public.cost_allocations ADD CONSTRAINT cost_allocations_source_chk CHECK ((source = ANY (ARRAY['MANUAL'::text, 'WO_SETTLEMENT'::text, 'WARRANTY_CREDIT'::text, 'ERP_INBOUND'::text, 'STOCK_MOVEMENT'::text])));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.cost_centers ADD CONSTRAINT cost_centers_code_key UNIQUE (code);
+    ALTER TABLE public.cost_centers ADD CONSTRAINT cost_centers_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.cost_centers ADD CONSTRAINT cost_centers_pkey PRIMARY KEY (id);
+    ALTER TABLE public.cost_centers ADD CONSTRAINT uq_cost_centers_company_code UNIQUE (company_id, code);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.depreciation_books ADD CONSTRAINT depreciation_books_asset_financial_id_book_type_key UNIQUE (asset_financial_id, book_type);
@@ -5244,7 +5299,7 @@ DO $$ BEGIN
     ALTER TABLE public.ers_climate_risks ADD CONSTRAINT ers_climate_risks_risk_level_check CHECK ((risk_level = ANY (ARRAY['low'::text, 'moderate'::text, 'high'::text, 'extreme'::text])));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.ers_cmls ADD CONSTRAINT ers_cmls_cml_number_key UNIQUE (cml_number);
+    ALTER TABLE public.ers_cmls ADD CONSTRAINT ers_cmls_cml_number_key UNIQUE (company_id, cml_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.ers_cmls ADD CONSTRAINT ers_cmls_pkey PRIMARY KEY (id);
@@ -5406,7 +5461,7 @@ DO $$ BEGIN
     ALTER TABLE public.ers_pid_configurations ADD CONSTRAINT ers_pid_configurations_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.ers_prediction_alerts ADD CONSTRAINT ers_prediction_alerts_alert_id_key UNIQUE (alert_id);
+    ALTER TABLE public.ers_prediction_alerts ADD CONSTRAINT ers_prediction_alerts_alert_id_key UNIQUE (company_id, alert_id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.ers_prediction_alerts ADD CONSTRAINT ers_prediction_alerts_alert_type_check CHECK ((alert_type = ANY (ARRAY['trend_deviation'::text, 'threshold_breach'::text, 'anomaly'::text, 'rul_warning'::text, 'pattern_detected'::text])));
@@ -5709,10 +5764,10 @@ DO $$ BEGIN
     ALTER TABLE public.ers_waveforms ADD CONSTRAINT ers_waveforms_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.goods_receipts ADD CONSTRAINT goods_receipts_grn_number_key UNIQUE (grn_number);
+    ALTER TABLE public.goods_receipts ADD CONSTRAINT goods_receipts_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.goods_receipts ADD CONSTRAINT goods_receipts_pkey PRIMARY KEY (id);
+    ALTER TABLE public.goods_receipts ADD CONSTRAINT goods_receipts_tenant_grn_uq UNIQUE NULLS NOT DISTINCT (company_id, grn_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.hierarchy_config ADD CONSTRAINT hierarchy_config_pkey PRIMARY KEY (id);
@@ -5730,16 +5785,16 @@ DO $$ BEGIN
     ALTER TABLE public.import_batches ADD CONSTRAINT import_batches_status_check CHECK ((status = ANY (ARRAY['draft'::text, 'mapped'::text, 'committed'::text, 'rolled_back'::text, 'failed'::text])));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.insurance_incidents ADD CONSTRAINT insurance_incidents_incident_number_key UNIQUE (incident_number);
+    ALTER TABLE public.insurance_incidents ADD CONSTRAINT insurance_incidents_incident_number_key UNIQUE (company_id, incident_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.insurance_incidents ADD CONSTRAINT insurance_incidents_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.inventory_items ADD CONSTRAINT inventory_items_material_number_key UNIQUE (material_number);
+    ALTER TABLE public.inventory_items ADD CONSTRAINT inventory_items_material_number_key UNIQUE (company_id, material_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.inventory_items ADD CONSTRAINT inventory_items_part_number_key UNIQUE (part_number);
+    ALTER TABLE public.inventory_items ADD CONSTRAINT inventory_items_part_number_key UNIQUE (company_id, part_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.inventory_items ADD CONSTRAINT inventory_items_pkey PRIMARY KEY (id);
@@ -5766,7 +5821,7 @@ DO $$ BEGIN
     ALTER TABLE public.invoice_matches ADD CONSTRAINT invoice_matches_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.invoice_matches ADD CONSTRAINT invoice_matches_vendor_number_uq UNIQUE (vendor_id, invoice_number);
+    ALTER TABLE public.invoice_matches ADD CONSTRAINT invoice_matches_vendor_number_uq UNIQUE (company_id, vendor_id, invoice_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.invoice_tolerances ADD CONSTRAINT invoice_tolerances_pkey PRIMARY KEY (id);
@@ -5799,10 +5854,10 @@ DO $$ BEGIN
     ALTER TABLE public.jsa_hazards ADD CONSTRAINT jsa_hazards_residual_likelihood_check CHECK (((residual_likelihood >= 1) AND (residual_likelihood <= 5)));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.jsa_templates ADD CONSTRAINT jsa_templates_name_key UNIQUE (name);
+    ALTER TABLE public.jsa_templates ADD CONSTRAINT jsa_templates_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.jsa_templates ADD CONSTRAINT jsa_templates_pkey PRIMARY KEY (id);
+    ALTER TABLE public.jsa_templates ADD CONSTRAINT uq_jsa_templates_company_name UNIQUE (company_id, name);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.loto_permits ADD CONSTRAINT loto_permits_pkey PRIMARY KEY (id);
@@ -5859,7 +5914,7 @@ DO $$ BEGIN
     ALTER TABLE public.notification_channels ADD CONSTRAINT notification_channels_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.notification_channels ADD CONSTRAINT notification_channels_type_key UNIQUE (type);
+    ALTER TABLE public.notification_channels ADD CONSTRAINT uq_notification_channels_company_type UNIQUE (company_id, type);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.notification_logs ADD CONSTRAINT notification_logs_pkey PRIMARY KEY (id);
@@ -5883,7 +5938,7 @@ DO $$ BEGIN
     ALTER TABLE public.numbering_config ADD CONSTRAINT numbering_config_singleton CHECK ((id = 1));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.numbering_config_overrides ADD CONSTRAINT numbering_config_overrides_object_class_check CHECK ((object_class = ANY (ARRAY['EQUIPMENT'::text, 'FLOC'::text])));
+    ALTER TABLE public.numbering_config_overrides ADD CONSTRAINT numbering_config_overrides_object_class_check CHECK ((object_class = ANY (ARRAY['EQUIPMENT'::text, 'FLOC'::text, 'GOODS_RECEIPT'::text])));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.numbering_config_overrides ADD CONSTRAINT numbering_config_overrides_pkey PRIMARY KEY (company_id, object_class);
@@ -5961,7 +6016,7 @@ DO $$ BEGIN
     ALTER TABLE public.service_requests ADD CONSTRAINT service_requests_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.service_requests ADD CONSTRAINT service_requests_request_number_key UNIQUE (request_number);
+    ALTER TABLE public.service_requests ADD CONSTRAINT service_requests_request_number_key UNIQUE (company_id, request_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.strategy_packages ADD CONSTRAINT strategy_packages_interval_days_check CHECK ((interval_days > 0));
@@ -6021,13 +6076,13 @@ DO $$ BEGIN
     ALTER TABLE public.warranties ADD CONSTRAINT warranties_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.warranty_claims ADD CONSTRAINT warranty_claims_claim_number_key UNIQUE (claim_number);
+    ALTER TABLE public.warranty_claims ADD CONSTRAINT warranty_claims_claim_number_key UNIQUE (company_id, claim_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.warranty_claims ADD CONSTRAINT warranty_claims_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.wbs_elements ADD CONSTRAINT wbs_elements_code_key UNIQUE (code);
+    ALTER TABLE public.wbs_elements ADD CONSTRAINT wbs_elements_code_key UNIQUE (company_id, code);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.wbs_elements ADD CONSTRAINT wbs_elements_pkey PRIMARY KEY (id);
@@ -6042,7 +6097,7 @@ DO $$ BEGIN
     ALTER TABLE public.work_center_members ADD CONSTRAINT work_center_members_role_check CHECK ((role = ANY (ARRAY['MEMBER'::text, 'LEAD'::text])));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.work_centers ADD CONSTRAINT work_centers_code_key UNIQUE (code);
+    ALTER TABLE public.work_centers ADD CONSTRAINT work_centers_code_key UNIQUE (company_id, code);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.work_centers ADD CONSTRAINT work_centers_pkey PRIMARY KEY (id);
@@ -6057,7 +6112,7 @@ DO $$ BEGIN
     ALTER TABLE public.work_orders ADD CONSTRAINT work_orders_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
-    ALTER TABLE public.work_orders ADD CONSTRAINT work_orders_wo_number_key UNIQUE (wo_number);
+    ALTER TABLE public.work_orders ADD CONSTRAINT work_orders_wo_number_key UNIQUE (company_id, wo_number);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.writeback_log ADD CONSTRAINT writeback_log_pkey PRIMARY KEY (id);
@@ -7354,7 +7409,7 @@ CREATE INDEX IF NOT EXISTS idx_rag_class ON public.ers_rag_documents USING btree
 CREATE INDEX IF NOT EXISTS idx_rag_embedding_hnsw ON public.ers_rag_documents USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_rag_fts ON public.ers_rag_documents USING gin (fts);
 CREATE INDEX IF NOT EXISTS idx_rag_source ON public.ers_rag_documents USING btree (source);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_rag_source_chunk ON public.ers_rag_documents USING btree (source, chunk_index);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_rag_source_chunk ON public.ers_rag_documents USING btree (company_id, source, chunk_index);
 CREATE INDEX IF NOT EXISTS idx_ers_rbd_models_company_id ON public.ers_rbd_models USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_rbd_models_asset ON public.ers_rbd_models USING btree (asset_id);
 CREATE INDEX IF NOT EXISTS idx_ers_rbi_assessments_asset_id ON public.ers_rbi_assessments USING btree (asset_id);
@@ -7569,7 +7624,7 @@ CREATE INDEX IF NOT EXISTS idx_task_library_inventory_inventory_item_id ON publi
 CREATE INDEX IF NOT EXISTS idx_task_library_inventory_task_id ON public.task_library_inventory USING btree (task_id);
 CREATE INDEX IF NOT EXISTS idx_task_library_items_asset_class ON public.task_library_items USING gin (asset_class_codes);
 CREATE INDEX IF NOT EXISTS idx_task_library_items_company_id ON public.task_library_items USING btree (company_id);
-CREATE UNIQUE INDEX IF NOT EXISTS task_library_items_code_key ON public.task_library_items USING btree (code);
+CREATE UNIQUE INDEX IF NOT EXISTS task_library_items_code_key ON public.task_library_items USING btree (company_id, code);
 CREATE INDEX IF NOT EXISTS idx_task_library_roles_company_id ON public.task_library_roles USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_task_library_roles_task_id ON public.task_library_roles USING btree (task_id);
 CREATE INDEX IF NOT EXISTS idx_thread_reads_company_id ON public.thread_reads USING btree (company_id);
@@ -8216,6 +8271,8 @@ DROP TRIGGER IF EXISTS trg_reliability_studies_updated ON public.ers_reliability
 CREATE TRIGGER trg_reliability_studies_updated BEFORE UPDATE ON public.ers_reliability_studies FOR EACH ROW EXECUTE FUNCTION update_reliability_studies_timestamp();
 DROP TRIGGER IF EXISTS trg_risk_register_updated ON public.ers_risk_register;
 CREATE TRIGGER trg_risk_register_updated BEFORE UPDATE ON public.ers_risk_register FOR EACH ROW EXECUTE FUNCTION update_psm_timestamp();
+DROP TRIGGER IF EXISTS trg_goods_receipt_number ON public.goods_receipts;
+CREATE TRIGGER trg_goods_receipt_number BEFORE INSERT ON public.goods_receipts FOR EACH ROW EXECUTE FUNCTION ers_goods_receipt_number();
 DROP TRIGGER IF EXISTS set_updated_at_insurance_incidents ON public.insurance_incidents;
 CREATE TRIGGER set_updated_at_insurance_incidents BEFORE UPDATE ON public.insurance_incidents FOR EACH ROW EXECUTE FUNCTION update_modified_column();
 DROP TRIGGER IF EXISTS audit_inventory_changes ON public.inventory_items;

@@ -125,6 +125,47 @@ for (const p of livePolicies) {
     const checkOk = !lw || f.check.includes(lw) || lw.includes(f.check);
     if (!usingOk || !checkOk) mismatched.push(p.k);
 }
+// ── Constraint fidelity ─────────────────────────────────────────────────────
+// Counting tables and policies missed an entire migration. 0265/0266 rewrote 26
+// UNIQUE constraints to include company_id and this script reported "matches",
+// because it never looked at constraints — the baseline still said
+// UNIQUE (tag), which is the narrow key that stops two customers from both
+// having an asset P-101. Exactly the staleness this exists to catch.
+//
+// pg_get_constraintdef is what the exporter emits, so a faithful export means
+// the definition text matches. Compared by name, so a renamed constraint shows
+// up as one missing and one extra rather than silently passing.
+const liveConstraints = await sql(`
+    SELECT c.conname AS name, pg_get_constraintdef(c.oid) AS def
+      FROM pg_constraint c
+      JOIN pg_class t     ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+     WHERE n.nspname = 'public' AND c.contype IN ('u', 'c', 'f', 'p')`);
+
+const fileConstraints = new Map();
+for (const m of schema.matchAll(/ADD CONSTRAINT\s+"?([\w]+)"?\s+([\s\S]*?);\s*(?=\n|$)/g)) {
+    fileConstraints.set(m[1], norm(m[2]));
+}
+const conAbsent = [], conChanged = [];
+for (const c of liveConstraints) {
+    const f = fileConstraints.get(c.name);
+    if (f === undefined) { conAbsent.push(c.name); continue; }
+    const want = norm(c.def);
+    if (f !== want && !f.includes(want) && !want.includes(f)) conChanged.push(c.name);
+}
+const uniqLive = liveConstraints.filter((c) => /^UNIQUE/.test(c.def)).length;
+const uniqTenantLive = liveConstraints.filter((c) => /^UNIQUE/.test(c.def) && /company_id/.test(c.def)).length;
+let uniqTenantFile = 0;
+for (const [, d] of fileConstraints) if (/^unique/.test(d) && /company_id/.test(d)) uniqTenantFile++;
+
+if (conAbsent.length) bad++;
+if (conChanged.length) bad++;
+if (uniqTenantFile !== uniqTenantLive) bad++;
+console.log(`\n  constraint fidelity (${liveConstraints.length} live, ${fileConstraints.size} parsed)`);
+console.log(`  ${conAbsent.length ? '❌' : '✅'} absent from baseline    ${conAbsent.length}${conAbsent.length ? '  ' + conAbsent.slice(0, 4).join(', ') : ''}`);
+console.log(`  ${conChanged.length ? '❌' : '✅'} definition changed      ${conChanged.length}${conChanged.length ? '  ' + conChanged.slice(0, 4).join(', ') : ''}`);
+console.log(`  ${uniqTenantFile === uniqTenantLive ? '✅' : '❌'} tenant-scoped UNIQUE    ${uniqTenantFile} of ${uniqTenantLive} (of ${uniqLive} unique constraints)`);
+
 const tenantLive = livePolicies.filter((p) => /caller_company/.test(`${p.qual ?? ''}${p.with_check ?? ''}`)).length;
 let tenantFile = 0;
 for (const [, v] of filePolicies) if (/caller_company/.test(v.using + v.check)) tenantFile++;

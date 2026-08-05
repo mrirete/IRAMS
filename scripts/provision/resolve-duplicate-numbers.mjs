@@ -38,7 +38,7 @@
  *   node scripts/provision/resolve-duplicate-numbers.mjs --plan     # show, touch nothing
  *   node scripts/provision/resolve-duplicate-numbers.mjs --apply --project-ref <ref>
  */
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, renameSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -136,6 +136,32 @@ if (projectRef && token) {
     console.log('⚠ No --project-ref / SUPABASE_ACCESS_TOKEN: ordering from filenames alone.\n');
 }
 
+/**
+ * Every name in the ledger must exist on disk.
+ *
+ * This is the state that replays an already-applied migration, and it is
+ * reachable: the ledger moves before the files, so a rename that fails partway
+ * leaves the two disagreeing. It happened here once, with `git mv` on a file
+ * from a parallel stream that was not yet tracked.
+ *
+ * Checked on EVERY run, including --plan and including runs with nothing to
+ * rename — a no-op run is exactly when nobody is looking.
+ */
+async function reconcile() {
+    if (!projectRef || !token) return true;
+    const onDisk = new Set(readdirSync(DIR));
+    const orphaned = ledgerRows.map((r) => r.name)
+        .filter((n) => /^\d{4}[a-z]?_/.test(n) && !onDisk.has(n));
+    if (!orphaned.length) return true;
+    console.error(`\n✖ ${orphaned.length} ledger entr(y/ies) name a file that is not on disk:`);
+    orphaned.forEach((n) => console.error(`    ${n}`));
+    console.error('  The next --apply would treat the on-disk name as pending and replay it.');
+    console.error('  Repair: rename the file to match the ledger, or UPDATE schema_migrations back.');
+    return false;
+}
+
+if (!(await reconcile())) process.exit(1);
+
 const { renames, total } = buildPlan(appliedAt);
 const fromLedger = renames.filter((r) => r.source === 'ledger').length;
 
@@ -154,10 +180,16 @@ if (!projectRef || !token) {
     process.exit(1);
 }
 
-// Ledger first. If this fails, nothing has been renamed and the repo still
-// matches the database — the safe direction to fail in. A rename with no ledger
-// update leaves 35 migrations looking pending, which on the next --apply would
-// replay them against a schema that already has them.
+// Ledger first, then files. Neither order is safe on its own — this ran once
+// with `git mv` on an UNTRACKED file (a migration from a parallel work stream,
+// not yet committed), git refused, and the ledger had already moved. Result:
+// the ledger named 0265a_… while the disk still said 0265_…, so the very next
+// --apply would have seen it as pending and replayed it against a schema that
+// already had it.
+//
+// So the rename must not be able to fail: git mv when the file is tracked, a
+// plain rename when it is not. And whichever half fails, reconcile() below puts
+// the two back in agreement rather than leaving a mismatch behind.
 console.log('\nUpdating the ledger…');
 const known = new Set(ledgerRows.map((r) => r.name));
 let moved = 0, absent = [];
@@ -168,15 +200,30 @@ for (const r of renames) {
 }
 console.log(`  ${moved} ledger row(s) renamed${absent.length ? `, ${absent.length} not in the ledger (never applied): ${absent.join(', ')}` : ''}`);
 
-// git mv, so the rename is recorded as a rename and blame survives.
+// git mv where possible, so the rename is recorded as a rename and blame
+// survives. Untracked files (a migration from a parallel stream, not yet
+// committed) make git mv fail — those get a plain rename instead. It must not
+// throw here: the ledger has already moved.
 console.log('\nRenaming files…');
+let viaGit = 0, viaFs = 0, failed = [];
 for (const r of renames) {
-    execFileSync('git', ['mv', `${REL}/${r.from}`, `${REL}/${r.to}`], { cwd: REPO, stdio: 'pipe' });
+    try {
+        execFileSync('git', ['mv', `${REL}/${r.from}`, `${REL}/${r.to}`], { cwd: REPO, stdio: 'pipe' });
+        viaGit++;
+    } catch {
+        try { renameSync(resolve(DIR, r.from), resolve(DIR, r.to)); viaFs++; }
+        catch (e) { failed.push(`${r.from}: ${e.message}`); }
+    }
 }
-console.log(`  ${renames.length} file(s) renamed.`);
+console.log(`  ${viaGit} via git mv, ${viaFs} untracked (plain rename)${failed.length ? `, ${failed.length} FAILED` : ''}`);
+failed.forEach((f) => console.error(`    ✖ ${f}`));
+
+// Re-read the ledger and check again: the renames just moved both halves.
+ledgerRows = await sql(`SELECT name, extract(epoch from applied_at) * 1000 AS ms FROM public.schema_migrations`);
+if (!(await reconcile())) process.exit(1);
 
 const left = buildPlan(appliedAt).renames.length;
-console.log(`\n${left === 0 ? '✔' : '✖'} remaining collisions: ${left}`);
+console.log(`\n${left === 0 ? '✔' : '✖'} remaining collisions: ${left}   ledger/disk agree: ✅`);
 console.log('Next: node scripts/provision/apply-migrations.mjs --status --project-ref ' + projectRef);
 console.log('      Pending must still be 0 and drifted must be 0.');
 process.exit(left === 0 ? 0 : 1);
