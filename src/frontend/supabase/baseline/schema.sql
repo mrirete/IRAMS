@@ -745,6 +745,120 @@ END;
 $function$
 ;
 
+CREATE OR REPLACE FUNCTION public.ers_map_external_ids(p_entity_type text, p_system text, p_pairs jsonb)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+    v_caller UUID;
+    v_n      INT := 0;
+BEGIN
+    IF p_pairs IS NULL OR jsonb_typeof(p_pairs) <> 'array' OR jsonb_array_length(p_pairs) = 0 THEN
+        RETURN 0;
+    END IF;
+    IF COALESCE(btrim(p_system), '') = '' THEN
+        RAISE EXCEPTION 'ers_map_external_ids: a system name is required';
+    END IF;
+
+    BEGIN v_caller := public.caller_company(); EXCEPTION WHEN OTHERS THEN v_caller := NULL; END;
+
+    -- One branch per entity type rather than dynamic SQL: the set of
+    -- mappable objects is small, fixed and worth reading.
+    IF p_entity_type = 'asset' THEN
+        WITH input AS (
+            SELECT x.entity_id, btrim(x.external_key) AS external_key
+            FROM jsonb_to_recordset(p_pairs) AS x(entity_id UUID, external_key TEXT)
+            WHERE COALESCE(btrim(x.external_key), '') <> ''
+        ),
+        resolved AS (
+            SELECT a.company_id, i.entity_id, i.external_key
+            FROM input i
+            JOIN public.assets a ON a.id = i.entity_id
+            -- Someone else's record is skipped, not mapped and not an error.
+            WHERE (v_caller IS NULL OR a.company_id = v_caller)
+        )
+        INSERT INTO public.erp_object_map
+            (company_id, system, entity_type, entity_id, external_key, ownership)
+        SELECT r.company_id, p_system, 'asset', r.entity_id, r.external_key, 'EXTERNAL'
+        FROM resolved r
+        -- The key is already claimed by a different record here: a real
+        -- ambiguity in their export, left visible rather than re-pointed.
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.erp_object_map m
+             WHERE m.company_id IS NOT DISTINCT FROM r.company_id
+               AND m.system = p_system AND m.entity_type = 'asset'
+               AND m.external_key = r.external_key
+               AND m.entity_id <> r.entity_id)
+        ON CONFLICT (company_id, system, entity_type, entity_id) DO UPDATE
+            SET external_key = EXCLUDED.external_key,
+                updated_at   = NOW();
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+
+    ELSIF p_entity_type = 'inventory_item' THEN
+        WITH input AS (
+            SELECT x.entity_id, btrim(x.external_key) AS external_key
+            FROM jsonb_to_recordset(p_pairs) AS x(entity_id UUID, external_key TEXT)
+            WHERE COALESCE(btrim(x.external_key), '') <> ''
+        ),
+        resolved AS (
+            SELECT i2.company_id, i.entity_id, i.external_key
+            FROM input i
+            JOIN public.inventory_items i2 ON i2.id = i.entity_id
+            WHERE (v_caller IS NULL OR i2.company_id = v_caller)
+        )
+        INSERT INTO public.erp_object_map
+            (company_id, system, entity_type, entity_id, external_key, ownership)
+        SELECT r.company_id, p_system, 'inventory_item', r.entity_id, r.external_key, 'EXTERNAL'
+        FROM resolved r
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.erp_object_map m
+             WHERE m.company_id IS NOT DISTINCT FROM r.company_id
+               AND m.system = p_system AND m.entity_type = 'inventory_item'
+               AND m.external_key = r.external_key
+               AND m.entity_id <> r.entity_id)
+        ON CONFLICT (company_id, system, entity_type, entity_id) DO UPDATE
+            SET external_key = EXCLUDED.external_key,
+                updated_at   = NOW();
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+
+    ELSIF p_entity_type = 'vendor' THEN
+        WITH input AS (
+            SELECT x.entity_id, btrim(x.external_key) AS external_key
+            FROM jsonb_to_recordset(p_pairs) AS x(entity_id UUID, external_key TEXT)
+            WHERE COALESCE(btrim(x.external_key), '') <> ''
+        ),
+        resolved AS (
+            SELECT v.company_id, i.entity_id, i.external_key
+            FROM input i
+            JOIN public.vendors v ON v.id = i.entity_id
+            WHERE (v_caller IS NULL OR v.company_id = v_caller)
+        )
+        INSERT INTO public.erp_object_map
+            (company_id, system, entity_type, entity_id, external_key, ownership)
+        SELECT r.company_id, p_system, 'vendor', r.entity_id, r.external_key, 'EXTERNAL'
+        FROM resolved r
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.erp_object_map m
+             WHERE m.company_id IS NOT DISTINCT FROM r.company_id
+               AND m.system = p_system AND m.entity_type = 'vendor'
+               AND m.external_key = r.external_key
+               AND m.entity_id <> r.entity_id)
+        ON CONFLICT (company_id, system, entity_type, entity_id) DO UPDATE
+            SET external_key = EXCLUDED.external_key,
+                updated_at   = NOW();
+        GET DIAGNOSTICS v_n = ROW_COUNT;
+
+    ELSE
+        RAISE EXCEPTION 'ers_map_external_ids: % is not a mappable entity type here', p_entity_type;
+    END IF;
+
+    RETURN v_n;
+END;
+$function$
+;
+
 CREATE OR REPLACE FUNCTION public.ers_match_invoice(p_invoice_id uuid)
  RETURNS TABLE(match_status text, payment_block text, variance_amount numeric)
  LANGUAGE plpgsql
@@ -1762,21 +1876,30 @@ BEGIN
     IF (TG_OP = 'DELETE') THEN
         old_data := to_jsonb(OLD);
         changes_json := jsonb_build_object('old', old_data, 'actor_email', actor_email);
-        INSERT INTO audit_logs (table_name, record_id, action, changed_by, changes)
-        VALUES (TG_TABLE_NAME, OLD.id::TEXT, 'DELETE', user_id, changes_json);
+        INSERT INTO audit_logs (table_name, record_id, action, changed_by, changes, company_id)
+        VALUES (TG_TABLE_NAME, OLD.id::TEXT, 'DELETE', user_id, changes_json,
+                   coalesce(nullif(old_data->>'company_id','')::uuid,
+                            CASE WHEN TG_TABLE_NAME = 'companies' THEN nullif(old_data->>'id','')::uuid END,
+                            public.caller_company()));
         RETURN OLD;
     ELSIF (TG_OP = 'UPDATE') THEN
         old_data := to_jsonb(OLD);
         new_data := to_jsonb(NEW);
         changes_json := jsonb_build_object('old', old_data, 'new', new_data, 'actor_email', actor_email);
-        INSERT INTO audit_logs (table_name, record_id, action, changed_by, changes)
-        VALUES (TG_TABLE_NAME, NEW.id::TEXT, 'UPDATE', user_id, changes_json);
+        INSERT INTO audit_logs (table_name, record_id, action, changed_by, changes, company_id)
+        VALUES (TG_TABLE_NAME, NEW.id::TEXT, 'UPDATE', user_id, changes_json,
+                   coalesce(nullif(new_data->>'company_id','')::uuid,
+                            CASE WHEN TG_TABLE_NAME = 'companies' THEN nullif(new_data->>'id','')::uuid END,
+                            public.caller_company()));
         RETURN NEW;
     ELSIF (TG_OP = 'INSERT') THEN
         new_data := to_jsonb(NEW);
         changes_json := jsonb_build_object('new', new_data, 'actor_email', actor_email);
-        INSERT INTO audit_logs (table_name, record_id, action, changed_by, changes)
-        VALUES (TG_TABLE_NAME, NEW.id::TEXT, 'INSERT', user_id, changes_json);
+        INSERT INTO audit_logs (table_name, record_id, action, changed_by, changes, company_id)
+        VALUES (TG_TABLE_NAME, NEW.id::TEXT, 'INSERT', user_id, changes_json,
+                   coalesce(nullif(new_data->>'company_id','')::uuid,
+                            CASE WHEN TG_TABLE_NAME = 'companies' THEN nullif(new_data->>'id','')::uuid END,
+                            public.caller_company()));
         RETURN NEW;
     END IF;
     RETURN NULL;
@@ -2094,6 +2217,76 @@ AS $function$ BEGIN
 END; $function$
 ;
 
+CREATE OR REPLACE FUNCTION public.stamp_tenant()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+    j   jsonb;
+    v   uuid;
+    ref text;
+BEGIN
+    -- The common case: the DEFAULT already stamped it (defaults run before
+    -- BEFORE-triggers), or the client supplied it. One IF and out.
+    IF NEW.company_id IS NOT NULL THEN
+        RETURN NEW;
+    END IF;
+
+    j := to_jsonb(NEW);
+
+    -- asset-anchored rows (sensor points, readings, alerts, twin states…)
+    ref := coalesce(j->>'asset_id', '');
+    IF ref <> '' THEN
+        SELECT company_id INTO v FROM public.assets WHERE id = ref::uuid;
+        IF v IS NOT NULL THEN NEW.company_id := v; RETURN NEW; END IF;
+    END IF;
+
+    -- work-order-anchored rows
+    ref := coalesce(j->>'wo_id', j->>'work_order_id', '');
+    IF ref <> '' THEN
+        SELECT company_id INTO v FROM public.work_orders WHERE id::text = ref;
+        IF v IS NOT NULL THEN NEW.company_id := v; RETURN NEW; END IF;
+    END IF;
+
+    -- user-anchored rows (AI logs, usage counters)
+    ref := coalesce(j->>'user_id', j->>'changed_by', '');
+    IF ref <> '' THEN
+        SELECT company_id INTO v FROM public.users WHERE id::text = ref;
+        IF v IS NOT NULL THEN NEW.company_id := v; RETURN NEW; END IF;
+    END IF;
+
+    -- recipient-anchored rows (outbox, notifications) — recipient columns are
+    -- TEXT and have historically held users.id OR contacts.id, so try both.
+    ref := coalesce(j->>'recipient_user_id', j->>'recipient_id', '');
+    IF ref <> '' THEN
+        SELECT company_id INTO v FROM public.users WHERE id::text = ref;
+        IF v IS NULL THEN
+            SELECT company_id INTO v FROM public.contacts WHERE id::text = ref;
+        END IF;
+        IF v IS NOT NULL THEN NEW.company_id := v; RETURN NEW; END IF;
+    END IF;
+
+    ref := coalesce(j->>'connector_id', '');
+    IF ref <> '' THEN
+        SELECT company_id INTO v FROM public.connectors WHERE id::text = ref;
+        IF v IS NOT NULL THEN NEW.company_id := v; RETURN NEW; END IF;
+    END IF;
+
+    ref := coalesce(j->>'contact_id', '');
+    IF ref <> '' THEN
+        SELECT company_id INTO v FROM public.contacts WHERE id::text = ref;
+        IF v IS NOT NULL THEN NEW.company_id := v; RETURN NEW; END IF;
+    END IF;
+
+    -- Nothing derived. Leave it NULL: the NOT NULL constraint makes that a
+    -- loud, attributable error at the writer, instead of a row no tenant can
+    -- ever see. Silent loss is the failure mode this migration exists to end.
+    RETURN NEW;
+END $function$
+;
+
 CREATE OR REPLACE FUNCTION public.sync_stock_on_hand()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -2367,7 +2560,7 @@ CREATE TABLE IF NOT EXISTS public.asset_bom (
     notes text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.asset_financials (
@@ -2392,7 +2585,7 @@ CREATE TABLE IF NOT EXISTS public.asset_financials (
     warranty_end_date date,
     original_acquisition_cost numeric(15,2) NOT NULL,
     subsequent_capitalizations numeric(15,2) DEFAULT 0,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.asset_insurance (
@@ -2413,7 +2606,7 @@ CREATE TABLE IF NOT EXISTS public.asset_insurance (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     end_date date,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.asset_production_config (
@@ -2427,7 +2620,7 @@ CREATE TABLE IF NOT EXISTS public.asset_production_config (
     oee_target_pct numeric DEFAULT 85 NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.assets (
@@ -2458,7 +2651,7 @@ CREATE TABLE IF NOT EXISTS public.assets (
     equipment_generation integer DEFAULT 1 NOT NULL,
     functional_location_id uuid,
     manufacturer_id uuid,
-    company_id uuid DEFAULT caller_company(),
+    company_id uuid DEFAULT caller_company() NOT NULL,
     maintenance_strategy_id uuid,
     responsible_work_center_id uuid,
     import_batch_id uuid
@@ -2474,7 +2667,7 @@ CREATE TABLE IF NOT EXISTS public.audit_assessment_collaborators (
     invited_by text,
     invited_at timestamp with time zone DEFAULT now(),
     accepted_at timestamp with time zone,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_assessments (
@@ -2527,7 +2720,7 @@ CREATE TABLE IF NOT EXISTS public.audit_assessments (
     assessor_username text,
     sixm_checklist_answers jsonb DEFAULT '[]'::jsonb,
     sixm_dimension_notes jsonb DEFAULT '{}'::jsonb,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_corrective_actions (
@@ -2553,7 +2746,7 @@ CREATE TABLE IF NOT EXISTS public.audit_corrective_actions (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_findings (
@@ -2576,7 +2769,7 @@ CREATE TABLE IF NOT EXISTS public.audit_findings (
     raised_by uuid,
     raised_at timestamp with time zone DEFAULT now(),
     closed_at timestamp with time zone,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_logs (
@@ -2587,7 +2780,7 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
     changed_by uuid,
     "timestamp" timestamp with time zone DEFAULT now(),
     changes jsonb NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_participants (
@@ -2604,7 +2797,7 @@ CREATE TABLE IF NOT EXISTS public.audit_participants (
     signed_off boolean DEFAULT false,
     signed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_responses (
@@ -2619,7 +2812,7 @@ CREATE TABLE IF NOT EXISTS public.audit_responses (
     assessor_comments text,
     assessed_by uuid,
     assessed_at timestamp with time zone,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_template_questions (
@@ -2632,7 +2825,7 @@ CREATE TABLE IF NOT EXISTS public.audit_template_questions (
     question_type text DEFAULT 'maturity'::text,
     is_mandatory boolean DEFAULT true,
     sort_order integer DEFAULT 0,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_template_sections (
@@ -2645,7 +2838,7 @@ CREATE TABLE IF NOT EXISTS public.audit_template_sections (
     weight numeric(5,2) DEFAULT 1.0,
     standard_clause text,
     parent_section_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audit_templates (
@@ -2664,7 +2857,7 @@ CREATE TABLE IF NOT EXISTS public.audit_templates (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.audits (
@@ -2700,7 +2893,7 @@ CREATE TABLE IF NOT EXISTS public.audits (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.budget_blocks (
@@ -2712,7 +2905,7 @@ CREATE TABLE IF NOT EXISTS public.budget_blocks (
     requires_override_role character varying(50),
     active boolean DEFAULT true,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.budgets (
@@ -2730,7 +2923,7 @@ CREATE TABLE IF NOT EXISTS public.budgets (
     updated_at timestamp with time zone DEFAULT now(),
     status character varying DEFAULT 'DRAFT'::character varying,
     monthly_data jsonb DEFAULT '{}'::jsonb,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.capital_events (
@@ -2753,7 +2946,7 @@ CREATE TABLE IF NOT EXISTS public.capital_events (
     approved_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.companies (
@@ -2779,7 +2972,7 @@ CREATE TABLE IF NOT EXISTS public.connector_sync_logs (
     status text,
     records integer DEFAULT 0,
     message text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.connectors (
@@ -2795,7 +2988,7 @@ CREATE TABLE IF NOT EXISTS public.connectors (
     records_synced bigint DEFAULT 0,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.contacts (
@@ -2833,7 +3026,7 @@ CREATE TABLE IF NOT EXISTS public.contacts (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     cost_center_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.cost_allocations (
@@ -2852,7 +3045,7 @@ CREATE TABLE IF NOT EXISTS public.cost_allocations (
     created_at timestamp with time zone DEFAULT now(),
     asset_id uuid,
     source text DEFAULT 'MANUAL'::text NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.cost_centers (
@@ -2872,7 +3065,7 @@ CREATE TABLE IF NOT EXISTS public.cost_centers (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     gl_account text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.depreciation_books (
@@ -2890,7 +3083,7 @@ CREATE TABLE IF NOT EXISTS public.depreciation_books (
     current_hours integer DEFAULT 0,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.depreciation_schedules (
@@ -2905,7 +3098,7 @@ CREATE TABLE IF NOT EXISTS public.depreciation_schedules (
     posted boolean DEFAULT false,
     posting_document character varying(20),
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.dictionaries (
@@ -2933,7 +3126,7 @@ CREATE TABLE IF NOT EXISTS public.entity_files (
     category text,
     description text,
     task_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.equipment_installations (
@@ -2945,7 +3138,7 @@ CREATE TABLE IF NOT EXISTS public.equipment_installations (
     reason text,
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.erp_object_map (
@@ -2962,7 +3155,7 @@ CREATE TABLE IF NOT EXISTS public.erp_object_map (
     active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.error_logs (
@@ -2984,7 +3177,7 @@ CREATE TABLE IF NOT EXISTS public.error_logs (
     browser_info text,
     url text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_agent_actions (
@@ -3000,7 +3193,7 @@ CREATE TABLE IF NOT EXISTS public.ers_agent_actions (
     review_notes text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_ai_audit_log (
@@ -3019,7 +3212,7 @@ CREATE TABLE IF NOT EXISTS public.ers_ai_audit_log (
     duration_ms integer DEFAULT 0 NOT NULL,
     ip_address inet,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_ai_budget_policy (
@@ -3028,7 +3221,7 @@ CREATE TABLE IF NOT EXISTS public.ers_ai_budget_policy (
     max_tokens_per_day bigint NOT NULL,
     note text,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_ai_usage_daily (
@@ -3039,7 +3232,7 @@ CREATE TABLE IF NOT EXISTS public.ers_ai_usage_daily (
     blocked integer DEFAULT 0 NOT NULL,
     first_call_at timestamp with time zone DEFAULT now() NOT NULL,
     last_call_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_analysis_data_sources (
@@ -3060,7 +3253,7 @@ CREATE TABLE IF NOT EXISTS public.ers_analysis_data_sources (
     manual_notes text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_assessment_snapshots (
@@ -3080,7 +3273,7 @@ CREATE TABLE IF NOT EXISTS public.ers_assessment_snapshots (
     narrative text,
     strategy_coverage_pct integer,
     success_rate_pct numeric,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_bad_actor_snapshots (
@@ -3091,7 +3284,7 @@ CREATE TABLE IF NOT EXISTS public.ers_bad_actor_snapshots (
     total_assets_analyzed integer,
     generated_at timestamp with time zone DEFAULT now(),
     top_assets jsonb DEFAULT '[]'::jsonb,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_bowtie_elements (
@@ -3108,7 +3301,7 @@ CREATE TABLE IF NOT EXISTS public.ers_bowtie_elements (
     position_y numeric DEFAULT 0 NOT NULL,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_carbon_metrics (
@@ -3120,7 +3313,7 @@ CREATE TABLE IF NOT EXISTS public.ers_carbon_metrics (
     total_tco2 numeric(10,1) GENERATED ALWAYS AS ((scope1_tco2 + scope2_tco2)) STORED,
     reporting_period text,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_climate_risks (
@@ -3132,7 +3325,7 @@ CREATE TABLE IF NOT EXISTS public.ers_climate_risks (
     vulnerability_score numeric(5,1),
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_cmls (
@@ -3153,7 +3346,7 @@ CREATE TABLE IF NOT EXISTS public.ers_cmls (
     y_coefficient numeric DEFAULT 0.4,
     corrosion_allowance_mm numeric DEFAULT 0,
     tmin_basis text DEFAULT 'manual'::text NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_collector_keys (
@@ -3167,7 +3360,7 @@ CREATE TABLE IF NOT EXISTS public.ers_collector_keys (
     note text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_corrosion_rates (
@@ -3180,7 +3373,7 @@ CREATE TABLE IF NOT EXISTS public.ers_corrosion_rates (
     is_accelerating boolean DEFAULT false,
     last_reading_date timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_criticality_assessments (
@@ -3199,7 +3392,7 @@ CREATE TABLE IF NOT EXISTS public.ers_criticality_assessments (
     notes text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_damage_mechanisms (
@@ -3212,7 +3405,7 @@ CREATE TABLE IF NOT EXISTS public.ers_damage_mechanisms (
     affected_asset_ids jsonb DEFAULT '[]'::jsonb,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_defect_elimination_tasks (
@@ -3233,7 +3426,7 @@ CREATE TABLE IF NOT EXISTS public.ers_defect_elimination_tasks (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     evidence_confidence integer,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_drone_surveys (
@@ -3244,7 +3437,7 @@ CREATE TABLE IF NOT EXISTS public.ers_drone_surveys (
     anomalies_found integer DEFAULT 0,
     reviewed boolean DEFAULT false,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_event_tree_branches (
@@ -3255,7 +3448,7 @@ CREATE TABLE IF NOT EXISTS public.ers_event_tree_branches (
     headers jsonb DEFAULT '[]'::jsonb NOT NULL,
     branches jsonb DEFAULT '[]'::jsonb NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_ffs_assessments (
@@ -3271,7 +3464,7 @@ CREATE TABLE IF NOT EXISTS public.ers_ffs_assessments (
     recommended_action text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_fmea_items (
@@ -3290,7 +3483,7 @@ CREATE TABLE IF NOT EXISTS public.ers_fmea_items (
     recommended_action text,
     action_status text,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_fmea_worksheets (
@@ -3304,7 +3497,7 @@ CREATE TABLE IF NOT EXISTS public.ers_fmea_worksheets (
     high_risk_count integer DEFAULT 0,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_hazop_deviations (
@@ -3325,7 +3518,7 @@ CREATE TABLE IF NOT EXISTS public.ers_hazop_deviations (
     action_status text DEFAULT 'open'::text NOT NULL,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_hazop_nodes (
@@ -3336,7 +3529,7 @@ CREATE TABLE IF NOT EXISTS public.ers_hazop_nodes (
     drawing_ref text,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_inspections (
@@ -3366,7 +3559,7 @@ CREATE TABLE IF NOT EXISTS public.ers_inspections (
     findings jsonb DEFAULT '[]'::jsonb NOT NULL,
     notes jsonb DEFAULT '[]'::jsonb NOT NULL,
     checklist_responses jsonb DEFAULT '{}'::jsonb NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_iow_parameters (
@@ -3382,7 +3575,7 @@ CREATE TABLE IF NOT EXISTS public.ers_iow_parameters (
     last_breach_date timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_lopa_scenarios (
@@ -3403,7 +3596,7 @@ CREATE TABLE IF NOT EXISTS public.ers_lopa_scenarios (
     recommendations text,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_pha_items (
@@ -3422,7 +3615,7 @@ CREATE TABLE IF NOT EXISTS public.ers_pha_items (
     action_status text DEFAULT 'open'::text NOT NULL,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_pid_configurations (
@@ -3435,7 +3628,7 @@ CREATE TABLE IF NOT EXISTS public.ers_pid_configurations (
     created_by text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_prediction_alerts (
@@ -3456,7 +3649,7 @@ CREATE TABLE IF NOT EXISTS public.ers_prediction_alerts (
     feedback_status text,
     diagnosis jsonb,
     failure_mode_code text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_prediction_feedback (
@@ -3467,7 +3660,7 @@ CREATE TABLE IF NOT EXISTS public.ers_prediction_feedback (
     feedback_by text NOT NULL,
     notes text,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_psm_studies (
@@ -3490,7 +3683,7 @@ CREATE TABLE IF NOT EXISTS public.ers_psm_studies (
     created_by text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_pssr_checklists (
@@ -3504,7 +3697,7 @@ CREATE TABLE IF NOT EXISTS public.ers_pssr_checklists (
     checked_date timestamp with time zone,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rag_documents (
@@ -3520,7 +3713,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rag_documents (
     metadata jsonb DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     fts tsvector GENERATED ALWAYS AS (to_tsvector('english'::regconfig, COALESCE(chunk_text, ''::text))) STORED,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rbd_models (
@@ -3533,7 +3726,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rbd_models (
     created_by text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rbi_assessments (
@@ -3549,7 +3742,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rbi_assessments (
     assessed_date timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rca_audit_log (
@@ -3559,7 +3752,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rca_audit_log (
     changed_by text NOT NULL,
     details jsonb DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rca_barriers (
@@ -3572,7 +3765,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rca_barriers (
     failure_reason text,
     corrective_action_id uuid,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rca_cause_taxonomy (
@@ -3598,7 +3791,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rca_corrective_actions (
     risk_of_not_acting text,
     work_order_id uuid,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rca_evidence (
@@ -3612,7 +3805,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rca_evidence (
     uploaded_by text,
     created_at timestamp with time zone DEFAULT now(),
     quality_grade text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rca_investigations (
@@ -3645,7 +3838,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rca_investigations (
     created_by uuid,
     proposed_method text,
     method_locked_at timestamp with time zone,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rca_node_evidence (
@@ -3654,7 +3847,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rca_node_evidence (
     evidence_id uuid NOT NULL,
     relation text DEFAULT 'supports'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rca_nodes (
@@ -3671,7 +3864,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rca_nodes (
     evidence_notes text,
     method text,
     gate_type text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rca_team_members (
@@ -3681,7 +3874,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rca_team_members (
     member_name text NOT NULL,
     role text NOT NULL,
     added_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rcm_decisions (
@@ -3714,7 +3907,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rcm_decisions (
     spares_requirements jsonb DEFAULT '[]'::jsonb,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rcm_failure_modes (
@@ -3739,7 +3932,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rcm_failure_modes (
     sort_order integer DEFAULT 0,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rcm_functions (
@@ -3754,7 +3947,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rcm_functions (
     sort_order integer DEFAULT 0,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rcm_studies (
@@ -3773,7 +3966,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rcm_studies (
     notes text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_reliability_analyses (
@@ -3794,7 +3987,7 @@ CREATE TABLE IF NOT EXISTS public.ers_reliability_analyses (
     study_id uuid,
     linked_pm_id uuid,
     linked_pm_title text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_reliability_studies (
@@ -3811,7 +4004,7 @@ CREATE TABLE IF NOT EXISTS public.ers_reliability_studies (
     findings text,
     approved_by text,
     approved_at timestamp with time zone,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_risk_register (
@@ -3836,7 +4029,7 @@ CREATE TABLE IF NOT EXISTS public.ers_risk_register (
     created_by text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_rul_estimates (
@@ -3850,7 +4043,7 @@ CREATE TABLE IF NOT EXISTS public.ers_rul_estimates (
     confidence_bands jsonb DEFAULT '[]'::jsonb,
     computed_at timestamp with time zone DEFAULT now(),
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_sensor_reading_points (
@@ -3862,7 +4055,7 @@ CREATE TABLE IF NOT EXISTS public.ers_sensor_reading_points (
     unit text,
     source text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_sensor_readings (
@@ -3876,7 +4069,7 @@ CREATE TABLE IF NOT EXISTS public.ers_sensor_readings (
     alarm_low numeric(12,3),
     readings jsonb DEFAULT '[]'::jsonb,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_sil_assessments (
@@ -3894,7 +4087,7 @@ CREATE TABLE IF NOT EXISTS public.ers_sil_assessments (
     verification_date date,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_smea_items (
@@ -3909,7 +4102,7 @@ CREATE TABLE IF NOT EXISTS public.ers_smea_items (
     priority_action text,
     status text DEFAULT 'open'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_smea_worksheets (
@@ -3921,7 +4114,7 @@ CREATE TABLE IF NOT EXISTS public.ers_smea_worksheets (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_thickness_readings (
@@ -3932,7 +4125,7 @@ CREATE TABLE IF NOT EXISTS public.ers_thickness_readings (
     ut_method text,
     technician text,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_twin_states (
@@ -3948,7 +4141,7 @@ CREATE TABLE IF NOT EXISTS public.ers_twin_states (
     last_calibrated_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_vision_results (
@@ -3962,7 +4155,7 @@ CREATE TABLE IF NOT EXISTS public.ers_vision_results (
     reviewed_by uuid,
     "timestamp" timestamp with time zone DEFAULT now(),
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ers_waveforms (
@@ -3976,7 +4169,7 @@ CREATE TABLE IF NOT EXISTS public.ers_waveforms (
     captured_at timestamp with time zone DEFAULT now() NOT NULL,
     created_by text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.goods_receipts (
@@ -3998,7 +4191,7 @@ CREATE TABLE IF NOT EXISTS public.goods_receipts (
     variance_cost numeric(15,2) DEFAULT 0,
     created_at timestamp with time zone DEFAULT now(),
     po_line_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.hierarchy_config (
@@ -4020,7 +4213,7 @@ CREATE TABLE IF NOT EXISTS public.import_batches (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     committed_at timestamp with time zone,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.insurance_incidents (
@@ -4050,7 +4243,7 @@ CREATE TABLE IF NOT EXISTS public.insurance_incidents (
     reported_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.inventory_items (
@@ -4082,7 +4275,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_items (
     salvage_value numeric DEFAULT 0,
     material_number text,
     stock_reserved numeric DEFAULT 0 NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.inventory_locations (
@@ -4095,7 +4288,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_locations (
     bins jsonb DEFAULT '[]'::jsonb,
     code text,
     address text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.inventory_stock (
@@ -4109,7 +4302,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_stock (
     updated_at timestamp with time zone DEFAULT now(),
     reorder_qty numeric DEFAULT 10,
     qty_on_order numeric DEFAULT 0,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.inventory_transactions (
@@ -4129,7 +4322,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_transactions (
     gl_account text,
     total_value numeric(15,2),
     cost_allocation_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.inventory_valuations (
@@ -4143,7 +4336,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_valuations (
     transaction_type character varying(20),
     transaction_ref uuid,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.invoice_match_lines (
@@ -4160,7 +4353,7 @@ CREATE TABLE IF NOT EXISTS public.invoice_match_lines (
     line_status text,
     block_reason text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.invoice_matches (
@@ -4185,7 +4378,7 @@ CREATE TABLE IF NOT EXISTS public.invoice_matches (
     matched_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.invoice_tolerances (
@@ -4197,7 +4390,7 @@ CREATE TABLE IF NOT EXISTS public.invoice_tolerances (
     qty_pct numeric(5,2) DEFAULT 0 NOT NULL,
     active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.job_tasks (
@@ -4226,7 +4419,7 @@ CREATE TABLE IF NOT EXISTS public.job_tasks (
     work_center_id uuid,
     control_key text DEFAULT 'PM01'::text NOT NULL,
     planned_rate numeric(12,2),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.journal_entries (
@@ -4238,7 +4431,7 @@ CREATE TABLE IF NOT EXISTS public.journal_entries (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now(),
     is_system boolean DEFAULT false,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.jsa_assessments (
@@ -4252,7 +4445,7 @@ CREATE TABLE IF NOT EXISTS public.jsa_assessments (
     authorized_at timestamp with time zone,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.jsa_hazards (
@@ -4272,7 +4465,7 @@ CREATE TABLE IF NOT EXISTS public.jsa_hazards (
     signoff_required boolean,
     signoff_by text,
     signoff_date timestamp with time zone,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.jsa_templates (
@@ -4282,7 +4475,7 @@ CREATE TABLE IF NOT EXISTS public.jsa_templates (
     created_by uuid,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.loto_permits (
@@ -4301,7 +4494,7 @@ CREATE TABLE IF NOT EXISTS public.loto_permits (
     cleared_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.maintenance_strategies (
@@ -4311,7 +4504,7 @@ CREATE TABLE IF NOT EXISTS public.maintenance_strategies (
     active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.manufacturer_models (
@@ -4324,7 +4517,7 @@ CREATE TABLE IF NOT EXISTS public.manufacturer_models (
     updated_at timestamp with time zone DEFAULT now(),
     vendor_id uuid,
     manufacturer_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.manufacturers (
@@ -4351,7 +4544,7 @@ CREATE TABLE IF NOT EXISTS public.message_templates (
     is_active boolean DEFAULT true,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.messages (
@@ -4364,7 +4557,7 @@ CREATE TABLE IF NOT EXISTS public.messages (
     mentions uuid[] DEFAULT '{}'::uuid[] NOT NULL,
     attachment_url text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.moc_requests (
@@ -4393,7 +4586,7 @@ CREATE TABLE IF NOT EXISTS public.moc_requests (
     approval_conditions text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.movement_type_gl_overrides (
@@ -4423,7 +4616,7 @@ CREATE TABLE IF NOT EXISTS public.notification_channels (
     config_json jsonb DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.notification_logs (
@@ -4436,7 +4629,7 @@ CREATE TABLE IF NOT EXISTS public.notification_logs (
     error_message text,
     metadata jsonb,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.notification_outbox (
@@ -4455,7 +4648,7 @@ CREATE TABLE IF NOT EXISTS public.notification_outbox (
     claimed_at timestamp with time zone,
     sent_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.notification_rules (
@@ -4473,7 +4666,7 @@ CREATE TABLE IF NOT EXISTS public.notification_rules (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     escalation_recipient_role text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.notifications (
@@ -4502,7 +4695,7 @@ CREATE TABLE IF NOT EXISTS public.notifications (
     created_by text,
     escalation_recipient_role text,
     vendor_recipient_id text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.numbering_config (
@@ -4533,7 +4726,7 @@ CREATE TABLE IF NOT EXISTS public.organization_unit_members (
     contact_id uuid NOT NULL,
     is_primary boolean DEFAULT false,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.organization_units (
@@ -4546,7 +4739,7 @@ CREATE TABLE IF NOT EXISTS public.organization_units (
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     cost_center text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.production_downtime_events (
@@ -4559,7 +4752,7 @@ CREATE TABLE IF NOT EXISTS public.production_downtime_events (
     description text,
     started_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.production_logs (
@@ -4580,7 +4773,7 @@ CREATE TABLE IF NOT EXISTS public.production_logs (
     source text DEFAULT 'manual'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ptw_approvals (
@@ -4594,7 +4787,7 @@ CREATE TABLE IF NOT EXISTS public.ptw_approvals (
     sequence integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ptw_isolation_points (
@@ -4615,7 +4808,7 @@ CREATE TABLE IF NOT EXISTS public.ptw_isolation_points (
     sequence integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.ptw_permits (
@@ -4642,7 +4835,7 @@ CREATE TABLE IF NOT EXISTS public.ptw_permits (
     created_by uuid,
     created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.purchase_order_lines (
@@ -4666,7 +4859,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_order_lines (
     invoice_matched boolean DEFAULT false NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.purchase_orders (
@@ -4689,7 +4882,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
     date_finished date,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.qualifications (
@@ -4704,7 +4897,7 @@ CREATE TABLE IF NOT EXISTS public.qualifications (
     notes text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.reading_definitions (
@@ -4727,7 +4920,7 @@ CREATE TABLE IF NOT EXISTS public.reading_definitions (
     alarm_deadband_pct numeric,
     alarm_persistence smallint,
     operator_action text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.reading_logs (
@@ -4745,7 +4938,7 @@ CREATE TABLE IF NOT EXISTS public.reading_logs (
     is_alarm boolean DEFAULT false,
     created_at timestamp with time zone DEFAULT now(),
     valuation_code text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.recurring_work (
@@ -4776,7 +4969,7 @@ CREATE TABLE IF NOT EXISTS public.recurring_work (
     local_impact text,
     plant_wide_impact text,
     work_center_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.reference_codes (
@@ -4841,7 +5034,7 @@ CREATE TABLE IF NOT EXISTS public.service_requests (
     authorized_by uuid,
     authorized_at timestamp with time zone,
     work_center_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.strategy_packages (
@@ -4852,7 +5045,7 @@ CREATE TABLE IF NOT EXISTS public.strategy_packages (
     task_count integer DEFAULT 0 NOT NULL,
     sort_order integer DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.task_library_files (
@@ -4863,7 +5056,7 @@ CREATE TABLE IF NOT EXISTS public.task_library_files (
     type text,
     uploaded_at timestamp with time zone DEFAULT now(),
     uploaded_by text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.task_library_inventory (
@@ -4872,7 +5065,7 @@ CREATE TABLE IF NOT EXISTS public.task_library_inventory (
     inventory_item_id uuid NOT NULL,
     quantity numeric(10,2) DEFAULT 1 NOT NULL,
     notes text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.task_library_items (
@@ -4894,7 +5087,7 @@ CREATE TABLE IF NOT EXISTS public.task_library_items (
     locked_by text,
     parent_task_id uuid,
     source_system text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.task_library_roles (
@@ -4903,7 +5096,7 @@ CREATE TABLE IF NOT EXISTS public.task_library_roles (
     role_code text NOT NULL,
     quantity integer DEFAULT 1,
     estimated_hours numeric(10,2) DEFAULT 0,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.tax_codes (
@@ -4927,7 +5120,7 @@ CREATE TABLE IF NOT EXISTS public.thread_reads (
     thread_type text NOT NULL,
     thread_id uuid NOT NULL,
     last_read_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.user_invites (
@@ -4944,7 +5137,7 @@ CREATE TABLE IF NOT EXISTS public.user_invites (
     accepted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.users (
@@ -4974,7 +5167,7 @@ CREATE TABLE IF NOT EXISTS public.vendors (
     contact_details jsonb,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.warranties (
@@ -4996,7 +5189,7 @@ CREATE TABLE IF NOT EXISTS public.warranties (
     reminder_days integer DEFAULT 30,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.warranty_claims (
@@ -5021,7 +5214,7 @@ CREATE TABLE IF NOT EXISTS public.warranty_claims (
     approved_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.wbs_elements (
@@ -5039,7 +5232,7 @@ CREATE TABLE IF NOT EXISTS public.wbs_elements (
     end_date date,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.wo_failure_data (
@@ -5051,7 +5244,7 @@ CREATE TABLE IF NOT EXISTS public.wo_failure_data (
     updated_at timestamp with time zone DEFAULT now(),
     local_impact text,
     plant_wide_impact text,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.work_center_members (
@@ -5059,7 +5252,7 @@ CREATE TABLE IF NOT EXISTS public.work_center_members (
     contact_id uuid NOT NULL,
     role text DEFAULT 'MEMBER'::text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.work_centers (
@@ -5074,7 +5267,7 @@ CREATE TABLE IF NOT EXISTS public.work_centers (
     active boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.work_order_labor (
@@ -5095,7 +5288,7 @@ CREATE TABLE IF NOT EXISTS public.work_order_labor (
     is_final boolean DEFAULT false NOT NULL,
     confirmation_no integer,
     remaining_hours numeric(6,2),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.work_order_parts (
@@ -5111,7 +5304,7 @@ CREATE TABLE IF NOT EXISTS public.work_order_parts (
     date_used date DEFAULT CURRENT_DATE,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.work_orders (
@@ -5154,7 +5347,7 @@ CREATE TABLE IF NOT EXISTS public.work_orders (
     warranty_claim_id uuid,
     work_center_id uuid,
     import_batch_id uuid,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.writeback_log (
@@ -5167,7 +5360,7 @@ CREATE TABLE IF NOT EXISTS public.writeback_log (
     response_excerpt text,
     error text,
     delivered_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.writeback_targets (
@@ -5184,7 +5377,7 @@ CREATE TABLE IF NOT EXISTS public.writeback_targets (
     created_by uuid,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    company_id uuid DEFAULT caller_company()
+    company_id uuid DEFAULT caller_company() NOT NULL
 );
 
 
@@ -8489,124 +8682,424 @@ CREATE OR REPLACE VIEW public.vendor_directory AS
 -- Triggers
 -- ══════════════════════════════════════════════
 
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.asset_bom;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.asset_bom FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_asset_bom_changes ON public.asset_bom;
 CREATE TRIGGER audit_asset_bom_changes AFTER INSERT OR DELETE OR UPDATE ON public.asset_bom FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.asset_financials;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.asset_financials FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.asset_insurance;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.asset_insurance FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS set_updated_at_asset_insurance ON public.asset_insurance;
 CREATE TRIGGER set_updated_at_asset_insurance BEFORE UPDATE ON public.asset_insurance FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.asset_production_config;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.asset_production_config FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.assets;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.assets FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_assets_changes ON public.assets;
 CREATE TRIGGER audit_assets_changes AFTER INSERT OR DELETE OR UPDATE ON public.assets FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS auto_equipment_number ON public.assets;
 CREATE TRIGGER auto_equipment_number BEFORE INSERT ON public.assets FOR EACH ROW EXECUTE FUNCTION generate_equipment_number();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_assessment_collaborators;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_assessment_collaborators FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_assessments;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_assessments FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_assessments_changes ON public.audit_assessments;
 CREATE TRIGGER audit_assessments_changes AFTER INSERT OR DELETE OR UPDATE ON public.audit_assessments FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_corrective_actions;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_corrective_actions FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_audit_corrective_actions_changes ON public.audit_corrective_actions;
 CREATE TRIGGER audit_audit_corrective_actions_changes AFTER INSERT OR DELETE OR UPDATE ON public.audit_corrective_actions FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_findings;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_findings FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_audit_findings_changes ON public.audit_findings;
 CREATE TRIGGER audit_audit_findings_changes AFTER INSERT OR DELETE OR UPDATE ON public.audit_findings FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_logs;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_logs FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_participants;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_participants FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_audit_participants_changes ON public.audit_participants;
 CREATE TRIGGER audit_audit_participants_changes AFTER INSERT OR DELETE OR UPDATE ON public.audit_participants FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_responses;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_responses FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_audit_responses_changes ON public.audit_responses;
 CREATE TRIGGER audit_audit_responses_changes AFTER INSERT OR DELETE OR UPDATE ON public.audit_responses FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_template_questions;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_template_questions FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_audit_template_questions_changes ON public.audit_template_questions;
 CREATE TRIGGER audit_audit_template_questions_changes AFTER INSERT OR DELETE OR UPDATE ON public.audit_template_questions FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_template_sections;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_template_sections FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_audit_template_sections_changes ON public.audit_template_sections;
 CREATE TRIGGER audit_audit_template_sections_changes AFTER INSERT OR DELETE OR UPDATE ON public.audit_template_sections FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audit_templates;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audit_templates FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_audit_templates_changes ON public.audit_templates;
 CREATE TRIGGER audit_audit_templates_changes AFTER INSERT OR DELETE OR UPDATE ON public.audit_templates FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.audits;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.audits FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_audits_changes ON public.audits;
 CREATE TRIGGER audit_audits_changes AFTER INSERT OR DELETE OR UPDATE ON public.audits FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.budget_blocks;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.budget_blocks FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.budgets;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.budgets FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.capital_events;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.capital_events FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.connector_sync_logs;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.connector_sync_logs FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.connectors;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.connectors FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.contacts;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.contacts FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_contacts_changes ON public.contacts;
 CREATE TRIGGER audit_contacts_changes AFTER INSERT OR DELETE OR UPDATE ON public.contacts FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.cost_allocations;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.cost_allocations FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.cost_centers;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.cost_centers FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.depreciation_books;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.depreciation_books FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.depreciation_schedules;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.depreciation_schedules FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_dictionaries_changes ON public.dictionaries;
 CREATE TRIGGER audit_dictionaries_changes AFTER INSERT OR DELETE OR UPDATE ON public.dictionaries FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.entity_files;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.entity_files FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_files_changes ON public.entity_files;
 CREATE TRIGGER audit_files_changes AFTER INSERT OR DELETE OR UPDATE ON public.entity_files FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.equipment_installations;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.equipment_installations FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.erp_object_map;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.erp_object_map FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.error_logs;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.error_logs FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_agent_actions;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_agent_actions FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_agent_action_updated ON public.ers_agent_actions;
 CREATE TRIGGER trg_agent_action_updated BEFORE UPDATE ON public.ers_agent_actions FOR EACH ROW EXECUTE FUNCTION update_agent_action_timestamp();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_ai_audit_log;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_ai_audit_log FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_ai_budget_policy;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_ai_budget_policy FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_ai_usage_daily;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_ai_usage_daily FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_analysis_data_sources;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_analysis_data_sources FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_ers_analysis_data_sources_updated_at ON public.ers_analysis_data_sources;
 CREATE TRIGGER trg_ers_analysis_data_sources_updated_at BEFORE UPDATE ON public.ers_analysis_data_sources FOR EACH ROW EXECUTE FUNCTION set_updated_at_col();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_assessment_snapshots;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_assessment_snapshots FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_bad_actor_snapshots;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_bad_actor_snapshots FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_bowtie_elements;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_bowtie_elements FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_carbon_metrics;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_carbon_metrics FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_climate_risks;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_climate_risks FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_cmls;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_cmls FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_collector_keys;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_collector_keys FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_corrosion_rates;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_corrosion_rates FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_criticality_assessments;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_criticality_assessments FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_criticality_changes ON public.ers_criticality_assessments;
 CREATE TRIGGER audit_criticality_changes AFTER INSERT OR DELETE OR UPDATE ON public.ers_criticality_assessments FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS set_criticality_updated_at ON public.ers_criticality_assessments;
 CREATE TRIGGER set_criticality_updated_at BEFORE UPDATE ON public.ers_criticality_assessments FOR EACH ROW EXECUTE FUNCTION update_criticality_timestamp();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_damage_mechanisms;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_damage_mechanisms FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_defect_elimination_tasks;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_defect_elimination_tasks FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trigger_ers_defect_elimination_tasks_updated_at ON public.ers_defect_elimination_tasks;
 CREATE TRIGGER trigger_ers_defect_elimination_tasks_updated_at BEFORE UPDATE ON public.ers_defect_elimination_tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_drone_surveys;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_drone_surveys FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_event_tree_branches;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_event_tree_branches FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_ffs_assessments;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_ffs_assessments FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_fmea_items;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_fmea_items FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_fmea_worksheets;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_fmea_worksheets FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_hazop_deviations;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_hazop_deviations FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_hazop_nodes;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_hazop_nodes FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_inspections;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_inspections FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_iow_parameters;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_iow_parameters FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_lopa_scenarios;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_lopa_scenarios FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_pha_items;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_pha_items FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_pid_configurations;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_pid_configurations FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trigger_ers_pid_configurations_updated_at ON public.ers_pid_configurations;
 CREATE TRIGGER trigger_ers_pid_configurations_updated_at BEFORE UPDATE ON public.ers_pid_configurations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_prediction_alerts;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_prediction_alerts FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_prediction_feedback;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_prediction_feedback FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_psm_studies;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_psm_studies FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_psm_studies_updated ON public.ers_psm_studies;
 CREATE TRIGGER trg_psm_studies_updated BEFORE UPDATE ON public.ers_psm_studies FOR EACH ROW EXECUTE FUNCTION update_psm_timestamp();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_pssr_checklists;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_pssr_checklists FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rag_documents;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rag_documents FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rbd_models;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rbd_models FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trigger_ers_rbd_models_updated_at ON public.ers_rbd_models;
 CREATE TRIGGER trigger_ers_rbd_models_updated_at BEFORE UPDATE ON public.ers_rbd_models FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rbi_assessments;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rbi_assessments FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rca_audit_log;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rca_audit_log FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rca_barriers;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rca_barriers FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rca_corrective_actions;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rca_corrective_actions FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rca_evidence;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rca_evidence FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rca_investigations;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rca_investigations FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rca_node_evidence;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rca_node_evidence FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rca_nodes;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rca_nodes FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_ers_rca_nodes_stamp_method ON public.ers_rca_nodes;
 CREATE TRIGGER trg_ers_rca_nodes_stamp_method BEFORE INSERT ON public.ers_rca_nodes FOR EACH ROW EXECUTE FUNCTION ers_rca_nodes_stamp_method();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rca_team_members;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rca_team_members FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rcm_decisions;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rcm_decisions FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_rcm_decisions ON public.ers_rcm_decisions;
 CREATE TRIGGER audit_rcm_decisions AFTER INSERT OR DELETE OR UPDATE ON public.ers_rcm_decisions FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS set_rcm_decisions_updated_at ON public.ers_rcm_decisions;
 CREATE TRIGGER set_rcm_decisions_updated_at BEFORE UPDATE ON public.ers_rcm_decisions FOR EACH ROW EXECUTE FUNCTION update_rcm_updated_at();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rcm_failure_modes;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rcm_failure_modes FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_rcm_failure_modes ON public.ers_rcm_failure_modes;
 CREATE TRIGGER audit_rcm_failure_modes AFTER INSERT OR DELETE OR UPDATE ON public.ers_rcm_failure_modes FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS set_rcm_failure_modes_updated_at ON public.ers_rcm_failure_modes;
 CREATE TRIGGER set_rcm_failure_modes_updated_at BEFORE UPDATE ON public.ers_rcm_failure_modes FOR EACH ROW EXECUTE FUNCTION update_rcm_updated_at();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rcm_functions;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rcm_functions FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_rcm_functions ON public.ers_rcm_functions;
 CREATE TRIGGER audit_rcm_functions AFTER INSERT OR DELETE OR UPDATE ON public.ers_rcm_functions FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS set_rcm_functions_updated_at ON public.ers_rcm_functions;
 CREATE TRIGGER set_rcm_functions_updated_at BEFORE UPDATE ON public.ers_rcm_functions FOR EACH ROW EXECUTE FUNCTION update_rcm_updated_at();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rcm_studies;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rcm_studies FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_rcm_studies ON public.ers_rcm_studies;
 CREATE TRIGGER audit_rcm_studies AFTER INSERT OR DELETE OR UPDATE ON public.ers_rcm_studies FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS set_rcm_studies_updated_at ON public.ers_rcm_studies;
 CREATE TRIGGER set_rcm_studies_updated_at BEFORE UPDATE ON public.ers_rcm_studies FOR EACH ROW EXECUTE FUNCTION update_rcm_updated_at();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_reliability_analyses;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_reliability_analyses FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_reliability_analyses_updated ON public.ers_reliability_analyses;
 CREATE TRIGGER trg_reliability_analyses_updated BEFORE UPDATE ON public.ers_reliability_analyses FOR EACH ROW EXECUTE FUNCTION update_reliability_analyses_timestamp();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_reliability_studies;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_reliability_studies FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_reliability_studies_updated ON public.ers_reliability_studies;
 CREATE TRIGGER trg_reliability_studies_updated BEFORE UPDATE ON public.ers_reliability_studies FOR EACH ROW EXECUTE FUNCTION update_reliability_studies_timestamp();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_risk_register;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_risk_register FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_risk_register_updated ON public.ers_risk_register;
 CREATE TRIGGER trg_risk_register_updated BEFORE UPDATE ON public.ers_risk_register FOR EACH ROW EXECUTE FUNCTION update_psm_timestamp();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_rul_estimates;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_rul_estimates FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_sensor_reading_points;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_sensor_reading_points FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_sensor_readings;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_sensor_readings FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_sil_assessments;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_sil_assessments FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_smea_items;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_smea_items FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_smea_worksheets;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_smea_worksheets FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_thickness_readings;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_thickness_readings FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_twin_states;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_twin_states FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_vision_results;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_vision_results FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ers_waveforms;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ers_waveforms FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.goods_receipts;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.goods_receipts FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_goods_receipt_number ON public.goods_receipts;
 CREATE TRIGGER trg_goods_receipt_number BEFORE INSERT ON public.goods_receipts FOR EACH ROW EXECUTE FUNCTION ers_goods_receipt_number();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.import_batches;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.import_batches FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.insurance_incidents;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.insurance_incidents FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS set_updated_at_insurance_incidents ON public.insurance_incidents;
 CREATE TRIGGER set_updated_at_insurance_incidents BEFORE UPDATE ON public.insurance_incidents FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.inventory_items;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.inventory_items FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_inventory_changes ON public.inventory_items;
 CREATE TRIGGER audit_inventory_changes AFTER INSERT OR DELETE OR UPDATE ON public.inventory_items FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS auto_material_number ON public.inventory_items;
 CREATE TRIGGER auto_material_number BEFORE INSERT ON public.inventory_items FOR EACH ROW EXECUTE FUNCTION generate_material_number();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.inventory_locations;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.inventory_locations FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.inventory_stock;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.inventory_stock FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_inventory_stock_changes ON public.inventory_stock;
 CREATE TRIGGER audit_inventory_stock_changes AFTER INSERT OR DELETE OR UPDATE ON public.inventory_stock FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS tr_sync_stock_on_hand ON public.inventory_stock;
 CREATE TRIGGER tr_sync_stock_on_hand AFTER INSERT OR DELETE OR UPDATE ON public.inventory_stock FOR EACH ROW EXECUTE FUNCTION sync_stock_on_hand();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.inventory_transactions;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_inventory_tx_defaults ON public.inventory_transactions;
 CREATE TRIGGER trg_inventory_tx_defaults BEFORE INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION ers_movement_defaults();
 DROP TRIGGER IF EXISTS trg_inventory_tx_post_fi ON public.inventory_transactions;
 CREATE TRIGGER trg_inventory_tx_post_fi AFTER INSERT ON public.inventory_transactions FOR EACH ROW EXECUTE FUNCTION ers_movement_post_fi();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.inventory_valuations;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.inventory_valuations FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.invoice_match_lines;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.invoice_match_lines FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.invoice_matches;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.invoice_matches FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.invoice_tolerances;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.invoice_tolerances FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.job_tasks;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.job_tasks FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_job_tasks_changes ON public.job_tasks;
 CREATE TRIGGER audit_job_tasks_changes AFTER INSERT OR DELETE OR UPDATE ON public.job_tasks FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.journal_entries;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.jsa_assessments;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.jsa_assessments FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS set_updated_at_jsa_assessments ON public.jsa_assessments;
 CREATE TRIGGER set_updated_at_jsa_assessments BEFORE UPDATE ON public.jsa_assessments FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.jsa_hazards;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.jsa_hazards FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS set_updated_at_jsa_hazards ON public.jsa_hazards;
 CREATE TRIGGER set_updated_at_jsa_hazards BEFORE UPDATE ON public.jsa_hazards FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.jsa_templates;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.jsa_templates FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS handle_updated_at ON public.jsa_templates;
 CREATE TRIGGER handle_updated_at BEFORE UPDATE ON public.jsa_templates FOR EACH ROW EXECUTE FUNCTION jsa_templates_touch_updated_at();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.loto_permits;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.loto_permits FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.maintenance_strategies;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.maintenance_strategies FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.manufacturer_models;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.manufacturer_models FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_models_changes ON public.manufacturer_models;
 CREATE TRIGGER audit_models_changes AFTER INSERT OR DELETE OR UPDATE ON public.manufacturer_models FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.message_templates;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.message_templates FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.messages;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.messages FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.moc_requests;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.moc_requests FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.movement_type_gl_overrides;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.movement_type_gl_overrides FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.notification_channels;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.notification_channels FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.notification_logs;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.notification_logs FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.notification_outbox;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.notification_outbox FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.notification_rules;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.notification_rules FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.notifications;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.notifications FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.numbering_config_overrides;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.numbering_config_overrides FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.organization_unit_members;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.organization_unit_members FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_org_members_changes ON public.organization_unit_members;
 CREATE TRIGGER audit_org_members_changes AFTER INSERT OR DELETE OR UPDATE ON public.organization_unit_members FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.organization_units;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.organization_units FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_org_units_changes ON public.organization_units;
 CREATE TRIGGER audit_org_units_changes AFTER INSERT OR DELETE OR UPDATE ON public.organization_units FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.production_downtime_events;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.production_downtime_events FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.production_logs;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.production_logs FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ptw_approvals;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ptw_approvals FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ptw_isolation_points;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ptw_isolation_points FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.ptw_permits;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.ptw_permits FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS trg_permit_number ON public.ptw_permits;
 CREATE TRIGGER trg_permit_number BEFORE INSERT ON public.ptw_permits FOR EACH ROW WHEN ((new.permit_number IS NULL)) EXECUTE FUNCTION generate_permit_number();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.purchase_order_lines;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.purchase_order_lines FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.purchase_orders;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.qualifications;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.qualifications FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_qualifications_changes ON public.qualifications;
 CREATE TRIGGER audit_qualifications_changes AFTER INSERT OR DELETE OR UPDATE ON public.qualifications FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.reading_definitions;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.reading_definitions FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.reading_logs;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.reading_logs FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.recurring_work;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.recurring_work FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.service_requests;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.service_requests FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_service_requests_changes ON public.service_requests;
 CREATE TRIGGER audit_service_requests_changes AFTER INSERT OR DELETE OR UPDATE ON public.service_requests FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.strategy_packages;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.strategy_packages FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.task_library_files;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.task_library_files FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.task_library_inventory;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.task_library_inventory FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.task_library_items;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.task_library_items FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.task_library_roles;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.task_library_roles FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.thread_reads;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.thread_reads FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.user_invites;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.user_invites FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.vendors;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.vendors FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.warranties;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.warranties FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS set_updated_at_warranties ON public.warranties;
 CREATE TRIGGER set_updated_at_warranties BEFORE UPDATE ON public.warranties FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.warranty_claims;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.warranty_claims FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS set_updated_at_warranty_claims ON public.warranty_claims;
 CREATE TRIGGER set_updated_at_warranty_claims BEFORE UPDATE ON public.warranty_claims FOR EACH ROW EXECUTE FUNCTION update_modified_column();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.wbs_elements;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.wbs_elements FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.wo_failure_data;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.wo_failure_data FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.work_center_members;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.work_center_members FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.work_centers;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.work_centers FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.work_order_labor;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.work_order_labor FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_wo_labor_changes ON public.work_order_labor;
 CREATE TRIGGER audit_wo_labor_changes AFTER INSERT OR DELETE OR UPDATE ON public.work_order_labor FOR EACH ROW EXECUTE FUNCTION log_audit_event();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.work_order_parts;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.work_order_parts FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_wo_parts_changes ON public.work_order_parts;
 CREATE TRIGGER audit_wo_parts_changes AFTER INSERT OR DELETE OR UPDATE ON public.work_order_parts FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS trg_sync_stock_reserved_parts ON public.work_order_parts;
 CREATE TRIGGER trg_sync_stock_reserved_parts AFTER INSERT OR DELETE OR UPDATE ON public.work_order_parts FOR EACH ROW EXECUTE FUNCTION sync_stock_reserved();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.work_orders;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.work_orders FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 DROP TRIGGER IF EXISTS audit_wo_changes ON public.work_orders;
 CREATE TRIGGER audit_wo_changes AFTER INSERT OR DELETE OR UPDATE ON public.work_orders FOR EACH ROW EXECUTE FUNCTION log_audit_event();
 DROP TRIGGER IF EXISTS enforce_cost_freezing ON public.work_orders;
@@ -8615,6 +9108,10 @@ DROP TRIGGER IF EXISTS trg_sync_stock_reserved_wo ON public.work_orders;
 CREATE TRIGGER trg_sync_stock_reserved_wo AFTER UPDATE OF status ON public.work_orders FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION sync_stock_reserved();
 DROP TRIGGER IF EXISTS trg_work_orders_settle ON public.work_orders;
 CREATE TRIGGER trg_work_orders_settle AFTER UPDATE OF status ON public.work_orders FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION trg_settle_on_done();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.writeback_log;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.writeback_log FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
+DROP TRIGGER IF EXISTS aa_stamp_tenant ON public.writeback_targets;
+CREATE TRIGGER aa_stamp_tenant BEFORE INSERT ON public.writeback_targets FOR EACH ROW EXECUTE FUNCTION stamp_tenant();
 
 
 -- ══════════════════════════════════════════════
