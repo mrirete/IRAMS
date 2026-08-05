@@ -249,10 +249,61 @@ NULL semantics deliberately unchanged — plain `UNIQUE`, not `NULLS NOT DISTINC
 latter, but `assets.equipment_number` is NULL on 27 of 69 rows and `NULLS NOT DISTINCT` would
 permit one such row per tenant and reject the other 26.
 
-**Still open in Phase 4:** the config tables themselves (`dictionaries`, `hierarchy_config`,
-`reference_codes`) still need the global-default + per-tenant-override treatment, and
-provisioning needs a seeding step so a new tenant opens with the ISO 14224 catalogue rather
-than an empty dropdown (§6 — that catalogue is empty today).
+#### Phase 4b — config overrides ✅ SHIPPED (0267 / 0268)
+
+0259 left eight tables out of tenancy as "product-seeded reference data, identical for every
+tenant". That was right then and wrong now, for a feature reason and a defect reason.
+
+**The feature.** `dictionaries` holds fault codes, work order types, org levels. Customers have
+their own — ISO 14224 is a starting point, not a straitjacket. A customer could not add one
+without adding it for everybody.
+
+**The defect, measured as a TECHNICIAN:** `tax_codes` had `ALL USING (true)` — one row affected.
+A technician at customer A could rewrite a tax code customer B reads. **G4 never saw it**: these
+tables have no `company_id`, so they were outside its scope entirely. A whole class of table in
+the blind spot of the check built to find blind spots. Testing five tables by hand found only
+that one; the migration's own assertion swept all eight and found **four more** on
+`ers_rca_cause_taxonomy` — any authenticated user could rewrite the ISO failure-cause taxonomy.
+
+**The shape.** `company_id IS NULL` is the product's global row; a `company_id` is that tenant's,
+and it shadows the global. Read `IS NULL OR = caller_company()`, write `= caller_company()`. The
+column DEFAULT makes the two cases differ *by construction*: an app insert carries the caller's
+tenant, a migration running as postgres has no JWT, gets NULL, and creates a global row.
+
+`NULLS NOT DISTINCT` here — the opposite of 0265 — because the NULL means something different.
+There it meant "absent" (27 assets have no `equipment_number` and must not collide); here it is a
+value meaning "global", and there must be exactly one global per key.
+
+**Copy-on-write in the client**, because RLS turns an edit of a global row into zero rows affected
+with `error: null` — the silent-success bug this workstream opened with. `writeConfigRow()` tries
+the update and, if it touched nothing, copies the global into the tenant with the patch applied.
+Deleting a global becomes a tenant-local deactivation.
+
+Four tables, not eight, with reasons recorded: `movement_types` and `ers_rca_cause_taxonomy` have
+their natural key *as* the primary key and it is FK-referenced; `hierarchy_config` and
+`numbering_config` are singletons read via `.eq('id', 1)`, which is the Phase 5 assumption and
+should be fixed there whole. Their write gates were tightened anyway — narrowed from "any user"
+to "any admin", **not eliminated**, and the migration says so.
+
+#### G4 hardened — mentioning the tenant vs enforcing it (0269 / 0270)
+
+The config form introduced a *legitimate* OR, so "this policy has an OR" stopped being a red flag
+— and G4 only asked whether a policy **mentions** `caller_company`. That would also pass
+`company_id = caller_company() OR true`.
+
+0269 required the tenant test to come **first**. Self-testing found that insufficient on exactly
+the shape it was written for, because `OR true` does come after a leading test. 0270 requires it
+to **bind**: the next token must be `AND`, or the expression must end.
+
+Parentheses broke this class of check three times (617 false violations once; 0269 flagged all
+four config policies because Postgres writes `((a) OR (b))`). The fix is to stop chasing paren
+layout — strip them all and match the flat form. Both migrations verify **in both directions
+inside the migration**, and G4's self-test now asserts what it must *ignore* as well as catch:
+**6/6 caught, 2/2 correctly ignored**.
+
+**Still open in Phase 4:** provisioning needs a seeding step so a new tenant opens with the ISO
+14224 catalogue rather than an empty dropdown (§6 — that catalogue is empty today and needs a
+maintenance engineer, not a migration).
 
 **Gate:** two tenants hold different fault codes and neither sees the other's; a fresh tenant is
 usable immediately after provisioning.
