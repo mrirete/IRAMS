@@ -8077,7 +8077,6 @@ CREATE INDEX IF NOT EXISTS idx_reading_logs_definition_id ON public.reading_logs
 CREATE INDEX IF NOT EXISTS idx_recurring_work_company_id ON public.recurring_work USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_recurring_work_work_center ON public.recurring_work USING btree (work_center_id);
 CREATE INDEX IF NOT EXISTS idx_reference_codes_company_id ON public.reference_codes USING btree (company_id);
-CREATE UNIQUE INDEX IF NOT EXISTS reference_codes_category_code_key ON public.reference_codes USING btree (category, code);
 CREATE UNIQUE INDEX IF NOT EXISTS semantic_catalog_object_column_uq ON public.semantic_catalog USING btree (object_name, COALESCE(column_name, '·'::text));
 CREATE INDEX IF NOT EXISTS idx_service_requests_asset_id ON public.service_requests USING btree (asset_id);
 CREATE INDEX IF NOT EXISTS idx_service_requests_company_id ON public.service_requests USING btree (company_id);
