@@ -8,6 +8,8 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
 import type { ModuleId } from '../config/moduleRegistry';
 import { MODULE_REGISTRY, MODULE_MAP } from '../config/moduleRegistry';
+import { moduleCeiling } from '../config/tierMap';
+import { supabase } from '../eam/lib/supabase';
 
 // ── All module IDs (default = full license) ──────────────
 
@@ -85,6 +87,35 @@ export const LicenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return new Set(ALL_SUB_MODULE_IDS);
     });
 
+    /**
+     * The licence CEILING — companies.tier, server truth since 0278.
+     *
+     * null means "no clamp": either the tier is enterprise ('all'), or we are
+     * unauthenticated / the fetch has not landed. Failing open here is
+     * deliberate and safe: ModuleGate is a commercial surface, and the data
+     * behind every module is guarded by RLS + caller_can() regardless. What a
+     * customer must NOT be able to do is the reverse — localStorage cannot
+     * raise the ceiling, because the ceiling is recomputed from the server row
+     * on every session and the clamp below wins.
+     */
+    const [ceiling, setCeiling] = useState<Set<ModuleId> | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        const fetchTier = async () => {
+            // RLS (0273) returns only the caller's own company row, so no id
+            // is needed — "the one visible row" is the right one.
+            const { data, error } = await supabase.from('companies').select('tier').limit(1).maybeSingle();
+            if (!cancelled) setCeiling(error ? null : moduleCeiling(data?.tier));
+        };
+        fetchTier();
+        const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') fetchTier();
+            if (event === 'SIGNED_OUT') setCeiling(null);
+        });
+        return () => { cancelled = true; sub.subscription.unsubscribe(); };
+    }, []);
+
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify([...enabledModules]));
     }, [enabledModules]);
@@ -96,8 +127,11 @@ export const LicenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const isModuleEnabled = useCallback((id: ModuleId) => {
         // Core is always enabled
         if (id === 'core') return true;
+        // The tier ceiling wins over any local toggle: an admin can hide
+        // licensed modules, never enable unlicensed ones.
+        if (ceiling && !ceiling.has(id)) return false;
         return enabledModules.has(id);
-    }, [enabledModules]);
+    }, [enabledModules, ceiling]);
 
     const isSubModuleEnabled = useCallback((childId: string) => {
         return enabledSubModules.has(childId);

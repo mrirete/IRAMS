@@ -141,7 +141,11 @@ if (!args.includes('--create')) {
 }
 const name = flag('--name'), code = flag('--code').toUpperCase(), adminEmail = flag('--admin-email');
 const password = flag('--admin-password') || `Tn-${randomBytes(9).toString('base64url')}`;
+const tier = (flag('--tier') || 'starter').toLowerCase();
 if (!name || !code || !adminEmail) { console.error('--name, --code and --admin-email are required.'); process.exit(1); }
+if (!['starter', 'professional', 'enterprise'].includes(tier)) {
+    console.error(`--tier must be starter|professional|enterprise, got "${tier}".`); process.exit(1);
+}
 
 const seedIds = extractSeedIds();
 const allIds = SEED_TABLES.flatMap((t) => seedIds[t]);
@@ -152,9 +156,10 @@ const [made] = await mgmt(`
     SELECT public.provision_tenant(${sqlLit(name)}, ${sqlLit(code)},
         ARRAY[${allIds.map((i) => `'${i}'`).join(',')}]::uuid[],
         ${flag('--currency') ? sqlLit(flag('--currency')) : 'NULL'},
-        ${flag('--country') ? sqlLit(flag('--country')) : 'NULL'}) AS id`);
+        ${flag('--country') ? sqlLit(flag('--country')) : 'NULL'},
+        ${sqlLit(tier)}) AS id`);
 const companyId = made.id;
-console.log(`✔ company ${code} = ${companyId}`);
+console.log(`✔ company ${code} = ${companyId} (tier: ${tier})`);
 
 // 3. the admin. create_auth_user handles auth.users + identities + public.users;
 //    then the tenant + roles are stamped, roles copied from the origin admin so
@@ -205,9 +210,16 @@ for (const t of SEED_TABLES) {
 // makes every "oldest active company" reader correct — and the origin's row
 // must be unwritable. That UPDATE was a real hole: companies was exempt from
 // the 0261 sweep, so until 0273 any tenant's admin could edit any company row.
-const myCo = await as('companies?select=id,code');
+const myCo = await as('companies?select=id,code,tier');
 check(myCo.ok && myCo.body.length === 1 && myCo.body[0].id === companyId,
     'companies: sees exactly its own row', myCo.ok ? `got ${myCo.body.length}` : `HTTP ${myCo.status}`);
+check(myCo.ok && myCo.body[0]?.tier === tier, `tier is server truth: ${tier}`, `got ${myCo.body[0]?.tier}`);
+
+// …and pinned: the tenant's own admin must not be able to raise it.
+const tierUp = await as(`companies?id=eq.${companyId}&select=tier`, {
+    method: 'PATCH', body: JSON.stringify({ tier: 'enterprise' }),
+});
+check(!tierUp.ok, 'tier cannot be raised from the app', `HTTP ${tierUp.status}`);
 const [origin] = await mgmt(`SELECT id::text FROM public.companies WHERE active ORDER BY created_at LIMIT 1`);
 const coWrite = await as(`companies?id=eq.${origin.id}&select=id`, {
     method: 'PATCH', body: JSON.stringify({ description: 'cross-tenant probe' }),
