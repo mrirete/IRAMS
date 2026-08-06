@@ -14,6 +14,7 @@ import { Download, FileUp, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-r
 import { ErpExportService } from '../../services/ErpExportService';
 import type { RenderedBatch } from '../../../lib/erp/emitters';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 
 const isoDaysAgo = (n: number): string =>
     new Date(Date.now() - n * 86400000).toISOString().split('T')[0];
@@ -28,6 +29,13 @@ const FAMILY_LABEL: Record<string, string> = {
 
 export const ErpExportPanel: React.FC = () => {
     const { showToast } = useToast();
+    // The silent-truncation guard. RLS refuses reads QUIETLY: a caller whose
+    // role lacks finops.view gets zero cost postings and would export a
+    // confident "empty period" file — incomplete without looking incomplete.
+    // The finance file must be all-or-nothing, so the panel refuses instead.
+    // (The nightly edge function runs as service_role and is immune.)
+    const { permissions } = useAuth();
+    const canReadFinance = permissions?.finops?.view === true;
     const [from, setFrom] = useState(isoDaysAgo(1));
     const [to, setTo] = useState(isoDaysAgo(0));
     const [includeCommitments, setIncludeCommitments] = useState(false);
@@ -84,6 +92,15 @@ export const ErpExportPanel: React.FC = () => {
                 </span>
             </div>
 
+            {!canReadFinance && (
+                <div className="bg-amber-50 border border-amber-200 rounded p-2.5 text-xs text-amber-800 flex items-start gap-1.5">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                    Your role cannot read cost postings, so an export from here would silently omit
+                    them — a finance file must be complete or not produced. The nightly export is
+                    unaffected; ask an administrator for FinOps view access to export interactively.
+                </div>
+            )}
+
             <div className="flex flex-wrap items-end gap-3">
                 <div>
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">From</label>
@@ -101,7 +118,7 @@ export const ErpExportPanel: React.FC = () => {
                         onChange={e => setIncludeCommitments(e.target.checked)} />
                     Include open commitments
                 </label>
-                <button onClick={preview} disabled={busy}
+                <button onClick={preview} disabled={busy || !canReadFinance}
                     className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 text-xs font-bold rounded hover:bg-slate-50 disabled:opacity-50 flex items-center gap-2">
                     {busy ? <Loader2 size={14} className="animate-spin" /> : null}
                     {busy ? 'Reading…' : 'Preview'}

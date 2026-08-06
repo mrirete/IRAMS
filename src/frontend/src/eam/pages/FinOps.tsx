@@ -20,6 +20,7 @@ import {
 } from '../services/FinOpsService';
 import { DatabaseService } from '../services/DatabaseService';
 import ErpExportPanel from '../components/finops/ErpExportPanel';
+import ErpReconciliationPanel from '../components/finops/ErpReconciliationPanel';
 import { AskRelanternButton } from '../components/AskRelanternButton';
 import AdvisoryAgentPanel from '../components/ui/AdvisoryAgentPanel';
 import { runWarrantyRecovery } from '../services/agentRunClient';
@@ -2725,7 +2726,9 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
     return (
         <div className="space-y-6">
             {/* Tier-1 ERP outbound. It lives here because this tab already holds
-                the PO/GRN/invoice documents the export carries. */}
+                the PO/GRN/invoice documents the export carries. The queue first:
+                fixing what is owed matters more than downloading what is not. */}
+            <ErpReconciliationPanel />
             <ErpExportPanel />
 
             {/* Stats — computed from real PO data */}

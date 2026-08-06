@@ -136,6 +136,76 @@ class ErpExportServiceClass {
     summarise(batch: RenderedBatch): { kind: string; rows: number }[] {
         return batch.tables.map(t => ({ kind: t.kind, rows: t.rows.length }));
     }
+
+    /**
+     * The three exception queues a person works, in one read. Integrations do
+     * not die of missing features; they die because nobody owns the failed
+     * documents — this is what that person looks at.
+     */
+    async getReconciliationQueues(): Promise<{
+        unsettled: { workOrderId: string; woNumber: string; variance: number }[];
+        blockedInvoices: { invoiceId: string; invoiceNumber: string; vendor: string; block: string; variance: number }[];
+        unpostedMovements: number;
+    }> {
+        const [settle, invoices, movements] = await Promise.all([
+            supabase.from('sem_wo_settlement')
+                .select('work_order_id, wo_number, unsettled_variance, wo_state')
+                .eq('wo_state', 'done')
+                .or('unsettled_variance.gte.0.01,unsettled_variance.lte.-0.01')
+                .order('unsettled_variance', { ascending: false })
+                .limit(50),
+            supabase.from('sem_invoice_matches')
+                .select('invoice_id, invoice_number, vendor_name, vendor_code, payment_block, variance_amount')
+                .eq('match_status', 'BLOCKED')
+                .order('variance_amount', { ascending: false })
+                .limit(50),
+            supabase.from('sem_stock_movements')
+                .select('movement_id', { count: 'exact', head: true })
+                .eq('fi_status', 'unposted'),
+        ]);
+
+        return {
+            unsettled: (settle.data ?? []).map((r: any) => ({
+                workOrderId: r.work_order_id,
+                woNumber: r.wo_number,
+                variance: parseFloat(r.unsettled_variance) || 0,
+            })),
+            blockedInvoices: (invoices.data ?? []).map((r: any) => ({
+                invoiceId: r.invoice_id,
+                invoiceNumber: r.invoice_number,
+                vendor: r.vendor_code || r.vendor_name || '—',
+                block: r.payment_block || 'VARIANCE',
+                variance: parseFloat(r.variance_amount) || 0,
+            })),
+            unpostedMovements: movements.count ?? 0,
+        };
+    }
+
+    /** Last nights, most recent first. "Did last night happen?" lives here. */
+    async getRunHistory(limit = 7): Promise<{
+        id: string; date: string; status: string; documents: number; skipped: number;
+        files: { name: string; rows: number }[]; error?: string; triggeredBy: string;
+    }[]> {
+        const { data, error } = await supabase
+            .from('erp_export_runs')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(limit);
+        if (error) {
+            console.warn('[erp] run history read failed (0279 applied?):', error.message);
+            return [];
+        }
+        return (data ?? []).map((r: any) => ({
+            id: r.id,
+            date: r.period_from,
+            status: r.status,
+            documents: r.documents ?? 0,
+            skipped: r.skipped ?? 0,
+            files: Array.isArray(r.files) ? r.files : [],
+            error: r.error || undefined,
+            triggeredBy: r.triggered_by || 'cron',
+        }));
+    }
 }
 
 export const ErpExportService = new ErpExportServiceClass();
