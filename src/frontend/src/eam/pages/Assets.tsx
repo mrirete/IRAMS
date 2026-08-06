@@ -23,7 +23,7 @@ import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, reso
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import BulkImportModal from '../components/modals/BulkImportModal';
-import { importAssets } from '../services/bulkImportService';
+import { importAssets, importBoms } from '../services/bulkImportService';
 import { exportAssetsToXLSX, exportAssetsToCSV } from '../services/assetTemplates';
 
 import { AddManufacturerModal } from '../components/modals/AddManufacturerModal';
@@ -1906,44 +1906,30 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                     }
                     return result;
                 }}
-                onImportBOMs={async (bomGroups) => {
-                    let count = 0;
-                    let failCount = 0;
-                    for (const group of bomGroups) {
-                        const asset = assets.find(a => a.tag.toUpperCase() === group.assetTag.toUpperCase());
-                        if (!asset) {
-                            failCount++;
-                            errorLog.importError('assets', `BOM import: asset tag "${group.assetTag}" not found in register`, undefined, {
-                                assetTag: group.assetTag, itemCount: group.items.length,
-                            });
-                            continue;
-                        }
-                        try {
-                            const existingBom = asset.bomItems || [];
-                            const newItems: BomItem[] = group.items.map(item => ({
-                                id: crypto.randomUUID(),
-                                inventoryCode: item.inventoryCode || '',
-                                description: item.description || '',
-                                quantity: item.quantity || 1,
-                                uom: item.uom || 'EA',
-                                critical: item.critical || false,
-                            }));
-                            await DatabaseService.getInstance().updateAsset({ ...asset, bomItems: [...existingBom, ...newItems] });
-                            count += newItems.length;
-                        } catch (err) {
-                            failCount++;
-                            errorLog.importError('assets', `BOM import failed for ${group.assetTag}`, err, {
-                                assetTag: group.assetTag, itemCount: group.items.length,
-                            });
-                        }
+                onImportBOMs={async (rows) => {
+                    // The engine writes asset_bom — the real table. The old inline
+                    // handler pushed bomItems through updateAsset, which has not
+                    // persisted that field since 0130 moved BOM to a table, so it
+                    // toasted "Imported N BOM items" and wrote NOTHING. The green
+                    // toast was a lie for every BOM bulk import since.
+                    const result = await importBoms(rows);
+                    if (result.failed > 0) {
+                        errorLog.importError('assets', `${result.failed} BOM row(s) could not be imported`, undefined, {
+                            failures: result.outcomes.filter(o => o.status === 'failed').slice(0, 20),
+                        });
                     }
                     const refreshed = await DatabaseService.getInstance().getAssets();
                     setAssets(refreshed);
+                    const count = result.inserted;
+                    const failCount = result.failed;
                     if (failCount > 0) {
-                        showToast(`Imported ${count} BOM items, ${failCount} groups failed — see Error Logs`, 'warning');
+                        showToast(`Imported ${count} BOM items, ${failCount} failed — see Error Logs`, 'warning');
                     } else {
                         showToast(`Imported ${count} BOM items`, 'success');
                     }
+                    // Returned so the modal renders the per-row outcome screen —
+                    // the old handler returned nothing and failures were invisible.
+                    return result;
                 }}
             />
 

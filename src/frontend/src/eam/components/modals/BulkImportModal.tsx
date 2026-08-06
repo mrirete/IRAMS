@@ -18,7 +18,6 @@ import {
     type ImportType, type ParseResult, type ParsedRow
 } from '../../services/assetTemplates';
 import { outcomesToCsv, type ImportResult } from '../../services/importTypes';
-import type { BomItem } from '../../types';
 
 // ─── Import type metadata ───────────────────────────────────────
 // Functional locations are asset rows (FLOC-class hierarchy levels), so the
@@ -74,7 +73,8 @@ interface BulkImportModalProps {
     onImportData: (type: ImportType, rows: Record<string, string>[]) => Promise<ImportResult | void>;
     /** Raw-row asset handler. Hierarchy resolution happens in the handler. */
     onImportAssets?: (rows: Record<string, string>[]) => Promise<ImportResult | void>;
-    onImportBOMs?: (boms: { assetTag: string; items: Partial<BomItem>[] }[]) => void;
+    /** Raw-row BOM handler — the engine (importBoms) owns resolution and dedup. */
+    onImportBOMs?: (rows: Record<string, string>[]) => Promise<ImportResult | void>;
 }
 
 type Step = 'select' | 'upload' | 'validate' | 'importing';
@@ -164,19 +164,11 @@ export default function BulkImportModal({
                 const res = await onImportAssets(validRows);
                 if (res) setResult(res);
             } else if (parseResult.type === 'bom' && onImportBOMs) {
-                const bomMap = new Map<string, Partial<BomItem>[]>();
-                validRows.forEach(r => {
-                    const tag = r['assettag'] || '';
-                    if (!bomMap.has(tag)) bomMap.set(tag, []);
-                    bomMap.get(tag)!.push({
-                        inventoryCode: r['inventorycode'] || '',
-                        description: r['description'] || '',
-                        quantity: Number(r['quantity']) || 1,
-                        uom: r['uom'] || 'EA',
-                        critical: (r['critical'] || '').toUpperCase() === 'YES',
-                    });
-                });
-                await onImportBOMs(Array.from(bomMap.entries()).map(([assetTag, items]) => ({ assetTag, items })));
+                // Raw rows, like assets: the engine resolves codes and reports
+                // per-row outcomes. The old path pre-grouped here and returned
+                // nothing, so the result screen never showed BOM failures.
+                const res = await onImportBOMs(validRows);
+                if (res) setResult(res);
             } else {
                 const res = await onImportData(parseResult.type, validRows);
                 if (res) setResult(res);

@@ -4,7 +4,7 @@ import {
     Search, Plus, Edit2, Trash2, Settings, Database, Shield, ShieldOff, Activity,
     X as XIcon, Users, Save, AlertCircle, User as UserIcon, UserPlus,
     Globe, MapPin, Briefcase, Bell, BookOpen, AlertTriangle, DollarSign, Layers, Eye, EyeOff, ArrowLeft,
-    ChevronRight
+    ChevronRight, RotateCcw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -363,13 +363,63 @@ const DictionaryManager: React.FC = () => {
         entry: null
     });
 
-    React.useEffect(() => {
-        const load = async () => {
-            const data = await DatabaseService.getInstance().getDictionaries();
-            setDictionaries(data);
-        };
-        load();
-    }, [selectedType]); // Re-load when type changes
+    /** Which standard (category|code) pairs exist — distinguishes an entry
+     *  that CUSTOMISES a product standard from one that is purely the
+     *  tenant's own. */
+    const [standardKeys, setStandardKeys] = useState<Set<string>>(new Set());
+
+    /**
+     * Always reload from the server after a write. Copy-on-write (0267) means
+     * editing a Standard entry produces a NEW row (the tenant's copy) with a
+     * NEW id — patching local state keeps the stale global id, and the next
+     * edit against it collides with "you already have a custom version".
+     */
+    const reload = React.useCallback(async () => {
+        const db = DatabaseService.getInstance();
+        const [data, keys] = await Promise.all([db.getDictionaries(), db.getStandardCodeKeys()]);
+        setDictionaries(data);
+        setStandardKeys(keys);
+    }, []);
+
+    React.useEffect(() => { reload(); }, [selectedType, reload]); // Re-load when type changes
+
+    type EntryScope = 'standard' | 'customised' | 'own';
+    /** undefined = the source carries no scope (federated cost centres): show nothing. */
+    const scopeOf = (e: DictionaryEntry): EntryScope | undefined => {
+        if (e.companyId === undefined) return undefined;
+        if (e.companyId === null) return 'standard';
+        return standardKeys.has(`${e.type}|${e.code}`) ? 'customised' : 'own';
+    };
+    const ScopeChip: React.FC<{ scope?: EntryScope }> = ({ scope }) => {
+        if (!scope) return null;
+        const look = {
+            standard: { label: 'Standard', cls: 'bg-slate-100 text-slate-500' },
+            customised: { label: 'Customised', cls: 'bg-amber-100 text-amber-700' },
+            own: { label: 'Yours', cls: 'bg-blue-100 text-blue-700' },
+        }[scope];
+        return (
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${look.cls}`}
+                  title={{
+                      standard: 'Provided with the product. Editing it creates your company’s own version; other companies are unaffected.',
+                      customised: 'Your company’s version of a standard entry. Revert to get the standard back.',
+                      own: 'Added by your company. Only your company sees it.',
+                  }[scope]}>
+                {look.label}
+            </span>
+        );
+    };
+
+    /** Delete the tenant's customised copy → the product standard resurfaces. */
+    const handleRevert = async (entry: DictionaryEntry) => {
+        if (!confirm(`Revert "${entry.code}" to the standard version? Your company's customisation will be removed.`)) return;
+        try {
+            await DatabaseService.getInstance().deleteDictionary(entry.id);
+            await reload();
+            showToast(`"${entry.code}" reverted to the standard version.`, 'success');
+        } catch (e: any) {
+            showToast('Error reverting: ' + e.message, 'error');
+        }
+    };
 
     const handleDeleteClick = (entry: DictionaryEntry) => {
         if (entry.is_locked || entry.locked) {
@@ -383,7 +433,10 @@ const DictionaryManager: React.FC = () => {
         if (!deleteModal.entry) return;
         try {
             await DatabaseService.getInstance().deleteDictionary(deleteModal.entry.id);
-            setDictionaries(prev => prev.filter(d => d.id !== deleteModal.entry!.id));
+            // Reload, not filter: deleting a Standard entry copy-on-writes a
+            // deactivated tenant copy, and deleting a Customised one resurfaces
+            // the standard — both change rows this component cannot predict.
+            await reload();
         } catch (e: any) {
             showToast('Error deleting: ' + e.message, 'error');
         } finally {
@@ -407,9 +460,10 @@ const DictionaryManager: React.FC = () => {
         const db = DatabaseService.getInstance();
 
         if (editingEntry) {
-            // Update
+            // Update. Reload rather than patch: editing a Standard entry
+            // copy-on-writes into a NEW row id (see reload()).
             await db.updateDictionary(editingEntry.id, updates);
-            setDictionaries(prev => prev.map(d => d.id === editingEntry.id ? { ...d, ...updates } : d));
+            await reload();
         } else {
             // Create
             if (!updates.code || !updates.description) throw new Error("Code and Description are required");
@@ -426,7 +480,7 @@ const DictionaryManager: React.FC = () => {
             };
 
             await db.addDictionary(newEntry);
-            setDictionaries(prev => [...prev, newEntry]);
+            await reload();   // pick up the server-stamped companyId (scope badge)
         }
     };
 
@@ -689,6 +743,10 @@ const DictionaryManager: React.FC = () => {
                                             <p className="text-[13px] text-slate-600 mt-0.5 break-words">{entry.description}</p>
                                         </div>
                                         <div className="flex items-center gap-0.5 shrink-0">
+                                            {scopeOf(entry) === 'customised' && (
+                                                <button onClick={() => handleRevert(entry)} aria-label="Revert to standard"
+                                                    className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-slate-400 active:text-amber-600 active:bg-amber-50"><RotateCcw size={16} /></button>
+                                            )}
                                             <button onClick={() => handleEditClick(entry)} aria-label="Edit entry"
                                                 className="h-9 w-9 inline-flex items-center justify-center rounded-lg text-slate-400 active:bg-slate-100"><Edit2 size={16} /></button>
                                             <button onClick={() => handleDeleteClick(entry)} aria-label="Delete entry"
@@ -700,6 +758,7 @@ const DictionaryManager: React.FC = () => {
                                         <span className={`px-2 py-0.5 rounded font-medium ${entry.active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                                             {entry.active ? 'Active' : 'Inactive'}
                                         </span>
+                                        <ScopeChip scope={scopeOf(entry)} />
                                         {locked && (
                                             <span className="px-2 py-0.5 rounded font-medium bg-amber-100 text-amber-700 inline-flex items-center gap-1">
                                                 <Shield size={10} /> Locked
@@ -884,6 +943,7 @@ const DictionaryManager: React.FC = () => {
                                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${entry.active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                                                 {entry.active ? 'Active' : 'Inactive'}
                                             </span>
+                                            <ScopeChip scope={scopeOf(entry)} />
                                             {(entry.is_locked || entry.locked) && (
                                                 <span className="px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 flex items-center gap-1">
                                                     <Shield size={10} /> Locked
@@ -892,6 +952,11 @@ const DictionaryManager: React.FC = () => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                        {scopeOf(entry) === 'customised' && (
+                                            <button onClick={() => handleRevert(entry)}
+                                                className="p-1 text-slate-400 hover:text-amber-600 transition-colors"
+                                                title="Revert to the standard version"><RotateCcw size={16} /></button>
+                                        )}
                                         {selectedType === 'COST_CENTRE' && (
                                             <button onClick={() => navigate(`/finops?tab=cost-centers&id=${entry.id}`)} className="p-1 px-2 text-green-600 hover:bg-green-50 rounded flex items-center gap-1 text-xs font-medium border border-transparent hover:border-green-200 transition-colors" title="Manage Budget">
                                                 <DollarSign size={14} /> Budget
@@ -950,14 +1015,31 @@ const DictionaryManager: React.FC = () => {
                     </table>
                 </div>
             </div>
+            {/* Honest per-scope wording: what "delete" actually does depends on
+                whose row it is (0267). A standard entry is only HIDDEN for this
+                company; a customised one reverts to the standard. */}
             <ConfirmationModal
                 isOpen={deleteModal.isOpen}
                 onClose={() => setDeleteModal({ isOpen: false, entry: null })}
                 onConfirm={handleConfirmDelete}
-                title="Delete Dictionary Entry?"
-                message={`Are you sure you want to delete '${deleteModal.entry?.code}'? This change will be permanent.`}
+                title={
+                    deleteModal.entry && scopeOf(deleteModal.entry) === 'standard' ? 'Hide Standard Entry?' :
+                    deleteModal.entry && scopeOf(deleteModal.entry) === 'customised' ? 'Remove Customisation?' :
+                    'Delete Dictionary Entry?'
+                }
+                message={
+                    deleteModal.entry && scopeOf(deleteModal.entry) === 'standard'
+                        ? `'${deleteModal.entry.code}' is a standard entry provided with the product. It will be hidden for your company only — other companies keep it, and you can restore it later by reverting.`
+                    : deleteModal.entry && scopeOf(deleteModal.entry) === 'customised'
+                        ? `This removes your company's customised version of '${deleteModal.entry.code}'. The standard entry will reappear.`
+                        : `Are you sure you want to delete '${deleteModal.entry?.code}'? This change will be permanent.`
+                }
                 type="danger"
-                confirmText="Delete Entry"
+                confirmText={
+                    deleteModal.entry && scopeOf(deleteModal.entry) === 'standard' ? 'Hide for my company' :
+                    deleteModal.entry && scopeOf(deleteModal.entry) === 'customised' ? 'Remove customisation' :
+                    'Delete Entry'
+                }
             />
         </div >
     );

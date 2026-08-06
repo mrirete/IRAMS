@@ -11,13 +11,13 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
     Database, Wrench, Users, Package, Building2, CalendarClock, Gauge,
-    FileSpreadsheet, Radio, BarChart2, CheckCircle2, ArrowRight, ArrowLeft, Loader2,
+    FileSpreadsheet, Radio, BarChart2, Boxes, CheckCircle2, ArrowRight, ArrowLeft, Loader2,
     Send, RotateCcw, AlertTriangle, Tags, Download, FileUp,
 } from 'lucide-react';
 import BulkImportModal from '../../eam/components/modals/BulkImportModal';
 import PidRegisterModal from '../../components/migration/PidRegisterModal';
 import { DatabaseService } from '../../eam/services/DatabaseService';
-import { importAssets, importReadings, importFailureCodes, findUnresolvedFailureCodes } from '../../eam/services/bulkImportService';
+import { importAssets, importBoms, importReadings, importFailureCodes, findUnresolvedFailureCodes } from '../../eam/services/bulkImportService';
 import { importService } from '../../eam/services/ImportService';
 import { supabase } from '../../eam/lib/supabase';
 import { emptyResult, tally, errMessage, type ImportResult } from '../../eam/services/importTypes';
@@ -60,41 +60,47 @@ const PHASES: Phase[] = [
         to: '/inventory?action=import', toLabel: 'Import inventory', count: c => c.inventory, unit: 'items',
     },
     {
-        n: 4, title: 'Vendors', icon: <Building2 size={18} />,
+        n: 4, title: 'Bills of materials', icon: <Boxes size={18} />,
+        blurb: 'Which spares belong to which equipment. Codes that match inventory link to the material; unknown codes become text BOM lines, promotable later.',
+        importType: 'bom', count: c => c.bom, unit: 'BOM items',
+        note: 'Needs the register (1) and inventory (3) first — rows name an asset tag and an inventory code.',
+    },
+    {
+        n: 5, title: 'Vendors', icon: <Building2 size={18} />,
         blurb: 'Suppliers and contractors your purchase orders and warranties refer to.',
         to: '/vendors?action=import', toLabel: 'Import vendors', count: c => c.vendors, unit: 'vendors',
     },
     {
-        n: 5, title: 'PM schedules & job plans', icon: <CalendarClock size={18} />,
+        n: 6, title: 'PM schedules & job plans', icon: <CalendarClock size={18} />,
         blurb: 'Recurring jobs, then the task lists that tell a technician what to actually do. Schedules first — job plans attach to them by PM code.',
         to: '/recurring-work?action=import', toLabel: 'Import schedules & job plans', count: c => c.pms, unit: 'schedules',
         note: 'A schedule without a job plan tells a technician when, but not what. Import both.',
     },
     {
-        n: 6, title: 'Work-order history', icon: <FileSpreadsheet size={18} />,
+        n: 7, title: 'Work-order history', icon: <FileSpreadsheet size={18} />,
         blurb: 'Your maintenance history from SAP PM, Maximo or MaintainX — column-mapped, quality-checked and reversible.',
         to: '/specialist/import', toLabel: 'Open the CMMS Import Wizard',
         count: c => c.workOrders, unit: 'work orders',
     },
     {
-        n: 7, title: 'Failure-code catalogs', icon: <Tags size={18} />,
+        n: 8, title: 'Failure-code catalogs', icon: <Tags size={18} />,
         blurb: 'Your own failure modes, causes and remedies. Imported history stores codes as written — without the catalog they decode to blank while still counting as "coded".',
         importType: 'failurecodes', count: c => c.codes, unit: 'codes',
         note: 'Import history first, then export the codes it actually used — the button below fills the template for you.',
     },
     {
-        n: 8, title: 'Meter & condition history', icon: <Gauge size={18} />,
+        n: 9, title: 'Meter & condition history', icon: <Gauge size={18} />,
         blurb: 'Runtime hours, vibration and temperature logs. Reading points are created automatically.',
         importType: 'readings', count: c => c.readings, unit: 'readings',
     },
     {
-        n: 9, title: 'Live sensor feeds', icon: <Radio size={18} />,
+        n: 10, title: 'Live sensor feeds', icon: <Radio size={18} />,
         blurb: 'Optional — connect a live telemetry source so Predict keeps learning after the migration.',
         to: '/admin/connectors', toLabel: 'Open the Connector Hub',
         count: c => c.connectors, unit: 'connectors',
     },
     {
-        n: 10, title: 'Verify & assess', icon: <BarChart2 size={18} />,
+        n: 11, title: 'Verify & assess', icon: <BarChart2 size={18} />,
         blurb: 'Put the Specialist to work on what you just loaded — reliability baseline, bad actors, quick wins.',
         to: '/specialist/assessment', toLabel: 'Run the assessment',
         count: c => c.batches, unit: 'import batches',
@@ -225,6 +231,11 @@ export const MigrationCenterPage: React.FC = () => {
     const handleImportData = async (type: ImportType, rows: Record<string, string>[]): Promise<ImportResult | void> => {
         if (type === 'readings') {
             const res = await importReadings(rows);
+            void refresh();
+            return res;
+        }
+        if (type === 'bom') {
+            const res = await importBoms(rows);
             void refresh();
             return res;
         }

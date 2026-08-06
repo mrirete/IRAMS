@@ -77,6 +77,10 @@ export interface DictionaryEntry {
   code: string;
   description: string;
   active: boolean;
+  /** 0267 scope: null = the product's standard row, a uuid = this tenant's
+   *  own row. undefined = source doesn't carry scope (e.g. federated cost
+   *  centres) — show no scope badge in that case. */
+  companyId?: string | null;
 
   // Contact Type Specifics
   hourlyRate?: number;

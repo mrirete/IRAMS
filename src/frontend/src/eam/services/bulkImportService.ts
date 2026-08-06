@@ -485,6 +485,131 @@ export async function importAssets(
     return res;
 }
 
+// ───────────────────────── Bills of materials ─────────────────────────
+
+/**
+ * BOM rows → the asset_bom junction table (SAP Material Master parity, 0130).
+ *
+ * This function exists because the previous BOM import path was a lie: the
+ * Assets page wrote `bomItems` through updateAsset, which has not persisted
+ * that field since 0130 moved BOM to a table — so the import toasted
+ * "Imported N BOM items" and wrote nothing. The engine writes the real table
+ * and reports what actually happened, row by row, like every other importer.
+ *
+ * Resolution follows the 0130 taxonomy: an inventoryCode that matches a
+ * material (by part number or material number) links; one that matches
+ * nothing becomes a TEXT BOM row — a real component with no material record,
+ * promotable later — with a note saying so rather than a silent guess.
+ * Re-importing the same file is idempotent: rows already on the asset's BOM
+ * (same material, or same part number for text rows) are skipped.
+ */
+export async function importBoms(rows: Row[]): Promise<ImportResult> {
+    const res = emptyResult();
+    if (rows.length === 0) return res;
+
+    // ── Resolve the assets the rows hang off ──
+    const assets = await fetchAssetsByTag(rows.map(r => r['assettag'] || ''));
+
+    // ── Resolve inventory codes: part number first, then material number ──
+    const codes = [...new Set(rows.map(r => (r['inventorycode'] || '').trim().toUpperCase()).filter(Boolean))];
+    const itemByCode = new Map<string, { id: string; partNumber: string; description: string; unitCost: number; uom: string }>();
+    for (const part of chunk(codes, LOOKUP_CHUNK)) {
+        for (const col of ['part_number', 'material_number'] as const) {
+            const { data } = await supabase
+                .from('inventory_items')
+                .select('id, part_number, material_number, description, unit_cost, uom')
+                .in(col, part);
+            for (const i of data ?? []) {
+                const item = {
+                    id: i.id, partNumber: i.part_number || '',
+                    description: i.description || '', unitCost: Number(i.unit_cost) || 0, uom: i.uom || 'EA',
+                };
+                if (i.part_number) itemByCode.set(String(i.part_number).toUpperCase(), item);
+                if (i.material_number) itemByCode.set(String(i.material_number).toUpperCase(), item);
+            }
+        }
+    }
+
+    // ── What each asset already carries, so a re-import cannot duplicate ──
+    const assetIds = [...new Set([...assets.values()].map(a => a.id))];
+    const seen = new Set<string>();
+    if (assetIds.length > 0) {
+        const { data: existing } = await supabase
+            .from('asset_bom')
+            .select('asset_id, inventory_item_id, part_number')
+            .in('asset_id', assetIds);
+        for (const b of existing ?? []) {
+            if (b.inventory_item_id) seen.add(`${b.asset_id}|inv:${b.inventory_item_id}`);
+            if (b.part_number) seen.add(`${b.asset_id}|txt:${String(b.part_number).toUpperCase()}`);
+        }
+    }
+
+    // ── Build, dedupe (against the DB and within the file), report ──
+    const payload: { row: Record<string, unknown>; draft: { row: number; key: string; note?: string } }[] = [];
+    rows.forEach((r, i) => {
+        const rowNo = rowNum(r, i + 2);
+        const tag = (r['assettag'] || '').trim();
+        const code = (r['inventorycode'] || '').trim();
+        const key = `${tag} → ${code || r['description'] || '?'}`;
+
+        const asset = assets.get(tag.toUpperCase());
+        if (!asset) {
+            tally(res, { row: rowNo, key, status: 'failed', reason: `Asset tag "${tag}" not found in the register` });
+            return;
+        }
+        if (!code && !(r['description'] || '').trim()) {
+            tally(res, { row: rowNo, key, status: 'failed', reason: 'Row carries neither an inventory code nor a description' });
+            return;
+        }
+
+        const item = code ? itemByCode.get(code.toUpperCase()) : undefined;
+        const dupKey = item ? `${asset.id}|inv:${item.id}` : `${asset.id}|txt:${code.toUpperCase()}`;
+        if (seen.has(dupKey)) {
+            tally(res, { row: rowNo, key, status: 'skipped', reason: 'Already on this asset’s BOM' });
+            return;
+        }
+        seen.add(dupKey);
+
+        payload.push({
+            draft: {
+                row: rowNo, key,
+                note: !item && code ? `"${code}" is not in inventory — added as a text BOM line (promotable to a material later)` : undefined,
+            },
+            row: {
+                asset_id: asset.id,
+                inventory_item_id: item?.id ?? null,
+                part_number: item?.partNumber || code || null,
+                description: (r['description'] || '').trim() || item?.description || code,
+                quantity: Number(r['quantity']) || 1,
+                uom: (r['uom'] || '').trim() || item?.uom || 'EA',
+                is_critical: (r['critical'] || '').toUpperCase() === 'YES',
+                estimated_cost: item?.unitCost ?? 0,
+                // The 0261 rule, browser edition: inherit the ASSET's tenant so a
+                // BOM row can never point across the boundary its parent sits in.
+                // Omitted (never null) when unknown, so the column default applies.
+                ...(asset.companyId ? { company_id: asset.companyId } : {}),
+            },
+        });
+    });
+
+    // ── Insert in chunks; a failed chunk retries row by row ──
+    for (const part of chunk(payload, 50)) {
+        const { error } = await supabase.from('asset_bom').insert(part.map(p => p.row));
+        if (!error) {
+            part.forEach(p => tally(res, { row: p.draft.row, key: p.draft.key, status: 'inserted', reason: p.draft.note }));
+            continue;
+        }
+        for (const p of part) {
+            const { error: oneErr } = await supabase.from('asset_bom').insert(p.row);
+            tally(res, oneErr
+                ? { row: p.draft.row, key: p.draft.key, status: 'failed', reason: oneErr.message }
+                : { row: p.draft.row, key: p.draft.key, status: 'inserted', reason: p.draft.note });
+        }
+    }
+
+    return res;
+}
+
 // ───────────────────────── Readings ─────────────────────────
 
 /**

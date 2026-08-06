@@ -23,6 +23,8 @@ const resetDb = () => {
     db.assets = { rows: [] };
     db.cost_centers = { rows: [] };
     db.import_batches = { rows: [], insertError: { message: 'permission denied' } };
+    db.inventory_items = { rows: [] };
+    db.asset_bom = { rows: [] };
     db.reading_definitions = { rows: [] };
     db.reading_logs = { rows: [] };
 };
@@ -107,7 +109,7 @@ vi.mock('../lib/supabase', () => ({
     },
 }));
 
-const { importAssets } = await import('./bulkImportService');
+const { importAssets, importBoms } = await import('./bulkImportService');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 type Row = Record<string, string>;
@@ -515,5 +517,97 @@ describe('external id capture', () => {
             { sourceSystem: 'sap_pm', mode: 'sync' },
         );
         expect(mapCall()!.args.p_pairs).toEqual([{ entity_id: 'ex-9', external_key: 'EQ-77' }]);
+    });
+});
+
+// ── BOM import (the engine that replaced a silent no-op) ─────────────────────
+// The previous BOM path wrote bomItems through updateAsset, which stopped
+// persisting that field when 0130 moved BOM to the asset_bom table — so every
+// BOM bulk import since toasted success and wrote nothing. These pin the
+// replacement engine to the real table.
+describe('importBoms', () => {
+    const bomRow = (r: Partial<Record<string, string>> & { assettag: string }) => ({
+        assettag: r.assettag, inventorycode: r.inventorycode ?? '', description: r.description ?? '',
+        quantity: r.quantity ?? '2', uom: r.uom ?? 'EA', critical: r.critical ?? 'NO',
+    });
+    const seed = () => {
+        db.assets.rows.push({ id: 'a-1', tag: 'PMP-1', hierarchy_level: 'EQUIPMENT', company_id: 'co-1' });
+        db.inventory_items.rows.push({
+            id: 'inv-1', part_number: 'BRG-6205', material_number: 'MAT-9001',
+            description: 'Bearing 6205', unit_cost: 25, uom: 'EA',
+        });
+    };
+
+    it('writes the asset_bom table — not the dead updateAsset path', async () => {
+        seed();
+        const res = await importBoms([bomRow({ assettag: 'PMP-1', inventorycode: 'BRG-6205' })]);
+        expect(res.inserted).toBe(1);
+        const written = (inserted.asset_bom ?? [])[0];
+        expect(written).toBeDefined();
+        expect(written.asset_id).toBe('a-1');
+        expect(written.inventory_item_id).toBe('inv-1');
+        expect(written.estimated_cost).toBe(25);
+    });
+
+    it('links by material number too — the key an SAP export carries', async () => {
+        seed();
+        const res = await importBoms([bomRow({ assettag: 'PMP-1', inventorycode: 'MAT-9001' })]);
+        expect(res.inserted).toBe(1);
+        expect((inserted.asset_bom ?? [])[0].inventory_item_id).toBe('inv-1');
+    });
+
+    it('turns an unknown code into a text BOM line, and says so', async () => {
+        seed();
+        const res = await importBoms([bomRow({ assettag: 'PMP-1', inventorycode: 'MYSTERY-9', description: 'Odd bracket' })]);
+        expect(res.inserted).toBe(1);
+        const written = (inserted.asset_bom ?? [])[0];
+        expect(written.inventory_item_id).toBeNull();
+        expect(written.part_number).toBe('MYSTERY-9');
+        expect(res.outcomes[0].reason).toMatch(/text BOM/i);
+    });
+
+    it('fails the row for an asset that does not exist', async () => {
+        seed();
+        const res = await importBoms([bomRow({ assettag: 'NOPE-1', inventorycode: 'BRG-6205' })]);
+        expect(res.failed).toBe(1);
+        expect(res.inserted).toBe(0);
+        expect(res.outcomes[0].reason).toMatch(/not found/);
+    });
+
+    it('skips a material already on the asset — re-importing a file cannot duplicate', async () => {
+        seed();
+        db.asset_bom.rows.push({ id: 'b-1', asset_id: 'a-1', inventory_item_id: 'inv-1', part_number: 'BRG-6205' });
+        const res = await importBoms([bomRow({ assettag: 'PMP-1', inventorycode: 'BRG-6205' })]);
+        expect(res.skipped).toBe(1);
+        expect(res.inserted).toBe(0);
+    });
+
+    it('dedupes within the file as well', async () => {
+        seed();
+        const res = await importBoms([
+            bomRow({ assettag: 'PMP-1', inventorycode: 'BRG-6205' }),
+            bomRow({ assettag: 'PMP-1', inventorycode: 'BRG-6205' }),
+        ]);
+        expect(res.inserted).toBe(1);
+        expect(res.skipped).toBe(1);
+    });
+
+    it('inherits the asset tenant, and never sends an explicit null', async () => {
+        seed();
+        db.assets.rows.push({ id: 'a-2', tag: 'PMP-2', hierarchy_level: 'EQUIPMENT', company_id: null });
+        await importBoms([
+            bomRow({ assettag: 'PMP-1', inventorycode: 'BRG-6205' }),
+            bomRow({ assettag: 'PMP-2', inventorycode: 'MAT-9001' }),
+        ]);
+        const rows = inserted.asset_bom ?? [];
+        expect(rows.find(r => r.asset_id === 'a-1')?.company_id).toBe('co-1');
+        expect('company_id' in rows.find(r => r.asset_id === 'a-2')!).toBe(false);
+    });
+
+    it('fails a row that names neither a code nor a description', async () => {
+        seed();
+        const res = await importBoms([bomRow({ assettag: 'PMP-1' })]);
+        expect(res.failed).toBe(1);
+        expect(res.outcomes[0].reason).toMatch(/neither/);
     });
 });

@@ -1864,6 +1864,11 @@ export class DatabaseService {
             ...(d.properties || {}),
             // Keep raw properties for Cost Center and other compound data
             properties: d.properties,
+            // Scope carrier (0267 config model): null = the product's standard
+            // row, a uuid = this tenant's own row. The Admin manager uses it to
+            // label Standard / Customised / Yours and to offer revert. Placed
+            // after the properties spread so a stray JSONB key cannot clobber it.
+            companyId: d.company_id ?? null,
         })) as DictionaryRecord[];
 
         // FEDERATION: Inject Cost Centers from FinOps Service
@@ -2178,6 +2183,20 @@ export class DatabaseService {
         }
 
         await this.writeConfigRow('reference_codes', id, coreUpdates);
+    }
+
+    /**
+     * The (category|code) keys of the PRODUCT'S standard rows. The manager
+     * needs them to tell a "customised" entry (shadows a standard) from a
+     * purely-own one — the effective view collapses the pair, so the entry
+     * alone cannot say which it is. Read from the base table: the read policy
+     * (company_id IS NULL OR own) exposes global rows to every tenant.
+     */
+    public async getStandardCodeKeys(): Promise<Set<string>> {
+        const { data, error } = await supabase
+            .from('reference_codes').select('category, code').is('company_id', null);
+        if (error) { console.error('DatabaseService.getStandardCodeKeys:', error); return new Set(); }
+        return new Set((data ?? []).map((r: any) => `${r.category}|${r.code}`));
     }
 
     /**
@@ -2589,17 +2608,19 @@ export class DatabaseService {
     public async getOnboardingCounts(): Promise<{
         assets: number; pms: number; workOrders: number; people: number;
         inventory: number; vendors: number; readings: number; batches: number; connectors: number; codes: number;
+        bom: number;
     }> {
         const head = async (table: string) => {
             const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
             return error ? 0 : (count || 0);
         };
-        const [assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes] = await Promise.all([
+        const [assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom] = await Promise.all([
             head('assets'), head('recurring_work'), head('work_orders'), head('contacts'),
             head('inventory_items'), head('vendors'), head('reading_logs'),
             head('import_batches'), head('connectors'), head('reference_codes'),
+            head('asset_bom'),
         ]);
-        return { assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes };
+        return { assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom };
     }
 
     /**
