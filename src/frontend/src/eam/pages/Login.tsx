@@ -181,11 +181,12 @@ export const Login: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex items-center gap-4">
-                    <span className="text-[13px] font-medium hidden sm:block" style={{ color: '#64748b' }}>Don't have an account?</span>
-                    <button className="text-[13px] font-bold px-4 py-2 rounded-lg transition-colors"
-                            style={{ color: '#f59e0b', border: '1.5px solid #fde68a', background: '#fffbeb' }}>
-                        Contact IT Support
-                    </button>
+                    <span className="text-[13px] font-medium hidden sm:block" style={{ color: '#64748b' }}>Don't have a workspace?</span>
+                    {/* Self-serve signup (Phase 6b) — was a dead "Contact IT Support" button */}
+                    <a href="/signup" className="text-[13px] font-bold px-4 py-2 rounded-lg transition-colors"
+                       style={{ color: '#f59e0b', border: '1.5px solid #fde68a', background: '#fffbeb' }}>
+                        Start free
+                    </a>
                 </div>
             </header>
 
