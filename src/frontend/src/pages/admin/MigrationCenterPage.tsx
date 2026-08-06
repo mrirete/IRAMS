@@ -120,6 +120,9 @@ export const MigrationCenterPage: React.FC = () => {
     const [openType, setOpenType] = useState<ImportType | null>(null);
     const [pidOpen, setPidOpen] = useState(false);
     const [batches, setBatches] = useState<Awaited<ReturnType<typeof importService.listBatches>>>([]);
+    // import_batches.source_system vocabulary. Threaded into importAssets so a
+    // foreign CMMS's own ids are kept (erp_object_map) rather than discarded.
+    const [sourceSystem, setSourceSystem] = useState('spreadsheet');
     const [inviting, setInviting] = useState(false);
     const [harvesting, setHarvesting] = useState(false);
 
@@ -237,7 +240,9 @@ export const MigrationCenterPage: React.FC = () => {
 
     const handleImportAssets = async (rows: Record<string, string>[]): Promise<ImportResult> => {
         // withBatch: this route is admin-gated, so provenance always records.
-        const res = await importAssets(rows, { withBatch: true });
+        // sourceSystem: names the batch honestly AND keeps the source system's
+        // own record ids for a later ERP integration (0275).
+        const res = await importAssets(rows, { withBatch: true, sourceSystem });
         void refresh();
         return res;
     };
@@ -271,6 +276,35 @@ export const MigrationCenterPage: React.FC = () => {
                     Moving from SAP PM, Maximo, MaintainX or spreadsheets? Work down this list in order.
                     Each step feeds the next — the register has to exist before history, schedules or readings can attach to it.
                 </p>
+                {/* Which system the files come out of. More than provenance: a
+                    foreign CMMS export carries the ids THEIR system knows these
+                    records by, and naming the source is what lets the import
+                    keep them (erp_object_map) — so a later ERP integration
+                    starts already mapped instead of rediscovering identities
+                    by name. A spreadsheet has no other side, so it maps nothing. */}
+                <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+                    <span className="font-semibold text-slate-700">These files come from:</span>
+                    <select
+                        value={sourceSystem}
+                        onChange={(e) => setSourceSystem(e.target.value)}
+                        className="border border-slate-300 rounded-lg px-2 py-1 text-sm bg-white"
+                    >
+                        <option value="spreadsheet">Spreadsheets / hand-built files</option>
+                        <option value="sap_pm">SAP PM</option>
+                        <option value="maximo">IBM Maximo</option>
+                        <option value="maintainx">MaintainX</option>
+                        <option value="emaint">eMaint</option>
+                        <option value="limble">Limble</option>
+                        <option value="fiix">Fiix</option>
+                        <option value="upkeep">UpKeep</option>
+                        <option value="other">Another system</option>
+                    </select>
+                    {sourceSystem !== 'spreadsheet' && sourceSystem !== 'other' && (
+                        <span className="text-[11px] text-emerald-700">
+                            their record ids will be kept for a future integration
+                        </span>
+                    )}
+                </label>
             </div>
 
             {/* Order warning — the failure mode this page exists to prevent */}

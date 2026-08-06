@@ -1887,7 +1887,11 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                 onImportAssets={async (rows) => {
                     // The engine owns hierarchy resolution, parent ordering and
                     // per-level rules; it reports every row's fate back to the modal.
-                    const result = await importAssets(rows);
+                    // withBatch: this door had no provenance, so rows imported here
+                    // could never be rolled back as a unit. For a non-admin the
+                    // batch insert is refused by RLS and the import proceeds with
+                    // a note — provenance when possible, never a blocker.
+                    const result = await importAssets(rows, { withBatch: true });
                     if (result.failed > 0) {
                         errorLog.importError('assets', `${result.failed} asset row(s) could not be imported`, undefined, {
                             failures: result.outcomes.filter(o => o.status === 'failed').slice(0, 20),

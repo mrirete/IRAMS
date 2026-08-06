@@ -243,7 +243,9 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
     const handleImportAssets = async (rows: Record<string, string>[]) => {
         // Same hierarchy-aware engine the Asset Register uses — Predict's setup
         // must not produce a flatter register than the main import path.
-        const result = await importAssets(rows);
+        // withBatch for the same reason as the Assets page: every bulk door
+        // records provenance when it can, so any import can be rolled back.
+        const result = await importAssets(rows, { withBatch: true });
         await refreshAssets();
         const { inserted: ok, failed: fail } = result;
         if (ok > 0) showToast(`${ok} asset${ok > 1 ? 's' : ''} imported into your register${fail ? ` (${fail} failed)` : ''}.`, fail ? 'warning' : 'success');
