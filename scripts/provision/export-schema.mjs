@@ -100,13 +100,21 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;`).join('\n');
 }
 
 async function sequences(p, t, schema) {
-    // Standalone sequences only — identity/serial sequences are created with
-    // their table and would collide.
+    // ALL sequences, deliberately. An earlier version excluded auto-dependent
+    // ('a' in pg_depend) sequences on the theory that serial/identity
+    // sequences "are created with their table and would collide" — but THIS
+    // exporter never renders SERIAL: every column comes out as an explicit
+    // `integer DEFAULT nextval('…_seq')`, which creates nothing. So owned
+    // sequences (e.g. hierarchy_config_id_seq, attached via OWNED BY in 0273)
+    // were skipped here AND not created by the table DDL, and the first real
+    // load into an empty project died at CREATE TABLE with "relation
+    // …_id_seq does not exist" — invisible to verify-baseline, which checks
+    // content, not execution order. IF NOT EXISTS keeps the emission safe even
+    // if a future generator change reintroduces serial-style DDL.
     const rows = await q(p, t, `
         SELECT c.relname
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'S' AND n.nspname = '${schema}'
-          AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'a')
         ORDER BY c.relname;`);
     return rows.map((r) => `CREATE SEQUENCE IF NOT EXISTS ${schema}.${r.relname};`).join('\n');
 }
@@ -183,18 +191,43 @@ async function indexes(p, t, schema) {
 }
 
 async function views(p, t, schema) {
+    // Emitted in TOPOLOGICAL order (referenced views first), not alphabetical.
+    // An earlier version ordered by dependent-COUNT descending — a one-level
+    // heuristic that ties every link of a chain A→B→C at count 1 and lets the
+    // alphabetical tiebreak emit B before C. The first real load into an empty
+    // project died exactly there: a sem_* view referencing sem_wo_receiver,
+    // which sorts later. Depth = longest path to a view with no view
+    // dependencies; emit ascending. Views cannot be cyclic, so the recursion
+    // terminates.
     const rows = await q(p, t, `
+        WITH RECURSIVE edges AS (
+            SELECT DISTINCT dc.oid AS view_oid, d.refobjid AS ref_oid
+            FROM pg_depend d
+            JOIN pg_rewrite rw ON rw.oid = d.objid
+            JOIN pg_class dc ON dc.oid = rw.ev_class
+            JOIN pg_class rc ON rc.oid = d.refobjid
+            JOIN pg_namespace n ON n.oid = dc.relnamespace
+            WHERE dc.relkind = 'v' AND rc.relkind = 'v'
+              AND dc.oid <> d.refobjid AND n.nspname = '${schema}'
+        ),
+        depth (view_oid, d) AS (
+            SELECT c.oid, 0
+            FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE c.relkind = 'v' AND n.nspname = '${schema}'
+              AND NOT EXISTS (SELECT 1 FROM edges e WHERE e.view_oid = c.oid)
+            UNION ALL
+            SELECT e.view_oid, dp.d + 1
+            FROM edges e JOIN depth dp ON dp.view_oid = e.ref_oid
+        )
         SELECT c.relname AS view_name,
                pg_get_viewdef(c.oid, true) AS def,
                COALESCE((SELECT option_value FROM pg_options_to_table(c.reloptions)
-                         WHERE option_name = 'security_invoker'), 'false') AS security_invoker,
-               (SELECT count(*) FROM pg_depend d
-                JOIN pg_rewrite rw ON rw.oid = d.objid
-                JOIN pg_class dc ON dc.oid = rw.ev_class
-                WHERE d.refobjid = c.oid AND dc.relkind = 'v' AND dc.oid <> c.oid) AS dependents
-        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                         WHERE option_name = 'security_invoker'), 'false') AS security_invoker
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        LEFT JOIN (SELECT view_oid, max(d) AS d FROM depth GROUP BY view_oid) dd ON dd.view_oid = c.oid
         WHERE c.relkind = 'v' AND n.nspname = '${schema}'
-        ORDER BY dependents DESC, c.relname;`);
+        ORDER BY COALESCE(dd.d, 0), c.relname;`);
     return rows.map((r) => {
         const opts = String(r.security_invoker) === 'true' ? ' WITH (security_invoker = true)' : '';
         return `CREATE OR REPLACE VIEW ${schema}.${r.view_name}${opts} AS\n${r.def}`;

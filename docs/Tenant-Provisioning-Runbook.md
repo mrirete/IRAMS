@@ -137,9 +137,37 @@ CONSTRAINT` — emitting both would create each twice. The comparison is against
 **standalone** indexes. Comparing the raw catalog number produces a confident
 false alarm, which is what it did the first time.
 
-**Last verified 2026-08-05** — structurally, against the origin, all seven
-counts matching. The 2026-07-25 full-load verification below predates tenancy
-and no longer covers what ships.
+**Last FULL LOAD verified 2026-08-06** into a fresh project (`jgsbupplobuhlevgkscz`,
+"IREAMS Load Test", eu-north-1 — kept as the standing scratch target, ledger
+baselined at 295 migrations). All ten load sections clean; census identical on
+every count (166 tables, 505 policies, 734 constraints, 216 triggers…); and a
+structural fingerprint over **4,701 definition lines** — every column with type
+and default, every constraint definition, index definition, policy predicate,
+function body hash and enum label — matched the origin md5-for-md5.
+
+The load surfaced two exporter bugs that content verification structurally
+cannot see, both now fixed in `export-schema.mjs`:
+
+1. **Owned sequences were skipped.** The exporter excluded auto-dependent
+   sequences on the theory that serial columns recreate them — but it never
+   emits `SERIAL`, only explicit `DEFAULT nextval(…)`, which creates nothing.
+   `hierarchy_config_id_seq` (0273, `OWNED BY`) was in neither section and the
+   Tables load died on it. All sequences are now emitted with `IF NOT EXISTS`.
+2. **View-on-view ordering used a one-level heuristic.** Ordering by
+   dependent-count ties every link of a chain and the alphabetical tiebreak
+   emitted a `sem_*` view before `sem_wo_receiver`, which it references. Views
+   are now emitted in true topological order (recursive depth over pg_depend).
+
+This is why the load test exists: `verify-baseline.mjs` proves the files
+DESCRIBE the schema; only a load proves they EXECUTE. Re-run the load against
+the scratch project after any exporter change or large migration batch:
+
+```bash
+# wipe scratch, reload, compare
+node scripts/provision/load-baseline.mjs --project-ref jgsbupplobuhlevgkscz --file src/frontend/supabase/baseline/schema.sql
+node scripts/provision/load-baseline.mjs --project-ref jgsbupplobuhlevgkscz --file src/frontend/supabase/baseline/seed.sql
+node scripts/provision/load-baseline.mjs --project-ref jgsbupplobuhlevgkscz --census   # vs origin --census
+```
 
 `export-seed.mjs` carries an explicit allowlist of reference tables. **Anything not on that list is never exported** — adding a table means asserting it holds no customer data. `schema_migrations` is deliberately excluded, since each project owns its own ledger.
 

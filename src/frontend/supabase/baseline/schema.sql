@@ -61,7 +61,9 @@ CREATE SEQUENCE IF NOT EXISTS public.audit_number_seq;
 CREATE SEQUENCE IF NOT EXISTS public.equipment_number_seq;
 CREATE SEQUENCE IF NOT EXISTS public.ers_sensor_reading_points_id_seq;
 CREATE SEQUENCE IF NOT EXISTS public.goods_receipt_seq;
+CREATE SEQUENCE IF NOT EXISTS public.hierarchy_config_id_seq;
 CREATE SEQUENCE IF NOT EXISTS public.material_number_seq;
+CREATE SEQUENCE IF NOT EXISTS public.numbering_config_id_seq;
 CREATE SEQUENCE IF NOT EXISTS public.wo_number_seq;
 
 
@@ -3170,6 +3172,20 @@ CREATE TABLE IF NOT EXISTS public.equipment_installations (
     company_id uuid DEFAULT caller_company() NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS public.erp_export_runs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    company_id uuid NOT NULL,
+    period_from date NOT NULL,
+    period_to date NOT NULL,
+    status text DEFAULT 'ok'::text NOT NULL,
+    documents integer DEFAULT 0 NOT NULL,
+    skipped integer DEFAULT 0 NOT NULL,
+    files jsonb DEFAULT '[]'::jsonb NOT NULL,
+    error text,
+    triggered_by text DEFAULT 'cron'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS public.erp_object_map (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     system text DEFAULT 'SAP'::text NOT NULL,
@@ -5607,6 +5623,12 @@ DO $$ BEGIN
     ALTER TABLE public.equipment_installations ADD CONSTRAINT equipment_installations_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE public.erp_export_runs ADD CONSTRAINT erp_export_runs_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE public.erp_export_runs ADD CONSTRAINT erp_export_runs_status_check CHECK ((status = ANY (ARRAY['ok'::text, 'empty'::text, 'error'::text])));
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE public.erp_object_map ADD CONSTRAINT erp_object_map_entity_type_check CHECK ((entity_type = ANY (ARRAY['vendor'::text, 'cost_center'::text, 'wbs_element'::text, 'gl_account'::text, 'inventory_item'::text, 'purchase_order'::text, 'purchase_order_line'::text, 'goods_receipt'::text, 'work_order'::text, 'cost_allocation'::text, 'asset'::text, 'company'::text])));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
@@ -6789,6 +6811,9 @@ DO $$ BEGIN
     ALTER TABLE public.equipment_installations ADD CONSTRAINT fk_equipment_installations_company FOREIGN KEY (company_id) REFERENCES companies(id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE public.erp_export_runs ADD CONSTRAINT erp_export_runs_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE public.erp_object_map ADD CONSTRAINT fk_erp_object_map_company FOREIGN KEY (company_id) REFERENCES companies(id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
@@ -7716,6 +7741,7 @@ CREATE INDEX IF NOT EXISTS idx_entity_files_uploaded_by ON public.entity_files U
 CREATE INDEX IF NOT EXISTS idx_equip_install_equipment ON public.equipment_installations USING btree (equipment_id);
 CREATE INDEX IF NOT EXISTS idx_equip_install_floc ON public.equipment_installations USING btree (functional_location_id);
 CREATE INDEX IF NOT EXISTS idx_equipment_installations_company_id ON public.equipment_installations USING btree (company_id);
+CREATE INDEX IF NOT EXISTS idx_erp_export_runs_company ON public.erp_export_runs USING btree (company_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_erp_map_entity ON public.erp_object_map USING btree (entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_erp_map_external ON public.erp_object_map USING btree (system, entity_type, external_key);
 CREATE INDEX IF NOT EXISTS idx_erp_map_stale ON public.erp_object_map USING btree (system, last_synced_at) WHERE active;
@@ -8102,108 +8128,6 @@ CREATE INDEX IF NOT EXISTS idx_writeback_targets_company_id ON public.writeback_
 -- Views
 -- ══════════════════════════════════════════════
 
-CREATE OR REPLACE VIEW public.sem_asset_reliability WITH (security_invoker = true) AS
- WITH cm AS (
-         SELECT w.asset_id,
-            count(*) AS failures_12mo,
-            COALESCE(sum(w.actual_downtime_hrs), 0::numeric) AS downtime_hrs_12mo,
-            count(*) FILTER (WHERE COALESCE(w.actual_downtime_hrs, 0::numeric) > 0::numeric) AS timed_repairs,
-            COALESCE(sum(w.actual_downtime_hrs) FILTER (WHERE COALESCE(w.actual_downtime_hrs, 0::numeric) > 0::numeric), 0::numeric) AS timed_downtime_hrs
-           FROM work_orders w
-          WHERE upper(COALESCE(w.type, ''::text)) = 'CM'::text AND w.created_at >= (now() - '365 days'::interval)
-          GROUP BY w.asset_id
-        )
- SELECT a.id AS asset_id,
-    a.tag AS asset_tag,
-    a.criticality::text AS criticality,
-    COALESCE(cm.failures_12mo, 0::bigint) AS failures_12mo,
-    round(COALESCE(cm.downtime_hrs_12mo, 0::numeric), 1) AS downtime_hrs_12mo,
-    GREATEST(0::numeric, 8760::numeric - COALESCE(cm.downtime_hrs_12mo, 0::numeric)) AS operating_hrs_12mo,
-        CASE
-            WHEN COALESCE(cm.failures_12mo, 0::bigint) > 0 THEN round(GREATEST(0::numeric, 8760::numeric - COALESCE(cm.downtime_hrs_12mo, 0::numeric)) / cm.failures_12mo::numeric, 1)
-            ELSE NULL::numeric
-        END AS mtbf_hours,
-        CASE
-            WHEN COALESCE(cm.failures_12mo, 0::bigint) > 0 THEN round(GREATEST(0::numeric, 8760::numeric - COALESCE(cm.downtime_hrs_12mo, 0::numeric)) / cm.failures_12mo::numeric / 24.0, 1)
-            ELSE NULL::numeric
-        END AS mtbf_days,
-        CASE
-            WHEN COALESCE(cm.timed_repairs, 0::bigint) > 0 THEN round(cm.timed_downtime_hrs / cm.timed_repairs::numeric, 1)
-            ELSE NULL::numeric
-        END AS mttr_hours,
-        CASE
-            WHEN COALESCE(cm.failures_12mo, 0::bigint) > 0 AND COALESCE(cm.timed_repairs, 0::bigint) > 0 THEN round(GREATEST(0::numeric, 8760::numeric - cm.downtime_hrs_12mo) / cm.failures_12mo::numeric / NULLIF(GREATEST(0::numeric, 8760::numeric - cm.downtime_hrs_12mo) / cm.failures_12mo::numeric + cm.timed_downtime_hrs / cm.timed_repairs::numeric, 0::numeric) * 100::numeric, 1)
-            ELSE NULL::numeric
-        END AS availability_pct,
-        CASE
-            WHEN COALESCE(cm.failures_12mo, 0::bigint) > 0 THEN round(COALESCE(cm.timed_repairs, 0::bigint)::numeric / cm.failures_12mo::numeric * 100::numeric, 0)
-            ELSE 0::numeric
-        END AS downtime_coverage_pct
-   FROM assets a
-     LEFT JOIN cm ON cm.asset_id = a.id;
-
-CREATE OR REPLACE VIEW public.sem_wo_actual_lines WITH (security_invoker = true) AS
- SELECT work_order_id,
-    cost_type,
-    cost_center_id,
-    round(sum(amount), 2) AS amount,
-    NULLIF(round(sum(quantity), 3), 0::numeric) AS quantity,
-    max(unit) AS unit
-   FROM ( SELECT l.wo_id AS work_order_id,
-            'LABOR'::text AS cost_type,
-            COALESCE(wc.cost_center_id, r.cost_center_id) AS cost_center_id,
-            sum(COALESCE(l.hours_worked, 0::numeric) * COALESCE(NULLIF(l.rate_per_hour, 0::numeric), t.planned_rate, wc.activity_rate, 0::numeric)) AS amount,
-            sum(COALESCE(l.hours_worked, 0::numeric)) AS quantity,
-            'H'::text AS unit
-           FROM work_order_labor l
-             JOIN job_tasks t ON t.id = l.job_task_id
-             JOIN sem_wo_receiver r ON r.work_order_id = l.wo_id
-             LEFT JOIN work_centers wc ON wc.id = t.work_center_id
-          GROUP BY l.wo_id, (COALESCE(wc.cost_center_id, r.cost_center_id))
-        UNION ALL
-         SELECT l.wo_id,
-            'LABOR'::text AS text,
-            r.cost_center_id,
-            sum(COALESCE(l.hours_worked, 0::numeric) * COALESCE(l.rate_per_hour, 0::numeric)) AS sum,
-            sum(COALESCE(l.hours_worked, 0::numeric)) AS sum,
-            'H'::text AS text
-           FROM work_order_labor l
-             JOIN sem_wo_receiver r ON r.work_order_id = l.wo_id
-          WHERE l.job_task_id IS NULL
-          GROUP BY l.wo_id, r.cost_center_id
-        UNION ALL
-         SELECT p.wo_id,
-            'MATERIAL'::text AS text,
-            r.cost_center_id,
-            sum(COALESCE(p.quantity, 0::numeric) * COALESCE(p.unit_cost, 0::numeric)) AS sum,
-            NULL::numeric AS "numeric",
-            NULL::text AS text
-           FROM work_order_parts p
-             JOIN sem_wo_receiver r ON r.work_order_id = p.wo_id
-          WHERE p.is_planned IS DISTINCT FROM true
-          GROUP BY p.wo_id, r.cost_center_id
-        UNION ALL
-         SELECT pol.work_order_id,
-            'SERVICE'::text AS text,
-            COALESCE(pol.cost_center_id, r.cost_center_id) AS "coalesce",
-            sum(COALESCE(pol.qty_received, 0::numeric) * COALESCE(pol.unit_cost, 0::numeric)) AS sum,
-            sum(COALESCE(pol.qty_received, 0::numeric)) AS sum,
-            max(pol.uom) AS max
-           FROM purchase_order_lines pol
-             JOIN sem_wo_receiver r ON r.work_order_id = pol.work_order_id
-          WHERE pol.work_order_id IS NOT NULL AND pol.line_type = 'SERVICE'::text AND COALESCE(pol.qty_received, 0::numeric) > 0::numeric
-          GROUP BY pol.work_order_id, (COALESCE(pol.cost_center_id, r.cost_center_id))) s
-  GROUP BY work_order_id, cost_type, cost_center_id
- HAVING round(sum(amount), 2) <> 0::numeric;
-
-CREATE OR REPLACE VIEW public.sem_wo_receiver WITH (security_invoker = true) AS
- SELECT w.id AS work_order_id,
-    w.asset_id,
-    COALESCE(w.cost_center_id, wc.cost_center_id, a.cost_center_id) AS cost_center_id
-   FROM work_orders w
-     LEFT JOIN work_centers wc ON wc.id = w.work_center_id
-     LEFT JOIN assets a ON a.id = w.asset_id;
-
 CREATE OR REPLACE VIEW public.contact_directory AS
  SELECT id,
     name
@@ -8313,43 +8237,45 @@ CREATE OR REPLACE VIEW public.reference_codes_effective WITH (security_invoker =
   WHERE company_id IS NULL OR company_id = (( SELECT caller_company() AS caller_company))
   ORDER BY category, code, (company_id IS NULL);
 
-CREATE OR REPLACE VIEW public.sem_asset_health WITH (security_invoker = true) AS
+CREATE OR REPLACE VIEW public.sem_asset_reliability WITH (security_invoker = true) AS
+ WITH cm AS (
+         SELECT w.asset_id,
+            count(*) AS failures_12mo,
+            COALESCE(sum(w.actual_downtime_hrs), 0::numeric) AS downtime_hrs_12mo,
+            count(*) FILTER (WHERE COALESCE(w.actual_downtime_hrs, 0::numeric) > 0::numeric) AS timed_repairs,
+            COALESCE(sum(w.actual_downtime_hrs) FILTER (WHERE COALESCE(w.actual_downtime_hrs, 0::numeric) > 0::numeric), 0::numeric) AS timed_downtime_hrs
+           FROM work_orders w
+          WHERE upper(COALESCE(w.type, ''::text)) = 'CM'::text AND w.created_at >= (now() - '365 days'::interval)
+          GROUP BY w.asset_id
+        )
  SELECT a.id AS asset_id,
     a.tag AS asset_tag,
-    a.name AS asset_name,
     a.criticality::text AS criticality,
-    a.status_code,
-    a.hierarchy_level,
-    wc.code AS work_center_code,
-    ar.mtbf_days,
-    ar.mttr_hours,
-    a.failure_count_ytd,
-    a.running_hours,
-    ow.open_wo_count,
-    fe.failure_events_12mo,
-    fe.downtime_hrs_12mo,
-    pm.overdue_pm_count,
-    lr.last_reading_at,
-    ar.availability_pct,
-    a.mtbf_days AS mtbf_days_stored,
-    a.mttr_hours AS mttr_hours_stored
+    COALESCE(cm.failures_12mo, 0::bigint) AS failures_12mo,
+    round(COALESCE(cm.downtime_hrs_12mo, 0::numeric), 1) AS downtime_hrs_12mo,
+    GREATEST(0::numeric, 8760::numeric - COALESCE(cm.downtime_hrs_12mo, 0::numeric)) AS operating_hrs_12mo,
+        CASE
+            WHEN COALESCE(cm.failures_12mo, 0::bigint) > 0 THEN round(GREATEST(0::numeric, 8760::numeric - COALESCE(cm.downtime_hrs_12mo, 0::numeric)) / cm.failures_12mo::numeric, 1)
+            ELSE NULL::numeric
+        END AS mtbf_hours,
+        CASE
+            WHEN COALESCE(cm.failures_12mo, 0::bigint) > 0 THEN round(GREATEST(0::numeric, 8760::numeric - COALESCE(cm.downtime_hrs_12mo, 0::numeric)) / cm.failures_12mo::numeric / 24.0, 1)
+            ELSE NULL::numeric
+        END AS mtbf_days,
+        CASE
+            WHEN COALESCE(cm.timed_repairs, 0::bigint) > 0 THEN round(cm.timed_downtime_hrs / cm.timed_repairs::numeric, 1)
+            ELSE NULL::numeric
+        END AS mttr_hours,
+        CASE
+            WHEN COALESCE(cm.failures_12mo, 0::bigint) > 0 AND COALESCE(cm.timed_repairs, 0::bigint) > 0 THEN round(GREATEST(0::numeric, 8760::numeric - cm.downtime_hrs_12mo) / cm.failures_12mo::numeric / NULLIF(GREATEST(0::numeric, 8760::numeric - cm.downtime_hrs_12mo) / cm.failures_12mo::numeric + cm.timed_downtime_hrs / cm.timed_repairs::numeric, 0::numeric) * 100::numeric, 1)
+            ELSE NULL::numeric
+        END AS availability_pct,
+        CASE
+            WHEN COALESCE(cm.failures_12mo, 0::bigint) > 0 THEN round(COALESCE(cm.timed_repairs, 0::bigint)::numeric / cm.failures_12mo::numeric * 100::numeric, 0)
+            ELSE 0::numeric
+        END AS downtime_coverage_pct
    FROM assets a
-     LEFT JOIN work_centers wc ON wc.id = a.responsible_work_center_id
-     LEFT JOIN sem_asset_reliability ar ON ar.asset_id = a.id
-     LEFT JOIN LATERAL ( SELECT count(*) AS open_wo_count
-           FROM work_orders w
-          WHERE w.asset_id = a.id AND (ers_wo_state(w.status::text) = ANY (ARRAY['open'::text, 'unknown'::text]))) ow ON true
-     LEFT JOIN LATERAL ( SELECT count(*) AS failure_events_12mo,
-            COALESCE(sum(w.actual_downtime_hrs), 0::numeric) AS downtime_hrs_12mo
-           FROM work_orders w
-             JOIN wo_failure_data fd ON fd.wo_id = w.id
-          WHERE w.asset_id = a.id AND w.created_at >= (now() - '365 days'::interval)) fe ON true
-     LEFT JOIN LATERAL ( SELECT count(*) AS overdue_pm_count
-           FROM recurring_work rw
-          WHERE rw.asset_id = a.id::text AND rw.active AND rw.next_due_date IS NOT NULL AND rw.next_due_date < now()) pm ON true
-     LEFT JOIN LATERAL ( SELECT max(rl.created_at) AS last_reading_at
-           FROM reading_logs rl
-          WHERE rl.asset_id = a.id) lr ON true;
+     LEFT JOIN cm ON cm.asset_id = a.id;
 
 CREATE OR REPLACE VIEW public.sem_erp_mapping_health WITH (security_invoker = true) AS
  WITH counts AS (
@@ -8424,6 +8350,7 @@ CREATE OR REPLACE VIEW public.sem_failure_events WITH (security_invoker = true) 
 
 CREATE OR REPLACE VIEW public.sem_invoice_matches WITH (security_invoker = true) AS
  SELECT m.id AS invoice_id,
+    m.company_id,
     m.invoice_number,
     m.invoice_date,
     m.vendor_id,
@@ -8481,6 +8408,7 @@ CREATE OR REPLACE VIEW public.sem_pm_compliance WITH (security_invoker = true) A
 
 CREATE OR REPLACE VIEW public.sem_purchase_order_lines WITH (security_invoker = true) AS
  SELECT l.id AS line_id,
+    l.company_id,
     l.po_id,
     p.po_code,
     p.status AS po_status,
@@ -8572,6 +8500,7 @@ CREATE OR REPLACE VIEW public.sem_specialist_overdue_pm AS
 
 CREATE OR REPLACE VIEW public.sem_stock_movements WITH (security_invoker = true) AS
  SELECT t.id AS movement_id,
+    t.company_id,
     t."timestamp" AS moved_at,
     t.movement_type,
     mt.name AS movement_name,
@@ -8611,26 +8540,13 @@ CREATE OR REPLACE VIEW public.sem_stock_movements WITH (security_invoker = true)
      LEFT JOIN cost_centers cc ON cc.id = t.cost_center_id
      LEFT JOIN assets a ON a.id = t.asset_id;
 
-CREATE OR REPLACE VIEW public.sem_wo_settlement WITH (security_invoker = true) AS
+CREATE OR REPLACE VIEW public.sem_wo_receiver WITH (security_invoker = true) AS
  SELECT w.id AS work_order_id,
-    w.wo_number,
     w.asset_id,
-    ers_wo_state(w.status::text) AS wo_state,
-    COALESCE(a.actual_cost, 0::numeric) AS actual_cost,
-    COALESCE(p.settled_cost, 0::numeric) AS settled_cost,
-    round(COALESCE(a.actual_cost, 0::numeric) - COALESCE(p.settled_cost, 0::numeric), 2) AS unsettled_variance,
-    p.last_settled_at
+    COALESCE(w.cost_center_id, wc.cost_center_id, a.cost_center_id) AS cost_center_id
    FROM work_orders w
-     LEFT JOIN ( SELECT l.work_order_id,
-            sum(l.amount) AS actual_cost
-           FROM sem_wo_actual_lines l
-          GROUP BY l.work_order_id) a ON a.work_order_id = w.id
-     LEFT JOIN ( SELECT c.work_order_id,
-            sum(c.amount) AS settled_cost,
-            max(c.created_at) AS last_settled_at
-           FROM cost_allocations c
-          WHERE c.source = 'WO_SETTLEMENT'::text
-          GROUP BY c.work_order_id) p ON p.work_order_id = w.id;
+     LEFT JOIN work_centers wc ON wc.id = w.work_center_id
+     LEFT JOIN assets a ON a.id = w.asset_id;
 
 CREATE OR REPLACE VIEW public.sem_work_history WITH (security_invoker = true) AS
  SELECT wo.id AS work_order_id,
@@ -8726,6 +8642,119 @@ CREATE OR REPLACE VIEW public.vendor_directory AS
     name
    FROM vendors
   WHERE company_id = (( SELECT caller_company() AS caller_company));
+
+CREATE OR REPLACE VIEW public.sem_asset_health WITH (security_invoker = true) AS
+ SELECT a.id AS asset_id,
+    a.tag AS asset_tag,
+    a.name AS asset_name,
+    a.criticality::text AS criticality,
+    a.status_code,
+    a.hierarchy_level,
+    wc.code AS work_center_code,
+    ar.mtbf_days,
+    ar.mttr_hours,
+    a.failure_count_ytd,
+    a.running_hours,
+    ow.open_wo_count,
+    fe.failure_events_12mo,
+    fe.downtime_hrs_12mo,
+    pm.overdue_pm_count,
+    lr.last_reading_at,
+    ar.availability_pct,
+    a.mtbf_days AS mtbf_days_stored,
+    a.mttr_hours AS mttr_hours_stored
+   FROM assets a
+     LEFT JOIN work_centers wc ON wc.id = a.responsible_work_center_id
+     LEFT JOIN sem_asset_reliability ar ON ar.asset_id = a.id
+     LEFT JOIN LATERAL ( SELECT count(*) AS open_wo_count
+           FROM work_orders w
+          WHERE w.asset_id = a.id AND (ers_wo_state(w.status::text) = ANY (ARRAY['open'::text, 'unknown'::text]))) ow ON true
+     LEFT JOIN LATERAL ( SELECT count(*) AS failure_events_12mo,
+            COALESCE(sum(w.actual_downtime_hrs), 0::numeric) AS downtime_hrs_12mo
+           FROM work_orders w
+             JOIN wo_failure_data fd ON fd.wo_id = w.id
+          WHERE w.asset_id = a.id AND w.created_at >= (now() - '365 days'::interval)) fe ON true
+     LEFT JOIN LATERAL ( SELECT count(*) AS overdue_pm_count
+           FROM recurring_work rw
+          WHERE rw.asset_id = a.id::text AND rw.active AND rw.next_due_date IS NOT NULL AND rw.next_due_date < now()) pm ON true
+     LEFT JOIN LATERAL ( SELECT max(rl.created_at) AS last_reading_at
+           FROM reading_logs rl
+          WHERE rl.asset_id = a.id) lr ON true;
+
+CREATE OR REPLACE VIEW public.sem_wo_actual_lines WITH (security_invoker = true) AS
+ SELECT work_order_id,
+    cost_type,
+    cost_center_id,
+    round(sum(amount), 2) AS amount,
+    NULLIF(round(sum(quantity), 3), 0::numeric) AS quantity,
+    max(unit) AS unit
+   FROM ( SELECT l.wo_id AS work_order_id,
+            'LABOR'::text AS cost_type,
+            COALESCE(wc.cost_center_id, r.cost_center_id) AS cost_center_id,
+            sum(COALESCE(l.hours_worked, 0::numeric) * COALESCE(NULLIF(l.rate_per_hour, 0::numeric), t.planned_rate, wc.activity_rate, 0::numeric)) AS amount,
+            sum(COALESCE(l.hours_worked, 0::numeric)) AS quantity,
+            'H'::text AS unit
+           FROM work_order_labor l
+             JOIN job_tasks t ON t.id = l.job_task_id
+             JOIN sem_wo_receiver r ON r.work_order_id = l.wo_id
+             LEFT JOIN work_centers wc ON wc.id = t.work_center_id
+          GROUP BY l.wo_id, (COALESCE(wc.cost_center_id, r.cost_center_id))
+        UNION ALL
+         SELECT l.wo_id,
+            'LABOR'::text AS text,
+            r.cost_center_id,
+            sum(COALESCE(l.hours_worked, 0::numeric) * COALESCE(l.rate_per_hour, 0::numeric)) AS sum,
+            sum(COALESCE(l.hours_worked, 0::numeric)) AS sum,
+            'H'::text AS text
+           FROM work_order_labor l
+             JOIN sem_wo_receiver r ON r.work_order_id = l.wo_id
+          WHERE l.job_task_id IS NULL
+          GROUP BY l.wo_id, r.cost_center_id
+        UNION ALL
+         SELECT p.wo_id,
+            'MATERIAL'::text AS text,
+            r.cost_center_id,
+            sum(COALESCE(p.quantity, 0::numeric) * COALESCE(p.unit_cost, 0::numeric)) AS sum,
+            NULL::numeric AS "numeric",
+            NULL::text AS text
+           FROM work_order_parts p
+             JOIN sem_wo_receiver r ON r.work_order_id = p.wo_id
+          WHERE p.is_planned IS DISTINCT FROM true
+          GROUP BY p.wo_id, r.cost_center_id
+        UNION ALL
+         SELECT pol.work_order_id,
+            'SERVICE'::text AS text,
+            COALESCE(pol.cost_center_id, r.cost_center_id) AS "coalesce",
+            sum(COALESCE(pol.qty_received, 0::numeric) * COALESCE(pol.unit_cost, 0::numeric)) AS sum,
+            sum(COALESCE(pol.qty_received, 0::numeric)) AS sum,
+            max(pol.uom) AS max
+           FROM purchase_order_lines pol
+             JOIN sem_wo_receiver r ON r.work_order_id = pol.work_order_id
+          WHERE pol.work_order_id IS NOT NULL AND pol.line_type = 'SERVICE'::text AND COALESCE(pol.qty_received, 0::numeric) > 0::numeric
+          GROUP BY pol.work_order_id, (COALESCE(pol.cost_center_id, r.cost_center_id))) s
+  GROUP BY work_order_id, cost_type, cost_center_id
+ HAVING round(sum(amount), 2) <> 0::numeric;
+
+CREATE OR REPLACE VIEW public.sem_wo_settlement WITH (security_invoker = true) AS
+ SELECT w.id AS work_order_id,
+    w.wo_number,
+    w.asset_id,
+    ers_wo_state(w.status::text) AS wo_state,
+    COALESCE(a.actual_cost, 0::numeric) AS actual_cost,
+    COALESCE(p.settled_cost, 0::numeric) AS settled_cost,
+    round(COALESCE(a.actual_cost, 0::numeric) - COALESCE(p.settled_cost, 0::numeric), 2) AS unsettled_variance,
+    p.last_settled_at
+   FROM work_orders w
+     LEFT JOIN ( SELECT l.work_order_id,
+            sum(l.amount) AS actual_cost
+           FROM sem_wo_actual_lines l
+          GROUP BY l.work_order_id) a ON a.work_order_id = w.id
+     LEFT JOIN ( SELECT c.work_order_id,
+            sum(c.amount) AS settled_cost,
+            max(c.created_at) AS last_settled_at
+           FROM cost_allocations c
+          WHERE c.source = 'WO_SETTLEMENT'::text
+          GROUP BY c.work_order_id) p ON p.work_order_id = w.id;
 
 
 -- ══════════════════════════════════════════════
@@ -9200,6 +9229,7 @@ ALTER TABLE public.depreciation_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.dictionaries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.entity_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.equipment_installations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.erp_export_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.erp_object_map ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.error_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ers_agent_actions ENABLE ROW LEVEL SECURITY;
@@ -9595,6 +9625,9 @@ DROP POLICY IF EXISTS "auth_all_equipment_installations" ON public.equipment_ins
 CREATE POLICY "auth_all_equipment_installations" ON public.equipment_installations FOR ALL TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true))
     WITH CHECK (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
+DROP POLICY IF EXISTS "erp_export_runs_read" ON public.erp_export_runs;
+CREATE POLICY "erp_export_runs_read" ON public.erp_export_runs FOR SELECT TO authenticated
+    USING ((company_id = ( SELECT caller_company() AS caller_company)));
 DROP POLICY IF EXISTS "erp_map_read" ON public.erp_object_map;
 CREATE POLICY "erp_map_read" ON public.erp_object_map FOR SELECT TO authenticated
     USING (((company_id = ( SELECT caller_company() AS caller_company)) AND true));
@@ -11113,6 +11146,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.en
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.entity_files TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.equipment_installations TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.equipment_installations TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.erp_export_runs TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.erp_export_runs TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.erp_object_map TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.erp_object_map TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.error_logs TO authenticated;
