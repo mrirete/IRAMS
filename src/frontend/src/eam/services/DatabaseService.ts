@@ -4258,7 +4258,12 @@ export class DatabaseService {
                 // re-valued at the blended work-centre rate. Op/WC rates are fallbacks
                 // for legacy rows posted without one.
                 const posted = Number(l.rate_per_hour) || 0;
-                const rate = posted > 0 ? posted : (plannedRate ?? wcRate ?? 0);
+                // `!== 0`, not `> 0`: sem_wo_actual_lines uses NULLIF(rate, 0),
+                // which honours a NEGATIVE posted rate (a credit line). Under
+                // `> 0` the Cost tab would fall back to the planned rate while
+                // the ledger used the negative one — the exact divergence the
+                // mirror comment forbids.
+                const rate = posted !== 0 ? posted : (plannedRate ?? wcRate ?? 0);
                 hours += h;
                 cost += h * rate;
             }
@@ -4625,6 +4630,17 @@ export class DatabaseService {
 
         // 2. The receipt document. Nothing wrote this table before 0248 because
         //    there was no stable line to point at and no number to give it.
+        //
+        //    storage_location is a document field a receiver reads, so it holds
+        //    the location's CODE — the assessment found the uuid being written
+        //    here, which no system on the other side can resolve.
+        let storageLocation: string | null = null;
+        if (params.locationId) {
+            const { data: loc } = await supabase
+                .from('inventory_locations').select('code, name')
+                .eq('id', params.locationId).maybeSingle();
+            storageLocation = loc?.code || loc?.name || params.locationId;
+        }
         const { data: grn, error: grnErr } = await supabase
             .from('goods_receipts')
             .insert({
@@ -4634,7 +4650,7 @@ export class DatabaseService {
                 quantity,
                 unit_cost: Number(line.unit_cost) || 0,
                 total_cost: Number((quantity * (Number(line.unit_cost) || 0)).toFixed(2)),
-                storage_location: params.locationId || null,
+                storage_location: storageLocation,
                 received_date: new Date().toISOString().split('T')[0],
             })
             .select('grn_number')

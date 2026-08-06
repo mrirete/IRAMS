@@ -148,7 +148,12 @@ export class FileEmitter implements Emitter {
         for (const kind of Object.keys(COLUMNS) as DocumentKind[]) {
             const docs = byKind.get(kind);
             if (!docs || docs.length === 0) continue;
-            tables.push({ kind, columns: COLUMNS[kind], rows: docs.map(toRow) });
+            // Sorted by our id so a re-export is byte-identical, not merely
+            // set-identical. The queries carry no ORDER BY, so without this a
+            // re-run shuffles rows and a receiver diffing files sees change
+            // where there is none.
+            const ordered = [...docs].sort((a, b) => a.document_id.localeCompare(b.document_id));
+            tables.push({ kind, columns: COLUMNS[kind], rows: ordered.map(toRow) });
         }
 
         const notes = [
@@ -163,10 +168,22 @@ export class FileEmitter implements Emitter {
     }
 }
 
-/** RFC 4180: quote everything containing a comma, quote or newline; double inner quotes. */
+/**
+ * RFC 4180: quote everything containing a comma, quote or newline; double
+ * inner quotes.
+ *
+ * Plus one guard RFC 4180 does not know about: a TEXT cell starting with
+ * `=`, `+`, `-`, `@` or a tab is a formula the moment Excel opens the file,
+ * and these files go to a finance team who will open them in Excel. A vendor
+ * who names an asset `=WEBSERVICE(...)` must not get code execution in
+ * accounts payable. The standard defence is a leading apostrophe. Numbers are
+ * exempt — they arrive as numbers, and a negative amount is not an attack.
+ */
 export function toCsv(table: RenderedTable): string {
     const esc = (v: string | number): string => {
-        const s = String(v ?? '');
+        if (typeof v === 'number') return String(v);
+        let s = String(v ?? '');
+        if (/^[=+\-@\t]/.test(s)) s = `'${s}`;
         return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = table.columns.join(',');

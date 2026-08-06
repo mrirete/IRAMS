@@ -180,3 +180,60 @@ describe('mapSupplierInvoice', () => {
         expect(ok(mapSupplierInvoice({ ...row, match_status: '' })).match_status).toBe('PENDING');
     });
 });
+
+// ── Business keys over uuids (0277) ─────────────────────────────────────────
+// The assessment found these mappers shipping raw uuids as refs while
+// mapCostPosting shipped codes. A receiver can resolve WO-2026-4526; it can
+// do nothing with 7f3a-…. The views now carry both; the mapper must prefer
+// the key and keep the uuid only as a last resort.
+describe('business keys over uuids', () => {
+    it('a movement ships wo_number, po_code, cost centre code, tag and location code', () => {
+        const doc = (mapGoodsMovement({
+            movement_id: 'mv-9', moved_at: '2026-08-05', movement_type: '261',
+            material_number: 'MAT-1', quantity: 1, cost_at_time: 5, total_value: 5,
+            wo_id: 'uuid-wo', wo_number: 'WO-2026-4526',
+            po_id: 'uuid-po', po_code: 'PO-2026-1001',
+            cost_center_id: 'uuid-cc', cost_center_code: 'CC-MNT-01',
+            asset_id: 'uuid-a', asset_tag: 'PMP-101',
+            location_id: 'uuid-l', location_code: 'STORE-A',
+        }) as any).doc;
+        expect(doc.work_order_ref).toBe('WO-2026-4526');
+        expect(doc.purchase_order_ref).toBe('PO-2026-1001');
+        expect(doc.cost_center_ref).toBe('CC-MNT-01');
+        expect(doc.asset_ref).toBe('PMP-101');
+        expect(doc.storage_location_ref).toBe('STORE-A');
+    });
+
+    it('falls back to the uuid only when the view carries no key', () => {
+        const doc = (mapGoodsMovement({
+            movement_id: 'mv-10', moved_at: '2026-08-05', movement_type: '201',
+            part_number: 'BRG-1', quantity: 1, cost_at_time: 5, total_value: 5,
+            cost_center_id: 'uuid-cc',
+        }) as any).doc;
+        expect(doc.cost_center_ref).toBe('uuid-cc');
+    });
+
+    it('an invoice names its vendor by code, then name, then uuid', () => {
+        const base = {
+            invoice_id: 'i-1', invoice_number: 'INV-1', invoice_date: '2026-08-05',
+            invoice_amount: 100, match_status: 'MATCHED', variance_amount: 0,
+        };
+        expect((mapSupplierInvoice({ ...base, vendor_id: 'u', vendor_name: 'Acme', vendor_code: 'V100' }) as any).doc.supplier_ref).toBe('V100');
+        expect((mapSupplierInvoice({ ...base, vendor_id: 'u', vendor_name: 'Acme' }) as any).doc.supplier_ref).toBe('Acme');
+        expect((mapSupplierInvoice({ ...base, vendor_id: 'u' }) as any).doc.supplier_ref).toBe('u');
+    });
+
+    it('a PO line prefers the material number their system knows', () => {
+        const doc = (mapPurchaseOrderLine({
+            line_id: 'l-1', po_code: 'PO-1', line_no: 10, line_type: 'MATERIAL',
+            description: 'x', qty_ordered: 1, qty_received: 0, unit_cost: 1, line_total: 1,
+            part_number: 'BRG-6205', material_number: 'MAT-9001',
+            supplier_code: 'V100', supplier_name: 'Acme', supplier_id: 'uuid-v',
+            created_at: '2026-08-05T10:00:00Z',
+        }) as any).doc;
+        expect(doc.material_ref).toBe('MAT-9001');
+        expect(doc.supplier_ref).toBe('V100');
+        // The assessment found this shipping '' — the view had no date at all.
+        expect(doc.document_date).toBe('2026-08-05');
+    });
+});

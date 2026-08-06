@@ -132,3 +132,32 @@ describe('batchToFiles', () => {
         expect(batchToFiles(out)).toHaveLength(1);
     });
 });
+
+// ── Hardening found by the assessment (0277) ────────────────────────────────
+describe('csv formula injection', () => {
+    const table = { kind: 'cost_posting' as const, columns: ['a', 'b'], rows: [] as any[] };
+
+    it('neutralises a text cell that Excel would execute', () => {
+        for (const payload of ['=WEBSERVICE("http://x")', '+1+1', '-1+1', '@SUM(A1)', '\tcmd']) {
+            const line = toCsv({ ...table, rows: [{ a: payload, b: 1 }] }).split('\r\n')[1];
+            expect(line.startsWith("'") || line.startsWith("\"'")).toBe(true);
+        }
+    });
+
+    it('does not mangle a negative NUMBER — an amount is not an attack', () => {
+        const line = toCsv({ ...table, rows: [{ a: -150.5, b: 1 }] }).split('\r\n')[1];
+        expect(line).toBe('-150.5,1');
+    });
+});
+
+describe('deterministic ordering', () => {
+    it('renders the same rows in the same order whatever order the query returned', () => {
+        const doc = (id: string) => ({
+            kind: 'cost_posting', document_id: id, document_date: '2026-08-05',
+            cost_type: 'LABOR', amount: 1, currency: 'USD', is_reversal: false,
+        }) as any;
+        const forward = new FileEmitter().render({ from: 'a', to: 'b', documents: [doc('ca-1'), doc('ca-2'), doc('ca-3')], skipped: [] });
+        const shuffled = new FileEmitter().render({ from: 'a', to: 'b', documents: [doc('ca-3'), doc('ca-1'), doc('ca-2')], skipped: [] });
+        expect(toCsv(forward.tables[0])).toBe(toCsv(shuffled.tables[0]));
+    });
+});
