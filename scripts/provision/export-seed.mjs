@@ -33,6 +33,11 @@ const API = 'https://api.supabase.com/v1';
 export const SEED_TABLES = [
     // Org spine — the single default company a tenant starts from.
     'companies',
+    // Which rows are the product's per-tenant seed set (0279). Without this, a
+    // fresh enterprise deployment has an empty registry and ITS self-serve
+    // signup refuses to provision. Ids reference rows that ship in this same
+    // seed file, so the export is self-consistent.
+    'product_seed_rows',
     // Codes and vocabularies.
     'dictionaries',
     'reference_codes',

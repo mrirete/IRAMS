@@ -64,6 +64,7 @@ CREATE SEQUENCE IF NOT EXISTS public.goods_receipt_seq;
 CREATE SEQUENCE IF NOT EXISTS public.hierarchy_config_id_seq;
 CREATE SEQUENCE IF NOT EXISTS public.material_number_seq;
 CREATE SEQUENCE IF NOT EXISTS public.numbering_config_id_seq;
+CREATE SEQUENCE IF NOT EXISTS public.signup_throttle_id_seq;
 CREATE SEQUENCE IF NOT EXISTS public.wo_number_seq;
 
 
@@ -4787,6 +4788,12 @@ CREATE TABLE IF NOT EXISTS public.organization_units (
     company_id uuid DEFAULT caller_company() NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS public.product_seed_rows (
+    id uuid NOT NULL,
+    table_name text NOT NULL,
+    added_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS public.production_downtime_events (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     production_log_id uuid NOT NULL,
@@ -5080,6 +5087,14 @@ CREATE TABLE IF NOT EXISTS public.service_requests (
     authorized_at timestamp with time zone,
     work_center_id uuid,
     company_id uuid DEFAULT caller_company() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.signup_throttle (
+    id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+    ip text NOT NULL,
+    email text,
+    outcome text DEFAULT 'attempt'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.strategy_packages (
@@ -6370,6 +6385,9 @@ DO $$ BEGIN
     ALTER TABLE public.organization_units ADD CONSTRAINT organization_units_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
+    ALTER TABLE public.product_seed_rows ADD CONSTRAINT product_seed_rows_pkey PRIMARY KEY (id);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
     ALTER TABLE public.production_downtime_events ADD CONSTRAINT production_downtime_events_event_type_check CHECK ((event_type = ANY (ARRAY['planned_stop'::text, 'unplanned_stop'::text, 'minor_stop'::text, 'speed_loss'::text, 'startup_reject'::text, 'production_reject'::text])));
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
@@ -6440,6 +6458,9 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.service_requests ADD CONSTRAINT service_requests_request_number_key UNIQUE (company_id, request_number);
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE public.signup_throttle ADD CONSTRAINT signup_throttle_pkey PRIMARY KEY (id);
 EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 DO $$ BEGIN
     ALTER TABLE public.strategy_packages ADD CONSTRAINT strategy_packages_interval_days_check CHECK ((interval_days > 0));
@@ -8062,6 +8083,7 @@ CREATE INDEX IF NOT EXISTS idx_service_requests_asset_id ON public.service_reque
 CREATE INDEX IF NOT EXISTS idx_service_requests_company_id ON public.service_requests USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_service_requests_requester_id ON public.service_requests USING btree (requester_id);
 CREATE INDEX IF NOT EXISTS idx_service_requests_work_center ON public.service_requests USING btree (work_center_id);
+CREATE INDEX IF NOT EXISTS idx_signup_throttle_recent ON public.signup_throttle USING btree (ip, created_at);
 CREATE INDEX IF NOT EXISTS idx_strategy_packages_company_id ON public.strategy_packages USING btree (company_id);
 CREATE INDEX IF NOT EXISTS idx_strategy_packages_strategy ON public.strategy_packages USING btree (strategy_id);
 CREATE INDEX IF NOT EXISTS idx_task_library_files_company_id ON public.task_library_files USING btree (company_id);
@@ -9328,6 +9350,7 @@ ALTER TABLE public.numbering_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.numbering_config_overrides ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.organization_unit_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.organization_units ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_seed_rows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_downtime_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.production_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ptw_approvals ENABLE ROW LEVEL SECURITY;
@@ -9344,6 +9367,7 @@ ALTER TABLE public.role_permissions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.schema_migrations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.semantic_catalog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.signup_throttle ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.strategy_packages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_library_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_library_inventory ENABLE ROW LEVEL SECURITY;
@@ -11352,6 +11376,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.or
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.organization_unit_members TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.organization_units TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.organization_units TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.product_seed_rows TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.product_seed_rows TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_downtime_events TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_downtime_events TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.production_logs TO authenticated;
@@ -11418,6 +11444,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.se
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.semantic_catalog TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.service_requests TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.service_requests TO service_role;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.signup_throttle TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.signup_throttle TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.strategy_packages TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.strategy_packages TO service_role;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.task_library_files TO authenticated;
