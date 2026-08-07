@@ -53,6 +53,7 @@ const queryClient = new QueryClient({
 const EamLogin = lazyWithReload(() => import('./eam/pages/Login').then(m => ({ default: m.Login })));
 const EamSignup = lazyWithReload(() => import('./eam/pages/Signup').then(m => ({ default: m.Signup })));
 const EamAcceptInvite = lazyWithReload(() => import('./eam/pages/AcceptInvite').then(m => ({ default: m.AcceptInvite })));
+const EamPrivacy = lazyWithReload(() => import('./eam/pages/Privacy').then(m => ({ default: m.Privacy })));
 const EamDashboard = lazyWithReload(() => import('./eam/pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const EamMyWork = lazyWithReload(() => import('./eam/pages/MyWork').then(m => ({ default: m.MyWork })));
 const EamAssets = lazyWithReload(() => import('./eam/pages/Assets').then(m => ({ default: m.Assets })));
@@ -175,6 +176,8 @@ function App() {
                     <Route path="/signup" element={<Suspense fallback={<Loading />}><EamSignup /></Suspense>} />
                     {/* Public — invite acceptance (the token in the URL is the credential) */}
                     <Route path="/invite/:token" element={<Suspense fallback={<Loading />}><EamAcceptInvite /></Suspense>} />
+                    {/* Public — GDPR Art. 13/14 notice; source of truth is docs/compliance/privacy-notice.md */}
+                    <Route path="/privacy" element={<Suspense fallback={<Loading />}><EamPrivacy /></Suspense>} />
                     <Route
                       path="*"
                       element={

@@ -407,6 +407,12 @@ export const Login: React.FC = () => {
                         )}
                     </div>
 
+                    {/* Privacy footer — GDPR Art. 13: the notice must be reachable where data collection starts */}
+                    <p className="text-center mt-5 text-[12px] font-medium" style={{ color: '#94a3b8' }}>
+                        <a href="/privacy" className="hover:underline" style={{ color: '#64748b' }}>Privacy Notice</a>
+                        <span className="mx-2">·</span>
+                        © {new Date().getFullYear()} Relantern
+                    </p>
 
                 </div>
             </div>

@@ -170,6 +170,12 @@ export const Signup: React.FC = () => {
                                 Starter plan — work management, assets, inventory, people and finance.
                                 Upgrade any time by talking to us.
                             </p>
+
+                            {/* GDPR Art. 13 — informed at the moment of collection */}
+                            <p className="text-[11px] font-medium text-center" style={{ color: '#94a3b8' }}>
+                                By creating a workspace you agree to how we handle data, described in the{' '}
+                                <a href="/privacy" className="underline" style={{ color: '#64748b' }}>Privacy Notice</a>.
+                            </p>
                         </form>
                     </div>
                 </div>
