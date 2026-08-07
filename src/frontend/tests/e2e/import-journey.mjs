@@ -34,7 +34,7 @@ const REF = new URL(SB).hostname.split('.')[0];
 const PROJECT = process.env.SUPABASE_PROJECT_REF || REF;
 const TOK = process.env.SUPABASE_ACCESS_TOKEN;
 // Only an admin can commit — import_batches is admin-only by RLS.
-const ADMIN = { email: 'admin001@cainergy.com', password: process.env.SMOKE_PASSWORD || 'Password123!' };
+const ADMIN = { email: 'admin001@cainergy.com', password: process.env.IREAMS_ADMIN_PASSWORD };
 
 const PREFIX = 'ZZIMPORTTEST';
 const N_ASSETS = 4;

@@ -27,7 +27,7 @@ const BASE = process.env.BASE || 'https://irams.vercel.app';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://hacrebcfvyqdnjvilhqc.supabase.co';
 const ANON = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhY3JlYmNmdnlxZG5qdmlsaHFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1Mjk5ODAsImV4cCI6MjA4NzEwNTk4MH0.F-2Fordc833NAuprdRBmm5s-Bd5fQsO0vxUK7_06AJ0';
 const REF = new URL(SUPABASE_URL).hostname.split('.')[0];
-const PW = process.env.SMOKE_PASSWORD || 'Password123!';
+const PW = process.env.SMOKE_PASSWORD || process.env.IREAMS_TEST_PASSWORD;
 
 const ROLES = JSON.parse(process.env.SMOKE_LOGINS_JSON || JSON.stringify([
     { label: 'SUPER_ADMIN', email: 'admin001@cainergy.com' },

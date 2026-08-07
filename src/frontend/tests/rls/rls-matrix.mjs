@@ -49,16 +49,16 @@ const SB = process.env.VITE_SUPABASE_URL || 'https://hacrebcfvyqdnjvilhqc.supaba
 const ANON = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhY3JlYmNmdnlxZG5qdmlsaHFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1Mjk5ODAsImV4cCI6MjA4NzEwNTk4MH0.F-2Fordc833NAuprdRBmm5s-Bd5fQsO0vxUK7_06AJ0';
 
 /** Admin baseline account — must be able to read everything. */
-const ADMIN = { email: 'admin001@cainergy.com', password: 'Password123!' };
+const ADMIN = { email: 'admin001@cainergy.com', password: process.env.IREAMS_ADMIN_PASSWORD };
 
 /**
  * Roles to probe. Every entry must be a REAL login: this harness exists to test
  * the database's answer to a real token, so there is nothing to simulate.
  */
 const LOGINS = JSON.parse(process.env.RLS_LOGINS_JSON || JSON.stringify([
-    { label: 'RELIABILITY_ENG', email: 'k.syrus@cainergy.com', password: 'Password123!' },
-    { label: 'TECHNICIAN', email: 'bea@cainergy.com', password: 'Password123!' },
-    { label: 'REQUESTER', email: 'requester01@cainergy.com', password: 'Password123!' },
+    { label: 'RELIABILITY_ENG', email: 'k.syrus@cainergy.com', password: process.env.IREAMS_TEST_PASSWORD },
+    { label: 'TECHNICIAN', email: 'bea@cainergy.com', password: process.env.IREAMS_TEST_PASSWORD },
+    { label: 'REQUESTER', email: 'requester01@cainergy.com', password: process.env.IREAMS_TEST_PASSWORD },
 ]));
 
 /**

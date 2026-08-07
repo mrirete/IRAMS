@@ -36,7 +36,7 @@ const mgmt = async (sql) => {
 const signIn = async (email) => {
     const r = await fetch(`${SB}/auth/v1/token?grant_type=password`, {
         method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: 'Password123!' }),
+        body: JSON.stringify({ email, password: (email === 'admin001@cainergy.com' ? process.env.IREAMS_ADMIN_PASSWORD : process.env.IREAMS_TEST_PASSWORD) }),
     });
     return r.ok ? (await r.json()).access_token : null;
 };

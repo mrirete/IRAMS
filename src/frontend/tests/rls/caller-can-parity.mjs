@@ -127,7 +127,7 @@ const LOGINS = [
 for (const [label, email] of LOGINS) {
     const auth = await (await fetch(`${SB}/auth/v1/token?grant_type=password`, {
         method: 'POST', headers: { apikey: ANON, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: 'Password123!' }),
+        body: JSON.stringify({ email, password: (email === 'admin001@cainergy.com' ? process.env.IREAMS_ADMIN_PASSWORD : process.env.IREAMS_TEST_PASSWORD) }),
     })).json();
     if (!auth.access_token) { console.log(`   ⚠ ${label}: sign-in failed, skipped`); continue; }
 

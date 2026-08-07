@@ -246,7 +246,7 @@ check(eff.ok && eff.body.length === 1 && eff.body[0].description === `${code} ov
 
 // …and the ORIGIN admin cannot see any of it.
 console.log('Verification — as the ORIGIN admin:');
-const originJwt = await signIn('admin001@cainergy.com', 'Password123!');
+const originJwt = await signIn('admin001@cainergy.com', process.env.IREAMS_ADMIN_PASSWORD);
 if (originJwt) {
     const asOrigin = rest(originJwt);
     const leak = await asOrigin(`dictionaries?select=id&description=eq.${encodeURIComponent(`${code} override`)}`);
