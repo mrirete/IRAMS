@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Camera, Upload, X, Loader2 } from 'lucide-react';
 import { DatabaseService } from '../../services/DatabaseService';
+import { StorageImage } from './StorageImage';
 
 /**
  * Compress an image file client-side using canvas.
@@ -210,7 +211,7 @@ export const ImageCapture: React.FC<ImageCaptureProps> = ({
                     <Loader2 size={24} className="text-blue-500 animate-spin" />
                 ) : currentImage ? (
                     <>
-                        <img src={currentImage} alt="Preview" className="w-full h-full object-cover" />
+                        <StorageImage value={currentImage} alt="Preview" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                             <Camera size={20} className="text-white" />
                         </div>

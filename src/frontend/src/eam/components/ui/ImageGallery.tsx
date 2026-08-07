@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Camera, Plus, Trash2, X, ZoomIn, Loader2, Clock } from 'lucide-react';
+import { StorageImage } from './StorageImage';
 import { DatabaseService } from '../../services/DatabaseService';
 import { ImageCapture } from './ImageCapture';
 
@@ -174,8 +175,8 @@ export const ImageGallery: React.FC<ImageGalleryProps> = ({
                             key={img.id}
                             className="group relative aspect-square rounded-lg overflow-hidden border border-slate-200 bg-slate-100 cursor-pointer"
                         >
-                            <img
-                                src={img.url}
+                            <StorageImage
+                                value={img.url}
                                 alt={img.name}
                                 className="w-full h-full object-cover"
                                 loading="lazy"
@@ -223,8 +224,8 @@ export const ImageGallery: React.FC<ImageGalleryProps> = ({
                     >
                         <X size={28} />
                     </button>
-                    <img
-                        src={lightboxUrl}
+                    <StorageImage
+                        value={lightboxUrl}
                         alt="Full size"
                         className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl"
                         onClick={e => e.stopPropagation()}

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { Paperclip, Plus, Trash2, Download, Loader2, X, Edit3, Filter, Tag, Link2 } from 'lucide-react';
 import { WorkOrder, JobFile, JobTask, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
+import { openStorageRef } from '../../lib/storageUrl';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -330,8 +331,10 @@ export const FilesTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrde
                         <button onClick={() => setEditingFileId(f.id)} title="Edit metadata"
                             className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition"><Edit3 size={14} /></button>
                     )}
-                    <a href={f.url} target="_blank" rel="noreferrer" title="Download / View"
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"><Download size={14} /></a>
+                    {/* Signed on click: the bucket is private (0235), so there
+                        is no durable href to put in the anchor. */}
+                    <button onClick={() => void openStorageRef(f.url)} title="Download / View"
+                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"><Download size={14} /></button>
                     {!isReadonly && (
                         <button onClick={() => removeFile(f)} title="Delete"
                             className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition"><Trash2 size={14} /></button>

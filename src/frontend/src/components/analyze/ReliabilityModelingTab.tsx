@@ -18,6 +18,7 @@ import ReliabilityBlockDiagram from './ReliabilityBlockDiagram';
 import PIDViewer from './PIDViewer';
 import PidAskPanel from './PidAskPanel';
 import { useHistory } from '../../hooks/useHistory';
+import { useStorageUrl } from '../../hooks/useStorageUrl';
 import analyzeService from '../../eam/services/AnalyzeService';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 import { pdfToImageBlob } from '../../utils/pdfToImage';
@@ -285,6 +286,11 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
     // Convenience destructures
     const { blocks: rbdBlocks, groups: rbdGroups } = rbd.state;
     const { equipment: pidEquipment, connections: pidConnections, backgroundImage: pidBg } = pid.state;
+
+    // pidBg is a stored `bucket/path` ref (0235); the SVG needs a real URL.
+    // Resolved here rather than inside PIDViewer so the viewer stays a pure
+    // renderer — it is also driven by callers that pass a data: URL directly.
+    const { url: pidBgUrl } = useStorageUrl(pidBg);
 
     // ═══════════════════════════════════════════════════════
     //  Keyboard shortcuts  (Ctrl+Z / Ctrl+Y / Delete)
@@ -732,8 +738,9 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                 uploadFile = new File([pngBlob], file.name.replace(/\.pdf$/i, '.png'), { type: 'image/png' });
             }
 
-            const publicUrl = await db.uploadPIDImage(uploadFile);
-            pid.set(prev => ({ ...prev, backgroundImage: publicUrl }));
+            // A `bucket/path` ref, not a URL — the bucket is private (0235).
+            const ref = await db.uploadPIDImage(uploadFile);
+            pid.set(prev => ({ ...prev, backgroundImage: ref }));
         } catch (err) {
             console.error('P&ID image upload failed:', err);
             // Fallback: read as dataURL so the user isn't blocked
@@ -1437,7 +1444,7 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                         equipment={pidEquipment}
                         connections={pidConnections}
                         showHeatMap
-                        backgroundImage={pidBg}
+                        backgroundImage={pidBgUrl}
                         onUploadImage={pidUploadImage}
                         onAddEquipment={pidAddEquipment}
                         onRemoveEquipment={pidRemoveEquipment}

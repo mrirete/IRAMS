@@ -1,5 +1,6 @@
 import React from 'react';
 import { InstructionBlock } from '../types';
+import { StorageImage } from './ui/StorageImage';
 import {
     CheckSquare, Square, Camera, PenTool, AlertTriangle, AlertOctagon,
     CheckCircle, XCircle, Activity, Lock, Link as LinkIcon,
@@ -330,7 +331,7 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                             <div className="grid grid-cols-3 gap-2 mb-2">
                                 {block.photoUrls.map((url, idx) => (
                                     <div key={idx} className="aspect-square bg-slate-100 rounded-lg border border-slate-200 flex items-center justify-center overflow-hidden">
-                                        <img src={url} alt={`Evidence ${idx + 1}`} className="object-cover w-full h-full" />
+                                        <StorageImage value={url} alt={`Evidence ${idx + 1}`} className="object-cover w-full h-full" />
                                     </div>
                                 ))}
                             </div>

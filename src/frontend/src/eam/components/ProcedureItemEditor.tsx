@@ -1,5 +1,7 @@
 import React from 'react';
 import { InstructionBlock, InstructionBlockType, ProcedureMedia } from '../types';
+import { StorageImage } from './ui/StorageImage';
+import { openStorageRef } from '../../lib/storageUrl';
 import {
     Type, CheckSquare, Hash, Calendar, Camera, PenTool, Activity, Gauge,
     AlertTriangle, Lock, Trash2, ListChecks, HelpCircle, Link as LinkIcon,
@@ -563,9 +565,9 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                         {block.media.map(m => (
                             <div key={m.id} className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-100">
                                 {m.type === 'IMAGE' ? (
-                                    <a href={m.url} target="_blank" rel="noreferrer" className="shrink-0">
-                                        <img src={m.url} alt={m.label || 'Reference image'} className="w-9 h-9 rounded object-cover border border-slate-200" />
-                                    </a>
+                                    <button type="button" onClick={() => void openStorageRef(m.url)} className="shrink-0">
+                                        <StorageImage value={m.url} alt={m.label || 'Reference image'} className="w-9 h-9 rounded object-cover border border-slate-200" />
+                                    </button>
                                 ) : (
                                     <span className="text-slate-400"><LinkIcon size={10} /></span>
                                 )}

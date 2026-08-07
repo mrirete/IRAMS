@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, X, Package, AlertTriangle, CheckCircle } from 'lucide-react';
+import { StorageImage } from '../ui/StorageImage';
 import { DatabaseService } from '../../services/DatabaseService';
 
 interface InventoryPickerProps {
@@ -90,7 +91,7 @@ export const InventoryPicker: React.FC<InventoryPickerProps> = ({ isOpen, onClos
                             >
                                 <div className="flex items-center gap-3">
                                     <div className={`w-10 h-10 rounded bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs border border-slate-200`}>
-                                        {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover rounded" /> : <Package size={16} />}
+                                        {item.image ? <StorageImage value={item.image} alt="" className="w-full h-full object-cover rounded" fallback={<Package size={16} />} /> : <Package size={16} />}
                                     </div>
                                     <div>
                                         <div className="font-bold text-slate-800 text-sm group-hover:text-blue-600 transition">{item.description}</div>

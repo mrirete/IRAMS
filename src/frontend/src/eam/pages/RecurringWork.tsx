@@ -10,6 +10,7 @@ import {
     PauseCircle, PlayCircle, BarChart3, Eye, TrendingUp, Upload, BookOpen
 } from 'lucide-react';
 import { AskRelanternButton } from '../components/AskRelanternButton';
+import { openStorageRef } from '../../lib/storageUrl';
 import { aiContextService } from '../services/AIContextService';
 import { MOCK_RECURRING_JOBS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_WORK_ORDERS } from '../constants';
 import { RecurringJob, Asset, WorkOrderType, JobJSA, JobLabor, JobInventory, JobFile, JobTask, InstructionBlock, Contact, JSAHazard, GenerationRule, LibraryTask } from '../types';
@@ -3227,9 +3228,9 @@ const FilesTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                                         />
                                     </div>
                                     {f.url && (
-                                        <a href={f.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-blue-600 hover:underline inline-flex items-center gap-1">
+                                        <button type="button" onClick={() => void openStorageRef(f.url)} className="text-[10px] text-blue-600 hover:underline inline-flex items-center gap-1">
                                             <FileText size={10} /> Open / Download
-                                        </a>
+                                        </button>
                                     )}
                                 </div>
                             </div>

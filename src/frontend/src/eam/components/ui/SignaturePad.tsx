@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { PenTool, RotateCcw } from 'lucide-react';
+import { StorageImage } from './StorageImage';
 
 interface SignaturePadProps {
     onCapture: (dataUrl: string) => void;
@@ -104,7 +105,7 @@ export const SignaturePad: React.FC<SignaturePadProps> = ({ onCapture, existingS
             <div className="relative">
                 {label && <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">{label}</p>}
                 <div className="border border-slate-200 rounded-lg bg-slate-50 p-2 flex items-center gap-3">
-                    <img src={existingSignature} alt="Signature" className="h-12 object-contain flex-1" />
+                    <StorageImage value={existingSignature} alt="Signature" className="h-12 object-contain flex-1" />
                     {!disabled && (
                         <button
                             onClick={() => onCapture('')}

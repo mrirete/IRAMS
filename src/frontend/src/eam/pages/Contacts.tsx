@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { StorageImage } from '../components/ui/StorageImage';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import {
@@ -564,7 +565,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                         onClick={() => { setSelectedContact(contact); setSelectedContactIds(new Set()); }}
                                     >
                                         <div className={`mobile-card-contact-avatar ${contact.flags?.isVirtual ? 'bg-orange-100 text-orange-600' : 'bg-slate-200 text-slate-500'}`}>
-                                            {contact.image ? <img src={contact.image} alt="" className="h-full w-full object-cover" /> : (contact.firstName?.charAt(0) || contact.name?.charAt(0) || '?')}
+                                            {contact.image ? <StorageImage value={contact.image} alt="" className="h-full w-full object-cover" fallback={<>{contact.firstName?.charAt(0) || contact.name?.charAt(0) || '?'}</>} /> : (contact.firstName?.charAt(0) || contact.name?.charAt(0) || '?')}
                                         </div>
                                         <div className="mobile-card-contact-body">
                                             <div className="mobile-card-contact-name">{contact.name}</div>
@@ -629,7 +630,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                                     <td className="px-6 py-4 whitespace-nowrap">
                                                         <div className="flex items-center">
                                                             <div className={"flex-shrink-0 h-10 w-10 rounded-full flex items-center justify-center font-bold overflow-hidden " + (contact.flags?.isVirtual ? "bg-orange-100 text-orange-600" : "bg-slate-200 text-slate-500")}>
-                                                                {contact.image ? <img src={contact.image} alt="" className="h-full w-full object-cover" /> : (contact.firstName?.charAt(0) || contact.name?.charAt(0) || '?')}
+                                                                {contact.image ? <StorageImage value={contact.image} alt="" className="h-full w-full object-cover" fallback={<>{contact.firstName?.charAt(0) || contact.name?.charAt(0) || '?'}</>} /> : (contact.firstName?.charAt(0) || contact.name?.charAt(0) || '?')}
                                                             </div>
                                                             <div className="ml-4">
                                                                 <div className="text-sm font-medium text-slate-900">{contact.name}</div>
@@ -726,7 +727,7 @@ export const Contacts: React.FC<ContactsProps> = ({ onAnalyze }) => {
                                 icon={
                                     <div className="h-10 w-10 rounded-full overflow-hidden border border-slate-200 bg-white flex items-center justify-center flex-shrink-0">
                                         {selectedContact.image ? (
-                                            <img src={selectedContact.image} alt="" className="h-full w-full object-cover" />
+                                            <StorageImage value={selectedContact.image} alt="" className="h-full w-full object-cover" />
                                         ) : (
                                             <span className="text-lg font-bold text-slate-400">
                                                 {(selectedContact.firstName?.[0] || selectedContact.name?.[0] || '?').toUpperCase()}

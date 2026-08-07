@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { StorageImage } from '../components/ui/StorageImage';
 import {
     Plus, Search, Clock, CheckCircle,
     X, User, Camera, Zap, Trash2, Save,
@@ -1202,7 +1203,7 @@ const RequestDetail: React.FC<{
                                 <div className="grid grid-cols-2 gap-2">
                                     {request.files.map(f => (
                                         <div key={f.id} className="aspect-square bg-slate-100 rounded-lg overflow-hidden border border-slate-200 relative group cursor-pointer">
-                                            <img src={f.url} alt={f.name} className="w-full h-full object-cover" />
+                                            <StorageImage value={f.url} alt={f.name} className="w-full h-full object-cover" />
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold">
                                                 View
                                             </div>

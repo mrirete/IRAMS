@@ -12,6 +12,7 @@ import {
     RecurringWorkRecord
 } from '../schema';
 import { DataMapper } from './DataMapper';
+import { parseStorageRef, invalidateStorageUrl, callerCompanyId } from '../../lib/storageUrl';
 import {
     DictionaryType,
     DictionaryEntry,
@@ -324,32 +325,43 @@ export class DatabaseService {
 
     /**
      * Generic image upload to any Supabase Storage bucket.
+     *
+     * Returns a `bucket/path` REFERENCE, not a URL. The buckets are private as
+     * of 0235, so the only URL that would work is a signed one — and signed
+     * URLs expire, which makes them unsafe to persist in a column. Render with
+     * <StorageImage value={ref} /> or useStorageUrl(ref).
+     *
      * @param file  The file to upload
      * @param bucket  Storage bucket name (e.g. 'assets', 'avatars')
      * @param prefix  Filename prefix (e.g. 'asset_', 'contact_', 'wo_')
      */
     public async uploadImage(file: File, bucket: string, prefix: string = ''): Promise<string> {
         const fileExt = file.name.split('.').pop() || 'jpg';
-        const fileName = `${prefix}${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const company = await callerCompanyId();
+        const objectPath = `${company}/${prefix}${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
 
         const { error: uploadError } = await supabase.storage
             .from(bucket)
-            .upload(fileName, file, { upsert: true });
+            .upload(objectPath, file, { upsert: true });
 
         if (uploadError) {
             throw uploadError;
         }
 
-        const { data } = supabase.storage.from(bucket).getPublicUrl(fileName);
-        return data.publicUrl;
+        return `${bucket}/${objectPath}`;
     }
 
-    /** Delete an image from Supabase Storage */
+    /** Delete an image from Supabase Storage. Accepts a `bucket/path` ref or a legacy URL. */
     public async deleteImage(bucket: string, path: string): Promise<void> {
-        // Extract just the file name from a full public URL if needed
-        const fileName = path.includes('/') ? path.split('/').pop()! : path;
-        const { error } = await supabase.storage.from(bucket).remove([fileName]);
+        // Objects are keyed `<company_id>/<file>` since 0281, so the object
+        // path is everything AFTER the bucket — not just the last segment.
+        // parseStorageRef handles the ref form, the legacy public-URL form and
+        // a bare name alike.
+        const ref = parseStorageRef(path.includes('/') ? path : `${bucket}/${path}`);
+        const objectPath = ref?.path ?? path;
+        const { error } = await supabase.storage.from(bucket).remove([objectPath]);
         if (error) console.error('Failed to delete image:', error);
+        invalidateStorageUrl(path);
     }
 
     /** Convenience: upload avatar to avatars bucket */
@@ -370,14 +382,15 @@ export class DatabaseService {
     /**
      * Generic file upload to any Supabase Storage bucket (supports all file types).
      * Unlike uploadImage, this does NOT compress/convert — preserves original format.
+     * Returns a `bucket/path` reference (see uploadImage for why, post-0235).
      * @param file    The file to upload (PDF, XLSX, DOCX, etc.)
      * @param bucket  Storage bucket name
      * @param prefix  Filename prefix (e.g. 'wo_doc_', 'sr_doc_')
      */
     public async uploadFile(file: File, bucket: string, prefix: string = ''): Promise<string> {
-        const fileExt = file.name.split('.').pop() || 'bin';
         const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\s+/g, '_');
-        const fileName = `${prefix}${Date.now()}_${sanitizedName}`;
+        const company = await callerCompanyId();
+        const fileName = `${company}/${prefix}${Date.now()}_${sanitizedName}`;
 
         const { error: uploadError } = await supabase.storage
             .from(bucket)
@@ -390,8 +403,7 @@ export class DatabaseService {
             throw uploadError;
         }
 
-        const { data } = supabase.storage.from(bucket).getPublicUrl(fileName);
-        return data.publicUrl;
+        return `${bucket}/${fileName}`;
     }
 
     /** Convenience: upload work order document to work-order-docs bucket */
@@ -404,19 +416,24 @@ export class DatabaseService {
      * capture gets a fresh path: the bucket's RLS allows INSERT but 403s an
      * overwrite (x-upsert on an existing object), so paths are never reused.
      * The object behind the signature being replaced is removed best-effort.
+     *
+     * Returns a `bucket/path` reference (post-0235). `previousRef` accepts
+     * either that form or a legacy public URL — signoffs live in JSONB, which
+     * 0235 deliberately did not rewrite, so both shapes are in the wild.
      */
-    public async uploadJSASignature(woId: string, role: string, dataUrl: string, previousUrl?: string): Promise<string> {
+    public async uploadJSASignature(woId: string, role: string, dataUrl: string, previousRef?: string): Promise<string> {
         const blob = await (await fetch(dataUrl)).blob();
-        const path = `jsa_sig_${woId}_${role.replace(/\W+/g, '_')}_${Date.now()}.png`;
+        const company = await callerCompanyId();
+        const path = `${company}/jsa_sig_${woId}_${role.replace(/\W+/g, '_')}_${Date.now()}.png`;
         const { error } = await supabase.storage.from('work-order-docs')
             .upload(path, blob, { contentType: 'image/png' });
         if (error) throw error;
-        if (previousUrl && previousUrl.includes('/work-order-docs/')) {
-            const prev = previousUrl.split('/work-order-docs/')[1]?.split('?')[0];
-            if (prev) void supabase.storage.from('work-order-docs').remove([prev]);
+        const prev = parseStorageRef(previousRef);
+        if (prev?.bucket === 'work-order-docs') {
+            void supabase.storage.from('work-order-docs').remove([prev.path]);
+            invalidateStorageUrl(previousRef);
         }
-        const { data } = supabase.storage.from('work-order-docs').getPublicUrl(path);
-        return data.publicUrl;
+        return `work-order-docs/${path}`;
     }
 
     public async deleteContact(contactId: string): Promise<void> {

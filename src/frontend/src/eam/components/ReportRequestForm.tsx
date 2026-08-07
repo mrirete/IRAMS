@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { StorageImage } from './ui/StorageImage';
 import {
     X, Camera, Mic, AlertTriangle, CheckCircle2, Package, MapPin,
     Search, ChevronDown, ChevronRight, QrCode,
@@ -593,7 +594,7 @@ export const ReportRequestForm: React.FC<{
                         <div className="grid grid-cols-4 gap-2">
                             {files.map(f => (
                                 <div key={f.id} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200">
-                                    <img src={f.url} alt="Attachment" className="w-full h-full object-cover" />
+                                    <StorageImage value={f.url} alt="Attachment" className="w-full h-full object-cover" />
                                     <button
                                         onClick={() => setFiles(files.filter(file => file.id !== f.id))}
                                         className="absolute top-1 right-1 bg-black/50 hover:bg-red-600 text-white p-1 rounded-full backdrop-blur-sm"

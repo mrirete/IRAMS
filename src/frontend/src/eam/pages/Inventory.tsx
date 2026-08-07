@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { StorageImage } from '../components/ui/StorageImage';
 import {
     Search, Plus, Filter, Save, Package, Truck, Layers,
     FileText, ShoppingCart, History, Box, Barcode,
@@ -2653,7 +2654,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                                         />
                                     </div>
                                     <div className="w-10 h-10 bg-slate-200 rounded flex-shrink-0 flex items-center justify-center text-slate-500">
-                                        {item.image ? <img src={item.image} alt="" className="w-full h-full object-cover rounded" /> : <Box size={20} />}
+                                        {item.image ? <StorageImage value={item.image} alt="" className="w-full h-full object-cover rounded" fallback={<Box size={20} />} /> : <Box size={20} />}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         {/* Row 1: Code + Badges */}
@@ -2700,7 +2701,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         title={selectedItem.code}
                         subtitle={selectedItem.description}
                         icon={selectedItem.image
-                            ? <img src={selectedItem.image} alt="Preview" className="w-full h-full object-cover rounded" />
+                            ? <StorageImage value={selectedItem.image} alt="Preview" className="w-full h-full object-cover rounded" />
                             : <Package size={18} />
                         }
                         onClose={() => setSelectedItem(null)}
