@@ -75,6 +75,19 @@ equivalent obligations and remains liable for sub-processors.
 workspace on written request; disabling removes Google from the active flow
 for that Controller.
 
+## 5a. CCPA/CPRA service-provider terms (US customers)
+
+Where the California Consumer Privacy Act (as amended) applies to Controller,
+Processor acts as a **"service provider"**: Processor shall not (a) sell or
+share the personal information; (b) retain, use, or disclose it for any
+purpose other than performing the services under the agreement, or outside
+the direct business relationship with Controller; or (c) combine it with
+personal information received from other customers or collected on its own
+behalf, except as the CCPA permits for service providers. Processor certifies
+that it understands these restrictions. Equivalent state-law terms (Virginia,
+Colorado, Texas, and successors) are deemed incorporated where they apply to
+Controller.
+
 ## 6. Personal data breach (Art. 33/34 support)
 
 Processor notifies Controller **without undue delay and within 48 hours**
@@ -82,6 +95,13 @@ of becoming aware of a personal data breach affecting Controller data, with
 the Art. 33(3) particulars as they become available, and reasonably assists
 with notifications. `[DECIDE: 48h is the offered SLA — confirm it is
 operationally honest before signing]`
+
+The same notification feeds Controller's obligations under other regimes it
+is subject to — e.g. the Australian Notifiable Data Breaches scheme (OAIC),
+Canada's PIPEDA (OPC, and the 24-month breach record), and US state
+attorney-general notification statutes — and Processor provides the
+particulars those regimes require of the Controller to the extent Processor
+holds them.
 
 ## 7. Assistance (Art. 28(3)(e), (f))
 

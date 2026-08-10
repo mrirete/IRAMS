@@ -37,6 +37,7 @@ without identifiability.
 | Signup/tenancy data (C-1) | Account life + `[DECIDE: 30–90 days]` | Workspace termination runbook |
 | Whole workspace (termination) | Export offered, then deletion within `[DECIDE: 30/60/90]` days per DPA §8 | `[BUILD: tenant-teardown script — inverse of provision]` |
 | Backups | Supabase PITR/backup window `[DECIDE: confirm plan's window and state it — erased data ages out of backups within that window]` | Provider-managed |
+| Personal-data breach records | **24 months minimum** (PIPEDA s.10.3 requires it; also serves Art. 33(5) GDPR documentation duty) — record every breach, reportable or not | DSR/incident log; never swept |
 
 ## Erasure mechanics (what actually runs)
 

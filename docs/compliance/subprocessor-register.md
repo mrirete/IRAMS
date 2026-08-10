@@ -26,6 +26,17 @@ the DPA's sub-processor clause (30 days to object).
 - **Playwright/test tooling** — test accounts only (`*@cainergy.com`), no
   real-person data.
 
+## Use by customers outside the EU
+
+This register plus the executed DPA are the artefacts non-EU customers need
+for their own accountability duties: for Australian customers, the
+"reasonable steps" evidence APP 8 requires before disclosing personal
+information to an overseas recipient (they remain accountable for us — this
+register is what their privacy team files); for Canadian customers, the
+PIPEDA openness/accountability record for cross-border processing; for US
+customers under CCPA, the service-provider chain. Hand it over proactively in
+procurement — it shortens security review.
+
 ## Customer notification log
 
 | Date | Change | Notified |
