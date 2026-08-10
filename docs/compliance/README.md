@@ -13,6 +13,8 @@ statement is aspirational or needs a legal decision, it is marked `[DECIDE: …]
 | [data-processing-addendum.md](data-processing-addendum.md) | Art. 28(3) — processor terms | Enterprise procurement |
 | [data-retention-policy.md](data-retention-policy.md) | Art. 5(1)(e), Art. 17 | ISO A.8.10, SOC 2 C1.2 |
 | [dsr-procedure.md](dsr-procedure.md) | Art. 12–23 — data subject rights | ISO A.5.34 |
+| [isms/](isms/) | — | **ISO 27001:2022 ISMS**: manual+scope, policy, risk register, SoA (93 controls), incident response, audit/review programme |
+| [soc2-roadmap.md](soc2-roadmap.md) | — | SOC 2 Type 2 path: control map, phases, window rules |
 
 ## Operating rules
 
