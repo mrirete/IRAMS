@@ -538,6 +538,8 @@ export class DataMapper {
                     remedyCode: fd.remedy_code || undefined,
                     detectionCode: fd.detection_code || undefined,
                     objectPart: fd.object_part || undefined,
+                    failedBomItemId: fd.failed_bom_item_id || undefined,
+                    failedPartNo: fd.failed_part_no || undefined,
                     comments: fd.comments || undefined,
                     localImpact: fd.local_impact || undefined,
                     plantWideImpact: fd.plant_wide_impact || undefined,

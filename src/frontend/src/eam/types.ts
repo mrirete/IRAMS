@@ -732,7 +732,9 @@ export interface WorkOrder {
     failureCause?: string; // ISO 14224 Failure Cause (Why it happened)
     remedyCode?: string;
     detectionCode?: string; // How it was found (ISO 14224 Table B.4; DETECTION_METHOD dictionary)
-    objectPart?: string;    // Which component failed (SAP catalog B analogue; free text)
+    objectPart?: string;    // Which component failed — description snapshot (SAP catalog B analogue)
+    failedBomItemId?: string; // asset_bom line the fault was found on (ISO 14224 level 8/9 via the BOM)
+    failedPartNo?: string;    // part-number snapshot at coding time
     comments?: string;
     localImpact?: string;    // Local failure effect (equipment level)
     plantWideImpact?: string; // Plant-wide failure effect (production/safety/env)

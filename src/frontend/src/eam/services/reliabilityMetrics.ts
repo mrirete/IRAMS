@@ -18,6 +18,7 @@ export interface AssetReliability {
   mttrHours?: number;          // SMRP: Mean Time To Repair (hours)
   availabilityPct?: number;    // SMRP inherent availability Ai = MTBF/(MTBF+MTTR), %
   recurringModes: { mode: string; count: number }[]; // failure modes seen >=2× (12mo)
+  recurringParts: { part: string; count: number }[]; // failed components seen >=2× (12mo, 0287 BOM link)
   repeatFailure: boolean;      // a mode recurred, or >=3 failures in 12 months
   recommendRCA: boolean;       // data-driven RCA trigger
   rcaReason?: string;          // why an RCA is recommended
@@ -31,6 +32,13 @@ const CORRECTIVE_RE = /CORRECT|BREAK|EMERG|REPAIR|\bCM\b|\bEM\b/;
 const failureMode = (r: any): string | undefined => {
   const fd = Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data;
   return fd?.failure_mode_code || fd?.failureMode || undefined;
+};
+
+// The failed component (ISO 14224 level 8/9): the object_part description
+// snapshot, coded from the asset BOM since 0287.
+const failedPart = (r: any): string | undefined => {
+  const fd = Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data;
+  return fd?.object_part || fd?.objectPart || undefined;
 };
 
 // Failure event time, best basis first: the recorded malfunction start (0283 —
@@ -65,7 +73,7 @@ export const isFailure = (r: any): boolean => {
  * that pass richer client-side records.
  */
 export const FAILURE_QUERY_COLUMNS =
-  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, malfunction_start, breakdown, wo_failure_data(failure_mode_code)';
+  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, malfunction_start, breakdown, wo_failure_data(failure_mode_code, object_part)';
 
 /**
  * One derivation of the numbers the Modelling calculators auto-populate from an
@@ -120,6 +128,18 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     .map(([mode, count]) => ({ mode, count }))
     .sort((a, b) => b.count - a.count);
 
+  // Recurring failed components within the same window (0287) — "what part of
+  // this asset keeps failing", the spares/bad-actor angle recurringModes can't see.
+  const partCounts: Record<string, number> = {};
+  for (const r of failures12) {
+    const p = failedPart(r);
+    if (p) partCounts[p] = (partCounts[p] || 0) + 1;
+  }
+  const recurringParts = Object.entries(partCounts)
+    .filter(([, c]) => c >= 2)
+    .map(([part, count]) => ({ part, count }))
+    .sort((a, b) => b.count - a.count);
+
   // MTTR — prefer the asset's stored value, else mean of actual repair durations.
   const durs = failures.map(repairHoursOf).filter(d => d > 0);
   const mttrHours = (opts.mttrHours ?? null) != null
@@ -166,6 +186,7 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     mttrHours,
     availabilityPct,
     recurringModes,
+    recurringParts,
     repeatFailure,
     recommendRCA,
     rcaReason,

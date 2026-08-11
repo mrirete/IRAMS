@@ -3935,6 +3935,14 @@ function JobsTab({ asset }: { asset: Asset }) {
                             ))}
                         </div>
                     )}
+                    {rel.recurringParts.length > 0 && (
+                        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap text-[11px]">
+                            <span className="text-slate-500 font-semibold flex items-center gap-1"><Package size={11} /> Failing components:</span>
+                            {rel.recurringParts.slice(0, 4).map(p => (
+                                <span key={p.part} className="px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-semibold">{p.part} ×{p.count}</span>
+                            ))}
+                        </div>
+                    )}
                     {rel.recommendRCA && (
                         <div className="mt-2.5 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-800">
                             <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />

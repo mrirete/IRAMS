@@ -2758,7 +2758,7 @@ export class DatabaseService {
 
         // --- FAILURE DATA PERSISTENCE (ISO 14224) ---
         // Moved BEFORE TECO validation so data is in the table when validation queries it
-        if (failureData && (failureData.failureMode || failureData.failureCause || failureData.remedyCode || failureData.detectionCode || failureData.objectPart || failureData.localImpact || failureData.plantWideImpact)) {
+        if (failureData && (failureData.failureMode || failureData.failureCause || failureData.remedyCode || failureData.detectionCode || failureData.objectPart || failureData.failedBomItemId || failureData.localImpact || failureData.plantWideImpact)) {
             const failureRow = {
                 wo_id: id,
                 failure_mode_code: failureData.failureMode || null,
@@ -2766,6 +2766,8 @@ export class DatabaseService {
                 remedy_code: failureData.remedyCode || null,
                 detection_code: failureData.detectionCode || null,
                 object_part: failureData.objectPart || null,
+                failed_bom_item_id: failureData.failedBomItemId || null,
+                failed_part_no: failureData.failedPartNo || null,
                 comments: failureData.comments || null,
                 local_impact: failureData.localImpact || null,
                 plant_wide_impact: failureData.plantWideImpact || null,

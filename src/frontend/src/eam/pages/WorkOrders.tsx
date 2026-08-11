@@ -272,6 +272,8 @@ export const WorkOrders: React.FC = () => {
                                         remedyCode: fd.remedy_code || undefined,
                                         detectionCode: fd.detection_code || undefined,
                                         objectPart: fd.object_part || undefined,
+                                        failedBomItemId: fd.failed_bom_item_id || undefined,
+                                        failedPartNo: fd.failed_part_no || undefined,
                                         comments: fd.comments || undefined,
                                         localImpact: fd.local_impact || undefined,
                                         plantWideImpact: fd.plant_wide_impact || undefined,
@@ -1065,6 +1067,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const [modalMalfStart, setModalMalfStart] = useState('');
     const [modalMalfEnd, setModalMalfEnd] = useState('');
     const [modalBreakdown, setModalBreakdown] = useState(false);
+    const [modalFailedBomId, setModalFailedBomId] = useState('');
 
     useEffect(() => {
         if (!showCompleteModal) {
@@ -1077,6 +1080,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             setModalMalfStart('');
             setModalMalfEnd('');
             setModalBreakdown(false);
+            setModalFailedBomId('');
         }
     }, [showCompleteModal]);
 
@@ -1139,6 +1143,19 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         };
     }, []);
+
+    // ── Asset BOM (0287): the maintainable-component list for failure coding.
+    // A failed component is picked from here so the record lands on a real
+    // BOM line (ISO 14224 level 8/9), not free text.
+    const [bomItems, setBomItems] = useState<any[]>([]);
+    useEffect(() => {
+        let active = true;
+        if (!localJob.assetId) { setBomItems([]); return; }
+        DatabaseService.getInstance().getBomForAsset(localJob.assetId)
+            .then(items => { if (active) setBomItems(items || []); })
+            .catch(() => { if (active) setBomItems([]); });
+        return () => { active = false; };
+    }, [localJob.assetId]);
 
     // ── Asset Criticality lookup (for conditional TECO rules) ──
     const [assetCriticality, setAssetCriticality] = useState<string | null>(null);
@@ -1320,6 +1337,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             remedyCode: fd.remedy_code || undefined,
                             detectionCode: fd.detection_code || undefined,
                             objectPart: fd.object_part || undefined,
+                            failedBomItemId: fd.failed_bom_item_id || undefined,
+                            failedPartNo: fd.failed_part_no || undefined,
                             comments: fd.comments || undefined,
                             localImpact: fd.local_impact || undefined,
                             plantWideImpact: fd.plant_wide_impact || undefined,
@@ -1553,12 +1572,18 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
               }, ...(localJob.journals || [])]
             : (localJob.journals || []);
 
+        const modalBom = modalFailedBomId ? bomItems.find((b: any) => b.id === modalFailedBomId) : undefined;
         const finalFailureData = requiresFailureCoding && !hasFailureMode && modalFailureMode
             ? {
                 ...(localJob.failureData || {}),
                 failureMode: modalFailureMode,
                 failureCause: modalFailureCause || localJob.failureData?.failureCause,
-                remedyCode: modalRemedy || localJob.failureData?.remedyCode
+                remedyCode: modalRemedy || localJob.failureData?.remedyCode,
+                ...(modalBom ? {
+                    failedBomItemId: modalBom.id,
+                    failedPartNo: modalBom.partNumber || undefined,
+                    objectPart: modalBom.description || undefined,
+                } : {})
               }
             : localJob.failureData;
 
@@ -1648,6 +1673,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     followUpDescription.trim() ? followUpDescription.trim() : '',
                     `Corrective follow-up generated from ${localJob.type} work order ${localJob.woNumber || localJob.id}.`,
                     localJob.failureData?.comments ? `\nInspection Observations: ${localJob.failureData.comments}` : '',
+                    finalFailureData?.objectPart ? `Failed component: ${finalFailureData.objectPart}${finalFailureData.failedPartNo ? ` (${finalFailureData.failedPartNo})` : ''}` : '',
                     `\nOriginal PM: ${localJob.title || 'N/A'}`,
                     `Asset: ${localJob.assetCode || localJob.assetName || 'N/A'}`,
                     isCriticalityA ? '\n⚠️ CRITICALITY A ASSET — Requires engineering review.' : ''
@@ -1670,6 +1696,34 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     message += `\n\nFollow-up Corrective WO ${woNum} created (Priority: ${followUpPriority}).`;
                     if (isCriticalityA) {
                         message += '\nCriticality A — Engineering review required.';
+                    }
+
+                    // 0287: the failed component is a stocked material → plan it on
+                    // the follow-up so the corrective team arrives with the part.
+                    try {
+                        const failedBom = finalFailureData?.failedBomItemId
+                            ? bomItems.find((b: any) => b.id === finalFailureData.failedBomItemId)
+                            : undefined;
+                        if (newWO?.id && failedBom?.inventoryItemId) {
+                            const qty = Number(failedBom.quantity) || 1;
+                            const unit = Number(failedBom.estimatedCost) || 0;
+                            const { error: partErr } = await supabase.from('work_order_parts').insert({
+                                wo_id: newWO.id,
+                                item_id: failedBom.inventoryItemId,
+                                quantity: qty,
+                                unit_cost: unit,
+                                total_cost: Math.round(qty * unit * 100) / 100,
+                                is_planned: true,
+                                notes: `Pre-loaded from failure coding — failed component "${failedBom.description}"`,
+                            });
+                            if (!partErr) {
+                                message += `\nPlanned part pre-loaded: ${failedBom.description}.`;
+                            } else {
+                                console.warn('[Follow-up] part pre-load failed (non-blocking):', partErr.message);
+                            }
+                        }
+                    } catch (partThrown) {
+                        console.warn('[Follow-up] part pre-load threw (non-blocking):', partThrown);
                     }
                 } catch (fuErr: any) {
                     console.error('Failed to create follow-up WO:', fuErr);
@@ -1965,7 +2019,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     {activeTab === 'resources' && <ResourcesTab job={localJob} users={users} contacts={contacts} onNavigateToTask={(taskId) => { setActiveTab('tasks'); }} dictionaries={dictionaries} />}
                     {activeTab === 'cost' && <CostTab job={localJob} refreshKey={costRefreshKey} />}
                     {activeTab === 'files' && <FilesTab job={localJob} onUpdate={updateJob} tasks={localJob.tasks || []} />}
-                    {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} />}
+                    {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} bomItems={bomItems} />}
                     {activeTab === 'discussion' && localJob.id && (
                         <div className="h-[60vh] border border-slate-200 rounded-xl overflow-hidden">
                             <ThreadPanel threadType="work_order" threadId={localJob.id} threadLabel={localJob.woNumber || 'this work order'} />
@@ -2072,6 +2126,23 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                                 size="sm"
                                             />
                                         </div>
+                                        {bomItems.length > 0 && (
+                                            <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Failed Component (Optional)</label>
+                                                <select
+                                                    className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                    value={modalFailedBomId}
+                                                    onChange={e => setModalFailedBomId(e.target.value)}
+                                                >
+                                                    <option value="">-- Select from asset BOM --</option>
+                                                    {bomItems.map((b: any) => (
+                                                        <option key={b.id} value={b.id}>
+                                                            {b.description}{b.partNumber ? ` (${b.partNumber})` : ''}{b.critical ? ' ⚠ critical' : ''}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        )}
                                         <div>
                                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Remedy / Action Taken (Optional)</label>
                                             <input
@@ -2770,7 +2841,7 @@ const SearchableSelect: React.FC<{
     );
 };
 
-const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void, assetClassCode?: string }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange, assetClassCode }) => {
+const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void, assetClassCode?: string, bomItems?: any[] }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange, assetClassCode, bomItems = [] }) => {
     const { profile } = useAuth();
     // Dropdown Data — all failure modes (unfiltered, for duplicate validation)
     const allFailureModes = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_MODE' && d.active), [dictionaries]);
@@ -2851,6 +2922,46 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
             failureData: {
                 ...job.failureData,
                 objectPart: localObjectPart
+            }
+        });
+    };
+
+    // Failed-component picker (0287). Manual mode = a typed component with no
+    // BOM link — either legacy data or "not in BOM".
+    const [partManualMode, setPartManualMode] = useState(
+        !job.failureData?.failedBomItemId && !!job.failureData?.objectPart
+    );
+    useEffect(() => {
+        // Only ever FORCE a mode from data — never cancel the user's explicit
+        // "type manually" choice while their text is still empty.
+        if (job.failureData?.failedBomItemId) setPartManualMode(false);
+        else if (job.failureData?.objectPart) setPartManualMode(true);
+    }, [job.failureData?.failedBomItemId, job.failureData?.objectPart]);
+    const selectedBomPart = job.failureData?.failedBomItemId
+        ? bomItems.find((b: any) => b.id === job.failureData?.failedBomItemId)
+        : undefined;
+    const handleFailedComponentPick = (value: string) => {
+        if (value === '__MANUAL__') {
+            setPartManualMode(true);
+            onUpdate({ failureData: { ...job.failureData, failedBomItemId: undefined, failedPartNo: undefined } });
+            return;
+        }
+        if (!value) {
+            setPartManualMode(false);
+            setLocalObjectPart('');
+            onUpdate({ failureData: { ...job.failureData, failedBomItemId: undefined, failedPartNo: undefined, objectPart: undefined } });
+            return;
+        }
+        const bom = bomItems.find((b: any) => b.id === value);
+        if (!bom) return;
+        setPartManualMode(false);
+        setLocalObjectPart(bom.description || '');
+        onUpdate({
+            failureData: {
+                ...job.failureData,
+                failedBomItemId: bom.id,
+                failedPartNo: bom.partNumber || undefined,
+                objectPart: bom.description || undefined,
             }
         });
     };
@@ -2992,6 +3103,14 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                             ))}
                         </div>
                     )}
+                    {relMetrics.recurringParts.length > 0 && (
+                        <div className="mt-1.5 flex items-center gap-1.5 flex-wrap text-[11px]">
+                            <span className="text-slate-500 font-semibold flex items-center gap-1"><Package size={11} /> Failing components:</span>
+                            {relMetrics.recurringParts.slice(0, 4).map(p => (
+                                <span key={p.part} className="px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-semibold">{p.part} ×{p.count}</span>
+                            ))}
+                        </div>
+                    )}
                     {relMetrics.recommendRCA && (
                         <div className="mt-2.5 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-800">
                             <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
@@ -3129,15 +3248,43 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Object Part <span className="text-slate-400 font-normal">(Optional)</span></label>
-                                    <input
-                                        type="text"
-                                        value={localObjectPart}
-                                        onChange={(e) => setLocalObjectPart(e.target.value)}
-                                        onBlur={flushObjectPart}
-                                        className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500"
-                                        placeholder="e.g. DE bearing, mechanical seal..."
-                                    />
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Failed Component <span className="text-slate-400 font-normal">(Optional)</span></label>
+                                    {bomItems.length > 0 ? (
+                                        <>
+                                            {/* Pick from the asset's BOM — the failure record lands on a real
+                                                maintainable component (ISO 14224 level 8/9), not free text. */}
+                                            <select
+                                                className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500"
+                                                value={partManualMode ? '__MANUAL__' : (job.failureData?.failedBomItemId || '')}
+                                                onChange={(e) => handleFailedComponentPick(e.target.value)}
+                                            >
+                                                <option value="">-- Select from asset BOM --</option>
+                                                {bomItems.map((b: any) => (
+                                                    <option key={b.id} value={b.id}>
+                                                        {b.description}{b.partNumber ? ` (${b.partNumber})` : ''}{b.critical ? ' ⚠ critical' : ''}
+                                                    </option>
+                                                ))}
+                                                <option value="__MANUAL__">Other / not in BOM — type manually…</option>
+                                            </select>
+                                            {selectedBomPart?.inventoryItemId && (
+                                                <p className="text-[10px] text-blue-500 mt-1 flex items-center gap-1">
+                                                    <Package size={10} /> Linked to material {selectedBomPart.materialNumber || selectedBomPart.partNumber} — a follow-up corrective WO will pre-load this part.
+                                                </p>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <p className="text-[10px] text-slate-400 mb-1">No BOM on this asset — components can be typed below; add a BOM on the Asset page for coded records.</p>
+                                    )}
+                                    {(bomItems.length === 0 || partManualMode) && (
+                                        <input
+                                            type="text"
+                                            value={localObjectPart}
+                                            onChange={(e) => setLocalObjectPart(e.target.value)}
+                                            onBlur={flushObjectPart}
+                                            className={`w-full p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 ${bomItems.length > 0 ? 'mt-1.5' : ''}`}
+                                            placeholder="e.g. DE bearing, mechanical seal..."
+                                        />
+                                    )}
                                 </div>
                             </div>
 
