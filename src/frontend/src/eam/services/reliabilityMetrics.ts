@@ -33,7 +33,11 @@ const failureMode = (r: any): string | undefined => {
   return fd?.failure_mode_code || fd?.failureMode || undefined;
 };
 
-const eventDate = (r: any): string | undefined => r.closed_at || r.created_at || r.createdAt;
+// Failure event time, best basis first: the recorded malfunction start (0283 —
+// the actual equipment event, SAP AUSVN), then closure, then creation as the
+// last paperwork proxy.
+const eventDate = (r: any): string | undefined =>
+  r.malfunction_start || r.malfunctionStart || r.closed_at || r.created_at || r.createdAt;
 
 /**
  * THE canonical failure predicate (M1 — engine unification). A work order
@@ -61,7 +65,7 @@ export const isFailure = (r: any): boolean => {
  * that pass richer client-side records.
  */
 export const FAILURE_QUERY_COLUMNS =
-  'id, type, status, created_at, closed_at, actual_downtime_hrs, wo_failure_data(failure_mode_code)';
+  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, malfunction_start, breakdown, wo_failure_data(failure_mode_code)';
 
 /**
  * One derivation of the numbers the Modelling calculators auto-populate from an
@@ -174,12 +178,20 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
 // Weibull tab all model the SAME events. This retires the calculators' ad-hoc,
 // slightly-different WO extraction (M1 — engine unification).
 
-// Repair-duration basis, in preference order: recorded downtime, elapsed
-// duration, then labour hours as a last-resort proxy (plants that don't
-// capture downtime at closeout would otherwise produce no MTTR at all).
+// Repair-duration basis, in preference order: recorded downtime, order-level
+// actual hours (actual_duration_hrs, 0283 — captured in the Complete modal),
+// then legacy client-side field names as a last-resort proxy (plants that
+// don't capture downtime at closeout would otherwise produce no MTTR at all).
 // This ONE chain feeds both the engine MTTR and every calculator series.
-const repairHoursOf = (r: any): number =>
-  Number(r.actual_downtime_hrs ?? r.actual_duration ?? r.actualDuration ?? r.actual_hours) || 0;
+// First POSITIVE value wins (not ??): UI-mapped records default the numeric
+// fields to 0, and a 0 early in the chain must not mask a real value later.
+const repairHoursOf = (r: any): number => {
+  for (const v of [r.actual_downtime_hrs, r.actual_duration_hrs, r.actual_duration, r.actualDowntime, r.actualDuration, r.actual_hours]) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+};
 
 /** Per-failure repair/downtime hours (same basis as MTTR) — for maintainability charts. */
 export function failureRepairHours(records: any[]): number[] {

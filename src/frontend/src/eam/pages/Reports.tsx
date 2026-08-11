@@ -1078,16 +1078,19 @@ export const Reports: React.FC = () => {
           </ResponsiveContainer>
         </ReportChartCard>
 
-        <ReportChartCard title="Resource Utilization" subtitle="Estimated technician hours by type" onPin={() => pinWidget('cost-trend', 'chart', 'Resource Utilization', 6, 1)}>
+        {/* Honesty fix: this chart plots DOLLARS from costData but was titled
+            "Resource Utilization" with series named "Productive/Support Hrs".
+            True wrench-time needs labour confirmations vs paid hours — not built yet. */}
+        <ReportChartCard title="Cost Mix" subtitle="Labor vs parts cost by month" onPin={() => pinWidget('cost-mix', 'chart', 'Cost Mix', 6, 1)}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={costData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} />
-              <YAxis tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} />
+              <YAxis tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
               <Tooltip content={<CustomTooltip />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="Labor" name="Productive Hrs" stackId="a" fill={COLORS.emerald} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Parts" name="Support Hrs" stackId="a" fill={COLORS.cyan} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Labor" name="Labor $" stackId="a" fill={COLORS.emerald} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Parts" name="Parts $" stackId="a" fill={COLORS.cyan} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ReportChartCard>

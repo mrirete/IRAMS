@@ -11,7 +11,9 @@ import {
   Wrench, TrendingUp, CalendarCheck, List, ChevronRight
 } from 'lucide-react';
 import { ReportDataTable, TableColumn } from '../components/reports/ReportDataTable';
-import { exportXLSX } from '../utils/reportExport';
+import { exportXLSX, exportCSV } from '../utils/reportExport';
+import { isOpenWo } from '../../lib/woState';
+import { isPreventiveWoType } from '../lib/workOrder';
 
 const COLORS = {
   blue: '#3b82f6', cyan: '#06b6d4', emerald: '#10b981', amber: '#f59e0b',
@@ -78,7 +80,7 @@ export const ReportDrillDown: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from('work_orders')
-        .select('id, wo_number, asset_id, created_at, closed_at, type, title, failure_mode, actual_downtime_hrs, frozen_labor_cost, frozen_material_cost, status, priority_code')
+        .select('id, wo_number, asset_id, created_at, closed_at, due_date, type, title, failure_mode, actual_downtime_hrs, frozen_labor_cost, frozen_material_cost, status, priority_code')
         .neq('status', 'CANCELLED')
         .order('created_at', { ascending: false });
       return data || [];
@@ -160,6 +162,77 @@ export const ReportDrillDown: React.FC = () => {
     const quality = 0.96;
     return { availability, performance, quality, oee: availability * performance * quality, isEstimate: true };
   }, [assets]);
+
+  // Per-asset availability — from the canonical sem_asset_reliability view
+  // (this drill type was declared and linked from Reports but had no render
+  // case at all: it fell through to "Report type not found").
+  const availabilityData = useMemo(() => {
+    const nameById = new Map<string, any>((assets as any[]).map((a: any) => [a.id, a]));
+    return (assetReliability as any[])
+      .filter((r: any) => r.availability_pct != null)
+      .map((r: any) => ({
+        asset_tag: r.asset_tag ?? nameById.get(r.asset_id)?.tag ?? r.asset_id,
+        asset_name: nameById.get(r.asset_id)?.name ?? r.asset_tag,
+        criticality: r.criticality ?? nameById.get(r.asset_id)?.criticality ?? '—',
+        availability_pct: Number(r.availability_pct),
+        mtbf_days: r.mtbf_days ?? 0,
+        mttr_hours: r.mttr_hours ?? 0,
+        failures_12mo: r.failures_12mo ?? 0,
+      }))
+      .sort((a, b) => a.availability_pct - b.availability_pct);
+  }, [assets, assetReliability]);
+
+  // Backlog aging over OPEN WORK ORDERS (canonical isOpenWo). The previous
+  // implementation bucketed the assets table and charted asset counts as
+  // "Open WOs".
+  const backlogBuckets = useMemo(() => {
+    const now = Date.now();
+    const buckets = [
+      { age: '0-7d', count: 0, color: COLORS.emerald },
+      { age: '8-14d', count: 0, color: COLORS.amber },
+      { age: '15-30d', count: 0, color: COLORS.red },
+      { age: '30d+', count: 0, color: '#dc2626' },
+    ];
+    (workOrders as any[]).filter(w => isOpenWo(w.status) && w.created_at).forEach((wo: any) => {
+      const days = Math.floor((now - new Date(wo.created_at).getTime()) / 86400000);
+      const idx = days <= 7 ? 0 : days <= 14 ? 1 : days <= 30 ? 2 : 3;
+      buckets[idx].count++;
+    });
+    return buckets;
+  }, [workOrders]);
+
+  // PM compliance from the actual work orders: PM-type WOs bucketed by due
+  // month over the last 12 months; "executed on time" = closed on/before due
+  // date. Replaces a Math.sin/Math.cos synthetic series that charted invented
+  // numbers as compliance.
+  const pmComplianceData = useMemo(() => {
+    const now = new Date();
+    const months: { key: string; label: string; Scheduled: number; Executed: number }[] = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        label: d.toLocaleDateString(undefined, { month: 'short', year: '2-digit' }),
+        Scheduled: 0,
+        Executed: 0,
+      });
+    }
+    const byKey = new Map(months.map(m => [m.key, m]));
+    for (const w of workOrders as any[]) {
+      if (!isPreventiveWoType(w.type) || !w.due_date) continue;
+      const due = new Date(w.due_date);
+      const m = byKey.get(`${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}`);
+      if (!m) continue;
+      m.Scheduled++;
+      if (w.closed_at && new Date(w.closed_at).getTime() <= due.getTime() + 86400000 - 1) m.Executed++;
+    }
+    return months.map(m => ({
+      month: m.label,
+      Scheduled: m.Scheduled,
+      Executed: m.Executed,
+      Compliance: m.Scheduled > 0 ? Math.round((m.Executed / m.Scheduled) * 100) : null,
+    }));
+  }, [workOrders]);
 
   const handleExport = (data: any[], columns: { key: string; label: string }[], filename: string) => {
     exportXLSX(data, columns, filename);
@@ -378,10 +451,26 @@ export const ReportDrillDown: React.FC = () => {
         ];
         return (
           <div className="space-y-6">
+            {/* Honesty banner — these factors are placeholders, not measurements.
+                The isEstimate flag existed but was never rendered, so estimates
+                were presented as fact. */}
+            {oeeData.isEstimate && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-xs text-amber-800 flex items-start gap-2">
+                <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                <span>
+                  <strong>Estimated figures.</strong> Availability is derived from asset health indices; Performance and Quality
+                  are placeholder factors until production data is recorded. For measured OEE, use the OEE dashboard on the
+                  Reports → Asset Health tab (production logs → <code>get_plant_oee</code>).
+                </span>
+              </div>
+            )}
             {/* OEE Summary */}
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
               <div className="text-center mb-6">
-                <div className="text-4xl font-bold text-slate-900">{(oeeData.oee * 100).toFixed(1)}%</div>
+                <div className="text-4xl font-bold text-slate-900">
+                  {(oeeData.oee * 100).toFixed(1)}%
+                  {oeeData.isEstimate && <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Est.</span>}
+                </div>
                 <div className="text-sm text-slate-500 font-medium mt-1">Overall Equipment Effectiveness</div>
                 <div className="text-xs text-slate-400 mt-1">
                   {(oeeData.availability * 100).toFixed(0)}% × {(oeeData.performance * 100).toFixed(0)}% × {(oeeData.quality * 100).toFixed(0)}%
@@ -409,20 +498,6 @@ export const ReportDrillDown: React.FC = () => {
       }
 
       case 'backlog': {
-        const now = new Date();
-        const openWOs = assets.filter((a: any) => a.status !== 'CLSD' && a.created_at);
-        const backlogBuckets = [
-          { age: '0-7d', count: 0, color: COLORS.emerald },
-          { age: '8-14d', count: 0, color: COLORS.amber },
-          { age: '15-30d', count: 0, color: COLORS.red },
-          { age: '30d+', count: 0, color: '#dc2626' },
-        ];
-        openWOs.forEach((wo: any) => {
-          const days = Math.floor((now.getTime() - new Date(wo.created_at).getTime()) / 86400000);
-          const idx = days <= 7 ? 0 : days <= 14 ? 1 : days <= 30 ? 2 : 3;
-          backlogBuckets[idx].count++;
-        });
-
         const blCols: TableColumn[] = [
           { key: 'age', label: 'Age Bucket' },
           { key: 'count', label: 'Open WOs', format: 'number', dataBar: true },
@@ -450,29 +525,33 @@ export const ReportDrillDown: React.FC = () => {
       }
 
       case 'pm-compliance': {
-        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const pmData = months.map((m) => {
-          const scheduled = Math.round(8 + Math.sin(months.indexOf(m)) * 3 + 5);
-          const executed = Math.round(scheduled * (0.7 + Math.cos(months.indexOf(m)) * 0.15));
-          return { month: m, Scheduled: scheduled, Executed: executed, Compliance: scheduled > 0 ? Math.round((executed / scheduled) * 100) : 0 };
-        });
-
         const pmCols: TableColumn[] = [
           { key: 'month', label: 'Month' },
           { key: 'Scheduled', label: 'Scheduled', format: 'number' },
-          { key: 'Executed', label: 'Executed', format: 'number' },
+          { key: 'Executed', label: 'Executed On Time', format: 'number' },
           { key: 'Compliance', label: 'Compliance %', format: 'percent' },
         ];
+        const hasAnyPm = pmComplianceData.some(m => m.Scheduled > 0);
+
+        if (!hasAnyPm) {
+          return (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-500 text-sm">
+              <CalendarCheck size={28} className="mx-auto mb-3 text-slate-300" />
+              No PM work orders with due dates in the last 12 months — nothing to measure compliance against yet.
+            </div>
+          );
+        }
 
         return (
           <div className="space-y-6">
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5" style={{ height: 400 }}>
-              <h3 className="text-sm font-bold text-slate-800 mb-4">PM Scheduled vs Executed (12 months)</h3>
-              <ResponsiveContainer width="100%" height="90%">
-                <BarChart data={pmData}>
+              <h3 className="text-sm font-bold text-slate-800 mb-1">PM Scheduled vs Executed On Time (12 months)</h3>
+              <p className="text-[11px] text-slate-400 mb-3">Scheduled = PM work orders due in the month · Executed = closed on or before their due date</p>
+              <ResponsiveContainer width="100%" height="85%">
+                <BarChart data={pmComplianceData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 11 }} />
-                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                  <YAxis tick={{ fill: '#64748b', fontSize: 11 }} allowDecimals={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar dataKey="Scheduled" fill={COLORS.blue} radius={[4, 4, 0, 0]} />
@@ -480,7 +559,45 @@ export const ReportDrillDown: React.FC = () => {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <ReportDataTable title="PM Compliance Detail" columns={pmCols} data={pmData} exportFilename="ERS_PM_Compliance.csv" />
+            <ReportDataTable title="PM Compliance Detail" columns={pmCols} data={pmComplianceData} exportFilename="ERS_PM_Compliance.csv" />
+          </div>
+        );
+      }
+
+      case 'availability': {
+        const avCols: TableColumn[] = [
+          { key: 'asset_tag', label: 'Tag', width: '90px' },
+          { key: 'asset_name', label: 'Name' },
+          { key: 'criticality', label: 'Crit.' },
+          { key: 'availability_pct', label: 'Availability %', format: 'percent', dataBar: true },
+          { key: 'mtbf_days', label: 'MTBF (days)', format: 'number' },
+          { key: 'mttr_hours', label: 'MTTR (hrs)', format: 'hours' },
+          { key: 'failures_12mo', label: 'Failures (12mo)', format: 'number' },
+        ];
+        if (availabilityData.length === 0) {
+          return (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center text-slate-500 text-sm">
+              <Gauge size={28} className="mx-auto mb-3 text-slate-300" />
+              No availability data yet — it needs at least two coded failures per asset (sem_asset_reliability).
+            </div>
+          );
+        }
+        return (
+          <div className="space-y-6">
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5" style={{ height: 400 }}>
+              <h3 className="text-sm font-bold text-slate-800 mb-1">Availability by Asset (worst first)</h3>
+              <p className="text-[11px] text-slate-400 mb-3">Inherent availability = MTBF / (MTBF + MTTR), from 12 months of corrective work (sem_asset_reliability)</p>
+              <ResponsiveContainer width="100%" height="85%">
+                <BarChart data={availabilityData.slice(0, 12)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="asset_tag" tick={{ fill: '#64748b', fontSize: 10 }} />
+                  <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 11 }} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="availability_pct" name="Availability %" fill={COLORS.teal} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <ReportDataTable title="Availability Detail" columns={avCols} data={availabilityData} exportFilename="ERS_Availability.csv" />
           </div>
         );
       }
@@ -515,32 +632,42 @@ export const ReportDrillDown: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              const exportData = type === 'downtime' || type === 'downtime-by-asset' ? downtimeByAsset
+          {(() => {
+            // One dataset resolver for both buttons; covers every drill type
+            // (backlog / pm-compliance / availability previously exported nothing).
+            const exportDataFor = (): any[] =>
+              type === 'downtime' || type === 'downtime-by-asset' ? downtimeByAsset
                 : type === 'mtbf-mttr' ? mtbfMttrData
                 : type === 'downtime-by-reason' ? downtimeReasons
+                : type === 'backlog' ? backlogBuckets.map(({ age, count }) => ({ age, count }))
+                : type === 'pm-compliance' ? pmComplianceData
+                : type === 'availability' ? availabilityData
                 : [];
-              const cols = Object.keys(exportData[0] || {}).map(k => ({ key: k, label: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) }));
-              handleExport(exportData, cols, `ERS_${type}_Report.xlsx`);
-            }}
-            className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-700 font-medium hover:bg-slate-50 transition-colors shadow-sm"
-          >
-            <Download size={14} /> CSV
-          </button>
-          <button
-            onClick={() => {
-              const exportData = type === 'downtime' || type === 'downtime-by-asset' ? downtimeByAsset
-                : type === 'mtbf-mttr' ? mtbfMttrData
-                : type === 'downtime-by-reason' ? downtimeReasons
-                : [];
-              const cols = Object.keys(exportData[0] || {}).map(k => ({ key: k, label: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) }));
-              handleExport(exportData, cols, `ERS_${type}_Report.xlsx`);
-            }}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 rounded-lg text-sm text-white font-medium hover:bg-blue-500 transition-colors shadow-sm"
-          >
-            <FileSpreadsheet size={14} /> Export XLSX
-          </button>
+            const colsFor = (data: any[]) =>
+              Object.keys(data[0] || {}).map(k => ({ key: k, label: k.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) }));
+            return (
+              <>
+                <button
+                  onClick={() => {
+                    const data = exportDataFor();
+                    exportCSV(data, colsFor(data), `ERS_${type}_Report.csv`);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-700 font-medium hover:bg-slate-50 transition-colors shadow-sm"
+                >
+                  <Download size={14} /> CSV
+                </button>
+                <button
+                  onClick={() => {
+                    const data = exportDataFor();
+                    handleExport(data, colsFor(data), `ERS_${type}_Report.xlsx`);
+                  }}
+                  className="flex items-center gap-2 px-3 py-2 bg-blue-600 rounded-lg text-sm text-white font-medium hover:bg-blue-500 transition-colors shadow-sm"
+                >
+                  <FileSpreadsheet size={14} /> Export XLSX
+                </button>
+              </>
+            );
+          })()}
         </div>
       </div>
 

@@ -704,6 +704,9 @@ export interface WorkOrder {
   estDowntime: number; // Hours
   actualDuration: number; // Hours
   actualDowntime: number; // Hours
+  malfunctionStart?: string; // Equipment failure event start (ISO timestamp; SAP AUSVN)
+  malfunctionEnd?: string;   // Equipment back in service (SAP AUSBS)
+  breakdown?: boolean;       // SAP MSAUS-style breakdown indicator; undefined = not recorded
   actualCost?: number; // Total Actual Cost (Snapshot)
 
   // Reference

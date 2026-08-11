@@ -35,6 +35,21 @@ export interface WorkOrderInput {
     properties?: Record<string, unknown>;
 }
 
+/**
+ * Preventive work-order types — the ONE list deciding whether failure coding
+ * is required at completion. The client gate (WorkOrders.tsx) and the server
+ * gate (DatabaseService TECO validation) previously carried different lists,
+ * so a PdM/SCHEDULED WO passed the client and was then rejected server-side.
+ */
+export const PREVENTIVE_WO_TYPES = [
+    'PM', 'PREVENTIVE', 'PREVENTATIVE', 'SCHEDULED',
+    'INSPECTION', 'PREDICTIVE', 'PDM', 'CALIBRATION',
+] as const;
+
+export function isPreventiveWoType(type: string | null | undefined): boolean {
+    return (PREVENTIVE_WO_TYPES as readonly string[]).includes(String(type || '').toUpperCase());
+}
+
 function generateWoNumber(): string {
     return `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`;
 }

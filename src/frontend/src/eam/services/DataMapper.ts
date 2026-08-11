@@ -517,9 +517,13 @@ export class DataMapper {
             timeDueFinish,
 
             estDuration: record.est_duration || 0,
-            estDowntime: 0,
-            actualDuration: 0,
-            actualDowntime: 0,
+            estDowntime: Number(record.est_downtime_hrs) || 0,
+            actualDuration: Number(record.actual_duration_hrs) || 0,
+            actualDowntime: Number(record.actual_downtime_hrs) || 0,
+            malfunctionStart: record.malfunction_start || undefined,
+            malfunctionEnd: record.malfunction_end || undefined,
+            breakdown: typeof record.breakdown === 'boolean' ? record.breakdown : undefined,
+            parentWoId: record.parent_wo_id || undefined,
             assignedTo: record.assigned_to,
             recurringWorkId: record.recurring_work_id || undefined,
             tasks: mappedTasks,
@@ -592,6 +596,33 @@ export class DataMapper {
         // Estimated Duration
         if (ui.estDuration !== undefined) {
             record.est_duration = Number(ui.estDuration) || 0;
+        }
+
+        // Downtime & actuals (0283) — previously dead UI controls: these fields
+        // were collected in the UI but never mapped, so they saved into the void.
+        if (ui.estDowntime !== undefined) {
+            record.est_downtime_hrs = Number(ui.estDowntime) || 0;
+        }
+        if (ui.actualDowntime !== undefined) {
+            record.actual_downtime_hrs = Number(ui.actualDowntime) || null;
+        }
+        if (ui.actualDuration !== undefined) {
+            record.actual_duration_hrs = Number(ui.actualDuration) || null;
+        }
+        if (ui.malfunctionStart !== undefined) {
+            record.malfunction_start = ui.malfunctionStart || null;
+        }
+        if (ui.malfunctionEnd !== undefined) {
+            record.malfunction_end = ui.malfunctionEnd || null;
+        }
+        if (ui.breakdown !== undefined) {
+            record.breakdown = ui.breakdown;
+        }
+
+        // Follow-up chain (P0-2): parent link was written at creation only and
+        // then unreadable/unsaveable — map it both directions.
+        if (ui.parentWoId !== undefined) {
+            record.parent_wo_id = ui.parentWoId || null;
         }
 
         // Scheduling dates - map to actual DB columns

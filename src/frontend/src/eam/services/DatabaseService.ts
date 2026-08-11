@@ -27,6 +27,7 @@ import {
 import type { MaintenanceStrategy, StrategyPackage } from '../../lib/maintenanceStrategy';
 import { evaluateReading } from '../../lib/readingAlarm';
 import { movementTypeFor } from '../lib/movementType';
+import { isPreventiveWoType } from '../lib/workOrder';
 import {
     OperationActual,
     OrderActuals,
@@ -2775,7 +2776,8 @@ export class DatabaseService {
                 .single();
 
             const woType = woTypeData?.type || coreUpdates.type || '';
-            const isPM = ['PM', 'PREVENTIVE', 'INSPECTION', 'CALIBRATION'].includes(woType.toUpperCase());
+            // Single policy shared with the client gate — see lib/workOrder.ts.
+            const isPM = isPreventiveWoType(woType);
 
             if (!isPM) {
                 // CM / other jobs: Failure Mode is mandatory
@@ -2798,7 +2800,10 @@ export class DatabaseService {
 
         // --- GATEKEEPER PROTOCOL ---
         // "Any cancellation of a WO on a Criticality A asset requires rejection_reason and sign-off"
-        if (coreUpdates.status === 'CANCELLED') {
+        // Both cancel spellings exist in the wo_status enum ('CANCELLED' from 0000,
+        // 'CANC' from 0148, which is what the status dictionary emits) — matching
+        // only one made the gate trivially bypassable.
+        if (String(coreUpdates.status || '').toUpperCase().startsWith('CANC')) {
             const { data: woData } = await supabase
                 .from('work_orders')
                 .select('asset_id')
@@ -2906,13 +2911,15 @@ export class DatabaseService {
                     }
 
                     // G14: Update warranty hours counter
+                    // (column is hours_worked — 'act_hours' never existed, so this
+                    // block silently no-oped inside the catch below)
                     const { data: laborData } = await supabase
                         .from('work_order_labor')
-                        .select('act_hours')
+                        .select('hours_worked')
                         .eq('wo_id', id);
 
                     const totalActualHours = (laborData || []).reduce(
-                        (sum, row) => sum + (parseFloat(row.act_hours || 0)), 0
+                        (sum, row) => sum + (parseFloat(row.hours_worked || 0)), 0
                     );
 
                     if (totalActualHours > 0) {

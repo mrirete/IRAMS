@@ -45,7 +45,7 @@ import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { buildWorkOrder } from '../lib/workOrder';
+import { buildWorkOrder, isPreventiveWoType } from '../lib/workOrder';
 import { resolveLabourRate, labourRateSourceLabel } from '../lib/labourRate';
 import { issueWorkOrderParts } from '../lib/goodsIssue';
 import { ImageGallery } from '../components/ui/ImageGallery';
@@ -76,6 +76,11 @@ import { JSATab, isRealJsaId } from '../components/JSATab';
 
 type ViewMode = 'LIST' | 'DETAIL' | 'PM_LIST' | 'MY_WORK';
 type TabId = 'details' | 'tasks' | 'jsa' | 'resources' | 'cost' | 'files' | 'analysis' | 'discussion';
+
+// Members of the wo_status Postgres enum (0000 + 0148). The STATUS_CODE
+// dictionary is a merged list that also carries request/PM statuses, which
+// the work_orders column cannot accept.
+const WO_STATUS_ENUM = ['OPEN', 'PLAN', 'SCHED', 'WIP', 'WAIT', 'TECO', 'CLOSED', 'CANC', 'CANCELLED'];
 
 // ...
 
@@ -1048,6 +1053,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const [modalFailureCause, setModalFailureCause] = useState('');
     const [modalRemedy, setModalRemedy] = useState('');
     const [modalJournalNote, setModalJournalNote] = useState('');
+    // Completion actuals (0283) — the equipment-event data reliability math runs on
+    const [modalActualHours, setModalActualHours] = useState('');
+    const [modalDowntimeHours, setModalDowntimeHours] = useState('');
+    const [modalMalfStart, setModalMalfStart] = useState('');
+    const [modalMalfEnd, setModalMalfEnd] = useState('');
+    const [modalBreakdown, setModalBreakdown] = useState(false);
 
     useEffect(() => {
         if (!showCompleteModal) {
@@ -1055,6 +1066,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             setModalFailureCause('');
             setModalRemedy('');
             setModalJournalNote('');
+            setModalActualHours('');
+            setModalDowntimeHours('');
+            setModalMalfStart('');
+            setModalMalfEnd('');
+            setModalBreakdown(false);
         }
     }, [showCompleteModal]);
 
@@ -1148,7 +1164,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const allFailureCauses = dictionaries.filter(d => d.type === 'FAILURE_CAUSE' && d.active);
 
     const woType = (localJob.type || '').toString().toUpperCase();
-    const isPreventiveType = ['PM', 'PREVENTIVE', 'PREVENTATIVE', 'SCHEDULED', 'INSPECTION', 'PREDICTIVE'].includes(woType);
+    // Single policy shared with the server-side TECO gate — see lib/workOrder.ts.
+    const isPreventiveType = isPreventiveWoType(woType);
     const isCriticalityA = assetCriticality === 'A';
     // PMs ALWAYS skip failure coding — defects found during PMs get their own follow-up corrective WO
     const requiresFailureCoding = !isPreventiveType;
@@ -1267,6 +1284,13 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     assignedTo: raw.assigned_to,
                     costCenter: raw.cost_center,
                     estDuration: raw.est_duration || 0,
+                    estDowntime: Number(raw.est_downtime_hrs) || 0,
+                    actualDuration: Number(raw.actual_duration_hrs) || 0,
+                    actualDowntime: Number(raw.actual_downtime_hrs) || 0,
+                    malfunctionStart: raw.malfunction_start || undefined,
+                    malfunctionEnd: raw.malfunction_end || undefined,
+                    breakdown: typeof raw.breakdown === 'boolean' ? raw.breakdown : undefined,
+                    parentWoId: raw.parent_wo_id || undefined,
                     dateDueStart,
                     timeDueStart,
                     dueDate,
@@ -1419,7 +1443,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         // ═══ GATEKEEPER PROTOCOL: Criticality A cancellation ═══
         // Per user rules: "Any cancellation of a Work Request on a Criticality A asset
         // requires a mandatory 'Reason for Rejection' and a digital sign-off"
-        if (!force && (updates.status as string) === 'CANCELLED' && (localJob.status as string) !== 'CANCELLED' && isCriticalityA) {
+        if (!force
+            && String(updates.status || '').toUpperCase().startsWith('CANC')   // matches both enum spellings: CANC (dictionary) and CANCELLED (legacy)
+            && !String(localJob.status || '').toUpperCase().startsWith('CANC')
+            && isCriticalityA) {
             setShowGatekeeperModal(true);
             setGatekeeperReason('');
             setGatekeeperConfirmed(false);
@@ -1515,6 +1542,23 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         let message = `Work Order ${localJob.woNumber || localJob.id} is now Technically Complete.`;
         let followUpFailed = false;
 
+        // Completion actuals (0283) — parse and validate before any write.
+        const actualHrs = parseFloat(modalActualHours);
+        const downtimeHrs = parseFloat(modalDowntimeHours);
+        const malfStartIso = modalMalfStart ? new Date(modalMalfStart).toISOString() : null;
+        const malfEndIso = modalMalfEnd ? new Date(modalMalfEnd).toISOString() : null;
+        if (malfStartIso && malfEndIso && malfEndIso < malfStartIso) {
+            showToast('Malfunction end must be after malfunction start.', 'warning');
+            return;
+        }
+        const actualsCols: Record<string, unknown> = {
+            ...(Number.isFinite(actualHrs) && actualHrs > 0 ? { actual_duration_hrs: actualHrs } : {}),
+            ...(Number.isFinite(downtimeHrs) && downtimeHrs > 0 ? { actual_downtime_hrs: downtimeHrs } : {}),
+            ...(malfStartIso ? { malfunction_start: malfStartIso } : {}),
+            ...(malfEndIso ? { malfunction_end: malfEndIso } : {}),
+            ...(!isPreventiveType ? { breakdown: modalBreakdown } : {}),
+        };
+
         try {
             // Flush any pending debounced saves first
             if (saveTimerRef.current) {
@@ -1526,6 +1570,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             // so that wo_failure_data is written BEFORE TECO validation
             await DatabaseService.getInstance().updateWorkOrder(localJob.id, {
                 status: updatedStatus,
+                ...actualsCols,
                 failureData: finalFailureData,
                 properties: {
                     ...((localJob as any).properties || {}),
@@ -1534,6 +1579,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             } as any, user?.id || 'unknown');
             updateJob({
                 status: updatedStatus,
+                ...(Number.isFinite(actualHrs) && actualHrs > 0 ? { actualDuration: actualHrs } : {}),
+                ...(Number.isFinite(downtimeHrs) && downtimeHrs > 0 ? { actualDowntime: downtimeHrs } : {}),
+                ...(malfStartIso ? { malfunctionStart: malfStartIso } : {}),
+                ...(malfEndIso ? { malfunctionEnd: malfEndIso } : {}),
+                ...(!isPreventiveType ? { breakdown: modalBreakdown } : {}),
                 failureData: finalFailureData,
                 journals: finalJournals as any
             });
@@ -2017,6 +2067,73 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     </div>
                                 )}
 
+                                {/* Actuals & Downtime (0283) — the fields MTTR/MTBF/availability actually run on */}
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                                    <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">Actuals &amp; Downtime</span>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Actual Labour (hrs)</label>
+                                            <input
+                                                type="number" min="0" step="0.5"
+                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                placeholder="e.g. 4.5"
+                                                value={modalActualHours}
+                                                onChange={e => setModalActualHours(e.target.value)}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Equipment Downtime (hrs)</label>
+                                            <input
+                                                type="number" min="0" step="0.5"
+                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                placeholder="Blank = derive from window"
+                                                value={modalDowntimeHours}
+                                                onChange={e => setModalDowntimeHours(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    {!isPreventiveType && (
+                                        <>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Malfunction Start</label>
+                                                    <input
+                                                        type="datetime-local"
+                                                        className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                        value={modalMalfStart}
+                                                        onChange={e => setModalMalfStart(e.target.value)}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Back in Service</label>
+                                                    <input
+                                                        type="datetime-local"
+                                                        className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                        value={modalMalfEnd}
+                                                        onChange={e => setModalMalfEnd(e.target.value)}
+                                                    />
+                                                </div>
+                                            </div>
+                                            <label className="flex items-start gap-2.5 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={modalBreakdown}
+                                                    onChange={e => setModalBreakdown(e.target.checked)}
+                                                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+                                                />
+                                                <span className="text-xs text-slate-700">
+                                                    <span className="font-bold">Breakdown</span> — the equipment lost its required function
+                                                    (drives true failure counts for MTBF; leave unchecked for degraded-but-running work)
+                                                </span>
+                                            </label>
+                                            <p className="text-[10px] text-slate-400">
+                                                The malfunction window is the failure event time used for MTBF — not the work order's paperwork dates.
+                                                If downtime hours are blank, they are derived from the window.
+                                            </p>
+                                        </>
+                                    )}
+                                </div>
+
                                 <p className="text-slate-600 text-sm">
                                     You are about to mark work order <strong>{localJob.woNumber || localJob.id}</strong> as <strong>Technically Complete (TECO)</strong>.
                                     The work is physically complete. Costs can still be posted until Financial Close.
@@ -2257,14 +2374,20 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                             // insert() resolves with { error } rather than throwing,
                                             // so the catch alone would have missed every real DB
                                             // failure — an RLS denial included.
+                                            // action must be INSERT/UPDATE/DELETE (CHECK constraint) and
+                                            // changed_by is a UUID column — the old 'GATEKEEPER_CANCELLATION'
+                                            // + email combo was rejected by the DB on every attempt. The
+                                            // event identity lives in `changes` instead, as a real JSONB
+                                            // object (stringifying wrote a quoted string into jsonb).
                                             const { error: auditErr } = await supabase.from('audit_logs').insert({
                                                 table_name: 'work_orders',
                                                 record_id: localJob.id,
-                                                action: 'GATEKEEPER_CANCELLATION',
-                                                changed_by: user?.email || user?.id || 'unknown',
+                                                action: 'UPDATE',
+                                                changed_by: user?.id || null,
                                                 timestamp: new Date().toISOString(),
-                                                changes: JSON.stringify({
-                                                    event: 'CRITICALITY_A_CANCELLATION',
+                                                changes: {
+                                                    event: 'GATEKEEPER_CANCELLATION',
+                                                    actor_email: user?.email || null,
                                                     wo_number: localJob.woNumber,
                                                     asset_id: localJob.assetId,
                                                     asset_code: localJob.assetCode || localJob.assetName,
@@ -2272,7 +2395,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                                     reason_for_rejection: gatekeeperReason.trim(),
                                                     signed_off_by: user?.user_metadata?.full_name || user?.email,
                                                     signed_off_at: new Date().toISOString(),
-                                                }),
+                                                },
                                             });
                                             if (auditErr) {
                                                 auditLogged = false;
@@ -2283,9 +2406,19 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                             console.error('[Gatekeeper] Audit log write threw:', thrown);
                                         }
 
-                                        // Proceed with cancellation
+                                        // Proceed with cancellation. The reason rides in properties so
+                                        // the server-side gatekeeper check (which requires it for any
+                                        // crit-A CANC*) sees it — without this the save was rejected
+                                        // with GATEKEEPER_BLOCKED after the modal was already approved.
                                         setShowGatekeeperModal(false);
-                                        await updateJob({ status: 'CANCELLED' as any }, true);
+                                        await updateJob({
+                                            status: 'CANCELLED' as any,
+                                            properties: {
+                                                ...(localJob.properties || {}),
+                                                rejection_reason: gatekeeperReason.trim(),
+                                                rejection_signoff: user?.user_metadata?.full_name || user?.email || user?.id || 'unknown',
+                                            },
+                                        } as any, true);
                                         // Never claim an audit trail that was not written — this is a
                                         // Criticality A override, and the audit record is the only
                                         // evidence the rejection was authorised.
@@ -3461,6 +3594,16 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             .sort((a, b) => when(b) - when(a))
             .slice(0, 4);
     }, [pickWOs, job.assetId, job.id]);
+
+    // Follow-up chain, parent → children: WOs raised from this one (e.g.
+    // "Complete & Raise Follow-Up"). The link was persisted at creation but
+    // never rendered in either direction.
+    const followUps = useMemo(() => {
+        const when = (w: any) => new Date(w.createdAt || w.created_at || 0).getTime();
+        return (pickWOs as any[])
+            .filter(w => (w.parentWoId || w.parent_wo_id) === job.id)
+            .sort((a, b) => when(b) - when(a));
+    }, [pickWOs, job.id]);
     // Main Work Center (0178): active work groups for the header-level picker.
     const [detailWorkCenters, setDetailWorkCenters] = useState<{ id: string; code: string; name: string }[]>([]);
     useEffect(() => {
@@ -3607,7 +3750,10 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             value={job.status}
                             onChange={(e) => onUpdate({ status: e.target.value as any })}
                         >
-                            {dictionaries.filter(d => d.type === 'STATUS_CODE' && d.active).map(s => (
+                            {/* STATUS_CODE is a merged dictionary (WO + request + PM statuses, 0038a).
+                                Only wo_status enum members are offerable — picking e.g. REVIEW or
+                                APPROVED produced a raw Postgres enum-cast error. */}
+                            {dictionaries.filter(d => d.type === 'STATUS_CODE' && d.active && WO_STATUS_ENUM.includes(String(d.code).toUpperCase())).map(s => (
                                 <option key={s.id} value={s.code}>{s.description}</option>
                             ))}
                             {!dictionaries.some(d => d.type === 'STATUS_CODE' && d.code === job.status) && (
@@ -3692,6 +3838,32 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             ><Folder size={14} /></button>
                         </div>
                     </div>
+
+                    {/* Follow-up chain (parent → children): inspection→defect→corrective traceability */}
+                    {followUps.length > 0 && (
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Follow-up work orders raised from this WO</label>
+                            <div className="border border-amber-200 rounded-lg divide-y divide-amber-100 bg-amber-50/40 overflow-hidden">
+                                {followUps.map((w: any) => (
+                                    <button
+                                        key={w.id}
+                                        type="button"
+                                        onClick={() => navigateToWo(`/work-orders/${w.id}`)}
+                                        title="Open this follow-up work order"
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-amber-50 transition-colors"
+                                    >
+                                        <GitPullRequest size={12} className="text-amber-500 flex-shrink-0" />
+                                        <span className="text-xs font-mono font-bold text-slate-600 flex-shrink-0">{w.woNumber || w.wo_number || '—'}</span>
+                                        <span className="text-xs text-slate-600 truncate flex-1">{w.title}</span>
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 flex-shrink-0">{w.status}</span>
+                                        <span className="text-[10px] text-slate-400 flex-shrink-0">
+                                            {(() => { const d = w.createdAt || w.created_at; return d ? new Date(d).toLocaleDateString() : ''; })()}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Work Type {job.recurringWorkId && <Lock size={10} className="inline text-slate-400 ml-1" />}</label>
@@ -6732,15 +6904,16 @@ const MyWorkTodayView: React.FC<MyWorkTodayViewProps> = ({
 
     // Handle Quick TECO (Technical Complete)
     const handleCompleteJob = async (job: WorkOrder) => {
-        const asset = assets.find(a => a.id === job.assetId);
-        const isCriticalA = asset?.criticality === 'A';
-        const requiresFailureCoding = (job.type as string) !== 'PM' && isCriticalA;
+        // Same policy as the server-side TECO gate (lib/workOrder.ts): all
+        // corrective work needs a failure mode. The old crit-A-only rule let
+        // the client through only for the server to reject with TECO_BLOCKED.
+        const requiresFailureCoding = !isPreventiveWoType(job.type);
 
         // Failure Coding enforcement
         if (requiresFailureCoding) {
             const fMode = selectedFailureModes[job.id];
             if (!fMode) {
-                showToast("⛔ Failure Coding Required: Standard Failure Mode is mandatory for Criticality A assets.", "error");
+                showToast("⛔ Failure Coding Required: a Failure Mode is mandatory to complete corrective work.", "error");
                 return;
             }
 
@@ -6814,7 +6987,8 @@ const MyWorkTodayView: React.FC<MyWorkTodayViewProps> = ({
                     {assignedJobs.map((job) => {
                         const asset = assets.find(a => a.id === job.assetId);
                         const isCriticalA = asset?.criticality === 'A';
-                        const requiresFailureCoding = (job.type as string) !== 'PM' && isCriticalA;
+                        // Mirrors handleCompleteJob / the server TECO gate.
+                        const requiresFailureCoding = !isPreventiveWoType(job.type);
                         const hasParts = job.inventory && job.inventory.length > 0;
                         const isStaged = job.properties?.staging_confirmed === true;
 
