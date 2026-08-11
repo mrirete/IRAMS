@@ -1,0 +1,27 @@
+# Gitleaks config — picked up automatically by the gitleaks CI job (F-005).
+#
+# Allowlist policy: an entry is allowed here ONLY if it is (a) public by
+# design, or (b) a credential verified DEAD at the time of listing, with the
+# verification noted. Never allowlist a live secret — rotate it instead.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known non-secrets"
+
+regexes = [
+    # Supabase ANON key for the origin project (hacrebcfvyqdnjvilhqc).
+    # Public/publishable by design — shipped in every client bundle; RLS is
+    # the protection, not key secrecy. Exact-match, so a service_role JWT
+    # can never ride in on this entry.
+    '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhhY3JlYmNmdnlxZG5qdmlsaHFjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1Mjk5ODAsImV4cCI6MjA4NzEwNTk4MH0\.F-2Fordc833NAuprdRBmm5s-Bd5fQsO0vxUK7_06AJ0''',
+    # Historical shared test password, rotated in a8a4313. Verified dead
+    # 2026-08-11: password grant refused for tech001/requester01/admin001.
+    '''Password123!''',
+]
+
+paths = [
+    # Template values only, never real credentials.
+    '''\.env\.example$''',
+]

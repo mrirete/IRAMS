@@ -26,7 +26,7 @@ row without interviewing anyone.
 | 5.14 | Information transfer | ✅ | TLS everywhere; signed URLs; DPA governs customer transfer |
 | 5.15 | Access control | ✅ | RLS + role_can (0241) + tenant conjunct (0258–0281); policy §3 |
 | 5.16 | Identity management | ✅ | Supabase Auth; one identity per person; invites tokenised (0190) |
-| 5.17 | Authentication info | 🟡 | Salted hashes (provider); test creds in env (a8a4313); **MFA open (R-08)** |
+| 5.17 | Authentication info | ✅ | Salted hashes (provider); test creds in env (a8a4313); TOTP 2FA live 2026-08-11 (enrollment + aal2 login challenge); residual: per-account opt-in |
 | 5.18 | Access rights | ✅ | Role templates in DB; quarterly review per calendar; same-day leaver revocation path |
 | 5.19–5.22 | Supplier security (4 controls) | ✅ | Sub-processor register + annual review + DPAs + inherited attestations |
 | 5.23 | Cloud services security | ✅ | Register + region pinning (eu-west-1) + exit path (tenant-portable runner) |
@@ -36,7 +36,7 @@ row without interviewing anyone.
 | 5.27 | Learning from incidents | ✅ | IR §5 post-incident review → findings log; precedent: stuck-spinner & 0238 no-op retros exist in repo docs |
 | 5.28 | Evidence collection | ✅ | IR §4; append-only audit_logs are the substrate |
 | 5.29 | Security during disruption | 🟡 | Provider SLAs; documented deploy/rollback; BC test pending (R-10) |
-| 5.30 | ICT readiness for BC | 🟡 | PITR exists; **restore test not yet evidenced** |
+| 5.30 | ICT readiness for BC | 🔴 | Follows 8.13: no backups on current plan (verified 2026-08-11) — recovery = migration replay, data lost. Plan upgrade is F-006 |
 | 5.31 | Legal/regulatory requirements | ✅ | `docs/compliance/` set (GDPR + NA/AU deltas) |
 | 5.32 | Intellectual property | ✅ | Licensed deps only; lockfiles |
 | 5.33 | Protection of records | ✅ | Append-only audit; retention schedule + sweep (0282) |
@@ -77,15 +77,15 @@ row without interviewing anyone.
 | 8.2 | Privileged access | ✅ | is_admin() gates; service-role confined to edge functions; SECURITY DEFINER derives tenant (0261) |
 | 8.3 | Info access restriction | ✅ | RLS everywhere + private tenant-scoped storage (0281) |
 | 8.4 | Source code access | ✅ | Private repo; branch workflow |
-| 8.5 | Secure authentication | ✅/🟡 | JWT verified server-side (getUser(jwt) in all fns); **MFA = R-08** |
+| 8.5 | Secure authentication | ✅ | JWT verified server-side (getUser(jwt) in all fns); TOTP MFA + aal2 challenge live 2026-08-11 (F-004) |
 | 8.6 | Capacity | ✅ | Provider-managed + tier ceilings (0278) |
 | 8.7 | Malware | ⚪ | No file-execution surface server-side; endpoint AV = OS default |
-| 8.8 | Technical vulnerabilities | 🟡 | Trivy+Bandit daily; **gates advisory → make CRITICAL blocking (R-09)** |
+| 8.8 | Technical vulnerabilities | ✅ | Trivy CRITICAL blocking + npm audit critical gate + gitleaks, actions SHA-pinned (F-005, 2026-08-11); HIGH advisory pending triage |
 | 8.9 | Configuration mgmt | ✅ | Config = migrations + IaC-ish scripts, ledgered & checksummed |
 | 8.10 | Information deletion | ✅ | erase_person + retention_sweep (0282), self-auditing |
 | 8.11 | Data masking | 🟡 | Pseudonymisation (0024/0282); no prod-data-in-dev practice |
 | 8.12 | Data leakage prevention | ✅ | Private buckets + signed URLs + no-analytics client |
-| 8.13 | Backups | 🟡 | PITR on; **restore test pending** |
+| 8.13 | Backups | 🔴 | **API-verified 2026-08-11: pitr_enabled=false, zero backups — no restore path on current plan.** F-006 → plan upgrade (user). Was wrongly assumed 🟡 |
 | 8.14 | Redundancy | ⚪ | Accepted R-11 at current tier |
 | 8.15 | Logging | ✅ | Append-only audit_logs + AI/notification logs |
 | 8.16 | Monitoring | 🟡 | CI daily + self-auditing views; no realtime alerting `[BUILD: pipe audit findings to email via existing dispatcher]` |
@@ -108,6 +108,6 @@ row without interviewing anyone.
 
 ## Scoreboard
 
-**✅ 58 · 🟡 17 · 🔵 6 · ⚪ 12.** Certification-readiness = every 🟡/🔵 either
+**✅ 61 · 🟡 13 · 🔵 6 · 🔴 1 · ⚪ 12** (re-scored 2026-08-11 after F-004/F-005/F-007 closed and the backup assumption was corrected — 8.13 is now the only red). Certification-readiness = every 🟡/🔵 either
 closed or carrying a documented, risk-accepted justification. The five that
 matter most are the risk register's treatment queue (MFA first).

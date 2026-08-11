@@ -3,6 +3,7 @@ import { Settings, DollarSign, Bell, Shield, Info, Save, RotateCcw, Check, Globe
 import { useSettings, CURRENCY_OPTIONS, TIMEZONE_OPTIONS } from '../../contexts/SettingsContext';
 import type { Currency, DateFormatOption } from '../../contexts/SettingsContext';
 import { ModuleLicensingPanel } from '../../components/admin/ModuleLicensingPanel';
+import { MFAPanel } from '../../components/security/MFAPanel';
 
 // ─────────────────────────────────────────────────────────
 //  Tabs
@@ -242,6 +243,12 @@ const SecurityTab: React.FC = () => {
         <div>
             <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2"><Shield size={18} className="text-red-500" /> Security Configuration</h3>
             <p className="text-sm text-slate-500 mb-4">Authentication, session management, and access controls.</p>
+
+            {/* Real, per-account control (F-004) — everything below it is display-only */}
+            <div className="mb-5">
+                <MFAPanel isAdmin />
+            </div>
+
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg mb-5">
                 <p className="text-sm text-amber-700 font-semibold">⚠️ Security settings are managed by the system administrator and are read-only in this view.</p>
             </div>

@@ -30,7 +30,10 @@ const USE_PROXY = !!AI_PROXY_URL;
 // ── Direct Gemini Client (DEV-ONLY fallback) ────────────────
 // SECURITY: When VITE_AI_PROXY_URL is set, the direct client is NEVER created.
 // This ensures the Gemini API key is not bundled into the production build.
-const _devApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+// DEV-only fallback (risk R-05 / finding F-007): a VITE_ var is inlined into
+// the shipped bundle, so the key must be unreachable in production builds —
+// prod uses the server-side ai-proxy exclusively.
+const _devApiKey = import.meta.env.DEV ? (import.meta.env.VITE_GEMINI_API_KEY || '') : '';
 
 // Cached module + client instance — populated on first AI use
 let _genaiModule: typeof import('@google/genai') | null = null;

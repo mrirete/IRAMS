@@ -15,7 +15,10 @@ import type { DiagnosisResult } from '../../lib/predict/diagnosisRules';
 // ── AI Client Initialization ─────────────────────────────────
 // SECURITY: When the proxy is configured, NEVER initialize the direct client.
 // This prevents the Gemini API key from being bundled into the browser JS.
-const _devApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+// DEV-only fallback (risk R-05 / finding F-007): a VITE_ var is inlined into
+// the shipped bundle, so the key must be unreachable in production builds —
+// prod uses the server-side ai-proxy exclusively.
+const _devApiKey = import.meta.env.DEV ? (import.meta.env.VITE_GEMINI_API_KEY || '') : '';
 const _proxyConfigured = !!import.meta.env.VITE_AI_PROXY_URL;
 
 // Cached module + client instance — populated on first AI use

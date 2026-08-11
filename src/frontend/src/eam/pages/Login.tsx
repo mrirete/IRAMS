@@ -9,9 +9,14 @@ import {
 } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
 
-// Quick Switch is DEVELOPMENT ONLY — stripped from production builds
+// Quick Switch is DEVELOPMENT ONLY — stripped from production builds.
+// The shared test passwords were rotated out of the repo (a8a4313): the dev
+// server injects them from the repo-root .env.local via vite.config define.
+// Admin accounts use the admin credential; role accounts the test credential.
 const IS_DEV = import.meta.env.DEV;
-const TEST_PASSWORD = IS_DEV ? 'Password123!' : '';
+const ADMIN_PASSWORD = IS_DEV && typeof __DEV_ADMIN_PASSWORD__ !== 'undefined' ? __DEV_ADMIN_PASSWORD__ : '';
+const TEST_PASSWORD = IS_DEV && typeof __DEV_TEST_PASSWORD__ !== 'undefined' ? __DEV_TEST_PASSWORD__ : '';
+const ADMIN_USERNAMES = new Set(['admin001', 'mrirete']);
 
 // ── Stats for the dashboard preview ──
 const LIVE_STATS = [
@@ -70,7 +75,11 @@ export const Login: React.FC = () => {
                 const contacts = await db.getContacts();
 
                 if (users && users.length > 0) {
-                    const userList = users.slice(0, 12).map(u => {
+                    // The a8a4313 lockdown suspended all but the retained test
+                    // accounts — a suspended account can never sign in, so don't
+                    // offer it as a quick-switch target.
+                    const active = users.filter(u => (u as any).status !== 'suspended');
+                    const userList = active.slice(0, 12).map(u => {
                         const contact = contacts.find(c => c.id === (u as any).contact_id);
                         return {
                             username: u.username,
@@ -92,6 +101,44 @@ export const Login: React.FC = () => {
         loadUsers();
     }, []);
 
+    // ── MFA second step (F-004) ──
+    // Password sign-in yields an aal1 session. When the account has a verified
+    // TOTP factor, Supabase reports nextLevel aal2 — the session must not be
+    // treated as signed-in until the code verifies.
+    const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+    const [mfaCode, setMfaCode] = useState('');
+
+    const finishLogin = () => {
+        prefetchDashboard();
+        navigate(from, { replace: true });
+    };
+
+    const handleMfaVerify = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!mfaFactorId || mfaCode.length < 6) return;
+        setError('');
+        setLoading(true);
+        try {
+            const { error: err } = await supabase.auth.mfa.challengeAndVerify({ factorId: mfaFactorId, code: mfaCode.trim() });
+            if (err) throw err;
+            setMfaFactorId(null);
+            setMfaCode('');
+            finishLogin();
+        } catch (err: any) {
+            setError(err.message || 'That code was not accepted.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const cancelMfa = async () => {
+        // Half-authenticated (aal1) sessions must not linger.
+        await supabase.auth.signOut();
+        setMfaFactorId(null);
+        setMfaCode('');
+        setError('');
+    };
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -99,17 +146,36 @@ export const Login: React.FC = () => {
 
         try {
             await loginWithUsername(username, password);
-            // Start loading dashboard data while React Router navigates
-            prefetchDashboard();
-            navigate(from, { replace: true });
+
+            const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+            if (aal?.nextLevel === 'aal2' && aal.nextLevel !== aal.currentLevel) {
+                const { data: factors } = await supabase.auth.mfa.listFactors();
+                const totp = factors?.totp?.find(f => (f as any).status === 'verified');
+                if (totp) {
+                    setMfaFactorId(totp.id);
+                    setLoading(false);
+                    return; // second step renders; navigation happens after verify
+                }
+            }
+
+            finishLogin();
         } catch (err: any) {
             console.error("Login failed", err);
-            // A bare username only resolves for legacy (username@cainergy.com)
-            // accounts. Invited accounts (0190) are registered under their real
-            // email — steer the user there instead of a dead-end error.
-            const invalidCreds = (err.message || '').toLowerCase().includes('invalid login credentials');
-            if (invalidCreds && !username.includes('@')) {
-                setError('No account found for that username — try signing in with your email address instead.');
+            const code = err.code || '';
+            const invalidCreds = code === 'invalid_credentials'
+                || (err.message || '').toLowerCase().includes('invalid login credentials');
+            if (code === 'user_banned') {
+                // Suspended accounts (0164 ban pattern) — say so instead of
+                // letting the raw auth message through.
+                setError('This account has been suspended. Contact your administrator.');
+            } else if (invalidCreds && !username.includes('@')) {
+                // Invalid credentials on a bare username can mean a wrong
+                // password on a legacy (username@cainergy.com) account OR an
+                // invited account (0190) registered under its real email —
+                // don't claim "no account" when it may just be a bad password.
+                setError('Sign-in failed — check your password. If you joined by invite, sign in with your email address instead.');
+            } else if (invalidCreds) {
+                setError('Sign-in failed — wrong email or password.');
             } else {
                 setError(err.message || 'Failed to log in.');
             }
@@ -144,7 +210,8 @@ export const Login: React.FC = () => {
 
         try {
             await supabase.auth.signOut();
-            await loginWithUsername(targetUsername, TEST_PASSWORD);
+            const cred = ADMIN_USERNAMES.has(targetUsername.trim().toLowerCase()) ? ADMIN_PASSWORD : TEST_PASSWORD;
+            await loginWithUsername(targetUsername, cred);
             prefetchDashboard();
             navigate(from, { replace: true });
         } catch (err: any) {
@@ -221,7 +288,38 @@ export const Login: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Login form */}
+                        {/* MFA second step (F-004) — shown instead of the
+                            credential form once the password half succeeded */}
+                        {mfaFactorId ? (
+                            <form onSubmit={handleMfaVerify} className="space-y-5">
+                                <div className="flex items-center gap-3 p-3.5 rounded-xl" style={{ background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                                    <Shield size={17} style={{ color: '#2563eb' }} className="flex-shrink-0" />
+                                    <p className="text-[13px] font-medium" style={{ color: '#1e40af' }}>
+                                        Two-factor authentication is on for this account. Enter the 6-digit code from your authenticator app.
+                                    </p>
+                                </div>
+                                <div>
+                                    <label htmlFor="mfa-code" className="block text-[13px] font-semibold mb-2" style={{ color: '#334155' }}>
+                                        Verification code
+                                    </label>
+                                    <input id="mfa-code" value={mfaCode} autoFocus inputMode="numeric" autoComplete="one-time-code"
+                                           onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                                           placeholder="123456"
+                                           className="w-full text-center tracking-[0.35em] font-mono text-xl rounded-xl py-3.5 outline-none"
+                                           style={{ background: '#f8fafc', border: '1.5px solid #e2e8f0' }} />
+                                </div>
+                                <button type="submit" disabled={loading || mfaCode.length < 6}
+                                        className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-[15px] font-bold text-white transition-all duration-200 disabled:opacity-60"
+                                        style={{ background: 'linear-gradient(135deg, #f59e0b 0%, #ea580c 100%)', boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)' }}>
+                                    {loading ? <Loader2 size={17} className="animate-spin" /> : <>Verify <ArrowRight size={17} /></>}
+                                </button>
+                                <button type="button" onClick={cancelMfa}
+                                        className="w-full py-2 text-[13px] font-semibold rounded-lg transition-colors"
+                                        style={{ color: '#64748b' }}>
+                                    Use a different account
+                                </button>
+                            </form>
+                        ) : (
                         <form onSubmit={handleLogin} className="space-y-5">
                             {/* Username */}
                             <div>
@@ -320,6 +418,7 @@ export const Login: React.FC = () => {
                                 )}
                             </button>
                         </form>
+                        )}
 
                         {/* Divider — DEV ONLY */}
                         {IS_DEV && (

@@ -17,7 +17,10 @@ import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
 
 // SECURITY: In production, AI calls route through the backend proxy.
 // The direct Gemini client is a DEV-ONLY fallback.
-const _devApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+// DEV-only fallback (risk R-05 / finding F-007): a VITE_ var is inlined into
+// the shipped bundle, so the key must be unreachable in production builds —
+// prod uses the server-side ai-proxy exclusively.
+const _devApiKey = import.meta.env.DEV ? (import.meta.env.VITE_GEMINI_API_KEY || '') : '';
 const _proxyConfigured = !!import.meta.env.VITE_AI_PROXY_URL;
 
 let _genaiModule: typeof import('@google/genai') | null = null;
