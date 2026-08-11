@@ -731,6 +731,8 @@ export interface WorkOrder {
     failureMode?: string; // ISO 14224 Failure Mode (What happened)
     failureCause?: string; // ISO 14224 Failure Cause (Why it happened)
     remedyCode?: string;
+    detectionCode?: string; // How it was found (ISO 14224 Table B.4; DETECTION_METHOD dictionary)
+    objectPart?: string;    // Which component failed (SAP catalog B analogue; free text)
     comments?: string;
     localImpact?: string;    // Local failure effect (equipment level)
     plantWideImpact?: string; // Plant-wide failure effect (production/safety/env)

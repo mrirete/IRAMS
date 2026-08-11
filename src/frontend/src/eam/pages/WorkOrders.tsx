@@ -257,8 +257,11 @@ export const WorkOrders: React.FC = () => {
                                 assignedTo: (raw as any).assigned_to,
                                 costCenter: (raw as any).cost_center,
                                 enforceJobCostCenter: (raw.properties as any)?.enforceJobCostCenter,
-                                // Restore journals from properties JSONB
-                                journals: (raw.properties as any)?.journals || foundJob.journals || [],
+                                // Journals: prefer the append-only journal_entries rows (0285);
+                                // properties.journals is the offline cache / legacy fallback.
+                                journals: (raw as any).journal_rows?.length
+                                    ? DataMapper.toUIJournals((raw as any).journal_rows)
+                                    : ((raw.properties as any)?.journals || foundJob.journals || []),
                                 // Restore failureData from joined wo_failure_data
                                 failureData: (() => {
                                     const fd = Array.isArray(raw.wo_failure_data) ? raw.wo_failure_data[0] : raw.wo_failure_data;
@@ -267,6 +270,8 @@ export const WorkOrders: React.FC = () => {
                                         failureMode: fd.failure_mode_code || undefined,
                                         failureCause: fd.failure_cause_code || undefined,
                                         remedyCode: fd.remedy_code || undefined,
+                                        detectionCode: fd.detection_code || undefined,
+                                        objectPart: fd.object_part || undefined,
                                         comments: fd.comments || undefined,
                                         localImpact: fd.local_impact || undefined,
                                         plantWideImpact: fd.plant_wide_impact || undefined,
@@ -1087,7 +1092,6 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
     // ── GAP-21: Styled modal states (replace native alert/confirm) ──
     const [showFinancialCloseModal, setShowFinancialCloseModal] = useState(false);
-    const [journalDeleteId, setJournalDeleteId] = useState<string | null>(null);
 
     // Resolve asset class for failure mode context filtering
     const [resolvedAssetClass, setResolvedAssetClass] = useState<string>('');
@@ -1302,8 +1306,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     jsa: mappedJSA,
                     properties: raw.properties || {},
                     enforceJobCostCenter: (raw.properties as any)?.enforceJobCostCenter,
-                    // Restore journals from properties JSONB
-                    journals: (raw.properties as any)?.journals || updatedJob.journals || [],
+                    // Journals: prefer the append-only journal_entries rows (0285).
+                    journals: (raw as any).journal_rows?.length
+                        ? DataMapper.toUIJournals((raw as any).journal_rows)
+                        : ((raw.properties as any)?.journals || updatedJob.journals || []),
                     // Restore failureData from joined wo_failure_data
                     failureData: (() => {
                         const fd = Array.isArray(raw.wo_failure_data) ? raw.wo_failure_data[0] : raw.wo_failure_data;
@@ -1312,6 +1318,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             failureMode: fd.failure_mode_code || undefined,
                             failureCause: fd.failure_cause_code || undefined,
                             remedyCode: fd.remedy_code || undefined,
+                            detectionCode: fd.detection_code || undefined,
+                            objectPart: fd.object_part || undefined,
                             comments: fd.comments || undefined,
                             localImpact: fd.local_impact || undefined,
                             plantWideImpact: fd.plant_wide_impact || undefined,
@@ -1531,13 +1539,17 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     };
 
     const handleConfirmCompletion = async (followUp: boolean) => {
+        // Same shape as every other journal writer (entry/createdBy/createdAt) —
+        // this writer used author/date/comments, so TECO notes rendered blank in
+        // the timeline (which reads j.entry).
         const finalJournals = !hasJournals && modalJournalNote.trim()
             ? [{
                 id: `inst-${Date.now()}`,
                 type: 'Note',
-                author: (user as any)?.username || 'unknown',
-                date: new Date().toISOString(),
-                comments: modalJournalNote.trim()
+                createdBy: (user as any)?.username || 'unknown',
+                createdAt: new Date().toISOString(),
+                entry: modalJournalNote.trim(),
+                isSystem: false
               }, ...(localJob.journals || [])]
             : (localJob.journals || []);
 
@@ -2484,22 +2496,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 confirmText="Freeze Costs & Close"
             />
 
-            {/* ═══ GAP-21: Journal Delete Styled Modal (replaces native confirm) ═══ */}
-            <ConfirmationModal
-                isOpen={!!journalDeleteId}
-                onClose={() => setJournalDeleteId(null)}
-                onConfirm={() => {
-                    if (journalDeleteId) {
-                        const updated = (localJob.journals || []).filter((j: any) => j.id !== journalDeleteId);
-                        updateJob({ journals: updated });
-                        setJournalDeleteId(null);
-                    }
-                }}
-                title="Delete Journal Entry"
-                message="Are you sure you want to delete this journal entry? This cannot be undone."
-                type="danger"
-                confirmText="Delete Entry"
-            />
+            {/* Journal deletion removed (0285): journals are append-only records. */}
         </div>
     );
 };
@@ -2787,6 +2784,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     }, [allFailureModes, assetClassCode]);
     const allFailureCauses = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_CAUSE' && d.active), [dictionaries]);
     const failureCauses = allFailureCauses; // Causes are not asset-specific
+    const detectionMethods = useMemo(() => dictionaries.filter(d => d.type === 'DETECTION_METHOD' && d.active), [dictionaries]);
 
     // AI-assisted failure effects
     const [aiSuggestingEffects, setAiSuggestingEffects] = useState(false);
@@ -2817,6 +2815,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
 
     // Local state for free-text fields — only save onBlur to avoid disruptive auto-save while typing
     const [localActionTaken, setLocalActionTaken] = useState(job.failureData?.remedyCode || '');
+    const [localObjectPart, setLocalObjectPart] = useState(job.failureData?.objectPart || '');
     const [localEffects, setLocalEffects] = useState(job.failureData?.comments || '');
     const [localLocalImpact, setLocalLocalImpact] = useState(job.failureData?.localImpact || '');
     const [localPlantWideImpact, setLocalPlantWideImpact] = useState(job.failureData?.plantWideImpact || '');
@@ -2825,6 +2824,9 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     useEffect(() => {
         setLocalActionTaken(job.failureData?.remedyCode || '');
     }, [job.failureData?.remedyCode]);
+    useEffect(() => {
+        setLocalObjectPart(job.failureData?.objectPart || '');
+    }, [job.failureData?.objectPart]);
     useEffect(() => {
         setLocalEffects(job.failureData?.comments || '');
     }, [job.failureData?.comments]);
@@ -2840,6 +2842,15 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
             failureData: {
                 ...job.failureData,
                 remedyCode: localActionTaken
+            }
+        });
+    };
+
+    const flushObjectPart = () => {
+        onUpdate({
+            failureData: {
+                ...job.failureData,
+                objectPart: localObjectPart
             }
         });
     };
@@ -2871,8 +2882,6 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
         });
     };
 
-    const [editingId, setEditingId] = useState<string | null>(null);
-    const [editText, setEditText] = useState('');
     const [journalType, setJournalType] = useState('Note');
     const [showFollowUpConfirm, setShowFollowUpConfirm] = useState(false);
 
@@ -2883,30 +2892,21 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
             type: journalType,
             entry: note,
             createdBy: profile?.username || profile?.fullName || 'Unknown User',
-            createdAt: new Date().toLocaleString(),
+            createdAt: new Date().toISOString(), // ISO — sortable and timezone-safe (0285)
             isSystem: false
         };
         onUpdate({ journals: [newJournal, ...(job.journals || [])] });
         setNote('');
     };
 
-    const deleteJournal = (id: string) => {
-        const updated = (job.journals || []).filter(j => j.id !== id);
-        onUpdate({ journals: updated });
-    };
-
-    const startEdit = (j: any) => {
-        setEditingId(j.id);
-        setEditText(j.entry);
-    };
-
-    const saveEdit = (id: string) => {
-        const updated = (job.journals || []).map(j =>
-            j.id === id ? { ...j, entry: editText, editedAt: new Date().toLocaleString() } : j
-        );
-        onUpdate({ journals: updated });
-        setEditingId(null);
-        setEditText('');
+    // Journals are APPEND-ONLY (0285): entries mirror into journal_entries as
+    // the ISO 14224 record, so there is no edit or delete — a correction is a
+    // new entry. Display-side date formatting handles both ISO and the legacy
+    // locale strings older entries carry.
+    const formatJournalDate = (s?: string) => {
+        if (!s) return '';
+        const t = Date.parse(s);
+        return Number.isFinite(t) ? new Date(t).toLocaleString() : s;
     };
 
     const journalTypeColors: Record<string, string> = {
@@ -3115,6 +3115,32 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                 />
                             </div>
 
+                            {/* Detection + object part (0285, ISO 14224 Table B.4 / SAP catalog B).
+                                Detection is the field that proves PM effectiveness: found-by-inspection
+                                vs found-by-breakdown is the whole story. */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Detected By <span className="text-slate-400 font-normal">(Optional)</span></label>
+                                    <SearchableSelect
+                                        value={job.failureData?.detectionCode || ''}
+                                        onChange={(val) => onUpdate({ failureData: { ...job.failureData, detectionCode: val } })}
+                                        options={detectionMethods}
+                                        placeholder="-- How was it found? --"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Object Part <span className="text-slate-400 font-normal">(Optional)</span></label>
+                                    <input
+                                        type="text"
+                                        value={localObjectPart}
+                                        onChange={(e) => setLocalObjectPart(e.target.value)}
+                                        onBlur={flushObjectPart}
+                                        className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500"
+                                        placeholder="e.g. DE bearing, mechanical seal..."
+                                    />
+                                </div>
+                            </div>
+
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Action Taken <span className="text-slate-400 font-normal">(Optional)</span></label>
                                 <textarea
@@ -3284,46 +3310,11 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                         <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${journalTypeColors[j.type] || journalTypeColors['Note']}`}>
                                             {j.type}
                                         </span>
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="text-[10px] text-slate-400">{j.createdAt}</span>
-                                            {!j.isSystem && (
-                                                <div className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex gap-0.5">
-                                                    <button
-                                                        onClick={() => startEdit(j)}
-                                                        className="p-1 sm:p-0.5 text-slate-400 hover:text-blue-600 rounded min-w-[28px] min-h-[28px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
-                                                        title="Edit"
-                                                    >
-                                                        <Edit3 size={11} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => { if (confirm('Delete this journal entry?')) deleteJournal(j.id); }}
-                                                        className="p-1 sm:p-0.5 text-slate-400 hover:text-red-600 rounded min-w-[28px] min-h-[28px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
-                                                        title="Delete"
-                                                    >
-                                                        <Trash2 size={11} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
+                                        <span className="text-[10px] text-slate-400">{formatJournalDate(j.createdAt)}</span>
                                     </div>
                                     <div className="text-[11px] font-semibold text-slate-600 mb-0.5">{j.createdBy}</div>
-                                    {editingId === j.id ? (
-                                        <div className="space-y-1.5">
-                                            <textarea
-                                                value={editText}
-                                                onChange={(e) => setEditText(e.target.value)}
-                                                className="w-full border border-blue-300 rounded p-1.5 text-xs bg-blue-50 focus:ring-1 focus:ring-primary-500 resize-none h-16"
-                                                autoFocus
-                                            />
-                                            <div className="flex gap-1.5">
-                                                <button onClick={() => saveEdit(j.id)} className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-primary-500">Save</button>
-                                                <button onClick={() => setEditingId(null)} className="px-2 py-0.5 text-[10px] text-slate-500 bg-slate-100 rounded hover:bg-slate-200">Cancel</button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <p className="text-xs text-slate-600 whitespace-pre-wrap">{j.entry}</p>
-                                    )}
-                                    {(j as any).editedAt && editingId !== j.id && (
+                                    <p className="text-xs text-slate-600 whitespace-pre-wrap">{j.entry}</p>
+                                    {(j as any).editedAt && (
                                         <span className="text-[9px] text-slate-400 italic mt-1 block">edited {(j as any).editedAt}</span>
                                     )}
                                 </div>

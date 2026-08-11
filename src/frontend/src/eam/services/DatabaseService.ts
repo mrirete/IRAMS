@@ -2725,6 +2725,23 @@ export class DatabaseService {
             console.error("Error fetching work order:", error);
             return undefined;
         }
+
+        // Journals (0285): the queryable, append-only record lives in
+        // journal_entries; properties.journals is only the offline cache.
+        // No FK links the two (polymorphic entity_id), so PostgREST can't
+        // embed it — fetched alongside instead.
+        try {
+            const { data: journalRows } = await supabase
+                .from('journal_entries')
+                .select('id, entry_type, entry, created_at, is_system, client_id, author_name')
+                .eq('entity_type', 'WORK_ORDER')
+                .eq('entity_id', id)
+                .order('created_at', { ascending: false });
+            if (journalRows && journalRows.length > 0) {
+                (data as any).journal_rows = journalRows;
+            }
+        } catch { /* non-blocking — reader falls back to properties.journals */ }
+
         return data;
     }
 
@@ -2741,12 +2758,14 @@ export class DatabaseService {
 
         // --- FAILURE DATA PERSISTENCE (ISO 14224) ---
         // Moved BEFORE TECO validation so data is in the table when validation queries it
-        if (failureData && (failureData.failureMode || failureData.failureCause || failureData.remedyCode || failureData.localImpact || failureData.plantWideImpact)) {
+        if (failureData && (failureData.failureMode || failureData.failureCause || failureData.remedyCode || failureData.detectionCode || failureData.objectPart || failureData.localImpact || failureData.plantWideImpact)) {
             const failureRow = {
                 wo_id: id,
                 failure_mode_code: failureData.failureMode || null,
                 failure_cause_code: failureData.failureCause || null,
                 remedy_code: failureData.remedyCode || null,
+                detection_code: failureData.detectionCode || null,
+                object_part: failureData.objectPart || null,
                 comments: failureData.comments || null,
                 local_impact: failureData.localImpact || null,
                 plant_wide_impact: failureData.plantWideImpact || null,
@@ -2867,6 +2886,40 @@ export class DatabaseService {
         const { data, error } = await supabase.from('work_orders').update(finalUpdates).eq('id', id).select().single();
 
         if (error) throw error;
+
+        // ── Journal mirror (0285): INSERT-ONLY into journal_entries ──────────
+        // properties.journals stays the offline write-through cache; the table
+        // is the queryable, append-only record. ignoreDuplicates on
+        // (entity_id, client_id) makes replays idempotent, and the app never
+        // updates or deletes rows here — corrections are follow-up entries.
+        const journalBlob = (finalUpdates.properties as any)?.journals;
+        if (Array.isArray(journalBlob) && journalBlob.length > 0) {
+            try {
+                const isoRe = /^\d{4}-\d{2}-\d{2}T/;
+                const rows = journalBlob
+                    .map((j: any) => ({
+                        entity_id: id,
+                        entity_type: 'WORK_ORDER',
+                        entry_type: j?.type || 'Note',
+                        entry: j?.entry || j?.comments || '',
+                        created_at: (typeof j?.createdAt === 'string' && isoRe.test(j.createdAt)) ? j.createdAt
+                            : (typeof j?.date === 'string' && isoRe.test(j.date)) ? j.date
+                            : new Date().toISOString(),
+                        is_system: !!j?.isSystem,
+                        client_id: String(j?.id || ''),
+                        author_name: j?.createdBy || j?.author || null,
+                    }))
+                    .filter(r => r.client_id && r.entry);
+                if (rows.length > 0) {
+                    const { error: jErr } = await supabase
+                        .from('journal_entries')
+                        .upsert(rows, { onConflict: 'entity_id,client_id', ignoreDuplicates: true });
+                    if (jErr) console.warn('[updateWorkOrder] journal mirror failed (non-blocking):', jErr.message);
+                }
+            } catch (jThrown) {
+                console.warn('[updateWorkOrder] journal mirror threw (non-blocking):', jThrown);
+            }
+        }
 
         // Handle Relational Updates
         let taskSemaphores: Record<string, string> = {}; // Map TempID -> RealID

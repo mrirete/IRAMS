@@ -25,6 +25,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 
 import { TaskLibraryManager } from './admin/TaskLibrary';
+import { ManualCodeReview } from '../components/ManualCodeReview';
 import { OrgTreePicker } from '../components/OrgTreePicker';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 
@@ -2302,7 +2303,16 @@ export const Admin: React.FC = () => {
 
                 {/* Tab Content */}
                 <div className="flex-1 overflow-hidden relative bg-slate-50/50">
-                    {activeTab === 'dictionaries' && <DictionaryManager />}
+                    {activeTab === 'dictionaries' && (
+                        <div className="h-full min-h-0 flex flex-col">
+                            <div className="px-4 pt-4 md:px-6 md:pt-4 shrink-0">
+                                <ManualCodeReview />
+                            </div>
+                            <div className="flex-1 min-h-0">
+                                <DictionaryManager />
+                            </div>
+                        </div>
+                    )}
                     {activeTab === 'permissions' && <UserPermissionManager />}
                     {activeTab === 'licensing' && (
                         <div className="p-4 sm:p-6 overflow-y-auto h-full">

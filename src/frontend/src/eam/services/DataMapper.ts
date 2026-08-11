@@ -536,6 +536,8 @@ export class DataMapper {
                     failureMode: fd.failure_mode_code || undefined,
                     failureCause: fd.failure_cause_code || undefined,
                     remedyCode: fd.remedy_code || undefined,
+                    detectionCode: fd.detection_code || undefined,
+                    objectPart: fd.object_part || undefined,
                     comments: fd.comments || undefined,
                     localImpact: fd.local_impact || undefined,
                     plantWideImpact: fd.plant_wide_impact || undefined,
@@ -546,6 +548,19 @@ export class DataMapper {
             // Journals persisted in properties JSONB
             journals: record.properties?.journals || [],
         } as WorkOrder;
+    }
+
+    /** Map journal_entries rows (0285) to the UI journal shape. client_id is
+     *  the original app-side id, so optimistic entries and table rows dedupe. */
+    static toUIJournals(rows: any[]): any[] {
+        return (rows || []).map((r: any) => ({
+            id: r.client_id || r.id,
+            type: r.entry_type || 'Note',
+            entry: r.entry,
+            createdBy: r.author_name || 'unknown',
+            createdAt: r.created_at,
+            isSystem: !!r.is_system,
+        }));
     }
 
     static toDBWorkOrder(ui: WorkOrder, dictionaries?: any[]): any {

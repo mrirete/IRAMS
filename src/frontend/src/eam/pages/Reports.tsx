@@ -77,6 +77,14 @@ const woParts = (w: any) => Number(w.frozen_material_cost) || 0;
 const woCost = (w: any) =>
     (woLabor(w) + woParts(w)) || Number(w.frozen_total_cost) || Number(w.total_actual_cost) || 0;
 
+// ─── Row caps ───────────────────────────────────────────
+// These queries used to run select('*') with no .limit(): past PostgREST's
+// max-rows they silently truncated and every KPI on the page was quietly
+// wrong. The caps below are explicit, and when a result comes back exactly
+// at its cap the page says so instead of pretending the numbers are exact.
+const ROW_CAP_TXN = 10000;   // work_orders, service_requests, recurring_work
+const ROW_CAP_REF = 5000;    // assets, sem_asset_reliability
+
 export const Reports: React.FC = () => {
   const navigate = useNavigate();
   const { pinToActiveDashboard } = useDashboardStore();
@@ -110,7 +118,8 @@ export const Reports: React.FC = () => {
       const { data } = await supabase.from('work_orders').select('*')
         .gte('created_at', dateRange.start.toISOString())
         .lte('created_at', dateRange.end.toISOString())
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(ROW_CAP_TXN);
       return data || [];
     },
   });
@@ -118,7 +127,7 @@ export const Reports: React.FC = () => {
   const { data: assets = [] } = useQuery({
     queryKey: ['report-assets'],
     queryFn: async () => {
-      const { data } = await supabase.from('assets').select('*');
+      const { data } = await supabase.from('assets').select('*').limit(ROW_CAP_REF);
       return data || [];
     },
   });
@@ -152,7 +161,8 @@ export const Reports: React.FC = () => {
         .from('sem_asset_reliability')
         .select('asset_id, asset_tag, mtbf_days, mttr_hours, failures_12mo, downtime_hrs_12mo, availability_pct')
         .gt('failures_12mo', 0)
-        .order('mtbf_days', { ascending: true });
+        .order('mtbf_days', { ascending: true })
+        .limit(ROW_CAP_REF);
       return data || [];
     },
   });
@@ -171,7 +181,8 @@ export const Reports: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase.from('service_requests').select('*')
         .gte('created_at', dateRange.start.toISOString())
-        .lte('created_at', dateRange.end.toISOString());
+        .lte('created_at', dateRange.end.toISOString())
+        .limit(ROW_CAP_TXN);
       return data || [];
     },
   });
@@ -179,10 +190,21 @@ export const Reports: React.FC = () => {
   const { data: recurringWork = [] } = useQuery({
     queryKey: ['report-recurring-work'],
     queryFn: async () => {
-      const { data } = await supabase.from('recurring_work').select('*');
+      const { data } = await supabase.from('recurring_work').select('*').limit(ROW_CAP_TXN);
       return data || [];
     },
   });
+
+  // ── Row-cap honesty ─────────────────────────────────────
+  // A result that comes back exactly at its cap almost certainly hit it, so
+  // the aggregates below are computed from a truncated set. One banner, up
+  // top, says so — rather than every KPI being quietly wrong.
+  const dataTruncated =
+    workOrders.length >= ROW_CAP_TXN ||
+    serviceRequests.length >= ROW_CAP_TXN ||
+    recurringWork.length >= ROW_CAP_TXN ||
+    assets.length >= ROW_CAP_REF ||
+    assetMtbfMttr.length >= ROW_CAP_REF;
 
   // ── Dictionary Helper ───────────────────────────────────
   const getDictDesc = useCallback((category: string, code: string | null | undefined, fallback: string = 'Other') => {
@@ -523,6 +545,42 @@ export const Reports: React.FC = () => {
       Labor: Math.round(d.labor), Parts: Math.round(d.parts), Total: Math.round(d.total),
     }));
   }, [filteredWOs]);
+
+  // ── Maintenance cost by asset (Asset Health tab) ──
+  // Client-side aggregation over the same filtered WOs the rest of the page
+  // shows, on the same frozen-cost basis as woCost (labour + material frozen
+  // at closure, falling back to the aggregate columns). Hoisted here — not
+  // inside renderAssetHealth — for the hooks rule, like costData above.
+  const costByAsset = useMemo(() => {
+    const byId: Record<string, { wo_count: number; total_cost: number }> = {};
+    filteredWOs.forEach((w: any) => {
+      if (!w.asset_id) return;
+      if (!byId[w.asset_id]) byId[w.asset_id] = { wo_count: 0, total_cost: 0 };
+      byId[w.asset_id].wo_count++;
+      byId[w.asset_id].total_cost += woCost(w);
+    });
+    const assetById = new Map<string, any>(assets.map((a: any) => [a.id, a]));
+    return Object.entries(byId)
+      .map(([assetId, d]) => {
+        const asset = assetById.get(assetId);
+        return {
+          asset_id: assetId,
+          asset_tag: asset?.tag || asset?.name || 'Unknown',
+          asset_name: asset?.name || 'Unknown asset',
+          criticality: asset?.criticality || '—',
+          wo_count: d.wo_count,
+          total_cost: Math.round(d.total_cost),
+          avg_cost_per_wo: d.wo_count > 0 ? Math.round(d.total_cost / d.wo_count) : 0,
+        };
+      })
+      .sort((a, b) => b.total_cost - a.total_cost);
+  }, [filteredWOs, assets]);
+
+  const costByAssetTop12 = useMemo(
+    () => costByAsset.filter(r => r.total_cost > 0).slice(0, 12)
+      .map(r => ({ asset: r.asset_tag, name: r.asset_name, 'Total Cost': r.total_cost })),
+    [costByAsset],
+  );
 
   const totalCost = useMemo(() => filteredWOs.reduce((s: number, w: any) => s + woCost(w), 0), [filteredWOs]);
   const laborCostTotal = useMemo(() => filteredWOs.reduce((s: number, w: any) => s + woLabor(w), 0), [filteredWOs]);
@@ -905,6 +963,15 @@ export const Reports: React.FC = () => {
       { key: 'pct_of_total_wos', label: '% of WOs', format: 'percent' },
     ];
 
+    const costByAssetCols: TableColumn[] = [
+      { key: 'asset_tag', label: 'Asset Tag', width: '120px' },
+      { key: 'asset_name', label: 'Asset Name' },
+      { key: 'criticality', label: 'Criticality' },
+      { key: 'wo_count', label: 'WO Count', format: 'number', dataBar: true },
+      { key: 'total_cost', label: 'Total Cost', format: 'currency', dataBar: true },
+      { key: 'avg_cost_per_wo', label: 'Avg Cost / WO', format: 'currency' },
+    ];
+
     return (
       <div className="space-y-6">
         {/* Group By Selector */}
@@ -984,6 +1051,35 @@ export const Reports: React.FC = () => {
             </ComposedChart>
           </ResponsiveContainer>
         </ReportChartCard>
+
+        {/* ── Maintenance Cost by Asset ── */}
+        <ReportChartCard
+          title="Maintenance Cost by Asset"
+          subtitle="Top 12 by total cost — labour + material, frozen at closure"
+          infoTooltip="Aggregated from the filtered work orders on this page, grouped by asset. Same frozen-cost basis as the Cost & Parts tab."
+          height={380}
+          onPin={() => pinWidget('cost-by-asset', 'chart', 'Cost by Asset', 12, 1)}
+          onDrillDown={() => setActiveTab('costParts')}
+          drillDownLabel="View Costs & Parts"
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={costByAssetTop12} layout="vertical" margin={{ left: 20 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis type="number" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+              <YAxis dataKey="asset" type="category" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 500 }} width={110} />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar dataKey="Total Cost" name="Total Cost" fill={COLORS.indigo} radius={[0, 4, 4, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ReportChartCard>
+
+        <ReportDataTable
+          title="Maintenance Cost by Asset"
+          columns={costByAssetCols}
+          data={costByAsset}
+          exportFilename="ERS_Cost_By_Asset_Report.csv"
+          onRowClick={(row) => navigate(`/assets?id=${row.asset_id}`)}
+        />
 
         {/* ── NEW: MTBF/MTTR Trend + Downtime by Reason ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1193,6 +1289,17 @@ export const Reports: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Row-cap warning — one banner, not a wrong number per card */}
+      {dataTruncated && (
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-6 text-sm">
+          <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+          <p>
+            Result cap reached — KPIs below are computed from the first {ROW_CAP_TXN.toLocaleString()} rows
+            ({ROW_CAP_REF.toLocaleString()} for assets). Narrow the date range or filters for exact numbers.
+          </p>
+        </div>
+      )}
 
       {/* Tab Bar — horizontally scrollable on mobile */}
       <div className="relative mb-6">
