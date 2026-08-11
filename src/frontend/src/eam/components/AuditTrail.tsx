@@ -307,7 +307,8 @@ export const AuditTrail: React.FC<AuditTrailProps> = ({
                                             <div className="mt-2 pt-2 border-t border-slate-100 flex gap-4 text-xs text-slate-400">
                                                 <span className="flex items-center gap-1">
                                                     <User size={11} />
-                                                    {log.changed_by ? log.changed_by.slice(0, 8) + '…' : 'System'}
+                                                    {/* 0172 stamps the JWT email into changes.actor_email — far more useful than a UUID prefix */}
+                                                    {(log.changes as any)?.actor_email || (log.changed_by ? log.changed_by.slice(0, 8) + '…' : 'System')}
                                                 </span>
                                                 <span>Record: {log.record_id}</span>
                                                 <span>Table: {log.table_name}</span>

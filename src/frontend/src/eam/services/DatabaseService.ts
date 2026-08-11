@@ -2835,8 +2835,26 @@ export class DatabaseService {
         const finalUpdates = { ...coreUpdates, updated_at: new Date().toISOString() };
 
         if (coreUpdates.properties) {
-            // If we are updating properties, we likely want to merge, but for now specific flags from UI are passed as full object construction in DataMapper
-            // So we just take what's passed.
+            // Merge over the CURRENT row's properties instead of replacing them.
+            // The client rebuilds properties from its (possibly stale) in-memory
+            // copy, which silently dropped keys written by other flows —
+            // staging_confirmed, import metadata, rejection_reason — whenever a
+            // tab saved without having seen them. Incoming keys win; unknown
+            // existing keys survive.
+            try {
+                const { data: currentRow } = await supabase
+                    .from('work_orders')
+                    .select('properties')
+                    .eq('id', id)
+                    .single();
+                finalUpdates.properties = {
+                    ...((currentRow?.properties as Record<string, unknown>) || {}),
+                    ...(coreUpdates.properties as Record<string, unknown>),
+                };
+            } catch {
+                // Merge is best-effort — on read failure, fall through with the
+                // client's object rather than blocking the save.
+            }
         }
 
         // Strip undefined values to prevent sending null for NOT NULL columns (e.g. asset_id)

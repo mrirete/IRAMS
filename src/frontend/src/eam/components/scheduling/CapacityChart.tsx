@@ -121,13 +121,18 @@ export const CapacityChart: React.FC<CapacityChartProps> = ({
         return map;
     }, [craftCodes]);
 
-    // Per-day capacity: sum dailyCapacityHours for resources whose workingDays include that date
+    // Per-day capacity: sum dailyCapacityHours for resources working that day.
+    // workingDays holds WEEKDAY NAMES ('Mon'…'Sun', see getLaborAvailability),
+    // not ISO dates — comparing against the date string never matched, so the
+    // capacity line was structurally zero and utilisation always read as
+    // overloaded/no-capacity.
     const dailyCapacity = useMemo(() => {
         const map: Record<string, number> = {};
         dates.forEach((date) => {
+            const dayName = new Date(`${date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short' });
             let total = 0;
             resources.forEach((r) => {
-                if (r.workingDays.includes(date)) {
+                if (r.workingDays.includes(dayName) || r.workingDays.includes(date)) {
                     total += r.dailyCapacityHours;
                 }
             });

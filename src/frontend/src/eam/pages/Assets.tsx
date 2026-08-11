@@ -22,6 +22,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, isValidChild, showsEquipmentFields } from '../services/hierarchyModel';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
+import { computeAssetReliability, type AssetReliability } from '../services/reliabilityMetrics';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import { importAssets, importBoms } from '../services/bulkImportService';
 import { exportAssetsToXLSX, exportAssetsToCSV } from '../services/assetTemplates';
@@ -3801,6 +3802,11 @@ function JobsTab({ asset }: { asset: Asset }) {
     const [linkedPMs, setLinkedPMs] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showHistory, setShowHistory] = useState(false);
+    // Per-WO record facts (failure mode / downtime / cost) — the fetch always
+    // joined wo_failure_data and then discarded it; history rows showed neither
+    // what failed nor what it cost.
+    const [woFacts, setWoFacts] = useState<Record<string, { cost: number; downtime: number; mode?: string }>>({});
+    const [rel, setRel] = useState<AssetReliability | null>(null);
 
     const fetchJobs = useCallback(async () => {
         setLoading(true);
@@ -3815,6 +3821,22 @@ function JobsTab({ asset }: { asset: Asset }) {
             // Map DB records to UI work order type
             const mappedWOs = rawWOs.map((wo: any) => DataMapper.toUIWorkOrder(wo, allAssets));
             setAssetWOs(mappedWOs);
+
+            // Record facts from the raw rows (frozen costs prefer the closure
+            // snapshot, falling back to live totals) + the same reliability
+            // summary the work-order Analysis tab shows — previously it existed
+            // only inside a WO, never on the asset it describes.
+            const facts: Record<string, { cost: number; downtime: number; mode?: string }> = {};
+            for (const wo of rawWOs as any[]) {
+                const fd = Array.isArray(wo.wo_failure_data) ? wo.wo_failure_data[0] : wo.wo_failure_data;
+                facts[wo.id] = {
+                    cost: ((Number(wo.frozen_labor_cost) || 0) + (Number(wo.frozen_material_cost) || 0)) || Number(wo.total_actual_cost) || 0,
+                    downtime: Number(wo.actual_downtime_hrs) || 0,
+                    mode: fd?.failure_mode_code || undefined,
+                };
+            }
+            setWoFacts(facts);
+            setRel(computeAssetReliability(rawWOs as any[], { mtbfDays: (asset as any).mtbfDays, mttrHours: (asset as any).mttrHours }));
 
             // Map recurring_work DB records to PM display format
             const mappedPMs = rawPMs.map((pm: any) => ({
@@ -3835,6 +3857,8 @@ function JobsTab({ asset }: { asset: Asset }) {
             // DB fetch failed — show empty state (no mock fallback)
             setAssetWOs([]);
             setLinkedPMs([]);
+            setWoFacts({});
+            setRel(null);
         } finally {
             setLoading(false);
         }
@@ -3881,6 +3905,45 @@ function JobsTab({ asset }: { asset: Asset }) {
 
     return (
         <div className="space-y-6">
+            {/* Asset Reliability summary — same engine as the WO Analysis tab */}
+            {rel && rel.totalFailures > 0 && (
+                <div className="bg-white p-4 rounded-lg border border-slate-200">
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-bold text-slate-700 uppercase flex items-center gap-2">
+                            <Activity size={14} className="text-blue-600" /> Reliability from Work History
+                        </h3>
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wide">last 12 months</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {([
+                            ['Failures (12mo)', String(rel.failures12mo)],
+                            ['MTBF', rel.mtbfDays != null ? `${rel.mtbfDays}d` : '—'],
+                            ['MTTR', rel.mttrHours != null ? `${rel.mttrHours}h` : '—'],
+                            ['Last failure', rel.lastFailureDate ? new Date(rel.lastFailureDate).toLocaleDateString() : '—'],
+                        ] as [string, string][]).map(([label, value]) => (
+                            <div key={label} className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                                <div className="text-base font-extrabold text-slate-800">{value}</div>
+                                <div className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</div>
+                            </div>
+                        ))}
+                    </div>
+                    {rel.recurringModes.length > 0 && (
+                        <div className="mt-2 flex items-center gap-1.5 flex-wrap text-[11px]">
+                            <span className="text-slate-500 font-semibold flex items-center gap-1"><Repeat size={11} /> Recurring modes:</span>
+                            {rel.recurringModes.slice(0, 4).map(m => (
+                                <span key={m.mode} className="px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-semibold">{m.mode} ×{m.count}</span>
+                            ))}
+                        </div>
+                    )}
+                    {rel.recommendRCA && (
+                        <div className="mt-2.5 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-800">
+                            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+                            <div><span className="font-bold">RCA recommended.</span> {rel.rcaReason}</div>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Active Work Orders Section */}
             <div>
                 <h3 className="text-sm font-bold text-slate-700 uppercase mb-3 flex items-center gap-2">
@@ -3989,7 +4052,9 @@ function JobsTab({ asset }: { asset: Asset }) {
                 </button>
                 {showHistory && (
                     <>
-                        {completedWOs.map(wo => (
+                        {completedWOs.map(wo => {
+                            const facts = woFacts[wo.id];
+                            return (
                             <div
                                 key={wo.id}
                                 onClick={() => navigate(`/work-orders/${wo.id}`)}
@@ -4001,15 +4066,23 @@ function JobsTab({ asset }: { asset: Asset }) {
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${STATUS_COLORS[wo.status] || 'bg-slate-100 text-slate-600'}`}>{wo.status}</span>
                                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold uppercase ${PRIORITY_COLORS[wo.priority] || 'bg-slate-100 text-slate-600'}`}>{wo.priority}</span>
                                         {wo.type && <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-slate-100 text-slate-600">{wo.type}</span>}
+                                        {facts?.mode && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-red-50 text-red-700 border border-red-200">{facts.mode}</span>
+                                        )}
                                     </div>
                                     <h4 className="font-medium text-slate-700 text-sm truncate">{wo.title}</h4>
                                 </div>
                                 <div className="text-right ml-4 shrink-0">
                                     <div className="text-xs text-slate-400">{wo.dueDate ? new Date(wo.dueDate).toLocaleDateString() : ''}</div>
+                                    <div className="text-[10px] text-slate-500 mt-0.5 space-x-2">
+                                        {facts && facts.downtime > 0 && <span className="text-amber-600 font-semibold">{facts.downtime.toFixed(1)}h down</span>}
+                                        {facts && facts.cost > 0 && <span className="font-semibold">${Math.round(facts.cost).toLocaleString()}</span>}
+                                    </div>
                                     <ArrowUpRight size={14} className="text-slate-300 group-hover:text-blue-500 ml-auto mt-1 transition-colors" />
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                         {!completedWOs.length && (
                             <div className="text-center py-6 text-slate-400 text-sm border border-dashed border-slate-200 rounded-lg">
                                 <History size={24} className="mx-auto mb-2 opacity-20" />

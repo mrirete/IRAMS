@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useQuery } from '@tanstack/react-query';
 import { isOpenWo } from '../../lib/woState';
+import { computePmCompliance } from '../../lib/reliabilityKpis';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart
@@ -324,18 +325,18 @@ export const Dashboard: React.FC = () => {
   const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '...';
 
   // ── PM Schedule Compliance ──
-  const totalPM = pmWos.length;
-  const pmClosed = pmWos.filter((w: any) => w.status === 'CLOSED' || w.status === 'TECO').length;
-  const pmOnTime = pmWos.filter((w: any) => {
-    if (w.status !== 'CLOSED' && w.status !== 'TECO') return false;
-    if (!w.closed_at || !w.due_date) return false;
-    return new Date(w.closed_at) <= new Date(w.due_date);
-  }).length;
-  const pmComplianceRate = totalPM > 0 ? Math.round((pmOnTime / totalPM) * 100) : 0;
+  // CANONICAL definition (lib/reliabilityKpis.computePmCompliance): PMs DUE in
+  // the window, on-time = closed on/before due date. The old computation used
+  // all PM WOs ever as the denominator — a third, all-time definition that
+  // disagreed with both Reports and Scheduling.
+  const pmWindowMs = 90 * 86400000;
+  const pmc = computePmCompliance(pmWos as any[], Date.now() - pmWindowMs, Date.now());
+  const pmOnTime = pmc.onTime;
+  const pmMissed = pmc.due - pmc.onTime;
+  const pmComplianceRate = pmc.compliancePct != null ? Math.round(pmc.compliancePct) : 0;
   const pmComplianceData = [
     { name: 'On-Time', value: pmOnTime, color: '#22c55e' },
-    { name: 'Late', value: pmClosed - pmOnTime, color: '#f59e0b' },
-    { name: 'Open', value: totalPM - pmClosed, color: '#e2e8f0' },
+    { name: 'Late / Missed', value: pmMissed, color: '#f59e0b' },
   ].filter(d => d.value > 0);
 
   // ── Backlog Aging ──
@@ -693,6 +694,7 @@ export const Dashboard: React.FC = () => {
           <div className="flex items-center gap-2 mb-3">
             <Gauge size={16} className="text-emerald-600" />
             <h4 className="text-sm font-semibold text-slate-900">PM Compliance</h4>
+            <span className="ml-auto text-[10px] text-slate-400 uppercase tracking-wide">due last 90d</span>
           </div>
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 relative">
@@ -715,8 +717,8 @@ export const Dashboard: React.FC = () => {
             </div>
             <div className="flex-1 text-xs text-slate-500 space-y-1">
               <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500" /> On-Time: {pmOnTime}</div>
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Late: {pmClosed - pmOnTime}</div>
-              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-200" /> Open: {totalPM - pmClosed}</div>
+              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> Late / Missed: {pmMissed}</div>
+              <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-200" /> Due in window: {pmc.due}</div>
             </div>
           </div>
           <button onClick={() => navigate('/reports')} className="mt-3 text-[10px] font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">

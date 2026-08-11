@@ -1486,13 +1486,18 @@ export function MaintainabilityTab({ onStateChange, loadedData }: TabProps = {})
         if (!asset) return;
         setLoading(true);
         (async () => {
+            // actual_hours never existed on work_orders — PostgREST rejected the
+            // whole select (42703) and this auto-populate silently never fired.
+            // Same repair basis as the engine: recorded downtime, else order-level
+            // actual hours (0283).
             const { data: wos } = await supabase.from('work_orders')
-                .select('actual_hours')
-                .eq('asset_id', asset.id)
-                .not('actual_hours', 'is', null)
-                .gt('actual_hours', 0);
-            if (wos && wos.length > 0) {
-                setDataStr(wos.map(w => parseFloat(w.actual_hours).toFixed(1)).join(', '));
+                .select('actual_downtime_hrs, actual_duration_hrs')
+                .eq('asset_id', asset.id);
+            const durs = (wos || [])
+                .map(w => Number(w.actual_downtime_hrs) || Number(w.actual_duration_hrs) || 0)
+                .filter(n => n > 0);
+            if (durs.length > 0) {
+                setDataStr(durs.map(n => n.toFixed(1)).join(', '));
             }
             setLoading(false);
         })();
@@ -1670,8 +1675,10 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
             const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
             // All WO types in-window; the shared engine decides what counts as a failure
             // (corrective OR a coded failure mode), matching the Metrics definition.
+            // Was a hand-rolled column list including actual_hours/actual_duration,
+            // which don't exist on work_orders → 42703, silent empty result.
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, type, status, created_at, closed_at, actual_hours, actual_downtime_hrs, actual_duration, wo_failure_data(failure_mode_code)')
+                .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id)
                 .gte('created_at', yearAgo)
                 .order('created_at');

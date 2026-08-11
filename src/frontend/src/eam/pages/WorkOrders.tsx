@@ -59,6 +59,7 @@ import { CreatePMModal } from '../components/modals/CreatePMModal';
 import { OrgTreePicker } from '../components/OrgTreePicker';
 import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { FilesTab } from '../components/FilesTab';
+import { AuditTrail } from '../components/AuditTrail';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // Added import
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
@@ -1451,6 +1452,27 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             setGatekeeperReason('');
             setGatekeeperConfirmed(false);
             return;
+        }
+
+        // Auto-journal status & assignment changes as SYSTEM entries — the
+        // "History" half of Analysis & History was manual notes only; process
+        // events left no trace in the record.
+        const sysEntries: any[] = [];
+        const stamp = () => ({
+            id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sys-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            type: 'SYSTEM',
+            createdBy: (user as any)?.username || user?.email || 'system',
+            createdAt: new Date().toISOString(),
+            isSystem: true,
+        });
+        if (updates.status && updates.status !== localJob.status) {
+            sysEntries.push({ ...stamp(), entry: `Status changed: ${localJob.status || '—'} → ${updates.status}` });
+        }
+        if (updates.assignedTo !== undefined && updates.assignedTo !== localJob.assignedTo) {
+            sysEntries.push({ ...stamp(), entry: `Assignment changed: ${localJob.assignedTo || 'unassigned'} → ${updates.assignedTo || 'unassigned'}` });
+        }
+        if (sysEntries.length > 0) {
+            updates = { ...updates, journals: [...sysEntries, ...(updates.journals || localJob.journals || [])] };
         }
 
         // 1. Optimistic UI Update — instant, no lag
@@ -3314,6 +3336,17 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* ══ Change History — the DB audit trail for THIS work order.
+                audit_wo_changes has recorded every field change since 0000;
+                this is the first place a user can actually see it. ══ */}
+            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
+                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
+                    <Clock className="text-slate-500" size={14} /> Change History
+                    <span className="text-[10px] font-normal text-slate-400 ml-auto">audit trail — append-only</span>
+                </h3>
+                <AuditTrail entityId={job.id} tableName="work_orders" limit={40} compact />
             </div>
         </div>
     );
