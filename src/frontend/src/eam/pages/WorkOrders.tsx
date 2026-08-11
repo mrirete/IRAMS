@@ -271,6 +271,7 @@ export const WorkOrders: React.FC = () => {
                                         failureCause: fd.failure_cause_code || undefined,
                                         remedyCode: fd.remedy_code || undefined,
                                         detectionCode: fd.detection_code || undefined,
+                                        subunitCode: fd.subunit_code || undefined,
                                         objectPart: fd.object_part || undefined,
                                         failedBomItemId: fd.failed_bom_item_id || undefined,
                                         failedPartNo: fd.failed_part_no || undefined,
@@ -1336,6 +1337,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             failureCause: fd.failure_cause_code || undefined,
                             remedyCode: fd.remedy_code || undefined,
                             detectionCode: fd.detection_code || undefined,
+                            subunitCode: fd.subunit_code || undefined,
                             objectPart: fd.object_part || undefined,
                             failedBomItemId: fd.failed_bom_item_id || undefined,
                             failedPartNo: fd.failed_part_no || undefined,
@@ -2856,6 +2858,10 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     const allFailureCauses = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_CAUSE' && d.active), [dictionaries]);
     const failureCauses = allFailureCauses; // Causes are not asset-specific
     const detectionMethods = useMemo(() => dictionaries.filter(d => d.type === 'DETECTION_METHOD' && d.active), [dictionaries]);
+    // ISO 14224 level-7 subunits, scoped to the asset class like failure modes (0288)
+    const subunits = useMemo(() => dictionaries.filter(d =>
+        d.type === 'SUBUNIT' && d.active && (!d.categoryRef || d.categoryRef === assetClassCode)
+    ), [dictionaries, assetClassCode]);
 
     // AI-assisted failure effects
     const [aiSuggestingEffects, setAiSuggestingEffects] = useState(false);
@@ -3070,6 +3076,56 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
         openRelantern(context, 'workOrder', prompt);
     };
 
+    // ── Additional damage items (0288, SAP notification items) ──────────────
+    // The primary damage record above drives the TECO gate and analytics;
+    // extra faults found on the same job land here instead of vanishing in prose.
+    const [failureItems, setFailureItems] = useState<any[]>([]);
+    const reloadFailureItems = () => {
+        if (!job.id) return;
+        DatabaseService.getInstance().getFailureItems(job.id)
+            .then(setFailureItems)
+            .catch(() => setFailureItems([]));
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => { reloadFailureItems(); }, [job.id]);
+    const [draftItem, setDraftItem] = useState({ subunit: '', mode: '', cause: '', bomId: '', part: '', comments: '' });
+    const [addingItem, setAddingItem] = useState(false);
+    const dictDesc = (type: string, code?: string | null) =>
+        code ? (dictionaries.find(d => d.type === type && d.code === code)?.description || code) : '';
+    const handleAddDamageItem = async () => {
+        if (!draftItem.mode && !draftItem.bomId && !draftItem.part.trim()) {
+            showToast('Give the damage item at least a failure mode or a component.', 'info');
+            return;
+        }
+        setAddingItem(true);
+        try {
+            const bom = draftItem.bomId ? bomItems.find((b: any) => b.id === draftItem.bomId) : undefined;
+            await DatabaseService.getInstance().addFailureItem({
+                woId: job.id,
+                subunitCode: draftItem.subunit || undefined,
+                failureModeCode: draftItem.mode || undefined,
+                failureCauseCode: draftItem.cause || undefined,
+                failedBomItemId: bom?.id,
+                failedPartNo: bom?.partNumber || undefined,
+                objectPart: bom?.description || draftItem.part.trim() || undefined,
+                comments: draftItem.comments.trim() || undefined,
+            });
+            setDraftItem({ subunit: '', mode: '', cause: '', bomId: '', part: '', comments: '' });
+            reloadFailureItems();
+        } catch (e: any) {
+            showToast('Failed to add damage item: ' + e.message, 'error');
+        }
+        setAddingItem(false);
+    };
+    const handleRemoveDamageItem = async (id: string) => {
+        try {
+            await DatabaseService.getInstance().deleteFailureItem(id);
+            reloadFailureItems();
+        } catch (e: any) {
+            showToast('Failed to remove damage item: ' + e.message, 'error');
+        }
+    };
+
     return (
         <div className="flex flex-col gap-3 md:gap-4 animate-in fade-in duration-300">
             {/* ══ Closeout Quality (Gate 2) — advisory ══ */}
@@ -3248,6 +3304,19 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                     />
                                 </div>
                                 <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Subunit <span className="text-slate-400 font-normal">(ISO 14224 L7)</span></label>
+                                    <select
+                                        className="w-full p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500"
+                                        value={job.failureData?.subunitCode || ''}
+                                        onChange={(e) => onUpdate({ failureData: { ...job.failureData, subunitCode: e.target.value || undefined } })}
+                                    >
+                                        <option value="">-- Which system of the asset? --</option>
+                                        {subunits.map(s => (
+                                            <option key={s.id} value={s.code}>{s.description}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="md:col-span-2">
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Failed Component <span className="text-slate-400 font-normal">(Optional)</span></label>
                                     {bomItems.length > 0 ? (
                                         <>
@@ -3404,6 +3473,106 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                     </div>
                 </div>
             </div>
+
+            {/* ══ Additional damage items (0288) — multi-fault findings on one WO ══ */}
+            {!isPreventive && (
+                <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
+                    <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
+                        <AlertTriangle className="text-orange-500" size={14} /> Additional Damage Items
+                        <span className="text-[10px] font-normal text-slate-400 ml-auto">{failureItems.length} item{failureItems.length === 1 ? '' : 's'} beyond the primary record</span>
+                    </h3>
+
+                    {failureItems.length > 0 && (
+                        <div className="mb-3 border border-slate-200 rounded-lg divide-y divide-slate-100 overflow-hidden">
+                            {failureItems.map((it: any) => (
+                                <div key={it.id} className="flex items-start gap-2 px-3 py-2 text-xs bg-slate-50/50">
+                                    <span className="font-mono text-slate-400 flex-shrink-0 mt-0.5">#{it.seq}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {it.subunit_code && <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-semibold">{dictDesc('SUBUNIT', it.subunit_code)}</span>}
+                                            {it.object_part && <span className="px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200 font-semibold">{it.object_part}{it.failed_part_no ? ` (${it.failed_part_no})` : ''}</span>}
+                                            {it.failure_mode_code && <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 font-semibold">{dictDesc('FAILURE_MODE', it.failure_mode_code)}</span>}
+                                            {it.failure_cause_code && <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">{dictDesc('FAILURE_CAUSE', it.failure_cause_code)}</span>}
+                                        </div>
+                                        {it.comments && <p className="text-slate-500 mt-1">{it.comments}</p>}
+                                    </div>
+                                    <button
+                                        onClick={() => handleRemoveDamageItem(it.id)}
+                                        className="p-1 text-slate-400 hover:text-red-600 rounded flex-shrink-0"
+                                        title="Remove damage item"
+                                    >
+                                        <Trash2 size={12} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Add item */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <select
+                            className="p-2 border border-slate-300 rounded-lg text-xs bg-white"
+                            value={draftItem.subunit}
+                            onChange={e => setDraftItem(d => ({ ...d, subunit: e.target.value }))}
+                        >
+                            <option value="">Subunit…</option>
+                            {subunits.map(s => <option key={s.id} value={s.code}>{s.description}</option>)}
+                        </select>
+                        <SearchableSelect
+                            value={draftItem.mode}
+                            onChange={val => setDraftItem(d => ({ ...d, mode: val }))}
+                            options={failureModes}
+                            placeholder="Failure mode…"
+                            groupKey="categoryRef"
+                        />
+                        <select
+                            className="p-2 border border-slate-300 rounded-lg text-xs bg-white"
+                            value={draftItem.cause}
+                            onChange={e => setDraftItem(d => ({ ...d, cause: e.target.value }))}
+                        >
+                            <option value="">Cause…</option>
+                            {failureCauses.map(c => <option key={c.id} value={c.code}>{c.description}</option>)}
+                        </select>
+                        {bomItems.length > 0 ? (
+                            <select
+                                className="p-2 border border-slate-300 rounded-lg text-xs bg-white"
+                                value={draftItem.bomId}
+                                onChange={e => setDraftItem(d => ({ ...d, bomId: e.target.value, part: '' }))}
+                            >
+                                <option value="">Component (from BOM)…</option>
+                                {bomItems.map((b: any) => (
+                                    <option key={b.id} value={b.id}>{b.description}{b.partNumber ? ` (${b.partNumber})` : ''}</option>
+                                ))}
+                            </select>
+                        ) : (
+                            <input
+                                type="text"
+                                className="p-2 border border-slate-300 rounded-lg text-xs bg-white"
+                                placeholder="Component…"
+                                value={draftItem.part}
+                                onChange={e => setDraftItem(d => ({ ...d, part: e.target.value }))}
+                            />
+                        )}
+                        <input
+                            type="text"
+                            className="p-2 border border-slate-300 rounded-lg text-xs bg-white"
+                            placeholder="Comments…"
+                            value={draftItem.comments}
+                            onChange={e => setDraftItem(d => ({ ...d, comments: e.target.value }))}
+                        />
+                        <button
+                            onClick={handleAddDamageItem}
+                            disabled={addingItem}
+                            className="px-3 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-700 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        >
+                            {addingItem ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Add Damage Item
+                        </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2">
+                        The primary failure coding above drives the completion gate and reliability KPIs; damage items record the additional faults found on the same job.
+                    </p>
+                </div>
+            )}
 
             {/* Bottom Row: Unified Journals & Notes (full width) */}
             <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col" style={{ minHeight: isPreventive ? '350px' : '400px' }}>

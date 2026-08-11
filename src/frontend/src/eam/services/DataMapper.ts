@@ -537,6 +537,7 @@ export class DataMapper {
                     failureCause: fd.failure_cause_code || undefined,
                     remedyCode: fd.remedy_code || undefined,
                     detectionCode: fd.detection_code || undefined,
+                    subunitCode: fd.subunit_code || undefined,
                     objectPart: fd.object_part || undefined,
                     failedBomItemId: fd.failed_bom_item_id || undefined,
                     failedPartNo: fd.failed_part_no || undefined,

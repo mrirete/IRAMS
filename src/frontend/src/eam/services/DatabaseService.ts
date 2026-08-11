@@ -2758,13 +2758,14 @@ export class DatabaseService {
 
         // --- FAILURE DATA PERSISTENCE (ISO 14224) ---
         // Moved BEFORE TECO validation so data is in the table when validation queries it
-        if (failureData && (failureData.failureMode || failureData.failureCause || failureData.remedyCode || failureData.detectionCode || failureData.objectPart || failureData.failedBomItemId || failureData.localImpact || failureData.plantWideImpact)) {
+        if (failureData && (failureData.failureMode || failureData.failureCause || failureData.remedyCode || failureData.detectionCode || failureData.subunitCode || failureData.objectPart || failureData.failedBomItemId || failureData.localImpact || failureData.plantWideImpact)) {
             const failureRow = {
                 wo_id: id,
                 failure_mode_code: failureData.failureMode || null,
                 failure_cause_code: failureData.failureCause || null,
                 remedy_code: failureData.remedyCode || null,
                 detection_code: failureData.detectionCode || null,
+                subunit_code: failureData.subunitCode || null,
                 object_part: failureData.objectPart || null,
                 failed_bom_item_id: failureData.failedBomItemId || null,
                 failed_part_no: failureData.failedPartNo || null,
@@ -3295,6 +3296,53 @@ export class DatabaseService {
                 isStockable: undefined, // resolved by UI from INVENTORY_TYPE dictionary
             };
         });
+    }
+
+    // ── Multi-damage items (0288, SAP notification items analogue) ──────────
+    // The PRIMARY damage record stays on wo_failure_data; these are the extra
+    // faults found on the same WO. Working data pre-TECO — add/remove allowed.
+
+    public async getFailureItems(woId: string): Promise<any[]> {
+        const { data, error } = await supabase
+            .from('wo_failure_items')
+            .select('*')
+            .eq('wo_id', woId)
+            .order('seq', { ascending: true })
+            .order('created_at', { ascending: true });
+        if (error) {
+            console.error('[getFailureItems] Error:', error);
+            return [];
+        }
+        return data || [];
+    }
+
+    public async addFailureItem(item: {
+        woId: string; subunitCode?: string; objectPart?: string;
+        failedBomItemId?: string; failedPartNo?: string;
+        failureModeCode?: string; failureCauseCode?: string; comments?: string;
+    }): Promise<any> {
+        const { count } = await supabase
+            .from('wo_failure_items')
+            .select('id', { count: 'exact', head: true })
+            .eq('wo_id', item.woId);
+        const { data, error } = await supabase.from('wo_failure_items').insert({
+            wo_id: item.woId,
+            seq: (count || 0) + 1,
+            subunit_code: item.subunitCode || null,
+            object_part: item.objectPart || null,
+            failed_bom_item_id: item.failedBomItemId || null,
+            failed_part_no: item.failedPartNo || null,
+            failure_mode_code: item.failureModeCode || null,
+            failure_cause_code: item.failureCauseCode || null,
+            comments: item.comments || null,
+        }).select().single();
+        if (error) throw error;
+        return data;
+    }
+
+    public async deleteFailureItem(id: string): Promise<void> {
+        const { error } = await supabase.from('wo_failure_items').delete().eq('id', id);
+        if (error) throw error;
     }
 
     /**

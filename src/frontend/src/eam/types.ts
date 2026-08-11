@@ -7,7 +7,7 @@ export type DictionaryType =
   | 'CRITICALITY' | 'PRIORITY' | 'QUALIFICATION_TYPE' | 'READING_TYPE' | 'STATUS_CODE'
   | 'TAX_CODE' | 'UOM'
   | 'FAILURE_MODE' | 'FAILURE_CAUSE' | 'REMEDY_CODE'
-  | 'OBJECT_PART' | 'ACTIVITY_CODE'
+  | 'OBJECT_PART' | 'ACTIVITY_CODE' | 'SUBUNIT' | 'DETECTION_METHOD'
   | 'COST_CENTER_TYPE'
   | 'PERMIT_TYPE' | 'PTW_STATUS' | 'ISOLATION_TYPE' | 'PPE_TYPE'
   | 'RCM_STRATEGY' | 'PM_STATUS'
@@ -732,6 +732,7 @@ export interface WorkOrder {
     failureCause?: string; // ISO 14224 Failure Cause (Why it happened)
     remedyCode?: string;
     detectionCode?: string; // How it was found (ISO 14224 Table B.4; DETECTION_METHOD dictionary)
+    subunitCode?: string;   // ISO 14224 level-7 subunit (SUBUNIT dictionary, per asset class)
     objectPart?: string;    // Which component failed — description snapshot (SAP catalog B analogue)
     failedBomItemId?: string; // asset_bom line the fault was found on (ISO 14224 level 8/9 via the BOM)
     failedPartNo?: string;    // part-number snapshot at coding time
