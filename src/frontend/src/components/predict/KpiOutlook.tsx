@@ -76,7 +76,9 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                     supabase.rpc('compute_oee', { p_asset_id: assetId, p_from: from, p_to: to }),
                 ]);
                 if (!active) return;
-                let rows = woRes.data || [];
+                // any[]: the fallback below selects a deliberately narrower column
+                // set than FAILURE_QUERY_COLUMNS, so the two shapes differ.
+                let rows: any[] = woRes.data || [];
                 // FAILURE_QUERY_COLUMNS can be ahead of the live schema (e.g. a
                 // missing duration column 42703s the whole select) — fall back to
                 // the minimal set the failure math needs; MTTR then shows "—".
