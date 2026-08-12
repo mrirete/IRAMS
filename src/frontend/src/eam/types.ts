@@ -736,6 +736,8 @@ export interface WorkOrder {
     objectPart?: string;    // Which component failed — description snapshot (SAP catalog B analogue)
     failedBomItemId?: string; // asset_bom line the fault was found on (ISO 14224 level 8/9 via the BOM)
     failedPartNo?: string;    // part-number snapshot at coding time
+    secondaryFailure?: boolean; // 0289: true = collateral of another failure; false = primary; undefined = not asked
+    causedByWoId?: string;      // the initiating failure's WO when secondaryFailure = true
     comments?: string;
     localImpact?: string;    // Local failure effect (equipment level)
     plantWideImpact?: string; // Plant-wide failure effect (production/safety/env)

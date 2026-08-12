@@ -17,6 +17,7 @@ export interface AssetReliability {
   mtbfDays?: number;           // SMRP: Mean Time Between Failures (days)
   mttrHours?: number;          // SMRP: Mean Time To Repair (hours)
   availabilityPct?: number;    // SMRP inherent availability Ai = MTBF/(MTBF+MTTR), %
+  collateral12mo: number;      // failures marked as collateral of ANOTHER failure (0289) — shown, never counted against this asset
   recurringModes: { mode: string; count: number }[]; // failure modes seen >=2× (12mo)
   recurringParts: { part: string; count: number }[]; // failed components seen >=2× (12mo, 0287 BOM link)
   repeatFailure: boolean;      // a mode recurred, or >=3 failures in 12 months
@@ -39,6 +40,15 @@ const failureMode = (r: any): string | undefined => {
 const failedPart = (r: any): string | undefined => {
   const fd = Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data;
   return fd?.object_part || fd?.objectPart || undefined;
+};
+
+// Collateral damage (0289): the failure was CAUSED by another failure. It is
+// still an event on this asset (repairs, cost) but it is not the asset's own
+// reliability — MTBF/failure counts use primaries; collateral is counted
+// separately and always shown.
+export const isSecondaryFailure = (r: any): boolean => {
+  const fd = Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data;
+  return fd?.secondary_failure === true || fd?.secondaryFailure === true;
 };
 
 // Failure event time, best basis first: the recorded malfunction start (0283 —
@@ -73,7 +83,7 @@ export const isFailure = (r: any): boolean => {
  * that pass richer client-side records.
  */
 export const FAILURE_QUERY_COLUMNS =
-  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, malfunction_start, breakdown, wo_failure_data(failure_mode_code, object_part)';
+  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, malfunction_start, breakdown, wo_failure_data(failure_mode_code, object_part, secondary_failure, caused_by_wo_id)';
 
 /**
  * One derivation of the numbers the Modelling calculators auto-populate from an
@@ -111,11 +121,17 @@ export interface ReliabilityOptions {
 /** Compute asset reliability KPIs from its work-order history (raw DB records). */
 export function computeAssetReliability(records: any[], opts: ReliabilityOptions = {}): AssetReliability {
   const yearAgo = Date.now() - (opts.windowDays ?? 365) * 86400000;
-  const failures = (records || []).filter(isFailure);
-  const failures12 = failures.filter(r => {
+  const inWindow = (r: any) => {
     const d = eventDate(r);
     return d ? new Date(d).getTime() >= yearAgo : false;
-  });
+  };
+  // 0289: PRIMARY failures drive every aggregate below — collateral events
+  // (caused by another failure) are the initiator's account, not this asset's.
+  // They are counted separately and always shown, never silently dropped.
+  const allFailures = (records || []).filter(isFailure);
+  const failures = allFailures.filter(r => !isSecondaryFailure(r));
+  const collateral12mo = allFailures.filter(r => isSecondaryFailure(r) && inWindow(r)).length;
+  const failures12 = failures.filter(inWindow);
 
   // Recurring failure modes within the last 12 months.
   const modeCounts: Record<string, number> = {};
@@ -185,6 +201,7 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     mtbfDays,
     mttrHours,
     availabilityPct,
+    collateral12mo,
     recurringModes,
     recurringParts,
     repeatFailure,
@@ -214,14 +231,18 @@ const repairHoursOf = (r: any): number => {
   return 0;
 };
 
-/** Per-failure repair/downtime hours (same basis as MTTR) — for maintainability charts. */
+/** Per-failure repair/downtime hours (same basis as MTTR) — for maintainability charts.
+ *  Primaries only (0289): repairing collateral damage is real work, but it is not
+ *  this asset's repair-time distribution. */
 export function failureRepairHours(records: any[]): number[] {
-  return (records || []).filter(isFailure).map(repairHoursOf).filter(d => d > 0);
+  return (records || []).filter(isFailure).filter(r => !isSecondaryFailure(r)).map(repairHoursOf).filter(d => d > 0);
 }
 
-/** Inter-arrival times between consecutive failures, in hours — for Weibull life data. */
+/** Inter-arrival times between consecutive failures, in hours — for Weibull life data.
+ *  Primaries only (0289): a collateral event is not the asset's own life data and
+ *  would corrupt the β fit. */
 export function failureIntervalsHours(records: any[]): number[] {
-  const times = (records || []).filter(isFailure)
+  const times = (records || []).filter(isFailure).filter(r => !isSecondaryFailure(r))
     .map(eventDate).filter(Boolean)
     .map(d => new Date(d as string).getTime())
     .sort((a, b) => a - b);

@@ -541,6 +541,8 @@ export class DataMapper {
                     objectPart: fd.object_part || undefined,
                     failedBomItemId: fd.failed_bom_item_id || undefined,
                     failedPartNo: fd.failed_part_no || undefined,
+                    secondaryFailure: typeof fd.secondary_failure === 'boolean' ? fd.secondary_failure : undefined,
+                    causedByWoId: fd.caused_by_wo_id || undefined,
                     comments: fd.comments || undefined,
                     localImpact: fd.local_impact || undefined,
                     plantWideImpact: fd.plant_wide_impact || undefined,

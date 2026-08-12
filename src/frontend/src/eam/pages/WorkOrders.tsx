@@ -60,6 +60,7 @@ import { OrgTreePicker } from '../components/OrgTreePicker';
 import { ProcedureBuilder } from '../components/ProcedureBuilder';
 import { FilesTab } from '../components/FilesTab';
 import { AuditTrail } from '../components/AuditTrail';
+import { AroundThisFailure } from '../components/AroundThisFailure';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal'; // Added import
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
@@ -275,6 +276,8 @@ export const WorkOrders: React.FC = () => {
                                         objectPart: fd.object_part || undefined,
                                         failedBomItemId: fd.failed_bom_item_id || undefined,
                                         failedPartNo: fd.failed_part_no || undefined,
+                                        secondaryFailure: typeof fd.secondary_failure === 'boolean' ? fd.secondary_failure : undefined,
+                                        causedByWoId: fd.caused_by_wo_id || undefined,
                                         comments: fd.comments || undefined,
                                         localImpact: fd.local_impact || undefined,
                                         plantWideImpact: fd.plant_wide_impact || undefined,
@@ -1069,6 +1072,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     const [modalMalfEnd, setModalMalfEnd] = useState('');
     const [modalBreakdown, setModalBreakdown] = useState(false);
     const [modalFailedBomId, setModalFailedBomId] = useState('');
+    const [modalCollateral, setModalCollateral] = useState(false);
 
     useEffect(() => {
         if (!showCompleteModal) {
@@ -1082,6 +1086,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             setModalMalfEnd('');
             setModalBreakdown(false);
             setModalFailedBomId('');
+            setModalCollateral(false);
         }
     }, [showCompleteModal]);
 
@@ -1341,6 +1346,8 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                             objectPart: fd.object_part || undefined,
                             failedBomItemId: fd.failed_bom_item_id || undefined,
                             failedPartNo: fd.failed_part_no || undefined,
+                            secondaryFailure: typeof fd.secondary_failure === 'boolean' ? fd.secondary_failure : undefined,
+                            causedByWoId: fd.caused_by_wo_id || undefined,
                             comments: fd.comments || undefined,
                             localImpact: fd.local_impact || undefined,
                             plantWideImpact: fd.plant_wide_impact || undefined,
@@ -1575,7 +1582,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             : (localJob.journals || []);
 
         const modalBom = modalFailedBomId ? bomItems.find((b: any) => b.id === modalFailedBomId) : undefined;
-        const finalFailureData = requiresFailureCoding && !hasFailureMode && modalFailureMode
+        let finalFailureData = requiresFailureCoding && !hasFailureMode && modalFailureMode
             ? {
                 ...(localJob.failureData || {}),
                 failureMode: modalFailureMode,
@@ -1588,6 +1595,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 } : {})
               }
             : localJob.failureData;
+        // 0289: collateral flag from the modal — the causing WO can be linked
+        // afterwards from Analysis & History → Around This Failure.
+        if (!isPreventiveType && modalCollateral && finalFailureData?.secondaryFailure !== true) {
+            finalFailureData = { ...(finalFailureData || {}), secondaryFailure: true };
+        }
 
         const finalHasFailureMode = !!finalFailureData?.failureMode;
         const finalFailureCodingMet = !requiresFailureCoding || finalHasFailureMode;
@@ -2233,6 +2245,20 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                                     (drives true failure counts for MTBF; leave unchecked for degraded-but-running work)
                                                 </span>
                                             </label>
+                                            {localJob.failureData?.secondaryFailure === undefined && (
+                                                <label className="flex items-start gap-2.5 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={modalCollateral}
+                                                        onChange={e => setModalCollateral(e.target.checked)}
+                                                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                    />
+                                                    <span className="text-xs text-slate-700">
+                                                        <span className="font-bold">Caused by another failure</span> — this was collateral damage
+                                                        (charged to the cause, not this asset; link the causing WO afterwards in Analysis &amp; History → Around This Failure)
+                                                    </span>
+                                                </label>
+                                            )}
                                             <p className="text-[10px] text-slate-400">
                                                 The malfunction window is the failure event time used for MTBF — not the work order's paperwork dates.
                                                 If downtime hours are blank, they are derived from the window.
@@ -3140,7 +3166,9 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {([
-                            ['Failures (12mo)', String(relMetrics.failures12mo)],
+                            // 0289 honesty rule: collateral events are excluded from the
+                            // count but always shown, never silently dropped.
+                            ['Failures (12mo)', relMetrics.collateral12mo > 0 ? `${relMetrics.failures12mo} +${relMetrics.collateral12mo} collateral` : String(relMetrics.failures12mo)],
                             ['MTBF', relMetrics.mtbfDays != null ? `${relMetrics.mtbfDays}d` : '—'],
                             ['MTTR', relMetrics.mttrHours != null ? `${relMetrics.mttrHours}h` : '—'],
                             ['Last failure', relMetrics.lastFailureDate ? new Date(relMetrics.lastFailureDate).toLocaleDateString() : '—'],
@@ -3473,6 +3501,10 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                     </div>
                 </div>
             </div>
+
+            {/* ══ Around this failure (0289) — temporal neighbours + the one
+                systems-thinking question: was this caused by another failure? ══ */}
+            {!isPreventive && <AroundThisFailure job={job} onUpdate={onUpdate} />}
 
             {/* ══ Additional damage items (0288) — multi-fault findings on one WO ══ */}
             {!isPreventive && (

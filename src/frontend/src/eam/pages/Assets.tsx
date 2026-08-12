@@ -3916,7 +3916,8 @@ function JobsTab({ asset }: { asset: Asset }) {
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {([
-                            ['Failures (12mo)', String(rel.failures12mo)],
+                            // 0289: collateral shown separately — excluded from the asset's own count
+                            ['Failures (12mo)', rel.collateral12mo > 0 ? `${rel.failures12mo} +${rel.collateral12mo} collateral` : String(rel.failures12mo)],
                             ['MTBF', rel.mtbfDays != null ? `${rel.mtbfDays}d` : '—'],
                             ['MTTR', rel.mttrHours != null ? `${rel.mttrHours}h` : '—'],
                             ['Last failure', rel.lastFailureDate ? new Date(rel.lastFailureDate).toLocaleDateString() : '—'],
