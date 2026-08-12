@@ -4035,6 +4035,21 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
         return dateStr;
     };
 
+    // ── Actuals (0283) ── captured in the Complete modal; rendered here so the
+    // record is readable and correctable. Correction stays open until FINANCIAL
+    // close (CLOSED), matching the cost-freeze rule in 0284 — TECO is technical
+    // completion, not the end of postings.
+    const actualsLocked = job.status === WorkOrderStatus.CLOSED;
+    const hasActuals = !!(job.actualDuration || job.actualDowntime || job.malfunctionStart || job.malfunctionEnd || job.breakdown);
+    // <input type="datetime-local"> needs local 'YYYY-MM-DDTHH:mm', not a UTC ISO string.
+    const toLocalInput = (iso?: string) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    };
+    const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : undefined);
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 animate-in fade-in duration-300">
             <AssetPickerModal
@@ -4423,6 +4438,75 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                         className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
                                     />
                                 </div>
+                            </div>
+
+                            {/* ── Actuals (0283): what the job really took ── */}
+                            <div className="pt-3 border-t border-slate-200">
+                                <div className="flex items-center justify-between mb-2">
+                                    <span className="text-xs font-bold text-slate-500 uppercase">Actuals</span>
+                                    <div className="flex items-center gap-1.5">
+                                        {job.breakdown === true && (
+                                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">Breakdown</span>
+                                        )}
+                                        {actualsLocked && (
+                                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex items-center gap-1">
+                                                <Lock size={9} /> Closed
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                {!hasActuals && (
+                                    <p className="text-[11px] text-slate-400 mb-2">
+                                        Recorded at completion — use <strong>Complete</strong> to capture actual hours, equipment downtime and the malfunction window.
+                                    </p>
+                                )}
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Actual Duration (Hrs)</label>
+                                        <input
+                                            type="number" min="0" step="0.5"
+                                            value={job.actualDuration || ''}
+                                            disabled={actualsLocked}
+                                            onChange={(e) => onUpdate({ actualDuration: parseFloat(e.target.value) || 0 })}
+                                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${actualsLocked ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300'}`}
+                                            placeholder="0"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Actual Downtime (Hrs)</label>
+                                        <input
+                                            type="number" min="0" step="0.5"
+                                            value={job.actualDowntime || ''}
+                                            disabled={actualsLocked}
+                                            onChange={(e) => onUpdate({ actualDowntime: parseFloat(e.target.value) || 0 })}
+                                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${actualsLocked ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300'}`}
+                                            placeholder="0"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Malfunction Start</label>
+                                        <input
+                                            type="datetime-local"
+                                            value={toLocalInput(job.malfunctionStart)}
+                                            disabled={actualsLocked}
+                                            onChange={(e) => onUpdate({ malfunctionStart: fromLocalInput(e.target.value) })}
+                                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${actualsLocked ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300'}`}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Back in Service</label>
+                                        <input
+                                            type="datetime-local"
+                                            value={toLocalInput(job.malfunctionEnd)}
+                                            disabled={actualsLocked}
+                                            onChange={(e) => onUpdate({ malfunctionEnd: fromLocalInput(e.target.value) })}
+                                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${actualsLocked ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300'}`}
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-slate-400 mt-1.5">
+                                    Downtime drives MTTR and availability; the malfunction window is the failure event time used for MTBF. Leave downtime blank and it is derived from the window.
+                                </p>
                             </div>
                         </div>
                     )}
