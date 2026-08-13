@@ -32,7 +32,7 @@ import {
     TrendingUp,
     ShieldCheck,
     Printer, Copy, ChevronLeft, Download, GitPullRequest,
-    Shield, Box, Paperclip, AlertOctagon, Book, Bookmark, Package, Info, Bell, Send, Layers, Eye, Repeat,
+    Shield, Box, Paperclip, AlertOctagon, Book, Bookmark, Package, Info, Bell, Send, Layers, Eye, Repeat, Network,
     DollarSign, Briefcase, PenTool, Edit3, Sparkles, Loader2, Check, Factory
 } from 'lucide-react';
 import { InventoryPicker } from '../components/pickers/InventoryPicker';
@@ -2605,6 +2605,32 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
 // --- Analysis Tab (New) ---
 
+// Calm-screens: heavy record sections collapse to one-line strips so the tab
+// isn't a wall of forms. State chips keep the pending work visible at a glance;
+// content (and its queries) mounts only on expand.
+const CompactSection: React.FC<{
+    icon: React.ReactNode;
+    title: string;
+    summary?: React.ReactNode;
+    defaultOpen?: boolean;
+    children: React.ReactNode;
+}> = ({ icon, title, summary, defaultOpen = false, children }) => {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
+            <button type="button" onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-slate-50/60 rounded-lg">
+                {icon}
+                <span className="font-bold text-xs md:text-sm text-slate-800">{title}</span>
+                <span className="ml-auto flex items-center gap-2">
+                    {summary}
+                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+                </span>
+            </button>
+            {open && <div className="px-3 pb-3 md:px-4 md:pb-4">{children}</div>}
+        </div>
+    );
+};
+
 // Group label mapping for failure mode asset classes
 const FM_GROUP_LABELS: Record<string, string> = {
     'ROTATING': '⚙️ Rotating Equipment',
@@ -3505,17 +3531,33 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                 </div>
             </div>
 
-            {/* ══ Around this failure (0289) — temporal neighbours + the one
-                systems-thinking question: was this caused by another failure? ══ */}
-            {!isPreventive && <AroundThisFailure job={job} onUpdate={onUpdate} />}
-
-            {/* ══ Additional damage items (0288) — multi-fault findings on one WO ══ */}
+            {/* ══ Around this failure (0289) — collapsed strip; the answer chip
+                keeps the systems question visible without the bulk ══ */}
             {!isPreventive && (
-                <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
-                        <AlertTriangle className="text-orange-500" size={14} /> Additional Damage Items
-                        <span className="text-[10px] font-normal text-slate-400 ml-auto">{failureItems.length} item{failureItems.length === 1 ? '' : 's'} beyond the primary record</span>
-                    </h3>
+                <CompactSection
+                    icon={<Network className="text-blue-600" size={14} />}
+                    title="Around This Failure"
+                    summary={
+                        job.failureData?.secondaryFailure === true
+                            ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Collateral</span>
+                            : job.failureData?.secondaryFailure === false
+                                ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">Primary failure</span>
+                                : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">Caused by another failure?</span>
+                    }
+                >
+                    <AroundThisFailure job={job} onUpdate={onUpdate} embedded />
+                </CompactSection>
+            )}
+
+            {/* ══ Additional damage items (0288) — collapsed strip ══ */}
+            {!isPreventive && (
+                <CompactSection
+                    icon={<AlertTriangle className="text-orange-500" size={14} />}
+                    title="Additional Damage Items"
+                    summary={failureItems.length > 0
+                        ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 border border-orange-200">{failureItems.length}</span>
+                        : <span className="text-[10px] text-slate-400">none</span>}
+                >
 
                     {failureItems.length > 0 && (
                         <div className="mb-3 border border-slate-200 rounded-lg divide-y divide-slate-100 overflow-hidden">
@@ -3606,7 +3648,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                     <p className="text-[10px] text-slate-400 mt-2">
                         The primary failure coding above drives the completion gate and reliability KPIs; damage items record the additional faults found on the same job.
                     </p>
-                </div>
+                </CompactSection>
             )}
 
             {/* Bottom Row: Unified Journals & Notes (full width) */}
@@ -3680,16 +3722,14 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                 </div>
             </div>
 
-            {/* ══ Change History — the DB audit trail for THIS work order.
-                audit_wo_changes has recorded every field change since 0000;
-                this is the first place a user can actually see it. ══ */}
-            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
-                    <Clock className="text-slate-500" size={14} /> Change History
-                    <span className="text-[10px] font-normal text-slate-400 ml-auto">audit trail — append-only</span>
-                </h3>
+            {/* ══ Change History — collapsed strip; the audit query only fires on expand ══ */}
+            <CompactSection
+                icon={<Clock className="text-slate-500" size={14} />}
+                title="Change History"
+                summary={<span className="text-[10px] text-slate-400">audit trail — append-only</span>}
+            >
                 <AuditTrail entityId={job.id} tableName="work_orders" limit={40} compact />
-            </div>
+            </CompactSection>
         </div>
     );
 };
