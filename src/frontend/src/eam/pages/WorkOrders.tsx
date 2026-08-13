@@ -191,8 +191,11 @@ export const WorkOrders: React.FC = () => {
             setWorkOrders(scopedOrders);
         } catch (e) {
             console.error(e);
+            // Honest fallback: demo data must announce itself — users were
+            // editing mock WOs and hitting cryptic uuid errors on save.
             setWorkOrders(MOCK_WORK_ORDERS);
             setDictionaries(MOCK_DICTIONARIES);
+            showToast('Live data unavailable — showing DEMO work orders (read-only). Reload to retry.', 'warning');
         }
     };
 

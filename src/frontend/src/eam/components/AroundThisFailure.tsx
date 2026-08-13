@@ -24,6 +24,7 @@ import { useAuth } from '../contexts/AuthContext';
 import type { WorkOrder } from '../types';
 
 const WINDOW_HOURS = 24;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface CandidateWo {
     id: string;
@@ -72,8 +73,12 @@ export const AroundThisFailure: React.FC<{
         return Number.isFinite(t) ? t : null;
     }, [job.malfunctionStart, job.dateCreated]);
 
+    // Demo/mock records have non-uuid ids — every query and write would fail.
+    const isDemoRecord = !UUID_RE.test(job.id || '');
+
     useEffect(() => {
         let active = true;
+        if (isDemoRecord) { setLoading(false); return; }
         (async () => {
             setLoading(true);
             try {
@@ -201,6 +206,20 @@ export const AroundThisFailure: React.FC<{
 
     const answered = job.failureData?.secondaryFailure !== undefined;
     const isCollateral = job.failureData?.secondaryFailure === true;
+
+    if (isDemoRecord) {
+        return (
+            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
+                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
+                    <Network className="text-blue-600" size={14} /> Around This Failure
+                </h3>
+                <p className="text-xs text-slate-400">
+                    This is a demo record (live data was unavailable when the list loaded) — systems analysis needs a saved
+                    work order. Reload the page to get live data.
+                </p>
+            </div>
+        );
+    }
 
     return (
         <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">

@@ -2750,6 +2750,13 @@ export class DatabaseService {
         updates: Partial<WorkOrderRecord> & { tasks?: JobTask[]; labor?: JobLabor[]; inventory?: JobInventory[]; jsa?: JobJSA },
         actor: string
     ): Promise<WorkOrderRecord> {
+        // Demo/mock records (MOCK_WORK_ORDERS fallback) carry ids like
+        // "WO-2023-001" — any write would die in Postgres with a cryptic
+        // "invalid input syntax for type uuid". Fail with a human message.
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+            throw new Error('This is a demo record (live data was unavailable when the list loaded) — changes cannot be saved. Reload the page to get live work orders.');
+        }
+
         // Separate generic updates from Relational Updates
         const { tasks, labor, inventory, jsa, failureData, ...coreUpdates } = updates as any;
         console.log(`[updateWorkOrder] ${id} - Recv: Tasks=${tasks?.length}, Labor=${labor?.length}, Inv=${inventory?.length}`);
