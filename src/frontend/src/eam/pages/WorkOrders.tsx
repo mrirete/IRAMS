@@ -3182,7 +3182,13 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     };
 
     return (
-        <div className="flex flex-col gap-3 md:gap-4 animate-in fade-in duration-300">
+        <div className="animate-in fade-in duration-300">
+        {/* LinkedIn-style shell: a centered reading column with breathing space on both
+            sides, plus a sticky action rail so the close-out CTA stays in view while
+            the long form scrolls. Mobile keeps the single column (rail hidden; the CTA
+            lives in the Follow-Up card instead). */}
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-3 md:gap-4 items-start">
+        <div className="flex flex-col gap-3 md:gap-4 min-w-0">
             {/* ══ Closeout Quality (Gate 2) — advisory ══ */}
             <CloseoutReadinessStrip readiness={closeout} onReview={handleReviewCloseout} reviewGate={closeoutGate} />
 
@@ -3233,9 +3239,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                 </div>
             )}
 
-            {/* Top Row: Failure Analysis (context-aware) + Follow-Up */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-                {/* Failure Analysis Card */}
+            {/* Failure Analysis Card — full width of the reading column */}
                 <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
                     <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
                         <AlertOctagon className={isPreventive ? 'text-green-600' : 'text-red-600'} size={14} /> Failure Analysis
@@ -3496,41 +3500,6 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                     )}
                 </div>
 
-                {/* Follow-Up Card — visible for all work types */}
-                <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
-                    <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
-                        <GitPullRequest className="text-amber-600" size={14} /> Follow-Up Actions
-                    </h3>
-                    <div className="space-y-3">
-                        <p className="text-xs text-slate-600">
-                            {isPreventive
-                                ? 'If a defect or abnormal condition was discovered during this inspection, complete the work order and raise a follow-up corrective work order.'
-                                : 'Complete this work order and optionally raise a follow-up for additional corrective actions, secondary defects, or related remediation work.'}
-                        </p>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Follow-Up Description <span className="text-red-500">*</span></label>
-                            <textarea
-                                value={followUpDescription}
-                                onChange={(e) => onFollowUpDescriptionChange?.(e.target.value)}
-                                className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-none placeholder:text-slate-400"
-                                placeholder="Describe the defect, abnormal condition, or required follow-up action in detail..."
-                            />
-                            <p className="text-[10px] text-slate-400 mt-1">This description will be included in the follow-up work order for the corrective team.</p>
-                        </div>
-                        <button
-                            onClick={() => onOpenCompleteModal?.()}
-                            disabled={!followUpDescription.trim()}
-                            className={`w-full px-4 py-2.5 border-2 border-dashed font-bold rounded-lg flex items-center justify-center gap-2 transition-all text-sm ${followUpDescription.trim()
-                                    ? 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100 hover:border-amber-400 cursor-pointer'
-                                    : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'
-                                }`}
-                        >
-                            <AlertTriangle size={16} /> Complete &amp; Raise Follow-Up
-                        </button>
-                    </div>
-                </div>
-            </div>
-
             {/* ══ Around this failure (0289) — collapsed strip; the answer chip
                 keeps the systems question visible without the bulk ══ */}
             {!isPreventive && (
@@ -3722,6 +3691,38 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                 </div>
             </div>
 
+            {/* Follow-Up Actions — lives under Journals & Notes; the description is
+                OPTIONAL (the complete flow auto-generates a summary when it's empty) */}
+            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
+                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
+                    <GitPullRequest className="text-amber-600" size={14} /> Follow-Up Actions
+                </h3>
+                <div className="space-y-3">
+                    <p className="text-xs text-slate-600">
+                        {isPreventive
+                            ? 'If a defect or abnormal condition was discovered during this inspection, complete the work order and raise a follow-up corrective work order.'
+                            : 'Complete this work order and optionally raise a follow-up for additional corrective actions, secondary defects, or related remediation work.'}
+                    </p>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Follow-Up Description <span className="text-slate-400 font-normal">(Optional)</span></label>
+                        <textarea
+                            value={followUpDescription}
+                            onChange={(e) => onFollowUpDescriptionChange?.(e.target.value)}
+                            className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-none placeholder:text-slate-400"
+                            placeholder="Describe the defect, abnormal condition, or required follow-up action in detail..."
+                        />
+                        <p className="text-[10px] text-slate-400 mt-1">Included in the follow-up work order for the corrective team; left empty, an auto-generated summary is used.</p>
+                    </div>
+                    {/* Mobile fallback — on desktop this action lives in the sticky rail */}
+                    <button
+                        onClick={() => onOpenCompleteModal?.()}
+                        className="lg:hidden w-full px-4 py-2.5 border-2 border-dashed font-bold rounded-lg flex items-center justify-center gap-2 transition-all text-sm bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100 hover:border-amber-400"
+                    >
+                        <AlertTriangle size={16} /> Complete &amp; Raise Follow-Up
+                    </button>
+                </div>
+            </div>
+
             {/* ══ Change History — collapsed strip; the audit query only fires on expand ══ */}
             <CompactSection
                 icon={<Clock className="text-slate-500" size={14} />}
@@ -3730,6 +3731,36 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
             >
                 <AuditTrail entityId={job.id} tableName="work_orders" limit={40} compact />
             </CompactSection>
+        </div>
+
+        {/* ── Sticky action rail (desktop) — LinkedIn-style right column that keeps
+            the close-out CTA in view while the long form scrolls ── */}
+        <aside className="hidden lg:block sticky top-2">
+            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-3">
+                <h3 className="font-bold text-xs text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                    <GitPullRequest className="text-amber-600" size={14} /> Close-Out
+                </h3>
+                <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wide">Close-out quality</span>
+                    <span className={`text-sm font-extrabold ${closeout.score >= 80 ? 'text-emerald-600' : closeout.score >= 50 ? 'text-amber-600' : 'text-red-600'}`}>{closeout.score}%</span>
+                </div>
+                {closeout.blockers.length > 0 && (
+                    <p className="text-[10px] text-slate-400 -mt-1.5">Missing: {closeout.blockers.map(b => b.label).join(', ')}</p>
+                )}
+                <button
+                    onClick={() => onOpenCompleteModal?.()}
+                    className="w-full px-4 py-2.5 border-2 border-dashed font-bold rounded-lg flex items-center justify-center gap-2 transition-all text-sm bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100 hover:border-amber-400"
+                >
+                    <AlertTriangle size={16} /> Complete &amp; Raise Follow-Up
+                </button>
+                <p className="text-[10px] text-slate-400">
+                    {followUpDescription.trim()
+                        ? 'Your follow-up description will seed the corrective work order.'
+                        : 'Optional: describe the follow-up under Journals & Notes — otherwise an auto-generated summary is used.'}
+                </p>
+            </div>
+        </aside>
+        </div>
         </div>
     );
 };
