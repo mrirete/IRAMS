@@ -38,7 +38,7 @@ export const ReliabilityAdvisorModal: React.FC<Props> = ({ asset, onClose, onCre
         let active = true;
         (async () => {
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
+                .select('id, type, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
                 .eq('asset_id', asset.id)
                 .order('created_at');
             if (!active) return;

@@ -640,7 +640,7 @@ class PredictionService {
 
         // ── Grounded path: WO failure history → censored Weibull → MRL ──
         const { data: wos } = await supabase.from('work_orders')
-            .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
+            .select('id, type, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
             .eq('asset_id', assetId)
             .order('created_at');
         const rows = wos || [];
@@ -974,7 +974,7 @@ class PredictionService {
 
         // ── B. Fitted Weibull wear-out from WO failure history (R-1) ──
         const { data: wos } = await supabase.from('work_orders')
-            .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
+            .select('id, type, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
             .eq('asset_id', assetId)
             .order('created_at');
         const rows = wos || [];

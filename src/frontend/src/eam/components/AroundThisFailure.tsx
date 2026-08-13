@@ -106,7 +106,7 @@ export const AroundThisFailure: React.FC<{
                     const to = new Date(myEventMs + 2 * 86400000).toISOString();
                     const { data: wos } = await supabase
                         .from('work_orders')
-                        .select('id, wo_number, title, type, status, asset_id, malfunction_start, closed_at, created_at, wo_failure_data(failure_mode_code, secondary_failure)')
+                        .select('id, wo_number, title, type, status, asset_id, malfunction_start, closed_at, created_at, wo_failure_data!wo_id(failure_mode_code, secondary_failure)')
                         .neq('id', job.id)
                         .gte('created_at', from)
                         .lte('created_at', to)

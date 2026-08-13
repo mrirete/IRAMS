@@ -2614,7 +2614,7 @@ export class DatabaseService {
     }
 
     public async getWorkOrders(): Promise<WorkOrderRecord[]> {
-        const { data, error } = await supabase.from('work_orders').select('*, wo_failure_data(*)').order('created_at', { ascending: false });
+        const { data, error } = await supabase.from('work_orders').select('*, wo_failure_data!wo_id(*)').order('created_at', { ascending: false });
         if (error) throw error;
         return data || [];
     }
@@ -2663,7 +2663,7 @@ export class DatabaseService {
     public async getWorkOrdersByAssetId(assetId: string): Promise<WorkOrderRecord[]> {
         const { data, error } = await supabase
             .from('work_orders')
-            .select('*, wo_failure_data(*)')
+            .select('*, wo_failure_data!wo_id(*)')
             .eq('asset_id', assetId)
             .order('created_at', { ascending: false });
         if (error) {
@@ -2716,7 +2716,7 @@ export class DatabaseService {
                 work_order_labor(*),
                 work_order_parts(*),
                 jsa_assessments(*, jsa_hazards(*)),
-                wo_failure_data(*)
+                wo_failure_data!wo_id(*)
             `)
             .eq('id', id)
             .single();

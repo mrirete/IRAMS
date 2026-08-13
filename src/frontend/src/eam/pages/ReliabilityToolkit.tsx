@@ -967,7 +967,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
             // failure definition (corrective OR coded failure mode) as Metrics/RAM.
             // All-time (life data wants every failure), all types; the engine filters.
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
+                .select('id, type, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
                 .eq('asset_id', asset.id)
                 .order('created_at');
             const times = failureIntervalsHours(wos || []);
@@ -991,7 +991,7 @@ export function WeibullTab({ onStateChange, loadedData, initialAsset, onPMCreate
         (async () => {
             const ids = poolMembers.map(a => a.id);
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, type, asset_id, created_at, closed_at, wo_failure_data(failure_mode_code)')
+                .select('id, type, asset_id, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
                 .in('asset_id', ids)
                 .order('created_at');
             const byAsset: Record<string, any[]> = {};

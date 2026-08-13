@@ -1613,7 +1613,7 @@ class AnalyzeService {
                 // NOTE: there is no total_cost column — canonical cost is frozen labor
                 // + material (falling back to total_actual_cost), same definition as
                 // sem_work_history and the agent tools.
-                .select('id, wo_number, title, type, status, description, failure_mode, failure_code, total_actual_cost, frozen_labor_cost, frozen_material_cost, created_at, closed_at, due_date, priority_code, wo_failure_data(*)')
+                .select('id, wo_number, title, type, status, description, failure_mode, failure_code, total_actual_cost, frozen_labor_cost, frozen_material_cost, created_at, closed_at, due_date, priority_code, wo_failure_data!wo_id(*)')
                 .eq('asset_id', assetId)
                 .order('created_at', { ascending: false })
                 .limit(100);
@@ -2628,7 +2628,7 @@ class AnalyzeService {
             cutoff.setMonth(cutoff.getMonth() - 12);
             const { data, error } = await supabase
                 .from('work_orders')
-                .select('id, wo_number, type, status, failure_mode, failure_code, total_actual_cost, frozen_labor_cost, frozen_material_cost, created_at, closed_at, wo_failure_data(*)')
+                .select('id, wo_number, type, status, failure_mode, failure_code, total_actual_cost, frozen_labor_cost, frozen_material_cost, created_at, closed_at, wo_failure_data!wo_id(*)')
                 .eq('asset_id', assetId)
                 .gte('created_at', cutoff.toISOString())
                 .order('created_at', { ascending: true });

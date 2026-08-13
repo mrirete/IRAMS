@@ -14,7 +14,7 @@ export type { GroundedRul };
 
 export async function fetchGroundedFit(assetId: string): Promise<GroundedRul> {
     const { data: wos } = await supabase.from('work_orders')
-        .select('id, type, created_at, closed_at, wo_failure_data(failure_mode_code)')
+        .select('id, type, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
         .eq('asset_id', assetId)
         .order('created_at');
     const rows = wos || [];

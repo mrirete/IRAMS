@@ -113,7 +113,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
 
                 const [woRes, aRes, allWOs, labor, finRes] = await Promise.all([
                     supabase.from('work_orders')
-                        .select('id, type, status, est_duration, actual_downtime_hrs, total_actual_cost, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data(failure_mode_code)')
+                        .select('id, type, status, est_duration, actual_downtime_hrs, total_actual_cost, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data!wo_id(failure_mode_code)')
                         .gte('created_at', since),
                     supabase.from('assets').select('id, tag, name, criticality, hierarchy_level, asset_class, manufacturer_id, equipment_number'),
                     db.getWorkOrders().catch(() => []),

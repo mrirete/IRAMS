@@ -83,7 +83,7 @@ export const isFailure = (r: any): boolean => {
  * that pass richer client-side records.
  */
 export const FAILURE_QUERY_COLUMNS =
-  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, malfunction_start, breakdown, wo_failure_data(failure_mode_code, object_part, secondary_failure, caused_by_wo_id)';
+  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, malfunction_start, breakdown, wo_failure_data!wo_id(failure_mode_code, object_part, secondary_failure, caused_by_wo_id)';
 
 /**
  * One derivation of the numbers the Modelling calculators auto-populate from an
