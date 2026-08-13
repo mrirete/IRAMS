@@ -5,13 +5,14 @@ How to observe a change running in the real app.
 ## Launch
 
 - Dev server: `npm run dev` in `src/frontend` → http://localhost:5173 (check first — it's usually already running). Port 4173 is `vite preview` serving a STALE build.
-- Login page fills: placeholder `Enter your username or email` + `#login-password`, click "Sign In". Working dev creds: `admin001@cainergy.com` / `Password123!` (SUPER_ADMIN); also `k.syrus@cainergy.com`. Wait ~4s after sign-in.
+- Login page fills: placeholder `Enter your username or email` + `#login-password`, click "Sign In". Working dev creds: `admin001@cainergy.com` (SUPER_ADMIN), password = `IREAMS_ADMIN_PASSWORD` in repo-root `.env.local` (`Password123!` is dead — rotated); also `k.syrus@cainergy.com` with `IREAMS_TEST_PASSWORD`. Wait ~4s after sign-in.
 - Playwright + Chromium live in `src/frontend/node_modules`; from a script elsewhere use `createRequire('<repo>/src/frontend/package.json')`.
 
 ## Drive recipes
 
 - Work order detail: `/work-orders/:id`. Page tabs are buttons: Details / Tasks / Safety (JSA) / Resources / Cost / Files.
 - Step popup (Tasks tab): rows are `div.cursor-pointer:has(input[placeholder="Enter task step name..."])` — click at `{ position: { x: 12, y: 20 } }` (the name input stopPropagations). Plan/Do work toggle is next to Steps; the Confirm-time bar only renders in Do work mode on a SAVED task (not `new-` ids).
+- RCA cause workspace: `/analyze/rca/:id` lands on the saved step — click step `Identify Causes`, then "Open workspace". Esc CLOSES the whole fullscreen workspace (don't use it to dismiss inline forms). Investigations live in `ers_rca_investigations` (not `rca_investigations`).
 - DB assertions: run REST queries inside `page.evaluate` using the app session — token from the localStorage key containing `auth-token`, headers `{ apikey: <VITE_SUPABASE_ANON_KEY from src/frontend/.env.local>, Authorization: Bearer <token> }` against `<VITE_SUPABASE_URL>/rest/v1/...`.
 
 ## Gotchas
