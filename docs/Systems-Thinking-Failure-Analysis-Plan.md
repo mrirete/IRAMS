@@ -65,7 +65,15 @@ Plus the supporting cast: coded failure taxonomy L6→L9 (0285–0288), `sem_fai
 - Redundancy: *"Backup coverage: standby pump available / ⚠ backup is down — single point of failure right now."* (live status from open WOs on members — this line alone justifies the phase for operations.)
 - The Modelling division's RBD tool **auto-seeds** from this model with live rates; hand-drawn mode remains for what-if. Honesty label: rankings are trustworthy, absolute % is an approximation (same rule as OEE estimates).
 
-### Phase 4 — Topology + model learning  *(after P&ID coverage check)*
+### Phase 4 — Topology + model learning  *(GATED OUT 2026-08-13 — coverage check failed)*
+
+> **Gate result:** live DB holds **1 diagram, 7 nodes, 7 edges, 0 nodes linked to register assets.**
+> Topological ranking maps failures onto the graph via node.assetId ↔ work_orders.asset_id; with zero
+> links it computes nothing for any real failure, so building the UI now would ship an empty feature.
+> **Unblock (data work, no engineering):** in the P&ID editor, link equipment nodes to register assets
+> (already supported — click a node → link asset), and digitize more diagrams (GraphRAG slice 2,
+> vision-as-digitizer, is the known path). Re-run the gate when linked-node coverage is meaningful
+> for at least one unit. The traversal itself already exists (agent-run/pidGraph.ts, deterministic BFS).
 
 - Rank Phase-1 candidates by P&ID graph distance/direction: upstream = cause candidate, downstream = fellow victim; utility systems flagged as common-cause suspects.
 - **The plant teaches the diagram:** documented cascades that cross "independent" paths in the system model ⇒ "possible hidden dependency" prompt (usually a shared utility).
