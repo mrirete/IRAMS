@@ -3301,6 +3301,63 @@ export class DatabaseService {
         });
     }
 
+    // ── System functions (0291) — the dependency model as data ──────────────
+
+    public async getSystemFunctions(): Promise<any[]> {
+        const { data, error } = await supabase
+            .from('system_functions')
+            .select('*, system_function_members(*)')
+            .eq('active', true)
+            .order('name');
+        if (error) {
+            console.error('[getSystemFunctions] Error:', error);
+            return [];
+        }
+        return data || [];
+    }
+
+    /** Insert or update a function and REPLACE its member rows (small table; the
+     *  editor always submits the full membership). */
+    public async saveSystemFunction(fn: {
+        id?: string; name: string; description?: string; hierarchyNodeId?: string | null;
+        members: { assetId: string; groupNo: number; kRequired: number }[];
+    }): Promise<any> {
+        const header = {
+            name: fn.name,
+            description: fn.description || null,
+            hierarchy_node_id: fn.hierarchyNodeId || null,
+            updated_at: new Date().toISOString(),
+        };
+        let fnId = fn.id;
+        if (fnId) {
+            const { error } = await supabase.from('system_functions').update(header).eq('id', fnId);
+            if (error) throw error;
+        } else {
+            const { data, error } = await supabase.from('system_functions').insert(header).select('id').single();
+            if (error) throw error;
+            fnId = data.id;
+        }
+        const { error: delErr } = await supabase.from('system_function_members').delete().eq('function_id', fnId);
+        if (delErr) throw delErr;
+        if (fn.members.length > 0) {
+            const { error: insErr } = await supabase.from('system_function_members').insert(
+                fn.members.map(m => ({
+                    function_id: fnId,
+                    asset_id: m.assetId,
+                    group_no: m.groupNo || 1,
+                    k_required: Math.max(1, m.kRequired || 1),
+                }))
+            );
+            if (insErr) throw insErr;
+        }
+        return fnId;
+    }
+
+    public async deleteSystemFunction(id: string): Promise<void> {
+        const { error } = await supabase.from('system_functions').delete().eq('id', id);
+        if (error) throw error;
+    }
+
     // ── Multi-damage items (0288, SAP notification items analogue) ──────────
     // The PRIMARY damage record stays on wo_failure_data; these are the extra
     // faults found on the same WO. Working data pre-TECO — add/remove allowed.
