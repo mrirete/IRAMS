@@ -7,7 +7,7 @@
  * Causes entered in the panel appear on the SVG instantly.
  */
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { Plus, Trash2, Target, Check, X, Edit3, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Target, Check, X, Edit3, AlertCircle } from 'lucide-react';
 import analyzeService from '../../eam/services/AnalyzeService';
 import type { RCANode, RCAEvidence, RCANodeEvidenceLink } from '../../eam/services/AnalyzeService';
 import NodeEvidenceChip from './NodeEvidenceChip';
@@ -53,6 +53,9 @@ const FISHBONE_FRAMEWORKS: Record<FishboneFramework, CatDef[]> = {
 const FRAMEWORK_LABELS: Record<FishboneFramework, string> = {
     '6Ms': '6Ms', '4Ms': '4Ms', '4Ps': '4Ps', '4Ss': '4Ss',
 };
+
+/** Node types that represent an actual cause hanging off a category bone. */
+const CAUSE_TYPES = new Set(['why', 'root_cause', 'contributing_factor']);
 
 const FRAMEWORK_DESCRIPTIONS: Record<FishboneFramework, string> = {
     '6Ms': 'Man, Machine, Material, Method, Environment, Measurement',
@@ -107,7 +110,9 @@ interface FishboneDiagramProps {
 const VB_W = 1200;
 const VB_H = 700;
 const SPINE_Y = VB_H / 2;
-const SPINE_LEFT = 80;
+// Cause labels hang to the LEFT of each sub-bone (text-anchor: end), so the leftmost
+// bone needs ~260px of gutter before the spine starts or its causes clip off-canvas.
+const SPINE_LEFT = 300;
 const SPINE_RIGHT = 960;
 const HEAD_W = 200;
 const BONE_LEN = 180;
@@ -137,10 +142,15 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [busyOp, setBusyOp] = useState(false);
     const [framework, setFramework] = useState<FishboneFramework>('6Ms');
+    // A framework switch that would hide recorded causes parks here until confirmed.
+    const [pendingFw, setPendingFw] = useState<FishboneFramework | null>(null);
     const [activeCat, setActiveCat] = useState<string | null>(null);
 
     const panelRef = useRef<HTMLDivElement>(null);
     const catRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    // Only one add-form is open at a time, so a single ref is enough to restore
+    // focus after a button-click add (Enter-adds never lose focus).
+    const addInputRef = useRef<HTMLInputElement>(null);
 
     const CATS = FISHBONE_FRAMEWORKS[framework];
 
@@ -168,6 +178,64 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
     }, [nodes]);
 
     const rootCauseNode = useMemo(() => nodes.find(n => n.is_root_cause), [nodes]);
+
+    // ── Framework ↔ data awareness ──────────────────────────
+    // Causes live under category nodes keyed by name; a framework only renders ITS
+    // categories, so causes recorded under another framework's categories are
+    // invisible (still in the DB). Everything below exists to make that visible.
+    const catDescById = useMemo(() => {
+        const m = new Map<string, string>();
+        nodes.forEach(n => { if (n.node_type === 'category') m.set(n.id, n.description); });
+        return m;
+    }, [nodes]);
+
+    /** Causes that framework `fw` would NOT display. */
+    const orphansFor = useCallback((fw: FishboneFramework) => {
+        const keys = new Set(FISHBONE_FRAMEWORKS[fw].map(c => c.key));
+        return nodes.filter(n => CAUSE_TYPES.has(n.node_type) && n.parent_id &&
+            catDescById.has(n.parent_id) && !keys.has(catDescById.get(n.parent_id)!));
+    }, [nodes, catDescById]);
+
+    /** The framework that displays the most of this investigation's causes. */
+    const bestFramework = useCallback((): FishboneFramework => {
+        let best: FishboneFramework = '6Ms', bestVisible = -1;
+        (Object.keys(FISHBONE_FRAMEWORKS) as FishboneFramework[]).forEach(fw => {
+            const keys = new Set(FISHBONE_FRAMEWORKS[fw].map(c => c.key));
+            const visible = nodes.filter(n => CAUSE_TYPES.has(n.node_type) && n.parent_id &&
+                keys.has(catDescById.get(n.parent_id) ?? '')).length;
+            if (visible > bestVisible) { best = fw; bestVisible = visible; }
+        });
+        return best;
+    }, [nodes, catDescById]);
+
+    // The framework is view state and resets to 6Ms on every load — a 4Ps/4Ss
+    // investigation reopened tomorrow would show zero causes with no hint why.
+    // Once the nodes arrive, snap to whichever framework its data actually uses
+    // (unless the user has already picked one this session).
+    const userPickedFwRef = useRef(false);
+    const autoDetectedFwRef = useRef(false);
+    useEffect(() => {
+        if (autoDetectedFwRef.current || userPickedFwRef.current) return;
+        if (!nodes.some(n => CAUSE_TYPES.has(n.node_type) && n.parent_id && catDescById.has(n.parent_id))) return;
+        autoDetectedFwRef.current = true;
+        const best = bestFramework();
+        if (best !== framework) setFramework(best);
+    }, [nodes, catDescById, bestFramework, framework]);
+
+    const applyFramework = useCallback((fw: FishboneFramework) => {
+        setFramework(fw);
+        setPendingFw(null);
+        // The open form / highlight may point at a category the new framework lacks.
+        setActiveCat(null);
+        setAddingTo(null);
+    }, []);
+
+    const handleFrameworkPick = useCallback((fw: FishboneFramework) => {
+        userPickedFwRef.current = true;
+        if (fw === framework) { setPendingFw(null); return; }
+        if (orphansFor(fw).length > 0) setPendingFw(fw);
+        else applyFramework(fw);
+    }, [framework, orphansFor, applyFramework]);
 
     /**
      * Resolve a category's spine node, creating it if this investigation has never
@@ -239,7 +307,11 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                 method: 'fishbone',
             });
             if (node) setNodes(prev => [...prev, node]);
-            setNewCauseText(''); setAddingTo(null);
+            // Stay in add mode: causes come in bursts during a brainstorm, and closing
+            // the form after every entry forces a +Add round-trip per cause. Escape or
+            // Cancel closes it.
+            setNewCauseText('');
+            addInputRef.current?.focus();
         } finally { setBusyOp(false); }
     }, [newCauseText, busyOp, ensureCategoryNode, investigationId, setNodes]);
 
@@ -311,8 +383,15 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
     // ═══════════════════════════════════════════════════════════
     //  RENDER
     // ═══════════════════════════════════════════════════════════
+    const hiddenNow = orphansFor(framework);
+    const orphanCatNames = (list: RCANode[]) =>
+        [...new Set(list.map(n => catDescById.get(n.parent_id!) ?? ''))].filter(Boolean).join(', ');
+
     return (
-        <div style={{ marginBottom: 16 }}>
+        // In the full-screen Causes view an unconstrained list stretches edge-to-edge on a
+        // wide monitor, pinning the category label to the far left and the +Add button to the
+        // far right with a screen of dead space between — cap and center it at reading width.
+        <div style={{ marginBottom: 16, ...(big ? { maxWidth: 920, marginLeft: 'auto', marginRight: 'auto' } : {}) }}>
             {/* Header bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -320,7 +399,7 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                 </div>
                 <div style={{ flex: 1, height: 1, background: '#e2e8f0', minWidth: 40 }} />
                 <select value={framework}
-                    onChange={(e) => setFramework(e.target.value as FishboneFramework)}
+                    onChange={(e) => handleFrameworkPick(e.target.value as FishboneFramework)}
                     style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, color: '#4338ca', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 6, cursor: 'pointer', outline: 'none' }}
                     title={`Analysis framework — ${FRAMEWORK_DESCRIPTIONS[framework]}`}>
                     {(Object.keys(FRAMEWORK_LABELS) as FishboneFramework[]).map(fw => (
@@ -333,6 +412,54 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                     {nodes.filter(n => n.node_type !== 'category').length} causes
                 </span>
             </div>
+
+            {/* Framework switch guard — the pick hides recorded causes; confirm first */}
+            {pendingFw && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                    padding: '8px 14px', marginBottom: 12,
+                    background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8,
+                    fontSize: big ? 13 : 12, color: '#92400e',
+                }}>
+                    <AlertCircle size={14} color="#d97706" style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 200 }}>
+                        Switch to <b>{pendingFw}</b>? {orphansFor(pendingFw).length} cause{orphansFor(pendingFw).length !== 1 ? 's' : ''} under{' '}
+                        <b>{orphanCatNames(orphansFor(pendingFw))}</b> will be hidden — not deleted; switching back shows them again.
+                    </span>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => applyFramework(pendingFw)}
+                            style={{ padding: '4px 12px', background: '#d97706', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                            Switch anyway
+                        </button>
+                        <button onClick={() => setPendingFw(null)}
+                            style={{ padding: '4px 12px', background: '#fff', color: '#92400e', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>
+                            Stay on {framework}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Standing notice — this framework is hiding causes recorded under another one */}
+            {!pendingFw && hiddenNow.length > 0 && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                    padding: '8px 14px', marginBottom: 12,
+                    background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8,
+                    fontSize: big ? 13 : 12, color: '#64748b',
+                }}>
+                    <AlertCircle size={14} color="#94a3b8" style={{ flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 200 }}>
+                        {hiddenNow.length} cause{hiddenNow.length !== 1 ? 's' : ''} recorded under{' '}
+                        <b>{orphanCatNames(hiddenNow)}</b> {hiddenNow.length !== 1 ? 'are' : 'is'} not shown in {framework}.
+                    </span>
+                    {bestFramework() !== framework && (
+                        <button onClick={() => { userPickedFwRef.current = true; applyFramework(bestFramework()); }}
+                            style={{ padding: '4px 12px', background: '#eef2ff', color: '#4338ca', border: '1px solid #c7d2fe', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+                            Show in {bestFramework()}
+                        </button>
+                    )}
+                </div>
+            )}
 
             {/* Root cause callout */}
             {rootCauseNode && (
@@ -431,10 +558,11 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                     <text x={tipX} y={tipY - 8} textAnchor="middle"
                                         fill="#94a3b8" fontSize="11">{cat.subtitle}</text>
 
-                                    {/* Cause count badge */}
-                                    <circle cx={tipX + 40} cy={tipY - 26} r="10"
+                                    {/* Cause count badge — offset past the widest label ("Measurement") so it
+                                        never sits on top of the category name */}
+                                    <circle cx={tipX + 72} cy={tipY - 26} r="10"
                                         fill={causes.length > 0 ? cat.color : '#e2e8f0'} />
-                                    <text x={tipX + 40} y={tipY - 22} textAnchor="middle"
+                                    <text x={tipX + 72} y={tipY - 22} textAnchor="middle"
                                         fill={causes.length > 0 ? '#fff' : '#94a3b8'}
                                         fontSize="11" fontWeight="700">{causes.length}</text>
 
@@ -494,9 +622,9 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                     <text x={tipX} y={tipY + 34} textAnchor="middle"
                                         fill="#94a3b8" fontSize="11">{cat.subtitle}</text>
 
-                                    <circle cx={tipX + 40} cy={tipY + 14} r="10"
+                                    <circle cx={tipX + 72} cy={tipY + 14} r="10"
                                         fill={causes.length > 0 ? cat.color : '#e2e8f0'} />
-                                    <text x={tipX + 40} y={tipY + 18} textAnchor="middle"
+                                    <text x={tipX + 72} y={tipY + 18} textAnchor="middle"
                                         fill={causes.length > 0 ? '#fff' : '#94a3b8'}
                                         fontSize="11" fontWeight="700">{causes.length}</text>
 
@@ -641,8 +769,9 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                                     if (e.key === 'Enter' && newCauseText.trim()) handleAddCause(cat.key);
                                                     if (e.key === 'Escape') { setAddingTo(null); setNewCauseText(''); }
                                                 }}
-                                                placeholder={`Describe ${/^[aeiou]/i.test(cat.label) ? 'an' : 'a'} ${cat.label.toLowerCase()} cause…`}
+                                                placeholder={`Describe ${/^[aeiou]/i.test(cat.label) ? 'an' : 'a'} ${cat.label.toLowerCase()} cause… (Enter to add, Esc to close)`}
                                                 autoFocus
+                                                ref={addInputRef}
                                                 style={{
                                                     flex: 1, padding: big ? '11px 14px' : '8px 12px', fontSize: sz.input,
                                                     border: `2px solid ${cat.color}60`, borderRadius: 8,
@@ -653,9 +782,9 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                                 onClick={() => handleAddCause(cat.key)}
                                                 disabled={!newCauseText.trim() || busyOp}
                                                 style={{
-                                                    padding: '8px 14px', background: cat.color, color: '#fff',
+                                                    padding: big ? '11px 18px' : '8px 14px', background: cat.color, color: '#fff',
                                                     border: 'none', borderRadius: 8, cursor: 'pointer',
-                                                    fontWeight: 700, fontSize: 12,
+                                                    fontWeight: 700, fontSize: sz.addBtn,
                                                     opacity: !newCauseText.trim() ? 0.5 : 1,
                                                     display: 'flex', alignItems: 'center', gap: 4,
                                                     transition: 'opacity 0.15s',
@@ -675,13 +804,17 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                             const isRoot = cause.is_root_cause;
 
                                             return (
-                                                <div key={cause.id} style={{
-                                                    display: 'flex', alignItems: 'center', gap: 8,
-                                                    padding: '7px 10px', margin: '1px 0',
-                                                    borderRadius: 8, transition: 'all 0.15s',
-                                                    background: isRoot ? `${cat.color}10` : 'transparent',
-                                                    borderLeft: `3px solid ${isRoot ? cat.color : 'transparent'}`,
-                                                }}>
+                                                <div key={cause.id}
+                                                    // Hover tint comes from the class so the inline background
+                                                    // (which would always win) is only set for the root cause.
+                                                    className={isRoot ? undefined : 'hover:bg-slate-50'}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: 8,
+                                                        padding: big ? '10px 12px' : '7px 10px', margin: '1px 0',
+                                                        borderRadius: 8, transition: 'all 0.15s',
+                                                        ...(isRoot ? { background: `${cat.color}10` } : {}),
+                                                        borderLeft: `3px solid ${isRoot ? cat.color : 'transparent'}`,
+                                                    }}>
                                                     {/* Dot indicator */}
                                                     <div style={{
                                                         width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
@@ -701,7 +834,7 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                                                     }}
                                                                     autoFocus
                                                                     style={{
-                                                                        flex: 1, padding: '5px 10px', fontSize: 12,
+                                                                        flex: 1, padding: big ? '8px 12px' : '5px 10px', fontSize: big ? sz.input : 12,
                                                                         border: `2px solid ${cat.color}`, borderRadius: 6,
                                                                         outline: 'none', color: '#1e293b', minWidth: 0,
                                                                     }}
@@ -758,19 +891,19 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                                                 />
                                                             )}
                                                             <button onClick={() => handleToggleRoot(cause)} disabled={busyOp}
-                                                                style={{ background: 'none', border: 'none', padding: 3, cursor: 'pointer', color: isRoot ? cat.color : '#d4d4d8', display: 'flex', borderRadius: 4 }}
+                                                                style={{ background: 'none', border: 'none', padding: big ? 5 : 3, cursor: 'pointer', color: isRoot ? cat.color : '#94a3b8', display: 'flex', borderRadius: 4 }}
                                                                 title={isRoot ? 'Unmark Root Cause' : 'Mark as Root Cause'}>
-                                                                <Target size={13} />
+                                                                <Target size={big ? 16 : 13} />
                                                             </button>
                                                             <button onClick={() => { setEditingId(cause.id); setEditText(cause.description); }}
-                                                                style={{ background: 'none', border: 'none', padding: 3, cursor: 'pointer', color: '#cbd5e1', display: 'flex', borderRadius: 4 }}
+                                                                style={{ background: 'none', border: 'none', padding: big ? 5 : 3, cursor: 'pointer', color: '#94a3b8', display: 'flex', borderRadius: 4 }}
                                                                 title="Edit">
-                                                                <Edit3 size={12} />
+                                                                <Edit3 size={big ? 15 : 12} />
                                                             </button>
                                                             <button onClick={() => setDeletingId(cause.id)}
-                                                                style={{ background: 'none', border: 'none', padding: 3, cursor: 'pointer', color: '#cbd5e1', display: 'flex', borderRadius: 4 }}
+                                                                style={{ background: 'none', border: 'none', padding: big ? 5 : 3, cursor: 'pointer', color: '#94a3b8', display: 'flex', borderRadius: 4 }}
                                                                 title="Delete">
-                                                                <Trash2 size={12} />
+                                                                <Trash2 size={big ? 15 : 12} />
                                                             </button>
                                                         </div>
                                                     )}
@@ -780,10 +913,21 @@ const FishboneDiagram: React.FC<FishboneDiagramProps> = ({
                                     </div>
                                 )}
 
-                                {/* Empty state */}
+                                {/* Empty state — a real click target, not just text telling you where to click */}
                                 {causes.length === 0 && !isAdding && (
-                                    <div style={{ padding: '6px 16px 10px 30px', fontSize: 11, color: '#cbd5e1', fontStyle: 'italic' }}>
-                                        No causes — click <span style={{ fontWeight: 700, color: cat.color }}>+ Add</span>
+                                    <div
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setAddingTo(cat.key);
+                                            setNewCauseText('');
+                                            setActiveCat(cat.key);
+                                        }}
+                                        style={{
+                                            padding: big ? '8px 18px 14px 40px' : '6px 16px 10px 30px',
+                                            fontSize: big ? 13 : 11, color: '#94a3b8', fontStyle: 'italic',
+                                            cursor: 'pointer',
+                                        }}>
+                                        No causes yet — <span style={{ fontWeight: 700, color: cat.color, fontStyle: 'normal' }}>+ add one</span>
                                     </div>
                                 )}
                             </div>
