@@ -11,6 +11,11 @@ ISO 14224 failure mode; preventive/inspection work is never a failure), defined
 in src/frontend/src/eam/services/reliabilityMetrics.ts (isFailure) and mirrored
 by rpc_pareto_analysis. Change the definition in all places together, or fleet
 rankings will disagree across surfaces.
+
+0289/0290 addendum: failure COUNTS must also exclude SECONDARY failures
+(wo_failure_data.secondary_failure = true — collateral damage caused by another
+failure); cost/downtime aggregates keep them (spend incurred at the asset).
+The initiator-side ranking lives in sem_cascade_initiators ("Trouble Makers").
 """
 
 from __future__ import annotations

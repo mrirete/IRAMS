@@ -22,6 +22,7 @@ import { useDashboardStore } from '../stores/DashboardStore';
 import { WidgetData } from '../components/reports/WidgetRegistry';
 import { DictionaryEntry } from '../types';
 import { OEEDashboard } from '../components/reports/OEEDashboard';
+import { TroubleMakersCard, SystemHotspotsCard } from '../components/reports/TroubleMakers';
 import { isOpenWo, isDoneWo } from '../../lib/woState';
 import { computeMtbfMttr, computePmCompliance, computePmRatio } from '../../lib/reliabilityKpis';
 
@@ -1051,6 +1052,11 @@ export const Reports: React.FC = () => {
             </ComposedChart>
           </ResponsiveContainer>
         </ReportChartCard>
+
+        {/* ── Systems thinking (Phase 2): who CAUSES damage vs who incurs it,
+            and the same record rolled up to system level ── */}
+        <TroubleMakersCard />
+        <SystemHotspotsCard />
 
         {/* ── Maintenance Cost by Asset ── */}
         <ReportChartCard
