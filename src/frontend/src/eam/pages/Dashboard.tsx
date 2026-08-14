@@ -595,7 +595,7 @@ export const Dashboard: React.FC = () => {
           <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
             {workTab === 'active' ? (
               myWork.length > 0 ? myWork.map((wo: any) => (
-                <button key={wo.id} onClick={() => navigate(`/work-orders?id=${wo.id}`)}
+                <button key={wo.id} onClick={() => navigate(`/work-orders/${wo.id}`)}
                   className="w-full p-3 sm:p-3.5 flex items-start sm:items-center gap-2.5 sm:gap-3 hover:bg-blue-50/30 transition text-left min-h-[52px]"
                 >
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5 sm:mt-0" style={{ backgroundColor: STATUS_COLORS[wo.status] || '#94a3b8' }} />
@@ -626,7 +626,7 @@ export const Dashboard: React.FC = () => {
               )
             ) : (
               recent.length > 0 ? recent.map((wo: any) => (
-                <button key={wo.id} onClick={() => navigate(`/work-orders?id=${wo.id}`)}
+                <button key={wo.id} onClick={() => navigate(`/work-orders/${wo.id}`)}
                   className="w-full px-5 py-3 flex items-center gap-3 hover:bg-slate-50 transition text-left"
                 >
                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: STATUS_COLORS[wo.status] || '#94a3b8' }} />

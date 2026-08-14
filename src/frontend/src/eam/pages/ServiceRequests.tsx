@@ -253,7 +253,7 @@ export const ServiceRequests: React.FC = () => {
     // Click handler: navigate to WO if converted, otherwise open detail
     const handleRequestClick = (req: ServiceRequest) => {
         if (req.status === RequestStatus.CONVERTED && req.linkedWOId) {
-            navigate(`/work-orders?id=${req.linkedWOId}`);
+            navigate(`/work-orders/${req.linkedWOId}`);
         } else {
             setIsCreating(false);
             setSelectedRequest(req);
@@ -497,7 +497,7 @@ const RequestColumn: React.FC<{
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
-                                        navigate(`/work-orders?id=${req.linkedWOId}`);
+                                        navigate(`/work-orders/${req.linkedWOId}`);
                                     }}
                                     className="flex items-center gap-1 text-blue-600 font-bold hover:underline"
                                 >
@@ -577,7 +577,7 @@ const MobileRequestGroup: React.FC<{
                                     </div>
                                     {req.linkedWOId ? (
                                         <button
-                                            onClick={(e) => { e.stopPropagation(); navigate(`/work-orders?id=${req.linkedWOId}`); }}
+                                            onClick={(e) => { e.stopPropagation(); navigate(`/work-orders/${req.linkedWOId}`); }}
                                             className="flex items-center gap-0.5 text-blue-600 font-bold text-[10px]"
                                         >
                                             <FileText size={10} /> WO #{req.linkedWONumber || '...'}
