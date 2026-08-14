@@ -2946,16 +2946,12 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     };
 
     // Local state for free-text fields — only save onBlur to avoid disruptive auto-save while typing
-    const [localActionTaken, setLocalActionTaken] = useState(job.failureData?.remedyCode || '');
     const [localObjectPart, setLocalObjectPart] = useState(job.failureData?.objectPart || '');
     const [localEffects, setLocalEffects] = useState(job.failureData?.comments || '');
     const [localLocalImpact, setLocalLocalImpact] = useState(job.failureData?.localImpact || '');
     const [localPlantWideImpact, setLocalPlantWideImpact] = useState(job.failureData?.plantWideImpact || '');
 
     // Sync local state when job data changes from outside (e.g. after DB refetch)
-    useEffect(() => {
-        setLocalActionTaken(job.failureData?.remedyCode || '');
-    }, [job.failureData?.remedyCode]);
     useEffect(() => {
         setLocalObjectPart(job.failureData?.objectPart || '');
     }, [job.failureData?.objectPart]);
@@ -2968,15 +2964,6 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     useEffect(() => {
         setLocalPlantWideImpact(job.failureData?.plantWideImpact || '');
     }, [job.failureData?.plantWideImpact]);
-
-    const flushActionTaken = () => {
-        onUpdate({
-            failureData: {
-                ...job.failureData,
-                remedyCode: localActionTaken
-            }
-        });
-    };
 
     const flushObjectPart = () => {
         onUpdate({
@@ -3418,16 +3405,9 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Action Taken <span className="text-slate-400 font-normal">(Optional)</span></label>
-                                <textarea
-                                    value={localActionTaken}
-                                    onChange={(e) => setLocalActionTaken(e.target.value)}
-                                    onBlur={flushActionTaken}
-                                    className="w-full h-14 p-2 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-primary-500 resize-none"
-                                    placeholder="Describe the corrective action taken..."
-                                />
-                            </div>
+                            {/* "Action Taken" removed: it was free prose duplicating the
+                                journal AND polluting remedy_code (a code column). Narrative
+                                lives in Journals; the completion modal owns the remedy. */}
 
                             {/* Failure Impact Fields (ISO 14224 §B.2.5) */}
                             <div className="pt-3 mt-3 border-t border-slate-100">
