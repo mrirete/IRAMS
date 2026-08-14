@@ -3055,7 +3055,39 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
             isSystem: false
         };
         onUpdate({ journals: [newJournal, ...(job.journals || [])] });
+        // A "Follow-up" entry IS the follow-up request: it arms the
+        // Complete & Raise Follow-Up action and rides into the new WO.
+        if (journalType === 'Follow-up') onFollowUpDescriptionChange?.(note);
         setNote('');
+    };
+
+    // Durable follow-up: the latest Follow-up journal seeds the description,
+    // so the request survives reloads instead of living in screen state.
+    useEffect(() => {
+        if (followUpDescription) return;
+        const fu = (job.journals || []).find((j: any) => j.type === 'Follow-up');
+        if (fu?.entry) onFollowUpDescriptionChange?.(fu.entry);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [job.journals]);
+
+    // Journal delete: own, non-system entries, only while the WO is open —
+    // at TECO the record freezes (append-only from then on). The archived
+    // mirror row is deleted too; if that fails the entry would resurface,
+    // so the user is told.
+    const journalsLocked = ['TECO', 'CLOSED', 'CANC', 'CANCELLED'].includes(String(job.status));
+    const canDeleteJournal = (j: any) =>
+        !j.isSystem && !journalsLocked && j.createdBy === (profile?.username || profile?.fullName);
+    const handleDeleteJournal = async (j: any) => {
+        onUpdate({ journals: (job.journals || []).filter((x: any) => x.id !== j.id) });
+        if (j.type === 'Follow-up' && followUpDescription === j.entry) onFollowUpDescriptionChange?.('');
+        try {
+            const { error } = await supabase
+                .from('journal_entries')
+                .delete()
+                .eq('entity_id', job.id)
+                .eq('client_id', j.id);
+            if (error) showToast('Entry removed, but the archived copy could not be deleted — it may reappear on reload.', 'warning');
+        } catch { /* non-blocking */ }
     };
 
     // Journals are APPEND-ONLY (0285): entries mirror into journal_entries as
@@ -3072,6 +3104,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
         'Note': 'bg-blue-100 text-blue-700',
         'Observation': 'bg-emerald-100 text-emerald-700',
         'Handover': 'bg-blue-100 text-blue-700',
+        'Follow-up': 'bg-amber-100 text-amber-700',
         'Safety': 'bg-red-100 text-red-700',
         'SYSTEM': 'bg-slate-200 text-slate-600'
     };
@@ -3618,6 +3651,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                             <option value="Note">Note</option>
                             <option value="Observation">Observation</option>
                             <option value="Handover">Handover</option>
+                            <option value="Follow-up">Follow-up</option>
                             <option value="Safety">Safety</option>
                         </select>
                         <span className="text-[10px] text-slate-400">as {profile?.username || 'Unknown'}</span>
@@ -3652,7 +3686,18 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                         <span className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${journalTypeColors[j.type] || journalTypeColors['Note']}`}>
                                             {j.type}
                                         </span>
-                                        <span className="text-[10px] text-slate-400">{formatJournalDate(j.createdAt)}</span>
+                                        <span className="flex items-center gap-1.5">
+                                            <span className="text-[10px] text-slate-400">{formatJournalDate(j.createdAt)}</span>
+                                            {canDeleteJournal(j) && (
+                                                <button
+                                                    onClick={() => handleDeleteJournal(j)}
+                                                    className="p-1 text-slate-300 hover:text-red-600 rounded"
+                                                    title="Delete your entry (possible until the work order is completed)"
+                                                >
+                                                    <Trash2 size={11} />
+                                                </button>
+                                            )}
+                                        </span>
                                     </div>
                                     <div className="text-[11px] font-semibold text-slate-600 mb-0.5">{j.createdBy}</div>
                                     <p className="text-xs text-slate-600 whitespace-pre-wrap">{j.entry}</p>
@@ -3671,36 +3716,35 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                 </div>
             </div>
 
-            {/* Follow-Up Actions — lives under Journals & Notes; the description is
-                OPTIONAL (the complete flow auto-generates a summary when it's empty) */}
-            <div className="bg-white p-3 md:p-4 rounded-lg border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-xs md:text-sm text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center gap-1.5">
-                    <GitPullRequest className="text-amber-600" size={14} /> Follow-Up Actions
-                </h3>
-                <div className="space-y-3">
-                    <p className="text-xs text-slate-600">
-                        {isPreventive
-                            ? 'If a defect or abnormal condition was discovered during this inspection, complete the work order and raise a follow-up corrective work order.'
-                            : 'Complete this work order and optionally raise a follow-up for additional corrective actions, secondary defects, or related remediation work.'}
-                    </p>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Follow-Up Description <span className="text-slate-400 font-normal">(Optional)</span></label>
-                        <textarea
-                            value={followUpDescription}
-                            onChange={(e) => onFollowUpDescriptionChange?.(e.target.value)}
-                            className="w-full h-20 p-2.5 border border-slate-300 rounded-lg text-xs bg-white focus:ring-1 focus:ring-amber-500 focus:border-amber-500 resize-none placeholder:text-slate-400"
-                            placeholder="Describe the defect, abnormal condition, or required follow-up action in detail..."
-                        />
-                        <p className="text-[10px] text-slate-400 mt-1">Included in the follow-up work order for the corrective team; left empty, an auto-generated summary is used.</p>
-                    </div>
-                    {/* Mobile fallback — on desktop this action lives in the sticky rail */}
-                    <button
-                        onClick={() => onOpenCompleteModal?.()}
-                        className="lg:hidden w-full px-4 py-2.5 border-2 border-dashed font-bold rounded-lg flex items-center justify-center gap-2 transition-all text-sm bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100 hover:border-amber-400"
-                    >
-                        <AlertTriangle size={16} /> Complete &amp; Raise Follow-Up
-                    </button>
+            {/* Follow-Up — embedded in Journals: a "Follow-up" journal entry IS the
+                request. This strip just reflects the armed/disarmed state. */}
+            <div className={`rounded-lg border p-3 flex items-start gap-2.5 ${followUpDescription.trim() ? 'bg-amber-50 border-amber-300' : 'bg-white border-slate-200'}`}>
+                <GitPullRequest size={14} className={`flex-shrink-0 mt-0.5 ${followUpDescription.trim() ? 'text-amber-600' : 'text-slate-400'}`} />
+                <div className="flex-1 min-w-0">
+                    {followUpDescription.trim() ? (
+                        <>
+                            <p className="text-xs font-bold text-amber-800">Follow-up armed — will be raised as a corrective WO at completion:</p>
+                            <p className="text-[11px] text-amber-700 mt-0.5 line-clamp-2">{followUpDescription}</p>
+                        </>
+                    ) : (
+                        <p className="text-xs text-slate-500">
+                            {isPreventive
+                                ? 'Found a defect during this inspection? Add a journal entry of type '
+                                : 'Need remediation work after this job? Add a journal entry of type '}
+                            <span className="font-bold text-amber-700">Follow-up</span> above — it arms the
+                            <span className="font-semibold"> Complete &amp; Raise Follow-Up</span> action and rides into the new work order.
+                        </p>
+                    )}
                 </div>
+                <button
+                    onClick={() => onOpenCompleteModal?.()}
+                    disabled={!followUpDescription.trim()}
+                    className={`flex-shrink-0 px-3 py-2 border-2 border-dashed font-bold rounded-lg flex items-center gap-1.5 text-xs transition-all ${followUpDescription.trim()
+                        ? 'bg-amber-100 border-amber-400 text-amber-800 hover:bg-amber-200 cursor-pointer'
+                        : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'}`}
+                >
+                    <AlertTriangle size={14} /> Complete &amp; Raise Follow-Up
+                </button>
             </div>
 
             {/* ══ Change History — collapsed strip; the audit query only fires on expand ══ */}
