@@ -3071,6 +3071,31 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     const journalsLocked = ['TECO', 'CLOSED', 'CANC', 'CANCELLED'].includes(String(job.status));
     const canDeleteJournal = (j: any) =>
         !j.isSystem && !journalsLocked && j.createdBy === (profile?.username || profile?.fullName);
+    // Edit: same scope as delete (own, non-system, WO still open). The mirror
+    // row must be updated too — the read path prefers it, so an edit that only
+    // touched properties.journals would silently revert on reload.
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editText, setEditText] = useState('');
+    const handleSaveEdit = async (j: any) => {
+        const text = editText.trim();
+        if (!text) return;
+        const editedAt = new Date().toISOString();
+        onUpdate({
+            journals: (job.journals || []).map((x: any) => x.id === j.id ? { ...x, entry: text, editedAt } : x),
+            ...(j.type === 'Follow-up' && followUpDescription === j.entry ? {} : {}),
+        } as any);
+        if (j.type === 'Follow-up' && followUpDescription === j.entry) onFollowUpDescriptionChange?.(text);
+        setEditingId(null);
+        try {
+            const { error } = await supabase
+                .from('journal_entries')
+                .update({ entry: text })
+                .eq('entity_id', job.id)
+                .eq('client_id', j.id);
+            if (error) showToast('Edited here, but the archived copy could not be updated — it may revert on reload.', 'warning');
+        } catch { /* non-blocking */ }
+    };
+
     const handleDeleteJournal = async (j: any) => {
         onUpdate({ journals: (job.journals || []).filter((x: any) => x.id !== j.id) });
         if (j.type === 'Follow-up' && followUpDescription === j.entry) onFollowUpDescriptionChange?.('');
@@ -3682,21 +3707,45 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                                         </span>
                                         <span className="flex items-center gap-1.5">
                                             <span className="text-[10px] text-slate-400">{formatJournalDate(j.createdAt)}</span>
-                                            {canDeleteJournal(j) && (
-                                                <button
-                                                    onClick={() => handleDeleteJournal(j)}
-                                                    className="p-1 text-slate-300 hover:text-red-600 rounded"
-                                                    title="Delete your entry (possible until the work order is completed)"
-                                                >
-                                                    <Trash2 size={11} />
-                                                </button>
+                                            {canDeleteJournal(j) && editingId !== j.id && (
+                                                <>
+                                                    <button
+                                                        onClick={() => { setEditingId(j.id); setEditText(j.entry); }}
+                                                        className="p-1 text-slate-300 hover:text-blue-600 rounded"
+                                                        title="Edit your entry (possible until the work order is completed)"
+                                                    >
+                                                        <Edit3 size={11} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteJournal(j)}
+                                                        className="p-1 text-slate-300 hover:text-red-600 rounded"
+                                                        title="Delete your entry (possible until the work order is completed)"
+                                                    >
+                                                        <Trash2 size={11} />
+                                                    </button>
+                                                </>
                                             )}
                                         </span>
                                     </div>
                                     <div className="text-[11px] font-semibold text-slate-600 mb-0.5">{j.createdBy}</div>
-                                    <p className="text-xs text-slate-600 whitespace-pre-wrap">{j.entry}</p>
-                                    {(j as any).editedAt && (
-                                        <span className="text-[9px] text-slate-400 italic mt-1 block">edited {(j as any).editedAt}</span>
+                                    {editingId === j.id ? (
+                                        <div className="space-y-1.5">
+                                            <textarea
+                                                value={editText}
+                                                onChange={(e) => setEditText(e.target.value)}
+                                                className="w-full border border-blue-300 rounded p-1.5 text-xs bg-blue-50 focus:ring-1 focus:ring-primary-500 resize-none h-16"
+                                                autoFocus
+                                            />
+                                            <div className="flex gap-1.5">
+                                                <button onClick={() => handleSaveEdit(j)} className="px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-500">Save</button>
+                                                <button onClick={() => setEditingId(null)} className="px-2 py-0.5 text-[10px] text-slate-500 bg-slate-100 rounded hover:bg-slate-200">Cancel</button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-slate-600 whitespace-pre-wrap">{j.entry}</p>
+                                    )}
+                                    {(j as any).editedAt && editingId !== j.id && (
+                                        <span className="text-[9px] text-slate-400 italic mt-1 block">edited {formatJournalDate((j as any).editedAt)}</span>
                                     )}
                                 </div>
                             </div>
