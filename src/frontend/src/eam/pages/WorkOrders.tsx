@@ -2270,6 +2270,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                     )}
                                 </div>
 
+                                {!isPreventiveType && followUpDescription.trim() && (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+                                        <GitPullRequest size={13} className="flex-shrink-0 mt-0.5" />
+                                        <span><span className="font-bold">Follow-up armed:</span> {followUpDescription}</span>
+                                    </div>
+                                )}
                                 <p className="text-slate-600 text-sm">
                                     You are about to mark work order <strong>{localJob.woNumber || localJob.id}</strong> as <strong>Technically Complete (TECO)</strong>.
                                     The work is physically complete. Costs can still be posted until Financial Close.
@@ -2320,34 +2326,22 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
                         <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
                             <button onClick={() => setShowCompleteModal(false)} className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-100 rounded-lg">Cancel</button>
-                            {modalCanComplete && (
-                                <>
-                                    {/* For PMs with defect: prominently show follow-up button */}
-                                    {isPreventiveType && defectFound ? (
-                                        <button
-                                            onClick={() => handleConfirmCompletion(true)}
-                                            className="px-4 py-2 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700 flex items-center gap-2 shadow-sm animate-pulse"
-                                        >
-                                            <AlertTriangle size={16} /> TECO & Create Corrective WO
-                                        </button>
-                                    ) : (
-                                        <>
-                                            <button
-                                                onClick={() => handleConfirmCompletion(true)}
-                                                className="px-4 py-2 border border-blue-200 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 hover:border-blue-300 flex items-center gap-2"
-                                            >
-                                                <GitPullRequest size={16} /> TECO & Request Follow-up
-                                            </button>
-                                            <button
-                                                onClick={() => handleConfirmCompletion(false)}
-                                                className="px-4 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm"
-                                            >
-                                                <CheckCircle size={16} /> Technically Complete
-                                            </button>
-                                        </>
-                                    )}
-                                </>
-                            )}
+                            {/* ONE confirm button — the decision was already made: a
+                                Follow-up journal entry (or the PM defect toggle) arms the
+                                follow-up; this just confirms completion. */}
+                            {modalCanComplete && (() => {
+                                const followUpArmed = defectFound || !!followUpDescription.trim();
+                                return (
+                                    <button
+                                        onClick={() => handleConfirmCompletion(followUpArmed)}
+                                        className={`px-4 py-2 font-bold rounded-lg flex items-center gap-2 shadow-sm text-white ${followUpArmed ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}
+                                    >
+                                        {followUpArmed
+                                            ? <><GitPullRequest size={16} /> Technically Complete + Raise Follow-Up</>
+                                            : <><CheckCircle size={16} /> Technically Complete</>}
+                                    </button>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>
@@ -3771,16 +3765,21 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                 {closeout.blockers.length > 0 && (
                     <p className="text-[10px] text-slate-400 -mt-1.5">Missing: {closeout.blockers.map(b => b.label).join(', ')}</p>
                 )}
+                {/* ONE action — the label reflects the armed state; the modal confirms. */}
                 <button
                     onClick={() => onOpenCompleteModal?.()}
-                    className="w-full px-4 py-2.5 border-2 border-dashed font-bold rounded-lg flex items-center justify-center gap-2 transition-all text-sm bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100 hover:border-amber-400"
+                    className={`w-full px-4 py-2.5 border-2 border-dashed font-bold rounded-lg flex items-center justify-center gap-2 transition-all text-sm ${followUpDescription.trim()
+                        ? 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-100 hover:border-amber-400'
+                        : 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100 hover:border-emerald-400'}`}
                 >
-                    <AlertTriangle size={16} /> Complete &amp; Raise Follow-Up
+                    {followUpDescription.trim()
+                        ? <><AlertTriangle size={16} /> Complete &amp; Raise Follow-Up</>
+                        : <><CheckCircle size={16} /> Complete Work Order</>}
                 </button>
                 <p className="text-[10px] text-slate-400">
                     {followUpDescription.trim()
-                        ? 'Your follow-up description will seed the corrective work order.'
-                        : 'Optional: describe the follow-up under Journals & Notes — otherwise an auto-generated summary is used.'}
+                        ? 'A follow-up corrective WO will be raised, seeded with your Follow-up journal entry.'
+                        : 'Need remediation afterwards? Add a Follow-up entry under Journals & Notes to arm it.'}
                 </p>
             </div>
         </aside>
