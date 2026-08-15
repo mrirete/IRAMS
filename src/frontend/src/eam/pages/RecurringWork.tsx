@@ -171,6 +171,8 @@ export const RecurringWork: React.FC = () => {
                 leadTimeDays: pm.lead_time_days || 7,
                 jobType: pm.job_type,
                 priority: pm.priority_code,
+                strategyId: pm.strategy_id || undefined,
+                strategyPackage: pm.strategy_package || undefined,
                 estDuration: pm.est_duration || 0,
                 estDowntime: pm.est_downtime || 0,
                 nextDueDate: pm.next_due_date || '',
@@ -553,6 +555,8 @@ export const RecurringWork: React.FC = () => {
                 lead_time_days: selectedJob.leadTimeDays,
                 job_type: selectedJob.jobType,
                 priority_code: selectedJob.priority,
+                strategy_id: (selectedJob as any).strategyId || null,
+                strategy_package: (selectedJob as any).strategyPackage || null,
                 est_duration: selectedJob.estDuration || 0,
                 est_downtime: selectedJob.estDowntime || 0,
                 // Persist the primary asset link
@@ -1287,6 +1291,12 @@ export const RecurringWork: React.FC = () => {
 };
 
 const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>) => void, dictionaries?: any[], jobs?: RecurringJob[], assets?: Asset[] }> = ({ job, onUpdate, dictionaries = [], jobs = [], assets = [] }) => {
+    // 0292: strategy-package linkage — makes cycle absorption reach the real schedule.
+    const [strategies, setStrategies] = useState<any[]>([]);
+    useEffect(() => {
+        DatabaseService.getInstance().getStrategies().then(setStrategies).catch(() => setStrategies([]));
+    }, []);
+    const selectedStrategy = strategies.find((s: any) => s.id === (job as any).strategyId);
     // Dictionary lookups
     const readingTypes = dictionaries.filter(d => d.type === 'READING_TYPE' && d.active);
     const timePeriods = dictionaries.filter(d => d.type === 'TIME_PERIOD' && d.active);
@@ -1508,6 +1518,37 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                                         ]
                                     }
                                 </select>
+                            </div>
+                            {/* 0292: Strategy package — same-day absorption by longer packages */}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Maintenance Strategy</label>
+                                <select
+                                    value={(job as any).strategyId || ''}
+                                    onChange={(e) => onUpdate({ strategyId: e.target.value || undefined, strategyPackage: undefined } as any)}
+                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-primary-500"
+                                >
+                                    <option value="">— None (standalone PM) —</option>
+                                    {strategies.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Strategy Package</label>
+                                <select
+                                    value={(job as any).strategyPackage || ''}
+                                    onChange={(e) => onUpdate({ strategyPackage: e.target.value || undefined } as any)}
+                                    disabled={!selectedStrategy}
+                                    className={`w-full p-2 border rounded-lg text-sm focus:ring-2 focus:ring-primary-500 ${selectedStrategy ? 'border-slate-300 bg-white' : 'border-slate-200 bg-slate-50 text-slate-400'}`}
+                                >
+                                    <option value="">— Select package —</option>
+                                    {(selectedStrategy?.packages || []).map((p: any) => (
+                                        <option key={p.id} value={p.label}>{p.label} — every {p.intervalDays} days</option>
+                                    ))}
+                                </select>
+                                {(job as any).strategyPackage && (
+                                    <p className="text-[10px] text-blue-600 mt-1 font-medium">
+                                        Absorbed when a longer package of this strategy is due the same day — one service, not a stack.
+                                    </p>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cost Center</label>

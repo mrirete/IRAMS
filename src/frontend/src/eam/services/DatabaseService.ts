@@ -5011,6 +5011,53 @@ export class DatabaseService {
 
         const templates = pm.templates || {};
 
+        // ── Strategy absorption (0292, X-1) ─────────────────────────────────
+        // If this PM implements a strategy package and a LONGER package of the
+        // same strategy+asset is due the SAME day (interval an exact multiple),
+        // the longer service's scope includes this one: raise no WO, roll this
+        // PM forward. One service, not a stack.
+        if (pm.strategy_id && pm.strategy_package) {
+            try {
+                const { data: pkgRows } = await supabase
+                    .from('strategy_packages')
+                    .select('label, interval_days')
+                    .eq('strategy_id', pm.strategy_id);
+                const mine = (pkgRows || []).find((p: any) => p.label === pm.strategy_package);
+                if (mine) {
+                    const { data: sibs } = await supabase
+                        .from('recurring_work')
+                        .select('id, strategy_package, next_due_date, active')
+                        .eq('strategy_id', pm.strategy_id)
+                        .eq('asset_id', assetId || pm.asset_id)
+                        .neq('id', pmId);
+                    const myDue = String(pm.next_due_date || new Date().toISOString()).slice(0, 10);
+                    const absorber = (sibs || []).find((s: any) => {
+                        if (s.active === false || !s.next_due_date) return false;
+                        const sp = (pkgRows || []).find((p: any) => p.label === s.strategy_package);
+                        return !!sp && sp.interval_days > mine.interval_days
+                            && sp.interval_days % mine.interval_days === 0
+                            && String(s.next_due_date).slice(0, 10) === myDue;
+                    });
+                    if (absorber) {
+                        const nextDue = new Date(new Date(myDue + 'T00:00:00Z').getTime() + mine.interval_days * 86400000).toISOString();
+                        await supabase.from('recurring_work').update({
+                            last_generated_date: new Date().toISOString(),
+                            next_due_date: nextDue,
+                        }).eq('id', pmId);
+                        const absorbedErr: any = new Error(
+                            `Absorbed: the ${pm.strategy_package} scope is included in the ${absorber.strategy_package} service due the same day — ` +
+                            `no separate work order raised; ${pm.strategy_package} rolled to ${nextDue.slice(0, 10)}.`
+                        );
+                        absorbedErr.absorbed = true;
+                        throw absorbedErr;
+                    }
+                }
+            } catch (absorbErr: any) {
+                if (absorbErr?.absorbed) throw absorbErr;
+                console.warn('[generateWOFromPM] absorption check failed (non-blocking):', absorbErr?.message);
+            }
+        }
+
         // 2. Create WO with traceability link
         const woId = crypto.randomUUID();
         // DataMapper.toUIWorkOrder prepends 'WO-', so store just the numeric portion
@@ -5024,7 +5071,7 @@ export class DatabaseService {
         const newWO: any = {
             id: woId,
             wo_number: woNumber,
-            title: (pm.description || pm.title) + ' (Generated)',
+            title: (pm.description || pm.title) + (pm.strategy_package ? ` — ${pm.strategy_package} service` : '') + ' (Generated)',
             description: pm.description || pm.title,
             status: 'OPEN',
             type: pm.job_type || 'PM',
