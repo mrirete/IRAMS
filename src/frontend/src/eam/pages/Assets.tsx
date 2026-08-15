@@ -2455,7 +2455,7 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             <option value="">Unassigned</option>
                             {workCenters.map(w => <option key={w.id} value={w.id}>{w.code} — {w.name}</option>)}
                         </select>
-                        <p className="text-[10px] text-slate-400 mt-1">Defaults onto requests, work orders & PMs raised on this asset (SAP Main Work Center).</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Defaults onto requests, work orders & PMs raised on this asset.</p>
                     </div>
                 </div>
             </div>

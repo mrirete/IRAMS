@@ -4444,7 +4444,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                     </div>
 
                     <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5" title="SAP Main Work Center — the work group responsible for executing this order. Per-operation work centers (costing) are set on the Tasks tab.">Main Work Group</label>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5" title="The work group responsible for executing this order. Per-operation work centers (costing) are set on the Tasks tab.">Main Work Group</label>
                         <select
                             className="w-full text-sm border border-slate-300 rounded-lg bg-white px-3 py-2.5"
                             value={job.workCenterId || ''}
@@ -4985,7 +4985,7 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
             <div className="flex items-center gap-2">
                 <DollarSign size={16} className="text-slate-400" />
                 <h3 className="text-sm font-bold text-slate-700">Operation Cost &amp; Settlement</h3>
-                <span className="text-[11px] text-slate-400">planned vs confirmed-actual labour · SAP order-to-cost</span>
+                <span className="text-[11px] text-slate-400">planned vs confirmed-actual labour</span>
                 {job.status === 'CLOSED' && (
                     <span className="ml-auto text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
                         <Lock size={10} /> Costs Frozen

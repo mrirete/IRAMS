@@ -773,7 +773,7 @@ export const MRSView: React.FC<MRSViewProps> = ({
                         </div>
                         <div className="hidden sm:block">
                             <h2 className="text-sm font-bold text-slate-800 leading-tight">Multi-Resource Scheduling</h2>
-                            <p className="text-[10px] text-slate-400 font-medium">SAP MRS-style resource view</p>
+                            <p className="text-[10px] text-slate-400 font-medium">Multi-resource scheduling view</p>
                         </div>
                     </div>
 

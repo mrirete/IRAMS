@@ -33,7 +33,7 @@ const IMPORT_TYPES: { type: ImportType; label: string; desc: string; icon: React
     { type: 'vendor',    label: 'Vendors',         desc: 'Suppliers & contractors',         icon: <Building2 size={20} />,      color: 'orange',  downloadFn: downloadVendorTemplate },
     { type: 'readings',  label: 'Readings',        desc: 'Meter & condition history',       icon: <Gauge size={20} />,          color: 'rose',    downloadFn: downloadReadingsTemplate },
     { type: 'jobplan',   label: 'Job Plans',       desc: 'PM task lists & operations',      icon: <ListChecks size={20} />,     color: 'violet',  downloadFn: downloadJobPlanTemplate },
-    { type: 'failurecodes', label: 'Failure Codes', desc: 'Your ISO 14224 / SAP catalogs',   icon: <Tags size={20} />,           color: 'teal',    downloadFn: downloadFailureCodesTemplate },
+    { type: 'failurecodes', label: 'Failure Codes', desc: 'Your ISO 14224 failure catalogs',   icon: <Tags size={20} />,           color: 'teal',    downloadFn: downloadFailureCodesTemplate },
 ];
 
 // Display label per type

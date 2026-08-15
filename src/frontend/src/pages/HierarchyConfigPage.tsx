@@ -402,7 +402,7 @@ const NumberRangesCard: React.FC = () => {
                     {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save ranges
                 </button>
             </div>
-            <p className="text-xs text-slate-500 mb-4">Auto-generated identifiers (SAP NRIV parity). "Start at" sets the next number issued — set it above your existing numbers to begin a new range.</p>
+            <p className="text-xs text-slate-500 mb-4">Auto-generated identifiers. "Start at" sets the next number issued — set it above your existing numbers to begin a new range.</p>
             {loading || !cfg ? (
                 <div className="flex justify-center py-8 text-slate-400"><Loader2 size={20} className="animate-spin" /></div>
             ) : (

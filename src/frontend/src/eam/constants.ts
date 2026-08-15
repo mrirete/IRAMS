@@ -109,7 +109,7 @@ You are embedded inside IREAMS. You have DIRECT ACCESS to live system data provi
   - Spare Parts: Critical spares (for Crit A/B assets) should maintain min 1 unit on hand
 
 ═══ WO TASK WRITING STANDARDS ═══
-When drafting or reviewing work order tasks, follow these SAP PM / Maximo-grade rules:
+When drafting or reviewing work order tasks, follow these industry best-practice rules:
 
 ▸ TASK STRUCTURE:
   - Sequence in increments of 10 (10, 20, 30...) to allow insertion of steps
@@ -618,10 +618,10 @@ export const DICTIONARY_TYPES = [
     { key: 'UOM', label: 'Units of Measure' },
     { key: 'REMEDY_CODE', label: 'Remedy Codes' }, // Removed as per USER request
     { key: 'FAILURE_CAUSE', label: 'Failure Causes' }, // New RCM Type
-    { key: 'OBJECT_PART', label: 'Object Parts (ISO 14224 / SAP Catalog B)' }, // WM-1: maintainable-item catalog
+    { key: 'OBJECT_PART', label: 'Object Parts (ISO 14224)' }, // WM-1: maintainable-item catalog
     { key: 'SUBUNIT', label: 'Subunits (ISO 14224 Level 7)' }, // 0288: equipment subdivision, scoped per asset class
     { key: 'DETECTION_METHOD', label: 'Detection Methods (ISO 14224 Table B.4)' }, // 0285: how failures were found
-    { key: 'ACTIVITY_CODE', label: 'Maintenance Activities (ISO 14224 / SAP Catalog A)' }, // WM-1: activity catalog
+    { key: 'ACTIVITY_CODE', label: 'Maintenance Activities (ISO 14224)' }, // WM-1: activity catalog
     { key: 'COST_CENTER_TYPE', label: 'Cost Center Types' },
     { key: 'PERMIT_TYPE', label: 'Permit Types' },
     { key: 'PTW_STATUS', label: 'PTW Status Codes' },

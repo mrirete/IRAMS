@@ -104,7 +104,7 @@ export const CompaniesPage: React.FC = () => {
                     <h1 className="text-lg md:text-xl font-bold text-slate-900 flex items-center gap-2">
                         <Building2 size={20} className="text-primary-600" /> Companies
                     </h1>
-                    <p className="text-xs text-slate-500">Sub-companies / legal entities (SAP Company Code). Org units, numbering, and configuration can be assigned per company, with group-level rollup across them.</p>
+                    <p className="text-xs text-slate-500">Sub-companies / legal entities. Org units, numbering, and configuration can be assigned per company, with group-level rollup across them.</p>
                 </div>
                 {tableReady && (
                     <div className="flex items-center gap-2">
