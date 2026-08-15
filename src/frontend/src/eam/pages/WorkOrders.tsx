@@ -1193,6 +1193,9 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
     const allFailureModes = dictionaries.filter(d => d.type === 'FAILURE_MODE' && d.active);
     const allFailureCauses = dictionaries.filter(d => d.type === 'FAILURE_CAUSE' && d.active);
+    // Coded remedies: the last free-text-into-a-code-column path. Falls back to
+    // free text only when the dictionary is empty.
+    const allRemedyCodes = dictionaries.filter(d => d.type === 'REMEDY_CODE' && d.active);
 
     const woType = (localJob.type || '').toString().toUpperCase();
     // Single policy shared with the server-side TECO gate — see lib/workOrder.ts.
@@ -2161,14 +2164,30 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                             </div>
                                         )}
                                         <div>
-                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Remedy / Action Taken (Optional)</label>
-                                            <input
-                                                type="text"
-                                                className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
-                                                placeholder="Describe action taken..."
-                                                value={modalRemedy}
-                                                onChange={e => setModalRemedy(e.target.value)}
-                                            />
+                                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Remedy (Optional)</label>
+                                            {allRemedyCodes.length > 0 ? (
+                                                <ModernSelect
+                                                    placeholder="-- Select Remedy --"
+                                                    value={modalRemedy}
+                                                    onChange={val => setModalRemedy(val)}
+                                                    options={allRemedyCodes.map(rc => ({
+                                                        value: rc.code,
+                                                        label: `${rc.description} (${rc.code})`,
+                                                        badge: rc.code,
+                                                        badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                    }))}
+                                                    size="sm"
+                                                />
+                                            ) : (
+                                                <input
+                                                    type="text"
+                                                    className="w-full text-xs border border-slate-300 rounded-lg bg-white p-2"
+                                                    placeholder="Describe action taken..."
+                                                    value={modalRemedy}
+                                                    onChange={e => setModalRemedy(e.target.value)}
+                                                />
+                                            )}
+                                            <p className="text-[9px] text-slate-400 mt-0.5">Coded so remedies are analyzable fleet-wide; the narrative belongs in the journal note below.</p>
                                         </div>
                                     </div>
                                 )}

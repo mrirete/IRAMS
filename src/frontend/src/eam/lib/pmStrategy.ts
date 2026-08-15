@@ -28,6 +28,8 @@ export interface PMStrategyInput {
     nextDueDate?: string;
     assignedAssets?: unknown[];
     templates?: unknown;
+    strategyId?: string;           // 0292: strategy this PM implements
+    strategyPackage?: string;      // 0292: which package (label) — drives absorption
 }
 
 function generatePmCode(): string {
@@ -58,5 +60,6 @@ export function buildPMStrategy(i: PMStrategyInput): Record<string, unknown> {
     if (i.nextDueDate) row.next_due_date = i.nextDueDate;
     if (i.assignedAssets !== undefined) row.assigned_assets = i.assignedAssets;
     if (i.templates !== undefined) row.templates = i.templates;
+    if (i.strategyId) { row.strategy_id = i.strategyId; row.strategy_package = i.strategyPackage || null; }
     return row;
 }

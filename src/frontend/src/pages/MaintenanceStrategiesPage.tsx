@@ -32,6 +32,30 @@ export const MaintenanceStrategiesPage: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const [strategies, setStrategies] = useState<MaintenanceStrategy[]>([]);
     const [draft, setDraft] = useState<MaintenanceStrategy>(DEFAULT_DRAFT);
+    // 0292: apply-to-asset — creates one linked PM per package, idempotently.
+    const [assets, setAssets] = useState<any[]>([]);
+    const [applyAssetId, setApplyAssetId] = useState('');
+    const [applying, setApplying] = useState(false);
+    useEffect(() => {
+        DatabaseService.getInstance().getAssets().then(a => setAssets(a || [])).catch(() => {});
+    }, []);
+    const applyToAsset = async () => {
+        if (!draft.id || !applyAssetId) return;
+        setApplying(true);
+        try {
+            const { created, skipped } = await DatabaseService.getInstance().applyStrategyToAsset(draft.id, applyAssetId);
+            const tag = assets.find((a: any) => a.id === applyAssetId)?.tag || 'asset';
+            showToast(
+                created.length
+                    ? `Created ${created.length} PM${created.length === 1 ? '' : 's'} on ${tag} (${created.join(', ')})${skipped.length ? ` — ${skipped.join(', ')} already existed` : ''}. Coincident cycles will be absorbed at generation.`
+                    : `All packages already applied to ${tag} — nothing duplicated.`,
+                'success'
+            );
+        } catch (e: any) {
+            showToast('Apply failed: ' + (e?.message || 'unknown'), 'error');
+        }
+        setApplying(false);
+    };
 
     const load = async () => {
         const db = DatabaseService.getInstance();
@@ -127,6 +151,33 @@ export const MaintenanceStrategiesPage: React.FC = () => {
                         </button>
                         {ready && draft.id && <button onClick={remove} className="text-sm font-semibold text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg">Delete</button>}
                     </div>
+
+                    {/* Apply to asset (0292): one PM per package, linked for absorption */}
+                    {ready && draft.id && (
+                        <div className="pt-2 border-t border-slate-100">
+                            <p className="text-[11px] font-bold text-slate-500 uppercase mb-1.5">Apply to asset</p>
+                            <div className="flex items-center gap-2">
+                                <select
+                                    value={applyAssetId}
+                                    onChange={e => setApplyAssetId(e.target.value)}
+                                    className="flex-1 text-sm border border-slate-200 rounded-lg p-2 bg-white min-w-0"
+                                >
+                                    <option value="">Select asset…</option>
+                                    {assets.map((a: any) => <option key={a.id} value={a.id}>{a.tag} — {a.name}</option>)}
+                                </select>
+                                <button
+                                    onClick={applyToAsset}
+                                    disabled={!applyAssetId || applying}
+                                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-slate-800 hover:bg-slate-700 disabled:opacity-50"
+                                >
+                                    {applying ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Create PM set
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-1">
+                                Creates one recurring PM per package on the asset, linked to this strategy. Re-running skips packages that already exist.
+                            </p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Absorption preview */}

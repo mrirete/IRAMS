@@ -28,6 +28,7 @@ import type { MaintenanceStrategy, StrategyPackage } from '../../lib/maintenance
 import { evaluateReading } from '../../lib/readingAlarm';
 import { movementTypeFor } from '../lib/movementType';
 import { isPreventiveWoType } from '../lib/workOrder';
+import { buildPMStrategy } from '../lib/pmStrategy';
 import {
     OperationActual,
     OrderActuals,
@@ -4931,6 +4932,45 @@ export class DatabaseService {
     public async createPM(pm: Partial<RecurringWorkRecord>): Promise<any> {
         const data = await this.insertTolerant('recurring_work', pm, ['work_center_id']);
         return data;
+    }
+
+    /**
+     * Apply a maintenance strategy to an asset: one recurring_work row per
+     * package, linked via strategy_id/strategy_package (0292) so generation
+     * absorbs coincident cycles. Idempotent — packages already applied to the
+     * asset are skipped, so re-running never duplicates PMs.
+     */
+    public async applyStrategyToAsset(strategyId: string, assetId: string): Promise<{ created: string[]; skipped: string[] }> {
+        const strat = (await this.getStrategies()).find(s => s.id === strategyId);
+        if (!strat) throw new Error('Strategy not found');
+        if (!strat.packages.length) throw new Error('Strategy has no packages');
+        const { data: existing } = await supabase
+            .from('recurring_work')
+            .select('strategy_package')
+            .eq('strategy_id', strategyId)
+            .eq('asset_id', assetId);
+        const have = new Set((existing || []).map((r: any) => r.strategy_package));
+        const created: string[] = [];
+        const skipped: string[] = [];
+        for (const p of strat.packages) {
+            if (have.has(p.label)) { skipped.push(p.label); continue; }
+            // First due at its own interval; coincidences at common multiples
+            // are then handled by generation-time absorption.
+            const nextDue = new Date(Date.now() + p.intervalDays * 86400000).toISOString();
+            await this.createPM(buildPMStrategy({
+                title: `${strat.name} — ${p.label}`,
+                description: `${p.label} package of maintenance strategy "${strat.name}" (every ${p.intervalDays} days).`,
+                assetId,
+                frequencyInterval: p.intervalDays,
+                frequencyUnit: 'Days',
+                jobType: 'PM',
+                nextDueDate: nextDue,
+                strategyId,
+                strategyPackage: p.label,
+            }) as any);
+            created.push(p.label);
+        }
+        return { created, skipped };
     }
 
     /**
