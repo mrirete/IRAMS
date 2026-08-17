@@ -565,8 +565,13 @@ export const Readings: React.FC = () => {
             {/* Sidebar List */}
             <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${sheetOpen ? 'hidden' : selectedAssetId ? 'hidden sm:flex sm:w-1/3' : 'w-full sm:w-1/3'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center gap-2">
-                    <div className="flex items-center gap-2">
-                        <h2 className="font-bold text-slate-900">Assets</h2>
+                    <div className="flex items-center gap-2 min-w-0">
+                        {/* Titled by purpose, not "Assets" — on mobile this pane fills the
+                            screen and was being mistaken for the main Asset Register. */}
+                        <div className="min-w-0">
+                            <h2 className="font-bold text-slate-900 leading-tight truncate">Condition Data</h2>
+                            <p className="text-[10px] text-slate-400 leading-tight truncate">pick an asset to record readings</p>
+                        </div>
                         <div className="flex border border-slate-200 rounded-lg overflow-hidden">
                             <button onClick={() => setViewMode('list')} className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-400 hover:text-slate-600'}`} title="Rounds list (due-sorted)"><List size={14} /></button>
                             <button onClick={() => setViewMode('tree')} className={`p-1.5 transition-colors ${viewMode === 'tree' ? 'bg-primary-50 text-primary-700' : 'bg-white text-slate-400 hover:text-slate-600'}`} title="Hierarchy (equipment → components)"><Network size={14} /></button>

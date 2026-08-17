@@ -5525,13 +5525,15 @@ const TasksTab: React.FC<{
                         className="relative w-full sm:max-w-3xl h-full sm:h-[90vh] bg-slate-50 sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 fade-in duration-200"
                     >
                         {/* Header — step identity + navigation */}
-                        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 bg-blue-600 text-white shrink-0">
+                        {/* [@media(max-height:520px)] = landscape phones: every row of chrome
+                            costs scrollable body space, so the header/name/footer all compact */}
+                        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 [@media(max-height:520px)]:py-1.5 bg-blue-600 text-white shrink-0">
                             <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white/20 shrink-0">
                                 {expandedIndex + 1}
                             </span>
                             <div className="flex-1 min-w-0">
                                 <div className="font-semibold text-sm sm:text-base truncate">{expandedTask.description || 'Untitled step'}</div>
-                                <div className="text-[10px] sm:text-[11px] text-blue-100">
+                                <div className="text-[10px] sm:text-[11px] text-blue-100 [@media(max-height:520px)]:hidden">
                                     Step {expandedIndex + 1} of {tasks.length}
                                 </div>
                             </div>
@@ -5561,8 +5563,8 @@ const TasksTab: React.FC<{
                             </div>
                         </div>
                         {/* Step name — guide: name the step first, then write instructions below */}
-                        <div className="px-3 sm:px-5 py-3 bg-white border-b border-slate-200 shrink-0">
-                            <label className="text-[11px] font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1.5 mb-1.5">
+                        <div className="px-3 sm:px-5 py-3 [@media(max-height:520px)]:py-1.5 bg-white border-b border-slate-200 shrink-0">
+                            <label className="text-[11px] font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1.5 mb-1.5 [@media(max-height:520px)]:hidden">
                                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> Step name
                             </label>
                             <input
@@ -5578,7 +5580,7 @@ const TasksTab: React.FC<{
                                 }`}
                             />
                             {!expandedTask.description && (
-                                <p className="text-[10px] text-amber-600 mt-1">Name this step first — then add instructions and resources below.</p>
+                                <p className="text-[10px] text-amber-600 mt-1 [@media(max-height:520px)]:hidden">Name this step first — then add instructions and resources below.</p>
                             )}
                         </div>
                         {/* Body */}
@@ -5602,7 +5604,7 @@ const TasksTab: React.FC<{
                         </div>
                         {/* Footer — persist & exit actions (safe-area padded: the modal covers the bottom nav) */}
                         <div
-                            className="flex items-center gap-2 px-3 sm:px-5 py-3 bg-white border-t border-slate-200 shrink-0"
+                            className="flex items-center gap-2 px-3 sm:px-5 py-3 [@media(max-height:520px)]:py-1.5 [@media(max-height:520px)]:[padding-bottom:calc(0.375rem+env(safe-area-inset-bottom,0px))!important] bg-white border-t border-slate-200 shrink-0"
                             style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
                         >
                             <button
@@ -5612,7 +5614,7 @@ const TasksTab: React.FC<{
                             >
                                 <Trash2 size={13} /> Delete step
                             </button>
-                            <span className="hidden sm:flex items-center gap-1 text-[10px] text-slate-400 ml-1">
+                            <span className="hidden sm:flex [@media(max-height:520px)]:!hidden items-center gap-1 text-[10px] text-slate-400 ml-1">
                                 <CheckCircle size={11} className="text-emerald-500" /> Changes auto-save as you edit
                             </span>
                             <div className="flex-1" />
@@ -6104,6 +6106,12 @@ const TaskEditor: React.FC<{
 
     const [showObservations, setShowObservations] = useState(false);
     const [observationText, setObservationText] = useState(task.observations || '');
+    // The observations panel sits BELOW the instruction list; opening it from the
+    // header button must bring it into view or the click looks like a no-op.
+    const observationsRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (showObservations) observationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, [showObservations]);
     const [showLibraryPicker, setShowLibraryPicker] = useState(false);
     const [libraryTasks, setLibraryTasks] = useState<LibraryTask[]>([]);
     const [libraryLoading, setLibraryLoading] = useState(false);
@@ -6352,10 +6360,19 @@ const TaskEditor: React.FC<{
                         </div>
                     </div>
 
-                    {/* Collapsible Observations — directly under its toggle, above the builder,
-                        so it never reads as a stray second notes section below the add palette */}
+                    <div className="p-2 sm:p-3">
+                        <ProcedureBuilder
+                            instructions={task.instructions || []}
+                            onChange={(blocks) => onChange({ instructions: blocks })}
+                            readOnly={(jobContext.status as string) === 'COMPLETED'}
+                            mode={((jobContext.status as string) === 'COMPLETED' || execMode) ? 'EXECUTE' : 'EDIT'}
+                        />
+                    </div>
+
+                    {/* Collapsible Observations — BELOW the instruction list (task-level notes
+                        come after the work steps, not above them); scrolled into view on open */}
                     {showObservations && (
-                        <div className="border-b border-slate-100 px-3 py-3 bg-slate-50">
+                        <div ref={observationsRef} className="border-t border-slate-100 px-3 py-3 bg-slate-50">
                             <label className="text-xs font-bold text-slate-600 uppercase mb-2 block flex items-center gap-1">
                                 <FileText size={12} />
                                 Observations & Notes
@@ -6400,15 +6417,6 @@ const TaskEditor: React.FC<{
                             </div>
                         </div>
                     )}
-
-                    <div className="p-2 sm:p-3">
-                        <ProcedureBuilder
-                            instructions={task.instructions || []}
-                            onChange={(blocks) => onChange({ instructions: blocks })}
-                            readOnly={(jobContext.status as string) === 'COMPLETED'}
-                            mode={((jobContext.status as string) === 'COMPLETED' || execMode) ? 'EXECUTE' : 'EDIT'}
-                        />
-                    </div>
                 </div>
 
                 {/* Compact Project Scheduling (Only for PROJECT scope) */}

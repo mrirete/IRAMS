@@ -153,12 +153,15 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                 );
 
             case 'TEXT':
+                // Dashed answer boxes were being mistaken for live inputs while authoring —
+                // the "Preview" chip says this is what the technician sees during execution.
                 return (
-                    <div className="mt-2 p-3 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50">
-                        <div className="flex items-center gap-2 text-slate-400">
-                            <FileText size={14} />
-                            <span className="text-xs">Technician writes their response here</span>
+                    <div className="mt-2 p-3 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-slate-400 min-w-0">
+                            <FileText size={14} className="flex-shrink-0" />
+                            <span className="text-xs truncate">Technician writes their response here during execution</span>
                         </div>
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-300 border border-slate-200 rounded px-1 py-0.5 flex-shrink-0">Preview</span>
                     </div>
                 );
 
@@ -214,19 +217,21 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
 
             case 'PHOTO':
                 return (
-                    <div className="mt-2 p-4 border-2 border-dashed border-slate-200 rounded-lg text-center bg-slate-50">
+                    <div className="mt-2 p-4 border-2 border-dashed border-slate-200 rounded-lg text-center bg-slate-50 relative">
+                        <span className="absolute top-1.5 right-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-300 border border-slate-200 rounded px-1 py-0.5">Preview</span>
                         <Camera size={20} className="mx-auto text-slate-300 mb-1" />
-                        <p className="text-xs text-slate-400">Technician captures photo evidence here</p>
+                        <p className="text-xs text-slate-400">Technician captures photo evidence here during execution</p>
                     </div>
                 );
 
             case 'SIGNATURE':
                 return (
-                    <div className="mt-2 p-3 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50">
-                        <div className="flex items-center gap-2 text-slate-400">
-                            <PenTool size={14} />
-                            <span className="text-xs">Digital signature capture</span>
+                    <div className="mt-2 p-3 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-slate-400 min-w-0">
+                            <PenTool size={14} className="flex-shrink-0" />
+                            <span className="text-xs truncate">Digital signature captured during execution</span>
                         </div>
+                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-300 border border-slate-200 rounded px-1 py-0.5 flex-shrink-0">Preview</span>
                     </div>
                 );
 
