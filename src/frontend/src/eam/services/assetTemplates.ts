@@ -21,7 +21,7 @@ function downloadBlob(blob: Blob, filename: string): void {
 }
 
 /** Convenience: write an XLSX workbook and trigger download */
-function downloadWorkbook(wb: XLSX.WorkBook, filename: string): void {
+export function downloadWorkbook(wb: XLSX.WorkBook, filename: string): void {
     const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([wbout], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

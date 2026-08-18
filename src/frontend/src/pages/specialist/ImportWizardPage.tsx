@@ -10,7 +10,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     UploadCloud, FileSpreadsheet, Wand2, CheckCircle2, AlertTriangle,
-    ArrowRight, ArrowLeft, Database, RotateCcw, Loader2, BarChart2,
+    ArrowRight, ArrowLeft, Database, RotateCcw, Loader2, BarChart2, Download,
 } from 'lucide-react';
 import { useAuth } from '../../eam/contexts/AuthContext';
 import { runCmmsAnalyst } from '../../eam/services/agentRunClient';
@@ -19,6 +19,7 @@ import {
     applyMapping, buildDqReport, parseMappingProposal,
     type AppliedImport, type DqReport, type ImportMapping, type AssetField, type WoField,
 } from '../../lib/importPipeline';
+import { templatesForSource, downloadCmmsTemplate } from './cmmsTemplates';
 
 type Step = 'upload' | 'map' | 'review' | 'done';
 
@@ -279,6 +280,21 @@ export const ImportWizardPage: React.FC = () => {
                     <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 max-w-2xl">
                         {SOURCE_SYSTEMS.find((s) => s.value === sourceSystem)?.exportHint}
                     </p>
+                    {/* No export handy? Pre-formatted sheets whose headers auto-map in step 2. */}
+                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <span className="text-slate-500">Or start from a template:</span>
+                        {templatesForSource(sourceSystem).map((t) => (
+                            <button key={t.filename} onClick={() => downloadCmmsTemplate(t)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 font-medium text-slate-600 hover:border-primary-300 hover:text-primary-700 transition-colors">
+                                <Download size={12} /> {t.label}
+                            </button>
+                        ))}
+                        <span className="basis-full text-[11px] text-slate-400">
+                            These import a flat asset list plus history for analysis. To build the full asset
+                            hierarchy (sites, units, parents), use Assets › Import and its own template — the two
+                            match on the same asset tag.
+                        </span>
+                    </div>
                     <button
                         onClick={() => fileRef.current?.click()}
                         disabled={busy}
