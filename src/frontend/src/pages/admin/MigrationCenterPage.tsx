@@ -12,7 +12,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
     Database, Wrench, Users, Package, Building2, CalendarClock, Gauge,
     FileSpreadsheet, Radio, BarChart2, Boxes, CheckCircle2, ArrowRight, ArrowLeft, Loader2,
-    Send, RotateCcw, AlertTriangle, Tags, Download, FileUp,
+    Send, RotateCcw, AlertTriangle, Tags, Download, FileUp, Lock,
 } from 'lucide-react';
 import BulkImportModal from '../../eam/components/modals/BulkImportModal';
 import PidRegisterModal from '../../components/migration/PidRegisterModal';
@@ -40,7 +40,15 @@ interface Phase {
     unit: string;
     /** Shown when the phase has landed nothing yet and order matters. */
     note?: string;
+    /**
+     * The ordering constraint, enforced: prerequisites that must hold data
+     * before this phase's importer opens. Data-driven (counts, not checkmarks) —
+     * a register loaded by any route unlocks everything that hangs off it.
+     */
+    requires?: { phase: number; needs: string; met: (c: Counts) => boolean }[];
 }
+
+const NEEDS_REGISTER = { phase: 1, needs: 'the asset register', met: (c: Counts) => c.assets > 0 };
 
 const PHASES: Phase[] = [
     {
@@ -63,7 +71,8 @@ const PHASES: Phase[] = [
         n: 4, title: 'Bills of materials', icon: <Boxes size={18} />,
         blurb: 'Which spares belong to which equipment. Codes that match inventory link to the material; unknown codes become text BOM lines, promotable later.',
         importType: 'bom', count: c => c.bom, unit: 'BOM items',
-        note: 'Needs the register (1) and inventory (3) first — rows name an asset tag and an inventory code.',
+        note: 'Rows name an asset tag and an inventory code, so both registers must exist.',
+        requires: [NEEDS_REGISTER, { phase: 3, needs: 'inventory', met: c => c.inventory > 0 }],
     },
     {
         n: 5, title: 'Vendors', icon: <Building2 size={18} />,
@@ -75,12 +84,15 @@ const PHASES: Phase[] = [
         blurb: 'Recurring jobs, then the task lists that tell a technician what to actually do. Schedules first — job plans attach to them by PM code.',
         to: '/recurring-work?action=import', toLabel: 'Import schedules & job plans', count: c => c.pms, unit: 'schedules',
         note: 'A schedule without a job plan tells a technician when, but not what. Import both.',
+        requires: [NEEDS_REGISTER],
     },
     {
         n: 7, title: 'Work-order history', icon: <FileSpreadsheet size={18} />,
         blurb: 'Your maintenance history from SAP PM, Maximo or MaintainX — column-mapped, quality-checked and reversible.',
         to: '/specialist/import', toLabel: 'Open the CMMS Import Wizard',
         count: c => c.workOrders, unit: 'work orders',
+        note: 'History imported without a register creates flat, unlevelled assets the hierarchy can never absorb.',
+        requires: [NEEDS_REGISTER],
     },
     {
         n: 8, title: 'Failure-code catalogs', icon: <Tags size={18} />,
@@ -92,6 +104,8 @@ const PHASES: Phase[] = [
         n: 9, title: 'Meter & condition history', icon: <Gauge size={18} />,
         blurb: 'Runtime hours, vibration and temperature logs. Reading points are created automatically.',
         importType: 'readings', count: c => c.readings, unit: 'readings',
+        note: 'Every reading row names an asset tag — without the register, every row fails.',
+        requires: [NEEDS_REGISTER],
     },
     {
         n: 10, title: 'Live sensor feeds', icon: <Radio size={18} />,
@@ -334,6 +348,11 @@ export const MigrationCenterPage: React.FC = () => {
                 {PHASES.map((p) => {
                     const complete = done(p);
                     const n = counts ? p.count(counts) : 0;
+                    // The mechanism behind "work down this list in order": a phase
+                    // whose prerequisites hold no data yet is locked — its importer
+                    // will not open. Until counts load, treat as locked (fail safe).
+                    const blockers = complete ? [] : (p.requires ?? []).filter((r) => !counts || !r.met(counts));
+                    const locked = blockers.length > 0;
                     return (
                         <div key={p.n}
                             className={`rounded-2xl border bg-white p-5 transition-colors ${complete ? 'border-emerald-200' : 'border-slate-200'}`}>
@@ -341,7 +360,7 @@ export const MigrationCenterPage: React.FC = () => {
                                 <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-bold text-sm
                                     ${complete ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
                                         : 'bg-slate-50 text-slate-400 border border-slate-200'}`}>
-                                    {complete ? <CheckCircle2 size={18} /> : p.n}
+                                    {complete ? <CheckCircle2 size={18} /> : locked ? <Lock size={15} /> : p.n}
                                 </div>
 
                                 <div className="flex-1 min-w-0">
@@ -360,23 +379,43 @@ export const MigrationCenterPage: React.FC = () => {
                                         <p className="text-xs text-slate-400 mt-1.5">{p.note}</p>
                                     )}
 
+                                    {locked && (
+                                        <p className="flex items-start gap-1.5 text-xs font-medium text-amber-700 mt-1.5">
+                                            <Lock size={12} className="mt-0.5 shrink-0" />
+                                            <span>
+                                                Locked — import {blockers.map((b, i) => (
+                                                    <React.Fragment key={b.phase}>
+                                                        {i > 0 && ' and '}{b.needs} (phase {b.phase})
+                                                    </React.Fragment>
+                                                ))} first.
+                                            </span>
+                                        </p>
+                                    )}
                                     <div className="flex items-center gap-2 mt-3 flex-wrap">
                                         {p.importType && (
                                             <button
                                                 onClick={() => setOpenType(p.importType!)}
-                                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2"
+                                                disabled={locked}
+                                                className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed"
                                             >
-                                                Import {p.title.toLowerCase()} <ArrowRight size={13} />
+                                                {locked && <Lock size={12} />} Import {p.title.toLowerCase()} <ArrowRight size={13} />
                                             </button>
                                         )}
-                                        {p.to && (
+                                        {p.to && (locked ? (
+                                            <button
+                                                disabled
+                                                className="flex items-center gap-1.5 rounded-lg bg-slate-200 text-slate-400 text-xs font-semibold px-3 py-2 cursor-not-allowed"
+                                            >
+                                                <Lock size={12} /> {p.toLabel} <ArrowRight size={13} />
+                                            </button>
+                                        ) : (
                                             <Link
                                                 to={p.to}
                                                 className="flex items-center gap-1.5 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold px-3 py-2"
                                             >
                                                 {p.toLabel} <ArrowRight size={13} />
                                             </Link>
-                                        )}
+                                        ))}
                                         {p.n === 7 && (
                                             <button
                                                 onClick={() => void exportUnresolvedCodes()}

@@ -6,7 +6,7 @@
  * import batch. The pure transformation lives in lib/importPipeline; writes
  * in ImportService; the LLM only proposes the mapping, never touches data.
  */
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
     UploadCloud, FileSpreadsheet, Wand2, CheckCircle2, AlertTriangle,
@@ -20,6 +20,7 @@ import {
     type AppliedImport, type DqReport, type ImportMapping, type AssetField, type WoField,
 } from '../../lib/importPipeline';
 import { templatesForSource, downloadCmmsTemplate } from './cmmsTemplates';
+import { supabase } from '../../eam/lib/supabase';
 
 type Step = 'upload' | 'map' | 'review' | 'done';
 
@@ -93,6 +94,16 @@ export const ImportWizardPage: React.FC = () => {
 
     const [step, setStep] = useState<Step>('upload');
     const [sourceSystem, setSourceSystem] = useState('sap_pm');
+    // Registerless-history guard: history committed with no asset register
+    // creates flat, unlevelled assets. The Migration Center hard-locks its
+    // phase-7 link on the same condition; this advisory covers the sidebar
+    // route, where blocking would kill the legitimate bootstrap-from-history
+    // flow. null until the count arrives — say nothing rather than guess.
+    const [hasRegister, setHasRegister] = useState<boolean | null>(null);
+    useEffect(() => {
+        void supabase.from('assets').select('id', { count: 'exact', head: true })
+            .then(({ count, error }) => { if (!error) setHasRegister((count ?? 0) > 0); });
+    }, []);
     const [fileName, setFileName] = useState('');
     const [headers, setHeaders] = useState<string[]>([]);
     const [rows, setRows] = useState<unknown[][]>([]);
@@ -281,6 +292,23 @@ export const ImportWizardPage: React.FC = () => {
             )}
 
             {/* ── Step 1: Upload ── */}
+            {step === 'upload' && hasRegister === false && (
+                <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+                    <span>
+                        No asset register exists yet. History imported now still works, but the assets it creates
+                        are flat — no hierarchy, no levels.{' '}
+                        {canCommit ? (
+                            <>If you have an equipment list, load it first in the{' '}
+                                <Link to="/admin/migration" state={{ to: '/specialist/import', label: 'Import wizard' }}
+                                    className="font-semibold underline underline-offset-2">Migration Center</Link>{' '}
+                                (phase 1), then come back.</>
+                        ) : (
+                            <>If your company has an equipment list, ask an admin to import it first.</>
+                        )}
+                    </span>
+                </div>
+            )}
             {step === 'upload' && (
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 space-y-5">
                     <label className="flex flex-col gap-1.5 text-sm max-w-xs">
