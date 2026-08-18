@@ -7,7 +7,7 @@
  * in ImportService; the LLM only proposes the mapping, never touches data.
  */
 import React, { useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
     UploadCloud, FileSpreadsheet, Wand2, CheckCircle2, AlertTriangle,
     ArrowRight, ArrowLeft, Database, RotateCcw, Loader2, BarChart2, Download,
@@ -230,6 +230,19 @@ export const ImportWizardPage: React.FC = () => {
         <div className="max-w-5xl mx-auto space-y-6 pb-24 animate-in fade-in duration-300">
             {/* Header + stepper */}
             <div>
+                {/* This wizard is phase 7 of the Migration Center's checklist — lead
+                    admins back to it. The origin state makes its back button return
+                    here (see MigrationOrigin). Route is admin-gated, so only show
+                    the link to roles that can enter it. */}
+                {canCommit && (
+                    <Link
+                        to="/admin/migration"
+                        state={{ to: '/specialist/import', label: 'Import wizard' }}
+                        className="inline-flex items-center gap-1.5 mb-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors w-fit py-0.5"
+                    >
+                        <ArrowLeft size={14} strokeWidth={2.5} /> Back to Migration Center
+                    </Link>
+                )}
                 <h1 className="text-xl md:text-2xl font-bold text-slate-800 tracking-tight flex items-center gap-2">
                     <Database size={22} className="text-primary-600" /> Import CMMS Data
                 </h1>
@@ -496,6 +509,14 @@ export const ImportWizardPage: React.FC = () => {
                             className="flex items-center gap-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-5 py-2.5 transition-colors">
                             <BarChart2 size={15} /> Run the assessment
                         </button>
+                        {/* History was phase 7 of the migration checklist — the next
+                            phase (failure-code catalogs) lives back in the Center. */}
+                        {canCommit && (
+                            <button onClick={() => navigate('/admin/migration', { state: { to: '/specialist/import', label: 'Import wizard' } })}
+                                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-sm font-medium px-4 py-2.5">
+                                <ArrowLeft size={14} /> Continue the migration
+                            </button>
+                        )}
                         <button onClick={() => { setStep('upload'); setBatchId(null); setApplied(null); setDq(null); setCommitResult(null); setError(null); }}
                             className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-sm font-medium px-4 py-2.5">
                             <RotateCcw size={14} /> Import another file
