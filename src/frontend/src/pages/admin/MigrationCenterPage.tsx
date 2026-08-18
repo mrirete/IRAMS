@@ -118,6 +118,8 @@ const PHASES: Phase[] = [
         blurb: 'Put the Specialist to work on what you just loaded — reliability baseline, bad actors, quick wins.',
         to: '/specialist/assessment', toLabel: 'Run the assessment',
         count: c => c.batches, unit: 'import batches',
+        note: 'The assessment reads the maintenance history — with nothing loaded it has nothing to say.',
+        requires: [{ phase: 7, needs: 'work-order history', met: c => c.workOrders > 0 }],
     },
 ];
 
