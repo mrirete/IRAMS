@@ -39,7 +39,7 @@ import { InventoryPicker } from '../components/pickers/InventoryPicker';
 import { FinOpsService, type CostAllocation, type WarrantyCheckResult, type CostAnomalyResult, type WorkOrderSettlement } from '../services/FinOpsService';
 import { MOCK_WORK_ORDERS, MOCK_ASSETS, MOCK_DICTIONARIES, MOCK_RECURRING_JOBS } from '../constants';
 import { WorkOrder, WorkOrderScope, WorkOrderStatus, WorkOrderType, JobJSA, JobTask, JobLabor, JobInventory, InstructionBlock, DictionaryEntry, JobFile, JSAHazard as JobHazard, OrganizationUnit, User, LibraryTask, WorkCenter, OrderActuals, DocumentCategory, DOCUMENT_CATEGORY_META } from '../types';
-import { LoadingState } from '../components/ui';
+import { LoadingState, DetailRail, RailRow, RAIL_INPUT, RAIL_INPUT_LOCKED } from '../components/ui';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -2018,8 +2018,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 md:p-6 pb-32 sm:pb-5 md:pb-6 bg-slate-50/50">
-                {/* Breathable: WO detail (incl. Tasks) uses the full page width. */}
-                <div className="max-w-none">
+                {/* One reading column for every tab. Details and Analysis capped
+                    themselves at max-w-6xl while the rest ran full-bleed, so content
+                    jumped width as you switched tabs — the cap lives here now and the
+                    tabs inherit it. */}
+                <div className="max-w-6xl mx-auto">
                     {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
                     {activeTab === 'tasks' && (
                         <TasksTab
@@ -3245,7 +3248,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
             sides, plus a sticky action rail so the close-out CTA stays in view while
             the long form scrolls. Mobile keeps the single column (rail hidden; the CTA
             lives in the Follow-Up card instead). */}
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-3 md:gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] gap-3 md:gap-4 items-start">
         <div className="flex flex-col gap-3 md:gap-4 min-w-0">
             {/* ══ Closeout Quality (Gate 2) — advisory ══ */}
             <CloseoutReadinessStrip readiness={closeout} onReview={handleReviewCloseout} reviewGate={closeoutGate} />
@@ -4102,19 +4105,6 @@ const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: 
 
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
-// ─── Schedule-rail primitives: a spec-sheet row (label left, value right) and
-//     the compact input sizing that lets the whole date block live in a 300px
-//     sticky column instead of eating half the Details page. ───
-const RAIL_INPUT = 'w-full text-xs border border-slate-300 rounded-md px-2 py-1.5 bg-white';
-const RAIL_INPUT_LOCKED = 'w-full text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-slate-100 text-slate-500';
-
-const RailRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-    <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-tight">{label}</span>
-        <div className="w-[132px] flex-shrink-0">{children}</div>
-    </div>
-);
-
 const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
     // Default expanded: this state only gates the field cards on < lg screens
     // (desktop always shows them via `hidden lg:block`), and collapsed-by-default
@@ -4270,7 +4260,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
             Analysis & History shell. Dates are short, low-ink fields — they do not
             deserve half the monitor — so they live in the rail and stay in view
             while the long left column scrolls. */}
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-3 md:gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-3 md:gap-4 items-start">
             <AssetPickerModal
                 open={showAssetPicker}
                 assets={pickAssets}
@@ -4756,17 +4746,17 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
 
         {/* ── Sticky schedule rail (desktop) — planned dates, then actuals folded
             away until there is something to read. ── */}
-        <aside className={`lg:sticky lg:top-2 ${isFieldsExpanded ? 'block' : 'hidden lg:block'}`}>
-            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
-                        <Calendar size={14} className="text-blue-600" /> Schedule
-                    </h3>
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                        {job.status === 'CLOSED' ? <CheckCircle size={11} /> : <Clock size={11} />}
-                        {job.status.replace('_', ' ')}
-                    </span>
-                </div>
+        <DetailRail
+            title="Schedule"
+            icon={<Calendar size={14} className="text-blue-600" />}
+            className={isFieldsExpanded ? 'block' : 'hidden lg:block'}
+            badge={
+                <span className="flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                    {job.status === 'CLOSED' ? <CheckCircle size={11} /> : <Clock size={11} />}
+                    {job.status.replace('_', ' ')}
+                </span>
+            }
+        >
 
                 {(!job.scope || job.scope === 'STANDARD') ? (
                     <div className="flex flex-col gap-2">
@@ -4892,8 +4882,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                         </div>
                     )}
                 </div>
-            </div>
-        </aside>
+        </DetailRail>
         </div>
         </div>
     );
@@ -5032,8 +5021,10 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
         );
     };
 
+    // No padding of its own — the tab shell pads, and doubling it pushed Cost out
+    // of line with every other tab's left edge.
     return (
-        <div className="p-3 sm:p-4 space-y-4">
+        <div className="space-y-4">
             <div className="flex items-center gap-2">
                 <DollarSign size={16} className="text-slate-400" />
                 <h3 className="text-sm font-bold text-slate-700">Operation Cost &amp; Settlement</h3>

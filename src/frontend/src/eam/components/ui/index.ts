@@ -39,3 +39,5 @@ export { ModernSelect } from './ModernSelect';
 export type { ModernSelectProps, SelectOption } from './ModernSelect';
 
 
+export { DetailRail, RailRow, RAIL_INPUT, RAIL_INPUT_LOCKED } from './DetailRail';
+export type { DetailRailProps, RailRowProps } from './DetailRail';

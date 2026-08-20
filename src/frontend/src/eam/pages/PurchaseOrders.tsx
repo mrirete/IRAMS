@@ -21,7 +21,7 @@ import { emptyResult, tally, errMessage, type ImportResult } from '../services/i
 import { ImageGallery } from '../components/ui/ImageGallery';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
-import { Badge, Button, type Tone } from '../components/ui';
+import { Badge, Button, DetailRail, RailRow, RAIL_INPUT, RAIL_INPUT_LOCKED, type Tone } from '../components/ui';
 
 // PO status → design-system tone (parallels getStatusColor for the new Badge primitive)
 const poStatusTone = (status: string): Tone => {
@@ -457,9 +457,14 @@ const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOr
     }, [contacts, vendors]);
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in">
+        <div className="animate-in fade-in">
+        {/* Centred reading column + a sticky terms rail, matching the work-order
+            Details shell. Logistics is what you actually read and edit; the three
+            dates and the tax switch are glance-and-go, so they do not get half the
+            page. The PO header already shows status — no chip duplicated here. */}
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
             {/* Supplier & Delivery */}
-            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
+            <div className="bg-white p-4 md:p-5 lg:p-6 rounded-lg border border-slate-200 shadow-sm space-y-4 min-w-0">
                 <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
                     <Truck size={18} className="text-blue-600" /> Logistics
                 </h3>
@@ -512,48 +517,44 @@ const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOr
                 </div>
             </div>
 
-            {/* Dates & Status */}
-            <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
-                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">
-                    <Clock size={18} className="text-blue-600" /> Scheduling & Terms
-                </h3>
-
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date Created</label>
-                        <input type="date" value={po.dateCreated} disabled className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-500" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date Required</label>
+            {/* Dates & terms — short fields, sized to their content and kept in view */}
+            <DetailRail title="Scheduling & Terms" icon={<Clock size={14} className="text-blue-600" />}>
+                <div className="flex flex-col gap-2">
+                    <RailRow label="Date Created">
+                        <input type="date" value={po.dateCreated} disabled className={RAIL_INPUT_LOCKED} />
+                    </RailRow>
+                    <RailRow label="Date Required">
                         <input
                             type="date"
                             value={po.dateRequired}
                             onChange={(e) => onUpdate({ dateRequired: e.target.value })}
-                            className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white"
+                            className={RAIL_INPUT}
                         />
-                    </div>
+                    </RailRow>
+                    <RailRow label="Date Finished">
+                        <input type="date" value={po.dateFinished || ''} disabled className={RAIL_INPUT_LOCKED} />
+                    </RailRow>
+                    {!po.dateFinished && (
+                        <p className="text-[10px] text-slate-400 -mt-0.5 text-right">Open until all lines are received.</p>
+                    )}
                 </div>
 
-                <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Date Finished</label>
-                    <input type="date" value={po.dateFinished || ''} disabled className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-500" placeholder="Open" />
-                </div>
-
-                <div className="pt-4 border-t border-slate-100">
-                    <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50">
+                <div className="border-t border-slate-100 pt-2.5">
+                    <label className="flex items-start gap-2 cursor-pointer">
                         <input
                             type="checkbox"
                             checked={po.taxInclusive}
                             onChange={(e) => onUpdate({ taxInclusive: e.target.checked })}
-                            className="w-5 h-5 text-blue-600 rounded"
+                            className="w-4 h-4 mt-0.5 text-blue-600 rounded flex-shrink-0"
                         />
-                        <div>
-                            <div className="text-sm font-bold text-slate-800">Tax Inclusive Pricing</div>
-                            <div className="text-xs text-slate-500">Unit costs include GST/VAT</div>
-                        </div>
+                        <span className="min-w-0">
+                            <span className="block text-[11px] font-bold text-slate-800">Tax Inclusive Pricing</span>
+                            <span className="block text-[10px] text-slate-400 leading-snug">Unit costs include GST/VAT</span>
+                        </span>
                     </label>
                 </div>
-            </div>
+            </DetailRail>
+        </div>
         </div>
     );
 };
