@@ -1563,35 +1563,40 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
 
                         {/* Tab Content */}
                         <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50">
-                            {activeTab === 'details' && <DetailsTab asset={selectedAsset} assetTypes={assetTypes} contacts={contacts} vendors={vendors} costCenters={costCenters} dictionaries={dictionaries} onUpdate={handleUpdateAsset} onRefreshContacts={refreshContacts} tagEditable={tagEditable} onChangeTag={handleChangeTag} />}
+                            {/* One reading column for every tab — the detail pane is as wide as the
+                                window allows, and an unbounded form is harder to read than a bounded
+                                one. Binds only on wide monitors; narrower panes are unchanged. */}
+                            <div className="max-w-6xl mx-auto">
+                                {activeTab === 'details' && <DetailsTab asset={selectedAsset} assetTypes={assetTypes} contacts={contacts} vendors={vendors} costCenters={costCenters} dictionaries={dictionaries} onUpdate={handleUpdateAsset} onRefreshContacts={refreshContacts} tagEditable={tagEditable} onChangeTag={handleChangeTag} />}
 
-                            {activeTab === 'hierarchy' && <HierarchyTab asset={selectedAsset} assets={assets} onSelect={setSelectedAsset} />}
-                            {activeTab === 'bom' && !isLocation(selectedAsset) && <BOMTab asset={selectedAsset} onUpdate={handleUpdateAsset} />}
-                            {activeTab === 'readings' && <ReadingsTab asset={selectedAsset} />}
-                            {activeTab === 'reliability' && !isLocation(selectedAsset) && <ReliabilityIntelligenceTab asset={selectedAsset} />}
-                            {activeTab === 'jobs' && <JobsTab asset={selectedAsset} />}
-                            {activeTab === 'financials' && <FinancialsTab asset={selectedAsset} />}
-                            {activeTab === 'tracking' && <TrackingTab asset={selectedAsset} />}
-                            {activeTab === 'files' && (
-                                <div className="bg-white p-6 justify-center flex flex-col border border-slate-200 rounded-lg shadow-sm">
-                                    <div className="flex justify-between items-center mb-4">
-                                        <h3 className="font-bold text-slate-800">Files & Documents</h3>
-                                        <button className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500">+ Upload File</button>
+                                {activeTab === 'hierarchy' && <HierarchyTab asset={selectedAsset} assets={assets} onSelect={setSelectedAsset} />}
+                                {activeTab === 'bom' && !isLocation(selectedAsset) && <BOMTab asset={selectedAsset} onUpdate={handleUpdateAsset} />}
+                                {activeTab === 'readings' && <ReadingsTab asset={selectedAsset} />}
+                                {activeTab === 'reliability' && !isLocation(selectedAsset) && <ReliabilityIntelligenceTab asset={selectedAsset} />}
+                                {activeTab === 'jobs' && <JobsTab asset={selectedAsset} />}
+                                {activeTab === 'financials' && <FinancialsTab asset={selectedAsset} />}
+                                {activeTab === 'tracking' && <TrackingTab asset={selectedAsset} />}
+                                {activeTab === 'files' && (
+                                    <div className="bg-white p-6 justify-center flex flex-col border border-slate-200 rounded-lg shadow-sm">
+                                        <div className="flex justify-between items-center mb-4">
+                                            <h3 className="font-bold text-slate-800">Files & Documents</h3>
+                                            <button className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500">+ Upload File</button>
+                                        </div>
+                                        <div className="flex flex-col items-center justify-center h-48 text-slate-400 border border-dashed border-slate-300 rounded-lg bg-slate-50">
+                                            <FolderPlus size={48} className="mb-2 opacity-20" />
+                                            <p>Upload equipment manuals, P&IDs, and other documents.</p>
+                                        </div>
                                     </div>
-                                    <div className="flex flex-col items-center justify-center h-48 text-slate-400 border border-dashed border-slate-300 rounded-lg bg-slate-50">
-                                        <FolderPlus size={48} className="mb-2 opacity-20" />
-                                        <p>Upload equipment manuals, P&IDs, and other documents.</p>
-                                    </div>
-                                </div>
-                            )}
+                                )}
 
-                            {/* Placeholders for others */}
-                            {['journals'].includes(activeTab as string) && (
-                                <div className="flex flex-col items-center justify-center h-48 text-slate-400">
-                                    <Box size={48} className="mb-2 opacity-20" />
-                                    <p>No data available for this view yet.</p>
-                                </div>
-                            )}
+                                {/* Placeholders for others */}
+                                {['journals'].includes(activeTab as string) && (
+                                    <div className="flex flex-col items-center justify-center h-48 text-slate-400">
+                                        <Box size={48} className="mb-2 opacity-20" />
+                                        <p>No data available for this view yet.</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* ═══ Mobile Sticky Bottom Action Bar (fixed above bottom nav) ═══ */}

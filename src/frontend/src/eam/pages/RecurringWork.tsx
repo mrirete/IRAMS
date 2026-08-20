@@ -1108,14 +1108,19 @@ export const RecurringWork: React.FC = () => {
 
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
-                        {activeTab === 'details' && <DetailsTab job={selectedJob} onUpdate={handleJobUpdate} dictionaries={dictionaries} jobs={jobs} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
-                        {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleJobUpdate} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
-                        {activeTab === 'tasks' && <TasksTab job={selectedJob} onUpdate={handleJobUpdate} />}
-                        {activeTab === 'jsa' && <JSATab job={selectedJob} onUpdate={handleJobUpdate} />}
-                        {activeTab === 'labor' && <LaborTab job={selectedJob} onUpdate={handleJobUpdate} contacts={contacts} dictionaries={dictionaries} />}
-                        {activeTab === 'inventory' && <InventoryTab job={selectedJob} onUpdate={handleJobUpdate} inventoryItems={inventoryItems} dictionaries={dictionaries} />}
-                        {activeTab === 'files' && <FilesTab job={selectedJob} onUpdate={handleJobUpdate} />}
-                        {activeTab === 'history' && <HistoryTab job={selectedJob} jobs={jobs} />}
+                        {/* One reading column for every tab — the detail pane is as wide as the
+                            window allows, and an unbounded form is harder to read than a bounded
+                            one. Binds only on wide monitors; narrower panes are unchanged. */}
+                        <div className="max-w-6xl mx-auto">
+                            {activeTab === 'details' && <DetailsTab job={selectedJob} onUpdate={handleJobUpdate} dictionaries={dictionaries} jobs={jobs} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
+                            {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleJobUpdate} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
+                            {activeTab === 'tasks' && <TasksTab job={selectedJob} onUpdate={handleJobUpdate} />}
+                            {activeTab === 'jsa' && <JSATab job={selectedJob} onUpdate={handleJobUpdate} />}
+                            {activeTab === 'labor' && <LaborTab job={selectedJob} onUpdate={handleJobUpdate} contacts={contacts} dictionaries={dictionaries} />}
+                            {activeTab === 'inventory' && <InventoryTab job={selectedJob} onUpdate={handleJobUpdate} inventoryItems={inventoryItems} dictionaries={dictionaries} />}
+                            {activeTab === 'files' && <FilesTab job={selectedJob} onUpdate={handleJobUpdate} />}
+                            {activeTab === 'history' && <HistoryTab job={selectedJob} jobs={jobs} />}
+                        </div>
                     </div>
                 </div>
             )}

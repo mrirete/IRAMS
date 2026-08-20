@@ -2751,16 +2751,21 @@ export function Inventory({ onAnalyze }: InventoryProps) {
 
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
-                        {activeTab === 'details' && <DetailsTab item={selectedItem} dictionaries={dictionaries} contacts={contacts} vendors={vendors} onUpdate={handleLocalUpdate} />}
-                        {activeTab === 'stores' && <StoresTab item={selectedItem} stores={stores} onUpdate={handleLocalUpdate} canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />}
-                        {activeTab === 'suppliers' && <SuppliersTab item={selectedItem} onUpdate={handleLocalUpdate} canCreate={canCreate} />}
-                        {activeTab === 'bom' && <BOMTab item={selectedItem} {...{canEdit, canDelete} as any} />}
-                        {activeTab === 'jobs' && <JobsTab item={selectedItem} />}
-                        {activeTab === 'financials' && <InventoryFinancialsTab item={selectedItem} onUpdate={handleLocalUpdate} dictionaries={dictionaries} />}
-                        {activeTab === 'purchasing' && <PurchasingTab item={selectedItem} />}
-                        {activeTab === 'history' && <HistoryTab item={selectedItem} />}
-                        {activeTab === 'properties' && <PropertiesTab item={selectedItem} onUpdate={handleLocalUpdate} />}
-                        {activeTab === 'fields' && <div className="p-12 text-center text-slate-400">Custom Fields configuration based on Inventory Type '{selectedItem.type}'.</div>}
+                        {/* One reading column for every tab — the detail pane is as wide as the
+                            window allows, and an unbounded form is harder to read than a bounded
+                            one. Binds only on wide monitors; narrower panes are unchanged. */}
+                        <div className="max-w-6xl mx-auto">
+                            {activeTab === 'details' && <DetailsTab item={selectedItem} dictionaries={dictionaries} contacts={contacts} vendors={vendors} onUpdate={handleLocalUpdate} />}
+                            {activeTab === 'stores' && <StoresTab item={selectedItem} stores={stores} onUpdate={handleLocalUpdate} canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />}
+                            {activeTab === 'suppliers' && <SuppliersTab item={selectedItem} onUpdate={handleLocalUpdate} canCreate={canCreate} />}
+                            {activeTab === 'bom' && <BOMTab item={selectedItem} {...{canEdit, canDelete} as any} />}
+                            {activeTab === 'jobs' && <JobsTab item={selectedItem} />}
+                            {activeTab === 'financials' && <InventoryFinancialsTab item={selectedItem} onUpdate={handleLocalUpdate} dictionaries={dictionaries} />}
+                            {activeTab === 'purchasing' && <PurchasingTab item={selectedItem} />}
+                            {activeTab === 'history' && <HistoryTab item={selectedItem} />}
+                            {activeTab === 'properties' && <PropertiesTab item={selectedItem} onUpdate={handleLocalUpdate} />}
+                            {activeTab === 'fields' && <div className="p-12 text-center text-slate-400">Custom Fields configuration based on Inventory Type '{selectedItem.type}'.</div>}
+                        </div>
                     </div>
 
                     {/* Stock Adjustment Modal */}
