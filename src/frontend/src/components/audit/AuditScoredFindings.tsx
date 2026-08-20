@@ -59,7 +59,7 @@ export const AuditScoredFindings: React.FC<Props> = ({ initialData, onComplete, 
     const getRatingConfig = (rating: string) => FINDING_RATINGS.find(r => r.value === rating) || FINDING_RATINGS[1];
 
     return (
-        <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
+        <div className="ers-page-narrow py-8 px-4 space-y-6">
             {/* Header */}
             <div className="text-center mb-2">
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-red-500/20">

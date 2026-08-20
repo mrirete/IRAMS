@@ -252,6 +252,16 @@ option {
   --ers-tab-height: 44px;
   --ers-filter-bar-height: 48px;
   --ers-content-gap: 16px;
+
+  /* Reading width. The app shell (shell/AppLayout) does not cap <main>, so a page
+     is as wide as the monitor unless it caps itself — and every page used to pick
+     its own max-w-*, which is how six different reading widths accumulated. Pick a
+     tier below instead of a number, and pages that mean the same thing stay the
+     same width. Values sit on existing Tailwind steps so adoption is not a redesign. */
+  --ers-page-narrow: 48rem;  /* 768px — wizard steps, single-column forms, prose */
+  --ers-page-form: 56rem;    /* 896px — reports, settings pages */
+  --ers-page-record: 72rem;  /* 1152px — record detail: reading column + rail */
+  --ers-page-wide: 80rem;    /* 1280px — dashboards, wide tables, graph views */
 }
 
 /* Reusable detail-panel slide-in */
@@ -274,6 +284,14 @@ option {
   .ers-list-panel { display: none; }
   .ers-list-panel.ers-list-panel--force { display: flex; width: 100%; max-width: 100%; }
 }
+
+/* Page reading width — one of four tiers, never a bare max-w-* on a page container.
+   Each caps and centres; below the tier width they are inert, so narrow screens and
+   split panes are unaffected. */
+.ers-page-narrow { max-width: var(--ers-page-narrow); margin-inline: auto; }
+.ers-page-form   { max-width: var(--ers-page-form);   margin-inline: auto; }
+.ers-page-record { max-width: var(--ers-page-record); margin-inline: auto; }
+.ers-page-wide   { max-width: var(--ers-page-wide);   margin-inline: auto; }
 
 /* ── Responsive Table Wrapper ── */
 .table-responsive {

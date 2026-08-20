@@ -775,7 +775,7 @@ export function RCAInvestigationPage() {
                     {toast.message}
                 </div>
             )}
-            <div className="max-w-7xl mx-auto space-y-6">
+            <div className="ers-page-wide space-y-6">
                 
                 {/* Header — sticks to the top. An RCA is a team exercise and the page is long;
                     Invite has to be reachable from wherever you are in it, not just from the

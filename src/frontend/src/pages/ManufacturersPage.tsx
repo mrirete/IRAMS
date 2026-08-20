@@ -32,7 +32,7 @@ export const ManufacturersPage: React.FC = () => {
     const selected = mfrs.find(m => m.id === selectedId) || null;
 
     return (
-        <div className="max-w-6xl mx-auto">
+        <div className="ers-page-record">
             {showAdd && (
                 <AddManufacturerModal
                     onClose={() => setShowAdd(false)}

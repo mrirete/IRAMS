@@ -86,7 +86,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
   const safetyFindings = findings.filter(f => f.category === 'Process Safety');
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 space-y-6">
+    <div className="ers-page-narrow py-8 px-4 space-y-6">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-xl shadow-blue-500/20">
         <div className="flex items-start justify-between">

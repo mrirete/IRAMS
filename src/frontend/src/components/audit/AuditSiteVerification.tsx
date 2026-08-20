@@ -85,7 +85,7 @@ export const AuditSiteVerification: React.FC<Props> = ({ initialData, onComplete
     };
 
     return (
-        <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
+        <div className="ers-page-narrow py-8 px-4 space-y-6">
             {/* Header */}
             <div className="text-center mb-2">
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-amber-500/20">

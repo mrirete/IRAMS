@@ -111,7 +111,7 @@ export const AuditAssessment: React.FC<Props> = ({ registration, onComplete }) =
   const Icon = ICON_MAP[currentDim?.icon] || ClipboardList;
 
   return (
-    <div className="max-w-3xl mx-auto py-6 px-4 flex flex-col" style={{ minHeight: 'calc(100vh - 160px)' }}>
+    <div className="ers-page-narrow py-6 px-4 flex flex-col" style={{ minHeight: 'calc(100vh - 160px)' }}>
       {/* Progress Header */}
       <div className="mb-6">
         <div className="flex items-center justify-between mb-2">

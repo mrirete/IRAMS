@@ -161,7 +161,7 @@ export const MeetingPackPage: React.FC = () => {
                 </button>
             </div>
 
-            <div className="max-w-4xl mx-auto space-y-5 pb-24">
+            <div className="ers-page-form space-y-5 pb-24">
                 {/* Cover */}
                 <div className="rounded-xl border border-slate-200 bg-white overflow-hidden print:rounded-none print:border-0">
                     <div className="h-1 bg-violet-600 print:hidden" />

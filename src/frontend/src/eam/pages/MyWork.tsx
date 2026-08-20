@@ -161,7 +161,7 @@ export const MyWork: React.FC = () => {
     };
 
     const content = (
-        <div className="max-w-2xl mx-auto flex flex-col gap-5 pb-8">
+        <div className="ers-page-narrow flex flex-col gap-5 pb-8">
             {/* ── Header ── */}
             <div className="flex items-center gap-3">
                 <div>

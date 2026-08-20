@@ -2316,7 +2316,7 @@ export const Admin: React.FC = () => {
                     {activeTab === 'permissions' && <UserPermissionManager />}
                     {activeTab === 'licensing' && (
                         <div className="p-4 sm:p-6 overflow-y-auto h-full">
-                            <div className="max-w-3xl mx-auto">
+                            <div className="ers-page-narrow">
                                 <div className="flex items-start gap-2 p-3 mb-4 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-800">
                                     <Layers size={14} className="mt-0.5 shrink-0 text-blue-500" />
                                     <span>

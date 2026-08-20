@@ -100,7 +100,7 @@ export const MaintenanceStrategiesPage: React.FC = () => {
     if (loading) return <div className="flex justify-center py-16 text-slate-400"><Loader2 className="animate-spin" /></div>;
 
     return (
-        <div className="max-w-5xl mx-auto space-y-5">
+        <div className="ers-page-record space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-lg md:text-xl font-bold text-slate-900 flex items-center gap-2"><CalendarClock size={20} className="text-primary-600" /> Maintenance Strategies</h1>

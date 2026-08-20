@@ -110,7 +110,7 @@ export const ManualsPage: React.FC = () => {
     const totalChunks = docs.reduce((s, d) => s + d.chunks, 0);
 
     return (
-        <div className="max-w-5xl mx-auto space-y-5 pb-24 animate-in fade-in duration-300">
+        <div className="ers-page-form space-y-5 pb-24 animate-in fade-in duration-300">
             <div>
                 <button onClick={() => navigate('/specialist')}
                     className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 mb-3">

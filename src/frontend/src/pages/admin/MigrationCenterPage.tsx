@@ -288,7 +288,7 @@ export const MigrationCenterPage: React.FC = () => {
     const done = (p: Phase) => !!counts && p.count(counts) > 0;
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6 pb-24 animate-in fade-in duration-300">
+        <div className="ers-page-form space-y-6 pb-24 animate-in fade-in duration-300">
             <div>
                 <Link
                     to={backTo}

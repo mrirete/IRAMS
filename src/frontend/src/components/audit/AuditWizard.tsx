@@ -237,7 +237,7 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
         <div className="h-full flex flex-col bg-slate-50">
             {/* ─── Top Stepper ────────────────────────────────── */}
             <div className="bg-white border-b border-slate-200 px-6 py-4">
-                <div className="max-w-4xl mx-auto">
+                <div className="ers-page-narrow">
                     {/* Back button + title + save status + invite */}
                     <div className="flex items-center gap-3 mb-4">
                         <button onClick={onExit} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors">

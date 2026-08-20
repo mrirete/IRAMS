@@ -61,7 +61,7 @@ export const SystemHealth: React.FC = () => {
     };
 
     return (
-        <div className="p-8 max-w-4xl mx-auto space-y-6">
+        <div className="p-8 ers-page-form space-y-6">
             <h1 className="text-2xl font-bold flex items-center gap-2">
                 <Shield className="text-green-600" /> System Diagnostics & Health
             </h1>

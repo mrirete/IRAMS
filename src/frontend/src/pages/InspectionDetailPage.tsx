@@ -244,7 +244,7 @@ const InspectionDetailPage: React.FC = () => {
     ];
 
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        <div className="ers-page-wide px-4 sm:px-6 py-6 space-y-6">
             {/* ── HEADER ── */}
             <div className="space-y-3">
                 <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-primary-600 transition-colors">

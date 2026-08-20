@@ -430,7 +430,7 @@ export const AssessmentReportPage: React.FC = () => {
                 </div>
             </div>
 
-            <div className="max-w-4xl mx-auto space-y-5 pb-24">
+            <div className="ers-page-form space-y-5 pb-24">
                 {/* Cover */}
                 {/* Cover — white and ink-light so it prints like a consulting
                     report rather than a brochure; the blue rule does the branding. */}

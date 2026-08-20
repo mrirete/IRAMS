@@ -2022,7 +2022,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     themselves at max-w-6xl while the rest ran full-bleed, so content
                     jumped width as you switched tabs — the cap lives here now and the
                     tabs inherit it. */}
-                <div className="max-w-6xl mx-auto">
+                <div className="ers-page-record">
                     {activeTab === 'details' && <DetailsTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} />}
                     {activeTab === 'tasks' && (
                         <TasksTab

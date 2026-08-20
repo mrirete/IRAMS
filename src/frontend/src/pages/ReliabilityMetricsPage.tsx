@@ -294,7 +294,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
     };
 
     return (
-        <div className="space-y-5 max-w-7xl mx-auto">
+        <div className="space-y-5 ers-page-wide">
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

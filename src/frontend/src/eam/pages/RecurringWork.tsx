@@ -1111,7 +1111,7 @@ export const RecurringWork: React.FC = () => {
                         {/* One reading column for every tab — the detail pane is as wide as the
                             window allows, and an unbounded form is harder to read than a bounded
                             one. Binds only on wide monitors; narrower panes are unchanged. */}
-                        <div className="max-w-6xl mx-auto">
+                        <div className="ers-page-record">
                             {activeTab === 'details' && <DetailsTab job={selectedJob} onUpdate={handleJobUpdate} dictionaries={dictionaries} jobs={jobs} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
                             {activeTab === 'assets' && <AssetsTab job={selectedJob} onUpdate={handleJobUpdate} onNavigateToAsset={(assetId) => { window.location.href = `/assets?id=${assetId}`; }} assets={dbAssets.length > 0 ? dbAssets : MOCK_ASSETS} />}
                             {activeTab === 'tasks' && <TasksTab job={selectedJob} onUpdate={handleJobUpdate} />}

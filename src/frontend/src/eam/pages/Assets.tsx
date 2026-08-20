@@ -1566,7 +1566,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                             {/* One reading column for every tab — the detail pane is as wide as the
                                 window allows, and an unbounded form is harder to read than a bounded
                                 one. Binds only on wide monitors; narrower panes are unchanged. */}
-                            <div className="max-w-6xl mx-auto">
+                            <div className="ers-page-record">
                                 {activeTab === 'details' && <DetailsTab asset={selectedAsset} assetTypes={assetTypes} contacts={contacts} vendors={vendors} costCenters={costCenters} dictionaries={dictionaries} onUpdate={handleUpdateAsset} onRefreshContacts={refreshContacts} tagEditable={tagEditable} onChangeTag={handleChangeTag} />}
 
                                 {activeTab === 'hierarchy' && <HierarchyTab asset={selectedAsset} assets={assets} onSelect={setSelectedAsset} />}

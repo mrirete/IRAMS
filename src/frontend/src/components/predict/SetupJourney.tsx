@@ -416,7 +416,7 @@ export const SetupJourney: React.FC<SetupJourneyProps> = ({ onExit, initialAsset
         (n === 4 && snapshotState === 'done');
 
     return (
-        <div className="max-w-3xl mx-auto animate-in fade-in duration-300">
+        <div className="ers-page-narrow animate-in fade-in duration-300">
             {/* Escape hatch — always visible, top-left (Esc works too) */}
             <button
                 onClick={() => onExit()}

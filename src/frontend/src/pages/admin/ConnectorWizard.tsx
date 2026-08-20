@@ -345,7 +345,7 @@ export const ConnectorWizard: React.FC = () => {
     };
 
     return (
-        <div className="max-w-5xl mx-auto animate-in fade-in duration-500">
+        <div className="ers-page-form animate-in fade-in duration-500">
             {/* Header */}
             <div className="mb-8">
                 <button onClick={handleBack} className="flex items-center text-sm text-slate-500 hover:text-slate-800 transition-colors mb-4 font-semibold">

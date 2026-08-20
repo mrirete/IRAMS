@@ -98,7 +98,7 @@ export const CompaniesPage: React.FC = () => {
     const mLabel = 'block text-[10.5px] font-semibold uppercase tracking-wider text-slate-400 mb-1';
 
     return (
-        <div className="space-y-5 max-w-5xl mx-auto">
+        <div className="space-y-5 ers-page-record">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-lg md:text-xl font-bold text-slate-900 flex items-center gap-2">

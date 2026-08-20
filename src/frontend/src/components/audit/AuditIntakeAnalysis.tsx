@@ -46,7 +46,7 @@ export const AuditIntakeAnalysis: React.FC<Props> = ({ intake, onContinue, onRef
     const firstName = intake.firstName || 'there';
 
     return (
-        <div className="max-w-4xl mx-auto py-8 px-4 space-y-6">
+        <div className="ers-page-narrow py-8 px-4 space-y-6">
 
             {/* ─── Header ─────────────────────────────────────── */}
             <div className="text-center mb-2">

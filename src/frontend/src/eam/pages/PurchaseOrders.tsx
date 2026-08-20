@@ -462,7 +462,7 @@ const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOr
             Details shell. Logistics is what you actually read and edit; the three
             dates and the tax switch are glance-and-go, so they do not get half the
             page. The PO header already shows status — no chip duplicated here. */}
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
+        <div className="ers-page-record grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-4 items-start">
             {/* Supplier & Delivery */}
             <div className="bg-white p-4 md:p-5 lg:p-6 rounded-lg border border-slate-200 shadow-sm space-y-4 min-w-0">
                 <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center gap-2">

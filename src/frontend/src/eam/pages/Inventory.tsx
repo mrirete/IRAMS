@@ -2754,7 +2754,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                         {/* One reading column for every tab — the detail pane is as wide as the
                             window allows, and an unbounded form is harder to read than a bounded
                             one. Binds only on wide monitors; narrower panes are unchanged. */}
-                        <div className="max-w-6xl mx-auto">
+                        <div className="ers-page-record">
                             {activeTab === 'details' && <DetailsTab item={selectedItem} dictionaries={dictionaries} contacts={contacts} vendors={vendors} onUpdate={handleLocalUpdate} />}
                             {activeTab === 'stores' && <StoresTab item={selectedItem} stores={stores} onUpdate={handleLocalUpdate} canCreate={canCreate} canEdit={canEdit} canDelete={canDelete} />}
                             {activeTab === 'suppliers' && <SuppliersTab item={selectedItem} onUpdate={handleLocalUpdate} canCreate={canCreate} />}

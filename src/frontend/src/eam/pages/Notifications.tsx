@@ -167,7 +167,7 @@ export const Notifications: React.FC = () => {
     const criticalCount = notifications.filter(n => n.severity === 'CRITICAL' && !n.isAcknowledged).length;
 
     return (
-        <div className="max-w-4xl mx-auto h-[calc(100vh-6rem)] flex flex-col">
+        <div className="ers-page-form h-[calc(100vh-6rem)] flex flex-col">
             {/* Header */}
             <div className="flex justify-between items-center mb-6">
                 <div>

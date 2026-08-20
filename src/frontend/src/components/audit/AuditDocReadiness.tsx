@@ -76,7 +76,7 @@ export const AuditDocReadiness: React.FC<Props> = ({ initialData, onComplete, on
         setItems(prev => prev.map(i => i.status === 'na' ? i : i));
 
     return (
-        <div className="max-w-3xl mx-auto py-8 px-4 space-y-5">
+        <div className="ers-page-narrow py-8 px-4 space-y-5">
             {/* Header */}
             <div className="text-center mb-2">
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">

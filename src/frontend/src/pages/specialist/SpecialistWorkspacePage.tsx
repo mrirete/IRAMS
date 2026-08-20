@@ -409,7 +409,7 @@ export const SpecialistWorkspacePage: React.FC = () => {
     };
 
     return (
-        <div className="max-w-6xl mx-auto space-y-4 pb-24 animate-in fade-in duration-300">
+        <div className="ers-page-record space-y-4 pb-24 animate-in fade-in duration-300">
             {/* ── Identity header — flat surface, blue reserved for the action ── */}
             <header className={`${CARD} p-4 sm:p-5`}>
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start">

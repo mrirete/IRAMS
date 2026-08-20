@@ -170,7 +170,7 @@ export const AuditIntake: React.FC<Props> = ({ initialData, onComplete }) => {
     const canSubmit = form.firstName && form.lastName && form.company && form.email && form.mobile && form.siteName && form.industrySector;
 
     return (
-        <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
+        <div className="ers-page-narrow py-8 px-4 space-y-6">
             {/* Header */}
             <div className="text-center mb-2">
                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-primary-600 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/20">
