@@ -4102,6 +4102,19 @@ const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: 
 
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
+// ─── Schedule-rail primitives: a spec-sheet row (label left, value right) and
+//     the compact input sizing that lets the whole date block live in a 300px
+//     sticky column instead of eating half the Details page. ───
+const RAIL_INPUT = 'w-full text-xs border border-slate-300 rounded-md px-2 py-1.5 bg-white';
+const RAIL_INPUT_LOCKED = 'w-full text-xs border border-slate-200 rounded-md px-2 py-1.5 bg-slate-100 text-slate-500';
+
+const RailRow: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+    <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide leading-tight">{label}</span>
+        <div className="w-[132px] flex-shrink-0">{children}</div>
+    </div>
+);
+
 const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
     // Default expanded: this state only gates the field cards on < lg screens
     // (desktop always shows them via `hidden lg:block`), and collapsed-by-default
@@ -4238,6 +4251,10 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     // completion, not the end of postings.
     const actualsLocked = job.status === WorkOrderStatus.CLOSED;
     const hasActuals = !!(job.actualDuration || job.actualDowntime || job.malfunctionStart || job.malfunctionEnd || job.breakdown);
+    // Actuals open themselves once there is something recorded; the override only
+    // exists so the user can fold that back (or open it early to key values in).
+    const [actualsOverride, setActualsOverride] = useState<boolean | null>(null);
+    const actualsOpen = actualsOverride ?? hasActuals;
     // <input type="datetime-local"> needs local 'YYYY-MM-DDTHH:mm', not a UTC ISO string.
     const toLocalInput = (iso?: string) => {
         if (!iso) return '';
@@ -4248,7 +4265,12 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
     const fromLocalInput = (v: string) => (v ? new Date(v).toISOString() : undefined);
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 animate-in fade-in duration-300">
+        <div className="animate-in fade-in duration-300">
+        {/* Centred reading column + a narrow sticky schedule rail, matching the
+            Analysis & History shell. Dates are short, low-ink fields — they do not
+            deserve half the monitor — so they live in the rail and stay in view
+            while the long left column scrolls. */}
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_300px] gap-3 md:gap-4 items-start">
             <AssetPickerModal
                 open={showAssetPicker}
                 assets={pickAssets}
@@ -4275,6 +4297,7 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                 />
             </div>
 
+        <div className="flex flex-col gap-3 md:gap-4 min-w-0">
             {/* Core Info */}
             <div className={`bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 ${isFieldsExpanded ? 'block' : 'hidden lg:block'}`}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -4575,145 +4598,22 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                 </div>
             </div>
 
-            {/* Scheduling & Progress */}
-            <div className={`bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 ${isFieldsExpanded ? 'block' : 'hidden lg:block'}`}>
-                {job.scope === 'PROJECT' && (
-                    <div className="flex justify-end">
+            {/* Turnaround / project scheduling — a start+finish matrix is too wide
+                for the rail, so project scope keeps its own full-width card here. */}
+            {job.scope === 'PROJECT' && (
+                <div className={`bg-white p-4 md:p-5 lg:p-6 rounded-xl border border-slate-200 shadow-sm ${isFieldsExpanded ? 'block' : 'hidden lg:block'}`}>
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                            <Calendar size={15} className="text-blue-600" /> Turnaround Schedule
+                        </h3>
                         <span className="text-[9px] font-bold uppercase bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
-                            Turnaround / Project Mode
+                            Project Mode
                         </span>
                     </div>
-                )}
-
-                <div className="space-y-3">
-
-                    {/* --- STANDARD SCOPE: Simplified Scheduling --- */}
-                    {(!job.scope || job.scope === 'STANDARD') && (
-                        <div className="space-y-3">
-                            <div className="bg-slate-50 border border-slate-200 rounded px-2.5 py-2 text-[11px] text-slate-500 flex items-center gap-1.5">
-                                <Calendar size={12} className="text-slate-400 flex-shrink-0" />
-                                Standard work orders use a simple due date and estimated duration for planning.
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Due Date</label>
-                                    <input
-                                        key={`due-std-${job.id}`}
-                                        type="date"
-                                        value={job.dueDate ? formatDateForInput(job.dueDate) : ''}
-                                        onChange={(e) => handleScheduleChange('dueDate', e.target.value)}
-                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white font-medium"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Est. Duration (Hrs)</label>
-                                    <input
-                                        type="number"
-                                        value={job.estDuration || ''}
-                                        onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })}
-                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
-                                        placeholder="0"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Est. Downtime (Hrs)</label>
-                                    <input
-                                        type="number"
-                                        value={job.estDowntime || ''}
-                                        onChange={(e) => onUpdate({ estDowntime: parseFloat(e.target.value) })}
-                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
-                                        placeholder="0"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Date Completed</label>
-                                    <input
-                                        key={`fin-std-${job.id}`}
-                                        type="date"
-                                        value={job.dateFinished ? formatDateForInput(job.dateFinished) : ''}
-                                        onChange={(e) => onUpdate({ dateFinished: e.target.value })}
-                                        className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2.5 bg-white"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* ── Actuals (0283): what the job really took ── */}
-                            <div className="pt-3 border-t border-slate-200">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs font-bold text-slate-500 uppercase">Actuals</span>
-                                    <div className="flex items-center gap-1.5">
-                                        {job.breakdown === true && (
-                                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">Breakdown</span>
-                                        )}
-                                        {actualsLocked && (
-                                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex items-center gap-1">
-                                                <Lock size={9} /> Closed
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                                {!hasActuals && (
-                                    <p className="text-[11px] text-slate-400 mb-2">
-                                        Recorded at completion — use <strong>Complete</strong> to capture actual hours, equipment downtime and the malfunction window.
-                                    </p>
-                                )}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Actual Duration (Hrs)</label>
-                                        <input
-                                            type="number" min="0" step="0.5"
-                                            value={job.actualDuration || ''}
-                                            disabled={actualsLocked}
-                                            onChange={(e) => onUpdate({ actualDuration: parseFloat(e.target.value) || 0 })}
-                                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${actualsLocked ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300'}`}
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Actual Downtime (Hrs)</label>
-                                        <input
-                                            type="number" min="0" step="0.5"
-                                            value={job.actualDowntime || ''}
-                                            disabled={actualsLocked}
-                                            onChange={(e) => onUpdate({ actualDowntime: parseFloat(e.target.value) || 0 })}
-                                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${actualsLocked ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300'}`}
-                                            placeholder="0"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Malfunction Start</label>
-                                        <input
-                                            type="datetime-local"
-                                            value={toLocalInput(job.malfunctionStart)}
-                                            disabled={actualsLocked}
-                                            onChange={(e) => onUpdate({ malfunctionStart: fromLocalInput(e.target.value) })}
-                                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${actualsLocked ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300'}`}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Back in Service</label>
-                                        <input
-                                            type="datetime-local"
-                                            value={toLocalInput(job.malfunctionEnd)}
-                                            disabled={actualsLocked}
-                                            onChange={(e) => onUpdate({ malfunctionEnd: fromLocalInput(e.target.value) })}
-                                            className={`w-full text-sm border rounded-lg px-3 py-2.5 ${actualsLocked ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-300'}`}
-                                        />
-                                    </div>
-                                </div>
-                                <p className="text-[10px] text-slate-400 mt-1.5">
-                                    Downtime drives MTTR and availability; the malfunction window is the failure event time used for MTBF. Leave downtime blank and it is derived from the window.
-                                </p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* --- PROJECT SCOPE: Full Turnaround Scheduling Matrix --- */}
-                    {job.scope === 'PROJECT' && (
                         <div className="space-y-3">
                             <div className="bg-blue-50 border border-blue-200 rounded px-2.5 py-2 text-[11px] text-blue-700 flex items-center gap-1.5">
                                 <Calendar size={12} className="text-blue-500 flex-shrink-0" />
-                                Project/Turnaround mode � full start & finish scheduling with time precision for shutdown planning.
+                                Project/Turnaround mode — full start & finish scheduling with time precision for shutdown planning.
                             </div>
 
                             {/* Scheduling Matrix */}
@@ -4850,18 +4750,151 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                                 </div>
                             </div>
                         </div>
+                </div>
+            )}
+        </div>
+
+        {/* ── Sticky schedule rail (desktop) — planned dates, then actuals folded
+            away until there is something to read. ── */}
+        <aside className={`lg:sticky lg:top-2 ${isFieldsExpanded ? 'block' : 'hidden lg:block'}`}>
+            <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-2.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h3 className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+                        <Calendar size={14} className="text-blue-600" /> Schedule
+                    </h3>
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                        {job.status === 'CLOSED' ? <CheckCircle size={11} /> : <Clock size={11} />}
+                        {job.status.replace('_', ' ')}
+                    </span>
+                </div>
+
+                {(!job.scope || job.scope === 'STANDARD') ? (
+                    <div className="flex flex-col gap-2">
+                        <RailRow label="Due Date">
+                            <input
+                                key={`due-std-${job.id}`}
+                                type="date"
+                                value={job.dueDate ? formatDateForInput(job.dueDate) : ''}
+                                onChange={(e) => handleScheduleChange('dueDate', e.target.value)}
+                                className={RAIL_INPUT}
+                            />
+                        </RailRow>
+                        <RailRow label="Est. Duration (h)">
+                            <input
+                                type="number" min="0" step="0.5"
+                                value={job.estDuration || ''}
+                                onChange={(e) => onUpdate({ estDuration: parseFloat(e.target.value) })}
+                                className={RAIL_INPUT}
+                                placeholder="0"
+                            />
+                        </RailRow>
+                        <RailRow label="Est. Downtime (h)">
+                            <input
+                                type="number" min="0" step="0.5"
+                                value={job.estDowntime || ''}
+                                onChange={(e) => onUpdate({ estDowntime: parseFloat(e.target.value) })}
+                                className={RAIL_INPUT}
+                                placeholder="0"
+                            />
+                        </RailRow>
+                        <RailRow label="Completed">
+                            <input
+                                key={`fin-std-${job.id}`}
+                                type="date"
+                                value={job.dateFinished ? formatDateForInput(job.dateFinished) : ''}
+                                onChange={(e) => onUpdate({ dateFinished: e.target.value })}
+                                className={RAIL_INPUT}
+                            />
+                        </RailRow>
+                    </div>
+                ) : (
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                        Planned start &amp; finish are set in the <strong className="text-slate-500">Turnaround Schedule</strong> card.
+                    </p>
+                )}
+
+                {/* ── Actuals (0283): what the job really took. Folded shut before
+                    completion so four empty fields stop shouting for attention. ── */}
+                <div className="border-t border-slate-100 pt-2.5">
+                    <button
+                        type="button"
+                        onClick={() => setActualsOverride(!actualsOpen)}
+                        className="w-full flex items-center justify-between gap-2 text-left"
+                    >
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">Actuals</span>
+                        <span className="flex items-center gap-1">
+                            {job.breakdown === true && (
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">Breakdown</span>
+                            )}
+                            {actualsLocked && (
+                                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 flex items-center gap-1">
+                                    <Lock size={9} /> Closed
+                                </span>
+                            )}
+                            <ChevronDown size={13} className={`text-slate-400 transition-transform ${actualsOpen ? 'rotate-180' : ''}`} />
+                        </span>
+                    </button>
+
+                    {!actualsOpen && (
+                        <p className="text-[10px] text-slate-400 mt-1 leading-snug">
+                            {hasActuals
+                                ? `${job.actualDuration || 0}h worked · ${job.actualDowntime || 0}h down`
+                                : <>Captured when you press <strong className="text-slate-500">Complete</strong>.</>}
+                        </p>
                     )}
 
-                    {/* Status Footer */}
-                    <div className="flex items-center justify-end pt-2 gap-2">
-                        <span className="text-xs font-medium text-slate-500">Overall Status:</span>
-                        <div className={`flex items-center gap-1 text-slate-600 font-bold bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200 text-xs`}>
-                            {job.status === 'CLOSED' ? <CheckCircle size={13} /> : <Clock size={13} />}
-                            {job.status.replace('_', ' ')}
+                    {actualsOpen && (
+                        <div className="flex flex-col gap-2 mt-2">
+                            <RailRow label="Actual Duration (h)">
+                                <input
+                                    type="number" min="0" step="0.5"
+                                    value={job.actualDuration || ''}
+                                    disabled={actualsLocked}
+                                    onChange={(e) => onUpdate({ actualDuration: parseFloat(e.target.value) || 0 })}
+                                    className={actualsLocked ? RAIL_INPUT_LOCKED : RAIL_INPUT}
+                                    placeholder="0"
+                                />
+                            </RailRow>
+                            <RailRow label="Actual Downtime (h)">
+                                <input
+                                    type="number" min="0" step="0.5"
+                                    value={job.actualDowntime || ''}
+                                    disabled={actualsLocked}
+                                    onChange={(e) => onUpdate({ actualDowntime: parseFloat(e.target.value) || 0 })}
+                                    className={actualsLocked ? RAIL_INPUT_LOCKED : RAIL_INPUT}
+                                    placeholder="0"
+                                />
+                            </RailRow>
+                            {/* datetime-local needs the full width — stacked, not paired */}
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Malfunction Start</label>
+                                <input
+                                    type="datetime-local"
+                                    value={toLocalInput(job.malfunctionStart)}
+                                    disabled={actualsLocked}
+                                    onChange={(e) => onUpdate({ malfunctionStart: fromLocalInput(e.target.value) })}
+                                    className={actualsLocked ? RAIL_INPUT_LOCKED : RAIL_INPUT}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Back in Service</label>
+                                <input
+                                    type="datetime-local"
+                                    value={toLocalInput(job.malfunctionEnd)}
+                                    disabled={actualsLocked}
+                                    onChange={(e) => onUpdate({ malfunctionEnd: fromLocalInput(e.target.value) })}
+                                    className={actualsLocked ? RAIL_INPUT_LOCKED : RAIL_INPUT}
+                                />
+                            </div>
+                            <p className="text-[10px] text-slate-400 leading-snug">
+                                Downtime drives MTTR and availability; the malfunction window is the failure event used for MTBF. Leave downtime blank and it is derived from the window.
+                            </p>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
+        </aside>
+        </div>
         </div>
     );
 };
