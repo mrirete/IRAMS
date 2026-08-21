@@ -277,7 +277,7 @@ export const PurchaseOrders: React.FC = () => {
     return (
         <div className="flex h-[calc(100vh-6rem)] gap-6">
             {/* List Sidebar */}
-            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedPO ? 'w-1/3 hidden lg:flex' : 'w-full'}`}>
+            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedPO ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center">
                     <h2 className="font-bold text-slate-900">Purchase Orders</h2>
                     <Button

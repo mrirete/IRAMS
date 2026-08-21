@@ -2527,7 +2527,7 @@ export function Inventory({ onAnalyze }: InventoryProps) {
     return (
         <div className="flex h-full gap-6 relative">
             {/* List Sidebar */}
-            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedItem ? 'w-1/3 hidden lg:flex' : 'w-full'}`}>
+            <div className={`flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300 ${selectedItem ? 'w-1/3 hidden lg:flex' : 'w-full ers-page-record'}`}>
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center">
                     <h2 className="font-bold text-slate-900">Inventory Registry</h2>
                     <div className="flex gap-2 items-center">

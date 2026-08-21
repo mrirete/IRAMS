@@ -760,7 +760,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                 LEFT PANEL — Switches between FULL TABLE (no selection) 
                 and COMPACT CARD HIERARCHY (asset selected / split view)
                ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */}
-            <div className={`${selectedAsset ? 'ers-list-panel hidden lg:flex' : 'w-full'} flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300`}>
+            <div className={`${selectedAsset ? 'ers-list-panel hidden lg:flex' : 'w-full ers-page-record'} flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-all duration-300`}>
 
                 {/* Back-to-list button (visible only on tablet/mobile when detail is showing) */}
                 {selectedAsset && (

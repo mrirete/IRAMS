@@ -830,7 +830,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     };
 
     return (
-        <div className="flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="ers-page-record flex flex-col h-full bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             {/* Header / Filters */}
             <div className="p-2 sm:p-3 md:p-4 border-b border-slate-200 space-y-2 sm:space-y-3">
                 <div className="flex flex-wrap justify-between items-center gap-2">
