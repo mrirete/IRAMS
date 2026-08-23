@@ -109,7 +109,7 @@ vi.mock('../lib/supabase', () => ({
     },
 }));
 
-const { importAssets, importBoms } = await import('./bulkImportService');
+const { importAssets, importBoms, importReadings } = await import('./bulkImportService');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 type Row = Record<string, string>;
@@ -609,5 +609,87 @@ describe('importBoms', () => {
         const res = await importBoms([bomRow({ assettag: 'PMP-1' })]);
         expect(res.failed).toBe(1);
         expect(res.outcomes[0].reason).toMatch(/neither/);
+    });
+});
+
+// ── SAP integration: equipment-number resolution + definition-only points ───
+
+describe('equipment-number resolution (SAP EQUNR references)', () => {
+    const seedSap = () => {
+        db.assets.rows.push({
+            id: 'a-9', tag: 'PMP-101A', equipment_number: '2000001222',
+            hierarchy_level: 'EQUIPMENT', company_id: 'co-1',
+        });
+        db.inventory_items.rows.push({
+            id: 'inv-9', part_number: 'FLT-0023', material_number: 'FLT-0023',
+            description: 'Air filter', unit_cost: 245, uom: 'EA',
+        });
+    };
+
+    it('a BOM row naming the EQUNR links to the tagged asset', async () => {
+        seedSap();
+        const res = await importBoms([{
+            assettag: '2000001222', inventorycode: 'FLT-0023',
+            description: 'Air filter', quantity: '4', uom: 'EA', critical: 'YES',
+        }]);
+        expect(res.inserted).toBe(1);
+        expect((inserted.asset_bom ?? [])[0].asset_id).toBe('a-9');
+    });
+
+    it('an asset row naming an EQUNR parent resolves it', async () => {
+        seedSap();
+        const res = await importAssets([row({
+            tag: 'PMP-101A-MTR', name: 'Drive motor', hierarchylevel: 'COMPONENT',
+            assettype: 'MOTOR', parenttag: '2000001222', criticality: 'B',
+        })]);
+        expect(res.inserted).toBe(1);
+        expect(byTag('PMP-101A-MTR')!.parent_id).toBe('a-9');
+    });
+});
+
+describe('importReadings: SAP measuring points and documents', () => {
+    const seedAsset = () => {
+        db.assets.rows.push({
+            id: 'a-9', tag: 'PMP-101A', equipment_number: '2000001222',
+            hierarchy_level: 'EQUIPMENT', company_id: 'co-1',
+        });
+    };
+
+    it('definition-only row creates a reading point with name, unit and alarm limits', async () => {
+        seedAsset();
+        const res = await importReadings([{
+            assettag: '2000001222', readingtype: 'VIB-DE', date: '', value: '',
+            pointname: 'Drive end bearing vibration', unit: 'mm/s', maxwarning: '7.1',
+        }]);
+        expect(res.inserted).toBe(1);
+        const def = (inserted.reading_definitions ?? [])[0];
+        expect(def.asset_id).toBe('a-9');           // resolved by EQUNR
+        expect(def.name).toBe('Drive end bearing vibration');
+        expect(def.unit).toBe('mm/s');
+        expect(def.max_warning).toBe(7.1);
+        expect(inserted.reading_logs ?? []).toHaveLength(0);  // no phantom reading
+    });
+
+    it('definition-only row on an existing point updates its limits', async () => {
+        seedAsset();
+        db.reading_definitions.rows.push({ id: 'def-1', asset_id: 'a-9', reading_type_code: 'VIB-DE' });
+        const res = await importReadings([{
+            assettag: 'PMP-101A', readingtype: 'VIB-DE', date: '', value: '',
+            maxwarning: '9.5',
+        }]);
+        expect(res.updated).toBe(1);
+        expect((updates.reading_definitions ?? [])[0].max_warning).toBe(9.5);
+    });
+
+    it('a measurement-document row by EQUNR logs the reading against the point', async () => {
+        seedAsset();
+        db.reading_definitions.rows.push({ id: 'def-1', asset_id: 'a-9', reading_type_code: 'RUNHOURS' });
+        const res = await importReadings([{
+            assettag: '2000001222', readingtype: 'RUNHOURS', date: '2026-01-31', value: '48210',
+        }]);
+        expect(res.inserted).toBe(1);
+        const log = (inserted.reading_logs ?? [])[0];
+        expect(log.definition_id).toBe('def-1');
+        expect(log.reading_value).toBe(48210);
     });
 });

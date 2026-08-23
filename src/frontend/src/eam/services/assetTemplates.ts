@@ -917,13 +917,17 @@ export function findHeaderRow(rawRows: unknown[][], maxScan = 8): number {
     ['assettag', 'readingtype', 'itemcost', 'qtyonhand', 'equipmentnumber', 'hierarchylevel',
         'parenttag', 'serialnumber', 'inventorycode', 'manufacturer', 'model'].forEach(h => known.add(h));
 
+    // Best row wins, minimum 2 exact-token matches (a sparse sheet like the
+    // SAP source list has only MATNR + LIFNR as recognisable names; title and
+    // hint rows are prose and score 0).
+    let best = 0, bestHits = 0;
     for (let i = 0; i < Math.min(maxScan, rawRows.length); i++) {
         const hits = new Set(
             (rawRows[i] ?? []).map(c => String(c ?? '').trim().toLowerCase()).filter(c => known.has(c)),
         );
-        if (hits.size >= 3) return i;
+        if (hits.size > bestHits) { best = i; bestHits = hits.size; }
     }
-    return 0;
+    return bestHits >= 2 ? best : 0;
 }
 
 // Header signature map for auto-detection
