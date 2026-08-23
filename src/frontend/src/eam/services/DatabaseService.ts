@@ -3212,6 +3212,7 @@ export class DatabaseService {
             itemCost: row.unit_cost || 0,
             costCenterInbound: row.properties?.financials?.inboundId,
             costCenterOutbound: row.properties?.financials?.outboundId,
+            preferredSupplierId: row.preferred_vendor_id || undefined,
 
             // Map Relational Stock to UI Array
             stockLocations: row.inventory_stock

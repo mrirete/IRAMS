@@ -2295,6 +2295,9 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                 costCenterInbound: updatedItem.costCenterInbound,
                 costCenterOutbound: updatedItem.costCenterOutbound,
 
+                // 0296 — the Details-tab picker wrote into the void before this.
+                preferred_vendor_id: updatedItem.preferredSupplierId || null,
+
                 properties: {
                     customFields: updatedItem.customFields || [],
                     suppliers: updatedItem.suppliers || []
@@ -2438,13 +2441,86 @@ export function Inventory({ onAnalyze }: InventoryProps) {
             return null;
         };
 
+        // Preferred suppliers (0296) — resolve by vendor code or name; unknown
+        // vendors are created as SUPPLIER. SAP source-list sheets reference
+        // vendors by LIFNR number, which lands here as the code.
+        const vendorIdByKey = new Map<string, string>();
+        try {
+            for (const v of await DatabaseService.getInstance().getVendors()) {
+                if (v.code) vendorIdByKey.set(String(v.code).toUpperCase(), v.id);
+                if (v.name) vendorIdByKey.set(String(v.name).toUpperCase(), v.id);
+            }
+        } catch { /* names below simply won't resolve */ }
+        const resolveVendor = async (ref: string): Promise<string | null> => {
+            const key = ref.toUpperCase();
+            const hit = vendorIdByKey.get(key);
+            if (hit) return hit;
+            try {
+                const created = await DatabaseService.getInstance().addVendor({
+                    id: '', name: ref, code: ref.slice(0, 12).toUpperCase().replace(/\s+/g, '-'),
+                    type: 'SUPPLIER', active: true,
+                } as Vendor);
+                if (created?.id) {
+                    vendorIdByKey.set(key, created.id);
+                    res.notes!.push(`Supplier "${ref}" created.`);
+                    return created.id;
+                }
+            } catch (e: unknown) {
+                res.notes!.push(`Could not create supplier "${ref}" (${errMessage(e)}).`);
+            }
+            return null;
+        };
+
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
             const rowNo = Number(row.__row) || i + 2;
             const code = row['code'] || `INV-${Date.now()}-${i}`;
 
             if (existingCodes.has(code.toUpperCase())) {
-                tally(res, { row: rowNo, key: code, status: 'skipped', reason: 'Item code already exists' });
+                // Update path for the two things a follow-up sheet legitimately
+                // carries for an EXISTING item: a preferred supplier (SAP source
+                // list) and an opening stock balance. Everything else on the row
+                // is left untouched — re-imports must never overwrite work done
+                // in the app.
+                const existing = inventoryItems.find(i => (i.code || '').toUpperCase() === code.toUpperCase());
+                const applied: string[] = [];
+                try {
+                    if (existing) {
+                        const supplierRef = (row['preferredsupplier'] || '').trim();
+                        if (supplierRef) {
+                            const vid = await resolveVendor(supplierRef);
+                            if (vid) {
+                                await DatabaseService.getInstance().updateInventoryItem(existing.id, { preferred_vendor_id: vid } as any);
+                                applied.push('preferred supplier');
+                            }
+                        }
+                        const qty = parseInt(row['qtyonhand'] || '0') || 0;
+                        if (qty > 0) {
+                            if ((existing.totalQtyOnHand ?? 0) > 0) {
+                                res.notes!.push(`Row ${rowNo} (${code}): item already holds stock — opening balance NOT posted (adjust via Stocktake if the number is wrong).`);
+                            } else {
+                                const storeId = await resolveStore(row['storename'] || 'Main Store');
+                                if (storeId) {
+                                    // 561: opening balance / data migration (0245 vocabulary).
+                                    await DatabaseService.getInstance().adjustInventoryStock(
+                                        existing.id, storeId, qty, 'ADJUSTMENT',
+                                        'Opening balance (migration import)', 'bulk-import',
+                                        { movementType: '561' },
+                                    );
+                                    applied.push(`opening stock ${qty}`);
+                                }
+                            }
+                        }
+                    }
+                } catch (e: unknown) {
+                    tally(res, { row: rowNo, key: code, status: 'failed', reason: errMessage(e) });
+                    continue;
+                }
+                if (applied.length > 0) {
+                    tally(res, { row: rowNo, key: code, status: 'updated', reason: `Existing item — applied ${applied.join(' + ')}` });
+                } else {
+                    tally(res, { row: rowNo, key: code, status: 'skipped', reason: 'Item code already exists' });
+                }
                 continue;
             }
 
@@ -2507,11 +2583,15 @@ export function Inventory({ onAnalyze }: InventoryProps) {
                     max_level: newItem.maxLevel,
                     is_active: true,
                     is_critical: newItem.isCritical,
+                    // 0296: SAP source-list / preferredSupplier column, linked for real.
+                    preferred_vendor_id: row['preferredsupplier']
+                        ? await resolveVendor(row['preferredsupplier'].trim())
+                        : null,
                     properties: { customFields: [], suppliers: [] },
-                }, newItem.stockLocations);
+                } as any, newItem.stockLocations);
                 existingCodes.add(code.toUpperCase());
-                if (row['assettag'] || row['preferredsupplier']) {
-                    res.notes!.push(`Row ${rowNo}: assetTag / preferredSupplier are not linked on import — set them on the item afterwards.`);
+                if (row['assettag']) {
+                    res.notes!.push(`Row ${rowNo}: assetTag is not linked on import — add the part to the asset's BOM (phase 4) instead.`);
                 }
                 tally(res, { row: rowNo, key: code, status: 'inserted' });
             } catch (e: unknown) {

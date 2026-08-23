@@ -290,7 +290,7 @@ const INVENTORY_COLUMNS = [
     { header: 'manufacturer', description: 'OEM manufacturer name', required: false },
     { header: 'isCritical', description: 'Critical spare? YES or NO', required: false },
     { header: 'assetTag', description: 'BOM link — asset this part belongs to', required: false },
-    { header: 'preferredSupplier', description: 'Vendor name or code', required: false },
+    { header: 'preferredSupplier', description: 'Vendor name or code — linked to the vendor register on import (unknown vendors are created)', required: false },
 ];
 
 const INVENTORY_EXAMPLES = [
@@ -837,14 +837,28 @@ export const SAP_PROFILES: SapSheetProfile[] = [
         },
     },
     {
-        // Opening stock (561-style balances). Creates items with an opening
-        // balance; items already loaded via the material sheet are reported
-        // as existing (post their stock through the material sheet instead).
+        // Opening stock (561-style balances). Existing items (loaded via the
+        // material sheet) get their opening balance posted as a 561 movement —
+        // guarded: never posted onto an item that already holds stock. Unknown
+        // codes are created as minimal items.
         name: 'SAP inventory balances', type: 'inventory',
         signature: ['matnr', 'budat'],
         aliases: { matnr: 'code', menge: 'qtyonhand', meins: 'uom', lgort: 'storename' },
         fixup: (r) => {
             if (!r['description']) r['description'] = `${r['code'] || 'Item'} (opening stock)`;
+            if (!r['type']) r['type'] = 'SPARE';
+            if (!r['uom']) r['uom'] = 'EA';
+            if (!r['itemcost']) r['itemcost'] = '0';
+        },
+    },
+    {
+        // Source list — preferred supplier per material (0296). LIFNR is the
+        // vendor number; unknown vendors are created as SUPPLIER records.
+        name: 'SAP source list', type: 'inventory',
+        signature: ['matnr', 'lifnr'],
+        aliases: { matnr: 'code', lifnr: 'preferredsupplier' },
+        fixup: (r) => {
+            if (!r['description']) r['description'] = r['code'] || '';
             if (!r['type']) r['type'] = 'SPARE';
             if (!r['uom']) r['uom'] = 'EA';
             if (!r['itemcost']) r['itemcost'] = '0';

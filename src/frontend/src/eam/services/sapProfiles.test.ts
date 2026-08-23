@@ -63,3 +63,19 @@ describe('profile fixups', () => {
     expect(r.value).toBe('48210');
   });
 });
+
+describe('SAP source list (0296)', () => {
+  it('recognises the sheet and maps LIFNR to the preferred supplier', () => {
+    const p = resolveSapProfile(lower(['MATNR', 'WERKS', 'VDATU', 'BDATU', 'LIFNR', 'EKORG', 'FLIFN']))!;
+    expect(p.name).toBe('SAP source list');
+    expect(p.aliases['lifnr']).toBe('preferredsupplier');
+    const r: Record<string, string> = { code: 'FLT-0023', preferredsupplier: '1000020' };
+    p.fixup!(r);
+    expect(r.description).toBe('FLT-0023'); // required-field defaults so the row validates
+    expect(r.type).toBe('SPARE');
+  });
+  it('does not shadow the material or stock sheets', () => {
+    expect(resolveSapProfile(lower(['MATNR', 'MAKTX', 'LIFNR']))!.name).toBe('SAP material master');
+    expect(resolveSapProfile(lower(['MATNR', 'BUDAT', 'MENGE']))!.name).toBe('SAP inventory balances');
+  });
+});

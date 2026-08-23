@@ -66,7 +66,7 @@ const PHASES: Phase[] = [
         n: 3, title: 'Inventory & storerooms', icon: <Package size={18} />,
         blurb: 'Spare parts, unit costs and opening stock. Storerooms are created from the storeName column.',
         to: '/inventory?action=import', toLabel: 'Import inventory', count: c => c.inventory, unit: 'items',
-        note: 'SAP material-master sheets (MATNR/MAKTX headers) import directly — material types, ABC flags and price control auto-translate. Post opening stock via the qtyOnHand column.',
+        note: 'SAP material-master sheets (MATNR/MAKTX headers) import directly — material types, ABC flags and price control auto-translate. Source-list sheets (MATNR/LIFNR) set preferred suppliers; inventory-balance sheets (MATNR/BUDAT) post opening stock as 561 movements.',
     },
     {
         n: 4, title: 'Bills of materials', icon: <Boxes size={18} />,
