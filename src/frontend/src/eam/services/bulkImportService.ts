@@ -62,7 +62,7 @@ const EXTERNAL_SYSTEM: Record<string, string> = {
     upkeep: 'UPKEEP',
 };
 
-interface ExistingAsset { id: string; tag: string; level?: string; companyId: string | null }
+interface ExistingAsset { id: string; tag: string; level?: string; companyId: string | null; equipmentNumber: string | null }
 
 /** Look up assets by tag in chunks (the `.in()` list has practical limits). */
 async function fetchAssetsByTag(tags: string[]): Promise<Map<string, ExistingAsset>> {
@@ -71,12 +71,13 @@ async function fetchAssetsByTag(tags: string[]): Promise<Map<string, ExistingAss
     for (const part of chunk(unique, LOOKUP_CHUNK)) {
         const { data, error } = await supabase
             .from('assets')
-            .select('id, tag, hierarchy_level, company_id')
+            .select('id, tag, hierarchy_level, company_id, equipment_number')
             .in('tag', part);
         if (error) throw new Error(`Asset lookup failed: ${error.message}`);
         for (const a of data ?? []) {
             map.set(String(a.tag).toUpperCase(), {
                 id: a.id, tag: a.tag, level: a.hierarchy_level ?? undefined, companyId: a.company_id ?? null,
+                equipmentNumber: a.equipment_number ?? null,
             });
         }
     }
@@ -111,11 +112,11 @@ interface AssetDraft {
  *               deliberate act, not a side effect of a nightly file.
  */
 async function applyAssetUpdates(
-    targets: { draft: AssetDraft; id: string }[],
+    targets: { draft: AssetDraft; id: string; equipmentNumber: string | null }[],
     ccByCode: Map<string, string>,
     res: ImportResult,
 ): Promise<void> {
-    for (const { draft, id } of targets) {
+    for (const { draft, id, equipmentNumber } of targets) {
         const d = draft.data;
         const patch: Record<string, unknown> = {};
         const set = (col: string, val: unknown) => {
@@ -125,7 +126,15 @@ async function applyAssetUpdates(
         set('name', d['name']);
         set('criticality', (d['criticality'] || '').toUpperCase() || undefined);
         set('status_code', (d['status'] || '').toUpperCase() || undefined);
-        set('equipment_number', d['equipmentnumber']);
+        // Fill-only: the equipment number is the physical object's identity —
+        // immutable once set (0293 enforces this in the DB; changing it is a
+        // replacement, recorded via replace_equipment()). A sync file may fill
+        // a blank, never rewrite.
+        if (!equipmentNumber) {
+            set('equipment_number', d['equipmentnumber']);
+        } else if (d['equipmentnumber'] && String(d['equipmentnumber']).trim() !== equipmentNumber) {
+            res.notes!.push(`Row ${draft.row} (${draft.tag}): file carries equipment number "${d['equipmentnumber']}" but the asset already has "${equipmentNumber}" — kept the existing one. A physical swap must be recorded with Replace Equipment, not a sync file.`);
+        }
         set('serial_number', d['serialnumber']);
         set('manufacturer', d['manufacturer']);
         set('model', d['model']);
@@ -219,7 +228,7 @@ export async function importAssets(
 
     const inFile = new Map<string, AssetDraft>();
     const pending: AssetDraft[] = [];
-    const toUpdate: { draft: AssetDraft; id: string }[] = [];
+    const toUpdate: { draft: AssetDraft; id: string; equipmentNumber: string | null }[] = [];
     for (const d of drafts) {
         const hit = d.tag ? existing.get(d.tag.toUpperCase()) : undefined;
         if (hit) {
@@ -229,7 +238,7 @@ export async function importAssets(
             // that reason — a re-run under the default must never overwrite
             // work someone did in the app after the first import.
             if (opts.mode === 'sync') {
-                toUpdate.push({ draft: d, id: hit.id });
+                toUpdate.push({ draft: d, id: hit.id, equipmentNumber: hit.equipmentNumber });
             } else {
                 tally(res, { row: d.row, key: d.tag, status: 'skipped', reason: 'Tag already exists — left untouched' });
             }

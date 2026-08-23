@@ -43,6 +43,7 @@ import { FloatingActionButton } from '../components/ui/FloatingActionButton';
 import { Button } from '../components/ui';
 import { ReliabilityIntelligenceTab } from '../components/ReliabilityIntelligenceTab';
 import { AddReadingPointModal } from '../components/modals/AddReadingPointModal';
+import { ReplaceEquipmentModal } from '../components/modals/ReplaceEquipmentModal';
 import { saveReadings, latestByDefinition, type PMDue } from '../services/readingEntry';
 import { evaluateReading } from '../../lib/readingAlarm';
 
@@ -211,6 +212,7 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
     // Modal State
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [addType, setAddType] = useState<'Asset' | 'Location'>('Asset');
+    const [showReplaceModal, setShowReplaceModal] = useState(false);
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; assetId: string | null; assetTag: string | null }>({
         isOpen: false,
         assetId: null,
@@ -1470,6 +1472,16 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                                     variant: 'secondary' as const,
                                     compactLabel: true,
                                 },
+                                // Physical swap: position keeps tag + history, object identity
+                                // moves on (new equipment number, Gen +1). replace_equipment() RPC.
+                                ...(canEdit && !isLocation(selectedAsset) ? [{
+                                    label: 'Replace',
+                                    icon: <Repeat size={14} />,
+                                    onClick: () => setShowReplaceModal(true),
+                                    variant: 'secondary' as const,
+                                    compactLabel: true,
+                                    tooltip: 'Record a physical equipment swap',
+                                }] : []),
                                 ...(canCreate ? [
                                 // F-005: child creation is level-aware — a FLOC offers "Add Location",
                                 // an Equipment-eligible level offers "Add Asset" (unknown level → both).
@@ -1621,6 +1633,25 @@ export const Assets: React.FC<AssetsProps> = ({ onAnalyze }) => {
                     </div>
                 )
             }
+
+            {/* ━━ Replace Equipment (physical swap — 0293) ━━ */}
+            {showReplaceModal && selectedAsset && (
+                <ReplaceEquipmentModal
+                    asset={{
+                        id: selectedAsset.id, tag: selectedAsset.tag, name: selectedAsset.name,
+                        equipmentNumber: selectedAsset.equipmentNumber,
+                        equipmentGeneration: selectedAsset.equipmentGeneration,
+                        serialNumber: selectedAsset.serialNumber,
+                    }}
+                    onClose={() => setShowReplaceModal(false)}
+                    onReplaced={({ equipmentNumber, equipmentGeneration, serialNumber }) => {
+                        const updated = { ...selectedAsset, equipmentNumber, equipmentGeneration, serialNumber };
+                        setAssets(prev => prev.map(a => a.id === updated.id ? updated : a));
+                        setSelectedAsset(updated);
+                        showToast(`Replacement recorded — ${updated.tag} is now Gen ${equipmentGeneration} (${equipmentNumber}).`, 'success');
+                    }}
+                />
+            )}
 
             {/* Empty State */}
             <ConfirmationModal

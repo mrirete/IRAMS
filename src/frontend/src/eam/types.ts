@@ -269,8 +269,8 @@ export interface Asset {
   assetClass?: string; // Dictionary Code - Asset Class (e.g., PUMP, COMPRESSOR)
 
   // Internal Equipment Number (SAP PM Equipment Number parity)
-  equipmentNumber?: string;       // Auto-generated: EQ-NNNNNN (immutable after creation)
-  equipmentGeneration?: number;   // Replacement counter (1 = original install, 2+ = replacement)
+  equipmentNumber?: string;       // Physical object identity, e.g. EQ-NNNNNN or migrated SAP EQUNR. Immutable once set — DB-enforced (0293); changes only via replace_equipment()
+  equipmentGeneration?: number;   // Replacement counter (1 = original install, 2+ = replacement) — incremented by replace_equipment()
 
   parentId?: string | null;
   companyId?: string | null;   // W-2: owning Company Code (drives per-company numbering)
