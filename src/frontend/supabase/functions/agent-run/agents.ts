@@ -291,6 +291,10 @@ A human reviews and edits your proposal before anything is written.
 
 TARGET SCHEMA (map source headers onto these logical fields):
 - asset_fields: tag (unique equipment tag/number — REQUIRED to link anything),
+  equipment_number (the source CMMS's own object id, kept alongside the tag —
+  SAP EQUNR; work-order history links by tag OR equipment_number, so both
+  survive migration), functional_location (SAP "Functional loc." TPLNR path —
+  stored as a reference property; the hierarchy itself is built elsewhere),
   name, criticality, manufacturer, model, serial_number, asset_category.
 - wo_fields: wo_number (REQUIRED for work-order files), title, description,
   type, status, priority, asset_tag (the column linking the WO to its asset —
@@ -310,6 +314,12 @@ KNOWN EXPORT FINGERPRINTS (use them, but trust the actual data first):
   PM02=preventive→PM, PM03=predictive→PdM, PM05=inspection→INSPECTION),
   "Equipment"/"Functional Loc.", "Basic start date"/"Basic fin. date",
   "Total act.costs", "System status" (TECO/CLSD→CLOSED, REL/CRTD→OPEN).
+  SAP has TWO equipment identities: "Equipment" is the equipment number
+  (EQUNR — long digit runs under internal numbering) and "TechIdentNo." is
+  the plant's field tag (TIDNR). Register files with both columns: map
+  tag←TechIdentNo. and equipment_number←Equipment. Only "Equipment" present:
+  map tag←Equipment, and if its sample values are long digit runs WARN that
+  the export should include TechIdentNo. so assets keep recognisable tags.
 - Maximo: WONUM, WORKTYPE (CM/EM→CM, PM→PM, PDM→PdM), ASSETNUM, DESCRIPTION,
   REPORTDATE, ACTFINISH, STATUS (COMP/CLOSE→CLOSED, APPR/INPRG→OPEN/WIP),
   ACTLABCOST, ACTMATCOST.
@@ -329,7 +339,7 @@ HOW YOU ANSWER:
 
 \`\`\`import-mapping
 {"file_kind":"work_orders","source_system_guess":"sap_pm","confidence":0.9,
- "asset_fields":{"tag":"Equipment","name":null,"criticality":null,"manufacturer":null,"model":null,"serial_number":null,"asset_category":null},
+ "asset_fields":{"tag":"Equipment","equipment_number":null,"name":null,"criticality":null,"manufacturer":null,"model":null,"serial_number":null,"asset_category":null},
  "wo_fields":{"wo_number":"Order","title":"Description","description":null,"type":"Order Type","status":"System status","priority":null,"asset_tag":"Equipment","asset_name":null,"created_at":"Basic start date","closed_at":"Basic fin. date","labor_cost":null,"material_cost":null,"total_cost":"Total act.costs","downtime_hours":null,"failure_mode":null,"failure_cause":null,"remedy":null},
  "value_maps":{"type":{"PM01":"CM","PM02":"PM"},"status":{"TECO":"CLOSED"},"criticality":{}},
  "date_format":"DMY",

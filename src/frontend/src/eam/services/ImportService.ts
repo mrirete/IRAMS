@@ -99,17 +99,37 @@ class ImportService {
     ): Promise<CommitResult> {
         const notes: string[] = [];
 
-        // 1. Resolve which asset tags already exist.
-        const tags = applied.assets.map((a) => a.tag);
+        // 1. Resolve which assets already exist — by tag OR equipment number.
+        //    SAP carries two identities (TechIdentNo. tag + EQUNR equipment
+        //    number). A register imported with the tag as its identity keeps
+        //    EQUNR in equipment_number; a work-order file that links rows by
+        //    EQUNR must still find those assets. So every draft key is tried
+        //    against both columns.
+        const keys = [...new Set([
+            ...applied.assets.map((a) => a.tag),
+            ...applied.assets.flatMap((a) => (a.equipment_number ? [a.equipment_number] : [])),
+        ])];
+        const byTag = new Map<string, string>();
+        const byEquipNo = new Map<string, string>();
+        for (const part of chunk(keys)) {
+            const [t, e] = await Promise.all([
+                supabase.from('assets').select('id, tag').in('tag', part),
+                supabase.from('assets').select('id, equipment_number').in('equipment_number', part),
+            ]);
+            if (t.error) throw new Error(`Asset lookup failed: ${t.error.message}`);
+            if (e.error) throw new Error(`Asset lookup failed: ${e.error.message}`);
+            for (const a of t.data ?? []) byTag.set(a.tag, a.id);
+            for (const a of e.data ?? []) if (a.equipment_number) byEquipNo.set(a.equipment_number, a.id);
+        }
         const idByTag = new Map<string, string>();
-        for (const part of chunk(tags)) {
-            const { data, error } = await supabase.from('assets').select('id, tag').in('tag', part);
-            if (error) throw new Error(`Asset lookup failed: ${error.message}`);
-            for (const a of data ?? []) idByTag.set(a.tag, a.id);
+        for (const a of applied.assets) {
+            const id = byTag.get(a.tag) ?? byEquipNo.get(a.tag)
+                ?? (a.equipment_number ? byEquipNo.get(a.equipment_number) ?? byTag.get(a.equipment_number) : undefined);
+            if (id) idByTag.set(a.tag, id);
         }
         const assetsMatched = idByTag.size;
         if (assetsMatched > 0) {
-            notes.push(`${assetsMatched} asset tag(s) already existed — imported history was linked to the existing assets.`);
+            notes.push(`${assetsMatched} asset(s) already existed (matched by tag or equipment number) — imported history was linked to the existing assets.`);
         }
 
         // 2. Insert the new assets.
@@ -125,6 +145,9 @@ class ImportService {
                     // assets land flat. Migrate the register via the asset template
                     // (Admin › Migration Center) FIRST and these match by tag instead.
                     hierarchy_level: 'EQUIPMENT',
+                    // Source CMMS identity (SAP EQUNR). Null lets the trigger
+                    // auto-number EQ-NNNNNN as usual (0121).
+                    equipment_number: a.equipment_number,
                     criticality: a.criticality ?? 'C',
                     status_code: 'ACTIVE',
                     manufacturer: a.manufacturer,
@@ -132,7 +155,12 @@ class ImportService {
                     serial_number: a.serial_number,
                     asset_category: a.asset_category,
                     import_batch_id: batchId,
-                    properties: { import_batch_id: batchId },
+                    properties: {
+                        import_batch_id: batchId,
+                        // SAP TPLNR path, kept for reference — this importer builds
+                        // a flat list; the tree is the Asset Register importer's job.
+                        ...(a.functional_location ? { functional_location: a.functional_location } : {}),
+                    },
                 };
             });
             const { data, error } = await supabase.from('assets').insert(rows).select('id, tag');

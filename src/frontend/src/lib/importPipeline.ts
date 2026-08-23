@@ -25,8 +25,8 @@ export interface ImportMapping {
 }
 
 export type AssetField =
-  | 'tag' | 'name' | 'criticality' | 'manufacturer' | 'model'
-  | 'serial_number' | 'asset_category';
+  | 'tag' | 'equipment_number' | 'functional_location' | 'name' | 'criticality'
+  | 'manufacturer' | 'model' | 'serial_number' | 'asset_category';
 
 export type WoField =
   | 'wo_number' | 'title' | 'description' | 'type' | 'status' | 'priority'
@@ -35,7 +35,9 @@ export type WoField =
   | 'failure_mode' | 'failure_cause' | 'remedy';
 
 export interface AssetDraft {
-  tag: string;
+  tag: string;                        // field tag (SAP TIDNR when present)
+  equipment_number: string | null;    // source CMMS object identity (SAP EQUNR, Maximo ASSETNUM)
+  functional_location: string | null; // SAP TPLNR path — kept as a property (the flat importer builds no tree)
   name: string;
   criticality: 'A' | 'B' | 'C' | 'D' | null;
   manufacturer: string | null;
@@ -244,6 +246,8 @@ export function applyMapping(
 
   const ai = {
     tag: headerIndex(headers, af.tag),
+    equipment_number: headerIndex(headers, af.equipment_number),
+    functional_location: headerIndex(headers, af.functional_location),
     name: headerIndex(headers, af.name),
     criticality: headerIndex(headers, af.criticality),
     manufacturer: headerIndex(headers, af.manufacturer),
@@ -284,14 +288,21 @@ export function applyMapping(
     if (isEmpty) return;
 
     // Asset extraction — from asset files directly, or derived from WO rows.
+    // Two identities per SAP practice: tag (TechIdentNo./functional location —
+    // what's painted on the machine) and equipment_number (EQUNR — the CMMS's
+    // own object id). External numbering collapses them into one: a row with
+    // no tag cell but an equipment number uses that number as its tag.
     const tagIdx = isAssetFile && ai.tag >= 0 ? ai.tag : w('asset_tag');
-    const tag = cellStr(row, tagIdx);
+    const equipNo = cellStr(row, ai.equipment_number) || null;
+    const tag = cellStr(row, tagIdx) || (isAssetFile ? equipNo ?? '' : '');
     if (tag) {
       const existing = assetsByTag.get(tag);
       const rawCrit = cellStr(row, ai.criticality);
       const mappedCrit = mapValue(vmaps.criticality, rawCrit) ?? (CRITICALITIES.has(rawCrit.toUpperCase()) ? rawCrit.toUpperCase() : null);
       const draft: AssetDraft = {
         tag,
+        equipment_number: equipNo || existing?.equipment_number || null,
+        functional_location: cellStr(row, ai.functional_location) || existing?.functional_location || null,
         name: cellStr(row, ai.name) || cellStr(row, w('asset_name')) || existing?.name || tag,
         criticality: (mappedCrit && CRITICALITIES.has(mappedCrit) ? mappedCrit : existing?.criticality ?? null) as AssetDraft['criticality'],
         manufacturer: cellStr(row, ai.manufacturer) || existing?.manufacturer || null,
@@ -421,6 +432,24 @@ export function buildDqReport(applied: AppliedImport): DqReport {
   }
   if (applied.assets.length && applied.assets.every((a) => !a.criticality)) {
     warnings.push('No criticality data found — assets default to unranked; a criticality assessment would sharpen every prioritisation in the report.');
+  }
+  // SAP internal numbering leaves EQUNR (a long digit run) as the only identity.
+  // Importing those as tags builds a register nobody in the field recognises.
+  // One equipment number, one asset. The same EQUNR under two different tags
+  // would violate the DB's uniqueness at commit — flag it while it's cheap.
+  const enCounts = new Map<string, number>();
+  for (const a of applied.assets) {
+    if (a.equipment_number) enCounts.set(a.equipment_number, (enCounts.get(a.equipment_number) ?? 0) + 1);
+  }
+  const dupEns = [...enCounts.entries()].filter(([, n]) => n > 1).map(([en]) => en);
+  if (dupEns.length) {
+    warnings.push(`Equipment number(s) ${dupEns.slice(0, 5).join(', ')}${dupEns.length > 5 ? ', …' : ''} appear under more than one tag — an equipment number identifies ONE physical asset; fix the source rows or the commit will be rejected.`);
+  }
+  // Strict majority: a few blank-TIDNR rows are normal; a mostly-digit
+  // register means the Equipment column was mapped as the tag.
+  const digitTags = applied.assets.filter((a) => /^\d{6,}$/.test(a.tag) && (!a.equipment_number || a.equipment_number === a.tag));
+  if (digitTags.length && digitTags.length * 2 > applied.assets.length) {
+    warnings.push(`${digitTags.length} asset tag(s) are long digit runs — these look like internal SAP equipment numbers (EQUNR), not field tags. If the export has a TechIdentNo. column, map it to Asset tag and map Equipment to Equipment number so assets keep the tag technicians recognise; work-order history still links by either identity.`);
   }
 
   return {

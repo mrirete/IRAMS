@@ -174,3 +174,48 @@ describe('parseMappingProposal', () => {
     expect(parseMappingProposal('just prose').mapping).toBeNull();
   });
 });
+
+// ── two SAP identities: EQUNR + TIDNR on an equipment register ───────────
+
+const IE05_HEADERS = ['Equipment', 'TechIdentNo.', 'Functional loc.', 'Description of technical object', 'Object type', 'ABC indic.'];
+const IE05_MAPPING: ImportMapping = {
+  file_kind: 'assets',
+  source_system_guess: 'sap_pm',
+  confidence: 0.9,
+  asset_fields: {
+    tag: 'TechIdentNo.', equipment_number: 'Equipment', functional_location: 'Functional loc.',
+    name: 'Description of technical object', asset_category: 'Object type',
+    criticality: 'ABC indic.',
+  },
+  wo_fields: {},
+  value_maps: {},
+};
+
+describe('applyMapping (SAP register with internal numbering)', () => {
+  const applied = applyMapping(IE05_HEADERS, [
+    ['10004521', 'PMP-101A', 'PLT1-CWS-PMP-101A', 'Centrifugal pump', 'PUMP', 'A'],
+    ['10004736', '', '', 'Air compressor - no TIDNR maintained', 'COMPRESSOR', 'B'],
+  ], IE05_MAPPING);
+
+  it('keeps both identities: TIDNR as tag, EQUNR as equipment number', () => {
+    const pump = applied.assets.find((a) => a.tag === 'PMP-101A')!;
+    expect(pump.equipment_number).toBe('10004521');
+    expect(pump.functional_location).toBe('PLT1-CWS-PMP-101A');
+  });
+  it('falls back to EQUNR as the tag when TIDNR is blank (external numbering)', () => {
+    const comp = applied.assets.find((a) => a.equipment_number === '10004736')!;
+    expect(comp.tag).toBe('10004736');
+    expect(applied.skippedRows).toBe(0);
+  });
+  it('warns when most tags are bare EQUNR digit runs', () => {
+    const numericOnly = applyMapping(IE05_HEADERS, [
+      ['10004521', '', '', 'Pump', 'PUMP', 'A'],
+      ['10004736', '', '', 'Compressor', 'COMPRESSOR', 'B'],
+    ], { ...IE05_MAPPING, asset_fields: { tag: 'Equipment', name: 'Description of technical object' } });
+    const report = buildDqReport(numericOnly);
+    expect(report.warnings.some((w) => w.includes('EQUNR'))).toBe(true);
+  });
+  it('does not warn when TIDNR tags are present', () => {
+    expect(buildDqReport(applied).warnings.some((w) => w.includes('EQUNR'))).toBe(false);
+  });
+});

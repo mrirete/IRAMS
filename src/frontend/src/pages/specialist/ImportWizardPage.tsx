@@ -62,7 +62,8 @@ const SOURCE_SYSTEMS = [
 ];
 
 const ASSET_FIELD_LABELS: Record<AssetField, string> = {
-    tag: 'Asset tag *', name: 'Asset name', criticality: 'Criticality',
+    tag: 'Asset tag *', equipment_number: 'Equipment number (SAP EQUNR)',
+    functional_location: 'Functional location', name: 'Asset name', criticality: 'Criticality',
     manufacturer: 'Manufacturer', model: 'Model', serial_number: 'Serial number',
     asset_category: 'Category',
 };
