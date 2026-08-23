@@ -58,15 +58,28 @@ const eventDate = (r: any): string | undefined =>
   r.malfunction_start || r.malfunctionStart || r.closed_at || r.created_at || r.createdAt;
 
 /**
- * THE canonical failure predicate (M1 — engine unification). A work order
- * counts as a "failure" if it's corrective/breakdown work OR carries a coded
- * failure mode (ISO 14224). Preventive/inspection work is not a failure.
+ * THE canonical failure predicate (M1 — engine unification; breakdown-aware
+ * since the KPI-unification pass). Precedence:
+ *
+ *   1. A RECORDED breakdown indicator wins over any type heuristic (0283 /
+ *      SAP MSAUS — the field MCJB counts failures by): true = the equipment
+ *      lost its function (a breakdown found during PM work IS a failure);
+ *      false = explicitly recorded as non-failure work, however it was typed
+ *      (a minor defect with a damage code is an event, not a failure).
+ *   2. Not recorded (null/undefined — legacy rows, thin imports): fall back
+ *      to the type heuristic — corrective/breakdown-typed OR carrying a coded
+ *      failure mode; preventive/inspection work is not a failure.
+ *
  * Every surface that counts, ranks, or models failures (Metrics scoreboard,
  * Modelling calculators, bad-actor rankings, agents) must use this — never a
- * local WO-type list. Server-side rankings (rpc_pareto_analysis, the Python
- * bad-actor analyzer) mirror this definition; change them together.
+ * local WO-type list. sem_asset_reliability (0295) mirrors this exactly.
+ * rpc_pareto_analysis deliberately does NOT — its counts are driven by the
+ * caller's explicit p_wo_types selection, a different contract.
  */
 export const isFailure = (r: any): boolean => {
+  const bd = r.breakdown;
+  if (bd === true) return true;
+  if (bd === false) return false;
   const t = String(r.type || '').toUpperCase();
   if (/PREVENT|PREDICT|INSPECT|SCHEDUL|\bPM\b|\bPDM\b/.test(t)) return false;
   return CORRECTIVE_RE.test(t) || !!failureMode(r);
