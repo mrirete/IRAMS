@@ -212,6 +212,12 @@ class ImportService {
                         total_actual_cost: w.labor_cost + w.material_cost,
                         cost_frozen: closed,
                         actual_downtime_hrs: w.downtime_hours,
+                        // 0283 reliability columns — the true failure-event data.
+                        // NULLs stay NULL: "not recorded" is an honest state.
+                        actual_duration_hrs: w.labor_hours,
+                        breakdown: w.breakdown,
+                        malfunction_start: w.malfunction_start,
+                        malfunction_end: w.malfunction_end,
                         created_by: null,
                         import_batch_id: batchId,
                         properties: { import_priority_raw: w.priority, import_source_row: w.source_row },

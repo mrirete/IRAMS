@@ -308,7 +308,13 @@ TARGET SCHEMA (map source headers onto these logical fields):
   lag instead; rows with an empty created_at are skipped), closed_at
   (completion — actual finish > basic finish; blank on open orders is fine), labor_cost, material_cost, total_cost (use
   only when the file has a single combined cost; prefer ACTUAL costs over
-  plan costs), downtime_hours, failure_mode, failure_cause, remedy.
+  plan costs), downtime_hours, labor_hours (actual work HOURS, not cost —
+  SAP "Actual work", Maximo ACTLABHRS), breakdown (functional-failure
+  indicator — SAP "Breakdown"/MSAUS checkbox where X=true, or Yes/No
+  columns; THE most valuable reliability column: without it every
+  corrective order counts as a failure), malfunction_start /
+  malfunction_end (SAP AUSVN/AUSBS — the true failure-event window,
+  preferred over paperwork dates), failure_mode, failure_cause, remedy.
 - value_maps: translate source VALUES to IREAMS canonical values —
   type → one of CM, PM, PdM, INSPECTION, SAFETY;
   status → one of CLOSED, TECO, OPEN, WIP, CANCELLED (historical exports are
@@ -363,7 +369,7 @@ HOW YOU ANSWER:
 \`\`\`import-mapping
 {"file_kind":"work_orders","source_system_guess":"sap_pm","confidence":0.9,
  "asset_fields":{"tag":"Equipment","equipment_number":null,"name":null,"criticality":null,"manufacturer":null,"model":null,"serial_number":null,"asset_category":null},
- "wo_fields":{"wo_number":"Order","title":"Description","description":null,"type":"Order Type","status":"System status","priority":null,"asset_tag":"Equipment","asset_location":"Functional Loc.","asset_name":null,"created_at":"Basic start date","closed_at":"Basic fin. date","labor_cost":null,"material_cost":null,"total_cost":"Total act.costs","downtime_hours":null,"failure_mode":null,"failure_cause":null,"remedy":null},
+ "wo_fields":{"wo_number":"Order","title":"Description","description":null,"type":"Order Type","status":"System status","priority":null,"asset_tag":"Equipment","asset_location":"Functional Loc.","asset_name":null,"created_at":"Basic start date","closed_at":"Basic fin. date","labor_cost":null,"material_cost":null,"total_cost":"Total act.costs","downtime_hours":"Breakdown dur.","labor_hours":"Actual work","breakdown":"Breakdown","malfunction_start":null,"malfunction_end":null,"failure_mode":null,"failure_cause":null,"remedy":null},
  "value_maps":{"type":{"PM01":"CM","PM02":"PM"},"status":{"TECO":"CLOSED"},"criticality":{}},
  "date_format":"DMY",
  "unmapped_headers":["Plant","Planner group"],

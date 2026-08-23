@@ -73,7 +73,9 @@ const WO_FIELD_LABELS: Record<WoField, string> = {
     asset_tag: 'Asset tag link *', asset_location: 'Location link (fallback)', asset_name: 'Asset name',
     created_at: 'WO date *', closed_at: 'Completion date',
     labor_cost: 'Labor cost', material_cost: 'Material cost', total_cost: 'Total cost',
-    downtime_hours: 'Downtime (hrs)', failure_mode: 'Failure mode',
+    downtime_hours: 'Downtime (hrs)', labor_hours: 'Actual work (hrs)',
+    breakdown: 'Breakdown indicator', malfunction_start: 'Malfunction start',
+    malfunction_end: 'Malfunction end', failure_mode: 'Failure mode',
     failure_cause: 'Failure cause', remedy: 'Remedy',
 };
 
@@ -476,6 +478,8 @@ export const ImportWizardPage: React.FC = () => {
                                 { label: 'With completion dates', pct: dq.coverage.closed_date_pct },
                                 { label: 'With failure coding', pct: dq.coverage.failure_code_pct },
                                 { label: 'With downtime hours', pct: dq.coverage.downtime_pct },
+                                { label: 'With breakdown indicator', pct: dq.coverage.breakdown_pct },
+                                { label: 'With actual work hours', pct: dq.coverage.labor_hours_pct },
                             ].map((c) => (
                                 <div key={c.label} className="flex items-center gap-3 text-xs">
                                     <span className="w-52 text-slate-600 shrink-0">{c.label}</span>

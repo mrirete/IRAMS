@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   applyMapping, buildDqReport, parseDateCell, parseCostCell,
-  guessWoType, guessWoStatus, parseMappingProposal,
+  guessWoType, guessWoStatus, parseMappingProposal, parseBooleanCell,
   type ImportMapping,
 } from './importPipeline';
 
@@ -269,5 +269,67 @@ describe('multi-token SAP system status', () => {
     ], SAP_MAPPING);
     expect(applied.workOrders.find((w) => w.wo_number === '4000010')!.status).toBe('CLOSED');
     expect(applied.workOrders.find((w) => w.wo_number === '4000011')!.status).toBe('OPEN');
+  });
+});
+
+// ── slice 2: breakdown indicator, labor hours, malfunction window ────────
+
+describe('parseBooleanCell (breakdown indicator)', () => {
+  it('reads SAP X and common yes/no vocabularies', () => {
+    expect(parseBooleanCell('X')).toBe(true);
+    expect(parseBooleanCell('yes')).toBe(true);
+    expect(parseBooleanCell('1')).toBe(true);
+    expect(parseBooleanCell('N')).toBe(false);
+    expect(parseBooleanCell('FALSE')).toBe(false);
+  });
+  it('keeps not-recorded as null — never collapses to false', () => {
+    expect(parseBooleanCell('')).toBeNull();
+    expect(parseBooleanCell(null)).toBeNull();
+    expect(parseBooleanCell('maybe')).toBeNull();
+  });
+});
+
+describe('applyMapping (reliability fields)', () => {
+  const HEADERS = ['Order', 'Equipment', 'Basic start date', 'Breakdown', 'Actual work', 'Malfunction start', 'Malfunction end'];
+  const MAPPING: ImportMapping = {
+    file_kind: 'work_orders', source_system_guess: 'sap_pm', confidence: 0.9,
+    asset_fields: {},
+    wo_fields: {
+      wo_number: 'Order', asset_tag: 'Equipment', created_at: 'Basic start date',
+      breakdown: 'Breakdown', labor_hours: 'Actual work',
+      malfunction_start: 'Malfunction start', malfunction_end: 'Malfunction end',
+    },
+    value_maps: {}, date_format: 'DMY',
+  };
+  const applied = applyMapping(HEADERS, [
+    ['4000020', 'P-101', '13/01/2025', 'X', '9', '13/01/2025', '15/01/2025'],
+    ['4000021', 'P-101', '01/02/2025', '', '', '', ''],
+    ['4000022', 'M-201', '20/02/2025', 'X', '4', '21/02/2025', '20/02/2025'],
+  ], MAPPING);
+
+  it('carries breakdown, labor hours and the malfunction window', () => {
+    const wo = applied.workOrders.find((w) => w.wo_number === '4000020')!;
+    expect(wo.breakdown).toBe(true);
+    expect(wo.labor_hours).toBe(9);
+    expect(wo.malfunction_start).toMatch(/^2025-01-13T/);
+    expect(wo.malfunction_end).toMatch(/^2025-01-15T/);
+  });
+  it('keeps unrecorded breakdown as null', () => {
+    expect(applied.workOrders.find((w) => w.wo_number === '4000021')!.breakdown).toBeNull();
+  });
+  it('drops an inverted malfunction window with an issue', () => {
+    const wo = applied.workOrders.find((w) => w.wo_number === '4000022')!;
+    expect(wo.malfunction_start).toBeNull();
+    expect(wo.malfunction_end).toBeNull();
+    expect(applied.issues.some((i) => i.kind === 'bad_malfunction_window')).toBe(true);
+  });
+  it('reports breakdown and labor-hours coverage', () => {
+    const report = buildDqReport(applied);
+    expect(report.coverage.breakdown_pct).toBe(67); // 2 of 3 recorded
+    expect(report.coverage.labor_hours_pct).toBe(67);
+  });
+  it('warns when no breakdown indicator exists at all', () => {
+    const bare = applyMapping(HEADERS, [['4000030', 'P-101', '13/01/2025', '', '', '', '']], MAPPING);
+    expect(buildDqReport(bare).warnings.some((w) => w.includes('breakdown indicator'))).toBe(true);
   });
 });

@@ -32,6 +32,7 @@ export type WoField =
   | 'wo_number' | 'title' | 'description' | 'type' | 'status' | 'priority'
   | 'asset_tag' | 'asset_location' | 'asset_name' | 'created_at' | 'closed_at'
   | 'labor_cost' | 'material_cost' | 'total_cost' | 'downtime_hours'
+  | 'labor_hours' | 'breakdown' | 'malfunction_start' | 'malfunction_end'
   | 'failure_mode' | 'failure_cause' | 'remedy';
 
 export interface AssetDraft {
@@ -59,6 +60,10 @@ export interface WoDraft {
   labor_cost: number;
   material_cost: number;
   downtime_hours: number | null;
+  labor_hours: number | null;       // actual work hours (SAP "Actual work", Maximo ACTLABHRS)
+  breakdown: boolean | null;        // SAP MSAUS indicator; null = not recorded (honest legacy state)
+  malfunction_start: string | null; // ISO — equipment failure event time (SAP AUSVN)
+  malfunction_end: string | null;   // ISO — back in service (SAP AUSBS)
   failure_mode: string | null;
   failure_cause: string | null;
   remedy: string | null;
@@ -86,6 +91,8 @@ export interface DqReport {
     closed_date_pct: number;  // % of WOs with a completion date
     failure_code_pct: number; // % of WOs with failure coding
     downtime_pct: number;     // % of WOs with downtime hours
+    breakdown_pct: number;    // % of WOs with a recorded breakdown indicator (true OR false)
+    labor_hours_pct: number;  // % of WOs with actual work hours
   };
   date_range: { from: string | null; to: string | null; months: number };
   issues: DqIssue[];
@@ -168,6 +175,23 @@ export function parseDateCell(cell: unknown, format: DateFormat = 'auto'): strin
   if (isNaN(d.getTime())) return null;
   const yr = d.getUTCFullYear();
   return yr >= 1990 && yr <= 2079 ? d.toISOString() : null;
+}
+
+// ── boolean parsing ───────────────────────────────────────────────────────
+
+/**
+ * Breakdown-indicator cell → boolean | null. SAP exports a checkbox as "X";
+ * other systems use Yes/No, Y/N, TRUE/FALSE, 1/0. Blank/unknown stays NULL —
+ * "not recorded" must remain distinguishable from "recorded as no breakdown".
+ */
+export function parseBooleanCell(cell: unknown): boolean | null {
+  if (cell === null || cell === undefined) return null;
+  if (typeof cell === 'boolean') return cell;
+  const v = String(cell).trim().toLowerCase();
+  if (!v) return null;
+  if (['x', 'y', 'yes', 'true', '1'].includes(v)) return true;
+  if (['n', 'no', 'false', '0', '-'].includes(v)) return false;
+  return null;
 }
 
 // ── cost parsing ──────────────────────────────────────────────────────────
@@ -404,6 +428,17 @@ export function applyMapping(
     }
 
     const downtime = w('downtime_hours') >= 0 ? parseCostCell(row[w('downtime_hours')]) : null;
+    const laborHours = w('labor_hours') >= 0 ? parseCostCell(row[w('labor_hours')]) : null;
+    const breakdown = w('breakdown') >= 0 ? parseBooleanCell(row[w('breakdown')]) : null;
+    // Malfunction window (SAP AUSVN/AUSBS): the true failure-event times —
+    // preferred MTBF basis over paperwork dates (0283). Discard an inverted
+    // window rather than importing negative outages.
+    let malfStart = w('malfunction_start') >= 0 ? parseDateCell(row[w('malfunction_start')], fmt) : null;
+    let malfEnd = w('malfunction_end') >= 0 ? parseDateCell(row[w('malfunction_end')], fmt) : null;
+    if (malfStart && malfEnd && malfEnd < malfStart) {
+      issues.add('bad_malfunction_window', 'Malfunction end precedes malfunction start — window dropped for this row.', rowNo);
+      malfStart = null; malfEnd = null;
+    }
 
     if (linkedByLocation) {
       issues.add('linked_by_location', 'Work order had no equipment id — linked by its location/functional location instead (a position-level asset is created).', rowNo);
@@ -422,6 +457,10 @@ export function applyMapping(
       labor_cost: labor ?? 0,
       material_cost: material ?? 0,
       downtime_hours: downtime !== null && downtime >= 0 ? downtime : null,
+      labor_hours: laborHours !== null && laborHours >= 0 ? laborHours : null,
+      breakdown,
+      malfunction_start: malfStart,
+      malfunction_end: malfEnd,
       failure_mode: cellStr(row, w('failure_mode')) || null,
       failure_cause: cellStr(row, w('failure_cause')) || null,
       remedy: cellStr(row, w('remedy')) || null,
@@ -465,6 +504,10 @@ export function buildDqReport(applied: AppliedImport): DqReport {
   if (wos.length && failPct < 20) {
     warnings.push(`Only ${failPct}% of work orders carry failure coding — failure-mode analysis (RCM/RCA grounding) is limited until coding improves.`);
   }
+  const breakdownPct = pct((w) => w.breakdown !== null);
+  if (wos.length && breakdownPct === 0) {
+    warnings.push('No breakdown indicator in the file — failure-event counting falls back to work type, which over-counts (not every corrective order is a functional failure). SAP: add the Breakdown column (MSAUS) to your layout.');
+  }
   if (applied.assets.length && applied.assets.every((a) => !a.criticality)) {
     warnings.push('No criticality data found — assets default to unranked; a criticality assessment would sharpen every prioritisation in the report.');
   }
@@ -498,6 +541,8 @@ export function buildDqReport(applied: AppliedImport): DqReport {
       closed_date_pct: wos.length ? pct((w) => !!w.closed_at) : 0,
       failure_code_pct: wos.length ? failPct : 0,
       downtime_pct: wos.length ? pct((w) => w.downtime_hours !== null) : 0,
+      breakdown_pct: wos.length ? breakdownPct : 0,
+      labor_hours_pct: wos.length ? pct((w) => w.labor_hours !== null) : 0,
     },
     date_range: { from, to, months },
     issues: applied.issues,
