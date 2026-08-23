@@ -13,6 +13,7 @@
  */
 import { supabase } from '../lib/supabase';
 import { fitWeibull, weibullBLife } from '../utils/weibull';
+import { isFailure, eventDate, FAILURE_QUERY_COLUMNS } from './reliabilityMetrics';
 import { computeRegisterQuality, type RegisterQuality } from '../../lib/registerQuality';
 import { collectSubtree } from '../../lib/assetSubtree';
 import { selectStrategies, type StrategyReview } from '../../lib/strategySelect';
@@ -27,6 +28,10 @@ interface WoRow {
     created_at: string; closed_at: string | null;
     frozen_labor_cost: number | null; frozen_material_cost: number | null;
     total_actual_cost: number | null; actual_downtime_hrs: number | null;
+    // Canonical failure-engine columns (FAILURE_QUERY_COLUMNS)
+    breakdown?: boolean | null; malfunction_start?: string | null;
+    actual_duration_hrs?: number | null;
+    wo_failure_data?: unknown;
 }
 interface AssetRow {
     id: string; tag: string; name: string; criticality: string | null;
@@ -37,7 +42,10 @@ const woCost = (w: WoRow): number => {
     const frozen = (Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0);
     return frozen || Number(w.total_actual_cost) || 0;
 };
-const isCorrective = (w: WoRow) => String(w.type ?? '').toUpperCase() === 'CM';
+// Canonical predicate (0295: breakdown-aware, collateral-excluding) — the
+// local `type === 'CM'` test this replaced under-counted EM/coded failures
+// and ignored recorded breakdown indicators.
+const isCorrective = (w: WoRow) => isFailure(w);
 const DAY_MS = 86400_000;
 
 // ── computed section shapes ───────────────────────────────────────────────
@@ -129,7 +137,7 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
 
     const [woQ, assetQ, pmQ, warrQ, failQ, readQ, logQ, smeaWsQ, smeaItemQ, qualQ, partsQ, stockQ] = await Promise.all([
         supabase.from('work_orders')
-            .select('id, asset_id, type, status, created_at, closed_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs')
+            .select(`asset_id, frozen_labor_cost, frozen_material_cost, total_actual_cost, ${FAILURE_QUERY_COLUMNS}`)
             .order('created_at', { ascending: false }).limit(20000),
         supabase.from('assets').select('id, tag, name, criticality, parent_id, manufacturer, model').limit(10000),
         supabase.from('recurring_work')
@@ -210,7 +218,8 @@ export async function computeAssessment(scopeRootId?: string): Promise<Assessmen
     for (const w of wos) {
         if (!w.asset_id || !isCorrective(w)) continue;
         const arr = failureDatesByAsset.get(w.asset_id) ?? [];
-        arr.push(new Date(w.created_at).getTime());
+        // Event basis, not paperwork date: malfunction_start > closed > created.
+        arr.push(new Date(eventDate(w) as string).getTime());
         failureDatesByAsset.set(w.asset_id, arr);
     }
     const weibull: WeibullFinding[] = [];

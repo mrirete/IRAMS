@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Sparkles, Loader2, TrendingUp, AlertTriangle, CheckCircle2, Wrench, Clock } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
-import { failureIntervalsHours, isFailure } from '../../eam/services/reliabilityMetrics';
+import { failureIntervalsHours, isFailure, FAILURE_QUERY_COLUMNS } from '../../eam/services/reliabilityMetrics';
 import { recommendPM, groundedRulFromHistory, type PMRecommendation } from '../../lib/pmRecommendation';
 import { weibullBLife } from '../../eam/utils/weibull';
 import { CreatePMFromWeibullModal, type WeibullPMData } from './CreatePMFromWeibullModal';
@@ -38,7 +38,7 @@ export const ReliabilityAdvisorModal: React.FC<Props> = ({ asset, onClose, onCre
         let active = true;
         (async () => {
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, type, created_at, closed_at, wo_failure_data!wo_id(failure_mode_code)')
+                .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id)
                 .order('created_at');
             if (!active) return;

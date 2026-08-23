@@ -53,8 +53,9 @@ export const isSecondaryFailure = (r: any): boolean => {
 
 // Failure event time, best basis first: the recorded malfunction start (0283 —
 // the actual equipment event, SAP AUSVN), then closure, then creation as the
-// last paperwork proxy.
-const eventDate = (r: any): string | undefined =>
+// last paperwork proxy. Exported so no caller re-derives event dates from
+// created_at alone.
+export const eventDate = (r: any): string | undefined =>
   r.malfunction_start || r.malfunctionStart || r.closed_at || r.created_at || r.createdAt;
 
 /**
