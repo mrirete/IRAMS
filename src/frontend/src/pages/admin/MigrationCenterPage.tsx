@@ -55,7 +55,7 @@ const PHASES: Phase[] = [
         n: 1, title: 'Assets & hierarchy', icon: <Wrench size={18} />,
         blurb: 'Your functional locations and equipment, as one tree. Everything else hangs off this — do it first.',
         importType: 'asset', count: c => c.assets, unit: 'assets',
-        note: 'Use hierarchyLevel + parentTag in the template so sites, systems and equipment land at the right level.',
+        note: 'Use hierarchyLevel + parentTag in the template so sites, systems and equipment land at the right level. SAP migration sheets (TPLNR/PLTXT functional locations, EQUNR/EQKTX equipment) import directly — the SAP field names auto-translate.',
     },
     {
         n: 2, title: 'People', icon: <Users size={18} />,
@@ -66,12 +66,13 @@ const PHASES: Phase[] = [
         n: 3, title: 'Inventory & storerooms', icon: <Package size={18} />,
         blurb: 'Spare parts, unit costs and opening stock. Storerooms are created from the storeName column.',
         to: '/inventory?action=import', toLabel: 'Import inventory', count: c => c.inventory, unit: 'items',
+        note: 'SAP material-master sheets (MATNR/MAKTX headers) import directly — material types, ABC flags and price control auto-translate. Post opening stock via the qtyOnHand column.',
     },
     {
         n: 4, title: 'Bills of materials', icon: <Boxes size={18} />,
         blurb: 'Which spares belong to which equipment. Codes that match inventory link to the material; unknown codes become text BOM lines, promotable later.',
         importType: 'bom', count: c => c.bom, unit: 'BOM items',
-        note: 'Rows name an asset tag and an inventory code, so both registers must exist.',
+        note: 'Rows name an asset tag and an inventory code, so both registers must exist. SAP BOM sheets (EQUNR/IDNRK headers) import directly, and EQUNR references resolve by equipment number.',
         requires: [NEEDS_REGISTER, { phase: 3, needs: 'inventory', met: c => c.inventory > 0 }],
     },
     {
@@ -104,7 +105,7 @@ const PHASES: Phase[] = [
         n: 9, title: 'Meter & condition history', icon: <Gauge size={18} />,
         blurb: 'Runtime hours, vibration and temperature logs. Reading points are created automatically.',
         importType: 'readings', count: c => c.readings, unit: 'readings',
-        note: 'Every reading row names an asset tag — without the register, every row fails.',
+        note: 'Every reading row names an asset tag — without the register, every row fails. SAP measuring-point sheets (MPOBJ/ATNAM) create the points with alarm limits; measurement-document sheets (MPOBJ/IDATE) load the history, counters included.',
         requires: [NEEDS_REGISTER],
     },
     {

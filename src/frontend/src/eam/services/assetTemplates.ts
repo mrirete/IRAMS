@@ -757,6 +757,161 @@ export interface ParseResult {
 /** Reading types that have seeded reference codes. */
 export const READING_TYPES = ['HOURS', 'KM', 'TEMPERATURE', 'VIBRATION', 'PRESSURE'];
 
+// ─── SAP migration-workbook profiles ────────────────────────────────────────
+// A consultant migrating out of SAP arrives with migration-cockpit-style
+// sheets whose headers are SAP FIELD NAMES (TPLNR, EQUNR, MATNR, IDNRK…).
+// These profiles let those sheets import DIRECTLY into the module importers —
+// no column surgery. A profile is matched by signature (all headers present),
+// then its aliases rewrite headers to the canonical template names before
+// validation, and its fixup patches per-row gaps (e.g. tag ← EQUNR when no
+// TIDNR column exists).
+//
+// Aliases are PER-SHEET, not global, because SAP reuses field names with
+// different roles: TPLNR is the row's own tag on a functional-location sheet
+// but the PARENT position on an equipment sheet. When two SAP columns alias
+// to one target (TPLNR + HEQUI → parentTag), the last NON-EMPTY value wins —
+// sheet order puts the more specific column later.
+export interface SapSheetProfile {
+    name: string;
+    type: ImportType;
+    /** All of these (lowercased SAP field names) must be present to match. */
+    signature: string[];
+    /** lowercased SAP header → canonical lowercased template header. */
+    aliases: Record<string, string>;
+    /** Per-row patch after aliasing, before validation. */
+    fixup?: (r: Record<string, string>) => void;
+}
+
+const SAP_MTART_MAP: Record<string, string> = {
+    ERSA: 'SPARE', VERB: 'CONSUMABLE', HIBE: 'CONSUMABLE', FHMI: 'TOOL', UNBW: 'MATERIAL', NLAG: 'MATERIAL',
+};
+
+export const SAP_PROFILES: SapSheetProfile[] = [
+    {
+        // Equipment BOM: EQUNR is the parent equipment here, IDNRK the component.
+        name: 'SAP equipment BOM', type: 'bom',
+        signature: ['equnr', 'idnrk'],
+        aliases: { equnr: 'assettag', idnrk: 'inventorycode', menge: 'quantity', meins: 'uom', potx1: 'description' },
+        fixup: (r) => {
+            if (!r['description']) r['description'] = r['inventorycode'] || '';
+            if (!r['quantity']) r['quantity'] = '1';
+        },
+    },
+    {
+        // Measurement documents (historical readings): one row per reading.
+        name: 'SAP measurement documents', type: 'readings',
+        signature: ['mpobj', 'idate'],
+        aliases: { mpobj: 'assettag', psort: 'readingtype', idate: 'date', readg: 'value', mrngu: 'unit', mdtxt: 'notes' },
+        fixup: (r) => {
+            if (!r['value'] && r['cntrr']) r['value'] = r['cntrr'];       // counters carry the total reading
+            if (!r['readingtype'] && r['point']) r['readingtype'] = r['point'];
+        },
+    },
+    {
+        // Measuring points: definition-only rows (no date/value) — they create
+        // or update reading points with unit + alarm limits.
+        name: 'SAP measuring points', type: 'readings',
+        signature: ['mpobj', 'atnam'],
+        aliases: { mpobj: 'assettag', psort: 'readingtype', pttxt: 'pointname', mrngu: 'unit', atvlo: 'minwarning', atvup: 'maxwarning', indct: 'counter' },
+        fixup: (r) => {
+            if (!r['readingtype'] && r['atnam']) r['readingtype'] = r['atnam'];
+        },
+    },
+    {
+        // Material master → inventory items.
+        name: 'SAP material master', type: 'inventory',
+        signature: ['matnr', 'maktx'],
+        aliases: {
+            matnr: 'code', maktx: 'description', mtart: 'type', meins: 'uom',
+            mfrnr: 'manufacturer', mfrpn: 'model', minbe: 'minlevel', mabst: 'maxlevel',
+            lgort: 'storename', lgpbe: 'binlocation', maabc: 'iscritical', verpr: 'itemcost',
+        },
+        fixup: (r) => {
+            const t = (r['type'] || '').toUpperCase();
+            if (SAP_MTART_MAP[t]) r['type'] = SAP_MTART_MAP[t];
+            const abc = (r['iscritical'] || '').toUpperCase();
+            if (abc) r['iscritical'] = abc === 'A' ? 'YES' : 'NO';
+            // Price control: S = standard price (STPRS), V = moving average (VERPR).
+            if ((r['vprsv'] || '').toUpperCase() === 'S' && r['stprs']) r['itemcost'] = r['stprs'];
+            if (!r['itemcost']) r['itemcost'] = r['stprs'] || '0';
+        },
+    },
+    {
+        // Opening stock (561-style balances). Creates items with an opening
+        // balance; items already loaded via the material sheet are reported
+        // as existing (post their stock through the material sheet instead).
+        name: 'SAP inventory balances', type: 'inventory',
+        signature: ['matnr', 'budat'],
+        aliases: { matnr: 'code', menge: 'qtyonhand', meins: 'uom', lgort: 'storename' },
+        fixup: (r) => {
+            if (!r['description']) r['description'] = `${r['code'] || 'Item'} (opening stock)`;
+            if (!r['type']) r['type'] = 'SPARE';
+            if (!r['uom']) r['uom'] = 'EA';
+            if (!r['itemcost']) r['itemcost'] = '0';
+        },
+    },
+    {
+        // Equipment master. TPLNR/HEQUI both alias to parentTag — HEQUI sits
+        // later in the sheet, so a superior equipment wins over the position.
+        name: 'SAP equipment', type: 'asset',
+        signature: ['equnr', 'eqktx'],
+        aliases: {
+            equnr: 'equipmentnumber', eqktx: 'name', tidnr: 'tag', eqart: 'assettype',
+            tplnr: 'parenttag', hequi: 'parenttag', herst: 'manufacturer', typbz: 'model',
+            serge: 'serialnumber', abckz: 'criticality', kostl: 'costcenter', stort: 'location',
+        },
+        fixup: (r) => {
+            if (!r['tag']) r['tag'] = r['equipmentnumber'] || '';  // external numbering / no TIDNR column
+            if (!r['hierarchylevel']) r['hierarchylevel'] = 'EQUIPMENT';
+        },
+    },
+    {
+        // Functional locations. EQART carries SITE/UNIT/SYSTEM in FL exports,
+        // which resolves the hierarchy level via the assetType fallback.
+        name: 'SAP functional locations', type: 'asset',
+        signature: ['tplnr', 'pltxt'],
+        aliases: {
+            tplnr: 'tag', pltxt: 'name', tplma: 'parenttag', eqart: 'assettype',
+            abckz: 'criticality', kostl: 'costcenter', stort: 'location',
+        },
+    },
+];
+
+/** Match a SAP sheet profile: every signature header present. Order matters —
+ *  more specific signatures (BOM before Equipment) are listed first. */
+export function resolveSapProfile(headersLower: string[]): SapSheetProfile | null {
+    const set = new Set(headersLower);
+    for (const p of SAP_PROFILES) {
+        if (p.signature.every(h => set.has(h))) return p;
+    }
+    return null;
+}
+
+/**
+ * SAP-style workbooks put a title, a hint line and the field-name row above
+ * the data ("Row 4 = SAP field name"). Find the real header row: the first
+ * row (scanning a handful) where ≥3 cells are recognisable header names —
+ * canonical template headers or SAP field names. Falls back to row 0.
+ */
+export function findHeaderRow(rawRows: unknown[][], maxScan = 8): number {
+    const known = new Set<string>();
+    for (const p of SAP_PROFILES) {
+        p.signature.forEach(h => known.add(h));
+        Object.keys(p.aliases).forEach(h => known.add(h));
+    }
+    Object.values(REQUIRED_FIELDS).flat().forEach(h => known.add(h));
+    ['assettag', 'readingtype', 'itemcost', 'qtyonhand', 'equipmentnumber', 'hierarchylevel',
+        'parenttag', 'serialnumber', 'inventorycode', 'manufacturer', 'model'].forEach(h => known.add(h));
+
+    for (let i = 0; i < Math.min(maxScan, rawRows.length); i++) {
+        const hits = new Set(
+            (rawRows[i] ?? []).map(c => String(c ?? '').trim().toLowerCase()).filter(c => known.has(c)),
+        );
+        if (hits.size >= 3) return i;
+    }
+    return 0;
+}
+
 // Header signature map for auto-detection
 const TYPE_SIGNATURES: { type: ImportType; required: string[]; distinguisher: string[] }[] = [
     { type: 'bom', required: ['assettag', 'inventorycode'], distinguisher: ['inventorycode'] },
@@ -857,26 +1012,41 @@ export function parseImportFile(file: File, forceType?: ImportType): Promise<Par
                     return;
                 }
 
-                const headers = (rawRows[0] as string[]).map(h => String(h || '').trim());
+                // SAP-style workbooks carry title/hint rows above the header row.
+                const headerRowIdx = findHeaderRow(rawRows);
+                const headers = (rawRows[headerRowIdx] as string[]).map(h => String(h || '').trim());
                 const headersLower = headers.map(h => h.toLowerCase());
-                const dataRows = rawRows.slice(1).filter(r => r.some(cell => cell !== undefined && cell !== null && cell !== ''));
+                // SAP field-name sheets rewrite to canonical headers via profile.
+                const sapProfile = resolveSapProfile(headersLower);
+                const keys = sapProfile ? headersLower.map(h => sapProfile.aliases[h] ?? h) : headersLower;
+                const dataRows = rawRows.slice(headerRowIdx + 1).filter(r => r.some(cell => cell !== undefined && cell !== null && cell !== ''));
 
-                const type = forceType || detectImportType(headersLower);
+                const type = forceType || sapProfile?.type || detectImportType(keys);
                 const requiredFields = REQUIRED_FIELDS[type] || [];
 
                 const seenKeys = new Set<string>(); // For duplicate detection
 
                 const parsedRows: ParsedRow[] = dataRows.map((row, idx) => {
                     const rowData: Record<string, string> = {};
-                    headersLower.forEach((h, i) => {
-                        rowData[h] = String(row[i] ?? '').trim();
+                    keys.forEach((h, i) => {
+                        const v = String(row[i] ?? '').trim();
+                        // Two SAP columns may alias to one target (TPLNR + HEQUI →
+                        // parentTag): last NON-EMPTY wins; never blank an earlier value.
+                        if (v || !(h in rowData)) rowData[h] = v;
                     });
+                    if (sapProfile?.fixup) sapProfile.fixup(rowData);
 
                     const errors: string[] = [];
                     const warnings: string[] = [];
 
+                    // A measuring-point sheet defines reading points without logging
+                    // a reading — date/value are only required on actual readings.
+                    const definitionOnly = type === 'readings' && !rowData['date'] && !rowData['value']
+                        && !!(rowData['pointname'] || rowData['minwarning'] || rowData['maxwarning'] || rowData['counter']);
+
                     // Required field check
                     requiredFields.forEach(f => {
+                        if (definitionOnly && (f === 'date' || f === 'value')) return;
                         if (!rowData[f]) errors.push(`Missing required: ${f}`);
                     });
 

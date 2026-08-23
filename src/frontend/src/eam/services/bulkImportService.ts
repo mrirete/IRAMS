@@ -64,22 +64,35 @@ const EXTERNAL_SYSTEM: Record<string, string> = {
 
 interface ExistingAsset { id: string; tag: string; level?: string; companyId: string | null; equipmentNumber: string | null }
 
-/** Look up assets by tag in chunks (the `.in()` list has practical limits). */
+/**
+ * Look up assets by tag OR equipment number, in chunks. SAP-shaped files
+ * (BOM sheets, measuring points, equipment parents) reference assets by
+ * EQUNR — the equipment number — so both identities resolve. Tag entries are
+ * written last: on a collision (one asset's equipment number equals another's
+ * tag) the tag wins.
+ */
 async function fetchAssetsByTag(tags: string[]): Promise<Map<string, ExistingAsset>> {
     const map = new Map<string, ExistingAsset>();
     const unique = [...new Set(tags.filter(Boolean))];
     for (const part of chunk(unique, LOOKUP_CHUNK)) {
-        const { data, error } = await supabase
-            .from('assets')
-            .select('id, tag, hierarchy_level, company_id, equipment_number')
-            .in('tag', part);
-        if (error) throw new Error(`Asset lookup failed: ${error.message}`);
-        for (const a of data ?? []) {
-            map.set(String(a.tag).toUpperCase(), {
-                id: a.id, tag: a.tag, level: a.hierarchy_level ?? undefined, companyId: a.company_id ?? null,
-                equipmentNumber: a.equipment_number ?? null,
-            });
+        const [byTag, byEn] = await Promise.all([
+            supabase.from('assets')
+                .select('id, tag, hierarchy_level, company_id, equipment_number')
+                .in('tag', part),
+            supabase.from('assets')
+                .select('id, tag, hierarchy_level, company_id, equipment_number')
+                .in('equipment_number', part),
+        ]);
+        if (byTag.error) throw new Error(`Asset lookup failed: ${byTag.error.message}`);
+        if (byEn.error) throw new Error(`Asset lookup failed: ${byEn.error.message}`);
+        const toEntry = (a: any): ExistingAsset => ({
+            id: a.id, tag: a.tag, level: a.hierarchy_level ?? undefined, companyId: a.company_id ?? null,
+            equipmentNumber: a.equipment_number ?? null,
+        });
+        for (const a of byEn.data ?? []) {
+            if (a.equipment_number) map.set(String(a.equipment_number).toUpperCase(), toEntry(a));
         }
+        for (const a of byTag.data ?? []) map.set(String(a.tag).toUpperCase(), toEntry(a));
     }
     return map;
 }
@@ -659,9 +672,43 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
         }
 
         const type = (r['readingtype'] || '').trim().toUpperCase();
+        if (!type) { tally(res, { row, key: tag, status: 'failed', reason: 'Missing readingType' }); continue; }
+
+        // Definition-only row (SAP measuring-point sheets): no date/value —
+        // create or update the reading point itself, with unit, name and
+        // alarm limits. Historical readings then land on it by asset + type.
+        const defOnly = !r['date'] && !r['value'];
+        if (defOnly) {
+            const num = (s: string | undefined) => (s !== undefined && s !== '' && !isNaN(Number(s)) ? Number(s) : null);
+            const patch: Record<string, unknown> = {};
+            if (r['pointname']) patch.name = r['pointname'];
+            if (r['unit']) patch.unit = r['unit'];
+            if (num(r['minwarning']) !== null) patch.min_warning = num(r['minwarning']);
+            if (num(r['maxwarning']) !== null) patch.max_warning = num(r['maxwarning']);
+            const dk0 = `${asset.id}::${type}`;
+            const existingDef = defByKey.get(dk0);
+            if (existingDef) {
+                if (Object.keys(patch).length === 0) {
+                    tally(res, { row, key: `${tag} ${type}`, status: 'skipped', reason: 'Reading point already exists — nothing to change' });
+                } else {
+                    const { error } = await supabase.from('reading_definitions').update(patch).eq('id', existingDef);
+                    if (error) tally(res, { row, key: `${tag} ${type}`, status: 'failed', reason: error.message });
+                    else tally(res, { row, key: `${tag} ${type}`, status: 'updated' });
+                }
+            } else {
+                const { data, error } = await supabase.from('reading_definitions')
+                    .insert({ asset_id: asset.id, reading_type_code: type, name: r['pointname'] || `${type.charAt(0)}${type.slice(1).toLowerCase()} (imported)`, unit: r['unit'] || null, ...patch })
+                    .select('id').single();
+                if (error) { tally(res, { row, key: `${tag} ${type}`, status: 'failed', reason: error.message }); continue; }
+                defByKey.set(dk0, data.id as string);
+                pointsCreated += 1;
+                tally(res, { row, key: `${tag} ${type}`, status: 'inserted' });
+            }
+            continue;
+        }
+
         const date = parseDateValue(r['date']);
         const value = Number(r['value']);
-        if (!type) { tally(res, { row, key: tag, status: 'failed', reason: 'Missing readingType' }); continue; }
         if (!date) { tally(res, { row, key: tag, status: 'failed', reason: `Unrecognised date "${r['date']}"` }); continue; }
         if (isNaN(value)) { tally(res, { row, key: tag, status: 'failed', reason: `Value "${r['value']}" is not a number` }); continue; }
 
