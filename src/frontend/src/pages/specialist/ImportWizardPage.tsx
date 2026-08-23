@@ -70,7 +70,7 @@ const ASSET_FIELD_LABELS: Record<AssetField, string> = {
 const WO_FIELD_LABELS: Record<WoField, string> = {
     wo_number: 'WO number *', title: 'Title', description: 'Description',
     type: 'Work type', status: 'Status', priority: 'Priority',
-    asset_tag: 'Asset tag link *', asset_name: 'Asset name',
+    asset_tag: 'Asset tag link *', asset_location: 'Location link (fallback)', asset_name: 'Asset name',
     created_at: 'WO date *', closed_at: 'Completion date',
     labor_cost: 'Labor cost', material_cost: 'Material cost', total_cost: 'Total cost',
     downtime_hours: 'Downtime (hrs)', failure_mode: 'Failure mode',

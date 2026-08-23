@@ -298,11 +298,17 @@ TARGET SCHEMA (map source headers onto these logical fields):
   name, criticality, manufacturer, model, serial_number, asset_category.
 - wo_fields: wo_number (REQUIRED for work-order files), title, description,
   type, status, priority, asset_tag (the column linking the WO to its asset —
-  REQUIRED for work-order files), asset_name, created_at (the WO's real
-  historical date — REQUIRED; prefer reported/basic-start date), closed_at
-  (completion date), labor_cost, material_cost, total_cost (use only when the
-  file has a single combined cost), downtime_hours, failure_mode,
-  failure_cause, remedy.
+  REQUIRED for work-order files), asset_location (position column — SAP
+  "Functional Loc.", Maximo LOCATION; rows with no asset id link by this
+  instead of being dropped), asset_name, created_at (the WO's real historical
+  EVENT date — REQUIRED; prefer ACTUAL dates over planning dates: malfunction
+  start > actual start > reported date > basic start — BUT check the samples:
+  open orders have no actual dates, so if the actual-start column is sparsely
+  populated map created_at to the reported/basic date and WARN about planning
+  lag instead; rows with an empty created_at are skipped), closed_at
+  (completion — actual finish > basic finish; blank on open orders is fine), labor_cost, material_cost, total_cost (use
+  only when the file has a single combined cost; prefer ACTUAL costs over
+  plan costs), downtime_hours, failure_mode, failure_cause, remedy.
 - value_maps: translate source VALUES to IREAMS canonical values —
   type → one of CM, PM, PdM, INSPECTION, SAFETY;
   status → one of CLOSED, TECO, OPEN, WIP, CANCELLED (historical exports are
@@ -310,22 +316,39 @@ TARGET SCHEMA (map source headers onto these logical fields):
   criticality → one of A, B, C, D.
 
 KNOWN EXPORT FINGERPRINTS (use them, but trust the actual data first):
-- SAP PM (IW38/IW39/IW47): "Order", "Order Type" (PM01=corrective→CM,
-  PM02=preventive→PM, PM03=predictive→PdM, PM05=inspection→INSPECTION),
-  "Equipment"/"Functional Loc.", "Basic start date"/"Basic fin. date",
-  "Total act.costs", "System status" (TECO/CLSD→CLOSED, REL/CRTD→OPEN).
+- SAP PM (IW38/IW39): "Order", "Order Type", "Equipment"/"Functional Loc.",
+  "Basic start date"/"Basic fin. date" (PLANNING dates — prefer "Malfunction
+  start"/"Actual start"/"Actual finish" columns when present), "Total
+  act.costs" (prefer act. over plan costs), "System status" (TECO/CLSD→
+  CLOSED, REL/CRTD→OPEN; cells hold MULTIPLE space-separated tokens like
+  "TECO CNF PRC" — map the individual tokens, the importer matches
+  token-wise). Order types: PM01=corrective/PM02=preventive is COMMON but
+  order types are CLIENT CONFIGURATION — vanilla PM03 is refurbishment, not
+  predictive; VERIFY against sample descriptions and WARN when guessing.
   SAP has TWO equipment identities: "Equipment" is the equipment number
   (EQUNR — long digit runs under internal numbering) and "TechIdentNo." is
   the plant's field tag (TIDNR). Register files with both columns: map
   tag←TechIdentNo. and equipment_number←Equipment. Only "Equipment" present:
   map tag←Equipment, and if its sample values are long digit runs WARN that
   the export should include TechIdentNo. so assets keep recognisable tags.
-- Maximo: WONUM, WORKTYPE (CM/EM→CM, PM→PM, PDM→PdM), ASSETNUM, DESCRIPTION,
-  REPORTDATE, ACTFINISH, STATUS (COMP/CLOSE→CLOSED, APPR/INPRG→OPEN/WIP),
-  ACTLABCOST, ACTMATCOST.
-- MaintainX/Limble/UpKeep: "Work Order ID/Title", "Asset", "Category"/"Work
-  Type" (Reactive→CM, Preventive→PM), "Priority", "Status" (Done/Complete→
-  CLOSED), "Created On", "Completed On".
+  WO files: asset_tag←Equipment, asset_location←"Functional Loc.".
+- Maximo: WONUM, WORKTYPE (CM/EM→CM, PM→PM, PDM→PdM), ASSETNUM, LOCATION,
+  DESCRIPTION, REPORTDATE (prefer ACTSTART when present), ACTFINISH, STATUS
+  (COMP/CLOSE→CLOSED, CAN→CANCELLED, WAPPR/APPR→OPEN, INPRG→WIP),
+  ACTLABCOST, ACTMATCOST. Maximo's TWO identities: ASSETNUM is the object
+  (often autonumbered digits) and LOCATION is the position — register files:
+  tag←ASSETNUM, functional_location←LOCATION; WO files: asset_tag←ASSETNUM,
+  asset_location←LOCATION (location-only WOs are routine). WONUM is unique
+  per SITEID only — if the file spans multiple SITEIDs, WARN that repeated
+  WONUMs across sites will be treated as duplicates (prefix WONUM with
+  SITEID before import).
+- MaintainX/Limble/UpKeep: "Work Order ID/Title", "Asset", "Location",
+  "Category"/"Work Type" (Reactive→CM, Preventive→PM), "Priority", "Status"
+  (Done/Complete→CLOSED, On Hold→WIP), "Created On", "Completed On".
+- eMaint X5: "WO Number", "Asset ID", "WO Type", "Status", "Date Requested"/
+  "Date Completed". Fiix: "Work Order #"/"Code", "Asset", "Maintenance Type",
+  "Status" (Open/In Progress/Closed), "Date Created"/"Date Completed"; Fiix
+  registers carry "Asset Code" + "Asset Name" — tag←Asset Code.
 
 HOW YOU ANSWER:
 1. Inspect headers AND sample values (e.g. a column named "Status" whose values
@@ -340,7 +363,7 @@ HOW YOU ANSWER:
 \`\`\`import-mapping
 {"file_kind":"work_orders","source_system_guess":"sap_pm","confidence":0.9,
  "asset_fields":{"tag":"Equipment","equipment_number":null,"name":null,"criticality":null,"manufacturer":null,"model":null,"serial_number":null,"asset_category":null},
- "wo_fields":{"wo_number":"Order","title":"Description","description":null,"type":"Order Type","status":"System status","priority":null,"asset_tag":"Equipment","asset_name":null,"created_at":"Basic start date","closed_at":"Basic fin. date","labor_cost":null,"material_cost":null,"total_cost":"Total act.costs","downtime_hours":null,"failure_mode":null,"failure_cause":null,"remedy":null},
+ "wo_fields":{"wo_number":"Order","title":"Description","description":null,"type":"Order Type","status":"System status","priority":null,"asset_tag":"Equipment","asset_location":"Functional Loc.","asset_name":null,"created_at":"Basic start date","closed_at":"Basic fin. date","labor_cost":null,"material_cost":null,"total_cost":"Total act.costs","downtime_hours":null,"failure_mode":null,"failure_cause":null,"remedy":null},
  "value_maps":{"type":{"PM01":"CM","PM02":"PM"},"status":{"TECO":"CLOSED"},"criticality":{}},
  "date_format":"DMY",
  "unmapped_headers":["Plant","Planner group"],

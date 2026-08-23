@@ -50,28 +50,30 @@ const sapWorkOrderHistory: CmmsTemplate = {
     filename: 'IREAMS_SAP_WorkOrderHistory_Template.xlsx',
     build: () => makeWorkbook(
         'Work Order History',
-        ['Order', 'Order Type', 'Description', 'Equipment',
-            'Basic start date', 'Basic fin. date', 'Priority', 'System status',
-            'Breakdown dur.', 'Total act.costs', 'Damage', 'Cause code', 'Activity'],
+        ['Order', 'Order Type', 'Description', 'Equipment', 'Functional loc.',
+            'Basic start date', 'Actual start', 'Actual finish', 'Basic fin. date',
+            'Priority', 'System status', 'Breakdown dur.', 'Total act.costs',
+            'Damage', 'Cause code', 'Activity'],
         [
-            ['4500001231', 'PM01', 'Pump seal leak - replace mechanical seal', 'PMP-101A', '03.02.2025', '05.02.2025', '1', 'TECO', 6.5, 1250, 'Leakage', 'Seal wear', 'Replaced mechanical seal'],
-            ['4500001248', 'PM02', '6-monthly service - lube oil change and inspection', 'CMP-201', '14.03.2025', '14.03.2025', '3', 'TECO', '', 320, '', '', 'Routine service completed'],
-            ['4500001305', 'PM03', 'Vibration alert follow-up - bearing check DE side', 'FAN-310', '02.04.2025', '04.04.2025', '2', 'CLSD', 12, 2840, 'Vibration', 'Bearing failure', 'Replaced DE bearing, realigned'],
-            ['4500001377', 'PM05', 'Statutory inspection - pressure safety valve', 'VSL-120', '21.05.2025', '21.05.2025', '2', 'TECO', '', 450, '', '', 'PSV tested and recertified'],
-            ['4500001412', 'PM01', 'Motor tripping on overload - investigate', 'MTR-415', '09.06.2025', '', '1', 'REL', '', '', '', '', ''],
+            ['4500001231', 'PM01', 'Pump seal leak - replace mechanical seal', 'PMP-101A', 'PLT1-CWS-PMP-101A', '03.02.2025', '10.02.2025', '11.02.2025', '05.02.2025', '1', 'TECO CNF', 6.5, 1250, 'Leakage', 'Seal wear', 'Replaced mechanical seal'],
+            ['4500001248', 'PM02', '6-monthly service - lube oil change and inspection', 'CMP-201', 'PLT1-IAS-CMP-201', '14.03.2025', '14.03.2025', '14.03.2025', '14.03.2025', '3', 'TECO', '', 320, '', '', 'Routine service completed'],
+            ['4500001305', 'PM03', 'Vibration alert follow-up - bearing check DE side', 'FAN-310', 'PLT1-BLR3-FAN-310', '02.04.2025', '02.04.2025', '04.04.2025', '04.04.2025', '2', 'CLSD CNF', 12, 2840, 'Vibration', 'Bearing failure', 'Replaced DE bearing, realigned'],
+            ['4500001377', 'PM05', 'Statutory inspection - pressure safety valve', 'VSL-120', 'PLT1-IAS-VSL-120', '21.05.2025', '21.05.2025', '21.05.2025', '21.05.2025', '2', 'TECO', '', 450, '', '', 'PSV tested and recertified'],
+            ['4500001412', 'PM01', 'Area lighting repair - boiler house walkway', '', 'PLT1-BLR3', '09.06.2025', '', '', '', '1', 'REL', '', '', '', '', ''],
         ],
-        [12, 10, 46, 12, 15, 15, 8, 13, 13, 14, 12, 14, 34],
+        [12, 10, 46, 12, 18, 15, 13, 13, 15, 8, 13, 13, 14, 12, 14, 34],
         [
             ['IREAMS — SAP PM work-order history template'],
             [''],
-            ['Where the data comes from', 'SAP transaction IW38 or IW39 (order list); IW47/IW49 for confirmations. Set your layout to include the columns on the first sheet, then export to spreadsheet and paste rows under the headers.'],
+            ['Where the data comes from', 'SAP transaction IW38 or IW39 (order list). ONE ROW PER ORDER — operation/confirmation-level exports (IW47/IW49) carry one row per operation, and surplus rows are reported as duplicates. Set your layout to include the columns on the first sheet, then export to spreadsheet and paste rows under the headers.'],
             [''],
             ['Do not rename headers', 'The Specialist recognises these exact SAP column names and maps them automatically. Extra columns are fine — they are simply left unmapped.'],
-            ['Required per row', 'Order (work-order number), Equipment, Basic start date. Rows missing any of these are skipped and reported.'],
+            ['Required per row', 'Order (work-order number), Equipment OR Functional loc., a start date. Rows missing any of these are skipped and reported.'],
             ['Equipment', 'Whatever identity your order list carries — the field tag (TechIdentNo.) or the SAP equipment number (EQUNR). Import the equipment register first and orders link to their assets by either one.'],
-            ['Dates', 'DD.MM.YYYY (SAP default), e.g. 03.02.2025. DD/MM/YYYY and ISO (2025-02-03) also work.'],
-            ['Order Type', 'PM01 = corrective, PM02 = preventive, PM03 = predictive, PM05 = inspection. Other values default to corrective.'],
-            ['System status', 'TECO / CLSD = closed, REL / CRTD = open, in-progress codes = WIP.'],
+            ['Functional loc.', 'Orders raised against a position with no equipment (area work) are normal — they link by this column instead of being dropped.'],
+            ['Dates', 'DD.MM.YYYY (SAP default). Actual start / Actual finish are the EVENT dates — include them if your layout has them; Basic dates are planning dates and can sit weeks away from the real failure (they distort MTBF and seasonality if used alone).'],
+            ['Order Type', 'PM01 = corrective, PM02 = preventive is common — but order types are configured per plant (vanilla PM03 is refurbishment, not predictive). Check your plant’s key; the wizard’s mapping step lets you correct each type before anything imports.'],
+            ['System status', 'TECO / CLSD = closed, REL / CRTD = open, in-progress codes = WIP. Full status strings like "TECO CNF PRC" are fine — statuses are matched token by token.'],
             ['Breakdown dur.', 'Downtime hours (number). Optional but powers availability and bad-actor analysis.'],
             ['Total act.costs', 'Number, no currency symbol needed. If you can export labor and material separately, add those columns — the Specialist will pick them up.'],
             ['Damage / Cause code / Activity', 'Failure mode, failure cause and remedy. Optional; from notifications (IW69) if your orders do not carry them. They unlock failure-mode analysis.'],
@@ -112,6 +114,127 @@ const sapEquipmentRegister: CmmsTemplate = {
             [''],
             ['This import creates a FLAT equipment list', 'It exists to anchor work-order history for reliability analysis. To migrate a full hierarchy (site → unit → system → equipment, parent links, functional locations), use the Asset Register’s own import instead: Assets › Import › Download Template (ERS_Asset_Import_Template.xlsx). Both importers keep the same two identities, so you can build the tree there first and still import history here.'],
             ['Import order', 'Register FIRST, then the work-order history — orders link to assets by the Equipment column (tag or equipment number, both match).'],
+            ...SHARED_FOOTER,
+        ],
+    ),
+};
+
+// ── IBM Maximo: work-order history (Work Order Tracking download) ─────────
+const maximoWorkOrderHistory: CmmsTemplate = {
+    label: 'Work-order history (WO Tracking)',
+    filename: 'IREAMS_Maximo_WorkOrderHistory_Template.xlsx',
+    build: () => makeWorkbook(
+        'Work Order History',
+        ['WONUM', 'DESCRIPTION', 'WORKTYPE', 'STATUS', 'WOPRIORITY', 'SITEID',
+            'ASSETNUM', 'LOCATION', 'REPORTDATE', 'ACTSTART', 'ACTFINISH',
+            'ACTLABCOST', 'ACTMATCOST', 'PROBLEMCODE'],
+        [
+            ['1001', 'Pump seal leak - replace mechanical seal', 'CM', 'CLOSE', '1', 'HOU', '11450', 'CWS-PMP-101A', '2025-02-03', '2025-02-10', '2025-02-11', 850, 400, 'LEAK'],
+            ['1002', '6-monthly service - lube oil and filters', 'PM', 'COMP', '3', 'HOU', '11487', 'IAS-CMP-201', '2025-03-14', '2025-03-14', '2025-03-14', 320, 0, ''],
+            ['1003', 'Vibration alert - DE bearing check', 'PDM', 'CLOSE', '2', 'HOU', '11502', 'BLR3-FAN-310', '2025-04-02', '2025-04-02', '2025-04-04', 1200, 1640, 'VIB'],
+            ['1004', 'Walkway lighting repair - boiler house', 'CM', 'COMP', '2', 'HOU', '', 'BLR3', '2025-05-21', '2025-05-21', '2025-05-21', 180, 45, ''],
+            ['1005', 'Motor tripping on overload - investigate', 'EM', 'INPRG', '1', 'HOU', '11529', 'CNV-MTR-415', '2025-06-09', '2025-06-09', '', '', '', ''],
+        ],
+        [10, 44, 10, 9, 10, 8, 11, 16, 13, 13, 13, 12, 12, 13],
+        [
+            ['IREAMS — Maximo work-order history template'],
+            [''],
+            ['Where the data comes from', 'Maximo: Work Order Tracking → filter your orders → Download (CSV). ONE ROW PER WORK ORDER — not per task/labor transaction.'],
+            [''],
+            ['Do not rename headers', 'The Specialist recognises these Maximo column names and maps them automatically. Extra columns are fine — they are left unmapped.'],
+            ['Required per row', 'WONUM, ASSETNUM or LOCATION, REPORTDATE. Rows missing any of these are skipped and reported.'],
+            ['ASSETNUM / LOCATION', 'Maximo’s two identities: ASSETNUM is the object, LOCATION the operating position. Orders carrying only a LOCATION (area work) link by it instead of being dropped. Import the asset register first so orders land on existing assets.'],
+            ['SITEID', 'WONUM is unique per site. If your export spans multiple sites, either import one site at a time or prefix WONUM with the site (HOU-1001) — repeated WONUMs across sites are otherwise reported as duplicates.'],
+            ['STATUS', 'COMP / CLOSE = closed, CAN = cancelled, WAPPR / APPR = open, INPRG = in progress.'],
+            ['WORKTYPE', 'CM / EM = corrective, PM = preventive, PDM = predictive. Other values default to corrective.'],
+            ['Dates', 'ACTSTART / ACTFINISH are the event dates — REPORTDATE alone works but planning lag distorts failure timing.'],
+            ['Costs', 'ACTLABCOST / ACTMATCOST as plain numbers. Cost data is the single most valuable input for money-ranked findings.'],
+            ...SHARED_FOOTER,
+        ],
+    ),
+};
+
+// ── IBM Maximo: asset register (Assets application download) ──────────────
+const maximoAssetRegister: CmmsTemplate = {
+    label: 'Asset register (Assets app)',
+    filename: 'IREAMS_Maximo_AssetRegister_Template.xlsx',
+    build: () => makeWorkbook(
+        'Asset List',
+        ['ASSETNUM', 'DESCRIPTION', 'ASSETTYPE', 'LOCATION', 'SITEID',
+            'MANUFACTURER', 'SERIALNUM', 'PRIORITY'],
+        [
+            ['11450', 'Centrifugal pump - cooling water train A', 'PUMP', 'CWS-PMP-101A', 'HOU', 'KSB', 'KSB-2019-04471', '1'],
+            ['11487', 'Reciprocating air compressor - instrument air', 'COMPRESSOR', 'IAS-CMP-201', 'HOU', 'Atlas Copco', 'ACP-2021-11832', '2'],
+            ['11502', 'Induced draft fan - boiler no. 3', 'FAN', 'BLR3-FAN-310', 'HOU', 'Howden', 'HWD-2018-00291', '1'],
+            ['11529', 'Electric motor 75 kW - conveyor drive', 'MOTOR', 'CNV-MTR-415', 'HOU', 'WEG', 'WEG-2020-77452', '2'],
+        ],
+        [11, 44, 14, 16, 8, 20, 18, 10],
+        [
+            ['IREAMS — Maximo asset register template'],
+            [''],
+            ['Where the data comes from', 'Maximo: Assets application → filter → Download (CSV). Paste rows under the headers on the first sheet.'],
+            [''],
+            ['TWO IDENTITIES, both kept', 'ASSETNUM is Maximo’s object id — often autonumbered digits — and LOCATION is the operating position (the tag people actually use). ASSETNUM becomes the IREAMS asset tag and LOCATION is kept as the functional-location reference; work-order history links by either. If your ASSETNUMs are bare digit runs, the import will warn — consider using the location or alias column as the tag instead (the wizard’s mapping step lets you swap them).'],
+            ['Required per row', 'ASSETNUM. Everything else is optional but improves the assessment.'],
+            ['PRIORITY', 'Asset priority 1-4 → criticality A-D (1 = most critical). Leave blank to import unranked.'],
+            [''],
+            ['This import creates a FLAT asset list', 'To build a full hierarchy (sites, systems, parent links), use the Asset Register’s own import instead: Assets › Import › Download Template. Both match on the same identities.'],
+            ['Import order', 'Register FIRST, then the work-order history.'],
+            ...SHARED_FOOTER,
+        ],
+    ),
+};
+
+// ── MaintainX: work-order history + asset export ──────────────────────────
+const maintainxWorkOrderHistory: CmmsTemplate = {
+    label: 'Work-order history (Reporting export)',
+    filename: 'IREAMS_MaintainX_WorkOrderHistory_Template.xlsx',
+    build: () => makeWorkbook(
+        'Work Order History',
+        ['Work Order ID', 'Title', 'Description', 'Status', 'Priority',
+            'Asset', 'Location', 'Categories', 'Created On', 'Completed On'],
+        [
+            ['2201', 'Pump seal leak - replace mechanical seal', 'Seal replaced, aligned, test run OK', 'Done', 'High', 'PMP-101A', 'Cooling Water', 'Reactive', '2025-02-03', '2025-02-05'],
+            ['2202', '6-monthly compressor service', 'Lube oil change and inspection', 'Done', 'Medium', 'CMP-201', 'Compressor House', 'Preventive', '2025-03-14', '2025-03-14'],
+            ['2203', 'Vibration alert - check DE bearing', 'DE bearing replaced and realigned', 'Done', 'High', 'FAN-310', 'Boiler 3', 'Reactive', '2025-04-02', '2025-04-04'],
+            ['2204', 'Motor tripping on overload', 'Under investigation', 'In Progress', 'High', 'MTR-415', 'Conveyor Bay', 'Reactive', '2025-06-09', ''],
+        ],
+        [13, 40, 40, 11, 9, 12, 16, 12, 12, 13],
+        [
+            ['IREAMS — MaintainX work-order history template'],
+            [''],
+            ['Where the data comes from', 'MaintainX: Reporting → Work Orders → Export CSV. One row per work order.'],
+            [''],
+            ['Required per row', 'Work Order ID, Asset, Created On. Rows missing any of these are skipped and reported.'],
+            ['Status', 'Done / Complete = closed, In Progress / On Hold = in progress, Open = open.'],
+            ['Categories', 'Reactive = corrective, Preventive = preventive; other wording also works — the Specialist translates it.'],
+            ['Costs', 'MaintainX cost columns (labor/parts) are optional but the single most valuable input for money-ranked findings — include them if your plan exports them.'],
+            ...SHARED_FOOTER,
+        ],
+    ),
+};
+
+const maintainxAssetRegister: CmmsTemplate = {
+    label: 'Asset register (Assets export)',
+    filename: 'IREAMS_MaintainX_AssetRegister_Template.xlsx',
+    build: () => makeWorkbook(
+        'Asset List',
+        ['Name', 'Description', 'Location', 'Parent Asset', 'Manufacturer', 'Model', 'Serial Number', 'Criticality'],
+        [
+            ['PMP-101A', 'Centrifugal pump - cooling water train A', 'Cooling Water', '', 'KSB', 'Etanorm 065-050', 'KSB-2019-04471', 'High'],
+            ['CMP-201', 'Reciprocating air compressor - instrument air', 'Compressor House', '', 'Atlas Copco', 'GA 75 VSD+', 'ACP-2021-11832', 'Medium'],
+            ['MTR-415', 'Electric motor 75 kW - conveyor drive', 'Conveyor Bay', '', 'WEG', 'W22 280S/M', 'WEG-2020-77452', 'Medium'],
+        ],
+        [14, 44, 16, 14, 20, 18, 18, 11],
+        [
+            ['IREAMS — MaintainX asset register template'],
+            [''],
+            ['Where the data comes from', 'MaintainX: Assets → ⋯ → Export. Paste rows under the headers on the first sheet.'],
+            ['Required per row', 'Name (the unique asset). Everything else is optional but improves the assessment.'],
+            ['Criticality', 'High / Medium / Low map to A / B / C. Leave blank to import unranked.'],
+            [''],
+            ['This import creates a FLAT asset list', 'To build a full hierarchy, use the Asset Register’s own import instead: Assets › Import › Download Template. Both match on the same name/tag.'],
+            ['Import order', 'Register FIRST, then the work-order history — orders link to assets by name.'],
             ...SHARED_FOOTER,
         ],
     ),
@@ -175,6 +298,8 @@ const genericAssetRegister: CmmsTemplate = {
 /** Templates offered per source system; sources without one fall back to the generic pair. */
 const TEMPLATES: Record<string, CmmsTemplate[]> = {
     sap_pm: [sapWorkOrderHistory, sapEquipmentRegister],
+    maximo: [maximoWorkOrderHistory, maximoAssetRegister],
+    maintainx: [maintainxWorkOrderHistory, maintainxAssetRegister],
     spreadsheet: [genericWorkOrderHistory, genericAssetRegister],
 };
 

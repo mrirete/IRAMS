@@ -30,7 +30,7 @@ export type AssetField =
 
 export type WoField =
   | 'wo_number' | 'title' | 'description' | 'type' | 'status' | 'priority'
-  | 'asset_tag' | 'asset_name' | 'created_at' | 'closed_at'
+  | 'asset_tag' | 'asset_location' | 'asset_name' | 'created_at' | 'closed_at'
   | 'labor_cost' | 'material_cost' | 'total_cost' | 'downtime_hours'
   | 'failure_mode' | 'failure_cause' | 'remedy';
 
@@ -111,6 +111,10 @@ export function guessWoType(raw: string): string {
 /** Fallback status heuristic: completed-looking → CLOSED, else OPEN. */
 export function guessWoStatus(raw: string, hasClosedDate: boolean): string {
   const v = raw.toLowerCase();
+  // Token-exact first: Maximo's CAN would otherwise never match (/canc/ needs
+  // four letters), and a substring test on 'can' would false-positive 'scan'.
+  const tokens = v.split(/[\s,;/|]+/);
+  if (tokens.includes('can') || tokens.includes('cnl')) return 'CANCELLED';
   if (/clos|comp|done|teco|clsd|finish|fertig/.test(v)) return 'CLOSED';
   if (/canc|abgebr|deleted/.test(v)) return 'CANCELLED';
   if (/prog|wip|inprg|started|exec/.test(v)) return 'WIP';
@@ -282,6 +286,26 @@ export function applyMapping(
     return null;
   };
 
+  // SAP system status is MULTI-token — a real IW38 cell reads "TECO CNF PRC
+  // SETC", so an exact map keyed on "TECO" never fires on the whole cell.
+  // Try the full value first (covers single-token systems and combos the
+  // agent mapped verbatim), then each token left-to-right — SAP prints the
+  // primary status first, so the first mapped token is the right one.
+  const mapStatusValue = (
+    table: Record<string, string> | undefined,
+    raw: string,
+  ): string | null => {
+    const whole = mapValue(table, raw);
+    if (whole !== null) return whole;
+    const tokens = raw.split(/[\s,;/|]+/).filter(Boolean);
+    if (tokens.length < 2) return null;
+    for (const t of tokens) {
+      const hit = mapValue(table, t);
+      if (hit !== null) return hit;
+    }
+    return null;
+  };
+
   rows.forEach((row, i) => {
     const rowNo = i + 1;
     const isEmpty = row.every((c) => c === null || c === undefined || String(c).trim() === '');
@@ -294,7 +318,15 @@ export function applyMapping(
     // no tag cell but an equipment number uses that number as its tag.
     const tagIdx = isAssetFile && ai.tag >= 0 ? ai.tag : w('asset_tag');
     const equipNo = cellStr(row, ai.equipment_number) || null;
-    const tag = cellStr(row, tagIdx) || (isAssetFile ? equipNo ?? '' : '');
+    // Position column: the asset file's own FL field, or the WO file's
+    // location link (SAP "Functional Loc.", Maximo LOCATION).
+    const location = (cellStr(row, ai.functional_location) || cellStr(row, w('asset_location'))) || null;
+    let tag = cellStr(row, tagIdx) || (isAssetFile ? equipNo ?? '' : '');
+    // Orders raised against a position with no equipment id are routine
+    // (area work, Maximo location-only WOs). Link by the position rather
+    // than dropping the history — the draft becomes a position-level asset.
+    let linkedByLocation = false;
+    if (!tag && isWoFile && location) { tag = location; linkedByLocation = true; }
     if (tag) {
       const existing = assetsByTag.get(tag);
       const rawCrit = cellStr(row, ai.criticality);
@@ -302,7 +334,7 @@ export function applyMapping(
       const draft: AssetDraft = {
         tag,
         equipment_number: equipNo || existing?.equipment_number || null,
-        functional_location: cellStr(row, ai.functional_location) || existing?.functional_location || null,
+        functional_location: location || existing?.functional_location || null,
         name: cellStr(row, ai.name) || cellStr(row, w('asset_name')) || existing?.name || tag,
         criticality: (mappedCrit && CRITICALITIES.has(mappedCrit) ? mappedCrit : existing?.criticality ?? null) as AssetDraft['criticality'],
         manufacturer: cellStr(row, ai.manufacturer) || existing?.manufacturer || null,
@@ -332,7 +364,7 @@ export function applyMapping(
       return;
     }
     if (seenWoNumbers.has(woNumber)) {
-      issues.add('duplicate_wo', 'Duplicate work-order number in file — first occurrence kept.', rowNo);
+      issues.add('duplicate_wo', 'Duplicate work-order number in file — first occurrence kept. (Operation/confirmation-level exports like SAP IW47/IW49 produce one row per operation; export one row per ORDER — IW38/IW39 — for full fidelity. Maximo multi-site exports repeat WONUM across sites; prefix it with SITEID.)', rowNo);
       skipped += 1;
       return;
     }
@@ -353,7 +385,7 @@ export function applyMapping(
     }
 
     const rawStatus = cellStr(row, w('status'));
-    let status = mapValue(vmaps.status, rawStatus) ?? guessWoStatus(rawStatus, !!closedAt);
+    let status = mapStatusValue(vmaps.status, rawStatus) ?? guessWoStatus(rawStatus, !!closedAt);
     if (!WO_STATUSES.has(status)) {
       issues.add('unmapped_status', `Unrecognised status value(s) defaulted by completion date.`, rowNo);
       status = closedAt ? 'CLOSED' : 'OPEN';
@@ -373,6 +405,9 @@ export function applyMapping(
 
     const downtime = w('downtime_hours') >= 0 ? parseCostCell(row[w('downtime_hours')]) : null;
 
+    if (linkedByLocation) {
+      issues.add('linked_by_location', 'Work order had no equipment id — linked by its location/functional location instead (a position-level asset is created).', rowNo);
+    }
     seenWoNumbers.add(woNumber);
     workOrders.push({
       wo_number: woNumber,
@@ -449,7 +484,7 @@ export function buildDqReport(applied: AppliedImport): DqReport {
   // register means the Equipment column was mapped as the tag.
   const digitTags = applied.assets.filter((a) => /^\d{6,}$/.test(a.tag) && (!a.equipment_number || a.equipment_number === a.tag));
   if (digitTags.length && digitTags.length * 2 > applied.assets.length) {
-    warnings.push(`${digitTags.length} asset tag(s) are long digit runs — these look like internal SAP equipment numbers (EQUNR), not field tags. If the export has a TechIdentNo. column, map it to Asset tag and map Equipment to Equipment number so assets keep the tag technicians recognise; work-order history still links by either identity.`);
+    warnings.push(`${digitTags.length} asset tag(s) are long digit runs — these look like internal CMMS object ids (SAP EQUNR, Maximo autonumbered ASSETNUM), not field tags. Map the human tag column (SAP TechIdentNo., a Maximo alias/location) to Asset tag and the system id to Equipment number, so assets keep the tag technicians recognise; work-order history still links by either identity.`);
   }
 
   return {

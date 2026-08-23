@@ -219,3 +219,55 @@ describe('applyMapping (SAP register with internal numbering)', () => {
     expect(buildDqReport(applied).warnings.some((w) => w.includes('EQUNR'))).toBe(false);
   });
 });
+
+// ── Maximo shape: ASSETNUM/LOCATION duality, CAN status, multi-token SAP ──
+
+const MAXIMO_HEADERS = ['WONUM', 'DESCRIPTION', 'WORKTYPE', 'STATUS', 'ASSETNUM', 'LOCATION', 'REPORTDATE', 'ACTFINISH'];
+const MAXIMO_MAPPING: ImportMapping = {
+  file_kind: 'work_orders',
+  source_system_guess: 'maximo',
+  confidence: 0.9,
+  asset_fields: {},
+  wo_fields: {
+    wo_number: 'WONUM', title: 'DESCRIPTION', type: 'WORKTYPE', status: 'STATUS',
+    asset_tag: 'ASSETNUM', asset_location: 'LOCATION',
+    created_at: 'REPORTDATE', closed_at: 'ACTFINISH',
+  },
+  value_maps: { type: { CM: 'CM', PM: 'PM' }, status: { CLOSE: 'CLOSED', COMP: 'CLOSED' } },
+  date_format: 'ISO',
+};
+
+describe('applyMapping (Maximo: location fallback + CAN status)', () => {
+  const applied = applyMapping(MAXIMO_HEADERS, [
+    ['1001', 'Pump seal leak', 'CM', 'CLOSE', '11450', 'CWS-PMP-101A', '2025-02-03', '2025-02-05'],
+    ['1004', 'Walkway lighting - boiler house', 'CM', 'COMP', '', 'BLR3', '2025-05-21', '2025-05-21'],
+    ['1007', 'Cancelled duplicate request', 'CM', 'CAN', '11450', 'CWS-PMP-101A', '2025-06-01', ''],
+  ], MAXIMO_MAPPING);
+
+  it('links a location-only WO by LOCATION instead of dropping it', () => {
+    expect(applied.workOrders).toHaveLength(3);
+    const areaWo = applied.workOrders.find((w) => w.wo_number === '1004')!;
+    expect(areaWo.asset_tag).toBe('BLR3');
+    expect(applied.issues.some((i) => i.kind === 'linked_by_location')).toBe(true);
+    // the position-level draft carries its location reference
+    expect(applied.assets.find((a) => a.tag === 'BLR3')!.functional_location).toBe('BLR3');
+  });
+  it('captures LOCATION as functional_location on asset-linked WOs too', () => {
+    expect(applied.assets.find((a) => a.tag === '11450')!.functional_location).toBe('CWS-PMP-101A');
+  });
+  it('maps bare CAN to CANCELLED (token-exact, not substring)', () => {
+    expect(applied.workOrders.find((w) => w.wo_number === '1007')!.status).toBe('CANCELLED');
+    expect(guessWoStatus('SCAN PENDING', false)).not.toBe('CANCELLED');
+  });
+});
+
+describe('multi-token SAP system status', () => {
+  it('matches value_maps token-wise on combined status strings', () => {
+    const applied = applyMapping(SAP_HEADERS, [
+      ['4000010', 'PM01', 'Combined status row', 'P-101', '13/01/2025', '15/01/2025', '100', 'TECO CNF PRC SETC'],
+      ['4000011', 'PM01', 'Open combined row', 'M-201', '20/02/2025', '', '50', 'REL CNF PRT'],
+    ], SAP_MAPPING);
+    expect(applied.workOrders.find((w) => w.wo_number === '4000010')!.status).toBe('CLOSED');
+    expect(applied.workOrders.find((w) => w.wo_number === '4000011')!.status).toBe('OPEN');
+  });
+});
