@@ -38,14 +38,23 @@ const P = 'ZZSAPUAT';
 if (!TOK) { console.error('SUPABASE_ACCESS_TOKEN not set — needed to verify and clean up.'); process.exit(1); }
 if (!ADMIN.password) { console.error('IREAMS_ADMIN_PASSWORD not set.'); process.exit(1); }
 
-const sql = async (q) => {
-    const r = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
-        method: 'POST', headers: { Authorization: `Bearer ${TOK}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: q }),
-    });
-    const t = await r.text();
-    if (!r.ok) throw new Error(`query failed: ${t.slice(0, 300)}`);
-    return JSON.parse(t);
+const sql = async (q, tries = 3) => {
+    for (let i = 1; ; i++) {
+        try {
+            const r = await fetch(`https://api.supabase.com/v1/projects/${REF}/database/query`, {
+                method: 'POST', headers: { Authorization: `Bearer ${TOK}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ query: q }),
+            });
+            const t = await r.text();
+            if (!r.ok) throw new Error(`query failed: ${t.slice(0, 300)}`);
+            return JSON.parse(t);
+        } catch (e) {
+            // Transient network drops are common enough to retry; real SQL
+            // errors repeat identically and still surface.
+            if (i >= tries) throw e;
+            await new Promise(r => setTimeout(r, 2000 * i));
+        }
+    }
 };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const findings = [];
