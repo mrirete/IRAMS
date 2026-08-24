@@ -26,7 +26,7 @@
  * uses. Always verify with `--verify` against a scratch project (see the
  * runbook) rather than trusting it blind.
  */
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -324,6 +324,38 @@ async function main() {
     await mkdir(dirname(out), { recursive: true });
     await writeFile(out, parts.join('\n'), 'utf8');
     console.log(`\n✔ Wrote ${out}`);
+
+    // ── Staleness stamp ─────────────────────────────────────────────────────
+    // The baseline went stale silently TWICE (§3.2a of the runbook: 2026-08-01
+    // missing RBAC+tenancy; 2026-08-15 missing 0283–0292). This stamp records
+    // the highest migration number the export absorbs; apply-migrations.mjs
+    // --baseline REFUSES when the repo has newer migrations, so a stale
+    // baseline can never again be silently marked as covering them.
+    // The stamp comes from the ORIGIN'S LEDGER, not the repo listing: a repo
+    // file that hasn't been applied to the origin is not in this export, so
+    // repo-max would overstate what the baseline absorbs.
+    const migDir = resolve(dirname(out), '../migrations');
+    const nums = (await readdir(migDir))
+        .map((f) => /^(\d{4})[a-z]?_/.exec(f)?.[1])
+        .filter(Boolean)
+        .map(Number);
+    const repoMax = String(Math.max(...nums)).padStart(4, '0');
+    let absorbs = null;
+    try {
+        const led = await q(projectRef, token,
+            `SELECT max(substring(name from '^[0-9]{4}')) AS m FROM public.schema_migrations;`);
+        absorbs = led?.[0]?.m || null;
+    } catch { /* no ledger on origin */ }
+    if (!absorbs) {
+        console.warn(`⚠ Origin has no schema_migrations ledger — stamping repo max ${repoMax} on trust.`);
+        absorbs = repoMax;
+    } else if (repoMax > absorbs) {
+        console.warn(`⚠ Repo has migrations up to ${repoMax} but the origin has only applied ≤ ${absorbs}.`);
+        console.warn(`  This baseline absorbs ≤ ${absorbs}; apply the pending migrations to the origin and re-export.`);
+    }
+    const stamp = resolve(dirname(out), 'ABSORBS');
+    await writeFile(stamp, `${absorbs}\nexported ${new Date().toISOString()} from ${projectRef} (origin ledger max; repo max ${repoMax})\n`, 'utf8');
+    console.log(`✔ Stamped ${stamp} — baseline absorbs migrations ≤ ${absorbs}`);
 }
 
 main().catch((e) => {

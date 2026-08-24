@@ -276,6 +276,39 @@ async function main() {
             console.log('\nLedger already populated — nothing to baseline.');
             return;
         }
+        // ── Staleness guard ─────────────────────────────────────────────────
+        // --baseline marks every repo migration as applied WITHOUT running it.
+        // If the baseline files were exported before some of those migrations,
+        // the new tenant is PERMANENTLY missing them while the ledger says all
+        // is well. This happened silently twice (runbook §3.2a). The exporter
+        // stamps baseline/ABSORBS with the highest migration it covers; refuse
+        // to baseline past it.
+        const stampPath = resolve(HERE, '../../src/frontend/supabase/baseline/ABSORBS');
+        let absorbs = null;
+        try { absorbs = (await readFile(stampPath, 'utf8')).split('\n')[0].trim(); } catch { /* missing */ }
+        const repoMax = plan.ordered
+            .map((m) => /^(\d{4})/.exec(m.file)?.[1])
+            .filter(Boolean)
+            .sort()
+            .pop();
+        if (!absorbs) {
+            console.error('\n✖ baseline/ABSORBS stamp is missing — cannot prove the baseline covers the migrations');
+            console.error('  about to be marked applied. Regenerate the baseline (export-schema.mjs writes the stamp):');
+            console.error('    node scripts/provision/export-schema.mjs --project-ref <origin>');
+            process.exitCode = 1;
+            return;
+        }
+        if (repoMax && repoMax > absorbs) {
+            console.error(`\n✖ STALE BASELINE: it absorbs migrations ≤ ${absorbs}, but the repo has ${repoMax}.`);
+            console.error('  Baselining now would mark the newer migrations as applied without their schema existing —');
+            console.error('  a silent, permanent gap. Regenerate first:');
+            console.error('    node scripts/provision/export-schema.mjs --project-ref <origin>');
+            console.error('    node scripts/provision/export-seed.mjs   --project-ref <origin>');
+            console.error('  then reload the baseline into this project and re-run --baseline.');
+            process.exitCode = 1;
+            return;
+        }
+        console.log(`  Baseline stamp: absorbs ≤ ${absorbs}; repo max ${repoMax} — consistent.`);
         console.log('\nBaselining: recording every migration as applied WITHOUT executing it.');
         await runSql(projectRef, token, LEDGER_DDL);
         const values = plan.ordered

@@ -102,20 +102,38 @@ node scripts/provision/load-baseline.mjs --project-ref <ref> --census
 
 Step 3 matters: `--baseline` marks every existing migration as applied without running it, so a migration added tomorrow applies to this tenant with a plain `--apply`.
 
+> **Staleness guard (added after incident #2, §3.2a):** `--baseline` now REFUSES when the repo
+> contains migrations newer than `baseline/ABSORBS` — the stamp `export-schema.mjs` writes from
+> the **origin's ledger** (not the repo listing: a repo file not yet applied to the origin is
+> not in the export). A stale baseline can no longer be silently marked as covering migrations
+> it doesn't contain. If the guard fires, re-export the baseline, reload it, then re-baseline.
+
 **Verified 2026-07-25** by loading into a throwaway project and comparing against the origin: all ten catalog counts matched, and six structural fingerprints (columns with types and defaults, constraint definitions, index definitions, policy predicates, function signatures, every enum label) matched exactly. Reference data matched row-for-row across all 15 tables, with zero rows in `assets`, `work_orders`, `users`, `contacts`, `audit_logs` or any operational table.
 
 ### 3.2a Refreshing the baseline
 
 > **The baseline is the product a customer receives, not the migrations directory.**
-> It went stale exactly once, silently, and it is worth knowing how. Generated
-> 2026-08-01; RBAC gating (`0241`–`0257`) and tenancy (`0258`–`0264`) landed
-> after it. For four days, provisioning a customer would have handed them a
-> database with **no tenant isolation and almost no write gating** —
-> `caller_company` appeared **zero** times in `schema.sql`. Nothing failed and
-> nothing warned. The file just described an older database.
+> It went stale silently **twice**, and it is worth knowing how both times.
 >
-> **Regenerate after any migration that changes schema, then verify.** Not "when
-> it changes materially" — that judgement is what went wrong.
+> **Incident #1** — generated 2026-08-01; RBAC gating (`0241`–`0257`) and tenancy
+> (`0258`–`0264`) landed after it. For four days, provisioning a customer would
+> have handed them a database with **no tenant isolation and almost no write
+> gating** — `caller_company` appeared **zero** times in `schema.sql`. Nothing
+> failed and nothing warned. The file just described an older database.
+>
+> **Incident #2** — caught 2026-08-24 during an advisory review: the work-module
+> sprint applied `0283`–`0296` to the origin (malfunction capture, failure
+> taxonomy, secondary failures, system functions…) and the baseline was never
+> regenerated. A tenant provisioned in that window would have been permanently
+> missing fourteen migrations **with the ledger swearing they were applied**
+> (step 3 marks everything applied without running it).
+>
+> Discipline failed twice, so it is now mechanical: `export-schema.mjs` stamps
+> `baseline/ABSORBS` with the origin ledger's highest applied migration, and
+> `apply-migrations.mjs --baseline` refuses when the repo is newer than the
+> stamp. **Still regenerate after any migration that changes schema** — the
+> guard turns forgetting from a silent customer defect into a loud refusal at
+> provisioning time.
 
 ```bash
 node scripts/provision/export-schema.mjs --project-ref hacrebcfvyqdnjvilhqc
@@ -136,6 +154,11 @@ PRIMARY KEY and UNIQUE constraints, which the exporter emits as `ADD
 CONSTRAINT` — emitting both would create each twice. The comparison is against
 **standalone** indexes. Comparing the raw catalog number produces a confident
 false alarm, which is what it did the first time.
+
+**Baseline regenerated 2026-08-24** (absorbs ≤ `0296`, content-verified against the origin by
+`verify-baseline.mjs` — every object, every policy predicate). ⚠ **Full load test against the
+scratch project is PENDING for this regeneration** — wipe the scratch and run the load block
+below before provisioning the next enterprise tenant.
 
 **Last FULL LOAD verified 2026-08-06** into a fresh project (`jgsbupplobuhlevgkscz`,
 "IREAMS Load Test", eu-north-1 — kept as the standing scratch target, ledger
