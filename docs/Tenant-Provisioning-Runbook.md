@@ -156,9 +156,11 @@ CONSTRAINT` — emitting both would create each twice. The comparison is against
 false alarm, which is what it did the first time.
 
 **Baseline regenerated 2026-08-24** (absorbs ≤ `0296`, content-verified against the origin by
-`verify-baseline.mjs` — every object, every policy predicate). ⚠ **Full load test against the
-scratch project is PENDING for this regeneration** — wipe the scratch and run the load block
-below before provisioning the next enterprise tenant.
+`verify-baseline.mjs`) and **FULL LOAD verified the same day**: scratch wiped, all twelve load
+sections clean, seed loaded (680 rows), census identical to the origin on every count
+(172 tables, 2,414 columns, 713 indexes, 513 policies, 218 triggers, 752 constraints, RLS on
+all 172 tables), and `--baseline` recorded 313 migrations through the new staleness guard
+("absorbs ≤ 0296; repo max 0296 — consistent").
 
 **Last FULL LOAD verified 2026-08-06** into a fresh project (`jgsbupplobuhlevgkscz`,
 "IREAMS Load Test", eu-north-1 — kept as the standing scratch target, ledger
