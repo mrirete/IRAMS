@@ -744,7 +744,9 @@ export async function importReadings(rows: Row[]): Promise<ImportResult> {
                 reading_value: value,
                 reading_date: date,
                 entered_by: 'import',
-                notes: r['notes'] || null,
+                // The column is `comments` — `notes` was a 42703 that failed
+                // every log row at runtime (caught by the SAP UAT journey).
+                comments: r['notes'] || null,
             },
         });
     }
