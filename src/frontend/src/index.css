@@ -119,6 +119,15 @@
   color: #94a3b8;
   opacity: 1;
 }
+/* Technician-observation cue — the emerald placeholder acts as the field's
+   label and is replaced by the technician's actual observation; must outrank
+   the slate .eam-app textarea::placeholder above */
+.obs-cue::placeholder,
+.eam-app .obs-cue::placeholder {
+  color: #059669; /* emerald-600, matches the field's icon/border coding */
+  font-weight: 600;
+  opacity: 1;
+}
 
 /* ── Native <option> dropdowns — always dark text on white (OS-rendered) ── */
 option {

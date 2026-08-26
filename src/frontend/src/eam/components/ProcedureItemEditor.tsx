@@ -12,6 +12,11 @@ import { DatabaseService } from '../services/DatabaseService';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 
+// Auto-grow a single-line textarea to fit its content (observation capture)
+const autoGrow = (el: HTMLTextAreaElement | null) => {
+    if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; }
+};
+
 interface ProcedureItemEditorProps {
     block: InstructionBlock;
     onChange: (updates: Partial<InstructionBlock>) => void;
@@ -154,21 +159,20 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
 
             case 'TEXT':
                 // Live observation capture — the technician's answer lives on this block
-                // (valueString), so no separate observations field is needed. Emerald marks
-                // it as the technician's area, distinct from the slate instruction above.
+                // (valueString), so no separate observations field is needed. The emerald
+                // placeholder IS the cue; a typed observation replaces it. Single-line
+                // box (same height as the other block previews) that grows with content.
                 return (
-                    <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/50 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
-                        <div className="flex items-center gap-1.5 px-2.5 pt-1.5">
-                            <FileText size={10} className="text-emerald-500 flex-shrink-0" />
-                            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-600">Technician Observation</span>
-                        </div>
+                    <div className="mt-2 flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2.5 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
+                        <FileText size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
                         <textarea
-                            className="w-full bg-transparent px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-emerald-400/60 resize-none"
+                            ref={autoGrow}
+                            className="w-full bg-transparent text-xs text-slate-700 obs-cue resize-none"
                             style={{ outline: 'none' }} /* container's focus-within ring is the indicator; beats global *:focus-visible */
-                            placeholder="Observations, findings or notes are written here during execution..."
+                            placeholder="Technician observation — written here during execution"
                             value={block.valueString || ''}
-                            onChange={(e) => onChange({ valueString: e.target.value })}
-                            rows={2}
+                            onChange={(e) => { autoGrow(e.target); onChange({ valueString: e.target.value }); }}
+                            rows={1}
                         />
                     </div>
                 );

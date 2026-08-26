@@ -4,9 +4,14 @@ import { StorageImage } from './ui/StorageImage';
 import {
     CheckSquare, Square, Camera, PenTool, AlertTriangle, AlertOctagon,
     CheckCircle, XCircle, Activity, Lock, Link as LinkIcon,
-    Image as ImageIcon, ExternalLink
+    Image as ImageIcon, ExternalLink, FileText
 } from 'lucide-react';
 import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
+
+// Auto-grow a single-line textarea to fit its content (observation capture)
+const autoGrow = (el: HTMLTextAreaElement | null) => {
+    if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; }
+};
 interface ProcedureItemRendererProps {
     block: InstructionBlock;
     onChange: (updates: Partial<InstructionBlock>) => void;
@@ -106,21 +111,21 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                     </button>
                 )}
 
-                {/* TEXT — technician observation; emerald marks it as the technician's
-                    input area, distinct from the instruction label above */}
+                {/* TEXT — technician observation; the emerald placeholder IS the cue,
+                    replaced by the technician's actual observation. Single-line box
+                    that grows with content. */}
                 {block.type === 'TEXT' && (
-                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
-                        <div className="flex items-center gap-1.5 px-2.5 pt-1.5">
-                            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-600">Technician Observation</span>
-                        </div>
+                    <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2.5 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
+                        <FileText size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
                         <textarea
-                            className="w-full bg-transparent px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-emerald-400/60 resize-none"
+                            ref={autoGrow}
+                            className="w-full bg-transparent text-xs text-slate-700 obs-cue resize-none"
                             style={{ outline: 'none' }} /* container's focus-within ring is the indicator; beats global *:focus-visible */
-                            placeholder="Enter observations, findings or notes..."
+                            placeholder="Technician observation"
                             value={block.valueString || ''}
-                            onChange={(e) => onChange({ valueString: e.target.value })}
+                            onChange={(e) => { autoGrow(e.target); onChange({ valueString: e.target.value }); }}
                             disabled={readOnly}
-                            rows={2}
+                            rows={1}
                         />
                     </div>
                 )}
