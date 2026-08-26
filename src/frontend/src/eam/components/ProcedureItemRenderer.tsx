@@ -106,16 +106,23 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                     </button>
                 )}
 
-                {/* TEXT */}
+                {/* TEXT — technician observation; emerald marks it as the technician's
+                    input area, distinct from the instruction label above */}
                 {block.type === 'TEXT' && (
-                    <textarea
-                        className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary-500"
-                        placeholder="Enter observations..."
-                        value={block.valueString || ''}
-                        onChange={(e) => onChange({ valueString: e.target.value })}
-                        disabled={readOnly}
-                        rows={3}
-                    />
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
+                        <div className="flex items-center gap-1.5 px-2.5 pt-1.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-600">Technician Observation</span>
+                        </div>
+                        <textarea
+                            className="w-full bg-transparent px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-emerald-400/60 resize-none"
+                            style={{ outline: 'none' }} /* container's focus-within ring is the indicator; beats global *:focus-visible */
+                            placeholder="Enter observations, findings or notes..."
+                            value={block.valueString || ''}
+                            onChange={(e) => onChange({ valueString: e.target.value })}
+                            disabled={readOnly}
+                            rows={2}
+                        />
+                    </div>
                 )}
 
                 {/* NUMBER */}

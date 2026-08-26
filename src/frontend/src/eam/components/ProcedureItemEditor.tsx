@@ -153,15 +153,23 @@ export const ProcedureItemEditor: React.FC<ProcedureItemEditorProps> = ({ block,
                 );
 
             case 'TEXT':
-                // Dashed answer boxes were being mistaken for live inputs while authoring —
-                // the "Preview" chip says this is what the technician sees during execution.
+                // Live observation capture — the technician's answer lives on this block
+                // (valueString), so no separate observations field is needed. Emerald marks
+                // it as the technician's area, distinct from the slate instruction above.
                 return (
-                    <div className="mt-2 p-3 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50 flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 text-slate-400 min-w-0">
-                            <FileText size={14} className="flex-shrink-0" />
-                            <span className="text-xs truncate">Technician writes their response here during execution</span>
+                    <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50/50 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
+                        <div className="flex items-center gap-1.5 px-2.5 pt-1.5">
+                            <FileText size={10} className="text-emerald-500 flex-shrink-0" />
+                            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-600">Technician Observation</span>
                         </div>
-                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-300 border border-slate-200 rounded px-1 py-0.5 flex-shrink-0">Preview</span>
+                        <textarea
+                            className="w-full bg-transparent px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-emerald-400/60 resize-none"
+                            style={{ outline: 'none' }} /* container's focus-within ring is the indicator; beats global *:focus-visible */
+                            placeholder="Observations, findings or notes are written here during execution..."
+                            value={block.valueString || ''}
+                            onChange={(e) => onChange({ valueString: e.target.value })}
+                            rows={2}
+                        />
                     </div>
                 );
 
