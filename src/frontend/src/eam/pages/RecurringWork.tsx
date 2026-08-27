@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import {
     Search, Plus, Filter, Save, Calendar, Clock, Gauge, FileText,
     Link as LinkIcon, Layers, Package, Users, ClipboardList,
-    ChevronRight, Zap, Play, CheckCircle, AlertTriangle, Repeat, Shield,
+    ChevronRight, ChevronLeft, Zap, Play, CheckCircle, AlertTriangle, Repeat, Shield,
     MoveUp, MoveDown, Trash2, Edit2, CheckSquare, Hash, AlignLeft, X, Loader2,
     Copy, Maximize2, Minimize2, Star, ArrowUpRight, ArrowLeft, History, ChevronDown, ChevronUp,
     PauseCircle, PlayCircle, BarChart3, Eye, TrendingUp, Upload, BookOpen
@@ -2246,113 +2247,232 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
     });
 
     const editingTask = tasks.find(t => t.id === editingTaskId);
+    const editingIndex = tasks.findIndex(t => t.id === editingTaskId);
+
+    // Step popup plumbing — Esc closes, body scroll locks while open. Same
+    // pattern as the Work Order step popup so PM templates feel identical.
+    useEffect(() => {
+        if (!editingTaskId) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setEditingTaskId(null); };
+        window.addEventListener('keydown', onKey);
+        const prevOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prevOverflow; };
+    }, [editingTaskId]);
+
+    const totalHrs = tasks.reduce((s, t) => s + (t.estHours || 0), 0);
 
     return (
-        <div className="flex gap-6 h-[600px] animate-in fade-in duration-300">
-            {/* Left: Task List */}
-            <div className="w-1/3 bg-white border border-slate-200 rounded-lg flex flex-col overflow-hidden">
-                <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                    <h3 className="font-bold text-slate-800 text-sm">Job Steps (Template)</h3>
-                    <div className="flex gap-1.5">
-                        <button
-                            onClick={openLibraryPicker}
-                            className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded hover:bg-blue-100 flex items-center gap-1 font-medium transition-colors"
-                            title="Import steps from Task Library"
-                        >
-                            <BookOpen size={13} /> Library
-                        </button>
-                        <button onClick={addTask} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1">
-                            <Plus size={14} /> Add
-                        </button>
-                    </div>
-                </div>
-                <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                    {tasks.map((task, index) => (
-                        <div
-                            key={task.id}
-                            onClick={() => setEditingTaskId(task.id)}
-                            className={`p-3 rounded-lg border cursor-pointer transition relative group ${editingTaskId === task.id ? 'bg-blue-50 border-blue-500 ring-1 ring-blue-500' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
-                        >
-                            <div className="flex justify-between items-start mb-1">
-                                <span className="font-mono text-xs font-bold text-slate-500 bg-slate-100 px-1.5 rounded">{task.sequence}</span>
-                                <span className="text-[10px] text-slate-400">{(task.instructions || []).length} steps</span>
-                            </div>
-                            <input
-                                type="text"
-                                value={task.description}
-                                onChange={(e) => { e.stopPropagation(); updateTask(task.id, { description: e.target.value }); }}
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-full font-medium text-slate-900 text-sm mb-1 bg-transparent border-none p-0 focus:ring-0 focus:outline-none placeholder:text-slate-300"
-                                placeholder="Enter task step name..."
-                            />
-                            <div className="flex justify-between items-center text-xs text-slate-500">
-                                <span>{task.estHours} Hrs</span>
-                            </div>
-                            <div className={`absolute right-2 top-8 flex flex-col gap-1 ${editingTaskId === task.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
-                                <button onClick={(e) => { e.stopPropagation(); moveTask(index, 'up'); }} className="p-1 hover:bg-slate-200 rounded text-slate-500" disabled={index === 0}><MoveUp size={12} /></button>
-                                <button onClick={(e) => { e.stopPropagation(); moveTask(index, 'down'); }} className="p-1 hover:bg-slate-200 rounded text-slate-500" disabled={index === tasks.length - 1}><MoveDown size={12} /></button>
-                            </div>
-                        </div>
-                    ))}
-                    {tasks.length === 0 && (
-                        <div className="text-center py-8 text-slate-400 text-sm">
-                            <BookOpen size={32} className="mx-auto mb-3 opacity-30" />
-                            <p>No tasks defined.</p>
-                            <p className="mt-1">Click <strong>Library</strong> to import from the Task Library, or <strong>Add</strong> to start from scratch.</p>
-                        </div>
+        <div className="animate-in fade-in duration-300">
+            {/* Header Bar — harmonised with the Work Order Tasks tab */}
+            <div className="bg-white border border-slate-200 rounded-t-lg p-2 sm:p-3 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                    <h3 className="font-bold text-slate-800 text-sm whitespace-nowrap">Steps <span className="hidden sm:inline text-slate-400 font-normal">(template)</span></h3>
+                    {tasks.length > 0 && (
+                        <span className="text-[10px] text-slate-400 whitespace-nowrap border-l border-slate-200 pl-2">
+                            {tasks.length} step{tasks.length === 1 ? '' : 's'} · {totalHrs.toFixed(1)}h
+                        </span>
                     )}
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                        onClick={openLibraryPicker}
+                        className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded hover:bg-blue-100 flex items-center gap-1 font-medium transition-colors"
+                        title="Import steps from Task Library"
+                    >
+                        <BookOpen size={13} /> Library
+                    </button>
+                    <button onClick={addTask} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded hover:bg-primary-500 flex items-center gap-1 font-medium">
+                        <Plus size={14} /> Add
+                    </button>
                 </div>
             </div>
 
-            {/* Right: Task Editor with ProcedureBuilder */}
-            <div className="flex-1 bg-white border border-slate-200 rounded-lg flex flex-col overflow-hidden">
-                {editingTask ? (
-                    <div className="flex flex-col h-full">
-                        {/* Task Header */}
-                        <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                            <div className="flex items-center gap-3">
-                                <span className="font-mono font-bold text-slate-500 bg-white border border-slate-200 px-2 py-1 rounded">Seq {editingTask.sequence}</span>
+            {/* Stacked step rows — full width, same look as the WO Tasks tab */}
+            <div className="border-x border-b border-slate-200 rounded-b-lg overflow-hidden bg-slate-50/50">
+                {tasks.map((task, index) => (
+                    <div key={task.id} className={index > 0 ? 'border-t border-slate-200' : ''}>
+                        <div
+                            onClick={() => setEditingTaskId(task.id)}
+                            className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2.5 sm:py-3 cursor-pointer transition-colors group bg-white hover:bg-slate-50 border-l-[3px] border-l-transparent hover:border-l-blue-300"
+                        >
+                            <ChevronRight size={16} className="text-slate-400 flex-shrink-0" />
+                            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded flex-shrink-0 bg-slate-100 text-slate-500">
+                                {index + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                                <input
+                                    type="text"
+                                    value={task.description}
+                                    onChange={(e) => updateTask(task.id, { description: e.target.value })}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onFocus={(e) => e.stopPropagation()}
+                                    className="w-full font-medium text-sm text-slate-900 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 hover:border-slate-300 focus:ring-2 focus:ring-primary-400 focus:border-primary-600 focus:outline-none placeholder:text-slate-300 truncate transition-colors"
+                                    placeholder="Enter task step name..."
+                                />
+                            </div>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); deleteTask(task.id); }}
+                                className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors flex-shrink-0"
+                                title="Delete task step"
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                            {(task.instructions?.length || 0) > 0 && (
+                                <span className="hidden sm:flex text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 font-medium items-center gap-0.5 flex-shrink-0">
+                                    <ClipboardList size={9} /> {task.instructions?.length}
+                                </span>
+                            )}
+                            <span className="hidden sm:block text-xs text-slate-500 font-medium flex-shrink-0 w-14 text-right">
+                                {task.estHours}h
+                            </span>
+                            <div className="hidden sm:flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); moveTask(index, 'up'); }}
+                                    className="p-1 hover:bg-slate-200 rounded text-slate-400 disabled:opacity-30"
+                                    disabled={index === 0}
+                                ><MoveUp size={12} /></button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); moveTask(index, 'down'); }}
+                                    className="p-1 hover:bg-slate-200 rounded text-slate-400 disabled:opacity-30"
+                                    disabled={index === tasks.length - 1}
+                                ><MoveDown size={12} /></button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                {tasks.length === 0 && (
+                    <div className="text-center py-12 text-slate-400 bg-white">
+                        <BookOpen size={40} className="mx-auto mb-3 opacity-20" />
+                        <p className="text-sm font-medium">No tasks defined</p>
+                        <p className="text-xs mt-1">Click <strong>Library</strong> to import from the Task Library, or <strong>Add</strong> to start from scratch.</p>
+                    </div>
+                )}
+            </div>
+
+            {/* Step popup — same shell as the Work Order step popup: full-screen on
+                mobile, centered modal on desktop. Portaled to <body>: the PM detail
+                overlay (fixed z-40) is a stacking context that would trap this below
+                the z-50 mobile bottom nav. */}
+            {editingTask && createPortal(
+                <div className="fixed inset-0 z-[60] flex items-stretch sm:items-center justify-center sm:p-6">
+                    <div
+                        className="absolute inset-0 bg-black/50 animate-in fade-in duration-200"
+                        onClick={() => setEditingTaskId(null)}
+                    />
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={`Step ${editingIndex + 1}: ${editingTask.description || 'Untitled step'}`}
+                        className="relative w-full sm:max-w-3xl h-full sm:h-[90vh] bg-slate-50 sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95 fade-in duration-200"
+                    >
+                        {/* Header — step identity + navigation */}
+                        <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3 bg-blue-600 text-white shrink-0">
+                            <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white/20 shrink-0">
+                                {editingIndex + 1}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-sm sm:text-base truncate">{editingTask.description || 'Untitled step'}</div>
+                                <div className="text-[10px] sm:text-[11px] text-blue-100">
+                                    Step {editingIndex + 1} of {tasks.length} — PM template
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                    onClick={addTask}
+                                    className="hidden sm:flex items-center gap-1 text-[11px] font-semibold px-2 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25 transition-colors mr-1"
+                                    title="Add a new step to this template"
+                                ><Plus size={13} /> New step</button>
+                                <button
+                                    onClick={() => setEditingTaskId(tasks[editingIndex - 1].id)}
+                                    disabled={editingIndex <= 0}
+                                    className="p-1.5 rounded-lg text-blue-100 hover:bg-white/15 disabled:opacity-30 transition-colors"
+                                    title="Previous step"
+                                ><ChevronLeft size={16} /></button>
+                                <button
+                                    onClick={() => setEditingTaskId(tasks[editingIndex + 1].id)}
+                                    disabled={editingIndex >= tasks.length - 1}
+                                    className="p-1.5 rounded-lg text-blue-100 hover:bg-white/15 disabled:opacity-30 transition-colors"
+                                    title="Next step"
+                                ><ChevronRight size={16} /></button>
+                                <button
+                                    onClick={() => setEditingTaskId(null)}
+                                    className="p-1.5 rounded-lg text-blue-100 hover:bg-white/15 ml-1 transition-colors"
+                                    title="Close (Esc)"
+                                ><X size={16} /></button>
+                            </div>
+                        </div>
+                        {/* Step name + estimate */}
+                        <div className="px-3 sm:px-5 py-3 bg-white border-b border-slate-200 shrink-0">
+                            <label className="text-[11px] font-bold uppercase tracking-wider text-blue-600 flex items-center gap-1.5 mb-1.5">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" /> Step name
+                            </label>
+                            <div className="flex items-center gap-2">
                                 <input
                                     type="text"
                                     value={editingTask.description}
                                     onChange={(e) => updateTask(editingTask.id, { description: e.target.value })}
-                                    className="font-bold text-slate-900 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none px-1 py-0.5 w-64"
+                                    autoFocus={!editingTask.description}
+                                    placeholder="What does this step do? e.g. Isolate and lock out main drive"
+                                    className={`flex-1 min-w-0 text-sm font-medium rounded-lg px-3 py-2 border outline-none transition-colors focus:ring-2 focus:ring-primary-400 focus:border-primary-600 ${
+                                        !editingTask.description
+                                            ? 'border-amber-300 bg-amber-50/40 placeholder:text-amber-500/60'
+                                            : 'border-slate-200 bg-white hover:border-slate-300'
+                                    }`}
                                 />
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <div className="flex items-center gap-2">
-                                    <label className="text-[10px] text-slate-400 uppercase font-bold">Est Hrs</label>
+                                <div className="flex items-center gap-1 flex-shrink-0 text-xs">
+                                    <Clock size={12} className="text-slate-400" />
                                     <input
                                         type="number"
                                         value={editingTask.estHours}
                                         onChange={(e) => updateTask(editingTask.id, { estHours: parseFloat(e.target.value) || 0 })}
-                                        className="w-16 text-sm border-slate-300 rounded p-1 text-center"
+                                        className="w-14 text-sm border border-slate-200 rounded-lg p-2 text-right focus:ring-2 focus:ring-primary-400 focus:border-primary-600 outline-none"
+                                        title="Estimated hours for this step"
                                     />
+                                    <span className="text-slate-400">hrs</span>
                                 </div>
-                                <button onClick={() => deleteTask(editingTask.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded" title="Delete task"><Trash2 size={16} /></button>
                             </div>
                         </div>
-
-                        {/* ProcedureBuilder - full instruction editor */}
-                        <div className="flex-1 overflow-y-auto">
+                        {/* Body — instruction builder */}
+                        <div className="flex-1 overflow-y-auto overscroll-contain p-2 sm:p-3">
                             <ProcedureBuilder
                                 instructions={editingTask.instructions || []}
                                 onChange={(blocks) => updateTask(editingTask.id, { instructions: blocks })}
                                 mode="EDIT"
                             />
                         </div>
+                        {/* Footer */}
+                        <div
+                            className="flex items-center gap-2 px-3 sm:px-5 py-3 bg-white border-t border-slate-200 shrink-0"
+                            style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+                        >
+                            <button
+                                onClick={() => deleteTask(editingTask.id)}
+                                className="flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-600 hover:bg-red-50 px-2.5 py-2 rounded-lg transition-colors"
+                                title="Delete this step from the template"
+                            >
+                                <Trash2 size={13} /> Delete step
+                            </button>
+                            <span className="hidden sm:flex items-center gap-1 text-[10px] text-slate-400 ml-1">
+                                <CheckCircle size={11} className="text-emerald-500" /> Changes apply to the template — Save the PM to persist
+                            </span>
+                            <div className="flex-1" />
+                            <button
+                                onClick={() => setEditingTaskId(null)}
+                                className="text-xs font-bold bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-500 transition-colors"
+                            >
+                                Done
+                            </button>
+                        </div>
                     </div>
-                ) : (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                        <ClipboardList size={48} className="mb-4 opacity-20" />
-                        <p>Select a task to view details or edit instructions.</p>
-                    </div>
-                )}
-            </div>
+                </div>,
+                document.body
+            )}
 
-            {/* Enhancement 1: Library Picker Modal */}
-            {showLibraryPicker && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            {/* Enhancement 1: Library Picker Modal — portaled for the same
+                stacking-context reason as the step popup */}
+            {showLibraryPicker && createPortal(
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
                         <div className="p-4 border-b border-slate-200 bg-blue-50 flex justify-between items-center">
                             <div>
@@ -2448,7 +2568,8 @@ const TasksTab: React.FC<{ job: RecurringJob; onUpdate: (u: Partial<RecurringJob
                             )}
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
