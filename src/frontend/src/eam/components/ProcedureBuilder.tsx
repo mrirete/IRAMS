@@ -191,10 +191,7 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
 
     return (
         <div className="space-y-3">
-            <div className="flex items-start gap-3">
-                {/* Instructions column — the list stays fully visible while adding */}
-                <div className="flex-1 min-w-0 space-y-3">
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={instructions.map(i => i.id)} strategy={verticalListSortingStrategy}>
                     {/* Nested under the step: connector line + indent so it reads as a sub-folder */}
                     <div className="space-y-3 pl-2 sm:pl-6 border-l-2 border-slate-100 ml-0.5 sm:ml-2">
@@ -221,59 +218,53 @@ export const ProcedureBuilder: React.FC<ProcedureBuilderProps> = ({ instructions
                 </SortableContext>
             </DndContext>
 
-                    {instructions.length === 0 && mode === 'EXECUTE' && (
-                        <div className="text-center text-slate-400 py-8 italic">
-                            No instructions defined for this task.
-                        </div>
-                    )}
-                    {instructions.length === 0 && mode === 'EDIT' && (
-                        <div className="text-center text-slate-400 py-8 italic border-2 border-dashed border-slate-100 rounded-lg">
-                            No instructions yet — tap Add instruction to create the first one.
-                        </div>
-                    )}
+            {instructions.length === 0 && mode === 'EXECUTE' && (
+                <div className="text-center text-slate-400 py-8 italic">
+                    No instructions defined for this task.
                 </div>
+            )}
+            {instructions.length === 0 && mode === 'EDIT' && (
+                <div className="text-center text-slate-400 py-8 italic border-2 border-dashed border-slate-100 rounded-lg">
+                    No instructions yet — tap Add instruction to create the first one.
+                </div>
+            )}
 
-                {/* Side rail — add types without covering the list (desktop) */}
-                {mode === 'EDIT' && !readOnly && (
-                    <div className="hidden sm:block w-[96px] shrink-0">
-                        <div className="sticky top-2 bg-white border border-slate-200 rounded-xl p-1.5 shadow-sm">
-                            <div className="text-[9px] text-blue-600 uppercase font-bold tracking-wider flex items-center gap-1 mb-1 px-1">
-                                <span className="w-1 h-1 rounded-full bg-blue-500 inline-block" /> Add
-                            </div>
-                            <div className="flex flex-col gap-0.5">
-                                {QUICK_TYPES.map(qt => {
-                                    const tool = BLOCK_TYPES.find(t => t.type === qt)!;
-                                    const style = CATEGORY_STYLES[tool.category];
-                                    return (
-                                        <button
-                                            key={qt}
-                                            onClick={() => addBlock(qt)}
-                                            className="group w-full flex flex-col items-center gap-0.5 py-1.5 rounded-lg border border-transparent hover:border-blue-200 hover:bg-blue-50/60 transition-colors"
-                                            title={`Add a ${tool.label} block`}
-                                        >
-                                            <span className={`p-1.5 rounded-md ${style.chip}`}>
-                                                <tool.icon size={14} />
-                                            </span>
-                                            <span className="text-[9px] font-semibold text-slate-500 group-hover:text-blue-700 leading-tight text-center">
-                                                {RAIL_LABELS[qt] || tool.label}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            <div className="border-t border-slate-100 my-1" />
+            {/* Add bar (desktop) — one compact chip row at the foot of the list,
+                the same visual scale as an instruction card (was a tall side rail).
+                Mobile keeps the collapsed Add-instruction dropdown below. */}
+            {mode === 'EDIT' && !readOnly && (
+                <div className="hidden sm:flex items-center gap-1.5 flex-wrap pl-6 ml-2.5">
+                    <span className="text-[9px] text-blue-600 uppercase font-bold tracking-wider flex items-center gap-1 mr-0.5">
+                        <span className="w-1 h-1 rounded-full bg-blue-500 inline-block" /> Add
+                    </span>
+                    {QUICK_TYPES.map(qt => {
+                        const tool = BLOCK_TYPES.find(t => t.type === qt)!;
+                        const style = CATEGORY_STYLES[tool.category];
+                        return (
                             <button
-                                onClick={() => setShowAddMenu(!showAddMenu)}
-                                className={`w-full flex flex-col items-center gap-0.5 py-1.5 rounded-lg border transition-colors ${showAddMenu ? 'bg-blue-600 border-blue-600 text-white' : 'border-transparent text-slate-500 hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-700'}`}
-                                title="Show every instruction type"
+                                key={qt}
+                                onClick={() => addBlock(qt)}
+                                className="group flex items-center gap-1.5 pl-1 pr-2 py-1 bg-white border border-slate-200 rounded-lg hover:border-blue-300 hover:bg-blue-50/60 transition-colors"
+                                title={`Add a ${tool.label} block`}
                             >
-                                <Plus size={14} />
-                                <span className="text-[9px] font-semibold leading-tight">All types</span>
+                                <span className={`p-1 rounded ${style.chip}`}>
+                                    <tool.icon size={12} />
+                                </span>
+                                <span className="text-[11px] font-medium text-slate-600 group-hover:text-blue-800">
+                                    {RAIL_LABELS[qt] || tool.label}
+                                </span>
                             </button>
-                        </div>
-                    </div>
-                )}
-            </div>
+                        );
+                    })}
+                    <button
+                        onClick={() => setShowAddMenu(!showAddMenu)}
+                        className={`flex items-center gap-1 px-2 py-1.5 rounded-lg border text-[11px] font-medium transition-colors ${showAddMenu ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-200 text-slate-500 hover:border-blue-300 hover:bg-blue-50/60 hover:text-blue-700'}`}
+                        title="Show every instruction type"
+                    >
+                        <Plus size={12} /> All types
+                    </button>
+                </div>
+            )}
 
             {/* Mobile quick-add — collapsed dropdown so the step stays calm until needed */}
             {mode === 'EDIT' && !readOnly && (

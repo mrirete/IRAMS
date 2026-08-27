@@ -125,7 +125,6 @@
 .obs-cue::placeholder,
 .eam-app .obs-cue::placeholder {
   color: #059669; /* emerald-600, matches the field's icon/border coding */
-  font-weight: 600;
   opacity: 1;
 }
 
