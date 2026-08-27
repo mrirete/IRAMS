@@ -6128,14 +6128,6 @@ const TaskEditor: React.FC<{
         return [...current, item];
     };
 
-    const [showObservations, setShowObservations] = useState(false);
-    const [observationText, setObservationText] = useState(task.observations || '');
-    // The observations panel sits BELOW the instruction list; opening it from the
-    // header button must bring it into view or the click looks like a no-op.
-    const observationsRef = useRef<HTMLDivElement>(null);
-    useEffect(() => {
-        if (showObservations) observationsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, [showObservations]);
     const [showLibraryPicker, setShowLibraryPicker] = useState(false);
     const [libraryTasks, setLibraryTasks] = useState<LibraryTask[]>([]);
     const [libraryLoading, setLibraryLoading] = useState(false);
@@ -6364,16 +6356,6 @@ const TaskEditor: React.FC<{
                         </h4>
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={() => setShowObservations(!showObservations)}
-                                className={`text-xs font-medium flex items-center gap-1 ${task.observations ? 'text-emerald-600 hover:text-emerald-700' : 'text-blue-600 hover:text-blue-700'}`}
-                            >
-                                <FileText size={12} />
-                                {showObservations ? 'Hide' : (task.observations ? 'View' : 'Add')} Observation
-                                {task.observations && !showObservations && (
-                                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
-                                )}
-                            </button>
-                            <button
                                 onClick={openLibraryPicker}
                                 title="Import from task library"
                                 className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
@@ -6393,51 +6375,15 @@ const TaskEditor: React.FC<{
                         />
                     </div>
 
-                    {/* Collapsible Observations — BELOW the instruction list (task-level notes
-                        come after the work steps, not above them); scrolled into view on open */}
-                    {showObservations && (
-                        <div ref={observationsRef} className="border-t border-slate-100 px-3 py-3 bg-slate-50">
-                            <label className="text-xs font-bold text-slate-600 uppercase mb-2 block flex items-center gap-1">
-                                <FileText size={12} />
-                                Observations & Notes
-                            </label>
-                            <textarea
-                                value={observationText}
-                                onChange={(e) => setObservationText(e.target.value)}
-                                placeholder="Add observations, findings, or notes about this task..."
-                                className="w-full p-2 text-sm border border-slate-200 rounded focus:ring-1 focus:ring-primary-500 focus:border-blue-500 min-h-[60px] resize-y"
-                                rows={2}
-                            />
-                            <div className="mt-2 flex items-center gap-2">
-                                <button className="text-xs flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-white transition">
-                                    <Camera size={12} />
-                                    Add Photo
-                                </button>
-                                <button className="text-xs flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-white transition">
-                                    <FileText size={12} />
-                                    Attach File
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        onChange({ observations: observationText });
-                                        setShowObservations(false);
-                                    }}
-                                    className="ml-auto text-xs bg-primary-600 text-white px-3 py-1 rounded hover:bg-primary-500 font-medium"
-                                >
-                                    Save Observation
-                                </button>
-                                {task.observations && (
-                                    <button
-                                        onClick={() => {
-                                            setObservationText('');
-                                            onChange({ observations: '' });
-                                            setShowObservations(false);
-                                        }}
-                                        className="text-xs text-red-500 hover:text-red-700 font-medium"
-                                    >
-                                        Clear
-                                    </button>
-                                )}
+                    {/* Task-level Add Observation was retired — observations are captured
+                        inline on TEXT instruction blocks. Legacy notes saved through the
+                        old panel stay visible (read-only) so no data silently disappears. */}
+                    {task.observations && (
+                        <div className="border-t border-slate-100 px-3 py-2 bg-slate-50 flex items-start gap-2 text-xs text-slate-600">
+                            <FileText size={12} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mr-2">Task note</span>
+                                {task.observations}
                             </div>
                         </div>
                     )}

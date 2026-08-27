@@ -4,9 +4,12 @@ import { StorageImage } from './ui/StorageImage';
 import {
     CheckSquare, Square, Camera, PenTool, AlertTriangle, AlertOctagon,
     CheckCircle, XCircle, Activity, Lock, Link as LinkIcon,
-    Image as ImageIcon, ExternalLink, FileText
+    Image as ImageIcon, ExternalLink, FileText, Loader2, X
 } from 'lucide-react';
 import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
+import { useToast } from '../contexts/ToastContext';
+import { DatabaseService } from '../services/DatabaseService';
+import { openStorageRef } from '../../lib/storageUrl';
 
 // Auto-grow a single-line textarea to fit its content (observation capture)
 const autoGrow = (el: HTMLTextAreaElement | null) => {
@@ -21,6 +24,25 @@ interface ProcedureItemRendererProps {
 export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ block, onChange, readOnly }) => {
     const confirm = useConfirm();
     const promptModal = usePrompt();
+    const { showToast } = useToast();
+
+    // Observation attachments — technician evidence on the TEXT block, stored in
+    // photoUrls (block.media is the author's reference material)
+    const [obsUploading, setObsUploading] = React.useState(false);
+    const obsDeviceRef = React.useRef<HTMLInputElement>(null);
+    const obsCameraRef = React.useRef<HTMLInputElement>(null);
+    const handleObsFile = async (file: File | undefined | null) => {
+        if (!file) return;
+        setObsUploading(true);
+        try {
+            const url = await DatabaseService.getInstance().uploadImage(file, 'work-order-docs', 'obs_');
+            onChange({ photoUrls: [...(block.photoUrls || []), url] });
+        } catch (e: any) {
+            showToast('Attachment upload failed: ' + (e?.message || 'unknown error'), 'error');
+        } finally {
+            setObsUploading(false);
+        }
+    };
 
     // Helper: Condition Reading Validation
     const handleConditionChange = (val: number) => {
@@ -115,17 +137,74 @@ export const ProcedureItemRenderer: React.FC<ProcedureItemRendererProps> = ({ bl
                     replaced by the technician's actual observation. Single-line box
                     that grows with content. */}
                 {block.type === 'TEXT' && (
-                    <div className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2.5 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
-                        <FileText size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
-                        <textarea
-                            ref={autoGrow}
-                            className="w-full bg-transparent text-xs text-slate-700 obs-cue resize-none"
-                            style={{ outline: 'none' }} /* container's focus-within ring is the indicator; beats global *:focus-visible */
-                            placeholder="Technician observation"
-                            value={block.valueString || ''}
-                            onChange={(e) => { autoGrow(e.target); onChange({ valueString: e.target.value }); }}
-                            disabled={readOnly}
-                            rows={1}
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 focus-within:border-emerald-400 focus-within:ring-2 focus-within:ring-emerald-500/10 transition-all">
+                        <div className="flex items-start gap-2 px-3 py-2.5">
+                            <FileText size={13} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+                            <textarea
+                                ref={autoGrow}
+                                className="w-full bg-transparent text-xs text-slate-700 obs-cue resize-none"
+                                style={{ outline: 'none' }} /* container's focus-within ring is the indicator; beats global *:focus-visible */
+                                placeholder="Technician observation"
+                                value={block.valueString || ''}
+                                onChange={(e) => { autoGrow(e.target); onChange({ valueString: e.target.value }); }}
+                                disabled={readOnly}
+                                rows={1}
+                            />
+                            {!readOnly && (
+                                <div className="flex items-center gap-0.5 flex-shrink-0 -mt-0.5">
+                                    <button
+                                        onClick={() => obsCameraRef.current?.click()}
+                                        disabled={obsUploading}
+                                        className="p-1 text-emerald-400 hover:text-emerald-600 hover:bg-emerald-100 rounded transition-colors disabled:opacity-60"
+                                        title="Photo evidence for this observation"
+                                    >
+                                        <Camera size={13} />
+                                    </button>
+                                    <button
+                                        onClick={() => obsDeviceRef.current?.click()}
+                                        disabled={obsUploading}
+                                        className="p-1 text-emerald-400 hover:text-emerald-600 hover:bg-emerald-100 rounded transition-colors disabled:opacity-60"
+                                        title="Attach an image to this observation"
+                                    >
+                                        {obsUploading ? <Loader2 size={13} className="animate-spin" /> : <ImageIcon size={13} />}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        {(block.photoUrls || []).length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 px-3 pb-2.5">
+                                {(block.photoUrls || []).map((url, idx) => (
+                                    <div key={idx} className="relative group/obs">
+                                        <button type="button" onClick={() => void openStorageRef(url)}>
+                                            <StorageImage value={url} alt={`Observation evidence ${idx + 1}`} className="w-12 h-12 rounded object-cover border border-emerald-200" />
+                                        </button>
+                                        {!readOnly && (
+                                            <button
+                                                onClick={() => onChange({ photoUrls: (block.photoUrls || []).filter((_, i) => i !== idx) })}
+                                                className="absolute -top-1.5 -right-1.5 bg-white border border-slate-200 rounded-full p-0.5 text-slate-400 hover:text-red-500 opacity-0 group-hover/obs:opacity-100 transition-opacity"
+                                                title="Remove attachment"
+                                            >
+                                                <X size={10} />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <input
+                            ref={obsDeviceRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => { handleObsFile(e.target.files?.[0]); e.target.value = ''; }}
+                        />
+                        <input
+                            ref={obsCameraRef}
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={(e) => { handleObsFile(e.target.files?.[0]); e.target.value = ''; }}
                         />
                     </div>
                 )}
