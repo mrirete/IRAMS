@@ -3151,6 +3151,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     };
 
     // Phase 4: asset reliability context (failure history → MTBF/MTTR + RCA signal).
+    const navigate = useNavigate();
     const [relMetrics, setRelMetrics] = useState<AssetReliability | null>(null);
     useEffect(() => {
         let active = true;
@@ -3253,27 +3254,42 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
             {/* ══ Closeout Quality (Gate 2) — advisory ══ */}
             <CloseoutReadinessStrip readiness={closeout} onReview={handleReviewCloseout} reviewGate={closeoutGate} />
 
-            {/* ══ Asset Reliability context (Phase 4) — SMRP equipment-reliability KPIs ══ */}
+            {/* ══ Asset Reliability context (Phase 4) — compact signal strip. The full
+                KPI dossier lives on the asset page (same engine); here one line of
+                inline stats plus the closeout-relevant signals (recurring modes,
+                failing parts, RCA call) only when they exist. MTBF/MTTR are skipped
+                when undefined (single failure) instead of rendering dash tiles. ══ */}
             {relMetrics && relMetrics.totalFailures > 0 && (
-                <div className="rounded-xl border border-slate-200 bg-white p-3 md:p-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2"><AlertOctagon size={15} className="text-blue-600" /> Asset Reliability</h3>
-                        <span className="text-[10px] text-slate-400 uppercase tracking-wide">last 12 months</span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {([
-                            // 0289 honesty rule: collateral events are excluded from the
-                            // count but always shown, never silently dropped.
-                            ['Failures (12mo)', relMetrics.collateral12mo > 0 ? `${relMetrics.failures12mo} +${relMetrics.collateral12mo} collateral` : String(relMetrics.failures12mo)],
-                            ['MTBF', relMetrics.mtbfDays != null ? `${relMetrics.mtbfDays}d` : '—'],
-                            ['MTTR', relMetrics.mttrHours != null ? `${relMetrics.mttrHours}h` : '—'],
-                            ['Last failure', relMetrics.lastFailureDate ? new Date(relMetrics.lastFailureDate).toLocaleDateString() : '—'],
-                        ] as [string, string][]).map(([label, value]) => (
-                            <div key={label} className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
-                                <div className="text-base font-extrabold text-slate-800">{value}</div>
-                                <div className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</div>
-                            </div>
-                        ))}
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 md:px-4">
+                    <div className="flex items-center gap-x-2 gap-y-0.5 flex-wrap text-xs text-slate-600">
+                        <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <AlertOctagon size={14} className="text-blue-600" /> Asset Reliability
+                        </span>
+                        <span className="font-semibold text-slate-700">
+                            {/* 0289 honesty rule: collateral events are excluded from the
+                                count but always shown, never silently dropped. */}
+                            {relMetrics.failures12mo} failure{relMetrics.failures12mo === 1 ? '' : 's'}
+                            {relMetrics.collateral12mo > 0 && ` +${relMetrics.collateral12mo} collateral`}
+                            <span className="text-slate-400 font-normal"> (12mo)</span>
+                        </span>
+                        {relMetrics.mtbfDays != null && (
+                            <span>· MTBF <span className="font-semibold text-slate-700">{relMetrics.mtbfDays}d</span></span>
+                        )}
+                        {relMetrics.mttrHours != null && (
+                            <span>· MTTR <span className="font-semibold text-slate-700">{relMetrics.mttrHours}h</span></span>
+                        )}
+                        {relMetrics.lastFailureDate && (
+                            <span>· last <span className="font-semibold text-slate-700">{new Date(relMetrics.lastFailureDate).toLocaleDateString()}</span></span>
+                        )}
+                        {job.assetId && (
+                            <button
+                                onClick={() => navigate(`/assets?id=${job.assetId}`)}
+                                className="ml-auto text-blue-600 hover:text-blue-700 font-medium flex items-center gap-0.5"
+                                title="Full reliability history on the asset page"
+                            >
+                                History <ChevronRight size={12} />
+                            </button>
+                        )}
                     </div>
                     {relMetrics.recurringModes.length > 0 && (
                         <div className="mt-2 flex items-center gap-1.5 flex-wrap text-[11px]">
