@@ -3060,11 +3060,14 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     const [journalType, setJournalType] = useState('Note');
     const [showFollowUpConfirm, setShowFollowUpConfirm] = useState(false);
 
-    const addJournal = () => {
+    // Follow-up is an ACTION, not a note category: it arms the Complete &
+    // Raise Follow-Up flow. So it submits via its own button beside the
+    // composer instead of hiding in the type dropdown.
+    const addJournal = (asFollowUp = false) => {
         if (!note.trim()) return;
         const newJournal = {
             id: `j-${Date.now()}`,
-            type: journalType,
+            type: asFollowUp ? 'Follow-up' : journalType,
             entry: note,
             createdBy: profile?.username || profile?.fullName || 'Unknown User',
             createdAt: new Date().toISOString(), // ISO — sortable and timezone-safe (0285)
@@ -3073,7 +3076,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
         onUpdate({ journals: [newJournal, ...(job.journals || [])] });
         // A "Follow-up" entry IS the follow-up request: it arms the
         // Complete & Raise Follow-Up action and rides into the new WO.
-        if (journalType === 'Follow-up') onFollowUpDescriptionChange?.(note);
+        if (asFollowUp) onFollowUpDescriptionChange?.(note);
         setNote('');
     };
 
@@ -3708,7 +3711,6 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                             <option value="Note">Note</option>
                             <option value="Observation">Observation</option>
                             <option value="Handover">Handover</option>
-                            <option value="Follow-up">Follow-up</option>
                             <option value="Safety">Safety</option>
                         </select>
                         <span className="text-[10px] text-slate-400">as {profile?.username || 'Unknown'}</span>
@@ -3721,14 +3723,27 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                             placeholder={`Add ${journalType.toLowerCase()} entry...`}
                             onKeyDown={(e) => { if (e.key === 'Enter' && e.ctrlKey) addJournal(); }}
                         />
-                        <button
-                            onClick={addJournal}
-                            disabled={!note.trim()}
-                            className="absolute bottom-2 right-2 p-1.5 sm:p-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 disabled:hover:bg-primary-600 transition min-w-[32px] min-h-[32px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
-                            title="Add entry (Ctrl+Enter)"
-                        >
-                            <ArrowRight size={14} />
-                        </button>
+                        <div className="absolute bottom-2 right-2 flex items-center gap-1.5">
+                            {/* Follow-up submits the SAME text as a Follow-up entry and
+                                arms Complete & Raise Follow-Up — an action, so it sits
+                                beside the composer, not in the type dropdown */}
+                            <button
+                                onClick={() => addJournal(true)}
+                                disabled={!note.trim()}
+                                className="px-2 py-1.5 bg-amber-100 border border-amber-300 text-amber-800 rounded-lg hover:bg-amber-200 disabled:opacity-50 disabled:hover:bg-amber-100 transition min-h-[32px] sm:min-h-0 flex items-center gap-1 text-[10px] font-bold"
+                                title="Add as Follow-up — arms Complete & Raise Follow-Up and seeds the corrective WO"
+                            >
+                                <GitPullRequest size={12} /> Follow-up
+                            </button>
+                            <button
+                                onClick={() => addJournal()}
+                                disabled={!note.trim()}
+                                className="p-1.5 sm:p-1.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 disabled:hover:bg-primary-600 transition min-w-[32px] min-h-[32px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
+                                title="Add entry (Ctrl+Enter)"
+                            >
+                                <ArrowRight size={14} />
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -3810,9 +3825,9 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                     ) : (
                         <p className="text-xs text-slate-500">
                             {isPreventive
-                                ? 'Found a defect during this inspection? Add a journal entry of type '
-                                : 'Need remediation work after this job? Add a journal entry of type '}
-                            <span className="font-bold text-amber-700">Follow-up</span> above — it arms the
+                                ? 'Found a defect during this inspection? Describe it in Journals & Notes and tap '
+                                : 'Need remediation work after this job? Describe it in Journals & Notes and tap '}
+                            <span className="font-bold text-amber-700">Follow-up</span> — it arms the
                             <span className="font-semibold"> Complete &amp; Raise Follow-Up</span> action and rides into the new work order.
                         </p>
                     )}
@@ -3866,7 +3881,7 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
                 <p className="text-[10px] text-slate-400">
                     {followUpDescription.trim()
                         ? 'A follow-up corrective WO will be raised, seeded with your Follow-up journal entry.'
-                        : 'Need remediation afterwards? Add a Follow-up entry under Journals & Notes to arm it.'}
+                        : 'Need remediation afterwards? Use the Follow-up button under Journals & Notes to arm it.'}
                 </p>
             </div>
         </aside>
