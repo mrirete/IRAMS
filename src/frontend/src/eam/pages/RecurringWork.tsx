@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -643,6 +643,15 @@ export const RecurringWork: React.FC = () => {
         { id: 'history', label: 'History', icon: History },
     ];
 
+    // Mobile tab navigation: the strip scrolls, so keep the active tab visible
+    // and give thumbs prev/next steppers instead of hunting by swipe.
+    const activeTabIndex = TABS.findIndex(t => t.id === activeTab);
+    const tabStripRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        tabStripRef.current?.querySelector<HTMLElement>('[data-tab-active]')
+            ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    }, [activeTab]);
+
     /**
      * Job-plan import — the procedure content a migrated PM otherwise lacks.
      *
@@ -1097,12 +1106,20 @@ export const RecurringWork: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Tabs */}
-                    <div className="px-2 sm:px-6 border-b border-slate-200 bg-slate-50/50">
-                        <div className="flex gap-x-1 sm:gap-x-6 overflow-x-auto">
+                    {/* Tabs — on mobile the strip scrolls between prev/next steppers,
+                        and the active tab auto-scrolls into view */}
+                    <div className="px-0.5 sm:px-6 border-b border-slate-200 bg-slate-50/50 flex items-center">
+                        <button
+                            onClick={() => activeTabIndex > 0 && setActiveTab(TABS[activeTabIndex - 1].id)}
+                            disabled={activeTabIndex <= 0}
+                            className="lg:hidden p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-30 flex-shrink-0"
+                            title="Previous tab"
+                        ><ChevronLeft size={16} /></button>
+                        <div ref={tabStripRef} className="flex gap-x-1 sm:gap-x-6 overflow-x-auto flex-1 min-w-0">
                             {TABS.map(tab => (
                                 <button
                                     key={tab.id}
+                                    data-tab-active={activeTab === tab.id || undefined}
                                     onClick={() => setActiveTab(tab.id)}
                                     className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-0 py-2.5 sm:py-3 text-xs sm:text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === tab.id
                                         ? 'border-blue-600 text-blue-600 bg-white'
@@ -1114,6 +1131,12 @@ export const RecurringWork: React.FC = () => {
                                 </button>
                             ))}
                         </div>
+                        <button
+                            onClick={() => activeTabIndex < TABS.length - 1 && setActiveTab(TABS[activeTabIndex + 1].id)}
+                            disabled={activeTabIndex >= TABS.length - 1}
+                            className="lg:hidden p-1.5 text-slate-400 hover:text-slate-600 disabled:opacity-30 flex-shrink-0"
+                            title="Next tab"
+                        ><ChevronRight size={16} /></button>
                     </div>
 
                     {/* Content — extra bottom padding on mobile so the last fields
@@ -1335,7 +1358,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
     const complianceColor = compliance.compliancePct >= greenThreshold ? 'green' : compliance.compliancePct >= yellowThreshold ? 'yellow' : 'red';
 
     return (
-        <div className="space-y-6 animate-in fade-in">
+        <div className="space-y-3 sm:space-y-6 animate-in fade-in">
             {/* Criticality Badge */}
             {criticality && (
                 <div className={`flex items-center gap-2 sm:gap-3 flex-wrap p-3 rounded-lg border text-sm font-medium ${criticality === 'A' ? 'bg-red-50 border-red-200 text-red-800' :
@@ -1358,7 +1381,7 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                 </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-6">
                 {/* Left Column: Scheduling Settings */}
                 <div className="bg-white p-4 sm:p-6 rounded-lg border border-slate-200 shadow-sm space-y-6">
                     <div>
@@ -1909,15 +1932,15 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
     };
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-6">
             {/* Auto-Assignment Rules Engine (Phase 5C) */}
-            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                <div className="flex justify-between items-center mb-4">
+            <div className="bg-white p-3 sm:p-4 rounded-lg border border-slate-200 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 mb-3 sm:mb-4">
                     <div>
                         <h3 className="font-bold text-slate-800 text-sm uppercase">Auto-Assignment Rules</h3>
                         <p className="text-[10px] text-slate-400 mt-0.5">Define rules to automatically link matching assets to this PM strategy.</p>
                     </div>
-                    <button onClick={runRules} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-500 font-bold shadow-sm flex items-center gap-1.5">
+                    <button onClick={runRules} className="text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-500 font-bold shadow-sm flex items-center gap-1.5 self-start sm:self-auto flex-shrink-0">
                         <TrendingUp size={12} /> Run Rules Now
                     </button>
                 </div>
@@ -1939,8 +1962,8 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                     </div>
                 )}
 
-                {/* Add New Rule */}
-                <div className="flex gap-2 items-end bg-slate-50 p-3 rounded-lg border border-slate-200">
+                {/* Add New Rule — stacks on phones */}
+                <div className="flex flex-col sm:flex-row gap-2 sm:items-end bg-slate-50 p-3 rounded-lg border border-slate-200">
                     <div className="flex-1">
                         <label className="text-[10px] uppercase font-bold text-slate-500">Field</label>
                         <select value={newRule.field} onChange={e => setNewRule(p => ({ ...p, field: e.target.value as any }))} className="w-full text-xs p-1.5 border rounded">
@@ -1962,7 +1985,7 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                         <label className="text-[10px] uppercase font-bold text-slate-500">Value</label>
                         <input type="text" value={newRule.value} onChange={e => setNewRule(p => ({ ...p, value: e.target.value }))} className="w-full text-xs p-1.5 border rounded" placeholder="e.g. Pump" />
                     </div>
-                    <button onClick={addRule} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded text-xs font-bold shadow-sm">Add Rule</button>
+                    <button onClick={addRule} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded text-xs font-bold shadow-sm w-full sm:w-auto flex-shrink-0">Add Rule</button>
                 </div>
 
                 {/* Rule Result */}
@@ -2056,7 +2079,73 @@ const AssetsTab: React.FC<{ job: RecurringJob; onUpdate?: (u: Partial<RecurringJ
                     </div>
                 )}
 
-                <div className="overflow-x-auto">
+                {/* Mobile: stacked cards — every linked asset fully visible without
+                    sideways scrolling; the table stays for sm+ */}
+                <div className="sm:hidden divide-y divide-slate-100">
+                    {job.assignedAssets.map((ra, idx) => {
+                        const asset = assets.find(a => a.id === ra.assetId);
+                        const nextDue = ra.lastCompletedDate ? new Date(new Date(ra.lastCompletedDate).setMonth(new Date(ra.lastCompletedDate).getMonth() + job.frequencyInterval)).toLocaleDateString() : 'Pending';
+                        const crit = asset?.criticality;
+                        return (
+                            <div key={idx} className="p-3">
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => asset && onNavigateToAsset?.(asset.id)}
+                                        className="font-bold text-blue-600 text-sm flex items-center gap-1 min-w-0"
+                                        title={`Navigate to ${asset?.tag || 'asset'}`}
+                                    >
+                                        <span className="truncate">{asset?.tag || '—'}</span>
+                                        <ArrowUpRight size={12} className="opacity-50 flex-shrink-0" />
+                                    </button>
+                                    {crit && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold flex-shrink-0 ${crit === 'A' ? 'bg-red-100 text-red-700' : crit === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+                                            {crit}
+                                        </span>
+                                    )}
+                                    <div className="flex-1" />
+                                    <button onClick={() => removeAsset(ra.assetId)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded flex-shrink-0" title="Remove asset">
+                                        <Trash2 size={14} />
+                                    </button>
+                                </div>
+                                <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{asset?.name}</p>
+                                <div className={`mt-2 grid gap-2 ${job.scheduleType === 'READING' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Last completed</label>
+                                        <input type="date" value={ra.lastCompletedDate || ''} onChange={e => {
+                                            if (onUpdate) {
+                                                const updated = job.assignedAssets.map((a, i) => i === idx ? { ...a, lastCompletedDate: e.target.value } : a);
+                                                onUpdate({ assignedAssets: updated });
+                                            }
+                                        }} className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs text-slate-900" />
+                                    </div>
+                                    {job.scheduleType === 'READING' && (
+                                        <div>
+                                            <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Last reading</label>
+                                            <input type="number" value={ra.lastReadingValue ?? ''} onChange={e => {
+                                                if (onUpdate) {
+                                                    const updated = job.assignedAssets.map((a, i) => i === idx ? { ...a, lastReadingValue: parseFloat(e.target.value) || undefined } : a);
+                                                    onUpdate({ assignedAssets: updated });
+                                                }
+                                            }} className="w-full border border-slate-200 rounded px-1.5 py-1 text-xs" />
+                                        </div>
+                                    )}
+                                    <div>
+                                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Next due (est)</label>
+                                        <div className="text-xs font-mono text-slate-600 py-1">{nextDue}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                    {job.assignedAssets.length === 0 && (
+                        <div className="px-4 py-8 text-center text-slate-400 text-sm">
+                            <Package size={28} className="mx-auto mb-2 opacity-20" />
+                            <p>No assets linked. Use the rules above or add manually.</p>
+                        </div>
+                    )}
+                </div>
+
+                <div className="hidden sm:block overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200">
                     <thead className="bg-slate-50">
                         <tr>
@@ -2647,13 +2736,13 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
+        <div className="space-y-3 sm:space-y-6 animate-in fade-in duration-300">
+            <div className="bg-white p-3 sm:p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
                 <div>
-                    <h3 className="font-bold text-slate-800">Job Safety Analysis (JSA) Template</h3>
-                    <p className="text-sm text-slate-500">5×5 Risk Matrix · Hierarchy of Controls · ISO 31000 / ISO 45001</p>
+                    <h3 className="font-bold text-slate-800 text-sm sm:text-base">Job Safety Analysis (JSA) Template</h3>
+                    <p className="text-xs sm:text-sm text-slate-500">5×5 Risk Matrix · Hierarchy of Controls · ISO 31000 / ISO 45001</p>
                 </div>
-                <button onClick={addHazard} className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2">
+                <button onClick={addHazard} className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-2 sm:px-4 rounded-lg text-xs sm:text-sm font-bold shadow-sm flex items-center gap-2 self-start sm:self-auto flex-shrink-0">
                     <Plus size={16} /> Add Hazard
                 </button>
             </div>
@@ -2701,10 +2790,10 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                     const score = typeof h.riskScore === 'number' ? h.riskScore : (h.consequence || 1) * (h.likelihood || 1);
                     const level = h.riskLevel || getRiskLevel(score);
                     return (
-                        <div key={h.id} className={`bg-white border-2 rounded-lg p-5 hover:shadow-md transition ${RISK_COLORS[level] || 'border-slate-200'}`}>
-                            <div className="flex items-start gap-4">
+                        <div key={h.id} className={`bg-white border-2 rounded-lg p-3 sm:p-5 hover:shadow-md transition ${RISK_COLORS[level] || 'border-slate-200'}`}>
+                            <div className="flex items-start gap-2 sm:gap-4">
                                 <span className="font-mono text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded mt-1">{idx + 1}</span>
-                                <div className="flex-1 space-y-4">
+                                <div className="flex-1 min-w-0 space-y-3 sm:space-y-4">
                                     {/* Hazard Description */}
                                     <div>
                                         <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Hazard Description</label>
@@ -2718,7 +2807,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                     </div>
 
                                     {/* Risk Matrix Selectors */}
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 sm:gap-4">
                                         <div>
                                             <label className="text-[10px] uppercase font-bold text-slate-500 mb-1 block">Consequence (1-5)</label>
                                             <select
@@ -2769,7 +2858,7 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
                                                     <button
                                                         key={ctrl}
                                                         onClick={() => toggleControl(h.id, ctrl)}
-                                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${active ? colors[i] + ' shadow-sm ring-2 ring-offset-1 ring-current/20' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
+                                                        className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[11px] sm:text-xs font-bold border-2 transition-all ${active ? colors[i] + ' shadow-sm ring-2 ring-offset-1 ring-current/20' : 'bg-slate-50 text-slate-400 border-slate-200 hover:border-slate-300'
                                                             }`}
                                                     >
                                                         {i + 1}. {ctrl}
@@ -2793,19 +2882,19 @@ const JSATab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJob>)
 
                                     {/* Sign-off (mandatory for high risk) */}
                                     {score >= 15 && (
-                                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-3">
-                                            <AlertTriangle size={16} className="text-red-600 flex-shrink-0" />
+                                        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                                            <AlertTriangle size={16} className="text-red-600 flex-shrink-0 hidden sm:block" />
                                             <div className="flex-1">
-                                                <p className="text-xs font-bold text-red-800">High-Risk: Mandatory Sign-Off Required</p>
+                                                <p className="text-xs font-bold text-red-800 flex items-center gap-1.5"><AlertTriangle size={13} className="sm:hidden flex-shrink-0" /> High-Risk: Mandatory Sign-Off Required</p>
                                                 <p className="text-[10px] text-red-600">This hazard requires engineering review and sign-off before WO generation.</p>
                                             </div>
-                                            <div className="flex items-center gap-2">
+                                            <div className="flex items-center gap-2 w-full sm:w-auto">
                                                 <input
                                                     type="text"
                                                     value={h.signoffBy || ''}
                                                     onChange={(e) => updateHazard(h.id, 'signoffBy', e.target.value)}
                                                     placeholder="Approved by..."
-                                                    className="text-xs border border-red-300 rounded px-2 py-1 w-32"
+                                                    className="text-xs border border-red-300 rounded px-2 py-1.5 flex-1 sm:flex-initial sm:w-32"
                                                 />
                                                 {h.signoffBy ? (
                                                     <CheckCircle size={16} className="text-green-600" />
