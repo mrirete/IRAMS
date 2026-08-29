@@ -1738,7 +1738,7 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                                 <div className="mobile-card-contact-body">
                                     <div className="mobile-card-contact-name">{job.title}</div>
                                     <div className="mobile-card-contact-sub">
-                                        {job.woNumber || job.id} · {job.assetName} · Due: {job.dueDate || 'N/A'}
+                                        {job.woNumber || '—'} · {job.assetName} · Due: {job.dueDate || 'N/A'}
                                     </div>
                                 </div>
                                 <div className="mobile-card-contact-badge">
@@ -1757,7 +1757,7 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                     <thead className="bg-slate-50 sticky top-0 z-10">
                         <tr>
                             <th className="w-12 px-6 py-3 text-left"><input type="checkbox" className="rounded" onChange={(e) => e.target.checked ? setSelectedIds(new Set(backlogJobs.map(j => j.id))) : setSelectedIds(new Set())} /></th>
-                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Job ID</th>
+                            <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">WO Number</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Description</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Asset</th>
                             <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Priority</th>
@@ -1782,7 +1782,8 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                                             className="rounded text-blue-600 focus:ring-primary-500"
                                         />
                                     </td>
-                                    <td className="px-6 py-4 text-sm font-mono font-medium text-blue-600">{job.id}</td>
+                                    {/* Business identifier, never the DB UUID — the row itself links to the WO */}
+                                    <td className="px-6 py-4 text-sm font-mono font-medium text-blue-600 whitespace-nowrap">{job.woNumber || '—'}</td>
                                     <td className="px-6 py-4">
                                         <div className="text-sm font-medium text-slate-900">{job.title}</div>
                                         <div className="text-xs text-slate-500">{job.description.substring(0, 50)}...</div>
@@ -1798,14 +1799,18 @@ const BacklogView: React.FC<{ jobs: WorkOrder[], onJobsUpdate: (j: WorkOrder[]) 
                                     </td>
                                     <td className="px-6 py-4 text-sm text-slate-600 hidden sm:table-cell">{job.dueDate}</td>
                                     <td className="px-6 py-4 hidden md:table-cell">
-                                        {job.assignedTo ? (
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-600">JD</div>
-                                                <span className="text-sm text-slate-900">John Doe</span>
-                                            </div>
-                                        ) : (
-                                            <span className="text-xs text-slate-400 italic">Unassigned</span>
-                                        )}
+                                        {(() => {
+                                            if (!job.assignedTo) return <span className="text-xs text-slate-400 italic">Unassigned</span>;
+                                            const assignee = (laborContacts || []).find(c => c.id === (job as any).assignedTo);
+                                            const name = assignee?.name || 'Assigned';
+                                            const initials = name.split(/\s+/).map(w => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase();
+                                            return (
+                                                <div className="flex items-center gap-2">
+                                                    <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">{initials}</div>
+                                                    <span className="text-sm text-slate-900">{name}</span>
+                                                </div>
+                                            );
+                                        })()}
                                     </td>
                                 </tr>
                             );
