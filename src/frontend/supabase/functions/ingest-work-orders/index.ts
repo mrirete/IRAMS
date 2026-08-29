@@ -84,8 +84,11 @@ async function rest(path: string, init: RequestInit = {}): Promise<unknown> {
 // source value so it stays neutral to the failure engine and mappable later.
 function guessWoType(raw: string): string | null {
     const v = raw.toLowerCase().trim();
-    if (/^pm0?3$/.test(v)) return "PM";
-    if (/^pm0?[125]$/.test(v)) return "CM";
+    // SAP vanilla: PM01 corrective, PM02 preventive; PM03+ are plant-configured
+    // (vanilla PM03 = refurbishment) — kept verbatim rather than defaulted wrong.
+    if (/^pm0?1$/.test(v)) return "CM";
+    if (/^pm0?2$/.test(v)) return "PM";
+    if (/^pm0?\d$/.test(v)) return null;
     if (/prev|pm\b|planned|routine/.test(v)) return "PM";
     if (/pred|pdm|condition|vibra/.test(v)) return "PdM";
     if (/insp|survey|check/.test(v)) return "INSPECTION";

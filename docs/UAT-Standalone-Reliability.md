@@ -22,11 +22,13 @@ Mark each case **Pass / Fail** and note the evidence (screenshot or response JSO
 |---|----|--------|-----|
 | A1 | Import the history file through the wizard; review the mapping proposal before confirming | AI-proposed mapping is editable; nothing is written before you confirm | |
 | A2 | Check the data-quality report | It grades cost coverage, failure-coding coverage, breakdown coverage, and **lists the unrecognised type codes by name** (e.g. `ZM01`) with a note that they are kept as-is and not counted as failures | |
-| A3 | After commit, open a `PM03` row's work order | Its type is **PM** (preventive), not CM | |
-| A4 | Open a `ZM01` row's work order | Type shows **ZM01** verbatim — not silently rebranded CM | |
+| A3 | After commit, open a `PM02` row's work order | Its type is **PM** (preventive), not CM — and a `PM01` row is CM | |
+| A4 | Open a `PM03` or `ZM01` row's work order | Type kept **verbatim** (plant-configured / unknown codes are never silently rebranded CM); the DQ report listed them for value-mapping | |
 | A5 | Open the asset Metrics scoreboard for an asset whose rows carried breakdown flags | Failure count matches the number of breakdown-true rows, not the raw corrective count | |
 | A6 | A row that had a failure *cause* but no failure *mode* | Failure coding shows the cause; mode is blank — **no "UNKNOWN" placeholder anywhere** | |
 | A7 | Roll the batch back from the Migration Center | All imported WOs and batch-created assets disappear; metrics return to the prior state | |
+| A8 | Include cost cells in mixed formats — `€1.234,56`, `$2,000`, `(500)`, `1 250.75` | All parse to the correct numbers (check `total_actual_cost` on the imported WOs); unparseable cells are reported as issues, not silently zeroed | |
+| A9 | After commit, open Reports → bad actors / asset spend for an imported asset | Money figures equal the file's frozen order totals (labor + material, or the combined total) | |
 
 ## B. Sync API (`ingest-work-orders`)
 

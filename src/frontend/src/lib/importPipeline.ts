@@ -111,11 +111,15 @@ const CRITICALITIES = new Set(['A', 'B', 'C', 'D']);
  *  brand it corrective; that silently inflated failure counts). */
 export function guessWoType(raw: string): string | null {
   const v = raw.toLowerCase().trim();
-  // SAP standard order types: PM01/PM02 corrective, PM03 preventive, PM05
-  // calamity/breakdown. `/pm\b/` never matched these (no word boundary before
-  // a digit), so a full IW38 export had its PREVENTIVE orders counted as CM.
-  if (/^pm0?3$/.test(v)) return 'PM';
-  if (/^pm0?[125]$/.test(v)) return 'CM';
+  // SAP vanilla order types (matches the SAP template's read-me): PM01 =
+  // corrective, PM02 = preventive. `/pm\b/` never matched these (no word
+  // boundary before a digit), so PM02 preventives were counted corrective.
+  // PM03+ are plant-configured (vanilla PM03 is refurbishment) — deliberately
+  // unclassified so the value kept verbatim prompts a value-mapping instead
+  // of a wrong default; the breakdown flag still decides failure counting.
+  if (/^pm0?1$/.test(v)) return 'CM';
+  if (/^pm0?2$/.test(v)) return 'PM';
+  if (/^pm0?\d$/.test(v)) return null;
   if (/prev|pm\b|planned|routine/.test(v)) return 'PM';
   if (/pred|pdm|condition|vibra/.test(v)) return 'PdM';
   if (/insp|survey|check/.test(v)) return 'INSPECTION';

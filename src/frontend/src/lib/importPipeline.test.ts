@@ -70,11 +70,13 @@ describe('type/status heuristics', () => {
     expect(guessWoType('Inspection Round')).toBe('INSPECTION');
     expect(guessWoType('Breakdown')).toBe('CM');
   });
-  it('knows SAP standard order types (PM03 is preventive, not corrective)', () => {
+  it('knows SAP vanilla order types (PM01 corrective, PM02 preventive)', () => {
     expect(guessWoType('PM01')).toBe('CM');
-    expect(guessWoType('PM02')).toBe('CM');
-    expect(guessWoType('PM03')).toBe('PM');
-    expect(guessWoType('PM05')).toBe('CM');
+    expect(guessWoType('PM02')).toBe('PM');
+    // PM03+ are plant-configured (vanilla PM03 = refurbishment) — kept
+    // verbatim for value-mapping rather than defaulted wrong.
+    expect(guessWoType('PM03')).toBeNull();
+    expect(guessWoType('PM05')).toBeNull();
   });
   it('returns null for values it cannot classify — the caller keeps the source value', () => {
     expect(guessWoType('ZM01')).toBeNull();
