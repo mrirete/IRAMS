@@ -190,8 +190,14 @@ Deno.serve(async (req: Request) => {
                 priority: str(r.priority),
                 created_at: createdAt,
                 closed_at: closedAt,
+                // Combined-figure rule matches the Import Wizard: total_cost is
+                // used ONLY when neither component is given (stored as the
+                // material component, same convention) — otherwise a row
+                // carrying labor + total would double-count the labor.
                 labor_cost: num(r.labor_cost) ?? 0,
-                material_cost: num(r.material_cost) ?? num(r.total_cost) ?? 0,
+                material_cost: num(r.material_cost)
+                    ?? (num(r.labor_cost) == null ? num(r.total_cost) : null)
+                    ?? 0,
                 downtime_hours: num(r.downtime_hours),
                 labor_hours: num(r.labor_hours),
                 breakdown: bool(r.breakdown),
