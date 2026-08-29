@@ -4312,6 +4312,9 @@ export class DatabaseService {
         const { data: costRow } = await supabase
             .from('inventory_items').select('unit_cost').eq('id', itemId).maybeSingle();
 
+        // Who and why travel WITH the movement (0297) — an adjustment audit
+        // trail that records neither is not an audit trail.
+        const { data: { user } } = await supabase.auth.getUser();
         const { error: txError } = await supabase.from('inventory_transactions').insert({
             item_id: itemId,
             transaction_type: isReceipt ? 'RECEIPT' : isIssue ? 'ISSUE' : 'ADJUST',
@@ -4321,6 +4324,8 @@ export class DatabaseService {
             po_id: opts?.poId ?? null,
             quantity: Math.abs(delta),
             cost_at_time: Number(costRow?.unit_cost) || 0,
+            performed_by: user?.id ?? null,
+            notes: reason || null,
             timestamp: new Date().toISOString()
         });
         // The stock level has already moved. A lost movement row leaves on-hand
@@ -4329,6 +4334,46 @@ export class DatabaseService {
         if (txError) {
             throw new Error(`Stock updated but the movement record failed (${reason} by ${actor}): ${txError.message}`);
         }
+    }
+
+    /**
+     * Movement history for one item — the READ side of the 0245 movement
+     * vocabulary. Write paths have stamped SAP-style movement types
+     * (101/261/561/701…) since 0245; until this method existed nothing ever
+     * read them back, so the History tab showed "No movement history" forever.
+     */
+    public async getItemTransactions(itemId: string, limit = 100): Promise<{
+        id: string; movementType: string | null; transactionType: string;
+        quantity: number; costAtTime: number; value: number | null;
+        timestamp: string; notes: string | null; performedBy: string | null;
+        woId: string | null; poId: string | null; locationName: string | null;
+    }[]> {
+        const [{ data, error }, { data: locs }] = await Promise.all([
+            supabase.from('inventory_transactions')
+                .select('id, transaction_type, movement_type, quantity, cost_at_time, total_value, timestamp, notes, performed_by, wo_id, po_id, location_id')
+                .eq('item_id', itemId)
+                .order('timestamp', { ascending: false })
+                .limit(limit),
+            supabase.from('inventory_locations').select('id, name'),
+        ]);
+        if (error) { console.warn('Supabase Error (getItemTransactions):', error.message); return []; }
+        const locName = new Map((locs ?? []).map((l: any) => [l.id, l.name]));
+        return (data ?? []).map((t: any) => ({
+            id: t.id,
+            movementType: t.movement_type ?? null,
+            transactionType: t.transaction_type,
+            quantity: Number(t.quantity) || 0,
+            costAtTime: Number(t.cost_at_time) || 0,
+            value: t.total_value !== null && t.total_value !== undefined
+                ? Number(t.total_value)
+                : (Number(t.cost_at_time) || 0) * (Number(t.quantity) || 0) || null,
+            timestamp: t.timestamp,
+            notes: t.notes ?? null,
+            performedBy: t.performed_by ?? null,
+            woId: t.wo_id ?? null,
+            poId: t.po_id ?? null,
+            locationName: locName.get(t.location_id) ?? null,
+        }));
     }
 
     // --- JOB TASKS ---
@@ -4908,6 +4953,30 @@ export class DatabaseService {
         }
 
         return { grnNumber: grn?.grn_number, qtyReceivedTotal: newTotal };
+    }
+
+    /**
+     * Goods receipts for one PO — the read side of receivePOLine. GRN numbers
+     * used to exist only in a transient toast; a receipt document you cannot
+     * find again is not a document.
+     */
+    public async getGoodsReceipts(poId: string): Promise<{
+        id: string; grnNumber: string | null; poLineId: string | null;
+        quantity: number; unitCost: number; totalCost: number;
+        storageLocation: string | null; receivedDate: string | null;
+    }[]> {
+        const { data, error } = await supabase
+            .from('goods_receipts')
+            .select('id, grn_number, po_line_id, quantity, unit_cost, total_cost, storage_location, received_date')
+            .eq('po_id', poId)
+            .order('received_date', { ascending: false });
+        if (error) { console.warn('Supabase Error (getGoodsReceipts):', error.message); return []; }
+        return (data ?? []).map((g: any) => ({
+            id: g.id, grnNumber: g.grn_number ?? null, poLineId: g.po_line_id ?? null,
+            quantity: Number(g.quantity) || 0, unitCost: Number(g.unit_cost) || 0,
+            totalCost: Number(g.total_cost) || 0,
+            storageLocation: g.storage_location ?? null, receivedDate: g.received_date ?? null,
+        }));
     }
 
     public async deletePurchaseOrder(id: string): Promise<void> {

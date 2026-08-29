@@ -22,6 +22,7 @@ import { ImageGallery } from '../components/ui/ImageGallery';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { Badge, Button, DetailRail, RailRow, RAIL_INPUT, RAIL_INPUT_LOCKED, type Tone } from '../components/ui';
+import { fmtMoney } from '../lib/money';
 
 // PO status → design-system tone (parallels getStatusColor for the new Badge primitive)
 const poStatusTone = (status: string): Tone => {
@@ -326,7 +327,7 @@ export const PurchaseOrders: React.FC = () => {
                                     <span>Req: {po.dateRequired}</span>
                                     <div className="flex items-center gap-2">
                                         <span className="font-medium text-slate-700">{po.items.length} Items</span>
-                                        <span className="font-bold text-slate-800">${po.items.reduce((s, i) => s + i.lineTotal, 0).toFixed(0)}</span>
+                                        <span className="font-bold text-slate-800">{fmtMoney(po.items.reduce((s, i) => s + i.lineTotal, 0), po.currency)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -378,7 +379,7 @@ export const PurchaseOrders: React.FC = () => {
                     <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
                         {activeTab === 'details' && <DetailsTab po={selectedPO} onUpdate={handleUpdatePO} contacts={contacts} locations={inventoryLocations} vendors={vendors} />}
                         {activeTab === 'items' && <ItemsTab po={selectedPO} onUpdate={handleUpdatePO} inventoryItems={inventoryItems} workOrders={workOrders} />}
-                        {activeTab === 'properties' && <PropertiesTab po={selectedPO} />}
+                        {activeTab === 'properties' && <PropertiesTab po={selectedPO} onUpdate={handleUpdatePO} />}
                         {activeTab === 'authorise' && <AuthoriseTab po={selectedPO} onUpdate={handleUpdatePO} totalAmount={totalAmount} />}
                     </div>
 
@@ -388,17 +389,18 @@ export const PurchaseOrders: React.FC = () => {
                             {selectedPO.items.length} Items
                         </div>
                         <div className="flex gap-6 items-center mobile-footer-totals">
+                            {/* No invented tax: IREAMS carries net amounts; tax is
+                                determined by the finance system (SAP FI) at invoice.
+                                The old footer applied a hardcoded 10% — and doubled
+                                down on tax-inclusive POs by still multiplying. */}
                             <div className="text-right">
-                                <span className="block text-xs text-slate-500 uppercase font-bold">Subtotal</span>
-                                <span className="font-medium">${totalAmount.toFixed(2)}</span>
-                            </div>
-                            <div className="text-right">
-                                <span className="block text-xs text-slate-500 uppercase font-bold">Tax</span>
-                                <span className="font-medium">${(selectedPO.taxInclusive ? 0 : totalAmount * 0.1).toFixed(2)}</span>
-                            </div>
-                            <div className="text-right pl-6 border-l border-slate-200 footer-total-main">
-                                <span className="block text-xs text-slate-500 uppercase font-bold">Total</span>
-                                <span className="text-xl font-bold text-slate-900">${(totalAmount * 1.1).toFixed(2)}</span>
+                                <span className="block text-xs text-slate-500 uppercase font-bold">
+                                    Total {selectedPO.taxInclusive ? '(tax incl.)' : '(net)'}
+                                </span>
+                                <span className="text-xl font-bold text-slate-900">{fmtMoney(totalAmount, selectedPO.currency)}</span>
+                                {!selectedPO.taxInclusive && (
+                                    <span className="block text-[10px] text-slate-400">Tax determined at invoice (ERP)</span>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -473,7 +475,12 @@ const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOr
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Supplier</label>
                     <select
                         value={po.supplierId}
-                        onChange={(e) => onUpdate({ supplierId: e.target.value })}
+                        onChange={(e) => {
+                            // The vendor's currency becomes the document currency —
+                            // it was hardcoded 'USD' regardless of supplier before.
+                            const v = supplierOptions.find(s => s.id === e.target.value) as any;
+                            onUpdate({ supplierId: e.target.value, ...(v?.currency ? { currency: v.currency } : {}) });
+                        }}
                         className="w-full p-2 border border-slate-300 rounded-lg text-sm bg-white"
                     >
                         <option value="">-- Select Vendor --</option>
@@ -576,6 +583,8 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
     const [invoiceAmount, setInvoiceAmount] = useState('');
     const [invoicing, setInvoicing] = useState(false);
     const [invoices, setInvoices] = useState<any[]>([]);
+    // GR documents behind the received quantities (read side of receivePOLine).
+    const [receipts, setReceipts] = useState<Awaited<ReturnType<typeof DatabaseService.prototype.getGoodsReceipts>>>([]);
 
     // Value actually receipted — what a correct invoice should come to.
     const receivedValue = useMemo(
@@ -585,6 +594,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
 
     useEffect(() => {
         FinOpsService.getInvoicesForPO(po.id).then(setInvoices).catch(() => setInvoices([]));
+        DatabaseService.getInstance().getGoodsReceipts(po.id).then(setReceipts).catch(() => setReceipts([]));
     }, [po.id]);
 
     // Helper to calculate status based on items
@@ -652,6 +662,14 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
         if (!targetItem || !targetItem.qtyReceivedNow || targetItem.qtyReceivedNow <= 0) return;
 
         const qtyReceiving = targetItem.qtyReceivedNow;
+        // Over-delivery guard: receiving beyond the ordered quantity is a
+        // deliberate act (change the order), not a keystroke. SAP blocks this
+        // with a tolerance key; we block at 100% of ordered.
+        const remaining = (targetItem.qtyOrdered || 0) - (targetItem.qtyReceivedTotal || 0);
+        if (qtyReceiving > remaining) {
+            showToast(`Only ${remaining} of ${targetItem.qtyOrdered} remain open on this line — increase the order quantity first if this is a genuine over-delivery.`, 'warning');
+            return;
+        }
         const db = DatabaseService.getInstance();
         const deliveryLocationId = po.deliveryContactId;
 
@@ -724,6 +742,8 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
             items: updatedItems,
             status: newStatus
         });
+        // The GRN just created must be findable, not just toasted.
+        DatabaseService.getInstance().getGoodsReceipts(po.id).then(setReceipts).catch(() => { /* list refresh only */ });
 
         // Notification hook-in: Goods Received
         NotificationService.checkRules('purchasing', 'PO_RECEIVED', {
@@ -1056,7 +1076,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                                         </select>
                                     </td>
                                     <td className="px-4 py-3 text-right text-sm">{item.qtyOrdered}</td>
-                                    <td className="px-4 py-3 text-right text-sm">${item.unitCost.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-right text-sm">{fmtMoney(item.unitCost, po.currency)}</td>
 
                                     {/* Receiving Input Column */}
                                     <td className="px-4 py-3 bg-blue-50 border-l border-blue-100">
@@ -1080,7 +1100,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                                     </td>
 
                                     <td className="px-4 py-3 text-right text-sm font-bold bg-slate-50 text-slate-700">{item.qtyReceivedTotal}</td>
-                                    <td className="px-4 py-3 text-right text-sm font-medium">${item.lineTotal.toFixed(2)}</td>
+                                    <td className="px-4 py-3 text-right text-sm font-medium">{fmtMoney(item.lineTotal, po.currency)}</td>
                                     <td className="px-4 py-3 text-center relative group-hover:visible">
                                         <div className="flex justify-center gap-1">
                                             <button
@@ -1143,6 +1163,42 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                     </table>
                 </div>
             </div>
+
+            {/* Goods receipts — the GR documents behind "Tot Rec". GRN numbers
+                used to appear only in a toast; the documents were unfindable. */}
+            {receipts.length > 0 && (
+                <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase">
+                        Goods Receipts
+                    </div>
+                    <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-50 text-slate-600 font-bold">
+                            <tr>
+                                <th className="p-2 border-b">GRN</th>
+                                <th className="p-2 border-b">Date</th>
+                                <th className="p-2 border-b">Line</th>
+                                <th className="p-2 border-b">Storage location</th>
+                                <th className="p-2 border-b text-right">Qty</th>
+                                <th className="p-2 border-b text-right">Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {receipts.map(gr => (
+                                <tr key={gr.id} className="border-b last:border-0">
+                                    <td className="p-2 font-mono text-blue-700">{gr.grnNumber || '—'}</td>
+                                    <td className="p-2">{gr.receivedDate || '—'}</td>
+                                    <td className="p-2 text-slate-600 max-w-[200px] truncate">
+                                        {po.items.find(i => i.id === gr.poLineId)?.description || '—'}
+                                    </td>
+                                    <td className="p-2 text-slate-600">{gr.storageLocation || '—'}</td>
+                                    <td className="p-2 text-right tabular-nums">{gr.quantity}</td>
+                                    <td className="p-2 text-right tabular-nums">{fmtMoney(gr.totalCost, po.currency)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
             {/* FI-3 (0255) — invoices against this order, with their verdicts. */}
             {invoices.length > 0 && (
@@ -1208,7 +1264,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
                             <h3 className="font-bold text-slate-800">Enter Vendor Invoice</h3>
                             <p className="text-xs text-slate-500 mt-1">
                                 Matched line by line against what was ordered and what was received.
-                                Received to date: <strong className="tabular-nums">{receivedValue.toFixed(2)}</strong>
+                                Received to date: <strong className="tabular-nums">{fmtMoney(receivedValue, po.currency)}</strong>
                             </p>
                         </div>
                         <div className="space-y-3">
@@ -1250,7 +1306,7 @@ const ItemsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrde
     );
 };
 
-const PropertiesTab: React.FC<{ po: PurchaseOrder }> = ({ po }) => (
+const PropertiesTab: React.FC<{ po: PurchaseOrder; onUpdate: (u: Partial<PurchaseOrder>) => void }> = ({ po, onUpdate }) => (
     <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-6">
         <div>
             <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Audit Trail</h3>
@@ -1278,11 +1334,11 @@ const PropertiesTab: React.FC<{ po: PurchaseOrder }> = ({ po }) => (
             <div className="space-y-4">
                 <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Reference No</label>
-                    <input type="text" defaultValue={po.reference} className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
+                    <input type="text" value={po.reference || ''} onChange={(e) => onUpdate({ reference: e.target.value })} className="w-full p-2 border border-slate-300 rounded-lg text-sm" />
                 </div>
                 <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Comments</label>
-                    <textarea defaultValue={po.comments} className="w-full h-32 p-2 border border-slate-300 rounded-lg text-sm resize-none" placeholder="Internal notes..." />
+                    <textarea value={po.comments || ''} onChange={(e) => onUpdate({ comments: e.target.value })} className="w-full h-32 p-2 border border-slate-300 rounded-lg text-sm resize-none" placeholder="Internal notes..." />
                 </div>
             </div>
         </div>
@@ -1320,7 +1376,7 @@ const AuthoriseTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<Purchase
                 <p className="text-slate-500 max-w-md">
                     {isAuthorized
                         ? `Authorized by ${po.authorizedById} on ${po.dateCreated}.`
-                        : `This order requires approval. Total value $${totalAmount.toFixed(2)} exceeds auto-approval limit.`}
+                        : `This order requires approval. Total value ${fmtMoney(totalAmount, po.currency)} exceeds auto-approval limit.`}
                 </p>
             </div>
 

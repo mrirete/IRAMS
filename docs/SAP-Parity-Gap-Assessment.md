@@ -120,7 +120,7 @@ Beyond the four-module gaps, these SAP-EAM capabilities would materially raise t
 **Wave 3 — structural depth:**
 - **X-1** Maintenance strategies/packages · **X-2** Classification/characteristics · **WM-3/4** object list + order types · **IN-2/4** stock types + MRP · **PO-2/3** positions + work-center capacity.
 
-**Wave 4 — extended:** X-3 rotables · X-4 measurement docs · X-5 calibration · FI-3 3-way match · X-6/7.
+**Wave 4 — extended:** X-3 rotables · X-4 measurement docs *(SAP-sheet import shipped)* · X-5 calibration · ~~FI-3 3-way match~~ *(shipped — `0248`/`0255`/`0256`, see §4)* · X-6/7.
 
 ---
 

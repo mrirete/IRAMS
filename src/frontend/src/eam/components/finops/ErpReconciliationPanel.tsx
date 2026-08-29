@@ -85,7 +85,7 @@ export const ErpReconciliationPanel: React.FC = () => {
             <div className="flex items-center gap-2 flex-wrap">
                 <RefreshCw size={16} className="text-slate-400" />
                 <h3 className="text-sm font-bold text-slate-700">ERP Reconciliation</h3>
-                <span className="text-[11px] text-slate-400">what has not reached the books, and why</span>
+                <span className="text-[11px] text-slate-400">what has not reached the books, and why — IREAMS keeps the maintenance cost ledger and hands SAP FI documents, never journal entries; costs carrying a work order post via settlement only</span>
                 {/* Last night's verdict rides in the header — the first question is always "did it run?" */}
                 {lastRun && (
                     <span

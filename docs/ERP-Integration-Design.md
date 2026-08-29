@@ -1,6 +1,6 @@
 # IREAMS ⇄ SAP — Integration Design
 
-**Status:** Design, ahead of Phase 1 · **Audience:** product + engineering, and the client's Basis/CPI team
+**Status:** Design + partially shipped — Phase 0 applied (`0244`–`0256`), Tier-1 file lane live (canonical documents, nightly export `0279`, FinOps export & reconciliation panels), `erp_object_map` seeded by imports (`0275`) · **Audience:** product + engineering, and the client's Basis/CPI team · *Last reviewed 2026-08-24*
 **Assumption on record:** the client runs **SAP BTP / Cloud Integration (CPI)**. That removes the single largest cost unknown — the integration is an iFlow on capacity they already own, not a middleware procurement.
 **Open:** ECC or S/4HANA. This document is written **S/4-first** and says exactly what changes if the answer is ECC.
 
@@ -23,6 +23,14 @@ Phase 0 is complete and applied. The integration does not start from a blank pag
 | `invoice_matches` + line-level match | `0255`/`0256` | The invoice leg, with tolerance and payment block |
 
 **The one design decision that shapes everything downstream:** settlement is the *sole* poster for anything carrying a work order, and only order-less movements post directly. Double counting is prevented structurally, by a `WHERE` clause, not by discipline. Any adapter must preserve that — do not "improve" a 261 into a direct FI post.
+
+---
+
+## 0a. The FI boundary — what IREAMS posts, what SAP FI owns
+
+One paragraph a finance reviewer can hold us to:
+
+**IREAMS is not a general ledger and does not pretend to be one.** It owns the *maintenance cost ledger* — `cost_allocations`, append-only, delta postings, reversals visible — plus GRN numbering and the three-way-match verdict. What it hands SAP FI are **documents**, never journal entries: five canonical families (`cost_posting`, `goods_movement`, `goods_receipt`, `purchase_order_line`, `supplier_invoice`), each carrying its account assignment. Deliberately left to SAP: **G/L account determination** (`gl_account` columns stay unseeded until the client's extract — D4), **tax** (POs and invoices carry net amounts; tax is determined at invoice in FI), **currency translation** (documents carry their own currency; group/parallel currencies are FI's), **payment runs**, and **period close** (IREAMS freezes work-order costs at business close per `0284`; fiscal periods are FI's). Where SAP posts a 261 twice (to FI and to the order, then settles), IREAMS posts once via settlement — `movement_types.fi_posting` (`NONE`/`DIRECT`/`VIA_SETTLEMENT`) records which rule every movement follows.
 
 ---
 
@@ -136,7 +144,7 @@ They are complementary, and phase 9 already proves the pattern — it hands off 
 
 ### One concrete improvement worth making early
 
-**The Migration Center should seed `erp_object_map`.** `import_batches.source_system` already records `sap_pm`, and a SAP PM export carries SAP's own equipment and material numbers. Those are precisely the `external_key` values the integration will need. Today they are used to match a row and then discarded.
+**The Migration Center seeds `erp_object_map`** *(shipped — `0275`)*. `import_batches.source_system` records `sap_pm`, and a SAP PM export carries SAP's own equipment and material numbers — precisely the `external_key` values the integration needs. Imports now keep them instead of matching and discarding. (Since then the importers also keep both SAP identities on the asset itself — `equipment_number` = EQUNR alongside the tag — and accept SAP field-name sheets directly.)
 
 Writing an `erp_object_map` row per imported record — when the source system is an ERP — means the integration begins life **already mapped**, instead of opening with a reconciliation project against the very data we just loaded. It is a small change to the import path and it removes the largest source of week-one integration pain.
 
@@ -317,8 +325,8 @@ The original plan was a straight line: build foundations, build an adapter, conn
 |---|---|---|---|---|
 | ~~0~~ | ~~Foundations — order-to-cost spine, PO lines, external keys~~ | — | — | ✅ **done** |
 | **A** | **Read-only pilot** — import equipment master + WO history, seed `erp_object_map` from their own numbers, run the assessment, deliver findings on their data | **2–3** | a file export | **No** |
-| **B** | **Unify the spine** — `writeback_log` → `erp_outbox`, one target registry, `NormalizedAction` joins the canonical set, per-family toggles | **2–3** | nothing | **No** |
-| **C** | **First emitter + first family** — S/4 OData, goods movements only, dry-run end to end | **2–3** | field mapping | **No** (dry-run) |
+| **B** | **Unify the spine** — `writeback_log` → `erp_outbox`, one target registry, `NormalizedAction` joins the canonical set, per-family toggles. *Still open: the finance-export lane and the Specialist-writeback lane remain two spines today (two logs, two screens) — a known, deliberate debt.* | **2–3** | nothing | **No** |
+| **C** | **First emitter + first family** — S/4 OData, goods movements only, dry-run end to end. *The Tier-1 file lane of this phase is **shipped**: `lib/erp` canonical documents + `FileEmitter` CSVs, nightly per-tenant export (`0279`) to a private bucket with run history, and the FinOps export/reconciliation panels. What remains of C is the S/4 OData emitter itself.* | **2–3** | field mapping | **No** (dry-run) |
 | **D** | **Master data inbound** — vendors, cost centres, G/L, materials | **1–2** | extracts + ownership rules | Partly |
 | **E** | **Remaining families** — PR/PO, invoices, cost postings | **2–3** | — | No |
 | **F** | **Sandbox connect + UAT** | **3–6** | sandbox, Basis time | **Yes** |

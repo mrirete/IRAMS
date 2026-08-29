@@ -18,6 +18,7 @@ import {
 } from '../constants';
 import { InventoryItem, InventoryLocation, Store, BinLocation, InventorySupplier, Contact, Vendor } from '../types';
 import { DatabaseService } from '../services/DatabaseService';
+import { MOVEMENT_TYPES } from '../lib/movementType';
 import { emptyResult, tally, errMessage } from '../services/importTypes';
 import { NotificationService } from '../services/NotificationService';
 import { AskRelanternButton } from '../components/AskRelanternButton';
@@ -1875,40 +1876,74 @@ function PurchasingTab({ item }: { item: InventoryItem }) {
 }
 
 function HistoryTab({ item }: { item: InventoryItem }) {
+    // The movement rows live in inventory_transactions and were never loaded —
+    // the tab read a `transactions` array nothing populated, so every item
+    // showed "No movement history" forever. Fetch here, on tab open.
+    const [rows, setRows] = useState<Awaited<ReturnType<typeof DatabaseService.prototype.getItemTransactions>>>([]);
+    const [loading, setLoading] = useState(true);
+    useEffect(() => {
+        let live = true;
+        setLoading(true);
+        DatabaseService.getInstance().getItemTransactions(item.id)
+            .then(r => { if (live) setRows(r); })
+            .finally(() => { if (live) setLoading(false); });
+        return () => { live = false; };
+    }, [item.id]);
+
+    const dirOf = (mt: string | null, txType: string): 1 | -1 | 0 => {
+        const d = mt ? MOVEMENT_TYPES[mt]?.direction : undefined;
+        if (d === 'IN') return 1;
+        if (d === 'OUT') return -1;
+        if (d === 'TRANSFER') return 0;
+        return txType === 'ISSUE' ? -1 : 1; // pre-0245 legacy rows
+    };
+
     return (
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
             <table className="min-w-full divide-y divide-slate-200">
                 <thead className="bg-slate-50">
                     <tr>
                         <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Date</th>
-                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Type</th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Movement</th>
                         <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Store</th>
                         <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">Reference</th>
-                        <th className="px-4 py-3 text-left text-xs font-bold text-slate-500 uppercase">User</th>
-                        <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Qty Change</th>
-                        <th className="px-4 py-3 text-right text-xs font-bold text-slate-900 uppercase bg-slate-50">Balance</th>
+                        <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Qty</th>
+                        <th className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase">Value</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                    {item.transactions.map(tx => (
-                        <tr key={tx.id} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 text-sm text-slate-900">{tx.date}</td>
-                            <td className="px-4 py-3">
-                                <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${tx.type === 'ISSUE' ? 'bg-amber-100 text-amber-800' :
-                                    tx.type === 'RECEIPT' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                                    }`}>{tx.type}</span>
-                            </td>
-                            <td className="px-4 py-3 text-sm text-slate-600">{tx.storeName}</td>
-                            <td className="px-4 py-3 text-sm text-blue-600 font-mono">{tx.reference || '-'}</td>
-                            <td className="px-4 py-3 text-sm text-slate-500">{tx.performedBy}</td>
-                            <td className={`px-4 py-3 text-sm text-right font-medium ${tx.qtyChange < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                {tx.qtyChange > 0 ? '+' : ''}{tx.qtyChange}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-right font-bold text-slate-900 bg-slate-50">{tx.newBalance}</td>
-                        </tr>
-                    ))}
-                    {item.transactions.length === 0 && (
-                        <tr><td colSpan={7} className="p-8 text-center text-slate-400 italic">No movement history.</td></tr>
+                    {rows.map(tx => {
+                        const dir = dirOf(tx.movementType, tx.transactionType);
+                        const qty = dir === 0 ? tx.quantity : dir * tx.quantity;
+                        const mtName = tx.movementType ? MOVEMENT_TYPES[tx.movementType]?.name : undefined;
+                        return (
+                            <tr key={tx.id} className="hover:bg-slate-50">
+                                <td className="px-4 py-3 text-sm text-slate-900 whitespace-nowrap">{new Date(tx.timestamp).toLocaleDateString()}</td>
+                                <td className="px-4 py-3">
+                                    <span className={`px-2 py-0.5 rounded text-xs font-bold font-mono mr-2 ${dir < 0 ? 'bg-amber-100 text-amber-800' : dir > 0 ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                                        {tx.movementType || tx.transactionType}
+                                    </span>
+                                    <span className="text-xs text-slate-600">{mtName || tx.transactionType}</span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-600">{tx.locationName || '—'}</td>
+                                <td className="px-4 py-3 text-sm text-slate-600 max-w-[220px] truncate" title={tx.notes || undefined}>
+                                    {tx.woId ? <span className="text-blue-600 font-mono text-xs mr-1">WO</span> : tx.poId ? <span className="text-blue-600 font-mono text-xs mr-1">PO</span> : null}
+                                    {tx.notes || (tx.woId || tx.poId ? '' : '—')}
+                                </td>
+                                <td className={`px-4 py-3 text-sm text-right font-medium ${qty < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                    {qty > 0 ? '+' : ''}{qty}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-right font-mono text-slate-700">
+                                    {tx.value !== null ? tx.value.toFixed(2) : '—'}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    {!loading && rows.length === 0 && (
+                        <tr><td colSpan={6} className="p-8 text-center text-slate-400 italic">No movement history.</td></tr>
+                    )}
+                    {loading && (
+                        <tr><td colSpan={6} className="p-8 text-center text-slate-400 italic">Loading movements…</td></tr>
                     )}
                 </tbody>
             </table>

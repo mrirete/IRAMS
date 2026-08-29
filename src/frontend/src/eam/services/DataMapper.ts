@@ -523,6 +523,11 @@ export class DataMapper {
             malfunctionStart: record.malfunction_start || undefined,
             malfunctionEnd: record.malfunction_end || undefined,
             breakdown: typeof record.breakdown === 'boolean' ? record.breakdown : undefined,
+            // Frozen ledger snapshot (0284) — the Cost tab must show THIS on a
+            // closed order, not a live recompute that can silently disagree.
+            costFrozen: record.cost_frozen === true,
+            frozenLaborCost: record.frozen_labor_cost !== null && record.frozen_labor_cost !== undefined ? Number(record.frozen_labor_cost) : undefined,
+            frozenMaterialCost: record.frozen_material_cost !== null && record.frozen_material_cost !== undefined ? Number(record.frozen_material_cost) : undefined,
             parentWoId: record.parent_wo_id || undefined,
             assignedTo: record.assigned_to,
             recurringWorkId: record.recurring_work_id || undefined,

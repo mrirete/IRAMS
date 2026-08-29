@@ -2777,10 +2777,8 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
                         <Scale size={18} className="text-primary-600" />
                         Three-Way Match Queue
                     </h3>
-                    <button className="flex items-center gap-2 px-3 py-1.5 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
-                        <Zap size={14} />
-                        Auto-Reconcile
-                    </button>
+                    {/* No fake controls: an "Auto-Reconcile" button with no handler
+                        stood here — deleted until the capability exists. */}
                 </div>
 
                 <div className="overflow-x-auto">
@@ -2820,7 +2818,11 @@ const SupplyChainTab: React.FC<SupplyChainTabProps> = ({ data }) => {
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-center">
-                                        <button className="p-1.5 hover:bg-slate-100 rounded transition-colors">
+                                        <button
+                                            onClick={() => { window.location.href = `/purchase-orders?id=${match.id}`; }}
+                                            className="p-1.5 hover:bg-slate-100 rounded transition-colors"
+                                            title="Open purchase order"
+                                        >
                                             <Eye size={14} className="text-slate-400" />
                                         </button>
                                     </td>

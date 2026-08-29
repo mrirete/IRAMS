@@ -708,6 +708,9 @@ export interface WorkOrder {
   malfunctionEnd?: string;   // Equipment back in service (SAP AUSBS)
   breakdown?: boolean;       // SAP MSAUS-style breakdown indicator; undefined = not recorded
   actualCost?: number; // Total Actual Cost (Snapshot)
+  costFrozen?: boolean;         // 0284 — snapshot taken at financial close (CLOSED), immutable after
+  frozenLaborCost?: number;     // ledger basis at close; undefined until frozen
+  frozenMaterialCost?: number;  // ledger basis at close (material + service); undefined until frozen
 
   // Reference
   reference1?: string;

@@ -5060,12 +5060,38 @@ const CostTab: React.FC<{ job: WorkOrder; refreshKey: number }> = ({ job, refres
                 <DollarSign size={16} className="text-slate-400" />
                 <h3 className="text-sm font-bold text-slate-700">Operation Cost &amp; Settlement</h3>
                 <span className="text-[11px] text-slate-400">planned vs confirmed-actual labour</span>
-                {job.status === 'CLOSED' && (
+                {/* Read the FLAG, not the status: 0284 freezes at CLOSED, and a
+                    badge inferred from status lies on any row where they differ. */}
+                {(job.costFrozen || job.status === 'CLOSED') && (
                     <span className="ml-auto text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
-                        <Lock size={10} /> Costs Frozen
+                        <Lock size={10} /> {job.costFrozen ? 'Costs Frozen' : 'Freezing at close'}
                     </span>
                 )}
             </div>
+
+            {/* The frozen ledger snapshot is the number of record on a closed
+                order. The cards below recompute live from current rows — shown
+                for detail, but when they drift from the snapshot, the snapshot
+                wins and the drift is flagged, not hidden. */}
+            {job.costFrozen && (job.frozenLaborCost !== undefined || job.frozenMaterialCost !== undefined) && (() => {
+                const fl = job.frozenLaborCost ?? 0;
+                const fm = job.frozenMaterialCost ?? 0;
+                const liveTotal = actualLabour + partsCost + serviceCost;
+                const drift = Math.abs(liveTotal - (fl + fm)) >= 0.01;
+                return (
+                    <div className="bg-slate-50 border border-slate-200 rounded-card px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+                        <span className="flex items-center gap-1.5 font-semibold text-slate-700"><Lock size={12} /> Frozen at financial close</span>
+                        <span className="tabular-nums text-slate-600">Labour {money(fl)}</span>
+                        <span className="tabular-nums text-slate-600">Material &amp; services {money(fm)}</span>
+                        <span className="tabular-nums font-bold text-slate-800">Total {money(fl + fm)}</span>
+                        {drift && (
+                            <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+                                Live recompute reads {money(liveTotal)} — rows changed after close; the frozen snapshot is the ledger basis.
+                            </span>
+                        )}
+                    </div>
+                );
+            })()}
 
             {(anomaly?.isAnomaly || warrantyCheck?.underWarranty) && (
                 <div className="space-y-2">
