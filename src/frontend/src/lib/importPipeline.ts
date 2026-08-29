@@ -105,14 +105,23 @@ const WO_TYPES = new Set(['CM', 'PM', 'PdM', 'INSPECTION', 'SAFETY']);
 const WO_STATUSES = new Set(['CLOSED', 'TECO', 'OPEN', 'WIP', 'CANCELLED']);
 const CRITICALITIES = new Set(['A', 'B', 'C', 'D']);
 
-/** Fallback type heuristic for values the mapping's value_maps doesn't cover. */
-export function guessWoType(raw: string): string {
-  const v = raw.toLowerCase();
+/** Fallback type heuristic for values the mapping's value_maps doesn't cover.
+ *  Returns null for values it cannot classify — the caller decides what an
+ *  unclassifiable type means (for history rows: keep the source value, do NOT
+ *  brand it corrective; that silently inflated failure counts). */
+export function guessWoType(raw: string): string | null {
+  const v = raw.toLowerCase().trim();
+  // SAP standard order types: PM01/PM02 corrective, PM03 preventive, PM05
+  // calamity/breakdown. `/pm\b/` never matched these (no word boundary before
+  // a digit), so a full IW38 export had its PREVENTIVE orders counted as CM.
+  if (/^pm0?3$/.test(v)) return 'PM';
+  if (/^pm0?[125]$/.test(v)) return 'CM';
   if (/prev|pm\b|planned|routine/.test(v)) return 'PM';
   if (/pred|pdm|condition|vibra/.test(v)) return 'PdM';
   if (/insp|survey|check/.test(v)) return 'INSPECTION';
   if (/safe|hse|incident/.test(v)) return 'SAFETY';
-  return 'CM'; // corrective is the conservative default for history
+  if (/correct|break|emerg|repair|fail|\bcm\b|\bem\b|\bbm\b/.test(v)) return 'CM';
+  return null;
 }
 
 /** Fallback status heuristic: completed-looking → CLOSED, else OPEN. */
@@ -403,9 +412,19 @@ export function applyMapping(
 
     const rawType = cellStr(row, w('type'));
     let type = mapValue(vmaps.type, rawType) ?? (rawType ? guessWoType(rawType) : 'CM');
-    if (!WO_TYPES.has(type)) {
-      issues.add('unmapped_type', `Unrecognised work type value(s) defaulted to CM.`, rowNo);
-      type = 'CM';
+    if (type === null || !WO_TYPES.has(type)) {
+      // Unrecognised source value: KEEP it (uppercased) instead of branding it
+      // 'CM'. The old default made every unmapped row a counted failure
+      // (breakdown NULL + corrective type ⇒ isFailure true), inflating MTBF
+      // denominators for exactly the imported-history tenants that need them
+      // most. A preserved foreign type ('ZM01') is neutral to the failure
+      // engine unless breakdown/failure coding says otherwise, stays visible
+      // for later value-mapping, and is honest about what the source said.
+      const kept = (type ?? rawType).toUpperCase().slice(0, 20);
+      issues.add('unmapped_type',
+        `Unrecognised work type value(s) kept as-is (e.g. "${kept}") — not counted as failures unless the row carries a breakdown flag or failure coding. Map them under Value mapping to classify.`,
+        rowNo);
+      type = kept || 'CM';
     }
 
     const rawStatus = cellStr(row, w('status'));
@@ -507,6 +526,18 @@ export function buildDqReport(applied: AppliedImport): DqReport {
   const breakdownPct = pct((w) => w.breakdown !== null);
   if (wos.length && breakdownPct === 0) {
     warnings.push('No breakdown indicator in the file — failure-event counting falls back to work type, which over-counts (not every corrective order is a functional failure). SAP: add the Breakdown column (MSAUS) to your layout.');
+  }
+  // Foreign (unclassified) work types are preserved verbatim and NOT counted
+  // as failures — say so before the customer wonders where their MTBF went.
+  const foreignTypes = new Map<string, number>();
+  for (const w of wos) {
+    if (!WO_TYPES.has(w.type)) foreignTypes.set(w.type, (foreignTypes.get(w.type) ?? 0) + 1);
+  }
+  const foreignCount = [...foreignTypes.values()].reduce((s, n) => s + n, 0);
+  if (foreignCount > 0) {
+    const top = [...foreignTypes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([t, n]) => `${t} (${n})`).join(', ');
+    warnings.push(`${foreignCount} work order(s) carry source type codes that could not be classified (${top}${foreignTypes.size > 5 ? ', …' : ''}) — they were imported with the source value and are only counted as failures where a breakdown flag or failure coding says so. Add them to the type value-mapping to classify corrective vs preventive.`);
   }
   if (applied.assets.length && applied.assets.every((a) => !a.criticality)) {
     warnings.push('No criticality data found — assets default to unranked; a criticality assessment would sharpen every prioritisation in the report.');

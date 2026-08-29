@@ -237,14 +237,15 @@ class ImportService {
             }
         }
 
-        // 5. Failure coding sidecar. Only failure_mode_code is NOT NULL (0109
-        // dropped the other two), and 'UNKNOWN' is not a catalog code — padding
-        // with it produced rows that decode to nothing in sem_failure_events.
-        // Genuine nulls keep the coverage statistics honest.
+        // 5. Failure coding sidecar. failure_mode_code is nullable since 0298 —
+        // a cause-only source row keeps its cause with a NULL mode instead of
+        // the old 'UNKNOWN' pad, which was not a catalog code, decoded to
+        // nothing in sem_failure_events, and counted as "coded failure
+        // evidence" in isFailure. Genuine nulls keep coverage stats honest.
         for (const part of chunk(failureDrafts, 200)) {
             const rows = part.map(({ wo_id, draft }) => ({
                 wo_id,
-                failure_mode_code: draft.failure_mode ?? 'UNKNOWN',
+                failure_mode_code: draft.failure_mode ?? null,
                 failure_cause_code: draft.failure_cause ?? null,
                 remedy_code: draft.remedy ?? null,
                 comments: 'Imported from foreign CMMS history',

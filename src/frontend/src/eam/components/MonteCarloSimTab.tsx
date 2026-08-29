@@ -11,9 +11,9 @@ import {
 } from '../utils/monteCarloEngine';
 import { MonteCarloResults } from '../components/MonteCarloResults';
 import { CreatePMFromWeibullModal, type WeibullPMData } from '../../components/analyze/CreatePMFromWeibullModal';
-
-// ─── Corrective WO type codes ────────────────────────────────
-const CORRECTIVE_WO_TYPES = ['CM', 'EM'];
+import {
+    FAILURE_QUERY_COLUMNS, isFailure, failureIntervalsHours, failureRepairHours,
+} from '../services/reliabilityMetrics';
 
 interface AssetOption { id: string; name: string; tag: string; criticality: string; }
 
@@ -156,28 +156,27 @@ export function MonteCarloSimTab({ onStateChange, loadedData, bridgeData, onSend
 
         setSpoolStatus('loading');
         try {
-            // Fetch corrective WOs for TTF intervals
+            // Same engine basis as the Weibull tab / Metrics scoreboard: fetch
+            // ALL types and let isFailure classify. The previous hand-rolled
+            // select (actual_hours/actual_cost/wo_type) named columns that
+            // don't exist on work_orders — PostgREST rejected the whole select
+            // (42703) and the spool silently returned nothing.
             const { data: wos } = await supabase.from('work_orders')
-                .select('id, created_at, actual_hours, actual_cost, wo_type')
+                .select(`${FAILURE_QUERY_COLUMNS}, total_actual_cost, frozen_labor_cost, frozen_material_cost`)
                 .eq('asset_id', asset.id)
-                .in('wo_type', CORRECTIVE_WO_TYPES)
                 .order('created_at', { ascending: true });
 
             const records = wos || [];
-            const timestamps = records.map(w => new Date(w.created_at).getTime()).sort((a, b) => a - b);
+            const failures = records.filter(isFailure);
 
-            // Compute TTF intervals (hours between successive failures)
-            const ttfs: number[] = [];
-            for (let i = 1; i < timestamps.length; i++) {
-                const hrs = (timestamps[i] - timestamps[i - 1]) / (1000 * 60 * 60);
-                if (hrs > 0) ttfs.push(hrs);
-            }
+            // TTF intervals + repair times from the shared engine (primaries only).
+            const ttfs = failureIntervalsHours(records);
+            const repairs = failureRepairHours(records);
 
-            // Repair times
-            const repairs = records.map(w => w.actual_hours).filter((h): h is number => h != null && h > 0);
-
-            // Costs
-            const costs = records.map(w => w.actual_cost).filter((c): c is number => c != null && c > 0);
+            // Cost per failure event, frozen figures first.
+            const costs = failures
+                .map((w: any) => Number(w.frozen_labor_cost ?? 0) + Number(w.frozen_material_cost ?? 0) || Number(w.total_actual_cost ?? 0))
+                .filter(c => c > 0);
 
             setSpoolInfo({ failures: ttfs.length, repairs: repairs.length });
 

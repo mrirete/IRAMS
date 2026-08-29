@@ -224,18 +224,19 @@ function CriticalAssetsPanel({ onSelectAsset }: { onSelectAsset: (asset: AssetOp
 
                 if (!critAssets || critAssets.length === 0) { setLoading(false); return; }
 
-                const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
                 const results: CriticalAsset[] = [];
 
                 // ONE batched query for all candidate assets (was an N+1 loop of
                 // up to 100 count queries), counted with the shared engine's
                 // isFailure so the picker badge equals the calculators' failure
-                // count for the same asset.
+                // count for the same asset. ALL history, not a 12-month slice —
+                // a tenant whose data is imported CMMS history would otherwise
+                // see an empty shortlist (standalone-reliability gap).
                 const { data: allWos } = await supabase.from('work_orders')
                     .select(`asset_id, ${FAILURE_QUERY_COLUMNS}`)
                     .in('asset_id', critAssets.map(a => a.id))
-                    .gte('created_at', yearAgo)
-                    .order('created_at', { ascending: false });
+                    .order('created_at', { ascending: false })
+                    .limit(20000);
 
                 const byAsset: Record<string, any[]> = {};
                 (allWos || []).forEach(w => { (byAsset[w.asset_id] ||= []).push(w); });
@@ -322,7 +323,7 @@ function CriticalAssetsPanel({ onSelectAsset }: { onSelectAsset: (asset: AssetOp
                     </div>
                     <div className="text-left">
                         <p className="text-sm font-bold text-slate-800">Critical Assets Requiring Analysis</p>
-                        <p className="text-[10px] text-slate-500">Crit A/B with corrective WOs (12 months) — select to analyze</p>
+                        <p className="text-[10px] text-slate-500">Crit A/B with failure history — select to analyze</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -606,11 +607,12 @@ export function MTBFTab({ onStateChange, loadedData }: TabProps = {}) {
         if (!asset) return;
         setLoading(true);
         (async () => {
-            const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
+            // ALL history — the engine windows to 12 months itself and falls
+            // back to lifetime when the last year is quiet, so imported CMMS
+            // history (often older than a year) still populates the calculator.
             const { data: wos } = await supabase.from('work_orders')
                 .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id)
-                .gte('created_at', yearAgo)
                 .order('created_at');
 
             const basis = assetFailureBasis(wos || []);
@@ -756,11 +758,10 @@ export function AvailabilityTab({ onStateChange, loadedData }: TabProps = {}) {
         if (!asset) return;
         setLoading(true);
         (async () => {
-            const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
+            // ALL history — see the MTBF tab note: the engine windows itself.
             const { data: wos } = await supabase.from('work_orders')
                 .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id)
-                .gte('created_at', yearAgo)
                 .order('created_at');
             const basis = assetFailureBasis(wos || []);
             if (basis.failures > 0) {
@@ -1303,11 +1304,10 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
         setLoadingSp(true);
         (async () => {
             // M1: same engine basis as RAM/Metrics so the spares MTBF reconciles.
-            const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
+            // ALL history — the engine windows itself (imported-history tenants).
             const { data: wos } = await supabase.from('work_orders')
                 .select(FAILURE_QUERY_COLUMNS)
-                .eq('asset_id', asset.id)
-                .gte('created_at', yearAgo);
+                .eq('asset_id', asset.id);
             const basis = assetFailureBasis(wos || []);
             if (basis.failures > 0) {
                 setMtbfVal(String(Math.round(basis.totalHours / basis.failures)));
@@ -1672,15 +1672,14 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
         if (!asset) return;
         setLoading(true);
         (async () => {
-            const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
-            // All WO types in-window; the shared engine decides what counts as a failure
-            // (corrective OR a coded failure mode), matching the Metrics definition.
+            // All WO types, ALL history; the shared engine decides what counts as a
+            // failure (corrective OR a coded failure mode), matching the Metrics
+            // definition, and windows to 12 months itself with a lifetime fallback.
             // Was a hand-rolled column list including actual_hours/actual_duration,
             // which don't exist on work_orders → 42703, silent empty result.
             const { data: wos } = await supabase.from('work_orders')
                 .select(FAILURE_QUERY_COLUMNS)
                 .eq('asset_id', asset.id)
-                .gte('created_at', yearAgo)
                 .order('created_at');
 
             if (wos && wos.length > 0) {

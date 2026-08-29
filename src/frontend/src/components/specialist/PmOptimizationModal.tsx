@@ -18,6 +18,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
     computePmOptimization, type PmOptimizationResult, type PmVerdict,
 } from '../../lib/pmOptimization';
+import { FAILURE_QUERY_COLUMNS, isFailure, eventDate } from '../../eam/services/reliabilityMetrics';
 
 const VERDICT_META: Record<PmVerdict['verdict'], { label: string; cls: string }> = {
     redundant: { label: 'redundant', cls: 'bg-indigo-50 text-indigo-600 border-indigo-200' },
@@ -49,16 +50,22 @@ export const PmOptimizationModal: React.FC<{ open: boolean; onClose: () => void 
                     supabase.from('recurring_work')
                         .select('id, code, title, asset_id, job_type, frequency_interval, frequency_unit')
                         .eq('active', true).limit(3000),
+                    // ALL types, classified client-side by the canonical isFailure —
+                    // a hard type='CM' filter made imported history (CORRECTIVE,
+                    // BREAKDOWN, EM, SAP PM01…) invisible to fleet optimization,
+                    // under-counting failures and mis-verdicting PMs.
                     supabase.from('work_orders')
-                        .select('asset_id, type, created_at')
-                        .eq('type', 'CM')
+                        .select(`asset_id, ${FAILURE_QUERY_COLUMNS}`)
                         .order('created_at', { ascending: false }).limit(20000),
                     supabase.from('assets').select('id, tag, name, criticality').limit(10000),
                 ]);
                 if (pmQ.error) throw pmQ.error;
+                const failureEvents = ((woQ.data ?? []) as any[])
+                    .filter(isFailure)
+                    .map((r) => ({ asset_id: r.asset_id, created_at: eventDate(r) ?? r.created_at }));
                 setResult(computePmOptimization(
                     (pmQ.data ?? []) as never,
-                    (woQ.data ?? []) as never,
+                    failureEvents as never,
                     (assetQ.data ?? []) as never,
                     Date.now(),
                 ));

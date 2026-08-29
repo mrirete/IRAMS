@@ -70,6 +70,16 @@ describe('type/status heuristics', () => {
     expect(guessWoType('Inspection Round')).toBe('INSPECTION');
     expect(guessWoType('Breakdown')).toBe('CM');
   });
+  it('knows SAP standard order types (PM03 is preventive, not corrective)', () => {
+    expect(guessWoType('PM01')).toBe('CM');
+    expect(guessWoType('PM02')).toBe('CM');
+    expect(guessWoType('PM03')).toBe('PM');
+    expect(guessWoType('PM05')).toBe('CM');
+  });
+  it('returns null for values it cannot classify — the caller keeps the source value', () => {
+    expect(guessWoType('ZM01')).toBeNull();
+    expect(guessWoType('Miscellaneous')).toBeNull();
+  });
   it('guesses statuses, using the closed date as a tiebreaker', () => {
     expect(guessWoStatus('TECO', false)).toBe('CLOSED');
     expect(guessWoStatus('INPRG', false)).toBe('WIP');

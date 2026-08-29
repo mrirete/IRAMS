@@ -7,6 +7,7 @@
  */
 import { supabase } from '../lib/supabase';
 import { notifyError } from '../lib/notify';
+import { isFailure } from './reliabilityMetrics';
 
 // Canonical WO cost: frozen labor + material (locked at closure), falling back
 // to total_actual_cost. Same definition as sem_work_history and the agent tools.
@@ -2628,14 +2629,16 @@ class AnalyzeService {
             cutoff.setMonth(cutoff.getMonth() - 12);
             const { data, error } = await supabase
                 .from('work_orders')
-                .select('id, wo_number, type, status, failure_mode, failure_code, total_actual_cost, frozen_labor_cost, frozen_material_cost, created_at, closed_at, wo_failure_data!wo_id(*)')
+                .select('id, wo_number, type, status, breakdown, malfunction_start, failure_mode, failure_code, total_actual_cost, frozen_labor_cost, frozen_material_cost, created_at, closed_at, wo_failure_data!wo_id(*)')
                 .eq('asset_id', assetId)
                 .gte('created_at', cutoff.toISOString())
                 .order('created_at', { ascending: true });
             if (error) { console.error('AnalyzeService.getFailureTrends:', error); return { modes: [], timeline: [], totalCM: 0, totalPM: 0, totalCost: 0 }; }
             const rows = data || [];
-            // Separate CM vs PM
-            const cmRows = rows.filter(r => r.type === 'CM' || r.failure_mode || r.failure_code || r.type === 'BM' || r.type === 'EM');
+            // Failures via the canonical engine predicate (breakdown-aware, 0295) —
+            // a local type list (CM/BM/EM) missed imported history typed CORRECTIVE,
+            // BREAKDOWN, SAP PM01… and counted breakdown=false rows it shouldn't.
+            const cmRows = rows.filter(r => isFailure(r));
             const pmRows = rows.filter(r => r.type === 'PM' || r.type === 'PREVENTIVE');
             // Failure mode frequency
             const modeMap = new Map<string, { count: number; totalCost: number; lastDate: string }>();

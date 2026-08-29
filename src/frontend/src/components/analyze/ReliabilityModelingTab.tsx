@@ -545,12 +545,12 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
 
         // Link: derive MTBF/MTTR via the SHARED reliability engine (M1) — the same
         // failure definition and basis Metrics and the RAM tab use, so the block's
-        // numbers reconcile across the tier instead of diverging.
-        const yearAgo = new Date(Date.now() - 365 * 86400000).toISOString();
+        // numbers reconcile across the tier instead of diverging. ALL history —
+        // the engine windows to 12 months itself and falls back to lifetime, so
+        // imported CMMS history older than a year still drives the block.
         const { data: wos } = await supabase.from('work_orders')
             .select(FAILURE_QUERY_COLUMNS)
-            .eq('asset_id', asset.id)
-            .gte('created_at', yearAgo);
+            .eq('asset_id', asset.id);
 
         let autoMtbf: number | undefined;
         let autoMttr: number | undefined;

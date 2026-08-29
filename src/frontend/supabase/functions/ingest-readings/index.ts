@@ -17,7 +17,10 @@
  * Unlike sensor-sync (which replaces each series with the window it pulled),
  * this APPENDS each point to the existing series (last 50 kept) — the right
  * semantics for incremental pushes. It also appends to
- * ers_sensor_reading_points (0236), the real history behind that projection.
+ * ers_sensor_reading_points (0236), the real history behind that projection,
+ * and (0298) mirrors the latest point into reading_logs for definitions that
+ * declare a matching sensor_tag — so meter-based PMs and reading alarms react
+ * to live feeds, not just manual entries.
  *
  * AUTH — per-collector keys (0236), not one shared secret. Each Collector
  * install gets its own key: hashed at rest, revocable on its own, and stamped
@@ -78,12 +81,12 @@ Deno.serve(async (req: Request) => {
     const presented = req.headers.get("x-api-key") ?? "";
     if (!presented) return json({ error: "Missing x-api-key" }, 401);
 
-    let collector: { id: string; name: string; readings_count: number } | null = null;
+    let collector: { id: string; name: string; readings_count: number; company_id: string | null } | null = null;
     try {
         const hash = await sha256Hex(presented);
         const rows = await rest(
-            `ers_collector_keys?select=id,name,readings_count&key_hash=eq.${hash}&is_active=eq.true`,
-        ) as { id: string; name: string; readings_count: number }[];
+            `ers_collector_keys?select=id,name,readings_count,company_id&key_hash=eq.${hash}&is_active=eq.true`,
+        ) as { id: string; name: string; readings_count: number; company_id: string | null }[];
         collector = rows?.[0] ?? null;
     } catch (e) {
         console.error("collector key lookup failed (0236 applied?):", e);
@@ -118,7 +121,11 @@ Deno.serve(async (req: Request) => {
         }
 
         // Resolve asset tokens → asset_id by id or tag (same rule as sensor-sync).
-        const assets = await rest(`assets?select=id,tag`) as { id: string; tag: string | null }[];
+        // TENANT-SCOPED (0298 hardening): keys belong to one company; resolving
+        // against every tenant's register let a tag collision route a push into
+        // another tenant's asset in the shared database.
+        const tenantFilter = collector.company_id ? `&company_id=eq.${collector.company_id}` : "";
+        const assets = await rest(`assets?select=id,tag${tenantFilter}`) as { id: string; tag: string | null }[];
         const byId = new Map<string, string>(); const byTag = new Map<string, string>();
         for (const a of assets) {
             byId.set(String(a.id).toLowerCase(), a.id);
@@ -231,6 +238,68 @@ Deno.serve(async (req: Request) => {
             body: JSON.stringify(payload),
         });
 
+        // ── Bridge to the CMMS condition side (0298) ───────────────────────
+        // Meter-based PMs and reading alarms read reading_logs, not
+        // ers_sensor_readings — without this mirror a live vibration feed
+        // drives the Predict twin but never trips a condition-based PM.
+        // A reading_definition on the same asset whose sensor_tag (or, as a
+        // zero-config fallback, reading_type_code) matches the pushed tag
+        // gets the LATEST point of this batch mirrored, throttled to one
+        // log row per definition per 15 minutes so high-rate sensors don't
+        // flood a table designed for rounds-cadence data.
+        let mirrored = 0;
+        try {
+            const defs = await rest(
+                `reading_definitions?select=id,asset_id,reading_type_code,sensor_tag,min_critical,max_critical` +
+                `&asset_id=in.(${assetIds.join(",")})&is_active=eq.true`,
+            ) as { id: string; asset_id: string; reading_type_code: string; sensor_tag: string | null; min_critical: number | null; max_critical: number | null }[];
+            if (defs?.length) {
+                const matches: { def: typeof defs[0]; g: Grp }[] = [];
+                for (const g of groups.values()) {
+                    const tagLc = g.tag.toLowerCase();
+                    const def = defs.find((d) => d.asset_id === g.asset_id && (d.sensor_tag ?? "").toLowerCase() === tagLc)
+                        ?? defs.find((d) => d.asset_id === g.asset_id && !d.sensor_tag && d.reading_type_code.toLowerCase() === tagLc);
+                    if (def) matches.push({ def, g });
+                }
+                if (matches.length) {
+                    const throttleIso = new Date(Date.now() - 15 * 60_000).toISOString();
+                    const recent = await rest(
+                        `reading_logs?select=definition_id&definition_id=in.(${matches.map((m) => m.def.id).join(",")})` +
+                        `&created_at=gte.${throttleIso}`,
+                    ) as { definition_id: string }[];
+                    const throttled = new Set((recent ?? []).map((r) => r.definition_id));
+                    const logRows = matches.filter((m) => !throttled.has(m.def.id)).map(({ def, g }) => {
+                        const ordered = g.pts.every((p) => p.ts)
+                            ? [...g.pts].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+                            : g.pts;
+                        const latest = ordered[ordered.length - 1];
+                        const at = latest.ts && !Number.isNaN(Date.parse(latest.ts)) ? new Date(latest.ts) : new Date();
+                        const isAlarm = (def.max_critical != null && latest.v >= Number(def.max_critical))
+                            || (def.min_critical != null && latest.v <= Number(def.min_critical));
+                        return {
+                            definition_id: def.id,
+                            asset_id: def.asset_id,
+                            reading_type_code: def.reading_type_code,
+                            reading_date: at.toISOString().slice(0, 10),
+                            reading_time: at.toISOString().slice(11, 19),
+                            reading_value: latest.v,
+                            entered_by: `collector:${collector.name}`,
+                            comments: "Mirrored from live sensor feed (ingest-readings)",
+                            is_alarm: isAlarm,
+                            ...(collector.company_id ? { company_id: collector.company_id } : {}),
+                        };
+                    });
+                    if (logRows.length) {
+                        await rest(`reading_logs`, { method: "POST", body: JSON.stringify(logRows) });
+                        mirrored = logRows.length;
+                    }
+                }
+            }
+        } catch (e) {
+            // The bridge is additive — never fail an ingest over it.
+            console.warn("reading_logs mirror failed (0298 applied?):", e);
+        }
+
         // Heartbeat: makes a silent collector visible without extra plumbing.
         try {
             await rest(`ers_collector_keys?id=eq.${collector.id}`, {
@@ -249,6 +318,7 @@ Deno.serve(async (req: Request) => {
             accepted: payload.length,
             points: valid.length - [...unknownAssets].length,
             historyWritten,
+            mirroredToConditionLogs: mirrored,
             rejected,
             unknownAssets: [...unknownAssets],
         });

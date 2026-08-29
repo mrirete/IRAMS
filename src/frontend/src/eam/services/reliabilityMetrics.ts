@@ -32,7 +32,12 @@ const CORRECTIVE_RE = /CORRECT|BREAK|EMERG|REPAIR|\bCM\b|\bEM\b/;
 
 const failureMode = (r: any): string | undefined => {
   const fd = Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data;
-  return fd?.failure_mode_code || fd?.failureMode || undefined;
+  const code = fd?.failure_mode_code || fd?.failureMode || undefined;
+  // 'UNKNOWN' was the import chain's NOT-NULL pad (pre-0298), not a catalog
+  // code — it must not count as "coded failure evidence" for isFailure, nor
+  // group as a recurring mode. 0298 converts stored pads to NULL; this guard
+  // covers tenants whose data predates that apply.
+  return code && code.toUpperCase() !== 'UNKNOWN' ? code : undefined;
 };
 
 // The failed component (ISO 14224 level 8/9): the object_part description
