@@ -4,7 +4,8 @@
  * Pre-populates a RecurringWorkRecord from Weibull analysis data:
  * - PM interval derived from β/η (% of characteristic life)
  * - Asset locked to the analysed equipment
- * - Description includes analysis provenance (β, η, R², data basis)
+ * - Analysis provenance (β, η, R², data basis) saved as structured `origin`,
+ *   not prose — the description stays one short sentence
  *
  * HITL: User can review, adjust, and confirm before saving.
  */
@@ -84,22 +85,23 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
 
         const isClass = !!(data.classAssets && data.classAssets.length);
         setTitle(isClass
-            ? `PM — ${data.className} class (${data.classAssets!.length} assets) — Weibull-based (β=${data.beta})`
-            : `PM — ${data.asset.tag} — Weibull-based replacement (β=${data.beta})`);
+            ? `PM — ${data.className} class (${data.classAssets!.length} assets) — Weibull-based`
+            : `PM — ${data.asset.tag} — Weibull-based replacement`);
+        // Keep the description human-sized: the analysis numbers (β, η, R², B10,
+        // data basis) live in structured `origin` provenance below and render as
+        // the compact Origin chip on the PM detail — not as prose.
         setDescription(
-            `Time-directed Preventive Maintenance based on Weibull life data analysis.\n\n` +
-            `Analysis Parameters:\n` +
-            `• Shape β = ${data.beta} (${data.beta > 1.5 ? 'wear-out pattern — PM is effective' : data.beta > 1 ? 'early wear — PM has limited value' : 'infant mortality — PM not recommended'})\n` +
-            `• Scale η = ${data.eta.toLocaleString()} hrs (characteristic life at 63.2% failure probability)\n` +
-            `• Goodness of fit R² = ${data.r2}\n` +
-            `• B10 life = ${data.b10.toLocaleString()} hrs (10% failure probability)\n` +
-            `• Data basis: ${data.dataPoints} failure intervals from corrective WO history\n\n` +
-            `Recommended PM interval: ${pmHrs.toLocaleString()} hrs (${pct}% of η)\n` +
-            `This replaces/overhauls the component before ${100 - pct}% cumulative failure probability is reached.`
+            `Time-directed replacement PM from Weibull analysis of ${data.dataPoints} failure intervals. ` +
+            `Interval = ${pct}% of characteristic life.` +
+            (isClass ? ` Applies to all ${data.classAssets!.length} assets in the ${data.className} class (pooled fit).` : '')
         );
         setIntervalHours(pmHrs);
-        setIntervalValue(pmHrs);
-        setFrequencyType('HOURS');
+        // Default to DAYS, not the raw η hours: recurring_work schedules are
+        // calendar-generated (0304 Autopilot), and an 'Hours' cadence silently
+        // created a PM nothing could ever generate (PM-31048 sat frozen on it).
+        // Hours stays selectable for genuinely meter-driven plans, with a warning.
+        setIntervalValue(Math.max(1, Math.round(pmHrs / 24)));
+        setFrequencyType('DAYS');
 
         // Default next due date: today + interval in days
         const days = Math.round(pmHrs / 24);
@@ -300,11 +302,16 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                                         onChange={e => setFrequencyType(e.target.value as any)}
                                         className="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white"
                                     >
-                                        <option value="HOURS">Hours</option>
+                                        <option value="HOURS">Hours (running meter)</option>
                                         <option value="DAYS">Days</option>
                                         <option value="WEEKS">Weeks</option>
                                         <option value="MONTHS">Months</option>
                                     </select>
+                                    {frequencyType === 'HOURS' && (
+                                        <p className="text-[10px] text-amber-600 mt-1 leading-snug">
+                                            Running-hours cadence: the calendar Autopilot will not generate this PM — it fires from meter readings. Pick Days/Weeks/Months for a calendar schedule.
+                                        </p>
+                                    )}
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Priority</label>
@@ -339,7 +346,7 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                                 <textarea
                                     value={description}
                                     onChange={e => setDescription(e.target.value)}
-                                    className="w-full p-3 border border-slate-300 rounded-lg text-xs text-slate-600 font-mono h-32 resize-none bg-slate-50 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                                    className="w-full p-3 border border-slate-300 rounded-lg text-xs text-slate-600 font-mono h-20 resize-none bg-slate-50 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                                 />
                             </div>
                         </div>

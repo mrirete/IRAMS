@@ -73,6 +73,29 @@ describe('computePmCompliance — schedule adherence, not proactive share', () =
         expect(r.due).toBe(0);
         expect(r.compliancePct).toBeNull();
     });
+
+    it('keeps a still-open overdue PM in the denominator however old its due date', () => {
+        // The blind spot this guards against: two PMs due 6 months ago sat OPEN
+        // while the sliding window aged them out — the tile read 100% beside
+        // live PM-Overdue escalations.
+        const r = computePmCompliance([
+            pm({ due_date: iso(30), closed_at: iso(31) }),                    // in-window, on time
+            pm({ status: 'OPEN', due_date: iso(180), closed_at: null }),      // ancient miss, still open → counts
+            pm({ status: 'OPEN', due_date: iso(180), closed_at: null }),
+        ], windowStart, NOW);
+        expect(r.due).toBe(3);
+        expect(r.onTime).toBe(1);
+        expect(r.compliancePct).toBeCloseTo(33.3, 1);
+    });
+
+    it('lets a miss leave the denominator only by completion or cancellation', () => {
+        const r = computePmCompliance([
+            pm({ status: 'CANCELLED', due_date: iso(180), closed_at: null }), // cancelled → out
+            pm({ status: 'CLOSED', due_date: iso(180), closed_at: iso(150) }), // done late, pre-window → out
+        ], windowStart, NOW);
+        expect(r.due).toBe(0);
+        expect(r.compliancePct).toBeNull();
+    });
 });
 
 describe('computePmRatio — the number that was mislabelled as compliance', () => {

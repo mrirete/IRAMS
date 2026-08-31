@@ -97,14 +97,25 @@ export interface PmComplianceResult {
 
 /**
  * PM compliance = schedule adherence, NOT the proactive share. A PM counts as
- * due when its due date falls in the window, and as compliant when it closed
- * on or before that date.
+ * due when its due date falls in the window — OR when it is still open past
+ * its due date, however old. Compliant = closed on or before the due date.
+ *
+ * The overdue-open clause is deliberate: with a pure sliding window, a missed
+ * PM counted against compliance for 90 days and then aged out while still not
+ * done — the dashboard read 100% beside live "PM Overdue" escalations. Neglect
+ * must not be able to age out of the metric; a miss leaves the denominator
+ * only by being completed or cancelled.
  */
+const DONE_STATUSES = ['CLOSED', 'TECO', 'COMP', 'CANCELLED'];
 export function computePmCompliance(wos: KpiWoRow[], windowStartMs: number, nowMs: number): PmComplianceResult {
     const due = wos.filter((w) => {
         if (!isPm(w.type) || !w.due_date) return false;
         const d = new Date(w.due_date).getTime();
-        return Number.isFinite(d) && d >= windowStartMs && d <= nowMs;
+        if (!Number.isFinite(d)) return false;
+        if (d >= windowStartMs && d <= nowMs) return true;
+        // Still-open overdue PM from before the window: stays due until done.
+        const open = !DONE_STATUSES.includes(String(w.status ?? '').toUpperCase());
+        return open && d < nowMs;
     });
     const onTime = due.filter((w) => {
         if (!w.closed_at) return false;

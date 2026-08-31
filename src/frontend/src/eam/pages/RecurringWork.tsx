@@ -169,6 +169,7 @@ export const RecurringWork: React.FC = () => {
                 scheduleType: pm.schedule_type,
                 frequencyInterval: pm.frequency_interval,
                 frequencyUnit: pm.frequency_unit,
+                autoGenerate: pm.auto_generate !== false, // 0304 Autopilot opt-out
                 leadTimeDays: pm.lead_time_days || 7,
                 jobType: pm.job_type,
                 priority: pm.priority_code,
@@ -555,6 +556,7 @@ export const RecurringWork: React.FC = () => {
                 schedule_type: selectedJob.scheduleType,
                 frequency_interval: selectedJob.frequencyInterval,
                 frequency_unit: selectedJob.frequencyUnit,
+                auto_generate: selectedJob.autoGenerate !== false, // 0304 Autopilot
                 lead_time_days: selectedJob.leadTimeDays,
                 job_type: selectedJob.jobType,
                 priority_code: selectedJob.priority,
@@ -1037,7 +1039,14 @@ export const RecurringWork: React.FC = () => {
                                     {dictionaries.find(d => d.type === 'STATUS_CODE' && d.code === selectedJob?.status)?.description || selectedJob?.status || 'Unknown'}
                                 </span>
                             </div>
-                            <p className="text-sm sm:text-base text-slate-500 line-clamp-2 lg:line-clamp-none pl-8 lg:pl-0">{selectedJob.jobDescription || selectedJob.description}</p>
+                            {(() => {
+                                // Weibull-created PMs saved before the description was
+                                // slimmed carry the full analysis prose; show only the
+                                // first line — the Origin chip below has the numbers.
+                                const raw = String(selectedJob.jobDescription || selectedJob.description || '');
+                                const desc = (selectedJob as any).origin?.source === 'weibull_analysis' ? raw.split('\n')[0] : raw;
+                                return <p className="text-sm sm:text-base text-slate-500 line-clamp-2 lg:line-clamp-3 pl-8 lg:pl-0">{desc}</p>;
+                            })()}
                             {/* 0299: origin provenance — why this PM exists at this interval */}
                             {(() => {
                                 const o = (selectedJob as any).origin as Record<string, any> | undefined;
@@ -1221,6 +1230,11 @@ export const RecurringWork: React.FC = () => {
                             >
                                 <Play size={16} fill="currentColor" /> Run Analysis
                             </button>
+                        </div>
+
+                        {/* 0304 — the daily server sweep now owns routine generation */}
+                        <div className="mx-6 mt-3 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-[11px] text-emerald-800">
+                            <span className="font-bold">Autopilot is on:</span> a daily server sweep generates due work orders for every schedule whose first generated PM has been completed (one open occurrence at a time; meter-based cadences excluded). This manual run stays for previews, backfills, and schedules that haven't armed yet — or that opted out.
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-6">
@@ -1530,6 +1544,26 @@ const DetailsTab: React.FC<{ job: RecurringJob, onUpdate: (u: Partial<RecurringJ
                             <div>
                                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Lead Time (Days)</label>
                                 <input type="number" value={job.leadTimeDays} onChange={(e) => onUpdate({ leadTimeDays: parseFloat(e.target.value) })} className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500" />
+                            </div>
+
+                            {/* 0304 PM Autopilot — per-schedule opt-out. The sweep only takes a
+                                schedule after its first generated WO has been completed. */}
+                            <div className="col-span-2 flex items-start gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={job.autoGenerate !== false}
+                                    onClick={() => onUpdate({ autoGenerate: job.autoGenerate === false })}
+                                    className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors mt-0.5 ${job.autoGenerate !== false ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                                >
+                                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transform transition-transform ${job.autoGenerate !== false ? 'translate-x-[18px]' : 'translate-x-[3px]'}`} />
+                                </button>
+                                <div className="min-w-0">
+                                    <div className="text-xs font-bold text-slate-700">Autopilot — generate due work orders automatically</div>
+                                    <p className="text-[10px] text-slate-500 mt-0.5">
+                                        A daily server sweep raises this schedule's due work orders. It arms only after the first generated PM has been completed, keeps one open occurrence at a time, and never touches meter-based cadences. Off = manual Generator only.
+                                    </p>
+                                </div>
                             </div>
 
                             <div className="col-span-2 p-3 bg-slate-50 border border-slate-200 rounded-lg">

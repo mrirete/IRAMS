@@ -1095,6 +1095,10 @@ export interface RecurringJob {
   frequencyUnit: string; // 'Months', 'Weeks', 'Hours', 'KM'
   leadTimeDays: number;
   nextDueDate?: string; // ISO date — computed from last completion + interval
+  // 0304 PM Autopilot: daily server sweep may generate this schedule's due WOs.
+  // Default ON, but the sweep only takes a schedule after its first generated
+  // WO has been completed (the loop is proven). False = manual Generator only.
+  autoGenerate?: boolean;
 
   // RCM Strategy Link (SAE JA1011 / ISO 14224)
   rcmStrategy?: 'TIME_DIRECTED' | 'CONDITION_DIRECTED' | 'FAILURE_FINDING' | 'RUN_TO_FAILURE';

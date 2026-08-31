@@ -389,10 +389,19 @@ export function computeScheduleCompliance(jobs: any[]): ComplianceResult {
 
 const PM_TYPES = ['PM', 'PREVENTIVE', 'INSPECTION', 'CALIBRATION'];
 
-/** PM Compliance — PMs due this month completed on/before their due date. */
+/**
+ * PM Compliance — PMs due this month, PLUS any PM still open past its due date
+ * from earlier months, completed on/before their due date. The overdue-open
+ * clause matches lib/reliabilityKpis.computePmCompliance: a missed PM cannot
+ * age out of the metric while it remains undone.
+ */
 export function computePMCompliance(jobs: any[]): ComplianceResult {
   const now = Date.now();
-  const due = (jobs || []).filter(j => PM_TYPES.includes(_type(j)) && _isThisMonth(_due(j)));
+  const due = (jobs || []).filter(j => {
+    if (!PM_TYPES.includes(_type(j)) || !_due(j)) return false;
+    if (_isThisMonth(_due(j))) return true;
+    return !_isClosed(j) && new Date(_due(j) as string).getTime() < now;
+  });
   const onTime = due.filter(j => _isClosed(j) && _completedTs(j, now) <= new Date(_due(j) as string).getTime());
   return { numerator: onTime.length, denominator: due.length, pct: due.length ? Math.round((onTime.length / due.length) * 1000) / 10 : null };
 }

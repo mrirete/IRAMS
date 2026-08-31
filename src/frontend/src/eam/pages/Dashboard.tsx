@@ -869,7 +869,7 @@ export const Dashboard: React.FC = () => {
       {/* PM Schedule Compliance popup */}
       <Modal open={insight === 'pm'} onClose={() => setInsight(null)} title="PM Compliance" size="sm">
         <div>
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">PMs due in the last 90 days · on-time = closed by the due date</div>
+          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">PMs due in the last 90 days + any still-open overdue PM · on-time = closed by the due date</div>
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 relative">
               {pmComplianceData.length > 0 ? (
