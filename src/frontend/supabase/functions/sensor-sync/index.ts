@@ -56,11 +56,16 @@ interface RestConfig {
 async function upsertPoints(
     sb: SupabaseClient,
     points: Point[],
-    opts: { append: boolean; source: string },
+    opts: { append: boolean; source: string; companyId?: string | null },
 ): Promise<number> {
     if (points.length === 0) return 0;
 
-    const { data: assets } = await sb.from('assets').select('id, tag');
+    // TENANT-SCOPED (0299 hardening, matches ingest-readings): a connector
+    // belongs to one company; resolving against every tenant's register would
+    // let a tag collision route a poll into another tenant's asset.
+    let assetQuery = sb.from('assets').select('id, tag');
+    if (opts.companyId) assetQuery = assetQuery.eq('company_id', opts.companyId);
+    const { data: assets } = await assetQuery;
     const byId = new Map<string, string>(); const byTag = new Map<string, string>();
     for (const a of assets ?? []) {
         byId.set(String(a.id).toLowerCase(), a.id);
@@ -139,6 +144,66 @@ async function upsertPoints(
         if (seriesErr) console.warn('[sensor-sync] time-series append failed (0236 applied?):', seriesErr.message);
     }
 
+    // ── Bridge to the CMMS condition side (0298/0299 — parity with the push
+    // path). A reading_definition on the same asset whose sensor_tag (or,
+    // zero-config, its reading_type_code) matches the pulled tag gets the
+    // LATEST point of this sync mirrored into reading_logs — so meter-based
+    // PMs and reading alarms react to polled feeds too, not only pushes.
+    // Throttled to one log row per definition per 15 minutes; always additive.
+    try {
+        const { data: defs } = await sb
+            .from('reading_definitions')
+            .select('id, asset_id, reading_type_code, sensor_tag, min_critical, max_critical')
+            .in('asset_id', assetIds)
+            .eq('is_active', true);
+        if (defs?.length) {
+            const matches: { def: (typeof defs)[0]; g: Grp }[] = [];
+            for (const g of groups.values()) {
+                const tagLc = g.tag.toLowerCase();
+                const def = defs.find((d) => d.asset_id === g.asset_id && (d.sensor_tag ?? '').toLowerCase() === tagLc)
+                    ?? defs.find((d) => d.asset_id === g.asset_id && !d.sensor_tag && String(d.reading_type_code).toLowerCase() === tagLc);
+                if (def) matches.push({ def, g });
+            }
+            if (matches.length) {
+                const throttleIso = new Date(Date.now() - 15 * 60_000).toISOString();
+                const { data: recent } = await sb
+                    .from('reading_logs')
+                    .select('definition_id')
+                    .in('definition_id', matches.map((m) => m.def.id))
+                    .gte('created_at', throttleIso);
+                const throttled = new Set((recent ?? []).map((r) => r.definition_id));
+                const logRows = matches.filter((m) => !throttled.has(m.def.id)).map(({ def, g }) => {
+                    const ordered = g.series.every((s) => s.ts)
+                        ? [...g.series].sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+                        : g.series;
+                    const latest = ordered[ordered.length - 1];
+                    const at = latest.ts && !Number.isNaN(Date.parse(latest.ts)) ? new Date(latest.ts) : new Date();
+                    const isAlarm = (def.max_critical != null && latest.v >= Number(def.max_critical))
+                        || (def.min_critical != null && latest.v <= Number(def.min_critical));
+                    return {
+                        definition_id: def.id,
+                        asset_id: def.asset_id,
+                        reading_type_code: def.reading_type_code,
+                        reading_date: at.toISOString().slice(0, 10),
+                        reading_time: at.toISOString().slice(11, 19),
+                        reading_value: latest.v,
+                        entered_by: `connector:${opts.source}`,
+                        comments: 'Mirrored from connector sync (sensor-sync)',
+                        is_alarm: isAlarm,
+                        ...(opts.companyId ? { company_id: opts.companyId } : {}),
+                    };
+                });
+                if (logRows.length) {
+                    const { error: logErr } = await sb.from('reading_logs').insert(logRows);
+                    if (logErr) console.warn('[sensor-sync] reading_logs mirror failed:', logErr.message);
+                }
+            }
+        }
+    } catch (e) {
+        // The bridge is additive — never fail a sync over it.
+        console.warn('[sensor-sync] reading_logs mirror error:', e);
+    }
+
     return payload.length;
 }
 
@@ -165,13 +230,19 @@ async function syncRest(sb: SupabaseClient, connector: Record<string, unknown>):
         lo: m.alarm_low ? Number(getPath(it, m.alarm_low)) : null,
     })).filter((r) => r.tag && Number.isFinite(r.value));
 
-    return await upsertPoints(sb, points, { append: false, source: 'sensor-sync' });
+    return await upsertPoints(sb, points, {
+        append: false, source: 'sensor-sync',
+        companyId: (connector.company_id as string | null) ?? null,
+    });
 }
 
 // ── kind: 'weather' — provider adapters live in _shared/weather.ts ──────────
 async function syncWeather(sb: SupabaseClient, connector: Record<string, unknown>): Promise<number> {
     const { points, skipped, label } = await fetchWeatherPoints(connector.config as WeatherConfig);
-    const written = await upsertPoints(sb, points, { append: true, source: 'sensor-sync' });
+    const written = await upsertPoints(sb, points, {
+        append: true, source: 'sensor-sync',
+        companyId: (connector.company_id as string | null) ?? null,
+    });
     if (skipped.length) console.warn(`[sensor-sync] ${label} cannot serve: ${skipped.join(', ')}`);
     return written;
 }

@@ -10,7 +10,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Download, Send, Loader2, AlertTriangle, CheckCircle2,
-    Plus, Radio, FileSpreadsheet, ClipboardList, History, X,
+    Plus, Radio, FileSpreadsheet, ClipboardList, History, X, CalendarClock,
 } from 'lucide-react';
 import {
     buildPackage, toCsv, TARGET_LABELS,
@@ -39,6 +39,8 @@ export const DeliverWorkPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [result, setResult] = useState<DeliveryResult | null>(null);
     const [showAddTarget, setShowAddTarget] = useState(false);
+    const [applying, setApplying] = useState<string | null>(null);
+    const [appliedMsg, setAppliedMsg] = useState<string | null>(null);
 
     const load = async () => {
         setLoading(true);
@@ -92,6 +94,26 @@ export const DeliverWorkPage: React.FC = () => {
         );
     };
 
+    // Third route (0299): apply an interval proposal to IREAMS's own schedule —
+    // for the full-suite tenant whose PMs live here, not in a foreign CMMS.
+    const applyInternally = async (p: ApprovedProposal) => {
+        setApplying(p.id); setError(null); setAppliedMsg(null);
+        try {
+            const r = await writebackService.applyIntervalProposal(p);
+            setAppliedMsg(`${r.pmCode}: every ${r.fromInterval} ${r.fromUnit.toLowerCase()} → every ${r.toDays} days. Takes effect from the next schedule generation.`);
+            await load();
+        } catch (e) {
+            setError(e instanceof Error ? e.message : String(e));
+        } finally {
+            setApplying(null);
+        }
+    };
+
+    const isApplyable = (p: ApprovedProposal): boolean => {
+        const k = String((p.draft_payload as Record<string, unknown> | null)?.recommendation_type ?? '');
+        return k === 'extend_interval' || k === 'set_interval';
+    };
+
     const deliver = async (dryRun: boolean) => {
         if (!targetId) { setError('Choose a delivery target first.'); return; }
         setBusy(true); setError(null); setResult(null);
@@ -128,13 +150,19 @@ export const DeliverWorkPage: React.FC = () => {
                 </h1>
                 <p className="text-slate-500 text-sm mt-1">
                     Work you approved, shaped for the system you actually run. Download a package to import,
-                    or deliver it live where your CMMS has an API.
+                    deliver it live where your CMMS has an API — or apply interval changes straight to the
+                    IREAMS schedule when your PMs live here.
                 </p>
             </div>
 
             {error && (
                 <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                     <AlertTriangle size={16} className="mt-0.5 shrink-0" /> {error}
+                </div>
+            )}
+            {appliedMsg && (
+                <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                    <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> Applied to the IREAMS schedule — {appliedMsg}
                 </div>
             )}
 
@@ -180,6 +208,16 @@ export const DeliverWorkPage: React.FC = () => {
                                                 {String(p.agent_type).replaceAll('_', ' ')} · approved {new Date(p.created_at).toLocaleDateString()}
                                             </div>
                                         </div>
+                                        {isApplyable(p) && (
+                                            <button
+                                                onClick={(e) => { e.preventDefault(); void applyInternally(p); }}
+                                                disabled={applying !== null}
+                                                title="Update this PM programme's interval in IREAMS itself — for schedules that live here rather than in an external CMMS. The proposal is then marked applied and leaves this queue."
+                                                className="flex items-center gap-1 shrink-0 rounded-lg border border-primary-200 bg-primary-50 hover:bg-primary-100 text-primary-700 text-[11px] font-semibold px-2.5 py-1.5 disabled:opacity-40 transition-colors">
+                                                {applying === p.id ? <Loader2 size={12} className="animate-spin" /> : <CalendarClock size={12} />}
+                                                Apply to schedule
+                                            </button>
+                                        )}
                                     </label>
                                 );
                             })}

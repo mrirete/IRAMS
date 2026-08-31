@@ -69,7 +69,7 @@ export const ReportDrillDown: React.FC = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from('sem_asset_reliability')
-        .select('asset_id, asset_tag, criticality, failures_12mo, mtbf_days, mttr_hours, availability_pct, downtime_coverage_pct');
+        .select('asset_id, asset_tag, criticality, failures_12mo, mtbf_days, mttr_hours, availability_pct, downtime_coverage_pct, failures_total, mtbf_hours_lifetime, mttr_hours_lifetime, last_failure_at');
       return data || [];
     },
   });
@@ -111,24 +111,32 @@ export const ReportDrillDown: React.FC = () => {
   // MTBF/MTTR grid — canonical computed values (sem_asset_reliability).
   // This used to PREFER assets.mtbf_days, a one-off backfill that migration
   // 0108 froze and nothing recomputes, so the grid disagreed with Reports.
+  // Lifetime fallback (0298): an asset quiet in the trailing year but with
+  // imported/older history shows its lifetime basis instead of vanishing —
+  // the `window` column says which basis each row is on.
   const mtbfMttrData = useMemo(() => {
     const nameById = new Map<string, any>((assets as any[]).map((a: any) => [a.id, a]));
     return (assetReliability as any[])
-      .filter((r: any) => r.mtbf_days != null || r.mttr_hours != null)
-      .sort((a: any, b: any) => (a.mtbf_days ?? Infinity) - (b.mtbf_days ?? Infinity))
+      .filter((r: any) => r.mtbf_days != null || r.mttr_hours != null || Number(r.failures_total) > 0)
       .map((r: any) => {
         const a = nameById.get(r.asset_id);
+        const lifetimeBasis = r.mtbf_days == null && r.mtbf_hours_lifetime != null;
+        const mtbfDays = r.mtbf_days ?? (r.mtbf_hours_lifetime != null ? Math.round(Number(r.mtbf_hours_lifetime) / 24) : 0);
+        const mttrHours = r.mttr_hours ?? r.mttr_hours_lifetime ?? 0;
         return {
           asset_tag: r.asset_tag ?? a?.tag,
           asset_name: a?.name ?? r.asset_tag,
           criticality: r.criticality ?? a?.criticality,
-          mtbf_days: r.mtbf_days ?? 0,
-          mttr_hours: r.mttr_hours ?? 0,
+          mtbf_days: mtbfDays,
+          mttr_hours: mttrHours,
           running_hours: a?.running_hours || 0,
           failure_count_ytd: r.failures_12mo ?? 0,
+          failures_total: r.failures_total ?? 0,
+          window: lifetimeBasis ? 'lifetime' : '12 mo',
           availability: r.availability_pct != null ? `${r.availability_pct}%` : '—',
         };
-      });
+      })
+      .sort((a: any, b: any) => (a.mtbf_days || Infinity) - (b.mtbf_days || Infinity));
   }, [assets, assetReliability]);
 
   // Downtime by reason — from ACTUAL failure coding on the work orders.
@@ -278,7 +286,9 @@ export const ReportDrillDown: React.FC = () => {
           { key: 'mtbf_days', label: 'MTBF (days)', format: 'number', dataBar: true },
           { key: 'mttr_hours', label: 'MTTR (hrs)', format: 'hours', dataBar: true },
           { key: 'running_hours', label: 'Run Hours', format: 'number' },
-          { key: 'failure_count_ytd', label: 'Failures YTD', format: 'number' },
+          { key: 'failure_count_ytd', label: 'Failures (12mo)', format: 'number' },
+          { key: 'failures_total', label: 'Lifetime', format: 'number' },
+          { key: 'window', label: 'Basis' },
           { key: 'availability', label: 'Availability' },
         ];
 

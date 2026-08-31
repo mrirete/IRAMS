@@ -98,6 +98,104 @@ class WritebackService {
         return new Set((data ?? []).map((r: { proposal_id: string }) => r.proposal_id));
     }
 
+    // ── internal apply (0299) ────────────────────────────────────────────
+
+    /**
+     * Apply an approved interval proposal to IREAMS's OWN schedule — the third
+     * delivery route (0299), for the full-suite tenant whose PMs live here
+     * rather than in a foreign CMMS. Updates recurring_work.frequency_interval,
+     * appends an interval_revision to the PM's origin provenance, and marks the
+     * proposal 'applied' (a terminal, ROI-counted state).
+     *
+     * The PM is resolved by the payload's current_pm_code first (exact code
+     * match); as a fallback, a SINGLE active PM on the proposal's asset. An
+     * ambiguous or missing match throws rather than guessing — never silently
+     * retime the wrong programme.
+     */
+    public async applyIntervalProposal(p: ApprovedProposal): Promise<{
+        pmId: string; pmCode: string; fromInterval: number; fromUnit: string; toDays: number;
+    }> {
+        const payload = (p.draft_payload ?? {}) as Record<string, unknown>;
+        const kind = String(payload.recommendation_type ?? '');
+        if (kind !== 'extend_interval' && kind !== 'set_interval') {
+            throw new Error('Only interval proposals (extend/set interval) can be applied to the schedule.');
+        }
+        const toDays = Number(payload.recommended_interval_days);
+        if (!Number.isFinite(toDays) || toDays <= 0) {
+            throw new Error('Proposal carries no valid recommended interval.');
+        }
+
+        // Resolve the target PM.
+        const code = String(payload.current_pm_code ?? '').trim();
+        let pm: { id: string; code: string; frequency_interval: number; frequency_unit: string; origin: Record<string, unknown> | null } | null = null;
+        if (code) {
+            const { data, error } = await supabase
+                .from('recurring_work')
+                .select('id, code, frequency_interval, frequency_unit, origin')
+                .eq('code', code)
+                .limit(2);
+            if (error) throw new Error(`PM lookup failed: ${error.message}`);
+            if ((data ?? []).length > 1) throw new Error(`PM code ${code} is ambiguous (${data!.length} matches).`);
+            pm = data?.[0] ?? null;
+        }
+        if (!pm && p.asset_id) {
+            const { data, error } = await supabase
+                .from('recurring_work')
+                .select('id, code, frequency_interval, frequency_unit, origin')
+                .eq('asset_id', p.asset_id)
+                .eq('active', true)
+                .limit(3);
+            if (error) throw new Error(`PM lookup failed: ${error.message}`);
+            if ((data ?? []).length === 1) pm = data![0];
+            else if ((data ?? []).length > 1) {
+                throw new Error('This asset has several active PMs — the proposal names none (no current_pm_code). Adjust the PM directly in Work → PM Programs.');
+            }
+        }
+        if (!pm) throw new Error('No matching PM programme found for this proposal.');
+
+        const { data: { user } } = await supabase.auth.getUser();
+        const appliedBy = user?.email ?? user?.id ?? null;
+        const revision = {
+            proposal_id: p.id,
+            recommendation_type: kind,
+            from_interval: pm.frequency_interval,
+            from_unit: pm.frequency_unit,
+            to_days: toDays,
+            basis: String(payload.basis ?? ''),
+            applied_at: new Date().toISOString(),
+            applied_by: appliedBy,
+        };
+        const priorRevisions = Array.isArray((pm.origin as any)?.interval_revisions)
+            ? (pm.origin as any).interval_revisions : [];
+        const { error: pmErr } = await supabase
+            .from('recurring_work')
+            .update({
+                frequency_interval: toDays,
+                frequency_unit: 'Days',
+                origin: { ...(pm.origin ?? {}), interval_revisions: [...priorRevisions, revision] },
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', pm.id);
+        if (pmErr) throw new Error(`Could not update the PM: ${pmErr.message}`);
+
+        // Terminal state on the proposal. If this stamp fails, say so loudly —
+        // the PM HAS changed and the queue must not offer a second apply.
+        const { error: actErr } = await supabase
+            .from('ers_agent_actions')
+            .update({
+                status: 'applied',
+                applied_at: new Date().toISOString(),
+                applied_ref: { pm_id: pm.id, pm_code: pm.code, from_interval: pm.frequency_interval, from_unit: pm.frequency_unit, to_days: toDays, applied_by: appliedBy },
+                updated_at: new Date().toISOString(),
+            })
+            .eq('id', p.id)
+            .eq('status', 'approved');
+        if (actErr) {
+            throw new Error(`PM ${pm.code} was updated to every ${toDays} days, but the proposal could not be marked applied (${actErr.message}). Refresh before retrying — do not apply it twice.`);
+        }
+        return { pmId: pm.id, pmCode: pm.code, fromInterval: pm.frequency_interval, fromUnit: pm.frequency_unit, toDays };
+    }
+
     // ── targets ──────────────────────────────────────────────────────────
 
     public async listTargets(): Promise<WritebackTarget[]> {

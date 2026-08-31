@@ -145,7 +145,8 @@ export interface WaveformCapture {
 // ─── Agentic Intelligence Types ──────────────────────────────
 
 export type AgentType = 'alert_to_wo' | 'bad_actor_rca' | 'threshold_adapter' | 'pm_effectiveness' | 'budget_overrun' | 'stockout_prevention' | 'cert_expiry' | 'compliance_audit' | 'auto_pareto' | 'vision_to_wo' | 'inspection_to_wo' | 'conversational_planner' | 'predictive_procurement';
-export type AgentActionStatus = 'pending_review' | 'approved' | 'rejected' | 'expired';
+// 'applied' (0299): approved AND written into IREAMS's own schedule — terminal.
+export type AgentActionStatus = 'pending_review' | 'approved' | 'rejected' | 'expired' | 'applied';
 export type AgentActionType = 'wr_draft' | 'rca_draft' | 'threshold_proposal' | 'pm_adjustment' | 'cost_investigation' | 'emergency_po_draft' | 'training_request' | 'quality_report' | 'de_task_draft' | 'work_plan_draft' | 'procurement_forecast';
 
 export interface PredictionFeedback {

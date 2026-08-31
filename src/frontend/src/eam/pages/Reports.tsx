@@ -159,13 +159,24 @@ export const Reports: React.FC = () => {
       // work order as a failure (K-601: 15 "failures" against 5 corrective
       // events) and averaged MTTR over PMs too, reading 29.6 days where the
       // canonical figure is 71.5.
+      // Lifetime fallback (0298): failures_12mo alone dropped every asset
+      // whose (often imported) history is older than a year — exactly the
+      // standalone-reliability tenant. Rows quiet in the window fall back to
+      // their lifetime basis, flagged in `window`.
       const { data } = await supabase
         .from('sem_asset_reliability')
-        .select('asset_id, asset_tag, mtbf_days, mttr_hours, failures_12mo, downtime_hrs_12mo, availability_pct')
-        .gt('failures_12mo', 0)
-        .order('mtbf_days', { ascending: true })
+        .select('asset_id, asset_tag, mtbf_days, mttr_hours, failures_12mo, downtime_hrs_12mo, availability_pct, failures_total, mtbf_hours_lifetime, mttr_hours_lifetime')
+        .or('failures_12mo.gt.0,failures_total.gt.0')
         .limit(ROW_CAP_REF);
-      return data || [];
+      return ((data || []) as any[]).map((r) => {
+        const lifetimeBasis = r.mtbf_days == null && r.mtbf_hours_lifetime != null;
+        return {
+          ...r,
+          mtbf_days: r.mtbf_days ?? (r.mtbf_hours_lifetime != null ? Math.round(Number(r.mtbf_hours_lifetime) / 24) : null),
+          mttr_hours: r.mttr_hours ?? r.mttr_hours_lifetime ?? null,
+          window: lifetimeBasis ? 'lifetime' : '12 mo',
+        };
+      }).sort((a, b) => (a.mtbf_days ?? Infinity) - (b.mtbf_days ?? Infinity));
     },
   });
 

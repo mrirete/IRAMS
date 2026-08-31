@@ -73,11 +73,14 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     // 8. Per-asset reliability for bad actors — the CANONICAL computed view
     //    (0234), not assets.mtbf_days, which migration 0108 froze in place
     //    and nothing has recomputed since.
+    // Lifetime fallback (0298): mtbf_days is 12-month-windowed; assets whose
+    // (often imported) failures are older than a year would drop off the bad-
+    // actor list entirely. Rows with only lifetime history fall back to
+    // mtbf_hours_lifetime/24, marked window:'lifetime' for honest display.
     supabase.from('sem_asset_reliability')
-      .select('asset_id, asset_tag, criticality, mtbf_days, mttr_hours, failures_12mo')
-      .not('mtbf_days', 'is', null)
-      .order('mtbf_days', { ascending: true })
-      .limit(20),
+      .select('asset_id, asset_tag, criticality, mtbf_days, mttr_hours, failures_12mo, failures_total, mtbf_hours_lifetime, mttr_hours_lifetime')
+      .or('mtbf_days.not.is.null,mtbf_hours_lifetime.not.is.null')
+      .limit(40),
     // 9. Defect elimination tasks
     supabase.from('ers_defect_elimination_tasks')
       .select('id, status, priority, annual_cost, estimated_savings, implementation_cost, created_at')
@@ -167,9 +170,20 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     overdue: filterWOs(overdue), recent: filterWOs(recent),
     myWork: filterWOs(myWorkResult.data || []), notifications: notificationsResult.data || [],
     woTrend: filterWOs(woTrend), pmWos: filterWOs(pmWoResult.data || []),
-    assetMtbf: scopedAssetIds
+    assetMtbf: ((rows: any[]) => rows
+      // Lifetime fallback (0298): windowed values win; quiet-year assets fall
+      // back to lifetime, flagged so the list can say which basis it's on.
+      .map((r: any) => ({
+        ...r,
+        mtbf_days: r.mtbf_days ?? (r.mtbf_hours_lifetime != null ? Math.round(Number(r.mtbf_hours_lifetime) / 24) : null),
+        mttr_hours: r.mttr_hours ?? r.mttr_hours_lifetime ?? null,
+        window: r.mtbf_days == null && r.mtbf_hours_lifetime != null ? 'lifetime' : '12 mo',
+      }))
+      .sort((a: any, b: any) => (a.mtbf_days ?? Infinity) - (b.mtbf_days ?? Infinity))
+      .slice(0, 20)
+    )(scopedAssetIds
       ? (assetMtbfResult.data || []).filter((a: any) => scopedAssetIds!.has(a.id) || scopedAssetTags?.has(a.tag))
-      : (assetMtbfResult.data || []),
+      : (assetMtbfResult.data || [])),
     deTasks: deTasksResult.data || [],
     governance,
   };
@@ -364,6 +378,7 @@ export const Dashboard: React.FC = () => {
     .map((a: any) => ({
       tag: a.asset_tag, name: a.asset_tag, id: a.asset_id,
       mtbf_days: a.mtbf_days, mttr_hours: a.mttr_hours, criticality: a.criticality,
+      window: a.window,
     }));
   const badActors = apiBadActors && apiBadActors.length > 0
     ? apiBadActors.map(a => {
@@ -788,7 +803,12 @@ export const Dashboard: React.FC = () => {
                       </div>
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span className="text-[10px] font-medium text-slate-500" title="Mean time between failures — computed from the last 12 months of corrective work">{a.mtbf_days != null ? `${a.mtbf_days}d` : '—'}</span>
+                      <span className="text-[10px] font-medium text-slate-500"
+                        title={a.window === 'lifetime'
+                          ? 'Mean time between failures — no failures in the last 12 months; computed over the asset\'s full recorded history (0298 lifetime basis)'
+                          : 'Mean time between failures — computed from the last 12 months of corrective work'}>
+                        {a.mtbf_days != null ? `${a.mtbf_days}d` : '—'}{a.window === 'lifetime' ? <span className="text-slate-400"> · life</span> : null}
+                      </span>
                       {/* Auto-draft DE Task */}
                       <button
                         onClick={async (e) => {

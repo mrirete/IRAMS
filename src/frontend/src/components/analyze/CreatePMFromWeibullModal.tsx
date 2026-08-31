@@ -139,6 +139,19 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                 jobType: 'PM',
                 priorityCode: priorityCode,
                 nextDueDate,
+                // 0299: structured provenance — the free-text description above is
+                // for people; this is for the PM detail card, audits, and agents.
+                origin: {
+                    source: 'weibull_analysis',
+                    beta: data.beta,
+                    eta_hours: data.eta,
+                    r2: data.r2,
+                    b10_hours: data.b10,
+                    data_points: data.dataPoints,
+                    interval_basis: `${data.beta > 3 ? 70 : data.beta > 2 ? 75 : 80}% of η`,
+                    ...(cls ? { class_name: data.className, class_size: cls.length } : { asset_tag: data.asset.tag }),
+                    created_at: new Date().toISOString(),
+                },
             }));
             setSuccess(true);
             setTimeout(() => {

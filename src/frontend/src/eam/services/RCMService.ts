@@ -812,7 +812,17 @@ class RCMServiceImpl {
           priority_code: consequenceToPriority(d.consequence_code),
           est_duration: 0,
           est_downtime: 0,
-          active: true
+          active: true,
+          // 0299: structured provenance — the schedule can answer "why does
+          // this PM exist" from data, not just the description free text.
+          origin: {
+            source: 'rcm',
+            study_id: studyId,
+            decision_id: d.id,
+            strategy_code: d.recommended_strategy_code,
+            consequence_code: d.consequence_code ?? null,
+            created_at: new Date().toISOString(),
+          },
         });
 
       if (!error) {

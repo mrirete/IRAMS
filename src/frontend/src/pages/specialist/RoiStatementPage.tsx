@@ -52,7 +52,10 @@ async function loadRoi(): Promise<RoiData> {
 
     const draftValue = (a: { draft_payload: Record<string, unknown> }) =>
         Number(a.draft_payload?.estimated_savings) || Number(a.draft_payload?.annual_cost) || 0;
-    const approvedActions = actions.filter((a) => a.status === 'approved');
+    // 'applied' (0299) is approved work that ALSO landed in the internal
+    // schedule — the strongest delivery evidence there is; it must keep
+    // counting here rather than vanishing from the ROI when applied.
+    const approvedActions = actions.filter((a) => a.status === 'approved' || a.status === 'applied');
     const pendingActions = actions.filter((a) => a.status === 'pending_review');
 
     let realization = computeRealization([], [], Date.now());

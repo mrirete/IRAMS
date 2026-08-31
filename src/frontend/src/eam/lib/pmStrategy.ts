@@ -30,6 +30,9 @@ export interface PMStrategyInput {
     templates?: unknown;
     strategyId?: string;           // 0292: strategy this PM implements
     strategyPackage?: string;      // 0292: which package (label) — drives absorption
+    /** 0299: structured provenance — why this PM exists (e.g. {source:'weibull_analysis',
+     *  beta, eta_hours, r2, ...}). Display/audit only; generation never reads it. */
+    origin?: Record<string, unknown>;
 }
 
 function generatePmCode(): string {
@@ -61,5 +64,6 @@ export function buildPMStrategy(i: PMStrategyInput): Record<string, unknown> {
     if (i.assignedAssets !== undefined) row.assigned_assets = i.assignedAssets;
     if (i.templates !== undefined) row.templates = i.templates;
     if (i.strategyId) { row.strategy_id = i.strategyId; row.strategy_package = i.strategyPackage || null; }
+    if (i.origin) row.origin = i.origin;
     return row;
 }

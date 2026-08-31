@@ -31,6 +31,7 @@ const CompaniesPage = lazyWithReload(() => import('./pages/CompaniesPage').then(
 const AdminActivityPage = lazyWithReload(() => import('./pages/admin/AdminActivityPage').then(m => ({ default: m.AdminActivityPage })));
 const InvitationsPage = lazyWithReload(() => import('./pages/admin/InvitationsPage').then(m => ({ default: m.InvitationsPage })));
 const MigrationCenterPage = lazyWithReload(() => import('./pages/admin/MigrationCenterPage').then(m => ({ default: m.MigrationCenterPage })));
+const ApiKeysPage = lazyWithReload(() => import('./pages/admin/ApiKeysPage').then(m => ({ default: m.ApiKeysPage })));
 const SpecialistWorkspacePage = lazyWithReload(() => import('./pages/specialist/SpecialistWorkspacePage').then(m => ({ default: m.SpecialistWorkspacePage })));
 const ImportWizardPage = lazyWithReload(() => import('./pages/specialist/ImportWizardPage').then(m => ({ default: m.ImportWizardPage })));
 const AssessmentReportPage = lazyWithReload(() => import('./pages/specialist/AssessmentReportPage').then(m => ({ default: m.AssessmentReportPage })));
@@ -278,6 +279,7 @@ function App() {
                                 <Route path="/admin/migration" element={<PermissionGate module="admin"><MigrationCenterPage /></PermissionGate>} />
                                 <Route path="/admin/invitations" element={<PermissionGate module="admin"><InvitationsPage /></PermissionGate>} />
                                 <Route path="/admin/connectors" element={<PermissionGate module="admin"><ConnectorHub /></PermissionGate>} />
+                                <Route path="/admin/api-keys" element={<PermissionGate module="admin"><ApiKeysPage /></PermissionGate>} />
                                 <Route path="/admin/connectors/new" element={<PermissionGate module="admin"><ConnectorWizard /></PermissionGate>} />
                                 <Route path="/admin/connectors/:id" element={<PermissionGate module="admin"><ConnectorDetail /></PermissionGate>} />
                                 <Route path="/admin/settings" element={<PermissionGate module="admin"><GlobalSettingsPage /></PermissionGate>} />

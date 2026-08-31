@@ -37,6 +37,7 @@ const STATUS_STYLES: Record<AgentActionStatus, { bg: string; text: string; label
     approved: { bg: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700', label: 'Approved' },
     rejected: { bg: 'bg-red-50 border-red-200', text: 'text-red-600', label: 'Rejected' },
     expired: { bg: 'bg-slate-50 border-slate-200', text: 'text-slate-500', label: 'Expired' },
+    applied: { bg: 'bg-primary-50 border-primary-200', text: 'text-primary-700', label: 'Applied to schedule' },
 };
 
 const AGENT_BADGES: Record<string, { icon: typeof Bot; color: string; label: string }> = {
