@@ -135,7 +135,10 @@ export const CreatePMFromWeibullModal: React.FC<CreatePMFromWeibullModalProps> =
                 // Class PM: representative asset + assigned_assets across the whole class.
                 assetId: cls ? cls[0].id : data.asset.id,
                 assignedAssets: cls ? cls.map(a => ({ assetId: a.id, lastCompletedDate: '', lastReadingValue: 0 })) : undefined,
-                scheduleType: 'TIME',
+                // 0305 cadence contract: Hours is a running-meter cadence, so a
+                // deliberate Hours choice becomes a READING schedule — TIME +
+                // 'Hours' is exactly the shape that froze PM-31048 forever.
+                scheduleType: frequencyType === 'HOURS' ? 'READING' : 'TIME',
                 frequencyInterval: intervalValue,
                 frequencyUnit: FREQ_UNIT[frequencyType] || 'Months',
                 jobType: 'PM',

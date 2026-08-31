@@ -39,8 +39,22 @@ function generatePmCode(): string {
     return `PM-${Math.floor(10000 + Math.random() * 90000)}`;
 }
 
+// 0305 cadence contract (mirrored by the recurring_work DB constraint
+// chk_time_pm_calendar_unit): a TIME schedule needs a unit the calendar
+// Autopilot (0304) can serve; running-meter cadences belong to READING
+// schedules. The Weibull modal once wrote TIME + 'Hours' and the schedule
+// froze forever — this throws a readable error before the DB says no.
+const CALENDAR_UNITS = ['DAYS', 'WEEKS', 'MONTHS', 'YEARS'];
+
 /** Build a recurring_work row from a typed input — required fields guaranteed. */
 export function buildPMStrategy(i: PMStrategyInput): Record<string, unknown> {
+    const scheduleType = (i.scheduleType || 'TIME').toUpperCase();
+    if (scheduleType === 'TIME' && !CALENDAR_UNITS.includes(String(i.frequencyUnit || '').toUpperCase())) {
+        throw new Error(
+            `A time-based PM needs a calendar frequency unit (Days/Weeks/Months/Years) — got "${i.frequencyUnit}". ` +
+            `For a running-meter cadence, use scheduleType 'READING' with the meter unit instead.`
+        );
+    }
     const row: Record<string, unknown> = {
         id: self.crypto.randomUUID(),
         code: i.code || generatePmCode(),

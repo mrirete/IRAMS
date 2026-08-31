@@ -19,6 +19,7 @@ import { CreatePMModal } from '../components/modals/CreatePMModal';
 import BulkImportModal from '../components/modals/BulkImportModal';
 import { ConfirmationModal } from '../components/modals/ConfirmationModal';
 import { DatabaseService } from '../services/DatabaseService';
+import { supabase } from '../lib/supabase';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import { emptyResult, tally, errMessage } from '../services/importTypes';
 import { parseDateValue } from '../services/assetTemplates';
@@ -204,6 +205,43 @@ export const RecurringWork: React.FC = () => {
     // ... inside return ...
 
 
+
+    // ── 0304/0305 — Autopilot status per schedule (loud gaps) ──────────────
+    // A schedule the daily sweep can't serve says so on the list instead of
+    // freezing silently: wrong cadence, unarmed, blocked by an open WO, or off.
+    const [woRollup, setWoRollup] = useState<Record<string, { completed: boolean; open: boolean }>>({});
+    useEffect(() => {
+        (async () => {
+            try {
+                const { data } = await supabase.from('work_orders')
+                    .select('recurring_work_id, status')
+                    .not('recurring_work_id', 'is', null);
+                const acc: Record<string, { completed: boolean; open: boolean }> = {};
+                for (const w of (data || []) as any[]) {
+                    const st = String(w.status || '').toUpperCase();
+                    const m = acc[w.recurring_work_id] || (acc[w.recurring_work_id] = { completed: false, open: false });
+                    if (['COMP', 'TECO', 'CLOSED'].includes(st)) m.completed = true;
+                    else if (st !== 'CANCELLED') m.open = true;
+                }
+                setWoRollup(acc);
+            } catch { /* chip is advisory only */ }
+        })();
+    }, [jobs.length]);
+
+    const AUTOPILOT_CALENDAR_UNITS = ['DAYS', 'WEEKS', 'MONTHS', 'YEARS'];
+    const autopilotChip = (job: RecurringJob): { label: string; cls: string } | null => {
+        if (String(job.scheduleType || 'TIME').toUpperCase() !== 'TIME') return null; // meter cadence — readings path
+        if (!AUTOPILOT_CALENDAR_UNITS.includes(String(job.frequencyUnit || '').toUpperCase()))
+            return { label: '⚠ Meter unit on a time schedule', cls: 'bg-red-50 text-red-700 border-red-200' };
+        if (job.autoGenerate === false)
+            return { label: 'Autopilot off', cls: 'bg-slate-100 text-slate-500 border-slate-200' };
+        const r = woRollup[job.id];
+        if (!r?.completed)
+            return { label: 'Arms after 1st completed PM', cls: 'bg-amber-50 text-amber-700 border-amber-200' };
+        if (r.open)
+            return { label: 'Autopilot · waiting (WO open)', cls: 'bg-blue-50 text-blue-700 border-blue-200' };
+        return { label: 'Autopilot active', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+    };
 
     // --- Generator Logic ---
     const [generateDate, setGenerateDate] = useState(new Date().toISOString().split('T')[0]);
@@ -989,6 +1027,12 @@ export const RecurringWork: React.FC = () => {
                                                         </span>
                                                     )
                                                 )}
+                                                {(() => {
+                                                    const chip = autopilotChip(job);
+                                                    return chip && (
+                                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${chip.cls}`}>{chip.label}</span>
+                                                    );
+                                                })()}
                                             </div>
                                         </div>
                                     </div>

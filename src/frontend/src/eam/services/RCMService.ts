@@ -804,7 +804,11 @@ class RCMServiceImpl {
           description: `Generated from RCM study. Strategy: ${d.recommended_strategy_code}. ${d.justification || ''}`,
           status: 'ACTIVE',
           asset_id: study.asset_id,
-          schedule_type: d.recommended_strategy_code === 'PM_CONDITION' ? 'READING' : 'TIME',
+          // 0305 cadence contract: an Hours interval (e.g. a measured-Weibull
+          // "1,700 h") is a running-meter cadence — it must be a READING
+          // schedule, or the DB constraint rejects it (TIME needs a calendar
+          // unit the 0304 Autopilot can serve).
+          schedule_type: (d.recommended_strategy_code === 'PM_CONDITION' || unit === 'Hours') ? 'READING' : 'TIME',
           frequency_interval: interval,
           frequency_unit: unit,
           lead_time_days: 7,
