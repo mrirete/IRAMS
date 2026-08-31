@@ -29,6 +29,7 @@ Mark each case **Pass / Fail** and note the evidence (screenshot or response JSO
 | A7 | Roll the batch back from the Migration Center | All imported WOs and batch-created assets disappear; metrics return to the prior state | |
 | A8 | Include cost cells in mixed formats — `€1.234,56`, `$2,000`, `(500)`, `1 250.75` | All parse to the correct numbers (check `total_actual_cost` on the imported WOs); unparseable cells are reported as issues, not silently zeroed | |
 | A9 | After commit, open Reports → bad actors / asset spend for an imported asset | Money figures equal the file's frozen order totals (labor + material, or the combined total) | |
+| A10 | Log in as a RELIABILITY_ENG account: run a work-order history import through the wizard; then attempt to roll the batch back | Import commits (0303 — REs hold history-refresh rights); rollback is refused — batch deletion stays admin-only, the governance line | |
 
 ## B. Sync API (`ingest-work-orders`)
 
