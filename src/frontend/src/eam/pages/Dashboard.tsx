@@ -246,7 +246,7 @@ export const Dashboard: React.FC = () => {
   const { showToast } = useToast();
   const userName = (profile as any)?.fullName || (profile as any)?.username || 'Operator';
   const userRole = role || '';
-  const [workTab, setWorkTab] = useState<'active' | 'recent'>('active');
+  const [workTab, setWorkTab] = useState<'active' | 'recent' | 'notifications'>('active');
   const [apiBadActors, setApiBadActors] = useState<BadActorEntry[] | null>(null);
   const [insight, setInsight] = useState<InsightKey | null>(null);
 
@@ -463,7 +463,7 @@ export const Dashboard: React.FC = () => {
     // Calm-screens: on desktop the page locks to the viewport — everything is
     // visible at once and drill-down happens in popups. Below lg it stacks and
     // scrolls naturally (phones can't show a wall-to-wall grid anyway).
-    <div className="flex flex-col gap-3 md:gap-4 lg:h-[calc(100vh-7rem)] lg:overflow-hidden">
+    <div className="ers-page-wide w-full flex flex-col gap-3 md:gap-4 lg:h-[calc(100vh-7rem)] lg:overflow-hidden">
 
       {/* ── Row 1: Header + quick actions, one strip ── */}
       <div className="flex flex-wrap items-center gap-2 md:gap-3 flex-none">
@@ -571,10 +571,10 @@ export const Dashboard: React.FC = () => {
         )}
       </div>
 
-      {/* ── Row 3: work | notifications | insights — fills the rest of the screen ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4 flex-1 min-h-0">
+      {/* ── Row 3: one tabbed centre feed + insights rail — fills the rest of the screen ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)] gap-3 md:gap-4 flex-1 min-h-0">
 
-        {/* ── My Work & Activity (merged panel) ── */}
+        {/* ── Centre feed — pill tabs swap this ONE panel's content (LinkedIn pattern) ── */}
         <div className="bg-white rounded-card shadow-card border border-slate-200 overflow-hidden flex flex-col min-h-0">
           {/* Overdue alert banner */}
           {overdue.length > 0 && (
@@ -587,8 +587,8 @@ export const Dashboard: React.FC = () => {
             </button>
           )}
 
-          {/* Tab header */}
-          <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center">
+          {/* Feed switcher — pills control what the single feed below shows */}
+          <div className="px-3 sm:px-5 py-3 border-b border-slate-100 flex justify-between items-center gap-2">
             <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
               <button onClick={() => setWorkTab('active')}
                 className={`px-3 py-1.5 min-h-[36px] md:min-h-0 rounded-md text-xs font-semibold transition-all ${workTab === 'active' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
@@ -596,8 +596,17 @@ export const Dashboard: React.FC = () => {
               <button onClick={() => setWorkTab('recent')}
                 className={`px-3 py-1.5 min-h-[36px] md:min-h-0 rounded-md text-xs font-semibold transition-all ${workTab === 'recent' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >Recent ({recent.length})</button>
+              <button onClick={() => setWorkTab('notifications')}
+                className={`px-3 py-1.5 min-h-[36px] md:min-h-0 rounded-md text-xs font-semibold transition-all inline-flex items-center gap-1.5 ${workTab === 'notifications' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <BellRing size={13} className={workTab === 'notifications' ? 'text-blue-600' : ''} />
+                <span className="hidden xs:inline">Notifications</span>
+                {notifications.length > 0 && (
+                  <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded-full leading-none">{notifications.length}</span>
+                )}
+              </button>
             </div>
-            <button onClick={() => navigate('/work-orders')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
+            <button onClick={() => navigate(workTab === 'notifications' ? '/notifications' : '/work-orders')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition whitespace-nowrap">
               View All <ArrowRight size={12} />
             </button>
           </div>
@@ -635,7 +644,7 @@ export const Dashboard: React.FC = () => {
                   <p className="text-sm text-slate-500">No active work orders. All caught up!</p>
                 </div>
               )
-            ) : (
+            ) : workTab === 'recent' ? (
               recent.length > 0 ? recent.map((wo: any) => (
                 <button key={wo.id} onClick={() => navigate(`/work-orders/${wo.id}`)}
                   className="w-full px-5 py-3 flex items-center gap-3 hover:bg-slate-50 transition text-left"
@@ -654,44 +663,27 @@ export const Dashboard: React.FC = () => {
                   <p className="text-sm text-slate-400">No recent activity yet</p>
                 </div>
               )
-            )}
-          </div>
-        </div>
-
-        {/* ── Notifications ── */}
-        <div className="bg-white rounded-card shadow-card border border-slate-200 overflow-hidden flex flex-col min-h-0">
-          <div className="px-5 py-3.5 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
-            <div className="flex items-center gap-2">
-              <BellRing size={16} className="text-blue-600" />
-              <h3 className="font-semibold text-slate-900 text-sm">Notifications</h3>
-              {notifications.length > 0 && (
-                <span className="text-xs font-bold bg-blue-600 text-white px-2 py-0.5 rounded-full">{notifications.length}</span>
-              )}
-            </div>
-            <button onClick={() => navigate('/notifications')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
-              View All <ArrowRight size={12} />
-            </button>
-          </div>
-          <div className="divide-y divide-slate-100 max-h-[360px] lg:max-h-none lg:flex-1 min-h-0 overflow-y-auto">
-            {notifications.length > 0 ? notifications.map((n: any) => (
-              <button key={n.id} onClick={() => navigate('/notifications')}
-                className={`w-full p-3 flex items-start gap-3 hover:bg-slate-50 transition text-left border-l-4 ${severityBg(n.severity)}`}
-              >
-                <div className="mt-0.5 flex-shrink-0">{severityIcon(n.severity)}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-900 truncate">{n.title}</span>
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 flex-shrink-0">{n.module || n.notification_type}</span>
+            ) : (
+              notifications.length > 0 ? notifications.map((n: any) => (
+                <button key={n.id} onClick={() => navigate('/notifications')}
+                  className={`w-full p-3 flex items-start gap-3 hover:bg-slate-50 transition text-left border-l-4 ${severityBg(n.severity)}`}
+                >
+                  <div className="mt-0.5 flex-shrink-0">{severityIcon(n.severity)}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-slate-900 truncate">{n.title}</span>
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 flex-shrink-0">{n.module || n.notification_type}</span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{n.message}</p>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{n.message}</p>
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0 mt-1">{timeAgo(n.created_at)}</span>
+                </button>
+              )) : (
+                <div className="p-8 text-center">
+                  <Bell size={24} className="text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-400">No new notifications</p>
                 </div>
-                <span className="text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0 mt-1">{timeAgo(n.created_at)}</span>
-              </button>
-            )) : (
-              <div className="p-8 text-center">
-                <Bell size={24} className="text-slate-300 mx-auto mb-2" />
-                <p className="text-sm text-slate-400">No new notifications</p>
-              </div>
+              )
             )}
           </div>
         </div>
