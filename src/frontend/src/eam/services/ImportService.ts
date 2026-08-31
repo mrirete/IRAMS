@@ -171,6 +171,45 @@ class ImportService {
             notes.push(`${defaultedCrit} asset(s) had no criticality in the file — defaulted to C pending a criticality assessment.`);
         }
 
+        // 2b. Parent links (B9) — second pass, after every row exists, so a
+        // parent defined later in the same file (or already in the register)
+        // still resolves. Unresolvable parents are reported, never guessed.
+        const withParents = applied.assets.filter((a) => a.parent_tag && a.parent_tag !== a.tag);
+        if (withParents.length > 0) {
+            // The earlier lookup maps only cover keys named in THIS file — a
+            // parent that already lives in the register (imported previously,
+            // or built in the Asset Register) needs its own batched lookup.
+            const parentById = new Map<string, string>();
+            const resolveLocal = (t: string) => idByTag.get(t) ?? byTag.get(t) ?? byEquipNo.get(t);
+            const missing = [...new Set(withParents.map((a) => a.parent_tag!))]
+                .filter((t) => !resolveLocal(t));
+            for (const part of chunk(missing)) {
+                const { data } = await supabase.from('assets')
+                    .select('id, tag, equipment_number')
+                    .or(part.map((t) => `tag.eq.${JSON.stringify(t)},equipment_number.eq.${JSON.stringify(t)}`).join(','));
+                for (const p of data ?? []) {
+                    if (p.tag) parentById.set(p.tag, p.id);
+                    if (p.equipment_number) parentById.set(p.equipment_number, p.id);
+                }
+            }
+            let linked = 0;
+            const unresolved: string[] = [];
+            for (const a of withParents) {
+                const childId = idByTag.get(a.tag);
+                const parentId = resolveLocal(a.parent_tag!) ?? parentById.get(a.parent_tag!);
+                if (!childId) continue;
+                if (!parentId) { unresolved.push(a.parent_tag!); continue; }
+                const { error } = await supabase.from('assets')
+                    .update({ parent_id: parentId }).eq('id', childId);
+                if (!error) linked += 1;
+            }
+            if (linked > 0) notes.push(`${linked} parent link(s) set from the Parent Tag column.`);
+            if (unresolved.length > 0) {
+                const sample = [...new Set(unresolved)].slice(0, 5).join(', ');
+                notes.push(`${unresolved.length} parent reference(s) could not be resolved (${sample}${unresolved.length > 5 ? ', …' : ''}) — those assets imported without a parent; fix the tags and re-import, or set parents in the Asset Register.`);
+            }
+        }
+
         // 3. Avoid wo_number collisions with existing data (suffix, keep history).
         const woNumbers = applied.workOrders.map((w) => w.wo_number);
         const existingWo = new Set<string>();

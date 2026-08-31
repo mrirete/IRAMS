@@ -1087,6 +1087,73 @@ class PredictionService {
         }
     }
 
+    /**
+     * Fleet-wide measured alert precision (B6 — the anti-alert-fatigue number).
+     * Precision = actionable ÷ reviewed, from HUMAN feedback on real alerts —
+     * never a model's self-score. null (not 100%) until something is reviewed:
+     * an unmeasured precision must not masquerade as a perfect one.
+     */
+    async getFleetAlertPrecision(): Promise<{
+        reviewed: number; actionable: number; falseAlarm: number;
+        precision: number | null;
+        reviewed90: number; precision90: number | null;
+        totalAlerts: number; coveragePct: number | null;
+        worstTypes: { type: string; falseAlarms: number }[];
+    }> {
+        const empty = { reviewed: 0, actionable: 0, falseAlarm: 0, precision: null, reviewed90: 0, precision90: null, totalAlerts: 0, coveragePct: null, worstTypes: [] };
+        try {
+            const [fbQ, alertCountQ] = await Promise.all([
+                supabase.from('ers_prediction_feedback')
+                    .select('alert_id, feedback_type, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(10000),
+                supabase.from('ers_prediction_alerts').select('id', { count: 'exact', head: true }),
+            ]);
+            if (fbQ.error) throw fbQ.error;
+            const rows = fbQ.data ?? [];
+            // One verdict per alert — the latest wins (rows are ordered desc).
+            const latestByAlert = new Map<string, { type: string; at: string }>();
+            for (const r of rows) {
+                if (!latestByAlert.has(r.alert_id)) latestByAlert.set(r.alert_id, { type: r.feedback_type, at: r.created_at });
+            }
+            const verdicts = [...latestByAlert.values()];
+            const actionable = verdicts.filter(v => v.type === 'actionable').length;
+            const falseAlarm = verdicts.filter(v => v.type === 'false_alarm').length;
+            const reviewed = actionable + falseAlarm;
+
+            const cutoff90 = Date.now() - 90 * 86400000;
+            const v90 = verdicts.filter(v => new Date(v.at).getTime() >= cutoff90);
+            const actionable90 = v90.filter(v => v.type === 'actionable').length;
+            const reviewed90 = v90.length;
+
+            // Which alert types cry wolf — the tuning targets.
+            const falseIds = [...latestByAlert.entries()].filter(([, v]) => v.type === 'false_alarm').map(([id]) => id).slice(0, 500);
+            let worstTypes: { type: string; falseAlarms: number }[] = [];
+            if (falseIds.length > 0) {
+                const { data: alerts } = await supabase.from('ers_prediction_alerts')
+                    .select('alert_id, alert_type').in('alert_id', falseIds);
+                const byType = new Map<string, number>();
+                for (const a of alerts ?? []) byType.set(a.alert_type, (byType.get(a.alert_type) ?? 0) + 1);
+                worstTypes = [...byType.entries()].map(([type, falseAlarms]) => ({ type, falseAlarms }))
+                    .sort((a, b) => b.falseAlarms - a.falseAlarms).slice(0, 3);
+            }
+
+            const totalAlerts = alertCountQ.count ?? 0;
+            return {
+                reviewed, actionable, falseAlarm,
+                precision: reviewed > 0 ? actionable / reviewed : null,
+                reviewed90,
+                precision90: reviewed90 > 0 ? actionable90 / reviewed90 : null,
+                totalAlerts,
+                coveragePct: totalAlerts > 0 ? Math.round((reviewed / totalAlerts) * 100) : null,
+                worstTypes,
+            };
+        } catch (e) {
+            console.error('Error computing fleet alert precision:', e);
+            return empty;
+        }
+    }
+
     // ══════════════════════════════════════════════════════════
     //  Agent Actions — HITL governance audit trail
     // ══════════════════════════════════════════════════════════

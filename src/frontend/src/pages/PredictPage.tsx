@@ -20,6 +20,7 @@ import { conditionalRemainingQuantileHours } from '../eam/utils/weibull';
 import type { RULEstimate } from '../types/intelligence';
 import { agentService } from '../eam/services/AgentService';
 import { AgentReviewPanel } from '../components/predict/AgentReviewPanel';
+import { AlertPrecisionCard } from '../components/predict/AlertPrecisionCard';
 import { KpiOutlook } from '../components/predict/KpiOutlook';
 import { resolveEquipmentClass } from '../lib/predict/equipmentClass';
 import { sensorKind } from '../lib/predict/healthModels';
@@ -1026,6 +1027,10 @@ export const PredictPage: React.FC = () => {
                             assetId={selectedAssetId}
                             currentUser={profile?.username || profile?.fullName || 'user'}
                         />
+                    </div>
+                    {/* B6: the measured false-alarm number — refreshes as feedback lands */}
+                    <div className="mt-4">
+                        <AlertPrecisionCard refreshKey={feedbackStats} />
                     </div>
                 </>
             )}

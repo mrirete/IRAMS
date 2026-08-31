@@ -65,7 +65,7 @@ const ASSET_FIELD_LABELS: Record<AssetField, string> = {
     tag: 'Asset tag *', equipment_number: 'Equipment number (SAP EQUNR)',
     functional_location: 'Functional location', name: 'Asset name', criticality: 'Criticality',
     manufacturer: 'Manufacturer', model: 'Model', serial_number: 'Serial number',
-    asset_category: 'Category',
+    asset_category: 'Category', parent_tag: 'Parent tag (hierarchy)',
 };
 const WO_FIELD_LABELS: Record<WoField, string> = {
     wo_number: 'WO number *', title: 'Title', description: 'Description',

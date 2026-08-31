@@ -1276,15 +1276,15 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
     const [confidence, setConfidence] = useState('95');
 
     // Result → Action: apply the stocking recommendation to an inventory item's min level
-    const [invItems, setInvItems] = useState<{ id: string; code: string; description: string; minLevel: number }[]>([]);
+    const [invItems, setInvItems] = useState<{ id: string; code: string; description: string; minLevel: number; maxLevel: number }[]>([]);
     const [invSel, setInvSel] = useState('');
     const [invApplying, setInvApplying] = useState(false);
     const [invToast, setInvToast] = useState<string | null>(null);
 
     useEffect(() => {
-        supabase.from('inventory_items').select('id, part_number, description, min_level').order('part_number')
+        supabase.from('inventory_items').select('id, part_number, description, min_level, max_level').order('part_number')
             .then(({ data }) => setInvItems((data || []).map((r: any) => ({
-                id: r.id, code: r.part_number || '—', description: r.description || '', minLevel: r.min_level || 0,
+                id: r.id, code: r.part_number || '—', description: r.description || '', minLevel: r.min_level || 0, maxLevel: r.max_level || 0,
             }))));
     }, []);
 
@@ -1406,13 +1406,38 @@ export function SparesTab({ onStateChange, loadedData }: TabProps = {}) {
                         onClick={async () => {
                             if (!invSel) return;
                             setInvApplying(true);
-                            const { error } = await supabase.from('inventory_items')
-                                .update({ min_level: result.requiredSpares }).eq('id', invSel);
-                            setInvApplying(false);
                             const item = invItems.find(i => i.id === invSel);
+                            // Keep the min ≤ max invariant: sizing above the current
+                            // max raises the ceiling with it rather than inverting it.
+                            const patch: Record<string, number> = { min_level: result.requiredSpares };
+                            if (item && result.requiredSpares > item.maxLevel) patch.max_level = result.requiredSpares;
+                            const { error } = await supabase.from('inventory_items')
+                                .update(patch).eq('id', invSel);
+                            setInvApplying(false);
                             if (!error) {
-                                setInvItems(prev => prev.map(i => i.id === invSel ? { ...i, minLevel: result.requiredSpares } : i));
+                                setInvItems(prev => prev.map(i => i.id === invSel ? { ...i, minLevel: result.requiredSpares, maxLevel: Math.max(i.maxLevel, result.requiredSpares) } : i));
                                 setInvToast(`Min level set to ${result.requiredSpares} on ${item?.code} ✓`);
+                                // Governance trail (B7): the applied stocking decision joins
+                                // the same audited, ROI-counted ledger as PM-interval applies —
+                                // an audit can answer "why is the min 3" from data.
+                                supabase.from('ers_agent_actions').insert({
+                                    agent_type: 'spares_optimizer',
+                                    asset_id: asset?.id ?? null,
+                                    action_type: 'draft_spares_level',
+                                    status: 'applied',
+                                    applied_at: new Date().toISOString(),
+                                    applied_ref: { inventory_item_id: invSel, part_number: item?.code, from_min: item?.minLevel ?? null, to_min: result.requiredSpares },
+                                    draft_payload: {
+                                        recommendation_type: 'spares_level',
+                                        asset_id: asset?.id ?? null,
+                                        asset_tag: asset?.tag ?? null,
+                                        inventory_item_id: invSel,
+                                        part_number: item?.code,
+                                        recommended_min: result.requiredSpares,
+                                        basis: `Poisson sizing @ ${confidence}% confidence — population ${population}, MTBF ${mtbfVal} h, resupply ${interval} h (λ=${result.lambda.toFixed(2)})`,
+                                        applied_directly: true,
+                                    },
+                                }).then(({ error: e }) => { if (e) console.warn('spares provenance log failed:', e.message); });
                             } else {
                                 setInvToast('Failed to update the inventory item');
                             }
@@ -2076,10 +2101,23 @@ export function RAMDashboardTab({ onStateChange, loadedData, onSendToSpares }: T
 // ═══════════════════════════════════════════════════════════════
 //  MAIN PAGE
 // ═══════════════════════════════════════════════════════════════
+const GUIDE_LS_KEY = 'irams_toolkit_guide_dismissed';
+
 export const ReliabilityToolkit: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<TabId>('mtbf');
+    // Calm entry (B8): land on Weibull — the tab with the bad-actor shortlist
+    // and the pick-asset → see-fit → create-PM path — not on a blank calculator.
+    const [activeTab, setActiveTab] = useState<TabId>('weibull');
     const [showHelp, setShowHelp] = useState(false);
     const activeTabDef = TABS.find(t => t.id === activeTab);
+
+    // First-visit guide strip; dismissal is a per-viewer convenience.
+    const [showGuide, setShowGuide] = useState<boolean>(() => {
+        try { return localStorage.getItem(GUIDE_LS_KEY) !== '1'; } catch { return true; }
+    });
+    const dismissGuide = () => {
+        setShowGuide(false);
+        try { localStorage.setItem(GUIDE_LS_KEY, '1'); } catch { /* per-viewer nicety only */ }
+    };
 
     // ── Weibull → Monte Carlo bridge state ──
     const [weibullBridge, setWeibullBridge] = useState<{ beta: number; eta: number; dataStr?: string } | null>(null);
@@ -2110,6 +2148,20 @@ export const ReliabilityToolkit: React.FC = () => {
                     </p>
                 </div>
             </div>
+
+            {/* ── First-visit guide: the whole toolkit in one sentence ── */}
+            {showGuide && (
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-primary-50 border border-primary-100 rounded-xl px-4 py-3">
+                    <p className="text-xs text-primary-800 font-medium flex flex-wrap items-center gap-x-4 gap-y-1">
+                        <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span> Pick a bad actor from the shortlist below</span>
+                        <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span> Its failure history fits itself — read β</span>
+                        <span className="flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-primary-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span> Create the PM from the fit — the study ends in the schedule</span>
+                    </p>
+                    <button onClick={dismissGuide} className="ml-auto text-[11px] font-semibold text-primary-600 hover:text-primary-800 shrink-0">
+                        Got it — don't show again
+                    </button>
+                </div>
+            )}
 
             {/* ── Tabs + inline help popover ── */}
             <div className="flex items-center gap-2">

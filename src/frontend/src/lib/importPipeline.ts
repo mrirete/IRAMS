@@ -26,7 +26,7 @@ export interface ImportMapping {
 
 export type AssetField =
   | 'tag' | 'equipment_number' | 'functional_location' | 'name' | 'criticality'
-  | 'manufacturer' | 'model' | 'serial_number' | 'asset_category';
+  | 'manufacturer' | 'model' | 'serial_number' | 'asset_category' | 'parent_tag';
 
 export type WoField =
   | 'wo_number' | 'title' | 'description' | 'type' | 'status' | 'priority'
@@ -45,6 +45,9 @@ export interface AssetDraft {
   model: string | null;
   serial_number: string | null;
   asset_category: string | null;
+  /** B9: another row's (or an existing asset's) tag — commit links parent_id
+   *  in a second pass, so a register import can carry its own hierarchy. */
+  parent_tag: string | null;
 }
 
 export interface WoDraft {
@@ -295,6 +298,7 @@ export function applyMapping(
     model: headerIndex(headers, af.model),
     serial_number: headerIndex(headers, af.serial_number),
     asset_category: headerIndex(headers, af.asset_category),
+    parent_tag: headerIndex(headers, af.parent_tag),
   };
   const wi = Object.fromEntries(
     (Object.keys(wf) as WoField[]).map((k) => [k, headerIndex(headers, wf[k])]),
@@ -378,6 +382,7 @@ export function applyMapping(
         model: cellStr(row, ai.model) || existing?.model || null,
         serial_number: cellStr(row, ai.serial_number) || existing?.serial_number || null,
         asset_category: cellStr(row, ai.asset_category) || existing?.asset_category || null,
+        parent_tag: cellStr(row, ai.parent_tag) || existing?.parent_tag || null,
       };
       assetsByTag.set(tag, draft);
     } else if (isAssetFile && !isWoFile) {
