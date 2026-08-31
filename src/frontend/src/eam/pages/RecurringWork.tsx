@@ -1042,9 +1042,11 @@ export const RecurringWork: React.FC = () => {
                             {(() => {
                                 // Weibull-created PMs saved before the description was
                                 // slimmed carry the full analysis prose; show only the
-                                // first line — the Origin chip below has the numbers.
+                                // first sentence — the Origin chip below has the numbers.
+                                // (Old records may predate `origin`, so also match the text.)
                                 const raw = String(selectedJob.jobDescription || selectedJob.description || '');
-                                const desc = (selectedJob as any).origin?.source === 'weibull_analysis' ? raw.split('\n')[0] : raw;
+                                const isWeibullProse = (selectedJob as any).origin?.source === 'weibull_analysis' || raw.includes('Analysis Parameters:');
+                                const desc = isWeibullProse ? raw.split('\n')[0].split('Analysis Parameters:')[0].trim() : raw;
                                 return <p className="text-sm sm:text-base text-slate-500 line-clamp-2 lg:line-clamp-3 pl-8 lg:pl-0">{desc}</p>;
                             })()}
                             {/* 0299: origin provenance — why this PM exists at this interval */}
