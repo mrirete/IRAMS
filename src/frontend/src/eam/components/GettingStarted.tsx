@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Circle, ArrowRight, X, Rocket, Boxes, CalendarClock, Wrench, Users, Database } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
 import { useAuth } from '../contexts/AuthContext';
+import { Modal } from './ui';
 
 const DISMISS_KEY = 'ers_onboarding_dismissed_v1';
 
@@ -33,11 +34,12 @@ const STEPS: Step[] = [
     { id: 'people', label: 'Invite your team', detail: 'Add the technicians and planners who will do and schedule the work.', cta: 'Add people', to: '/contacts', icon: <Users size={18} /> },
 ];
 
-export const GettingStarted: React.FC = () => {
+export const GettingStarted: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
     const navigate = useNavigate();
     const { role } = useAuth();
     const isAdmin = role === 'SUPER_ADMIN' || role === 'SYS_ADMIN';
     const [counts, setCounts] = useState<Counts | null>(null);
+    const [open, setOpen] = useState(false);
     const [dismissed, setDismissed] = useState<boolean>(() => {
         try { return localStorage.getItem(DISMISS_KEY) === 'true'; } catch { return false; }
     });
@@ -65,6 +67,83 @@ export const GettingStarted: React.FC = () => {
 
     // The next incomplete step gets the primary CTA emphasis.
     const nextStep = STEPS.find(s => !done(s));
+
+    // Calm-screens: on the viewport-locked dashboard the checklist collapses to a
+    // one-line strip; the full step list lives in a popup so the page keeps its
+    // height budget while onboarding stays one click away.
+    if (compact) {
+        return (
+            <>
+                <div className="flex items-center gap-2.5 sm:gap-3 bg-white border border-slate-200 rounded-card shadow-card px-3 sm:px-4 py-2 flex-none">
+                    <span className="p-1.5 rounded-lg bg-primary-600 text-white flex-shrink-0"><Rocket size={14} /></span>
+                    <div className="min-w-0 flex-1">
+                        <div className="text-xs sm:text-sm font-semibold text-slate-800 truncate">Get IREAMS running</div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                            <div className="h-1 w-20 sm:w-32 bg-slate-200 rounded-full overflow-hidden flex-shrink-0">
+                                <div className="h-full bg-primary-600 rounded-full transition-all" style={{ width: `${(completed / STEPS.length) * 100}%` }} />
+                            </div>
+                            <span className="text-[10px] text-slate-500 whitespace-nowrap">{completed} of {STEPS.length} done</span>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setOpen(true)}
+                        className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-500 transition-colors"
+                    >
+                        Continue setup <ArrowRight size={13} />
+                    </button>
+                    <button onClick={dismiss} className="text-slate-400 hover:text-slate-600 flex-shrink-0 p-1" aria-label="Dismiss getting started" title="Dismiss">
+                        <X size={15} />
+                    </button>
+                </div>
+                <Modal open={open} onClose={() => setOpen(false)} title="Get IREAMS running" size="lg">
+                    <p className="text-sm text-slate-500 mb-3">{completed} of {STEPS.length} done — a few steps to a live maintenance system.</p>
+                    <div className="mb-3 h-1.5 w-full max-w-xs bg-slate-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-primary-600 rounded-full transition-all" style={{ width: `${(completed / STEPS.length) * 100}%` }} />
+                    </div>
+                    <div className="border border-slate-200 rounded-card overflow-hidden">
+                        <ul className="divide-y divide-slate-100">
+                            {STEPS.map(s => {
+                                const isDone = done(s);
+                                const isNext = s.id === nextStep?.id;
+                                return (
+                                    <li key={s.id} className={`flex items-center gap-3 p-3 ${isDone ? 'opacity-70' : ''}`}>
+                                        <span className="flex-shrink-0">
+                                            {isDone ? <CheckCircle2 size={20} className="text-emerald-500" /> : <Circle size={20} className="text-slate-300" />}
+                                        </span>
+                                        <div className="flex-shrink-0 text-slate-400 hidden sm:block">{s.icon}</div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className={`text-sm font-semibold ${isDone ? 'text-slate-500 line-through decoration-slate-300' : 'text-slate-800'}`}>{s.label}</div>
+                                            {!isDone && <div className="text-xs text-slate-500 mt-0.5">{s.detail}</div>}
+                                        </div>
+                                        {!isDone && (
+                                            <button
+                                                onClick={() => navigate(s.to)}
+                                                className={`flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${isNext ? 'bg-primary-600 text-white hover:bg-primary-500' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                                            >
+                                                {s.cta} <ArrowRight size={13} />
+                                            </button>
+                                        )}
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                        {isAdmin && (
+                            <button
+                                onClick={() => navigate('/admin/migration', { state: { to: '/dashboard', label: 'Dashboard' } })}
+                                className="w-full flex items-center gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50/60 hover:bg-slate-50 text-left transition-colors"
+                            >
+                                <Database size={15} className="text-slate-400 flex-shrink-0" />
+                                <span className="text-xs text-slate-600 flex-1">
+                                    Already have a CMMS? <span className="font-semibold text-slate-700">Bring your data across in the Migration Center</span>
+                                </span>
+                                <ArrowRight size={13} className="text-slate-400 flex-shrink-0" />
+                            </button>
+                        )}
+                    </div>
+                </Modal>
+            </>
+        );
+    }
 
     return (
         <div className="bg-white border border-slate-200 rounded-card shadow-card overflow-hidden">

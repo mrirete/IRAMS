@@ -846,9 +846,12 @@ export const FinOps: React.FC = () => {
     };
 
     return (<>
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-emerald-50/30">
+        {/* Calm-screens: viewport-locked shell — header + tabs stay put, only the
+            active tab's body scrolls (min-h-screen inside the scrolling <main>
+            forced a viewport of chrome before any content). */}
+        <div className="flex flex-col h-[calc(100dvh-11rem)] md:h-[calc(100vh-7rem)] min-h-0 bg-gradient-to-br from-slate-50 via-white to-emerald-50/30 rounded-xl border border-slate-200 overflow-hidden">
             {/* Header */}
-            <div className="bg-white/80 backdrop-blur-md border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+            <div className="bg-white/80 backdrop-blur-md border-b border-slate-200 z-30 shadow-sm flex-none">
                 <div className="px-4 md:px-6 py-3 md:py-4">
                     <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-3 md:gap-4 min-w-0">
@@ -908,8 +911,8 @@ export const FinOps: React.FC = () => {
                 </div>
             </div>
 
-            {/* Content */}
-            <div className="p-6">
+            {/* Content — the only scroll region */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6">
                 {loading ? (
                     <div className="flex items-center justify-center h-64">
                         <RefreshCw className="animate-spin text-emerald-500" size={32} />

@@ -12,16 +12,16 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart
 } from 'recharts';
 import {
-  TrendingUp, TrendingDown, AlertCircle, CheckCircle, Clock, Activity,
-  Wrench, Package, RefreshCw, Loader2, Plus, ArrowRight,
+  AlertCircle, CheckCircle, Clock, Activity,
+  Wrench, Package, RefreshCw, Plus, ArrowRight,
   AlertTriangle, BarChart3, Inbox, Bell, BellRing,
-  Gauge, Timer, Skull, Target
+  Gauge, Timer, Skull, Target, ChevronRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { DatabaseService } from '../services/DatabaseService';
 import { classifyWork } from '../services/workReadiness';
 import ersApi, { BadActorEntry } from '../services/ERSApiClient';
-import { Button } from '../components/ui';
+import { Button, Modal } from '../components/ui';
 
 // ──────────────────────────────── Fetcher ────────────────────────────────
 // Exported so Login can prefetch dashboard data before navigating
@@ -235,6 +235,10 @@ const severityBg = (s: string) => {
 
 const SPARKLINE_COLORS = { created: '#1E4FDB', closed: '#22c55e' };
 
+// Calm-screens drill-downs: each insight strip/tile opens its full analysis in a
+// popup — the page itself stays a one-screen report.
+type InsightKey = 'governance' | 'pm' | 'backlog' | 'badActors' | 'fleet';
+
 // ──────────────────────────────── Dashboard ────────────────────────────────
 export const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -244,6 +248,7 @@ export const Dashboard: React.FC = () => {
   const userRole = role || '';
   const [workTab, setWorkTab] = useState<'active' | 'recent'>('active');
   const [apiBadActors, setApiBadActors] = useState<BadActorEntry[] | null>(null);
+  const [insight, setInsight] = useState<InsightKey | null>(null);
 
   const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery({
     queryKey: [DASHBOARD_QUERY_KEY, profile?.id, dataScope?.siteIds],
@@ -274,43 +279,29 @@ export const Dashboard: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 animate-pulse">
-        {/* Header skeleton */}
-        <div className="flex justify-between items-end">
+      <div className="flex flex-col gap-3 md:gap-4 animate-pulse">
+        {/* Header + quick actions skeleton */}
+        <div className="flex flex-wrap justify-between items-center gap-3">
           <div>
-            <div className="h-7 bg-slate-200 rounded-lg w-64 mb-2"></div>
-            <div className="h-4 bg-slate-100 rounded w-40"></div>
+            <div className="h-6 bg-slate-200 rounded-lg w-56 mb-2"></div>
+            <div className="h-3 bg-slate-100 rounded w-36"></div>
           </div>
           <div className="flex gap-2">
-            <div className="h-9 bg-slate-200 rounded-lg w-24"></div>
-            <div className="h-9 bg-slate-200 rounded-lg w-20"></div>
+            {[1, 2, 3, 4].map(i => <div key={i} className="h-9 bg-slate-200 rounded-lg w-20"></div>)}
           </div>
         </div>
-        {/* Quick Actions skeleton */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {[1,2,3,4].map(i => <div key={i} className="h-12 bg-slate-200 rounded-xl"></div>)}
-        </div>
-        {/* KPI Cards skeleton */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => (
-            <div key={i} className="bg-white p-4 rounded-card shadow-card border border-slate-200">
-              <div className="flex justify-between items-start mb-3">
-                <div className="w-9 h-9 bg-slate-100 rounded-lg"></div>
-                <div className="h-5 bg-slate-100 rounded-full w-16"></div>
-              </div>
-              <div className="h-4 bg-slate-100 rounded w-28 mb-2"></div>
-              <div className="h-8 bg-slate-200 rounded w-16"></div>
+        {/* KPI band skeleton */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
+          {[1, 2, 3, 4, 5, 6].map(i => (
+            <div key={i} className="bg-white px-3 py-2.5 rounded-card shadow-card border border-slate-200">
+              <div className="h-3 bg-slate-100 rounded w-20 mb-2.5"></div>
+              <div className="h-6 bg-slate-200 rounded w-12"></div>
             </div>
           ))}
         </div>
-        {/* Work panels skeleton */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-card shadow-card border border-slate-200 h-72"></div>
-          <div className="bg-white rounded-card shadow-card border border-slate-200 h-72"></div>
-        </div>
-        {/* Analytics cards skeleton */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1,2,3,4].map(i => <div key={i} className="bg-white rounded-card shadow-card border border-slate-200 h-48"></div>)}
+        {/* Panels skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
+          {[1, 2, 3].map(i => <div key={i} className="bg-white rounded-card shadow-card border border-slate-200 h-80 lg:h-[28rem]"></div>)}
         </div>
       </div>
     );
@@ -445,17 +436,17 @@ export const Dashboard: React.FC = () => {
   const kpis = [
     {
       label: 'Open Work Orders', value: openWOs, sub: `${totalWOs} total`,
-      icon: <Wrench size={18} />, bgIcon: 'bg-blue-50 text-blue-600',
+      icon: <Wrench size={16} />, bgIcon: 'bg-blue-50 text-blue-600',
       trend: openWOs > 5 ? 'up' as const : 'neutral' as const, path: '/work-orders',
     },
     {
       label: 'Pending Requests', value: pendingSRs, sub: `${srs.length} total`,
-      icon: <Clock size={18} />, bgIcon: 'bg-amber-50 text-amber-600',
+      icon: <Clock size={16} />, bgIcon: 'bg-amber-50 text-amber-600',
       trend: pendingSRs > 3 ? 'up' as const : 'neutral' as const, path: '/requests',
     },
     {
       label: 'Assets Managed', value: totalAssets, sub: `${criticalAssets} Critical-A`,
-      icon: <Activity size={18} />, bgIcon: 'bg-emerald-50 text-emerald-600',
+      icon: <Activity size={16} />, bgIcon: 'bg-emerald-50 text-emerald-600',
       trend: 'neutral' as const, path: '/assets',
     },
     // Inventory is gated on inventory.view (0257). Without it the query returns
@@ -463,24 +454,35 @@ export const Dashboard: React.FC = () => {
     // wrong number, which is worse than not showing it. Drop the tile instead.
     ...(permissions?.inventory?.view === true ? [{
       label: 'Low Stock Alerts', value: lowStockItems, sub: `of ${inventory.length} items`,
-      icon: <Package size={18} />, bgIcon: 'bg-rose-50 text-rose-600',
+      icon: <Package size={16} />, bgIcon: 'bg-rose-50 text-rose-600',
       trend: lowStockItems > 0 ? 'down' as const : 'neutral' as const, path: '/inventory',
     }] : []),
   ];
 
   return (
-    <div className="space-y-6">
+    // Calm-screens: on desktop the page locks to the viewport — everything is
+    // visible at once and drill-down happens in popups. Below lg it stacks and
+    // scrolls naturally (phones can't show a wall-to-wall grid anyway).
+    <div className="flex flex-col gap-3 md:gap-4 lg:h-[calc(100vh-7rem)] lg:overflow-hidden">
 
-      {/* ── Row 1: Header ── */}
-      <div className="flex flex-wrap justify-between items-end gap-3">
-        <div>
-          <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-slate-900">{getGreeting()}, {userName}</h1>
-          <p className="text-slate-500 text-xs sm:text-sm">
+      {/* ── Row 1: Header + quick actions, one strip ── */}
+      <div className="flex flex-wrap items-center gap-2 md:gap-3 flex-none">
+        <div className="min-w-0 mr-auto">
+          <h1 className="text-lg md:text-xl font-bold text-slate-900 leading-tight">{getGreeting()}, {userName}</h1>
+          <p className="text-slate-500 text-[11px] sm:text-xs">
             {userRole && <span className="capitalize">{userRole} • </span>}
             Live data • Updated {lastUpdate}
           </p>
         </div>
-        <div className="flex gap-1.5 sm:gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          {quickActions.map(qa => (
+            <button key={qa.label} onClick={() => navigate(qa.path)} title={qa.label}
+              className={`${qa.color} text-white rounded-lg px-2.5 sm:px-3 h-9 inline-flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-all active:scale-[0.98]`}
+            >
+              <qa.icon size={15} className="flex-shrink-0" />
+              <span className="hidden md:inline whitespace-nowrap">{qa.label}</span>
+            </button>
+          ))}
           <AskRelanternButton
             contextType="dashboard"
             contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
@@ -491,95 +493,89 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Getting-started checklist (self-hides once the org is up and running or dismissed) ── */}
-      <GettingStarted />
+      {/* ── Getting-started: one-line strip; the checklist opens in a popup ── */}
+      <GettingStarted compact />
 
-      {/* ── Quick Actions ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        {quickActions.map(qa => (
-          <button key={qa.label} onClick={() => navigate(qa.path)}
-            className={`${qa.color} text-white rounded-xl p-2.5 sm:p-3.5 flex flex-col sm:flex-row items-center gap-1.5 sm:gap-3 transition-all shadow-sm hover:shadow-raised active:scale-[0.98] min-h-[52px]`}
-          >
-            <qa.icon size={18} className="flex-shrink-0" />
-            <span className="text-[11px] sm:text-sm font-semibold text-center sm:text-left leading-tight">{qa.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* ── Row 2: KPI Cards (4 cards) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── Row 2: KPI band — every headline number in one row on desktop.
+             Governance and PM compliance live here as compact tiles; their full
+             charts open in popups. ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:gap-3 lg:flex flex-none">
         {kpis.map((kpi, idx) => (
           <button key={kpi.label} onClick={() => navigate(kpi.path)}
-            className="bg-white p-4 rounded-card shadow-card border border-slate-200 hover:shadow-raised hover:border-slate-300 transition-all text-left group"
+            className="bg-white px-3 py-2.5 rounded-card shadow-card border border-slate-200 hover:shadow-raised hover:border-slate-300 transition-all text-left group lg:flex-1 min-w-0"
           >
-            <div className="flex justify-between items-start mb-2">
-              <div className={`p-2 rounded-lg ${kpi.bgIcon}`}>{kpi.icon}</div>
-              {kpi.trend === 'up' ? (
-                <span className="flex items-center gap-1 text-[10px] font-medium text-green-600 bg-green-50 px-1.5 py-0.5 rounded-full">
-                  <TrendingUp size={10} /> {kpi.sub}
-                </span>
-              ) : kpi.trend === 'down' ? (
-                <span className="flex items-center gap-1 text-[10px] font-medium text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">
-                  <TrendingDown size={10} /> {kpi.sub}
-                </span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className={`p-1 rounded-md ${kpi.bgIcon} flex-shrink-0`}>{kpi.icon}</span>
+              <span className="text-[11px] font-medium text-slate-500 truncate">{kpi.label}</span>
+              <ArrowRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            </div>
+            <div className="flex items-end justify-between gap-2 mt-2">
+              <span className="text-xl font-bold text-slate-900 leading-none">{kpi.value}</span>
+              {idx === 0 && sparkDays.length > 0 ? (
+                <div className="h-7 w-20 -my-1">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={sparkDays}>
+                      <Area type="monotone" dataKey="created" stroke={SPARKLINE_COLORS.created} fill={SPARKLINE_COLORS.created} fillOpacity={0.15} strokeWidth={1.5} dot={false} />
+                      <Area type="monotone" dataKey="closed" stroke={SPARKLINE_COLORS.closed} fill={SPARKLINE_COLORS.closed} fillOpacity={0.1} strokeWidth={1.5} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               ) : (
-                <span className="text-[10px] font-medium text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-full">{kpi.sub}</span>
+                <span className="text-[10px] text-slate-400 whitespace-nowrap">{kpi.sub}</span>
               )}
             </div>
-            <h3 className="text-xs text-slate-500 font-medium">{kpi.label}</h3>
-            <div className="flex items-end justify-between mt-1">
-              <span className="text-2xl font-bold text-slate-900">{kpi.value}</span>
-              <ArrowRight size={14} className="text-slate-300 group-hover:text-primary-600 group-hover:translate-x-1 transition-all" />
-            </div>
-            {idx === 0 && sparkDays.length > 0 && (
-              <div className="h-8 mt-2 -mx-1">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={sparkDays}>
-                    <Area type="monotone" dataKey="created" stroke={SPARKLINE_COLORS.created} fill={SPARKLINE_COLORS.created} fillOpacity={0.15} strokeWidth={1.5} dot={false} />
-                    <Area type="monotone" dataKey="closed" stroke={SPARKLINE_COLORS.closed} fill={SPARKLINE_COLORS.closed} fillOpacity={0.1} strokeWidth={1.5} dot={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            )}
           </button>
         ))}
+
+        {/* Work Governance — compact tile; the full breakdown is a popup */}
+        {governance && governance.total > 0 && (
+          <button onClick={() => setInsight('governance')}
+            className="bg-white px-3 py-2.5 rounded-card shadow-card border border-slate-200 hover:shadow-raised hover:border-slate-300 transition-all text-left group lg:flex-1 min-w-0"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="p-1 rounded-md bg-emerald-50 text-emerald-600 flex-shrink-0"><Gauge size={16} /></span>
+              <span className="text-[11px] font-medium text-slate-500 truncate">Governance · 90d</span>
+              <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
+            </div>
+            <div className="flex items-end justify-between gap-2 mt-2">
+              <span className={`text-xl font-bold leading-none ${governance.proPct >= 80 ? 'text-emerald-600' : governance.proPct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{governance.proPct}%</span>
+              <span className="text-[10px] text-slate-400 whitespace-nowrap">proactive</span>
+            </div>
+            <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 mt-1.5">
+              <div className="bg-emerald-500 h-full" style={{ width: `${governance.proPct}%` }} />
+              <div className="bg-red-500 h-full" style={{ width: `${governance.reaPct}%` }} />
+            </div>
+          </button>
+        )}
+
+        {/* PM Compliance — compact tile; donut + counts in a popup.
+            Calm rule: no PMs due in the window → no tile (a confident 0% would lie). */}
+        {pmc.due > 0 && (
+          <button onClick={() => setInsight('pm')}
+            className="bg-white px-3 py-2.5 rounded-card shadow-card border border-slate-200 hover:shadow-raised hover:border-slate-300 transition-all text-left group lg:flex-1 min-w-0"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="p-1 rounded-md bg-green-50 text-green-600 flex-shrink-0"><CheckCircle size={16} /></span>
+              <span className="text-[11px] font-medium text-slate-500 truncate">PM Compliance · 90d</span>
+              <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
+            </div>
+            <div className="flex items-end justify-between gap-2 mt-2">
+              <span className={`text-xl font-bold leading-none ${pmComplianceRate >= 90 ? 'text-emerald-600' : pmComplianceRate >= 70 ? 'text-amber-500' : 'text-red-500'}`}>{pmComplianceRate}%</span>
+              <span className="text-[10px] text-slate-400 whitespace-nowrap">{pmOnTime}/{pmc.due} on-time</span>
+            </div>
+            <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 mt-1.5">
+              <div className="bg-green-500 h-full" style={{ width: `${pmComplianceRate}%` }} />
+              <div className="bg-amber-400 h-full" style={{ width: `${100 - pmComplianceRate}%` }} />
+            </div>
+          </button>
+        )}
       </div>
 
-      {/* ── Work Governance: Planned vs Reactive (last 90 days) ── */}
-      {governance && governance.total > 0 && (
-        <button
-          onClick={() => navigate('/reliability-metrics')}
-          className="w-full text-left bg-white rounded-card shadow-card border border-slate-200 p-4 sm:p-5 hover:border-slate-300 transition-all"
-        >
-          <div className="flex items-center justify-between mb-3 gap-2">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Gauge size={16} className="text-emerald-600" /> Work Governance
-              </h3>
-              <p className="text-[11px] text-slate-500">Planned vs Reactive · last 90 days · {governance.total} jobs</p>
-            </div>
-            <div className="text-right">
-              <div className={`text-2xl font-extrabold leading-none ${governance.proPct >= 80 ? 'text-emerald-600' : governance.proPct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{governance.proPct}%</div>
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Proactive</div>
-            </div>
-          </div>
-          <div className="flex h-3 rounded-full overflow-hidden bg-slate-100 border border-slate-200">
-            <div className="bg-emerald-500 h-full" style={{ width: `${governance.proPct}%` }} />
-            <div className="bg-red-500 h-full" style={{ width: `${governance.reaPct}%` }} />
-          </div>
-          <div className="flex items-center justify-between mt-2 text-[11px]">
-            <span className="font-semibold text-emerald-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {governance.proactive} proactive</span>
-            <span className="font-semibold text-red-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> {governance.reactive} reactive</span>
-          </div>
-          <p className="text-[10px] text-slate-400 mt-2">World-class benchmark ≥ 80% proactive. Tap for the full reliability metrics →</p>
-        </button>
-      )}
-
-      {/* ── Row 3: My Work & Activity  |  Notifications ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ── Row 3: work | notifications | insights — fills the rest of the screen ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4 flex-1 min-h-0">
 
         {/* ── My Work & Activity (merged panel) ── */}
-        <div className="bg-white rounded-card shadow-card border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-card shadow-card border border-slate-200 overflow-hidden flex flex-col min-h-0">
           {/* Overdue alert banner */}
           {overdue.length > 0 && (
             <button onClick={() => navigate('/work-orders?filter=overdue')}
@@ -607,7 +603,7 @@ export const Dashboard: React.FC = () => {
           </div>
 
           {/* Tab content */}
-          <div className="divide-y divide-slate-50 max-h-[320px] overflow-y-auto">
+          <div className="divide-y divide-slate-50 max-h-[320px] lg:max-h-none lg:flex-1 min-h-0 overflow-y-auto">
             {workTab === 'active' ? (
               myWork.length > 0 ? myWork.map((wo: any) => (
                 <button key={wo.id} onClick={() => navigate(`/work-orders/${wo.id}`)}
@@ -663,7 +659,7 @@ export const Dashboard: React.FC = () => {
         </div>
 
         {/* ── Notifications ── */}
-        <div className="bg-white rounded-card shadow-card border border-slate-200 overflow-hidden">
+        <div className="bg-white rounded-card shadow-card border border-slate-200 overflow-hidden flex flex-col min-h-0">
           <div className="px-5 py-3.5 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-blue-50 to-white">
             <div className="flex items-center gap-2">
               <BellRing size={16} className="text-blue-600" />
@@ -676,7 +672,7 @@ export const Dashboard: React.FC = () => {
               View All <ArrowRight size={12} />
             </button>
           </div>
-          <div className="divide-y divide-slate-100 max-h-[360px] overflow-y-auto">
+          <div className="divide-y divide-slate-100 max-h-[360px] lg:max-h-none lg:flex-1 min-h-0 overflow-y-auto">
             {notifications.length > 0 ? notifications.map((n: any) => (
               <button key={n.id} onClick={() => navigate('/notifications')}
                 className={`w-full p-3 flex items-start gap-3 hover:bg-slate-50 transition text-left border-l-4 ${severityBg(n.severity)}`}
@@ -699,18 +695,108 @@ export const Dashboard: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* ── Insights rail — calm strips; each opens its full analysis in a popup ── */}
+        <div className="flex flex-col gap-2.5 md:gap-3 min-h-0 lg:overflow-y-auto">
+
+          {/* Backlog Aging strip */}
+          <button onClick={() => setInsight('backlog')}
+            className="w-full bg-white rounded-card shadow-card border border-slate-200 px-3.5 py-2.5 text-left hover:shadow-raised hover:border-slate-300 transition-all group flex-none"
+          >
+            <div className="flex items-center gap-2">
+              <Clock size={14} className="text-amber-600 flex-shrink-0" />
+              <span className="text-xs font-semibold text-slate-900">Backlog Aging</span>
+              <span className="ml-auto text-[10px] text-slate-400">{openWOsList.length} open</span>
+              <ChevronRight size={13} className="text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
+            </div>
+            <div className="flex h-2 rounded-full overflow-hidden bg-slate-100 mt-2">
+              {agingBuckets.map(b => b.count > 0 && (
+                <div key={b.label} style={{ width: `${(b.count / Math.max(1, openWOsList.length)) * 100}%`, backgroundColor: b.color }} />
+              ))}
+            </div>
+            <div className="flex justify-between mt-1.5 text-[10px] text-slate-400">
+              {agingBuckets.map(b => (
+                <span key={b.label}>{b.label} <span className="font-semibold text-slate-600">{b.count}</span></span>
+              ))}
+            </div>
+          </button>
+
+          {/* Top Bad Actors strip — top 3 visible, full Pareto in the popup */}
+          {badActors.length > 0 && (
+            <button onClick={() => setInsight('badActors')}
+              className="w-full bg-white rounded-card shadow-card border border-slate-200 px-3.5 py-2.5 text-left hover:shadow-raised hover:border-slate-300 transition-all group flex-none"
+            >
+              <div className="flex items-center gap-2">
+                <Skull size={14} className="text-red-600 flex-shrink-0" />
+                <span className="text-xs font-semibold text-slate-900">Top Bad Actors</span>
+                <span className="ml-auto text-[9px] font-medium text-slate-400 uppercase tracking-wide">Pareto</span>
+                <ChevronRight size={13} className="text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
+              </div>
+              <div className="mt-2 space-y-1.5">
+                {badActors.slice(0, 3).map((a: any, i: number) => (
+                  <div key={a.tag} className="flex items-center gap-2 text-[11px]">
+                    <span className={`text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      i === 0 ? 'bg-red-100 text-red-700' : i === 1 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
+                    }`}>{i + 1}</span>
+                    <span className="font-semibold text-slate-700 truncate flex-1 min-w-0">{a.tag}</span>
+                    <span className="text-slate-500 flex-shrink-0">{a.mtbf_days != null ? `${a.mtbf_days}d MTBF` : '—'}</span>
+                  </div>
+                ))}
+              </div>
+            </button>
+          )}
+
+          {/* Fleet Reliability strip */}
+          {mtbfValues.length > 0 && (
+            <button onClick={() => setInsight('fleet')}
+              className="w-full bg-white rounded-card shadow-card border border-slate-200 px-3.5 py-2.5 text-left hover:shadow-raised hover:border-slate-300 transition-all group flex-none"
+            >
+              <div className="flex items-center gap-2">
+                <Timer size={14} className="text-blue-600 flex-shrink-0" />
+                <span className="text-xs font-semibold text-slate-900">Fleet Reliability</span>
+                <span className="ml-auto text-[10px] text-slate-400">{mtbfValues.length} assets</span>
+                <ChevronRight size={13} className="text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
+              </div>
+              <div className="flex gap-2 mt-2">
+                <div className="flex-1 bg-blue-50 rounded-lg px-2.5 py-1.5">
+                  <div className="text-[9px] font-bold text-blue-600 uppercase tracking-wide">Avg MTBF</div>
+                  <div className="text-sm font-bold text-slate-900">{avgMTBF} <span className="text-[10px] font-normal text-slate-500">days</span></div>
+                </div>
+                <div className="flex-1 bg-emerald-50 rounded-lg px-2.5 py-1.5">
+                  <div className="text-[9px] font-bold text-emerald-600 uppercase tracking-wide">Avg MTTR</div>
+                  <div className="text-sm font-bold text-slate-900">{avgMTTR} <span className="text-[10px] font-normal text-slate-500">hours</span></div>
+                </div>
+              </div>
+            </button>
+          )}
+
+          {/* Defect Elimination strip — the program page is the destination */}
+          <button onClick={() => navigate('/analyze?division=defect_elimination')}
+            className="w-full bg-white rounded-card shadow-card border border-slate-200 px-3.5 py-2.5 text-left hover:shadow-raised hover:border-slate-300 transition-all group flex-none"
+          >
+            <div className="flex items-center gap-2">
+              <Target size={14} className="text-blue-600 flex-shrink-0" />
+              <span className="text-xs font-semibold text-slate-900">Defect Elimination</span>
+              {criticalDETasks > 0 && (
+                <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{criticalDETasks} CRIT</span>
+              )}
+              <ArrowRight size={13} className="ml-auto text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+            </div>
+            <div className="flex items-center justify-between mt-2 text-[11px] text-slate-500">
+              <span>Active <span className="font-bold text-slate-900">{activeDETasks.length}</span></span>
+              <span>Resolved <span className="font-bold text-emerald-600">{resolvedDETasks.length}</span></span>
+              <span>Savings <span className="font-bold text-slate-900">${totalDESavings.toLocaleString()}</span></span>
+            </div>
+          </button>
+        </div>
       </div>
 
-      {/* ── Row 4: Analytical Cards (2×2 grid) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+      {/* ── Drill-down popups (calm-screens: process lives in the popup, the page stays a report) ── */}
 
-        {/* PM Schedule Compliance */}
-        <div className="bg-white p-5 rounded-card shadow-card border border-slate-200">
-          <div className="flex items-center gap-2 mb-3">
-            <Gauge size={16} className="text-emerald-600" />
-            <h4 className="text-sm font-semibold text-slate-900">PM Compliance</h4>
-            <span className="ml-auto text-[10px] text-slate-400 uppercase tracking-wide">due last 90d</span>
-          </div>
+      {/* PM Schedule Compliance popup */}
+      <Modal open={insight === 'pm'} onClose={() => setInsight(null)} title="PM Compliance" size="sm">
+        <div>
+          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">PMs due in the last 90 days · on-time = closed by the due date</div>
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 relative">
               {pmComplianceData.length > 0 ? (
@@ -736,18 +822,17 @@ export const Dashboard: React.FC = () => {
               <div className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-200" /> Due in window: {pmc.due}</div>
             </div>
           </div>
-          <button onClick={() => navigate('/reports')} className="mt-3 text-[10px] font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
-            View in Reports <ArrowRight size={10} />
+          <button onClick={() => navigate('/reports')} className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 transition">
+            View in Reports <ArrowRight size={12} />
           </button>
         </div>
+      </Modal>
 
-        {/* Backlog Aging */}
-        <div className="bg-white p-5 rounded-card shadow-card border border-slate-200">
-          <div className="flex items-center gap-2 mb-3">
-            <Clock size={16} className="text-amber-600" />
-            <h4 className="text-sm font-semibold text-slate-900">Backlog Aging</h4>
-          </div>
-          <div className="h-24">
+      {/* Backlog Aging popup */}
+      <Modal open={insight === 'backlog'} onClose={() => setInsight(null)} title="Backlog Aging" size="sm">
+        <div>
+          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">Age of open work orders since creation</div>
+          <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={agingBuckets} barSize={28}>
                 <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -760,19 +845,17 @@ export const Dashboard: React.FC = () => {
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div className="text-xs text-slate-500 mt-1">{openWOsList.length} open WOs in backlog</div>
-          <button onClick={() => navigate('/reports/drilldown/backlog')} className="mt-2 text-[10px] font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
-            View in Reports <ArrowRight size={10} />
+          <div className="text-xs text-slate-500 mt-2">{openWOsList.length} open WOs in backlog</div>
+          <button onClick={() => navigate('/reports/drilldown/backlog')} className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 transition">
+            View in Reports <ArrowRight size={12} />
           </button>
         </div>
+      </Modal>
 
-        {/* Top 5 Bad Actors — Pareto (ISO 55000 Monthly Analysis) */}
-        <div className="bg-white p-5 rounded-card shadow-card border border-slate-200">
-          <div className="flex items-center gap-2 mb-3">
-            <Skull size={16} className="text-red-600" />
-            <h4 className="text-sm font-semibold text-slate-900">Top Bad Actors</h4>
-            <span className="ml-auto text-[9px] font-medium text-slate-400 uppercase tracking-wide">Pareto</span>
-          </div>
+      {/* Top 5 Bad Actors popup — Pareto (ISO 55000 Monthly Analysis) */}
+      <Modal open={insight === 'badActors'} onClose={() => setInsight(null)} title="Top Bad Actors — Pareto" size="md">
+        <div>
+          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">ISO 55000 monthly analysis · lowest MTBF first</div>
           <div className="space-y-2.5">
             {badActors.length > 0 ? (() => {
               const maxMTBF = Math.max(1, ...badActors.map((a: any) => a.mtbf_days || 1));
@@ -831,7 +914,7 @@ export const Dashboard: React.FC = () => {
                             showToast(`Failed to create DE task: ${err.message}`, 'error');
                           }
                         }}
-                        className="relative opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-blue-50 text-blue-500 hover:text-blue-700 before:absolute before:-inset-2.5 before:content-[''] md:before:hidden"
+                        className="relative p-1 rounded hover:bg-blue-50 text-blue-500 hover:text-blue-700 before:absolute before:-inset-2.5 before:content-[''] md:before:hidden"
                         title="Auto-draft Defect Elimination task"
                       >
                         <Target size={12} />
@@ -876,45 +959,15 @@ export const Dashboard: React.FC = () => {
             </button>
           </div>
         </div>
+      </Modal>
 
-        {/* Defect Elimination Summary */}
-        <button onClick={() => navigate('/analyze?division=defect_elimination')} className="bg-white p-5 rounded-card shadow-card border border-slate-200 hover:shadow-raised hover:border-blue-200 transition-all text-left group">
-          <div className="flex items-center gap-2 mb-3">
-            <Target size={16} className="text-blue-600" />
-            <h4 className="text-sm font-semibold text-slate-900">Defect Elimination</h4>
-            {criticalDETasks > 0 && (
-              <span className="text-[9px] font-bold bg-red-100 text-red-700 px-1.5 py-0.5 rounded-full">{criticalDETasks} CRIT</span>
-            )}
-          </div>
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Active Tasks</span>
-              <span className="text-lg font-bold text-slate-900">{activeDETasks.length}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-500">Resolved</span>
-              <span className="text-sm font-semibold text-emerald-600">{resolvedDETasks.length}</span>
-            </div>
-            <div className="bg-emerald-50 rounded-lg p-2.5 mt-1">
-              <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Realized Savings</div>
-              <div className="text-lg font-bold text-slate-900 mt-0.5">${totalDESavings.toLocaleString()}</div>
-            </div>
-          </div>
-          <div className="mt-3 text-[10px] font-medium text-blue-600 group-hover:text-blue-800 flex items-center gap-1 transition">
-            Open DE Program <ArrowRight size={10} />
-          </div>
-        </button>
-
-        {/* Fleet Reliability (MTBF/MTTR) */}
-        <div className="bg-white p-5 rounded-card shadow-card border border-slate-200">
-          <div className="flex items-center gap-2 mb-3">
-            <Timer size={16} className="text-blue-600" />
-            <h4 className="text-sm font-semibold text-slate-900">Fleet Reliability</h4>
-            {/* Per-asset means. Reports shows a POOLED fleet figure over its date
-                range, which is a different (also correct) aggregation — both are
-                labelled so the two pages cannot look like they disagree. */}
-            <span className="text-[10px] text-slate-400">mean of {mtbfValues.length} assets with failures</span>
-          </div>
+      {/* Fleet Reliability popup (MTBF/MTTR) */}
+      <Modal open={insight === 'fleet'} onClose={() => setInsight(null)} title="Fleet Reliability" size="sm">
+        <div>
+          {/* Per-asset means. Reports shows a POOLED fleet figure over its date
+              range, which is a different (also correct) aggregation — both are
+              labelled so the two pages cannot look like they disagree. */}
+          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">Mean of {mtbfValues.length} assets with recorded failures</div>
           <div className="space-y-3">
             <div className="bg-blue-50 rounded-lg p-3">
               <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Avg MTBF</div>
@@ -937,11 +990,36 @@ export const Dashboard: React.FC = () => {
               </div>
             </div>
           </div>
-          <button onClick={() => navigate('/reports/drilldown/mtbf-mttr')} className="mt-3 text-[10px] font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 min-h-[32px] md:min-h-0 transition">
-            View MTBF/MTTR Analysis <ArrowRight size={10} />
+          <button onClick={() => navigate('/reports/drilldown/mtbf-mttr')} className="mt-3 text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 transition">
+            View MTBF/MTTR Analysis <ArrowRight size={12} />
           </button>
         </div>
-      </div>
+      </Modal>
+
+      {/* Work Governance popup — Planned vs Reactive (last 90 days) */}
+      <Modal open={insight === 'governance'} onClose={() => setInsight(null)} title="Work Governance" size="sm">
+        <div>
+          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">Planned vs Reactive · last 90 days · {governance.total} jobs</div>
+          <div className="flex items-end justify-between">
+            <div>
+              <div className={`text-3xl font-extrabold leading-none ${governance.proPct >= 80 ? 'text-emerald-600' : governance.proPct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{governance.proPct}%</div>
+              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-1">Proactive</div>
+            </div>
+          </div>
+          <div className="flex h-3 rounded-full overflow-hidden bg-slate-100 border border-slate-200 mt-3">
+            <div className="bg-emerald-500 h-full" style={{ width: `${governance.proPct}%` }} />
+            <div className="bg-red-500 h-full" style={{ width: `${governance.reaPct}%` }} />
+          </div>
+          <div className="flex items-center justify-between mt-2 text-[11px]">
+            <span className="font-semibold text-emerald-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {governance.proactive} proactive</span>
+            <span className="font-semibold text-red-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> {governance.reactive} reactive</span>
+          </div>
+          <p className="text-[11px] text-slate-400 mt-3">World-class benchmark ≥ 80% proactive.</p>
+          <button onClick={() => navigate('/reliability-metrics')} className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 transition">
+            Full reliability metrics <ArrowRight size={12} />
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 };

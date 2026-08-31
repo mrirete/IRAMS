@@ -1264,9 +1264,11 @@ export const Reports: React.FC = () => {
   const loading = woLoading;
 
   return (
-    <div className="space-y-0">
+    // Calm-screens: viewport-locked shell — header, filters and the tab bar stay
+    // put; only the active tab's body scrolls, so every report is one click away.
+    <div className="flex flex-col h-[calc(100dvh-11rem)] md:h-[calc(100vh-7rem)] min-h-0">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 flex-none">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <FileBarChart size={24} className="text-blue-600" />
@@ -1311,7 +1313,7 @@ export const Reports: React.FC = () => {
 
       {/* Row-cap warning — one banner, not a wrong number per card */}
       {dataTruncated && (
-        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-6 text-sm">
+        <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 mb-4 text-sm flex-none">
           <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
           <p>
             Result cap reached — KPIs below are computed from the first {ROW_CAP_TXN.toLocaleString()} rows
@@ -1321,7 +1323,7 @@ export const Reports: React.FC = () => {
       )}
 
       {/* Tab Bar — horizontally scrollable on mobile */}
-      <div className="relative mb-6">
+      <div className="relative flex-none">
         <div className="flex gap-0.5 sm:gap-1 border-b border-slate-200 overflow-x-auto pb-px scrollbar-hide">
         {TABS.map(tab => (
           <button
@@ -1343,9 +1345,9 @@ export const Reports: React.FC = () => {
       </div>
 
       {/* Content Area (Filter Panel is now overlay on mobile, so no side-by-side flexing needed below lg) */}
-      <div className="flex gap-4">
+      <div className="flex gap-4 flex-1 min-h-0 pt-4">
         {/* Slicer Panel — only renders inline on desktop (lg+); mobile is handled as overlay */}
-        <div className="hidden lg:block">
+        <div className="hidden lg:block overflow-y-auto">
           {filterPanelOpen && (
             <ReportFilterPanel
               filters={filters} onChange={setFilters} dictionaries={dictionaries}
@@ -1363,8 +1365,8 @@ export const Reports: React.FC = () => {
           )}
         </div>
 
-        {/* Tab Content */}
-        <div className="flex-1 min-w-0">
+        {/* Tab Content — the only scroll region */}
+        <div className="flex-1 min-w-0 overflow-y-auto pb-4">
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <Loader2 size={32} className="animate-spin text-blue-400" />

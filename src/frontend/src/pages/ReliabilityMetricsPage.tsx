@@ -22,6 +22,7 @@ import {
     backlogWeeksKpi, complianceKpi,
     kpisToAIContext, type ReliabilityKpi, type AssetReliability,
 } from '../eam/services/reliabilityMetrics';
+import { Tabs } from '../eam/components/ui';
 
 interface AssetRow { id: string; tag: string; name: string; criticality?: string; hierarchy_level?: string; asset_class?: string; manufacturer_id?: string; equipment_number?: string }
 interface BadActor { id: string; rel: AssetReliability }
@@ -82,6 +83,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const [critFilter, setCritFilter] = useState('ALL');   // ALL | A | B | C
     const [classFilter, setClassFilter] = useState('ALL'); // ALL | <asset_class>
     const windowLabel = WINDOW_OPTIONS.find(w => w.days === windowDays)?.label || `${windowDays} days`;
+
+    // Calm-screens: the vital-few KPI band stays on screen; the deep sections live
+    // behind tabs so the page fits one viewport and everything is a click away.
+    const [tab, setTab] = useState<'execution' | 'cost' | 'health' | 'badActors' | 'psc'>('execution');
 
     // M5 — reliability studies + created PMs per asset, to surface on the bad-actor list.
     const [studyByAsset, setStudyByAsset] = useState<Record<string, { count: number; pm?: string }>>({});
@@ -294,7 +299,9 @@ export const ReliabilityMetricsPage: React.FC = () => {
     };
 
     return (
-        <div className="space-y-5 ers-page-wide">
+        // Viewport-locked shell (Admin's dvh formula): header, filters and the KPI
+        // band stay fixed; only the active tab's body scrolls.
+        <div className="ers-page-wide flex flex-col gap-3 md:gap-4 h-[calc(100dvh-11rem)] md:h-[calc(100vh-7rem)] min-h-0">
             {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -323,7 +330,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
             ) : (
                 <>
                     {/* M4 — analysis window + asset filters; everything below recomputes live */}
-                    <div className="flex flex-wrap items-center gap-2 text-xs bg-white rounded-xl border border-slate-200 shadow-sm px-3 py-2.5">
+                    <div className="flex flex-wrap items-center gap-2 text-xs bg-white rounded-xl border border-slate-200 shadow-sm px-3 py-2.5 flex-none">
                         <span className="font-semibold text-slate-500">Window</span>
                         <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden">
                             {WINDOW_OPTIONS.map(w => (
@@ -397,7 +404,22 @@ export const ReliabilityMetricsPage: React.FC = () => {
                         </>);
                     })()}
 
-                    {/* Work Execution — mirrored from Schedule (shared spine) */}
+                    {/* Deep sections behind tabs — one viewport, everything a click away */}
+                    <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <Tabs
+                            tabs={[
+                                { id: 'execution', label: 'Work Execution', icon: CalendarClock },
+                                { id: 'cost', label: 'Cost vs RAV', icon: Gauge },
+                                { id: 'health', label: 'Register Health', icon: Layers },
+                                { id: 'badActors', label: 'Bad Actors', icon: TrendingUp, badge: badActors.length },
+                                { id: 'psc', label: 'Success Curve', icon: Sparkles },
+                            ]}
+                            activeTab={tab}
+                            onTabChange={(id) => setTab(id as typeof tab)}
+                        />
+                        <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-4 bg-slate-50/50">
+
+                    {tab === 'execution' && (
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
                             <CalendarClock size={15} className="text-primary-600" />
@@ -433,11 +455,12 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             })}
                         </div>
                     </div>
+                    )}
 
                     {/* Maintenance Cost vs RAV — SAP FI-CO / SMRP financial metrics (FI-2).
                         Calm rule: when there's no cost data at all, one quiet line, not
                         three N/A monoliths. */}
-                    {cost.pctRav == null && cost.maint12 <= 0 && cost.rav <= 0 ? (
+                    {tab === 'cost' && (cost.pctRav == null && cost.maint12 <= 0 && cost.rav <= 0 ? (
                         <div className="bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-2.5 text-[11px] text-slate-400 font-medium">
                             <span className="font-bold text-slate-500">Cost KPIs awaiting data:</span>{' '}
                             Maint. cost % of RAV · Maintenance cost · Replacement Asset Value — appear once WO costs and asset RAV are captured.
@@ -476,9 +499,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             })()}
                         </div>
                     </div>
-                    )}
+                    ))}
 
                     {/* Register Health — data quality (ISO 14224) */}
+                    {tab === 'health' && (
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
                             <Gauge size={15} className="text-primary-600" />
@@ -505,8 +529,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             })}
                         </div>
                     </div>
+                    )}
 
                     {/* Bad actors */}
+                    {tab === 'badActors' && (
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
                             <TrendingUp size={15} className="text-red-500" />
@@ -603,15 +629,18 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             </div>
                         )}
                     </div>
+                    )}
 
                     {/* Success-centric layer: Potential Success Curve (Golden Spot / MTOP /
                         MTTRg / SR) — the complement to the failure-centric KPIs above. */}
-                    <PSCPanel />
+                    {tab === 'psc' && <PSCPanel />}
 
                     <p className="text-[11px] text-slate-400">
                         Metrics computed over the {windowLabel} window via the shared reliability engine.
                         Adjust the window or filters above to re-analyze. Hover a KPI for its definition.
                     </p>
+                        </div>
+                    </div>
                 </>
             )}
 
