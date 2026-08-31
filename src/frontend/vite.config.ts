@@ -2,6 +2,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { execSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 // ── Build stamp ── injected so the running app can show exactly which commit is
 // deployed (compare to `git rev-parse --short HEAD`). Vercel sets the git SHA env;
@@ -11,11 +14,30 @@ const BUILD_SHA =
   (() => { try { return execSync('git rev-parse --short HEAD').toString().trim() } catch { return 'dev' } })()
 const BUILD_TIME = new Date().toISOString()
 
+// ── Dev quick-switch credentials ── the shared test passwords were rotated out
+// of the repo (a8a4313) into the repo-root .env.local (IREAMS_ADMIN_PASSWORD /
+// IREAMS_TEST_PASSWORD). The dev server injects them so Login's quick switch
+// still works; production builds always define ''.
+const repoEnvPath = resolve(dirname(fileURLToPath(import.meta.url)), '../../.env.local')
+function devCred(name: string): string {
+  if (process.env[name]) return process.env[name] as string
+  try {
+    // the file may carry a UTF-8 BOM — strip it or the first key won't match
+    const raw = readFileSync(repoEnvPath, 'utf8').replace(new RegExp('^\\uFEFF'), '')
+    const m = raw.match(new RegExp(`^${name}=(.*)$`, 'm'))
+    return m ? m[1].trim().replace(/^['"]|['"]$/g, '') : ''
+  } catch {
+    return ''
+  }
+}
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   define: {
     __BUILD_SHA__: JSON.stringify(BUILD_SHA),
     __BUILD_TIME__: JSON.stringify(BUILD_TIME),
+    __DEV_ADMIN_PASSWORD__: JSON.stringify(command === 'serve' ? devCred('IREAMS_ADMIN_PASSWORD') : ''),
+    __DEV_TEST_PASSWORD__: JSON.stringify(command === 'serve' ? devCred('IREAMS_TEST_PASSWORD') : ''),
   },
   plugins: [
     react(),
@@ -122,4 +144,4 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
     },
   },
-})
+}))
