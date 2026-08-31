@@ -22,6 +22,10 @@ import { DatabaseService } from '../services/DatabaseService';
 import { classifyWork } from '../services/workReadiness';
 import ersApi, { BadActorEntry } from '../services/ERSApiClient';
 import { Button, Modal } from '../components/ui';
+import {
+  ReliabilityView, SupervisorView, AssetsView, FinanceView,
+  type DashboardView, type DashboardShared, type InsightKey,
+} from '../components/dashboard/roleViews';
 
 // ──────────────────────────────── Fetcher ────────────────────────────────
 // Exported so Login can prefetch dashboard data before navigating
@@ -41,7 +45,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
   ] = await Promise.all([
     // 1. ALL work orders (single query replaces 5 separate ones)
     supabase.from('work_orders')
-      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id')
+      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id, actual_downtime_hrs')
       .order('updated_at', { ascending: false }),
     // 2. Service requests — counts only
     supabase.from('service_requests').select('status'),
@@ -235,9 +239,25 @@ const severityBg = (s: string) => {
 
 const SPARKLINE_COLORS = { created: '#1E4FDB', closed: '#22c55e' };
 
-// Calm-screens drill-downs: each insight strip/tile opens its full analysis in a
-// popup — the page itself stays a one-screen report.
-type InsightKey = 'governance' | 'pm' | 'backlog' | 'badActors' | 'fleet';
+// "Different hats": every view is available to every user (pills hide only when
+// the permission matrix denies the underlying data); the role just picks the
+// starting hat. The chosen hat is remembered per browser.
+const VIEW_STORE_KEY = 'ers_dashboard_view_v1';
+const VIEW_PILLS: { id: DashboardView; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'reliability', label: 'Reliability' },
+  { id: 'supervisor', label: 'Supervisor' },
+  { id: 'assets', label: 'Assets' },
+  { id: 'finance', label: 'Finance' },
+];
+const defaultViewForRole = (role: string | null | undefined): DashboardView => {
+  const r = (role || '').toUpperCase();
+  if (r === 'RELIABILITY_ENG') return 'reliability';
+  if (r === 'SUPERVISOR') return 'supervisor';
+  if (r === 'ASSET_MANAGER' || r === 'MANAGER') return 'assets';
+  if (r === 'EXECUTIVE') return 'finance';
+  return 'overview';
+};
 
 // ──────────────────────────────── Dashboard ────────────────────────────────
 export const Dashboard: React.FC = () => {
@@ -249,6 +269,32 @@ export const Dashboard: React.FC = () => {
   const [workTab, setWorkTab] = useState<'active' | 'recent' | 'notifications'>('active');
   const [apiBadActors, setApiBadActors] = useState<BadActorEntry[] | null>(null);
   const [insight, setInsight] = useState<InsightKey | null>(null);
+
+  // View ("hat") selection: stored choice wins; otherwise the role's default.
+  const [view, setView] = useState<DashboardView>(() => {
+    try {
+      const stored = localStorage.getItem(VIEW_STORE_KEY) as DashboardView | null;
+      if (stored && VIEW_PILLS.some(v => v.id === stored)) return stored;
+    } catch { /* ignore */ }
+    return defaultViewForRole(role);
+  });
+  // Role can resolve after mount — adopt its default until the user has chosen.
+  useEffect(() => {
+    try { if (!localStorage.getItem(VIEW_STORE_KEY)) setView(defaultViewForRole(role)); } catch { /* ignore */ }
+  }, [role]);
+  const pickView = (v: DashboardView) => {
+    setView(v);
+    try { localStorage.setItem(VIEW_STORE_KEY, v); } catch { /* ignore */ }
+  };
+  // Permission gates: a hat is offered only when its data is actually visible.
+  const canWear: Record<DashboardView, boolean> = {
+    overview: true,
+    reliability: permissions?.reliability?.view === true || permissions?.analytics?.view === true,
+    supervisor: permissions?.workOrders?.view === true,
+    assets: permissions?.assets?.view === true,
+    finance: permissions?.analytics?.viewCosts === true || permissions?.finops?.view === true || permissions?.dashboard?.viewCosts === true,
+  };
+  const activeView: DashboardView = canWear[view] ? view : 'overview';
 
   const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery({
     queryKey: [DASHBOARD_QUERY_KEY, profile?.id, dataScope?.siteIds],
@@ -459,6 +505,19 @@ export const Dashboard: React.FC = () => {
     }] : []),
   ];
 
+  // Everything the persona views need that the dashboard already computed.
+  const shared: DashboardShared = {
+    wos, openWOs, overdueCount: overdue.length,
+    governance,
+    pmDue: pmc.due, pmOnTime, pmRatePct: pmComplianceRate,
+    badActors, avgMTBF, avgMTTR, mtbfCount: mtbfValues.length,
+    agingBuckets, openBacklogCount: openWOsList.length,
+    deActive: activeDETasks.length, deResolved: resolvedDETasks.length,
+    deSavings: totalDESavings, deCritical: criticalDETasks,
+    notificationsCount: notifications.length,
+    assetsCount: totalAssets, criticalAssets,
+  };
+
   return (
     // Calm-screens: on desktop the page locks to the viewport — everything is
     // visible at once and drill-down happens in popups. Below lg it stacks and
@@ -496,6 +555,26 @@ export const Dashboard: React.FC = () => {
       {/* ── Getting-started: one-line strip; the checklist opens in a popup ── */}
       <GettingStarted compact />
 
+      {/* ── View pills — wear a different hat; every lens open to every user
+             (hidden only where permissions deny the data). LinkedIn-style. ── */}
+      <div className="flex items-center gap-1.5 flex-none overflow-x-auto scrollbar-hide">
+        {VIEW_PILLS.filter(v => canWear[v.id]).map(v => (
+          <button key={v.id} onClick={() => pickView(v.id)}
+            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors ${
+              activeView === v.id
+                ? 'bg-primary-600 text-white border-primary-600'
+                : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 hover:text-slate-800'
+            }`}
+          >{v.label}</button>
+        ))}
+      </div>
+
+      {activeView === 'reliability' && <ReliabilityView shared={shared} openInsight={setInsight} />}
+      {activeView === 'supervisor' && <SupervisorView shared={shared} openInsight={setInsight} />}
+      {activeView === 'assets' && <AssetsView shared={shared} openInsight={setInsight} />}
+      {activeView === 'finance' && <FinanceView shared={shared} openInsight={setInsight} />}
+
+      {activeView === 'overview' && (<>
       {/* ── Row 2: KPI band — every headline number in one row on desktop.
              Governance and PM compliance live here as compact tiles; their full
              charts open in popups. ── */}
@@ -782,8 +861,10 @@ export const Dashboard: React.FC = () => {
           </button>
         </div>
       </div>
+      </>)}
 
-      {/* ── Drill-down popups (calm-screens: process lives in the popup, the page stays a report) ── */}
+      {/* ── Drill-down popups (calm-screens: process lives in the popup, the page stays a report).
+             Mounted for every view so the persona rails share the same popups. ── */}
 
       {/* PM Schedule Compliance popup */}
       <Modal open={insight === 'pm'} onClose={() => setInsight(null)} title="PM Compliance" size="sm">
