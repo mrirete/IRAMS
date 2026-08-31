@@ -28,6 +28,7 @@ export const INVITE_ROLES: { code: string; label: string }[] = [
     { code: 'PLANNER', label: 'Planner' },
     { code: 'SUPERVISOR', label: 'Supervisor' },
     { code: 'RELIABILITY_ENG', label: 'Reliability Engineer' },
+    { code: 'ASSET_MANAGER', label: 'Asset Manager' },
     { code: 'MANAGER', label: 'Manager' },
     { code: 'EXECUTIVE', label: 'Executive' },
     { code: 'SYS_ADMIN', label: 'System Administrator' },

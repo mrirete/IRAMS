@@ -122,17 +122,21 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     // RELIABILITY_ENG: Core + Condition Data + Analytics + Safety (view)
     // Focused on reliability analysis, failure coding, RCA
     // ────────────────────────────────────────────────────────
+    // viewCosts: reliability engineering IS a money job — cost-ranked bad
+    // actors, DE savings, Monte Carlo cost inputs, spares economics. The role
+    // was blind to all of them (RF-01 matrix bug); SAP shops give REs cost
+    // display as a matter of course. Spending authority stays where it was.
     RELIABILITY_ENG: {
-        dashboard: BASIC_ACCESS,
-        assets: BASIC_ACCESS,
+        dashboard: { ...BASIC_ACCESS, viewCosts: true },
+        assets: { ...BASIC_ACCESS, viewCosts: true },
         requests: { ...BASIC_ACCESS, spendingLimit: 5000 },
-        workOrders: BASIC_ACCESS,
-        pm: BASIC_ACCESS,
+        workOrders: { ...BASIC_ACCESS, viewCosts: true },
+        pm: { ...BASIC_ACCESS, viewCosts: true },
         scheduling: VIEW_ONLY_PERM,
-        inventory: VIEW_ONLY_PERM, // Reliability views inventory; Planner/Storekeeper manages it (SAP MM separation)
+        inventory: { ...VIEW_ONLY_PERM, viewCosts: true }, // Reliability views inventory; Planner/Storekeeper manages it (SAP MM separation)
         purchasing: VIEW_ONLY_PERM,
         readings: BASIC_ACCESS,
-        analytics: VIEW_ONLY_PERM,
+        analytics: { ...VIEW_ONLY_PERM, viewCosts: true },
         contacts: VIEW_ONLY_PERM,
         vendors: VIEW_ONLY_PERM,
         taskLibrary: BASIC_ACCESS,
@@ -164,8 +168,11 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         contacts: VIEW_ONLY_PERM,
         vendors: VIEW_ONLY_PERM,
         taskLibrary: VIEW_ONLY_PERM,
-        // Premium — Blocked
-        finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
+        // safety is VIEW_ONLY, not NO_ACCESS (RF-01): supervisors review their
+        // crew's JSAs and own the LOTO discipline — the same matrix-error class
+        // already corrected for TECHNICIAN. Blocking the reviewer while the
+        // performer can see the assessment was policy drift, not policy.
+        finops: NO_ACCESS_PERM, safety: VIEW_ONLY_PERM,
         moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
         reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
         audits: VIEW_ONLY_PERM, activityLog: NO_ACCESS_PERM,
@@ -196,6 +203,40 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         // Premium — Blocked
         finops: VIEW_ONLY_PERM, admin: NO_ACCESS_PERM,
         reliability: VIEW_ONLY_PERM, integrity: VIEW_ONLY_PERM, sustain: VIEW_ONLY_PERM,
+        activityLog: NO_ACCESS_PERM,
+    },
+
+    // ────────────────────────────────────────────────────────
+    // ASSET_MANAGER: Portfolio stewardship (ISO 55000/55001) —
+    // MANAGER-grade cost/approval authority PLUS the strategy
+    // surfaces the persona is measured against: reliability &
+    // integrity visibility with costs, audits (§9.2), MoC (§8.2),
+    // FinOps lifecycle economics. RF-01: this persona previously
+    // had no home in the matrix.
+    // ────────────────────────────────────────────────────────
+    ASSET_MANAGER: {
+        dashboard: { ...BASIC_ACCESS, viewCosts: true },
+        assets: { ...BASIC_ACCESS, approve: true, viewCosts: true },
+        requests: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 25000 },
+        workOrders: { ...BASIC_ACCESS, approve: true, viewCosts: true, spendingLimit: 25000 },
+        pm: { ...BASIC_ACCESS, approve: true, viewCosts: true },
+        scheduling: VIEW_ONLY_PERM,
+        inventory: { ...VIEW_ONLY_PERM, viewCosts: true },
+        purchasing: { ...VIEW_ONLY_PERM, approve: true, viewCosts: true, spendingLimit: 50000 },
+        readings: VIEW_ONLY_PERM,
+        analytics: { ...VIEW_ONLY_PERM, viewCosts: true },
+        contacts: VIEW_ONLY_PERM,
+        vendors: { ...VIEW_ONLY_PERM, viewCosts: true },
+        taskLibrary: VIEW_ONLY_PERM,
+        safety: VIEW_ONLY_PERM,
+        moc: { ...BASIC_ACCESS, approve: true, authorize: true },
+        notifications: BASIC_ACCESS,
+        audits: { ...BASIC_ACCESS, approve: true, viewCosts: true },
+        finops: { ...BASIC_ACCESS, viewCosts: true },
+        admin: NO_ACCESS_PERM,
+        reliability: { ...VIEW_ONLY_PERM, viewCosts: true },
+        integrity: { ...VIEW_ONLY_PERM, viewCosts: true },
+        sustain: VIEW_ONLY_PERM,
         activityLog: NO_ACCESS_PERM,
     },
 

@@ -5,6 +5,7 @@ import { FinOpsService, AssetFinancial, DepreciationBook, Warranty, Depreciation
 
 // Sub-tab components
 import { FinancialsOverviewSubTab } from './financials/FinancialsOverviewSubTab';
+import { LifecycleCostCard } from './financials/LifecycleCostCard';
 import { DepreciationSubTab } from './financials/DepreciationSubTab';
 import { WarrantiesSubTab } from './financials/WarrantiesSubTab';
 import { InsuranceSubTab } from './financials/InsuranceSubTab';
@@ -369,6 +370,8 @@ const FinancialsTabInner: React.FC<FinancialsTabProps> = ({ asset }) => {
             </div>
 
             {/* Active Sub-Tab Content */}
+            {/* RF-01: what this asset has truly cost, trending how — above the fold */}
+            {activeSubTab === 'overview' && <LifecycleCostCard assetId={asset.id} />}
             {activeSubTab === 'overview' && (
                 <FinancialsOverviewSubTab
                     financialRecord={financialRecord}

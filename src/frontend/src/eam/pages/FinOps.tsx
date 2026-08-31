@@ -18,6 +18,7 @@ import {
     FinOpsService, CostCenter, Budget, Warranty, WarrantyCheckResult,
     WarrantyClaim, DepreciationBook, MaintenanceForecast, SupplyChainMatch
 } from '../services/FinOpsService';
+import { RenewalQueue } from '../components/finops/RenewalQueue';
 import { DatabaseService } from '../services/DatabaseService';
 import ErpExportPanel from '../components/finops/ErpExportPanel';
 import ErpReconciliationPanel from '../components/finops/ErpReconciliationPanel';
@@ -833,7 +834,14 @@ export const FinOps: React.FC = () => {
             case 'dashboard': return <DashboardTab metrics={dashboardMetrics} transactions={[]} />; // TODO: Fetch transactions
             case 'cost_centers': return <CostCentersTab costCenters={costCenters} onRefresh={loadData} initialSelectedId={searchParams.get('id')} />;
             case 'forecast':
-                return <ForecastTab />;
+                // RF-01: the repair-vs-replace screen leads the forecast view —
+                // capital conversations start from evidence, not spreadsheets.
+                return (
+                    <div className="space-y-5">
+                        <RenewalQueue />
+                        <ForecastTab />
+                    </div>
+                );
             case 'depreciation':
                 return <DepreciationTab books={depreciationBooks} fleetDepreciation={fleetDepreciation} costCenters={costCenters} />;
             case 'warranties': return <WarrantiesTab warranties={warranties} assets={assets} vendors={vendors} onRefresh={loadData} />;

@@ -7,7 +7,9 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench, Lock } from 'lucide-react';
+import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench, Lock, ClipboardCheck } from 'lucide-react';
+import { FailureReviewQueue } from '../components/analyze/FailureReviewQueue';
+import { useAuth } from '../eam/contexts/AuthContext';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 import { PSCPanel } from '../components/metrics/PSCPanel';
 import { supabase } from '../eam/lib/supabase';
@@ -86,7 +88,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
 
     // Calm-screens: the vital-few KPI band stays on screen; the deep sections live
     // behind tabs so the page fits one viewport and everything is a click away.
-    const [tab, setTab] = useState<'execution' | 'cost' | 'health' | 'badActors' | 'psc'>('execution');
+    const [tab, setTab] = useState<'execution' | 'cost' | 'health' | 'badActors' | 'psc' | 'review'>('execution');
+    // RF-01 FRACAS queue badge — the component reports its own count.
+    const [reviewCount, setReviewCount] = useState(0);
+    const { user: authUser } = useAuth();
 
     // M5 — reliability studies + created PMs per asset, to surface on the bad-actor list.
     const [studyByAsset, setStudyByAsset] = useState<Record<string, { count: number; pm?: string }>>({});
@@ -412,6 +417,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                 { id: 'cost', label: 'Cost vs RAV', icon: Gauge },
                                 { id: 'health', label: 'Register Health', icon: Layers },
                                 { id: 'badActors', label: 'Bad Actors', icon: TrendingUp, badge: badActors.length },
+                                { id: 'review', label: 'Failure Review', icon: ClipboardCheck, badge: reviewCount },
                                 { id: 'psc', label: 'Success Curve', icon: Sparkles },
                             ]}
                             activeTab={tab}
@@ -629,6 +635,14 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             </div>
                         )}
                     </div>
+                    )}
+
+                    {/* RF-01: FRACAS — confirm failure coding, queue that empties */}
+                    {tab === 'review' && (
+                        <FailureReviewQueue
+                            currentUser={(authUser as any)?.username || (authUser as any)?.email || 'engineer'}
+                            onCountChange={setReviewCount}
+                        />
                     )}
 
                     {/* Success-centric layer: Potential Success Curve (Golden Spot / MTOP /

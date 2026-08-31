@@ -14,6 +14,7 @@ import { ReportDataTable, TableColumn } from '../components/reports/ReportDataTa
 import { exportXLSX, exportCSV } from '../utils/reportExport';
 import { isOpenWo } from '../../lib/woState';
 import { isPreventiveWoType } from '../lib/workOrder';
+import { fetchDowntimeRates, unreliabilityCost, fmtMoney, type DowntimeRates } from '../../lib/downtimeCost';
 
 const COLORS = {
   blue: '#3b82f6', cyan: '#06b6d4', emerald: '#10b981', amber: '#f59e0b',
@@ -53,6 +54,13 @@ export const ReportDrillDown: React.FC = () => {
   const { reportType } = useParams<{ reportType: string }>();
   const type = (reportType || 'downtime') as DrillType;
   const config = DRILL_CONFIG[type] || DRILL_CONFIG['downtime'];
+
+  // Production-loss rates (RF-01): per-asset from asset_financials, tenant
+  // default from companies — lets downtime views speak the owner's language.
+  const { data: rates } = useQuery<DowntimeRates>({
+    queryKey: ['drilldown-downtime-rates'],
+    queryFn: fetchDowntimeRates,
+  });
 
   const { data: assets = [] } = useQuery({
     queryKey: ['drilldown-assets'],
@@ -102,11 +110,22 @@ export const ReportDrillDown: React.FC = () => {
       if (String(w.type ?? '').toUpperCase() === 'CM') cur.unplanned += hrs; else cur.planned += hrs;
       byAsset.set(key, cur);
     }
-    return [...byAsset.values()]
-      .map((r) => ({ asset: r.tag, name: r.name, Unplanned: Math.round(r.unplanned), Planned: Math.round(r.planned), Total: Math.round(r.unplanned + r.planned) }))
+    return [...byAsset.entries()]
+      .map(([assetId, r]) => {
+        // Unplanned hours in the owner's language (RF-01): rate-labelled
+        // estimate when a rate exists; an honest em-dash when none does.
+        const loss = rates ? unreliabilityCost(rates, assetId, r.unplanned) : null;
+        return {
+          asset: r.tag, name: r.name,
+          Unplanned: Math.round(r.unplanned), Planned: Math.round(r.planned),
+          Total: Math.round(r.unplanned + r.planned),
+          est_loss: loss ? Math.round(loss.cost) : null,
+          est_loss_fmt: loss ? `${fmtMoney(loss.cost)} (${loss.label})` : '—',
+        };
+      })
       .sort((x, y) => y.Total - x.Total)
       .slice(0, 12);
-  }, [assets, workOrders]);
+  }, [assets, workOrders, rates]);
 
   // MTBF/MTTR grid — canonical computed values (sem_asset_reliability).
   // This used to PREFER assets.mtbf_days, a one-off backfill that migration
@@ -256,9 +275,21 @@ export const ReportDrillDown: React.FC = () => {
           { key: 'Planned', label: 'Planned (hrs)', format: 'hours', dataBar: true },
           { key: 'Unplanned', label: 'Unplanned (hrs)', format: 'hours', dataBar: true },
           { key: 'Total', label: 'Total (hrs)', format: 'hours', dataBar: true },
+          { key: 'est_loss_fmt', label: 'Est. production loss' },
         ];
+        const totalLoss = downtimeByAsset.reduce((s, r: any) => s + (r.est_loss ?? 0), 0);
+        const ratedCount = downtimeByAsset.filter((r: any) => r.est_loss != null).length;
         return (
           <div className="space-y-6">
+            {totalLoss > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="text-lg font-bold text-amber-800">{fmtMoney(totalLoss)}</span>
+                <span className="text-xs text-amber-700">
+                  estimated production loss from unplanned downtime across the {ratedCount} listed asset(s) with a rate —
+                  rates come from each asset's Financials tab (company default applies where unset). An estimate, not a financial actual.
+                </span>
+              </div>
+            )}
             <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-5" style={{ height: 450 }}>
               <h3 className="text-sm font-bold text-slate-800 mb-4">Unplanned vs Planned Downtime by Asset</h3>
               <ResponsiveContainer width="100%" height="90%">

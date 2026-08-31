@@ -17,6 +17,8 @@ import { buildWorkOrder } from '../lib/workOrder';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { AssignmentModal } from '../components/scheduling/AssignmentModal';
+import { CrewBoard } from '../components/scheduling/CrewBoard';
+import { ShiftHandoverModal } from '../components/scheduling/ShiftHandoverModal';
 import { FrozenZoneModal } from '../components/scheduling/FrozenZoneModal';
 import { MaterialCheckModal } from '../components/scheduling/MaterialCheckModal';
 import type { MaterialCheckResult } from '../components/scheduling/MaterialCheckModal';
@@ -33,7 +35,7 @@ import { Button } from '../components/ui';
 const FROZEN_ZONE_DAYS = 7; // Industry standard — weekly schedule lock
 const NON_RESCHEDULABLE_STATUSES: string[] = ['TECO', 'CLOSED', 'CANC', 'CANCELLED'];
 
-type ViewMode = 'CALENDAR' | 'GANTT' | 'BACKLOG' | 'MRS';
+type ViewMode = 'CALENDAR' | 'GANTT' | 'BACKLOG' | 'MRS' | 'CREW';
 type CalendarScale = 'MONTH' | 'WEEK' | 'DAY';
 
 interface CalendarItem {
@@ -119,7 +121,8 @@ function isToday(d: Date): boolean {
 // ========================================
 export const Scheduling: React.FC = () => {
     const { showToast } = useToast();
-    const { dataScope, permissions } = useAuth();
+    const { dataScope, permissions, user } = useAuth();
+    const [handoverOpen, setHandoverOpen] = useState(false);
     const [viewMode, setViewMode] = useState<ViewMode>('CALENDAR');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [showProjections, setShowProjections] = useState(true);
@@ -921,7 +924,21 @@ export const Scheduling: React.FC = () => {
                         >
                             <Users size={16} /><span className="hidden sm:inline">Resources</span>
                         </button>
+                        <button
+                            onClick={() => setViewMode('CREW')}
+                            title="Who is on what right now — the supervisor's morning view"
+                            className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-md flex items-center gap-2 transition ${viewMode === 'CREW' ? 'bg-primary-50 text-primary-600' : 'text-slate-600 hover:bg-slate-50'}`}
+                        >
+                            <Briefcase size={16} /><span className="hidden sm:inline">Crew</span>
+                        </button>
                     </div>
+                    <button
+                        onClick={() => setHandoverOpen(true)}
+                        title="Shift handover — what the next shift needs to know"
+                        className="px-3 sm:px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 flex items-center gap-2 transition"
+                    >
+                        <ArrowRight size={16} className="rotate-90 sm:rotate-0" /><span className="hidden sm:inline">Handover</span>
+                    </button>
                     <PrintExportButton onClick={() => setPrintModalOpen(true)} />
                 </div>
             </div>
@@ -1039,6 +1056,7 @@ export const Scheduling: React.FC = () => {
                     />
                 )}
                 {viewMode === 'BACKLOG' && <BacklogView jobs={jobs} onJobsUpdate={setJobs} dictionaries={dictionaries} laborContacts={laborContacts} />}
+                {viewMode === 'CREW' && <CrewBoard jobs={jobs} contacts={laborContacts} />}
                 {viewMode === 'MRS' && (
                     <div className="flex flex-col h-full">
                         <MRSView
@@ -1151,6 +1169,13 @@ export const Scheduling: React.FC = () => {
                             .flatMap(j => ((j as any).requiredQualifications as string[]) ?? [])
                     ))
                 }
+            />
+
+            {/* RF-01: the 6am ritual, structured */}
+            <ShiftHandoverModal
+                open={handoverOpen}
+                onClose={() => setHandoverOpen(false)}
+                currentUser={(user as any)?.username || (user as any)?.email || 'supervisor'}
             />
 
             {/* ── Frozen Zone Modal ── */}

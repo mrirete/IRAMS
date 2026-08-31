@@ -29,6 +29,7 @@ interface InviteInfo {
 const ROLE_LABELS: Record<string, string> = {
     TECHNICIAN: 'Technician', REQUESTER: 'Requester', PLANNER: 'Planner',
     SUPERVISOR: 'Supervisor', RELIABILITY_ENG: 'Reliability Engineer',
+    ASSET_MANAGER: 'Asset Manager',
     MANAGER: 'Manager', EXECUTIVE: 'Executive', SYS_ADMIN: 'System Administrator',
     INTERNAL: 'Team Member',
 };
