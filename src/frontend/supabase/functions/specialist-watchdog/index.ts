@@ -21,6 +21,11 @@
 //      banded point sits OUTSIDE its warning band queues a restore-the-optimum
 //      proposal — acting on Sub-Optimal Drift BEFORE Critical Departure is
 //      the framework's whole point.
+//   6. Budget breach (RF-01 dedup ruling) — a cost center whose committed +
+//      actual crosses 90% (warn) or 100% (breach) of its OpEx budget notifies
+//      the finance-authority roles directly. NOT a proposal: budgets are
+//      FinOps' math (variance already computed there) — this is the missing
+//      announcement, once per budget per 30 days.
 //
 // Idempotent by design: a proposal is skipped while a matching watchdog
 // proposal is pending, or was reviewed in the last 30 days (never nag a
@@ -313,6 +318,74 @@ serve(async (req) => {
       }
     }
 
+    // ── 6. Budget breach → notify finance authority ───────────────────────
+    // FinOps owns the variance math; this is only the announcement. Once per
+    // budget per 30 days (entity_id-keyed dedupe), to MANAGER / EXECUTIVE /
+    // ASSET_MANAGER holders resolved the same way detect-sweep resolves roles.
+    let budgetAlerts = 0;
+    try {
+      const FY = new Date().getFullYear();
+      const [budQ, ccQ, notifQ, contactsQ, usersQ] = await Promise.all([
+        admin.from("budgets").select("id, cost_center_id, fiscal_year, opex_budget, committed, actual, currency, status").eq("fiscal_year", FY).gt("opex_budget", 0).limit(500),
+        admin.from("cost_centers").select("id, code, name").limit(1000),
+        admin.from("notifications").select("entity_id, severity")
+          .eq("notification_type", "BUDGET_BREACH")
+          .gte("created_at", new Date(now - 30 * DAY_MS).toISOString()).limit(1000),
+        admin.from("contacts").select("id, roles").limit(5000),
+        admin.from("users").select("id, contact_id").limit(5000),
+      ]);
+      const ccById = new Map(((ccQ.data ?? []) as { id: string; code: string | null; name: string | null }[]).map((c) => [c.id, c]));
+      const alerted = new Map(((notifQ.data ?? []) as { entity_id: string | null; severity: string }[])
+        .filter((n) => n.entity_id).map((n) => [n.entity_id as string, n.severity]));
+      const usersByContact = new Map(((usersQ.data ?? []) as { id: string; contact_id: string | null }[])
+        .filter((u) => u.contact_id).map((u) => [u.contact_id as string, u.id]));
+      const FIN_ROLES = new Set(["MANAGER", "EXECUTIVE", "ASSET_MANAGER", "SUPER_ADMIN", "SYS_ADMIN"]);
+      const recipients = [...new Set(((contactsQ.data ?? []) as { id: string; roles: string[] | null }[])
+        .filter((c) => (c.roles ?? []).some((r) => FIN_ROLES.has(String(r).toUpperCase().replace(/\s+/g, "_"))))
+        .map((c) => usersByContact.get(c.id))
+        .filter((u): u is string => !!u))];
+
+      if (recipients.length) {
+        const notifRows: Record<string, unknown>[] = [];
+        for (const b of (budQ.data ?? []) as { id: string; cost_center_id: string | null; opex_budget: number; committed: number | null; actual: number | null; currency: string | null; status: string | null }[]) {
+          if (String(b.status ?? "").toLowerCase() === "closed") continue;
+          const spent = (Number(b.actual) || 0) + (Number(b.committed) || 0);
+          const util = spent / Number(b.opex_budget);
+          if (util < 0.9) continue;
+          const severity = util >= 1 ? "CRITICAL" : "WARNING";
+          // Re-notify only when a warning later becomes a breach.
+          const prior = alerted.get(b.id);
+          if (prior && !(prior === "WARNING" && severity === "CRITICAL")) continue;
+          const cc = b.cost_center_id ? ccById.get(b.cost_center_id) : null;
+          const ccLabel = cc ? `${cc.code ?? ""} ${cc.name ?? ""}`.trim() : "cost center";
+          budgetAlerts += 1;
+          findings.push(`budget:${ccLabel}@${Math.round(util * 100)}%`);
+          for (const recipientId of recipients) {
+            notifRows.push({
+              recipient_id: recipientId,
+              title: util >= 1
+                ? `Budget breached — ${ccLabel} at ${Math.round(util * 100)}% of FY${FY} OpEx`
+                : `Budget at ${Math.round(util * 100)}% — ${ccLabel} approaching its FY${FY} OpEx limit`,
+              message: `Actual + committed ${Math.round(spent).toLocaleString()} ${b.currency ?? ""} against a budget of ${Math.round(Number(b.opex_budget)).toLocaleString()} ${b.currency ?? ""}. Review commitments in FinOps › Budget Control.`,
+              severity,
+              module: "finops",
+              notification_type: "BUDGET_BREACH",
+              is_read: false,
+              entity_id: b.id,
+              entity_type: "budget",
+              action_link: "/finops",
+            });
+          }
+        }
+        if (notifRows.length) {
+          const { error } = await admin.from("notifications").insert(notifRows);
+          if (error) console.error("budget notification insert failed:", error.message);
+        }
+      }
+    } catch (e) {
+      console.error("budget-breach check failed (non-fatal):", e);
+    }
+
     // ── persist ───────────────────────────────────────────────────────────
     let inserted = 0;
     if (proposals.length) {
@@ -325,6 +398,7 @@ serve(async (req) => {
       `Nightly watchdog: ${wos.length} WOs scanned · ${spikes} cost step-change(s) · ${drifts} PM-drift signal(s)` +
       `${driftFlags ? ` · ${driftFlags} Golden-Spot drift(s)` : ""}` +
       `${rcaDrafts ? ` · ${rcaDrafts} RCA draft(s) opened` : ""}` +
+      `${budgetAlerts ? ` · ${budgetAlerts} budget alert(s) sent` : ""}` +
       `${dqNote ? " · data-quality regression flagged" : ""} · ${inserted} proposal(s) queued.` +
       (dqNote ? `\n\n${dqNote}` : "");
     try {
@@ -352,6 +426,7 @@ serve(async (req) => {
       pm_drift: drifts,
       golden_spot_drift: driftFlags,
       rca_drafts: rcaDrafts,
+      budget_alerts: budgetAlerts,
       dq_regression: Boolean(dqNote),
       proposals_queued: inserted,
       skipped_snoozed: snoozed.size,
