@@ -23,6 +23,8 @@ import { supabase } from '../../eam/lib/supabase';
 import { emptyResult, tally, errMessage, type ImportResult } from '../../eam/services/importTypes';
 import { downloadUnresolvedCodes, type ImportType } from '../../eam/services/assetTemplates';
 import { useToast } from '../../eam/contexts/ToastContext';
+import { assessmentService } from '../../eam/services/AssessmentService';
+import type { IntakeDimensionKey } from '../../eam/services/IntakeQuickAnalysis';
 
 type Counts = Awaited<ReturnType<DatabaseService['getOnboardingCounts']>>;
 
@@ -132,6 +134,42 @@ const PHASES: Phase[] = [
  * page was built for, and on a cold URL it is the most useful place to land.
  */
 export interface MigrationOrigin { to?: string; label?: string }
+
+/**
+ * RF-01/AU: the audit intake's weakest dimension points at the migration
+ * phase that closes it — the system reading the plant's context and shaping
+ * its guidance. One line, honestly labelled self-reported; silent when no
+ * intake exists (the Getting Started checklist sends people to run one).
+ */
+const DIMENSION_PHASE_HINT: Partial<Record<IntakeDimensionKey, string>> = {
+    data: 'your quick win here is phases 7–8 — work-order history and failure-code catalogs are what turn the analytics on',
+    financial: 'export cost columns with your work-order history (phase 7) — money-ranked findings depend on them',
+    people: 'phase 2 (people & crafts) is where your gap closes first',
+    governance: 'get PM schedules & job plans in (phase 6) so the planned-work engine can carry the load',
+};
+
+const MaturityEmphasisHint: React.FC = () => {
+    const [hint, setHint] = useState<string | null>(null);
+    useEffect(() => {
+        let active = true;
+        assessmentService.getLatestIntakeAnalysis().then(latest => {
+            if (!active || !latest) return;
+            const weakest = [...latest.analysis.dimensions]
+                .filter(d => d.score != null)
+                .sort((a, b) => (a.score! - b.score!))[0];
+            if (!weakest || weakest.score == null || weakest.score >= 3.5) return;
+            const phase = DIMENSION_PHASE_HINT[weakest.key];
+            if (phase) setHint(`Your maturity intake (self-reported) rated ${weakest.label.toLowerCase()} lowest — ${phase}.`);
+        }).catch(() => { /* hint only */ });
+        return () => { active = false; };
+    }, []);
+    if (!hint) return null;
+    return (
+        <p className="mt-2 text-[12.5px] text-primary-700 bg-primary-50 border border-primary-100 rounded-lg px-3 py-2 max-w-2xl">
+            {hint}
+        </p>
+    );
+};
 
 export const MigrationCenterPage: React.FC = () => {
     const { showToast } = useToast();
@@ -304,6 +342,7 @@ export const MigrationCenterPage: React.FC = () => {
                     Moving from SAP PM, Maximo, MaintainX or spreadsheets? Work down this list in order.
                     Each step feeds the next — the register has to exist before history, schedules or readings can attach to it.
                 </p>
+                <MaturityEmphasisHint />
                 {/* Which system the files come out of. More than provenance: a
                     foreign CMMS export carries the ids THEIR system knows these
                     records by, and naming the source is what lets the import

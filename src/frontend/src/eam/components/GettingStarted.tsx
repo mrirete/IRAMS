@@ -10,7 +10,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CheckCircle2, Circle, ArrowRight, X, Rocket, Boxes, CalendarClock, Wrench, Users, Database } from 'lucide-react';
+import { CheckCircle2, Circle, ArrowRight, X, Rocket, Boxes, CalendarClock, Wrench, Users, Database, Compass } from 'lucide-react';
 import { DatabaseService } from '../services/DatabaseService';
 import { useAuth } from '../contexts/AuthContext';
 import { Modal } from './ui';
@@ -25,9 +25,13 @@ interface Step {
     to: string;
     icon: React.ReactNode;
 }
-interface Counts { assets: number; pms: number; workOrders: number; people: number; }
+interface Counts { maturity: number; assets: number; pms: number; workOrders: number; people: number; }
 
 const STEPS: Step[] = [
+    // Audit-first (RF-01/AU): the system learns the plant's operating context
+    // before prescribing anything — the intake shapes the Specialist's guidance
+    // and the Migration Center's emphasis.
+    { id: 'maturity', label: 'Tell us where you are', detail: 'A 10-minute, ISO 55000-aligned maturity intake — the system shapes its guidance around your gaps.', cta: 'Run the intake', to: '/audits', icon: <Compass size={18} /> },
     { id: 'assets', label: 'Import your assets', detail: 'Bulk-import equipment from a spreadsheet, mapped to your hierarchy — or add one by hand.', cta: 'Import assets', to: '/assets?action=import', icon: <Boxes size={18} /> },
     { id: 'pms', label: 'Create your first PM', detail: 'Set a recurring preventive job so the system schedules the work for you.', cta: 'Create a PM', to: '/recurring-work', icon: <CalendarClock size={18} /> },
     { id: 'workOrders', label: 'Raise a work order', detail: 'Log the first job — corrective or planned — and track it to completion.', cta: 'New work order', to: '/work-orders?action=create', icon: <Wrench size={18} /> },
@@ -49,7 +53,7 @@ export const GettingStarted: React.FC<{ compact?: boolean }> = ({ compact = fals
         let active = true;
         DatabaseService.getInstance().getOnboardingCounts()
             .then(c => { if (active) setCounts(c); })
-            .catch(() => { if (active) setCounts({ assets: 0, pms: 0, workOrders: 0, people: 0 }); });
+            .catch(() => { if (active) setCounts({ maturity: 0, assets: 0, pms: 0, workOrders: 0, people: 0 }); });
         return () => { active = false; };
     }, [dismissed]);
 

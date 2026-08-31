@@ -2627,19 +2627,21 @@ export class DatabaseService {
     public async getOnboardingCounts(): Promise<{
         assets: number; pms: number; workOrders: number; people: number;
         inventory: number; vendors: number; readings: number; batches: number; connectors: number; codes: number;
-        bom: number;
+        bom: number; maturity: number;
     }> {
         const head = async (table: string) => {
             const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true });
             return error ? 0 : (count || 0);
         };
-        const [assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom] = await Promise.all([
+        const [assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom, maturity] = await Promise.all([
             head('assets'), head('recurring_work'), head('work_orders'), head('contacts'),
             head('inventory_items'), head('vendors'), head('reading_logs'),
             head('import_batches'), head('connectors'), head('reference_codes'),
             head('asset_bom'),
+            // Audit-first onboarding (RF-01/AU): a maturity intake exists?
+            head('audit_assessments'),
         ]);
-        return { assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom };
+        return { assets, pms, workOrders, people, inventory, vendors, readings, batches, connectors, codes, bom, maturity };
     }
 
     /**

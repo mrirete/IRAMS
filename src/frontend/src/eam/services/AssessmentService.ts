@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase';
 import type { AuditRegistration, DimensionResult, AuditReport, ImprovementRoadmap } from './AuditAssessor';
 import type { AuditAssessmentState, AuditIntakeData, DocumentReviewItem, SiteVerificationItem, InterviewRecord, ScoredFinding } from './AuditTypes';
 import { auditPeopleBridge } from './AuditPeopleBridge';
+import { computeIntakeAnalysis, type IntakeAnalysis } from './IntakeQuickAnalysis';
 
 // ─── DB Row Type ──────────────────────────────────────────────────
 
@@ -265,6 +266,42 @@ export class AssessmentService {
         const { data, error } = await query;
         if (error) { console.error('[AssessmentService] listAssessments:', error); return []; }
         return (data || []) as AssessmentListItem[];
+    }
+
+    /**
+     * The newest assessment's intake, scored (audit-first onboarding, RF-01/AU).
+     * This is what lets the REST of the system read the plant's self-reported
+     * operating context: the Specialist's maturity card, the Migration Center's
+     * emphasis hint, and the say-do gap all start here. Directional by design —
+     * consumers must label it self-reported.
+     */
+    async getLatestIntakeAnalysis(): Promise<{
+        assessmentId: string;
+        assessmentNumber: string;
+        createdAt: string;
+        status: string;
+        overallMaturity: number | null;
+        maturityLevel: string | null;
+        analysis: IntakeAnalysis;
+    } | null> {
+        const { data, error } = await supabase
+            .from('audit_assessments')
+            .select('*')
+            .neq('status', 'deleted')
+            .order('updated_at', { ascending: false })
+            .limit(1);
+        if (error || !data?.length) return null;
+        const record = data[0] as AssessmentRecord;
+        const state = hydrateState(record);
+        return {
+            assessmentId: record.id,
+            assessmentNumber: record.assessment_number,
+            createdAt: record.created_at,
+            status: record.status,
+            overallMaturity: state.overallMaturity ?? null,
+            maturityLevel: state.maturityLevel ?? null,
+            analysis: computeIntakeAnalysis(state.intake),
+        };
     }
 
     async getSummary(): Promise<AssessmentSummary> {

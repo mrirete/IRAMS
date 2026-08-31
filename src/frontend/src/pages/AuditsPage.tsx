@@ -11,6 +11,7 @@ import { useAuth } from '../eam/contexts/AuthContext';
 import { supabase } from '../eam/lib/supabase';
 import type { AssessmentListItem, AssessmentSummary } from '../eam/services/AssessmentService';
 import type { AuditAssessmentState } from '../eam/services/AuditTypes';
+import { MaturityGapCard } from '../components/specialist/MaturityGapCard';
 
 type Phase = 'list' | 'wizard';
 type AuditScope = 'all' | 'mine';
@@ -225,6 +226,9 @@ export const AuditsPage: React.FC = () => {
                     New Audit
                 </button>
             </div>
+
+            {/* RF-01/AU: the audit's read of the plant, held against the live record */}
+            <div className="mb-6"><MaturityGapCard /></div>
 
             {/* Summary Cards */}
             {summary && (

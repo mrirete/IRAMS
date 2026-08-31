@@ -32,6 +32,7 @@ import { messagingService } from '../../eam/services/MessagingService';
 import { analyzeService, type RCAInvestigation } from '../../eam/services/AnalyzeService';
 import { Search, GitBranch, Target, HeartPulse, FolderOpen } from 'lucide-react';
 import BriefingReport, { RichText, type BriefingAsset } from '../../components/specialist/BriefingReport';
+import { MaturityGapCard } from '../../components/specialist/MaturityGapCard';
 
 interface AuditRow {
     id: string; module: string; context_type: string; query_text: string;
@@ -447,6 +448,10 @@ export const SpecialistWorkspacePage: React.FC = () => {
                  Every answer the Specialist gives is downstream of what is in
                  here, so it wears the primary colour and stands alone. ── */}
             {dataOnRamp}
+
+            {/* ── RF-01/AU: the audit's operating context, held against the live
+                 record — where the Specialist's guidance gets its bearings. ── */}
+            <MaturityGapCard />
 
             {/* ── The heart of the page: ask-first, centered (the Tier's old
                  Start·Home look) — value reads first above, action starts here.
