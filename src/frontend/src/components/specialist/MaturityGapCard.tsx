@@ -84,7 +84,7 @@ export const MaturityGapCard: React.FC = () => {
     const [state, setState] = useState<
         | { kind: 'loading' }
         | { kind: 'none' }
-        | { kind: 'ready'; gaps: DimensionGap[]; quickWins: { label: string; action: string; dimension: IntakeDimensionKey }[]; assessmentNumber: string; createdAt: string; headline: string | null }
+        | { kind: 'ready'; gaps: DimensionGap[]; quickWins: { label: string; action: string; dimension: IntakeDimensionKey }[]; assessmentNumber: string; createdAt: string; headline: string | null; wizardMaturity: { score: number; level: string | null } | null }
     >({ kind: 'loading' });
 
     useEffect(() => {
@@ -102,6 +102,11 @@ export const MaturityGapCard: React.FC = () => {
                     assessmentNumber: latest.assessmentNumber,
                     createdAt: latest.createdAt,
                     headline: latest.analysis.headline || null,
+                    // Evidence-based overall (the full 7-step wizard, when completed)
+                    // outranks the directional intake — show it when it exists.
+                    wizardMaturity: latest.overallMaturity != null
+                        ? { score: latest.overallMaturity, level: latest.maturityLevel }
+                        : null,
                 });
             } catch {
                 if (active) setState({ kind: 'none' });
@@ -135,6 +140,12 @@ export const MaturityGapCard: React.FC = () => {
             <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2">
                 <Compass size={15} className="text-primary-600" />
                 <h3 className="text-sm font-bold text-slate-800 m-0">Operating context — what you said vs what the data shows</h3>
+                {state.wizardMaturity && (
+                    <span className="text-[10px] font-bold bg-primary-50 text-primary-700 border border-primary-100 rounded-full px-2 py-0.5"
+                        title="From the completed evidence-based assessment (7-step wizard), not the directional intake">
+                        evidence-based maturity {state.wizardMaturity.score}/5{state.wizardMaturity.level ? ` · ${state.wizardMaturity.level}` : ''}
+                    </span>
+                )}
                 <span className="ml-auto text-[10px] text-slate-400">
                     self-reported intake {state.assessmentNumber} · {new Date(state.createdAt).toLocaleDateString()} · measured from your live records
                 </span>
