@@ -40,7 +40,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
   // Single WO query provides: status counts, overdue, recent, trend
   const [
     woResult, srResult, assetResult, inventoryResult,
-    myWorkResult, notificationsResult, pmWoResult, assetMtbfResult,
+    myWorkResult, notificationsResult, assetMtbfResult,
     deTasksResult, governanceResult,
   ] = await Promise.all([
     // 1. ALL work orders (single query replaces 5 separate ones)
@@ -49,8 +49,9 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
       .order('updated_at', { ascending: false }),
     // 2. Service requests — counts only
     supabase.from('service_requests').select('status'),
-    // 3. Assets — core fields
-    supabase.from('assets').select('id, tag, name, criticality, status_code, mtbf_days, mttr_hours'),
+    // 3. Assets — core fields. (mtbf_days/mttr_hours deliberately NOT selected:
+    //    those are the frozen 0108 backfill; sem_asset_reliability is canonical.)
+    supabase.from('assets').select('id, tag, name, criticality, status_code'),
     // 4. Inventory — minimal fields for stock alerts
     supabase.from('inventory_items').select('id, stock_on_hand, min_level, is_critical'),
     // 5. My work (user-specific, limited)
@@ -70,11 +71,11 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
           .order('created_at', { ascending: false })
           .limit(8)
       : Promise.resolve({ data: [] }),
-    // 7. PM work orders for compliance
-    supabase.from('work_orders')
-      .select('status, type, due_date, closed_at')
-      .in('type', ['PM', 'Preventive', 'Preventative', 'SCHEDULED']),
-    // 8. Per-asset reliability for bad actors — the CANONICAL computed view
+    // (The separate PM-compliance query is gone: query 1 already carries
+    //  status/type/due_date/closed_at for every WO, and computePmCompliance
+    //  filters by the ONE exported PM_WORK_TYPES list — a DB-side type filter
+    //  here was a second, subtly different definition.)
+    // 7. Per-asset reliability for bad actors — the CANONICAL computed view
     //    (0234), not assets.mtbf_days, which migration 0108 froze in place
     //    and nothing has recomputed since.
     // Lifetime fallback (0298): mtbf_days is 12-month-windowed; assets whose
@@ -104,7 +105,6 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     { name: 'inventory', ...inventoryResult },
     { name: 'my_work', ...(myWorkResult as any) },
     { name: 'notifications', ...(notificationsResult as any) },
-    { name: 'pm_work_orders', ...pmWoResult },
     { name: 'asset_mtbf', ...assetMtbfResult },
     { name: 'de_tasks', ...deTasksResult },
   ];
@@ -173,7 +173,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     assets: rawAssets, inventory: inventoryResult.data || [],
     overdue: filterWOs(overdue), recent: filterWOs(recent),
     myWork: filterWOs(myWorkResult.data || []), notifications: notificationsResult.data || [],
-    woTrend: filterWOs(woTrend), pmWos: filterWOs(pmWoResult.data || []),
+    woTrend: filterWOs(woTrend),
     assetMtbf: ((rows: any[]) => rows
       // Lifetime fallback (0298): windowed values win; quiet-year assets fall
       // back to lifetime, flagged so the list can say which basis it's on.
@@ -356,7 +356,7 @@ export const Dashboard: React.FC = () => {
     return <div className="p-8 text-red-500">Error loading dashboard: {(error as Error).message}</div>;
   }
 
-  const { wos, srs, assets, inventory, overdue, recent, myWork, notifications, woTrend, pmWos, assetMtbf, deTasks, governance } = data!;
+  const { wos, srs, assets, inventory, overdue, recent, myWork, notifications, woTrend, assetMtbf, deTasks, governance } = data!;
 
   // ── Derived Metrics ──
   const statusMap: Record<string, number> = {};
@@ -381,7 +381,9 @@ export const Dashboard: React.FC = () => {
   // all PM WOs ever as the denominator — a third, all-time definition that
   // disagreed with both Reports and Scheduling.
   const pmWindowMs = 90 * 86400000;
-  const pmc = computePmCompliance(pmWos as any[], Date.now() - pmWindowMs, Date.now());
+  // Filters by the exported PM_WORK_TYPES itself — the WO query already has
+  // every field it needs, so no separate DB-side type filter can drift.
+  const pmc = computePmCompliance(wos as any[], Date.now() - pmWindowMs, Date.now());
   const pmOnTime = pmc.onTime;
   const pmMissed = pmc.due - pmc.onTime;
   const pmComplianceRate = pmc.compliancePct != null ? Math.round(pmc.compliancePct) : 0;

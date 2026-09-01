@@ -47,7 +47,18 @@ export interface MtbfResult {
 
 const HOURS_PER_DAY = 24;
 const isCm = (t: string | null | undefined) => String(t ?? '').toUpperCase() === 'CM';
-const isPm = (t: string | null | undefined) => ['PM', 'PREVENTIVE', 'PREVENTATIVE', 'SCHEDULED'].includes(String(t ?? '').toUpperCase());
+
+/**
+ * THE list of preventive-scheduled work types that PM ratio and PM compliance
+ * cover. Exported so every consumer filters identically — the duplicate engine
+ * in services/reliabilityMetrics carried its own list (with INSPECTION and
+ * CALIBRATION, without SCHEDULED/PREVENTATIVE), so the same plant could show
+ * different compliance on two pages from the type filter alone. Inspections
+ * and calibrations ARE scheduled preventive work (SMRP usage), so the union
+ * is the honest set.
+ */
+export const PM_WORK_TYPES = ['PM', 'PREVENTIVE', 'PREVENTATIVE', 'SCHEDULED', 'INSPECTION', 'CALIBRATION'];
+const isPm = (t: string | null | undefined) => PM_WORK_TYPES.includes(String(t ?? '').toUpperCase());
 
 /**
  * Fleet MTBF/MTTR/availability over a window.

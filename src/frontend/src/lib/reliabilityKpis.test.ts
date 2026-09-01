@@ -88,6 +88,18 @@ describe('computePmCompliance — schedule adherence, not proactive share', () =
         expect(r.compliancePct).toBeCloseTo(33.3, 1);
     });
 
+    it('covers inspections and calibrations — the one PM_WORK_TYPES list', () => {
+        // The duplicate engine in services/reliabilityMetrics carried its own
+        // type list (with INSPECTION, without SCHEDULED), so two pages could
+        // disagree from the filter alone. One exported list now.
+        const r = computePmCompliance([
+            { type: 'INSPECTION', status: 'CLOSED', created_at: iso(40), due_date: iso(20), closed_at: iso(21) },
+            { type: 'CALIBRATION', status: 'OPEN', created_at: iso(40), due_date: iso(10), closed_at: null },
+        ], windowStart, NOW);
+        expect(r.due).toBe(2);
+        expect(r.onTime).toBe(1);
+    });
+
     it('lets a miss leave the denominator only by completion or cancellation', () => {
         const r = computePmCompliance([
             pm({ status: 'CANCELLED', due_date: iso(180), closed_at: null }), // cancelled → out

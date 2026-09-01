@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { isPreventiveWork } from './workReadiness';
+import { computePmCompliance as computeCanonicalPmCompliance } from '../../lib/reliabilityKpis';
 
 export interface AssetReliability {
   failures12mo: number;        // corrective failures in the last 12 months
@@ -365,11 +366,6 @@ const _completedTs = (j: any, now: number): number => {
   const c = j.dateCompleted || j.dateClosed || j.date_completed || j.closed_at;
   return c ? new Date(c).getTime() : now; // CLOSED/TECO without a date ⇒ treat as now
 };
-const _isThisMonth = (d?: string): boolean => {
-  if (!d) return false;
-  const x = new Date(d), n = new Date();
-  return x.getMonth() === n.getMonth() && x.getFullYear() === n.getFullYear();
-};
 const _estHours = (j: any): number => {
   const e = Number(j.estDuration ?? j.est_duration);
   if (e > 0) return e;
@@ -387,23 +383,31 @@ export function computeScheduleCompliance(jobs: any[]): ComplianceResult {
   return { numerator: onTime.length, denominator: scheduled.length, pct: scheduled.length ? Math.round((onTime.length / scheduled.length) * 1000) / 10 : null };
 }
 
-const PM_TYPES = ['PM', 'PREVENTIVE', 'INSPECTION', 'CALIBRATION'];
-
 /**
- * PM Compliance — PMs due this month, PLUS any PM still open past its due date
- * from earlier months, completed on/before their due date. The overdue-open
- * clause matches lib/reliabilityKpis.computePmCompliance: a missed PM cannot
- * age out of the metric while it remains undone.
+ * PM Compliance — delegates to THE canonical definition in lib/reliabilityKpis
+ * (one engine; this file previously carried its own type list and window, so
+ * the same plant could show different compliance on two pages). Window here is
+ * the current calendar month — this surface's established reporting frame —
+ * and the canonical overdue-open clause still applies: a missed PM stays in
+ * the denominator however old, leaving only by completion or cancellation.
  */
 export function computePMCompliance(jobs: any[]): ComplianceResult {
   const now = Date.now();
-  const due = (jobs || []).filter(j => {
-    if (!PM_TYPES.includes(_type(j)) || !_due(j)) return false;
-    if (_isThisMonth(_due(j))) return true;
-    return !_isClosed(j) && new Date(_due(j) as string).getTime() < now;
+  const monthStart = new Date(new Date(now).getFullYear(), new Date(now).getMonth(), 1).getTime();
+  const rows = (jobs || []).map(j => {
+    const closed = j.dateCompleted || j.dateClosed || j.date_completed || j.closed_at;
+    return {
+      type: _type(j),
+      status: _status(j),
+      created_at: j.createdAt || j.created_at || new Date(0).toISOString(),
+      // CLOSED/TECO without a completion date ⇒ treat as now (field-tolerant
+      // rule this file has always used).
+      closed_at: closed ? String(closed) : (_isClosed(j) ? new Date(now).toISOString() : null),
+      due_date: _due(j) ?? null,
+    };
   });
-  const onTime = due.filter(j => _isClosed(j) && _completedTs(j, now) <= new Date(_due(j) as string).getTime());
-  return { numerator: onTime.length, denominator: due.length, pct: due.length ? Math.round((onTime.length / due.length) * 1000) / 10 : null };
+  const r = computeCanonicalPmCompliance(rows, monthStart, now);
+  return { numerator: r.onTime, denominator: r.due, pct: r.compliancePct };
 }
 
 export interface BacklogMetrics {
