@@ -89,6 +89,11 @@ export interface AssessmentListItem {
     created_at: string;
     updated_at: string;
     completed_at: string | null;
+    /** 0306 planning: when a status='planned' assessment is due to start. */
+    planned_date: string | null;
+    /** 0306 planning: months between occurrences; null = one-off. */
+    recur_months: number | null;
+    audit_objective?: string | null;
 }
 
 export interface AssessmentSummary {
@@ -251,7 +256,7 @@ export class AssessmentService {
     }): Promise<AssessmentListItem[]> {
         let query = supabase
             .from('audit_assessments')
-            .select('id, assessment_number, assessor_name, assessor_company, assessor_site, industry_sector, status, current_step, dimensions_completed, overall_maturity, maturity_level, created_at, updated_at, completed_at')
+            .select('id, assessment_number, assessor_name, assessor_company, assessor_site, industry_sector, status, current_step, dimensions_completed, overall_maturity, maturity_level, created_at, updated_at, completed_at, planned_date, recur_months, audit_objective')
             .neq('status', 'deleted')
             .order('updated_at', { ascending: false });
 
@@ -266,6 +271,74 @@ export class AssessmentService {
         const { data, error } = await query;
         if (error) { console.error('[AssessmentService] listAssessments:', error); return []; }
         return (data || []) as AssessmentListItem[];
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  PLANNING (0306 — ISO 55001 §9.2 programme; carries the annual
+    //  criticality-review recurrence per the RF-01 dedup ruling)
+    // ═══════════════════════════════════════════════════════════════
+
+    /** Plan a future assessment (optionally recurring). */
+    async planAssessment(input: {
+        objective: string;
+        plannedDate: string;          // YYYY-MM-DD
+        recurMonths?: number | null;
+        assessorName: string;
+        assessorCompany?: string;
+        assessorEmail?: string;
+    }): Promise<{ id: string } | null> {
+        const { data, error } = await supabase
+            .from('audit_assessments')
+            .insert({
+                status: 'planned',
+                audit_objective: input.objective,
+                planned_date: input.plannedDate,
+                recur_months: input.recurMonths ?? null,
+                assessor_name: input.assessorName,
+                assessor_company: input.assessorCompany ?? '',
+                assessor_email: input.assessorEmail ?? '',
+            })
+            .select('id')
+            .single();
+        if (error) { console.error('[AssessmentService] planAssessment:', error); return null; }
+        return data as { id: string };
+    }
+
+    /**
+     * Start a planned assessment. Roll-forward happens HERE, not at
+     * completion: a recurring plan immediately schedules its next occurrence,
+     * so a missed cycle shows as an overdue planned row instead of vanishing.
+     */
+    async startPlanned(item: AssessmentListItem): Promise<boolean> {
+        const { error } = await supabase
+            .from('audit_assessments')
+            .update({ status: 'in_progress', current_step: 1 })
+            .eq('id', item.id)
+            .eq('status', 'planned');
+        if (error) { console.error('[AssessmentService] startPlanned:', error); return false; }
+        if (item.recur_months && item.recur_months > 0) {
+            const base = item.planned_date ? new Date(item.planned_date) : new Date();
+            base.setMonth(base.getMonth() + item.recur_months);
+            await this.planAssessment({
+                objective: item.audit_objective ?? '',
+                plannedDate: base.toISOString().slice(0, 10),
+                recurMonths: item.recur_months,
+                assessorName: item.assessor_name,
+                assessorCompany: item.assessor_company,
+            });
+        }
+        return true;
+    }
+
+    /** Remove a plan (soft-delete, same posture as assessments). */
+    async removePlan(id: string): Promise<boolean> {
+        const { error } = await supabase
+            .from('audit_assessments')
+            .update({ status: 'deleted' })
+            .eq('id', id)
+            .eq('status', 'planned');
+        if (error) { console.error('[AssessmentService] removePlan:', error); return false; }
+        return true;
     }
 
     /**
@@ -288,6 +361,9 @@ export class AssessmentService {
             .from('audit_assessments')
             .select('*')
             .neq('status', 'deleted')
+            // Planned rows (0306) carry no intake yet — they must never become
+            // "the latest context" and blank the gap card.
+            .neq('status', 'planned')
             .order('updated_at', { ascending: false })
             .limit(1);
         if (error || !data?.length) return null;

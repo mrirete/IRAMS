@@ -5,9 +5,13 @@
  *
  *  Live view over audit_assessments (the same engine as /audits):
  *  in-flight and completed assessments by date, stalled detection,
- *  and a working entry point into the assessment wizard. Future-dated
- *  planning/recurrence is on the roadmap (needs a planned status in
- *  the assessment schema).
+ *  and a working entry point into the assessment wizard.
+ *
+ *  Planning (0306): future-dated, optionally RECURRING assessments —
+ *  status='planned' rows with a due date. Starting one rolls the next
+ *  occurrence forward. This is also where the annual criticality review
+ *  lives (RF-01 dedup ruling): a 12-month recurring plan, not a separate
+ *  reminder system.
  * ═══════════════════════════════════════════════════════════════════════
  */
 
@@ -18,14 +22,22 @@ import {
     CheckCircle, Plus, Loader2, Bell, TrendingUp,
 } from 'lucide-react';
 import { assessmentService, type AssessmentListItem } from '../eam/services/AssessmentService';
+import { useAuth } from '../eam/contexts/AuthContext';
 
 const STALLED_DAYS = 30;
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string }> = {
+    planned: { label: 'Planned', color: 'text-sky-700', bg: 'bg-sky-100', dot: 'bg-sky-400' },
     in_progress: { label: 'In Progress', color: 'text-amber-700', bg: 'bg-amber-100', dot: 'bg-amber-400 animate-pulse' },
     completed: { label: 'Completed', color: 'text-green-700', bg: 'bg-green-100', dot: 'bg-green-400' },
     archived: { label: 'Archived', color: 'text-slate-500', bg: 'bg-slate-100', dot: 'bg-slate-400' },
 };
+
+/** One-click presets — the recurring programmes plants actually run. */
+const PLAN_PRESETS: { label: string; objective: string; recurMonths: number }[] = [
+    { label: 'Annual criticality review', recurMonths: 12, objective: 'Annual asset criticality review — re-validate A/B/C/D rankings against the last 12 months of failures, cost and process changes (feeds RCM/FMEA scoping and every criticality-ranked analysis).' },
+    { label: 'Annual ISO 55001 self-assessment', recurMonths: 12, objective: 'Annual ISO 55001 self-assessment across the six maturity dimensions — evidence-based, with the say-do gap reviewed against live records.' },
+];
 
 const isStalled = (a: AssessmentListItem) =>
     a.status === 'in_progress' &&
@@ -37,16 +49,49 @@ const isStalled = (a: AssessmentListItem) =>
 
 export const AuditSchedulePage: React.FC = () => {
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [assessments, setAssessments] = useState<AssessmentListItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('');
 
-    useEffect(() => {
-        assessmentService.listAssessments()
-            .then(setAssessments)
-            .finally(() => setLoading(false));
-    }, []);
+    // Planning form (0306)
+    const [planOpen, setPlanOpen] = useState(false);
+    const [planObjective, setPlanObjective] = useState('');
+    const [planDate, setPlanDate] = useState('');
+    const [planRecur, setPlanRecur] = useState<number>(0);
+    const [planBusy, setPlanBusy] = useState(false);
+    const [rowBusy, setRowBusy] = useState<string | null>(null);
+
+    const load = () => assessmentService.listAssessments().then(setAssessments).finally(() => setLoading(false));
+    useEffect(() => { void load(); }, []);
+
+    const submitPlan = async () => {
+        if (!planObjective.trim() || !planDate) return;
+        setPlanBusy(true);
+        const ok = await assessmentService.planAssessment({
+            objective: planObjective.trim(),
+            plannedDate: planDate,
+            recurMonths: planRecur > 0 ? planRecur : null,
+            assessorName: (user as any)?.username || (user as any)?.email || 'planner',
+        });
+        if (ok) { setPlanOpen(false); setPlanObjective(''); setPlanDate(''); setPlanRecur(0); await load(); }
+        setPlanBusy(false);
+    };
+
+    const startPlan = async (a: AssessmentListItem) => {
+        setRowBusy(a.id);
+        const ok = await assessmentService.startPlanned(a);
+        setRowBusy(null);
+        if (ok) navigate('/audits');
+    };
+
+    const removePlan = async (a: AssessmentListItem) => {
+        setRowBusy(a.id);
+        await assessmentService.removePlan(a.id);
+        await load();
+        setRowBusy(null);
+    };
 
     const filtered = assessments.filter(a => {
         const q = search.toLowerCase();
@@ -75,8 +120,53 @@ export const AuditSchedulePage: React.FC = () => {
                     <h1 className="text-2xl font-black text-slate-800">Audit Schedule</h1>
                     <p className="text-sm text-slate-500 mt-1">ISO 55001 §9.2 — Assessment programme tracking across sites and assessors</p>
                 </div>
-                <button onClick={() => navigate('/audits')} className="btn-primary"><Plus size={16} className="mr-2" />Start Audit</button>
+                <div className="flex items-center gap-2">
+                    <button onClick={() => setPlanOpen(v => !v)}
+                        className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5">
+                        <Calendar size={15} /> Plan assessment
+                    </button>
+                    <button onClick={() => navigate('/audits')} className="btn-primary"><Plus size={16} className="mr-2" />Start Audit</button>
+                </div>
             </div>
+
+            {/* 0306: plan a future (optionally recurring) assessment */}
+            {planOpen && (
+                <div className="bg-sky-50/60 border border-sky-200 rounded-xl p-4 mb-6 space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-bold text-slate-600">Presets:</span>
+                        {PLAN_PRESETS.map(p => (
+                            <button key={p.label}
+                                onClick={() => { setPlanObjective(p.objective); setPlanRecur(p.recurMonths); if (!planDate) { const d = new Date(); d.setMonth(d.getMonth() + 1); setPlanDate(d.toISOString().slice(0, 10)); } }}
+                                className="text-[11px] font-medium bg-white border border-sky-200 hover:border-sky-400 text-sky-700 rounded-full px-2.5 py-1">
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                    <textarea value={planObjective} onChange={e => setPlanObjective(e.target.value)}
+                        placeholder="What is this assessment for? (becomes the audit objective)"
+                        className="w-full h-16 rounded-lg border border-slate-200 p-3 text-sm resize-none bg-white" />
+                    <div className="flex flex-wrap items-center gap-3">
+                        <label className="text-xs text-slate-600 flex items-center gap-2">Due
+                            <input type="date" value={planDate} onChange={e => setPlanDate(e.target.value)}
+                                className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-white" />
+                        </label>
+                        <label className="text-xs text-slate-600 flex items-center gap-2">Repeats
+                            <select value={planRecur} onChange={e => setPlanRecur(Number(e.target.value))}
+                                className="rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-white">
+                                <option value={0}>never (one-off)</option>
+                                <option value={6}>every 6 months</option>
+                                <option value={12}>every 12 months</option>
+                                <option value={24}>every 24 months</option>
+                            </select>
+                        </label>
+                        <span className="text-[11px] text-slate-400">Starting a recurring plan schedules its next occurrence automatically.</span>
+                        <button onClick={() => void submitPlan()} disabled={planBusy || !planObjective.trim() || !planDate}
+                            className="ml-auto px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold disabled:opacity-40">
+                            {planBusy ? 'Planning…' : 'Add to programme'}
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* KPI Bar */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
@@ -104,6 +194,7 @@ export const AuditSchedulePage: React.FC = () => {
                     className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-700"
                 >
                     <option value="">All Status</option>
+                    <option value="planned">Planned</option>
                     <option value="in_progress">In Progress</option>
                     <option value="completed">Completed</option>
                     <option value="archived">Archived</option>
@@ -133,12 +224,13 @@ export const AuditSchedulePage: React.FC = () => {
                         const stCfg = STATUS_CONFIG[a.status] || STATUS_CONFIG.in_progress;
                         const stalled = isStalled(a);
                         const progressPct = Math.round((Math.max(0, (a.current_step || 1) - 1) / 7) * 100);
+                        const planOverdue = a.status === 'planned' && a.planned_date && new Date(a.planned_date).getTime() < Date.now();
 
                         return (
                             <div
                                 key={a.id}
-                                onClick={() => navigate('/audits')}
-                                className={`bg-white border border-slate-200 border-l-4 ${a.status === 'completed' ? 'border-l-green-400' : stalled ? 'border-l-red-500' : 'border-l-amber-400'} rounded-xl p-5 hover:shadow-md hover:border-slate-300 transition-all cursor-pointer ${stalled ? 'ring-1 ring-red-200' : ''}`}
+                                onClick={() => { if (a.status !== 'planned') navigate('/audits'); }}
+                                className={`bg-white border border-slate-200 border-l-4 ${a.status === 'planned' ? (planOverdue ? 'border-l-red-500' : 'border-l-sky-400') : a.status === 'completed' ? 'border-l-green-400' : stalled ? 'border-l-red-500' : 'border-l-amber-400'} rounded-xl p-5 hover:shadow-md hover:border-slate-300 transition-all ${a.status !== 'planned' ? 'cursor-pointer' : ''} ${stalled ? 'ring-1 ring-red-200' : ''}`}
                             >
                                 <div className="flex items-start gap-4">
                                     <div className={`w-3 h-3 rounded-full mt-1 shrink-0 ${stCfg.dot}`} />
@@ -180,6 +272,26 @@ export const AuditSchedulePage: React.FC = () => {
                                             <p className="text-[10px] text-green-600 mt-2 flex items-center gap-1">
                                                 <CheckCircle size={10} /> Assessment complete
                                             </p>
+                                        )}
+                                        {a.status === 'planned' && (
+                                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${planOverdue ? 'bg-red-100 text-red-700' : 'bg-sky-100 text-sky-700'}`}>
+                                                    {planOverdue ? 'OVERDUE — ' : 'Due '}
+                                                    {a.planned_date ? new Date(a.planned_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                                                    {a.recur_months ? ` · repeats every ${a.recur_months} mo` : ''}
+                                                </span>
+                                                {a.audit_objective && <span className="text-[11px] text-slate-500 truncate max-w-md">{a.audit_objective}</span>}
+                                                <span className="ml-auto flex items-center gap-1.5">
+                                                    <button onClick={(e) => { e.stopPropagation(); void startPlan(a); }} disabled={rowBusy !== null}
+                                                        className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-40">
+                                                        {rowBusy === a.id ? 'Starting…' : 'Start now'}
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); void removePlan(a); }} disabled={rowBusy !== null}
+                                                        className="text-[11px] font-medium px-2 py-1 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40">
+                                                        Remove
+                                                    </button>
+                                                </span>
+                                            </div>
                                         )}
                                     </div>
                                 </div>
