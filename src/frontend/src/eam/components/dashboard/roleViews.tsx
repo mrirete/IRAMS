@@ -36,7 +36,7 @@ export interface DashboardShared {
     wos: any[]; // full WO rows from the dashboard query (incl. actual_downtime_hrs)
     openWOs: number;
     overdueCount: number;
-    governance: { proactive: number; reactive: number; total: number; proPct: number; reaPct: number };
+    governance: { proactive: number; reactive: number; total: number; proPct: number; reaPct: number; prevProPct: number | null };
     pmDue: number; pmOnTime: number; pmRatePct: number;
     badActors: any[];
     avgMTBF: number; avgMTTR: number; mtbfCount: number;

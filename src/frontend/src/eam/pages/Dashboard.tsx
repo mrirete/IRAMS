@@ -6,6 +6,8 @@ import { useToast } from '../contexts/ToastContext';
 import { useQuery } from '@tanstack/react-query';
 import { isOpenWo } from '../../lib/woState';
 import { computePmCompliance } from '../../lib/reliabilityKpis';
+import { isFailure } from '../services/reliabilityMetrics';
+import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart
@@ -14,7 +16,7 @@ import {
   AlertCircle, CheckCircle, Clock, Activity,
   Wrench, Package, Plus, ArrowRight,
   AlertTriangle, BarChart3, Inbox, Bell, BellRing,
-  Gauge, Timer, Skull, Target, ChevronRight
+  Gauge, Timer, Skull, Target, ChevronRight, Home
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { DatabaseService } from '../services/DatabaseService';
@@ -33,7 +35,9 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
   const now = new Date();
   const nowISO = now.toISOString();
   const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
-  const ninetyDaysAgo = new Date(now.getTime() - 90 * 86400000).toISOString();
+  // Governance fetches TWO windows (current + prior 90d) so the tile can show
+  // motion, not just level.
+  const oneEightyDaysAgo = new Date(now.getTime() - 180 * 86400000).toISOString();
 
   // ── Optimized: 7 parallel queries instead of 12 ──
   // Single WO query provides: status counts, overdue, recent, trend
@@ -44,7 +48,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
   ] = await Promise.all([
     // 1. ALL work orders (single query replaces 5 separate ones)
     supabase.from('work_orders')
-      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id, actual_downtime_hrs')
+      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id, actual_downtime_hrs, breakdown, assigned_to, wo_failure_data!wo_id(failure_mode_code, reviewed_at)')
       .order('updated_at', { ascending: false }),
     // 2. Service requests — counts only
     supabase.from('service_requests').select('status'),
@@ -89,11 +93,12 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     supabase.from('ers_defect_elimination_tasks')
       .select('id, status, priority, annual_cost, estimated_savings, implementation_cost, created_at')
       .order('created_at', { ascending: false }),
-    // 10. Governance — Planned vs Reactive over the last 90 days. Needs the
-    //     task/labour signals (joined) so the ratio matches the Work Orders list.
+    // 10. Governance — Planned vs Reactive, current 90d + the 90d before
+    //     (trend). Needs the task/labour signals (joined) so the ratio
+    //     matches the Work Orders list.
     supabase.from('work_orders')
-      .select('id, type, status, est_duration, asset_id, job_tasks(description, instructions), work_order_labor(id)')
-      .gte('created_at', ninetyDaysAgo),
+      .select('id, type, status, est_duration, asset_id, created_at, job_tasks(description, instructions), work_order_labor(id)')
+      .gte('created_at', oneEightyDaysAgo),
   ]);
 
   // ── Error diagnostics: log any silent Supabase failures ──
@@ -148,24 +153,35 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     return wos.filter((wo: any) => !wo.asset_id || scopedAssetTags!.has(wo.asset_id));
   };
 
-  // ── Work Governance: Planned vs Reactive (last 90 days) ──
+  // ── Work Governance: Planned vs Reactive, current vs prior 90 days ──
   // Map each record to the shape classifyWork expects, so the ratio is identical
   // to the Work Orders list (preventive OR steps+estimate+labour = proactive).
   const govRaw = filterWOs(governanceResult.data || []);
-  let govPro = 0, govRea = 0;
-  for (const r of govRaw as any[]) {
-    const woLike = {
-      type: r.type, status: r.status, estDuration: r.est_duration,
-      tasks: (r.job_tasks || []).map((t: any) => ({ description: t.description, instructions: t.instructions || [], estHours: 0 })),
-      labor: r.work_order_labor || [],
-    };
-    const c = classifyWork(woLike as any);
-    if (c === 'PROACTIVE') govPro++;
-    else if (c === 'REACTIVE') govRea++;
-  }
-  const govTotal = govPro + govRea;
-  const govProPct = govTotal ? Math.round((govPro / govTotal) * 100) : 0;
-  const governance = { proactive: govPro, reactive: govRea, total: govTotal, proPct: govProPct, reaPct: govTotal ? 100 - govProPct : 0 };
+  const govWindowStart = now.getTime() - 90 * 86400000;
+  const govTally = (rows: any[]) => {
+    let pro = 0, rea = 0;
+    for (const r of rows) {
+      const woLike = {
+        type: r.type, status: r.status, estDuration: r.est_duration,
+        tasks: (r.job_tasks || []).map((t: any) => ({ description: t.description, instructions: t.instructions || [], estHours: 0 })),
+        labor: r.work_order_labor || [],
+      };
+      const c = classifyWork(woLike as any);
+      if (c === 'PROACTIVE') pro++;
+      else if (c === 'REACTIVE') rea++;
+    }
+    return { pro, rea };
+  };
+  const govCur = govTally((govRaw as any[]).filter(r => new Date(r.created_at).getTime() >= govWindowStart));
+  const govPrev = govTally((govRaw as any[]).filter(r => new Date(r.created_at).getTime() < govWindowStart));
+  const govPct = (p: number, r: number) => (p + r ? Math.round((p / (p + r)) * 100) : null);
+  const govTotal = govCur.pro + govCur.rea;
+  const govProPct = govPct(govCur.pro, govCur.rea) ?? 0;
+  const governance = {
+    proactive: govCur.pro, reactive: govCur.rea, total: govTotal,
+    proPct: govProPct, reaPct: govTotal ? 100 - govProPct : 0,
+    prevProPct: govPct(govPrev.pro, govPrev.rea),
+  };
 
   return {
     wos: filterWOs(rawWos), srs: srResult.data || [],
@@ -295,6 +311,10 @@ export const Dashboard: React.FC = () => {
   };
   const activeView: DashboardView = canWear[view] ? view : 'overview';
 
+  // TRUE unread count (the feed list is capped at 8 rows; badging its length
+  // would report min(unread, 8) — a number wearing the wrong definition).
+  const { unreadCount } = useUnreadNotifications(user?.id);
+
   const { data, isLoading, error, dataUpdatedAt } = useQuery({
     queryKey: [DASHBOARD_QUERY_KEY, profile?.id, dataScope?.siteIds],
     queryFn: () => fetchDashboardData(profile?.id, dataScope?.siteIds),
@@ -383,6 +403,25 @@ export const Dashboard: React.FC = () => {
   // Filters by the exported PM_WORK_TYPES itself — the WO query already has
   // every field it needs, so no separate DB-side type filter can drift.
   const pmc = computePmCompliance(wos as any[], Date.now() - pmWindowMs, Date.now());
+  // Prior equal window, for the delta chip (motion, not just level).
+  const pmcPrev = computePmCompliance(wos as any[], Date.now() - 2 * pmWindowMs, Date.now() - pmWindowMs);
+  const pmDelta = pmc.compliancePct != null && pmcPrev.compliancePct != null
+    ? Math.round(pmc.compliancePct - pmcPrev.compliancePct) : null;
+  const govDelta = governance.prevProPct != null && governance.total > 0
+    ? governance.proPct - governance.prevProPct : null;
+
+  // ── Hat-pill signals — the pills carry information scent, not just navigation ──
+  // FRACAS backlog (canonical isFailure + unreviewed) and unassigned open work.
+  const fracasCount = wos.filter((w: any) => {
+    if (!isFailure(w)) return false;
+    const fd = Array.isArray(w.wo_failure_data) ? w.wo_failure_data[0] : w.wo_failure_data;
+    return !fd?.reviewed_at;
+  }).length;
+  const unassignedCount = wos.filter((w: any) => isOpenWo(w.status) && !w.assigned_to).length;
+  const pillBadges: Partial<Record<DashboardView, number>> = {
+    reliability: fracasCount,
+    supervisor: unassignedCount,
+  };
   const pmOnTime = pmc.onTime;
   const pmMissed = pmc.due - pmc.onTime;
   const pmComplianceRate = pmc.compliancePct != null ? Math.round(pmc.compliancePct) : 0;
@@ -470,6 +509,9 @@ export const Dashboard: React.FC = () => {
     }).length;
     sparkDays.push({ day: dayStr, created, closed });
   }
+  // Net backlog motion this week — exact from the same 7-day trend the
+  // sparkline draws (created minus closed), no point-in-time reconstruction.
+  const woNet7 = sparkDays.reduce((s, d) => s + d.created - d.closed, 0);
 
   // ── Quick Actions ──
   // Desktop-only: on phones these all live in the bottom tab bar (+ FAB,
@@ -519,7 +561,7 @@ export const Dashboard: React.FC = () => {
     agingBuckets, openBacklogCount: openWOsList.length,
     deActive: activeDETasks.length, deResolved: resolvedDETasks.length,
     deSavings: totalDESavings, deCritical: criticalDETasks,
-    notificationsCount: notifications.length,
+    notificationsCount: unreadCount,
     assetsCount: totalAssets, criticalAssets,
   };
 
@@ -569,15 +611,30 @@ export const Dashboard: React.FC = () => {
              Compact on phones so all five sit on ONE line at 393px (wrap stays
              as the graceful fallback — never a horizontal scroll). ── */}
       <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 flex-none">
-        {VIEW_PILLS.filter(v => canWear[v.id]).map(v => (
-          <button key={v.id} onClick={() => pickView(v.id)}
-            className={`px-2.5 sm:px-3.5 py-2 md:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold whitespace-nowrap border transition-colors ${
-              activeView === v.id
-                ? 'bg-primary-600 text-white border-primary-600'
-                : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 hover:text-slate-800'
-            }`}
-          >{v.label}</button>
-        ))}
+        {VIEW_PILLS.filter(v => canWear[v.id]).map(v => {
+          const badge = pillBadges[v.id] ?? 0;
+          return (
+            <button key={v.id} onClick={() => pickView(v.id)} aria-label={v.label}
+              className={`px-2 sm:px-3.5 py-2 md:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold whitespace-nowrap border transition-colors inline-flex items-center gap-1 ${
+                activeView === v.id
+                  ? 'bg-primary-600 text-white border-primary-600'
+                  : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 hover:text-slate-800'
+              }`}
+            >
+              {/* Overview is the "home hat" — on phones a house glyph carries it
+                  so the four specialist hats + badges fit one line. */}
+              {v.id === 'overview' ? (<>
+                <Home size={13} className="sm:hidden" />
+                <span className="hidden sm:inline">{v.label}</span>
+              </>) : v.label}
+              {badge > 0 && (
+                <span className={`text-[9px] font-bold px-1 py-0.5 rounded-full leading-none ${
+                  activeView === v.id ? 'bg-white/25 text-white' : 'bg-blue-100 text-blue-700'
+                }`}>{badge > 99 ? '99+' : badge}</span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {activeView === 'reliability' && <ReliabilityView shared={shared} openInsight={setInsight} />}
@@ -600,7 +657,15 @@ export const Dashboard: React.FC = () => {
               <ArrowRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all flex-shrink-0 hidden sm:block" />
             </div>
             <div className="flex items-end justify-between gap-2 mt-2">
-              <span className="text-xl font-bold text-slate-900 leading-none">{kpi.value}</span>
+              <span className="inline-flex items-end gap-1.5">
+                <span className="text-xl font-bold text-slate-900 leading-none">{kpi.value}</span>
+                {idx === 0 && woNet7 !== 0 && (
+                  <span className={`text-[10px] font-semibold leading-none ${woNet7 > 0 ? 'text-red-500' : 'text-emerald-600'}`}
+                    title="Net backlog change over the last 7 days (created minus closed)">
+                    {woNet7 > 0 ? '▲' : '▼'}{Math.abs(woNet7)} wk
+                  </span>
+                )}
+              </span>
               {idx === 0 && sparkDays.length > 0 ? (
                 <div className="h-7 w-20 -my-1">
                   <ResponsiveContainer width="100%" height="100%">
@@ -628,7 +693,14 @@ export const Dashboard: React.FC = () => {
               <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0 hidden sm:block" />
             </div>
             <div className="flex items-end justify-between gap-2 mt-2">
-              <span className={`text-xl font-bold leading-none ${governance.proPct >= 80 ? 'text-emerald-600' : governance.proPct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{governance.proPct}%</span>
+              <span className="inline-flex items-end gap-1.5">
+                <span className={`text-xl font-bold leading-none ${governance.proPct >= 80 ? 'text-emerald-600' : governance.proPct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{governance.proPct}%</span>
+                {govDelta != null && govDelta !== 0 && (
+                  <span className={`text-[10px] font-semibold leading-none ${govDelta > 0 ? 'text-emerald-600' : 'text-red-500'}`} title="vs the prior 90 days">
+                    {govDelta > 0 ? '▲' : '▼'}{Math.abs(govDelta)}pp
+                  </span>
+                )}
+              </span>
               <span className="text-[10px] text-slate-400 whitespace-nowrap">proactive</span>
             </div>
             <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 mt-1.5">
@@ -650,7 +722,14 @@ export const Dashboard: React.FC = () => {
               <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0 hidden sm:block" />
             </div>
             <div className="flex items-end justify-between gap-2 mt-2">
-              <span className={`text-xl font-bold leading-none ${pmComplianceRate >= 90 ? 'text-emerald-600' : pmComplianceRate >= 70 ? 'text-amber-500' : 'text-red-500'}`}>{pmComplianceRate}%</span>
+              <span className="inline-flex items-end gap-1.5">
+                <span className={`text-xl font-bold leading-none ${pmComplianceRate >= 90 ? 'text-emerald-600' : pmComplianceRate >= 70 ? 'text-amber-500' : 'text-red-500'}`}>{pmComplianceRate}%</span>
+                {pmDelta != null && pmDelta !== 0 && (
+                  <span className={`text-[10px] font-semibold leading-none ${pmDelta > 0 ? 'text-emerald-600' : 'text-red-500'}`} title="vs the prior 90 days">
+                    {pmDelta > 0 ? '▲' : '▼'}{Math.abs(pmDelta)}pp
+                  </span>
+                )}
+              </span>
               <span className="text-[10px] text-slate-400 whitespace-nowrap">{pmOnTime}/{pmc.due} on-time</span>
             </div>
             <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 mt-1.5">
@@ -691,8 +770,8 @@ export const Dashboard: React.FC = () => {
               >
                 <BellRing size={13} className={workTab === 'notifications' ? 'text-blue-600' : ''} />
                 <span className="hidden xs:inline">Notifications</span>
-                {notifications.length > 0 && (
-                  <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded-full leading-none">{notifications.length}</span>
+                {unreadCount > 0 && (
+                  <span className="text-[10px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded-full leading-none">{unreadCount > 99 ? '99+' : unreadCount}</span>
                 )}
               </button>
             </div>
