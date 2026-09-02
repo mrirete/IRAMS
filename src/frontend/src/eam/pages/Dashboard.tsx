@@ -473,13 +473,15 @@ export const Dashboard: React.FC = () => {
   }
 
   // ── Quick Actions ──
-  // `short` is the phone label — four labelled buttons share one screen width,
-  // so the full label would either truncate or squash the row.
+  // Desktop-only: on phones these all live in the bottom tab bar (+ FAB,
+  // Assets, Reports), so repeating them at the top would spend the most
+  // valuable screen row on duplicates — LinkedIn keeps its mobile top for
+  // identity and puts actions in the bar; we follow.
   const quickActions = [
-    { label: 'Create Work Order', short: 'New WO', icon: Wrench, color: 'bg-primary-600 hover:bg-primary-500', path: '/work-orders?action=create' },
-    { label: 'Log Request', short: 'Request', icon: Inbox, color: 'bg-emerald-600 hover:bg-emerald-700', path: '/requests?action=create' },
-    { label: 'Add Asset', short: 'Asset', icon: Plus, color: 'bg-primary-600 hover:bg-primary-500', path: '/assets?action=create' },
-    { label: 'View Reports', short: 'Reports', icon: BarChart3, color: 'bg-slate-700 hover:bg-slate-800', path: '/reports' },
+    { label: 'Create Work Order', icon: Wrench, color: 'bg-primary-600 hover:bg-primary-500', path: '/work-orders?action=create' },
+    { label: 'Log Request', icon: Inbox, color: 'bg-emerald-600 hover:bg-emerald-700', path: '/requests?action=create' },
+    { label: 'Add Asset', icon: Plus, color: 'bg-primary-600 hover:bg-primary-500', path: '/assets?action=create' },
+    { label: 'View Reports', icon: BarChart3, color: 'bg-slate-700 hover:bg-slate-800', path: '/reports' },
   ];
 
   // ── KPI Cards (4 — removed WO Completion duplicate) ──
@@ -528,9 +530,9 @@ export const Dashboard: React.FC = () => {
     // scrolls naturally (phones can't show a wall-to-wall grid anyway).
     <div className="ers-page-wide w-full flex flex-col gap-3 md:gap-4 pb-20 md:pb-0 lg:h-[calc(100vh-7rem)] lg:overflow-hidden">
 
-      {/* ── Row 1: Header + quick actions. On phones the actions drop to their
-             own full-width row (icon over label, four across) instead of
-             squeezing beside the greeting as anonymous icon squares. ── */}
+      {/* ── Row 1: Header. Phones: identity + the signature CTA only — the
+             actions live in the bottom tab bar. Desktop (no bottom bar):
+             the quick-action buttons ride inline. ── */}
       <div className="flex flex-wrap items-center gap-2 md:gap-3 flex-none">
         <div className="min-w-0 mr-auto order-1">
           <h1 className="text-lg md:text-xl font-bold text-slate-900 leading-tight">{getGreeting()}, {userName}</h1>
@@ -539,14 +541,13 @@ export const Dashboard: React.FC = () => {
             Live data • Updated {lastUpdate}
           </p>
         </div>
-        <div className="grid grid-cols-4 gap-1.5 w-full order-3 md:order-2 md:flex md:w-auto md:items-center sm:gap-2">
+        <div className="hidden md:flex md:items-center gap-1.5 sm:gap-2 order-3 md:order-2">
           {quickActions.map(qa => (
             <button key={qa.label} onClick={() => navigate(qa.path)} title={qa.label}
-              className={`${qa.color} text-white rounded-lg px-1 md:px-3 py-1.5 md:py-0 md:h-9 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-1.5 text-[10px] md:text-xs font-semibold shadow-sm transition-all active:scale-[0.98] min-h-[48px] md:min-h-0`}
+              className={`${qa.color} text-white rounded-lg px-3 h-9 inline-flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-all active:scale-[0.98]`}
             >
-              <qa.icon size={16} className="flex-shrink-0" />
-              <span className="md:hidden whitespace-nowrap leading-none">{qa.short}</span>
-              <span className="hidden md:inline whitespace-nowrap">{qa.label}</span>
+              <qa.icon size={15} className="flex-shrink-0" />
+              <span className="whitespace-nowrap">{qa.label}</span>
             </button>
           ))}
         </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Wrench, Package, Plus, Boxes } from 'lucide-react';
+import { LayoutDashboard, Wrench, Package, Plus, BarChart3 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useUnreadNotifications } from '../hooks/useUnreadNotifications';
@@ -22,14 +22,18 @@ interface NavItem {
     badge?: boolean;
 }
 
-// Two items either side of the raised center "Report" action.
+// Two items either side of the raised center "Report" action. Five slots is
+// the ceiling (Apple HIG / LinkedIn density) — Reports replaced Inventory
+// here because every hat reads Reports daily while Inventory is a
+// storekeeper/planner destination (permission-gated for many roles) that
+// stays one tap away in the drawer.
 const LEFT_ITEMS: NavItem[] = [
     { id: 'home', label: 'Home',    icon: LayoutDashboard, path: '/dashboard' },
     { id: 'work', label: 'My Work', icon: Wrench,          path: '/my-work' },
 ];
 const RIGHT_ITEMS: NavItem[] = [
-    { id: 'assets',    label: 'Assets',    icon: Package, path: '/assets' },
-    { id: 'inventory', label: 'Inventory', icon: Boxes,   path: '/inventory' },
+    { id: 'assets',  label: 'Assets',  icon: Package,   path: '/assets' },
+    { id: 'reports', label: 'Reports', icon: BarChart3, path: '/reports' },
 ];
 
 export const MobileBottomNav: React.FC = () => {
