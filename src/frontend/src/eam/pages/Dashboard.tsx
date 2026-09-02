@@ -6,7 +6,6 @@ import { useToast } from '../contexts/ToastContext';
 import { useQuery } from '@tanstack/react-query';
 import { isOpenWo } from '../../lib/woState';
 import { computePmCompliance } from '../../lib/reliabilityKpis';
-import { isFailure } from '../services/reliabilityMetrics';
 import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip,
@@ -48,7 +47,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
   ] = await Promise.all([
     // 1. ALL work orders (single query replaces 5 separate ones)
     supabase.from('work_orders')
-      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id, actual_downtime_hrs, breakdown, assigned_to, wo_failure_data!wo_id(failure_mode_code, reviewed_at)')
+      .select('id, wo_number, title, status, type, priority_code, created_at, closed_at, due_date, updated_at, asset_id, actual_downtime_hrs')
       .order('updated_at', { ascending: false }),
     // 2. Service requests — counts only
     supabase.from('service_requests').select('status'),
@@ -419,18 +418,6 @@ export const Dashboard: React.FC = () => {
   const govDelta = governance.prevProPct != null && governance.total > 0
     ? governance.proPct - governance.prevProPct : null;
 
-  // ── Hat-pill signals — the pills carry information scent, not just navigation ──
-  // FRACAS backlog (canonical isFailure + unreviewed) and unassigned open work.
-  const fracasCount = wos.filter((w: any) => {
-    if (!isFailure(w)) return false;
-    const fd = Array.isArray(w.wo_failure_data) ? w.wo_failure_data[0] : w.wo_failure_data;
-    return !fd?.reviewed_at;
-  }).length;
-  const unassignedCount = wos.filter((w: any) => isOpenWo(w.status) && !w.assigned_to).length;
-  const pillBadges: Partial<Record<DashboardView, number>> = {
-    reliability: fracasCount,
-    supervisor: unassignedCount,
-  };
   const pmOnTime = pmc.onTime;
   const pmMissed = pmc.due - pmc.onTime;
   const pmComplianceRate = pmc.compliancePct != null ? Math.round(pmc.compliancePct) : 0;
@@ -601,14 +588,14 @@ export const Dashboard: React.FC = () => {
             </button>
           ))}
         </div>
-        {/* Mobile: Reports beside the greeting (Inventory holds the bottom-bar
-            slot). No Ask Specialist here — the TopBar's Specialist button is
-            the one CTA (was duplicated); no Refresh — data auto-refetches
-            every 2 min and on focus, and the "Updated" stamp shows freshness. */}
-        <button onClick={() => navigate('/reports')}
-          className="md:hidden order-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg px-3 h-9 inline-flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-all active:scale-[0.98]"
+        {/* Mobile: Reports as a quiet icon button beside the greeting
+            (Inventory holds the bottom-bar slot). No Ask Specialist here —
+            the TopBar's Specialist button is the one CTA; no Refresh — data
+            auto-refetches and pull-to-refresh covers the gesture. */}
+        <button onClick={() => navigate('/reports')} aria-label="Reports" title="Reports"
+          className="md:hidden order-2 bg-white border border-slate-300 text-slate-700 hover:border-slate-400 rounded-lg w-9 h-9 inline-flex items-center justify-center shadow-sm transition-all active:scale-[0.98]"
         >
-          <BarChart3 size={15} className="flex-shrink-0" /> Reports
+          <BarChart3 size={16} className="flex-shrink-0" />
         </button>
       </div>
 
@@ -620,30 +607,22 @@ export const Dashboard: React.FC = () => {
              Compact on phones so all five sit on ONE line at 393px (wrap stays
              as the graceful fallback — never a horizontal scroll). ── */}
       <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 flex-none">
-        {VIEW_PILLS.filter(v => canWear[v.id]).map(v => {
-          const badge = pillBadges[v.id] ?? 0;
-          return (
-            <button key={v.id} onClick={() => pickView(v.id)} aria-label={v.label}
-              className={`px-2 sm:px-3.5 py-2 md:py-1.5 min-h-[40px] md:min-h-0 rounded-full text-[11px] sm:text-xs font-semibold whitespace-nowrap border transition-colors inline-flex items-center gap-1 ${
-                activeView === v.id
-                  ? 'bg-primary-600 text-white border-primary-600'
-                  : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 hover:text-slate-800'
-              }`}
-            >
-              {/* Overview is the "home hat" — on phones a house glyph carries it
-                  so the four specialist hats + badges fit one line. */}
-              {v.id === 'overview' ? (<>
-                <Home size={13} className="sm:hidden" />
-                <span className="hidden sm:inline">{v.label}</span>
-              </>) : v.label}
-              {badge > 0 && (
-                <span className={`text-[9px] font-bold px-1 py-0.5 rounded-full leading-none ${
-                  activeView === v.id ? 'bg-white/25 text-white' : 'bg-blue-100 text-blue-700'
-                }`}>{badge > 99 ? '99+' : badge}</span>
-              )}
-            </button>
-          );
-        })}
+        {VIEW_PILLS.filter(v => canWear[v.id]).map(v => (
+          <button key={v.id} onClick={() => pickView(v.id)} aria-label={v.label}
+            className={`px-2 sm:px-3.5 py-2 md:py-1.5 min-h-[40px] md:min-h-0 rounded-full text-[11px] sm:text-xs font-semibold whitespace-nowrap border transition-colors inline-flex items-center gap-1 ${
+              activeView === v.id
+                ? 'bg-primary-600 text-white border-primary-600'
+                : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 hover:text-slate-800'
+            }`}
+          >
+            {/* Overview is the "home hat" — on phones a house glyph carries it
+                so the four specialist hats fit one line. */}
+            {v.id === 'overview' ? (<>
+              <Home size={13} className="sm:hidden" />
+              <span className="hidden sm:inline">{v.label}</span>
+            </>) : v.label}
+          </button>
+        ))}
       </div>
 
       {activeView === 'reliability' && <ReliabilityView shared={shared} openInsight={setInsight} />}
