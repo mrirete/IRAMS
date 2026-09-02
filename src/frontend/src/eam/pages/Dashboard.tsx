@@ -552,10 +552,26 @@ export const Dashboard: React.FC = () => {
           ))}
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 order-2 md:order-3">
-          <AskRelanternButton
-            contextType="dashboard"
-            contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
-          />
+          {/* Mobile: Reports rides up top (Inventory holds the bottom-bar slot);
+              Ask Specialist collapses to its icon so the row stays one line. */}
+          <button onClick={() => navigate('/reports')}
+            className="md:hidden bg-slate-700 hover:bg-slate-800 text-white rounded-lg px-3 h-9 inline-flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-all active:scale-[0.98]"
+          >
+            <BarChart3 size={15} className="flex-shrink-0" /> Reports
+          </button>
+          <span className="md:hidden">
+            <AskRelanternButton
+              contextType="dashboard"
+              compact
+              contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
+            />
+          </span>
+          <span className="hidden md:block">
+            <AskRelanternButton
+              contextType="dashboard"
+              contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
+            />
+          </span>
           <Button variant="secondary" size="sm" onClick={() => refetch()} leftIcon={<RefreshCw size={14} />}>
             <span className="hidden xs:inline">Refresh</span>
           </Button>
@@ -567,11 +583,12 @@ export const Dashboard: React.FC = () => {
 
       {/* ── View pills — wear a different hat; every lens open to every user
              (hidden only where permissions deny the data). LinkedIn-style.
-             Wraps to a second line on phones — never a horizontal scroll. ── */}
-      <div className="flex flex-wrap items-center gap-1.5 flex-none">
+             Compact on phones so all five sit on ONE line at 393px (wrap stays
+             as the graceful fallback — never a horizontal scroll). ── */}
+      <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 flex-none">
         {VIEW_PILLS.filter(v => canWear[v.id]).map(v => (
           <button key={v.id} onClick={() => pickView(v.id)}
-            className={`px-3.5 py-2 md:py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors ${
+            className={`px-2.5 sm:px-3.5 py-2 md:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold whitespace-nowrap border transition-colors ${
               activeView === v.id
                 ? 'bg-primary-600 text-white border-primary-600'
                 : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 hover:text-slate-800'
