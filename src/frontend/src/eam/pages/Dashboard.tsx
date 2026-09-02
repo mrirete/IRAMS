@@ -1,6 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AskRelanternButton } from '../components/AskRelanternButton';
 import { GettingStarted } from '../components/GettingStarted';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -13,7 +12,7 @@ import {
 } from 'recharts';
 import {
   AlertCircle, CheckCircle, Clock, Activity,
-  Wrench, Package, RefreshCw, Plus, ArrowRight,
+  Wrench, Package, Plus, ArrowRight,
   AlertTriangle, BarChart3, Inbox, Bell, BellRing,
   Gauge, Timer, Skull, Target, ChevronRight
 } from 'lucide-react';
@@ -21,7 +20,7 @@ import { supabase } from '../lib/supabase';
 import { DatabaseService } from '../services/DatabaseService';
 import { classifyWork } from '../services/workReadiness';
 import ersApi, { BadActorEntry } from '../services/ERSApiClient';
-import { Button, Modal } from '../components/ui';
+import { Modal } from '../components/ui';
 import {
   ReliabilityView, SupervisorView, AssetsView, FinanceView,
   type DashboardView, type DashboardShared, type InsightKey,
@@ -296,7 +295,7 @@ export const Dashboard: React.FC = () => {
   };
   const activeView: DashboardView = canWear[view] ? view : 'overview';
 
-  const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery({
+  const { data, isLoading, error, dataUpdatedAt } = useQuery({
     queryKey: [DASHBOARD_QUERY_KEY, profile?.id, dataScope?.siteIds],
     queryFn: () => fetchDashboardData(profile?.id, dataScope?.siteIds),
     enabled: !!profile?.id, // Don't fire until auth is ready (prevents anon key hitting RLS)
@@ -551,31 +550,15 @@ export const Dashboard: React.FC = () => {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1.5 sm:gap-2 order-2 md:order-3">
-          {/* Mobile: Reports rides up top (Inventory holds the bottom-bar slot);
-              Ask Specialist collapses to its icon so the row stays one line. */}
-          <button onClick={() => navigate('/reports')}
-            className="md:hidden bg-slate-700 hover:bg-slate-800 text-white rounded-lg px-3 h-9 inline-flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-all active:scale-[0.98]"
-          >
-            <BarChart3 size={15} className="flex-shrink-0" /> Reports
-          </button>
-          <span className="md:hidden">
-            <AskRelanternButton
-              contextType="dashboard"
-              compact
-              contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
-            />
-          </span>
-          <span className="hidden md:block">
-            <AskRelanternButton
-              contextType="dashboard"
-              contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
-            />
-          </span>
-          <Button variant="secondary" size="sm" onClick={() => refetch()} leftIcon={<RefreshCw size={14} />}>
-            <span className="hidden xs:inline">Refresh</span>
-          </Button>
-        </div>
+        {/* Mobile: Reports beside the greeting (Inventory holds the bottom-bar
+            slot). No Ask Specialist here — the TopBar's Specialist button is
+            the one CTA (was duplicated); no Refresh — data auto-refetches
+            every 2 min and on focus, and the "Updated" stamp shows freshness. */}
+        <button onClick={() => navigate('/reports')}
+          className="md:hidden order-2 bg-slate-700 hover:bg-slate-800 text-white rounded-lg px-3 h-9 inline-flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-all active:scale-[0.98]"
+        >
+          <BarChart3 size={15} className="flex-shrink-0" /> Reports
+        </button>
       </div>
 
       {/* ── Getting-started: one-line strip; the checklist opens in a popup ── */}
