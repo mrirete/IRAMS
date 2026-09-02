@@ -60,7 +60,7 @@ const Tile: React.FC<{
         <div className="flex items-center gap-1.5 min-w-0">
             <span className={`p-1 rounded-md ${iconBg} flex-shrink-0`}>{icon}</span>
             <span className="text-[11px] font-medium text-slate-500 truncate">{label}</span>
-            {onClick && <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />}
+            {onClick && <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0 hidden sm:block" />}
         </div>
         <div className="flex items-end justify-between gap-2 mt-2">
             <span className={`text-xl font-bold leading-none ${valueClass}`}>{value}</span>

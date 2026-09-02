@@ -473,11 +473,13 @@ export const Dashboard: React.FC = () => {
   }
 
   // ── Quick Actions ──
+  // `short` is the phone label — four labelled buttons share one screen width,
+  // so the full label would either truncate or squash the row.
   const quickActions = [
-    { label: 'Create Work Order', icon: Wrench, color: 'bg-primary-600 hover:bg-primary-500', path: '/work-orders?action=create' },
-    { label: 'Log Request', icon: Inbox, color: 'bg-emerald-600 hover:bg-emerald-700', path: '/requests?action=create' },
-    { label: 'Add Asset', icon: Plus, color: 'bg-primary-600 hover:bg-primary-500', path: '/assets?action=create' },
-    { label: 'View Reports', icon: BarChart3, color: 'bg-slate-700 hover:bg-slate-800', path: '/reports' },
+    { label: 'Create Work Order', short: 'New WO', icon: Wrench, color: 'bg-primary-600 hover:bg-primary-500', path: '/work-orders?action=create' },
+    { label: 'Log Request', short: 'Request', icon: Inbox, color: 'bg-emerald-600 hover:bg-emerald-700', path: '/requests?action=create' },
+    { label: 'Add Asset', short: 'Asset', icon: Plus, color: 'bg-primary-600 hover:bg-primary-500', path: '/assets?action=create' },
+    { label: 'View Reports', short: 'Reports', icon: BarChart3, color: 'bg-slate-700 hover:bg-slate-800', path: '/reports' },
   ];
 
   // ── KPI Cards (4 — removed WO Completion duplicate) ──
@@ -524,26 +526,31 @@ export const Dashboard: React.FC = () => {
     // Calm-screens: on desktop the page locks to the viewport — everything is
     // visible at once and drill-down happens in popups. Below lg it stacks and
     // scrolls naturally (phones can't show a wall-to-wall grid anyway).
-    <div className="ers-page-wide w-full flex flex-col gap-3 md:gap-4 lg:h-[calc(100vh-7rem)] lg:overflow-hidden">
+    <div className="ers-page-wide w-full flex flex-col gap-3 md:gap-4 pb-20 md:pb-0 lg:h-[calc(100vh-7rem)] lg:overflow-hidden">
 
-      {/* ── Row 1: Header + quick actions, one strip ── */}
+      {/* ── Row 1: Header + quick actions. On phones the actions drop to their
+             own full-width row (icon over label, four across) instead of
+             squeezing beside the greeting as anonymous icon squares. ── */}
       <div className="flex flex-wrap items-center gap-2 md:gap-3 flex-none">
-        <div className="min-w-0 mr-auto">
+        <div className="min-w-0 mr-auto order-1">
           <h1 className="text-lg md:text-xl font-bold text-slate-900 leading-tight">{getGreeting()}, {userName}</h1>
           <p className="text-slate-500 text-[11px] sm:text-xs">
             {userRole && <span className="capitalize">{userRole} • </span>}
             Live data • Updated {lastUpdate}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+        <div className="grid grid-cols-4 gap-1.5 w-full order-3 md:order-2 md:flex md:w-auto md:items-center sm:gap-2">
           {quickActions.map(qa => (
             <button key={qa.label} onClick={() => navigate(qa.path)} title={qa.label}
-              className={`${qa.color} text-white rounded-lg px-2.5 sm:px-3 h-9 inline-flex items-center gap-1.5 text-xs font-semibold shadow-sm transition-all active:scale-[0.98]`}
+              className={`${qa.color} text-white rounded-lg px-1 md:px-3 py-1.5 md:py-0 md:h-9 flex flex-col md:flex-row items-center justify-center gap-1 md:gap-1.5 text-[10px] md:text-xs font-semibold shadow-sm transition-all active:scale-[0.98] min-h-[48px] md:min-h-0`}
             >
-              <qa.icon size={15} className="flex-shrink-0" />
+              <qa.icon size={16} className="flex-shrink-0" />
+              <span className="md:hidden whitespace-nowrap leading-none">{qa.short}</span>
               <span className="hidden md:inline whitespace-nowrap">{qa.label}</span>
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-1.5 sm:gap-2 order-2 md:order-3">
           <AskRelanternButton
             contextType="dashboard"
             contextSummary={`Dashboard: ${openWOs} Open WOs, ${pendingSRs} Pending SRs, ${totalAssets} Assets (${criticalAssets} Critical-A), ${lowStockItems} Low Stock, MTBF ${avgMTBF}d, MTTR ${avgMTTR}h.`}
@@ -558,11 +565,12 @@ export const Dashboard: React.FC = () => {
       <GettingStarted compact />
 
       {/* ── View pills — wear a different hat; every lens open to every user
-             (hidden only where permissions deny the data). LinkedIn-style. ── */}
-      <div className="flex items-center gap-1.5 flex-none overflow-x-auto scrollbar-hide">
+             (hidden only where permissions deny the data). LinkedIn-style.
+             Wraps to a second line on phones — never a horizontal scroll. ── */}
+      <div className="flex flex-wrap items-center gap-1.5 flex-none">
         {VIEW_PILLS.filter(v => canWear[v.id]).map(v => (
           <button key={v.id} onClick={() => pickView(v.id)}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors ${
+            className={`px-3.5 py-2 md:py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors ${
               activeView === v.id
                 ? 'bg-primary-600 text-white border-primary-600'
                 : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 hover:text-slate-800'
@@ -588,7 +596,7 @@ export const Dashboard: React.FC = () => {
             <div className="flex items-center gap-1.5 min-w-0">
               <span className={`p-1 rounded-md ${kpi.bgIcon} flex-shrink-0`}>{kpi.icon}</span>
               <span className="text-[11px] font-medium text-slate-500 truncate">{kpi.label}</span>
-              <ArrowRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+              <ArrowRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all flex-shrink-0 hidden sm:block" />
             </div>
             <div className="flex items-end justify-between gap-2 mt-2">
               <span className="text-xl font-bold text-slate-900 leading-none">{kpi.value}</span>
@@ -616,7 +624,7 @@ export const Dashboard: React.FC = () => {
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="p-1 rounded-md bg-emerald-50 text-emerald-600 flex-shrink-0"><Gauge size={16} /></span>
               <span className="text-[11px] font-medium text-slate-500 truncate">Governance · 90d</span>
-              <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
+              <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0 hidden sm:block" />
             </div>
             <div className="flex items-end justify-between gap-2 mt-2">
               <span className={`text-xl font-bold leading-none ${governance.proPct >= 80 ? 'text-emerald-600' : governance.proPct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{governance.proPct}%</span>
@@ -638,7 +646,7 @@ export const Dashboard: React.FC = () => {
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="p-1 rounded-md bg-green-50 text-green-600 flex-shrink-0"><CheckCircle size={16} /></span>
               <span className="text-[11px] font-medium text-slate-500 truncate">PM Compliance · 90d</span>
-              <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
+              <ChevronRight size={12} className="ml-auto text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0 hidden sm:block" />
             </div>
             <div className="flex items-end justify-between gap-2 mt-2">
               <span className={`text-xl font-bold leading-none ${pmComplianceRate >= 90 ? 'text-emerald-600' : pmComplianceRate >= 70 ? 'text-amber-500' : 'text-red-500'}`}>{pmComplianceRate}%</span>
