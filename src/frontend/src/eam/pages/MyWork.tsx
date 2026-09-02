@@ -15,7 +15,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { DatabaseService } from '../services/DatabaseService';
 import { WorkOrderRecord } from '../schema';
 import { StatusPill, PriorityPill, Button } from '../components/ui';
-import { PullToRefreshWrapper } from '../components/PullToRefreshWrapper';
 
 type MyWO = WorkOrderRecord & { assets?: { name?: string } | null };
 
@@ -108,10 +107,16 @@ export const MyWork: React.FC = () => {
 
     // Assignments land while the tab is backgrounded — refresh silently
     // whenever the window regains focus (data fetched only on mount before).
+    // 'ers-refresh' is the shell-level pull-to-refresh broadcast (AppLayout
+    // owns the gesture now — this page's own wrapper is retired).
     useEffect(() => {
         const onFocus = () => load();
         window.addEventListener('focus', onFocus);
-        return () => window.removeEventListener('focus', onFocus);
+        window.addEventListener('ers-refresh', onFocus);
+        return () => {
+            window.removeEventListener('focus', onFocus);
+            window.removeEventListener('ers-refresh', onFocus);
+        };
     }, [load]);
 
     const grouped = useMemo(() => {
@@ -246,9 +251,5 @@ export const MyWork: React.FC = () => {
         </div>
     );
 
-    return (
-        <PullToRefreshWrapper onRefresh={load}>
-            {content}
-        </PullToRefreshWrapper>
-    );
+    return content;
 };

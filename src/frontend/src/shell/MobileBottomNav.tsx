@@ -55,7 +55,14 @@ export const MobileBottomNav: React.FC = () => {
         return (
             <button
                 key={item.id}
-                onClick={() => navigate(item.path)}
+                onClick={() => {
+                    // Tapping Home while already home = "take me home": the
+                    // dashboard listens and resets to the Overview hat.
+                    if (item.id === 'home' && active) {
+                        window.dispatchEvent(new CustomEvent('ers-dashboard-home'));
+                    }
+                    navigate(item.path);
+                }}
                 className={`mobile-bottom-nav-item ${active ? 'active' : ''}`}
                 aria-current={active ? 'page' : undefined}
             >
@@ -72,17 +79,19 @@ export const MobileBottomNav: React.FC = () => {
         <nav className="mobile-bottom-nav" aria-label="Mobile navigation">
             {LEFT_ITEMS.map(renderItem)}
 
-            {/* Raised center "Report" action — opens the QuickReport bottom sheet */}
+            {/* Raised center action — opens the QuickReport bottom sheet.
+                Labelled "Log Issue", not "Report": it raises a problem, and
+                "Report(s)" already means analytics elsewhere in the nav. */}
             <button
                 onClick={() => window.dispatchEvent(new CustomEvent('open-quick-report'))}
                 className="mobile-bottom-nav-item"
-                aria-label="Report a problem"
+                aria-label="Log an issue"
             >
                 <span className="flex flex-col items-center -mt-5">
                     <span className="w-12 h-12 rounded-full bg-primary-600 text-white flex items-center justify-center shadow-lg shadow-primary-600/30 border-4 border-white active:scale-95 transition-transform">
                         <Plus size={24} strokeWidth={2.6} />
                     </span>
-                    <span className="text-[10px] leading-none font-bold text-primary-600 mt-1">Report</span>
+                    <span className="text-[10px] leading-none font-bold text-primary-600 mt-1">Log Issue</span>
                 </span>
             </button>
 

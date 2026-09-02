@@ -1,7 +1,10 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { RefreshCw } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { MobileBottomNav } from './MobileBottomNav';
+import { usePullToRefresh } from '../eam/hooks/usePullToRefresh';
 import { useRelantern } from '../eam/contexts/RelanternContext';
 import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 import { GlobalErrorToaster } from '../eam/components/GlobalErrorToaster';
@@ -40,6 +43,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     // Computed once at mount (lazy init) — avoids a setState-in-effect cascade.
     const [isMainFrame] = useState(() => typeof window === 'undefined' || window.top === window.self);
     const { isOpen: isRelanternOpen, contextData, contextType, initialPrompt, pageActions, closeRelantern } = useRelantern();
+
+    // Shell-level pull-to-refresh: <main> is the app's ONE scroll container, so
+    // the gesture lives here for every page (touch-only — desktop unaffected).
+    // Query-backed pages refetch via invalidateQueries; pages with local loads
+    // subscribe to the 'ers-refresh' broadcast (e.g. MyWork).
+    const queryClient = useQueryClient();
+    const { containerRef, isRefreshing, pullDistance, pullProgress } = usePullToRefresh({
+        onRefresh: async () => {
+            window.dispatchEvent(new CustomEvent('ers-refresh'));
+            await queryClient.invalidateQueries();
+        },
+    });
 
     // Listen for custom sidebar toggle events from MobileBottomNav "More" button
     useEffect(() => {
@@ -94,7 +109,22 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                 />
 
                 {/* bg-slate-50 + text-slate-900: light content area so EAM page headers are visible */}
-                <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 relative bg-slate-50 text-slate-900">
+                <main ref={containerRef as any} className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 relative bg-slate-50 text-slate-900">
+                    {/* Pull-to-refresh indicator (collapsed to 0 height until pulled) */}
+                    <div
+                        className="flex items-center justify-center transition-all duration-200 overflow-hidden"
+                        style={{
+                            height: pullDistance > 0 || isRefreshing ? `${Math.max(pullDistance, isRefreshing ? 48 : 0)}px` : '0px',
+                            opacity: pullProgress > 0.1 || isRefreshing ? 1 : 0,
+                        }}
+                    >
+                        <div
+                            className={`p-1.5 rounded-full bg-slate-200 ${isRefreshing ? 'animate-spin' : ''}`}
+                            style={{ transform: isRefreshing ? undefined : `rotate(${pullProgress * 360}deg)` }}
+                        >
+                            <RefreshCw size={18} className={pullProgress >= 1 ? 'text-primary-600' : 'text-slate-500'} />
+                        </div>
+                    </div>
                     {children}
                 </main>
             </div>

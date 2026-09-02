@@ -301,6 +301,15 @@ export const Dashboard: React.FC = () => {
     setView(v);
     try { localStorage.setItem(VIEW_STORE_KEY, v); } catch { /* ignore */ }
   };
+  // Bottom-bar Home tapped while already here = "take me home": Overview hat.
+  useEffect(() => {
+    const h = () => {
+      setView('overview');
+      try { localStorage.setItem(VIEW_STORE_KEY, 'overview'); } catch { /* ignore */ }
+    };
+    window.addEventListener('ers-dashboard-home', h);
+    return () => window.removeEventListener('ers-dashboard-home', h);
+  }, []);
   // Permission gates: a hat is offered only when its data is actually visible.
   const canWear: Record<DashboardView, boolean> = {
     overview: true,
@@ -615,7 +624,7 @@ export const Dashboard: React.FC = () => {
           const badge = pillBadges[v.id] ?? 0;
           return (
             <button key={v.id} onClick={() => pickView(v.id)} aria-label={v.label}
-              className={`px-2 sm:px-3.5 py-2 md:py-1.5 rounded-full text-[11px] sm:text-xs font-semibold whitespace-nowrap border transition-colors inline-flex items-center gap-1 ${
+              className={`px-2 sm:px-3.5 py-2 md:py-1.5 min-h-[40px] md:min-h-0 rounded-full text-[11px] sm:text-xs font-semibold whitespace-nowrap border transition-colors inline-flex items-center gap-1 ${
                 activeView === v.id
                   ? 'bg-primary-600 text-white border-primary-600'
                   : 'bg-white text-slate-600 border-slate-300 hover:border-slate-400 hover:text-slate-800'
@@ -676,7 +685,7 @@ export const Dashboard: React.FC = () => {
                   </ResponsiveContainer>
                 </div>
               ) : (
-                <span className="text-[10px] text-slate-400 whitespace-nowrap">{kpi.sub}</span>
+                <span className="text-[10px] text-slate-500 whitespace-nowrap">{kpi.sub}</span>
               )}
             </div>
           </button>
@@ -701,7 +710,7 @@ export const Dashboard: React.FC = () => {
                   </span>
                 )}
               </span>
-              <span className="text-[10px] text-slate-400 whitespace-nowrap">proactive</span>
+              <span className="text-[10px] text-slate-500 whitespace-nowrap">proactive</span>
             </div>
             <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 mt-1.5">
               <div className="bg-emerald-500 h-full" style={{ width: `${governance.proPct}%` }} />
@@ -730,7 +739,7 @@ export const Dashboard: React.FC = () => {
                   </span>
                 )}
               </span>
-              <span className="text-[10px] text-slate-400 whitespace-nowrap">{pmOnTime}/{pmc.due} on-time</span>
+              <span className="text-[10px] text-slate-500 whitespace-nowrap">{pmOnTime}/{pmc.due} on-time</span>
             </div>
             <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 mt-1.5">
               <div className="bg-green-500 h-full" style={{ width: `${pmComplianceRate}%` }} />
@@ -765,7 +774,7 @@ export const Dashboard: React.FC = () => {
               <button onClick={() => setWorkTab('recent')}
                 className={`px-3 py-1.5 min-h-[36px] md:min-h-0 rounded-md text-xs font-semibold transition-all ${workTab === 'recent' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >Recent ({recent.length})</button>
-              <button onClick={() => setWorkTab('notifications')}
+              <button onClick={() => setWorkTab('notifications')} aria-label="Notifications"
                 className={`px-3 py-1.5 min-h-[36px] md:min-h-0 rounded-md text-xs font-semibold transition-all inline-flex items-center gap-1.5 ${workTab === 'notifications' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
               >
                 <BellRing size={13} className={workTab === 'notifications' ? 'text-blue-600' : ''} />
@@ -796,13 +805,13 @@ export const Dashboard: React.FC = () => {
                     </div>
                     <p className="text-xs text-slate-600 truncate mt-0.5">{wo.title || 'Untitled'}</p>
                     {wo.due_date && (
-                      <span className={`text-[10px] sm:hidden font-medium mt-1 inline-block ${new Date(wo.due_date) < new Date() ? 'text-red-500' : 'text-slate-400'}`}>
+                      <span className={`text-[10px] sm:hidden font-medium mt-1 inline-block ${new Date(wo.due_date) < new Date() ? 'text-red-500' : 'text-slate-500'}`}>
                         Due {new Date(wo.due_date).toLocaleDateString()}
                       </span>
                     )}
                   </div>
                   {wo.due_date && (
-                    <span className={`text-xs font-medium flex-shrink-0 hidden sm:block ${new Date(wo.due_date) < new Date() ? 'text-red-500' : 'text-slate-400'}`}>
+                    <span className={`text-xs font-medium flex-shrink-0 hidden sm:block ${new Date(wo.due_date) < new Date() ? 'text-red-500' : 'text-slate-500'}`}>
                       Due {new Date(wo.due_date).toLocaleDateString()}
                     </span>
                   )}  
@@ -824,12 +833,12 @@ export const Dashboard: React.FC = () => {
                     <span className="text-[10px] ml-1.5 px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">{wo.status}</span>
                     <p className="text-xs text-slate-500 truncate mt-0.5">{wo.title || 'No title'}</p>
                   </div>
-                  <span className="text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0">{timeAgo(wo.updated_at)}</span>
+                  <span className="text-[10px] text-slate-500 whitespace-nowrap flex-shrink-0">{timeAgo(wo.updated_at)}</span>
                 </button>
               )) : (
                 <div className="p-8 text-center">
                   <Activity size={24} className="text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400">No recent activity yet</p>
+                  <p className="text-sm text-slate-500">No recent activity yet</p>
                 </div>
               )
             ) : (
@@ -845,12 +854,12 @@ export const Dashboard: React.FC = () => {
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{n.message}</p>
                   </div>
-                  <span className="text-[10px] text-slate-400 whitespace-nowrap flex-shrink-0 mt-1">{timeAgo(n.created_at)}</span>
+                  <span className="text-[10px] text-slate-500 whitespace-nowrap flex-shrink-0 mt-1">{timeAgo(n.created_at)}</span>
                 </button>
               )) : (
                 <div className="p-8 text-center">
                   <Bell size={24} className="text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm text-slate-400">No new notifications</p>
+                  <p className="text-sm text-slate-500">No new notifications</p>
                 </div>
               )
             )}
@@ -867,7 +876,7 @@ export const Dashboard: React.FC = () => {
             <div className="flex items-center gap-2">
               <Clock size={14} className="text-amber-600 flex-shrink-0" />
               <span className="text-xs font-semibold text-slate-900">Backlog Aging</span>
-              <span className="ml-auto text-[10px] text-slate-400">{openWOsList.length} open</span>
+              <span className="ml-auto text-[10px] text-slate-500">{openWOsList.length} open</span>
               <ChevronRight size={13} className="text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
             </div>
             <div className="flex h-2 rounded-full overflow-hidden bg-slate-100 mt-2">
@@ -875,7 +884,7 @@ export const Dashboard: React.FC = () => {
                 <div key={b.label} style={{ width: `${(b.count / Math.max(1, openWOsList.length)) * 100}%`, backgroundColor: b.color }} />
               ))}
             </div>
-            <div className="flex justify-between mt-1.5 text-[10px] text-slate-400">
+            <div className="flex justify-between mt-1.5 text-[10px] text-slate-500">
               {agingBuckets.map(b => (
                 <span key={b.label}>{b.label} <span className="font-semibold text-slate-600">{b.count}</span></span>
               ))}
@@ -890,7 +899,7 @@ export const Dashboard: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Skull size={14} className="text-red-600 flex-shrink-0" />
                 <span className="text-xs font-semibold text-slate-900">Top Bad Actors</span>
-                <span className="ml-auto text-[9px] font-medium text-slate-400 uppercase tracking-wide">Pareto</span>
+                <span className="ml-auto text-[9px] font-medium text-slate-500 uppercase tracking-wide">Pareto</span>
                 <ChevronRight size={13} className="text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
               </div>
               <div className="mt-2 space-y-1.5">
@@ -915,7 +924,7 @@ export const Dashboard: React.FC = () => {
               <div className="flex items-center gap-2">
                 <Timer size={14} className="text-blue-600 flex-shrink-0" />
                 <span className="text-xs font-semibold text-slate-900">Fleet Reliability</span>
-                <span className="ml-auto text-[10px] text-slate-400">{mtbfValues.length} assets</span>
+                <span className="ml-auto text-[10px] text-slate-500">{mtbfValues.length} assets</span>
                 <ChevronRight size={13} className="text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0" />
               </div>
               <div className="flex gap-2 mt-2">
@@ -959,7 +968,7 @@ export const Dashboard: React.FC = () => {
       {/* PM Schedule Compliance popup */}
       <Modal open={insight === 'pm'} onClose={() => setInsight(null)} title="PM Compliance" size="sm">
         <div>
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">PMs due in the last 90 days + any still-open overdue PM · on-time = closed by the due date</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-3">PMs due in the last 90 days + any still-open overdue PM · on-time = closed by the due date</div>
           <div className="flex items-center gap-4">
             <div className="w-20 h-20 relative">
               {pmComplianceData.length > 0 ? (
@@ -994,7 +1003,7 @@ export const Dashboard: React.FC = () => {
       {/* Backlog Aging popup */}
       <Modal open={insight === 'backlog'} onClose={() => setInsight(null)} title="Backlog Aging" size="sm">
         <div>
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">Age of open work orders since creation</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-3">Age of open work orders since creation</div>
           <div className="h-40">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={agingBuckets} barSize={28}>
@@ -1018,7 +1027,7 @@ export const Dashboard: React.FC = () => {
       {/* Top 5 Bad Actors popup — Pareto (ISO 55000 Monthly Analysis) */}
       <Modal open={insight === 'badActors'} onClose={() => setInsight(null)} title="Top Bad Actors — Pareto" size="md">
         <div>
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">ISO 55000 monthly analysis · lowest MTBF first</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-3">ISO 55000 monthly analysis · lowest MTBF first</div>
           <div className="space-y-2.5">
             {badActors.length > 0 ? (() => {
               const maxMTBF = Math.max(1, ...badActors.map((a: any) => a.mtbf_days || 1));
@@ -1053,7 +1062,7 @@ export const Dashboard: React.FC = () => {
                         title={a.window === 'lifetime'
                           ? 'Mean time between failures — no failures in the last 12 months; computed over the asset\'s full recorded history (0298 lifetime basis)'
                           : 'Mean time between failures — computed from the last 12 months of corrective work'}>
-                        {a.mtbf_days != null ? `${a.mtbf_days}d` : '—'}{a.window === 'lifetime' ? <span className="text-slate-400"> · life</span> : null}
+                        {a.mtbf_days != null ? `${a.mtbf_days}d` : '—'}{a.window === 'lifetime' ? <span className="text-slate-500"> · life</span> : null}
                       </span>
                       {/* Auto-draft DE Task */}
                       <button
@@ -1087,7 +1096,7 @@ export const Dashboard: React.FC = () => {
                 </div>
               ));
             })() : (
-              <div className="text-xs text-slate-400 italic">No MTBF data available</div>
+              <div className="text-xs text-slate-500 italic">No MTBF data available</div>
             )}
           </div>
           <div className="flex items-center justify-between mt-3 pt-2 border-t border-slate-100">
@@ -1130,7 +1139,7 @@ export const Dashboard: React.FC = () => {
           {/* Per-asset means. Reports shows a POOLED fleet figure over its date
               range, which is a different (also correct) aggregation — both are
               labelled so the two pages cannot look like they disagree. */}
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">Mean of {mtbfValues.length} assets with recorded failures</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-3">Mean of {mtbfValues.length} assets with recorded failures</div>
           <div className="space-y-3">
             <div className="bg-blue-50 rounded-lg p-3">
               <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Avg MTBF</div>
@@ -1162,11 +1171,11 @@ export const Dashboard: React.FC = () => {
       {/* Work Governance popup — Planned vs Reactive (last 90 days) */}
       <Modal open={insight === 'governance'} onClose={() => setInsight(null)} title="Work Governance" size="sm">
         <div>
-          <div className="text-[10px] text-slate-400 uppercase tracking-wide mb-3">Planned vs Reactive · last 90 days · {governance.total} jobs</div>
+          <div className="text-[10px] text-slate-500 uppercase tracking-wide mb-3">Planned vs Reactive · last 90 days · {governance.total} jobs</div>
           <div className="flex items-end justify-between">
             <div>
               <div className={`text-3xl font-extrabold leading-none ${governance.proPct >= 80 ? 'text-emerald-600' : governance.proPct >= 60 ? 'text-amber-500' : 'text-red-500'}`}>{governance.proPct}%</div>
-              <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mt-1">Proactive</div>
+              <div className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide mt-1">Proactive</div>
             </div>
           </div>
           <div className="flex h-3 rounded-full overflow-hidden bg-slate-100 border border-slate-200 mt-3">
@@ -1177,7 +1186,7 @@ export const Dashboard: React.FC = () => {
             <span className="font-semibold text-emerald-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> {governance.proactive} proactive</span>
             <span className="font-semibold text-red-700 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> {governance.reactive} reactive</span>
           </div>
-          <p className="text-[11px] text-slate-400 mt-3">World-class benchmark ≥ 80% proactive.</p>
+          <p className="text-[11px] text-slate-500 mt-3">World-class benchmark ≥ 80% proactive.</p>
           <button onClick={() => navigate('/reliability-metrics')} className="mt-2 text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 transition">
             Full reliability metrics <ArrowRight size={12} />
           </button>

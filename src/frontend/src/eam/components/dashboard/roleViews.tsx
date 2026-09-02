@@ -64,7 +64,7 @@ const Tile: React.FC<{
         </div>
         <div className="flex items-end justify-between gap-2 mt-2">
             <span className={`text-xl font-bold leading-none ${valueClass}`}>{value}</span>
-            {sub && <span className="text-[10px] text-slate-400 whitespace-nowrap">{sub}</span>}
+            {sub && <span className="text-[10px] text-slate-500 whitespace-nowrap">{sub}</span>}
         </div>
     </button>
 );
@@ -79,7 +79,7 @@ const Strip: React.FC<{
         <div className="flex items-center gap-2">
             {icon}
             <span className="text-xs font-semibold text-slate-900">{title}</span>
-            {right && <span className="ml-auto text-[10px] text-slate-400">{right}</span>}
+            {right && <span className="ml-auto text-[10px] text-slate-500">{right}</span>}
             {chevron === 'arrow'
                 ? <ArrowRight size={13} className={`${right ? '' : 'ml-auto '}text-slate-300 group-hover:text-primary-600 group-hover:translate-x-0.5 transition-all flex-shrink-0`} />
                 : <ChevronRight size={13} className={`${right ? '' : 'ml-auto '}text-slate-300 group-hover:text-primary-600 transition-colors flex-shrink-0`} />}
@@ -405,7 +405,7 @@ export const FinanceView: React.FC<ViewProps> = ({ shared, openInsight }) => {
                 action={<button onClick={() => navigate('/finops')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open FinOps <ArrowRight size={12} /></button>}
             >
                 {topCost.length === 0 ? (
-                    <div className="p-8 text-center text-sm text-slate-400">No maintenance cost captured in the last 12 months yet.</div>
+                    <div className="p-8 text-center text-sm text-slate-500">No maintenance cost captured in the last 12 months yet.</div>
                 ) : (
                     <div className="divide-y divide-slate-100 bg-white">
                         {topCost.map((r: any, i: number) => (
@@ -420,7 +420,7 @@ export const FinanceView: React.FC<ViewProps> = ({ shared, openInsight }) => {
                                 </div>
                                 <div className="text-right flex-shrink-0">
                                     <div className="text-sm font-bold text-slate-900">{fmtMoney(Number(r.maint_cost_12mo) || 0)}</div>
-                                    <div className="text-[10px] text-slate-400">12-mo maint.</div>
+                                    <div className="text-[10px] text-slate-500">12-mo maint.</div>
                                 </div>
                             </button>
                         ))}
