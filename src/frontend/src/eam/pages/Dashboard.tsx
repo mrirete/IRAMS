@@ -279,7 +279,6 @@ export const Dashboard: React.FC = () => {
   const { user, profile, dataScope, role, permissions } = useAuth();
   const { showToast } = useToast();
   const userName = (profile as any)?.fullName || (profile as any)?.username || 'Operator';
-  const userRole = role || '';
   const [workTab, setWorkTab] = useState<'active' | 'recent' | 'notifications'>('active');
   const [apiBadActors, setApiBadActors] = useState<BadActorEntry[] | null>(null);
   const [insight, setInsight] = useState<InsightKey | null>(null);
@@ -400,7 +399,7 @@ export const Dashboard: React.FC = () => {
   const lowStockItems = inventory.filter((i: any) =>
     i.stock_on_hand !== null && i.min_level !== null && i.stock_on_hand <= i.min_level
   ).length;
-  const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '...';
+  const lastUpdate = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '...';
 
   // ── PM Schedule Compliance ──
   // CANONICAL definition (lib/reliabilityKpis.computePmCompliance): PMs DUE in
@@ -529,7 +528,8 @@ export const Dashboard: React.FC = () => {
       trend: openWOs > 5 ? 'up' as const : 'neutral' as const, path: '/work-orders',
     },
     {
-      label: 'Pending Requests', value: pendingSRs, sub: `${srs.length} total`,
+      // "N total" only when it differs from the headline — "6" + "6 total" is noise.
+      label: 'Pending Requests', value: pendingSRs, sub: pendingSRs === srs.length ? undefined : `${srs.length} total`,
       icon: <Clock size={16} />, bgIcon: 'bg-amber-50 text-amber-600',
       trend: pendingSRs > 3 ? 'up' as const : 'neutral' as const, path: '/requests',
     },
@@ -542,7 +542,7 @@ export const Dashboard: React.FC = () => {
     // zero rows, and this tile would read "0 Low Stock Alerts" — a confident
     // wrong number, which is worse than not showing it. Drop the tile instead.
     ...(permissions?.inventory?.view === true ? [{
-      label: 'Low Stock Alerts', value: lowStockItems, sub: `of ${inventory.length} items`,
+      label: 'Low Stock Alerts', value: lowStockItems, sub: undefined,
       icon: <Package size={16} />, bgIcon: 'bg-rose-50 text-rose-600',
       trend: lowStockItems > 0 ? 'down' as const : 'neutral' as const, path: '/inventory',
     }] : []),
@@ -573,10 +573,8 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-wrap items-center gap-2 md:gap-3 flex-none">
         <div className="min-w-0 mr-auto order-1">
           <h1 className="text-lg md:text-xl font-bold text-slate-900 leading-tight">{getGreeting()}, {userName}</h1>
-          <p className="text-slate-500 text-[11px] sm:text-xs">
-            {userRole && <span className="capitalize">{userRole} • </span>}
-            Live data • Updated {lastUpdate}
-          </p>
+          {/* Just the freshness stamp — role/"Live data" were ceremony. */}
+          <p className="text-slate-500 text-[11px] sm:text-xs">Updated {lastUpdate}</p>
         </div>
         <div className="hidden md:flex md:items-center gap-1.5 sm:gap-2 order-3 md:order-2">
           {quickActions.map(qa => (
@@ -663,9 +661,9 @@ export const Dashboard: React.FC = () => {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
-              ) : (
+              ) : kpi.sub ? (
                 <span className="text-[10px] text-slate-500 whitespace-nowrap">{kpi.sub}</span>
-              )}
+              ) : null}
             </div>
           </button>
         ))}

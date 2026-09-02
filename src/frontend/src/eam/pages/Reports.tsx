@@ -9,7 +9,7 @@ import {
 import {
   FileBarChart, Download, Activity, Gauge, Clock, AlertTriangle,
   Loader2, Target, Wrench, DollarSign, Package, Users,
-  CheckCircle2, Timer, Layers, Zap
+  CheckCircle2, Timer, Layers, Zap, ArrowLeft
 } from 'lucide-react';
 import { exportXLSX } from '../utils/reportExport';
 import { ReportKPICard } from '../components/reports/ReportKPICard';
@@ -93,7 +93,11 @@ export const Reports: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ReportTab>('overview');
   const [dateRange, setDateRange] = useState<DateRange>(getDateRange('12mo'));
   const [filters, setFilters] = useState<ReportFilters>(EMPTY_FILTERS);
-  const [filterPanelOpen, setFilterPanelOpen] = useState(true);
+  // Open by default only where the panel is an inline column (lg+). On phones
+  // it renders as a FULL-SCREEN overlay — defaulting it open buried the whole
+  // Reports page behind the Slicers sheet on arrival.
+  const [filterPanelOpen, setFilterPanelOpen] = useState(() =>
+    typeof window === 'undefined' || window.innerWidth >= 1024);
   const [groupBy, setGroupBy] = useState<'none' | 'unit' | 'system' | 'criticality' | 'assetType' | 'assetClass'>('none');
   const [paretoMetric, setParetoMetric] = useState<'wo_count' | 'total_cost' | 'downtime_hours'>('wo_count');
   // Reserved for cross-filter feature (Phase 3)
@@ -1269,12 +1273,21 @@ export const Reports: React.FC = () => {
     <div className="flex flex-col h-[calc(100dvh-11rem)] md:h-[calc(100vh-7rem)] min-h-0">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 flex-none">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <FileBarChart size={24} className="text-blue-600" />
-            Reports
-          </h1>
-          <p className="text-sm font-medium text-slate-500 mt-1">Enterprise Analytics & Intelligence</p>
+        <div className="flex items-center gap-1">
+          {/* Mobile: explicit way home — Reports is reached from the dashboard's
+              icon chip, and the round trip should be one obvious tap. */}
+          <button onClick={() => navigate('/dashboard')} aria-label="Back to dashboard" title="Back to dashboard"
+            className="md:hidden -ml-2 p-2 rounded-lg text-slate-500 hover:bg-slate-100 active:scale-95 transition"
+          >
+            <ArrowLeft size={20} />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <FileBarChart size={24} className="text-blue-600" />
+              Reports
+            </h1>
+            <p className="hidden sm:block text-sm font-medium text-slate-500 mt-1">Enterprise Analytics & Intelligence</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           {!filterPanelOpen && (
