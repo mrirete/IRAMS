@@ -10,7 +10,19 @@ interface Props {
   registration: AuditRegistration;
   results: DimensionResult[];
   auditState?: AuditAssessmentState;
+  /** Legacy: a loaded record whose report_data is shown as-is. */
   existingRecord?: AssessmentRecord | null;
+  /**
+   * Wizard mode (the normal path): the assessment row the wizard already
+   * auto-saves. When set, the view NEVER inserts a row of its own — it hands
+   * the generated report back through onGenerated and the wizard persists it
+   * on this record. Before 0308-era fixes every report view inserted a second,
+   * half-empty audit_assessments row.
+   */
+  recordId?: string | null;
+  initialReport?: AuditReport | null;
+  initialRoadmap?: ImprovementRoadmap | null;
+  onGenerated?: (report: AuditReport, roadmap: ImprovementRoadmap | null) => void;
   onSaved?: () => void;
 }
 
@@ -24,33 +36,50 @@ const TABS: { key: ReportTab; label: string; icon: React.ReactNode }[] = [
   { key: 'roadmap', label: 'Roadmap', icon: <Map size={14} /> },
 ];
 
-export const AuditReportView: React.FC<Props> = ({ registration, results, auditState, existingRecord, onSaved }) => {
-  const [report, setReport] = useState<AuditReport | null>(null);
-  const [roadmap, setRoadmap] = useState<ImprovementRoadmap | null>(null);
-  const [loading, setLoading] = useState(true);
+export const AuditReportView: React.FC<Props> = ({ registration, results, auditState, existingRecord, recordId: wizardRecordId, initialReport, initialRoadmap, onGenerated, onSaved }) => {
+  const [report, setReport] = useState<AuditReport | null>(initialReport || null);
+  const [roadmap, setRoadmap] = useState<ImprovementRoadmap | null>(initialRoadmap || null);
+  const [loading, setLoading] = useState(!initialReport);
   const [tab, setTab] = useState<ReportTab>('maturity');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [recordId, setRecordId] = useState<string | null>(existingRecord?.id || null);
-  const [notes, setNotes] = useState(existingRecord?.notes || '');
+  const [recordId, setRecordId] = useState<string | null>(wizardRecordId || existingRecord?.id || null);
+  const [notes, setNotes] = useState(existingRecord?.notes || auditState?.notes || '');
+  const generatedOnce = React.useRef(false);
+
+  useEffect(() => { if (wizardRecordId) setRecordId(wizardRecordId); }, [wizardRecordId]);
 
   useEffect(() => {
+    // 1. A report already exists (wizard state or a loaded record): show it, no LLM call.
+    if (initialReport) {
+      setReport(initialReport);
+      setRoadmap(initialRoadmap || null);
+      setLoading(false);
+      return;
+    }
     if (existingRecord?.report_data) {
       setReport(existingRecord.report_data);
       setRoadmap(existingRecord.roadmap_data || null);
       setLoading(false);
       return;
     }
+    // 2. Generate once per mount; hand it to the owner of the record.
+    if (generatedOnce.current) return;
+    generatedOnce.current = true;
     const generate = async () => {
       setLoading(true);
       try {
         const r = await auditAssessor.generateReport(results, registration);
         setReport(r);
-        const rm = await auditAssessor.generateRoadmap(r, registration);
+        let rm: ImprovementRoadmap | null = null;
+        try { rm = await auditAssessor.generateRoadmap(r, registration); } catch (e) { console.warn('Roadmap generation failed:', e); }
         setRoadmap(rm);
-        if (!existingRecord) {
+        if (onGenerated) {
+          onGenerated(r, rm);                       // wizard persists on its own row
+        } else if (!existingRecord && !wizardRecordId) {
+          // Legacy standalone use only (no wizard record to attach to).
           setSaveStatus('saving');
           try {
-            const saved = await assessmentService.createAssessment(registration, results, r, rm);
+            const saved = await assessmentService.createAssessment(registration, results, r, rm || undefined);
             if (saved) { setRecordId(saved.id); setSaveStatus('saved'); }
             else setSaveStatus('error');
           } catch { setSaveStatus('error'); }
@@ -59,7 +88,8 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
       setLoading(false);
     };
     generate();
-  }, [results, registration, existingRecord]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialReport, existingRecord]);
 
   const handleSaveNotes = async () => {
     if (!recordId) return;
@@ -113,7 +143,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
         </div>
         {/* 5-part summary stats */}
         <div className="grid grid-cols-5 gap-2 mt-4 pt-4 border-t border-white/10">
-          <MiniStat label="Dimensions" value={`${results.length}/6`} />
+          <MiniStat label="Dimensions" value={`${report.dimensionResults.length}/6`} />
           <MiniStat label="Findings" value={String(findings.length)} />
           <MiniStat label="Integrity" value={`${integrityFindings.length}`} />
           <MiniStat label="Safety" value={`${safetyFindings.length}`} />

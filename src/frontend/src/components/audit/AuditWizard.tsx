@@ -18,7 +18,9 @@ import { ASSESSMENT_STEPS } from '../../eam/services/AuditTypes';
 import type { AuditAssessmentState, AuditIntakeData, ScoredFinding } from '../../eam/services/AuditTypes';
 import type { SixMChecklistAnswer } from '../../eam/services/SixMQuestionBank';
 import { auditAssessor } from '../../eam/services/AuditAssessor';
+import type { AuditReport, ImprovementRoadmap } from '../../eam/services/AuditAssessor';
 import { assessmentService } from '../../eam/services/AssessmentService';
+import { computeSixMResults, draftFindingsFromAnswers } from '../../eam/services/sixmScoring';
 import { useAuth } from '../../eam/contexts/AuthContext';
 
 import { AuditIntake } from './AuditIntake';
@@ -205,11 +207,22 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
     };
 
     const handleSixMComplete = (answers: SixMChecklistAnswer[], notes: Record<string, string>) => {
+        // Score the checklist deterministically here (sixmScoring) so the report
+        // always has dimension results — the step that used to be skipped.
+        const dimensionResults = computeSixMResults(answers, notes);
+        const answersChanged = JSON.stringify(answers) !== JSON.stringify(state.sixmChecklistAnswers || []);
         const next: AuditAssessmentState = {
             ...state,
             sixmChecklistAnswers: answers,
             sixmDimensionNotes: notes,
-            dimensionsCompleted: new Set(answers.map(a => a.dimensionKey)).size,
+            dimensionResults,
+            dimensionsCompleted: dimensionResults.length,
+            // A changed checklist invalidates a previously generated report.
+            reportData: answersChanged ? null : state.reportData,
+            roadmapData: answersChanged ? null : state.roadmapData,
+            overallMaturity: answersChanged ? null : state.overallMaturity,
+            overallPercentage: answersChanged ? null : state.overallPercentage,
+            maturityLevel: answersChanged ? null : state.maturityLevel,
             currentStep: 4,
         };
         setState(next);
@@ -221,6 +234,26 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
         setState(next);
         scheduleSave(next);
     };
+
+    /** The report view generated (or regenerated) the report: it lives on THIS record, never a second row. */
+    const handleReportGenerated = (report: AuditReport, roadmap: ImprovementRoadmap | null) => {
+        const next: AuditAssessmentState = {
+            ...stateRef.current,
+            reportData: report,
+            roadmapData: roadmap,
+            overallMaturity: report.overallScore,
+            overallPercentage: report.overallPercentage,
+            maturityLevel: report.maturityLevel,
+        };
+        setState(next);
+        scheduleSave(next);
+    };
+
+    // Findings drafted from the 6M answers (Step 4 seeds from these when empty).
+    const suggestedFindings = React.useMemo(
+        () => draftFindingsFromAnswers(state.sixmChecklistAnswers),
+        [state.sixmChecklistAnswers],
+    );
 
     // Build registration object for report components
     const registration = {
@@ -345,6 +378,10 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                 {currentStep === 4 && (
                     <AuditScoredFindings
                         initialData={state.scoredFindings}
+                        suggested={suggestedFindings}
+                        assessmentId={recordIdRef.current || state.id}
+                        assessmentNumber={state.assessmentNumber}
+                        onChange={(data) => { const next = { ...stateRef.current, scoredFindings: data }; setState(next); scheduleSave(next); }}
                         onComplete={handleFindingsComplete}
                         onBack={() => goToStep(3)}
                     />
@@ -354,7 +391,10 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                         registration={registration}
                         results={state.dimensionResults}
                         auditState={state}
-                        existingRecord={null}
+                        recordId={recordIdRef.current || state.id || null}
+                        initialReport={state.reportData || null}
+                        initialRoadmap={state.roadmapData || null}
+                        onGenerated={handleReportGenerated}
                         onSaved={onSaved}
                     />
                 )}

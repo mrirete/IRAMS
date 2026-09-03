@@ -245,6 +245,15 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                                     <Wrench size={8} /> {action.wo_number || 'WO'} <ExternalLink size={8} />
                                                 </button>
                                             )}
+                                            {action.assessment_id && (
+                                                <button
+                                                    onClick={() => navigate('/audits')}
+                                                    className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 flex items-center gap-0.5 hover:bg-violet-200 transition-colors"
+                                                    title="Raised from a scored finding in the 6M assessment"
+                                                >
+                                                    <Target size={8} /> {action.assessment_number || 'Assessment'} <ExternalLink size={8} />
+                                                </button>
+                                            )}
                                         </div>
                                         <p className="text-sm font-medium text-slate-800">{action.description}</p>
                                         <div className="flex items-center gap-4 mt-2 text-[11px] text-slate-400 flex-wrap">

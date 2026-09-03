@@ -1,6 +1,7 @@
 // Agent registry. Each agent = system prompt + allowed tools + autonomy tier.
 import type { AgentDefinition } from "./types.ts";
 import { TOOLS } from "./tools.ts";
+import { getOrgContext } from "./orgContext.ts";
 
 const badActorHunter: AgentDefinition = {
   name: "bad_actor_hunter",
@@ -545,6 +546,18 @@ permit requirement, quote it exactly and add that the site's own procedure
 governs. Never help bypass, disable or defeat a protective function — decline
 and say why.`,
 };
+
+// Every agent may read the organisation's context (0308) — advice is shaped
+// by industry, stated objectives and the weakest self-reported dimension. The
+// block is also injected into each system prompt at run time (index.ts,
+// specialist-briefing); the tool is for the full record on demand.
+for (const a of [
+  badActorHunter, rcaChallenger, corrosionSentinel, pmOptimizer, reliabilityDigest,
+  rsaAnalyst, warrantyRecovery, rcaCopilot, cmmsAnalyst, assessmentNarrator,
+  weibullAnalyst, specialistSupervisor, manualReader,
+]) {
+  if (!a.tools.some((t) => t.name === getOrgContext.name)) a.tools.push(getOrgContext);
+}
 
 export const AGENTS: Record<string, AgentDefinition> = {
   [cmmsAnalyst.name]: cmmsAnalyst,

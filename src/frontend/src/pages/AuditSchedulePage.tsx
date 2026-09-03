@@ -223,7 +223,7 @@ export const AuditSchedulePage: React.FC = () => {
                     {filtered.map(a => {
                         const stCfg = STATUS_CONFIG[a.status] || STATUS_CONFIG.in_progress;
                         const stalled = isStalled(a);
-                        const progressPct = Math.round((Math.max(0, (a.current_step || 1) - 1) / 7) * 100);
+                        const progressPct = a.status === 'completed' ? 100 : Math.round((Math.max(0, (a.current_step || 1) - 1) / 5) * 100);
                         const planOverdue = a.status === 'planned' && a.planned_date && new Date(a.planned_date).getTime() < Date.now();
 
                         return (
@@ -265,7 +265,7 @@ export const AuditSchedulePage: React.FC = () => {
                                                 <div className="flex-1 bg-slate-100 rounded-full h-1.5">
                                                     <div className="h-1.5 rounded-full bg-amber-400 transition-all" style={{ width: `${progressPct}%` }} />
                                                 </div>
-                                                <span className="text-[10px] font-mono text-slate-400">Step {a.current_step || 1}/7 · {a.dimensions_completed}/6 dimensions</span>
+                                                <span className="text-[10px] font-mono text-slate-400">Step {a.current_step || 1}/5 · {a.dimensions_completed}/6 dimensions</span>
                                             </div>
                                         )}
                                         {a.status === 'completed' && a.completed_at && (

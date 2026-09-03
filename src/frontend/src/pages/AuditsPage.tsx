@@ -216,7 +216,7 @@ export const AuditsPage: React.FC = () => {
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h1 className="text-2xl font-black text-slate-800">Integrated Audit Assessments</h1>
-                    <p className="text-sm text-slate-500 mt-1">ISO 55000:2024 Series · AMS · AIM · PSM — 7-Step Audit Engine</p>
+                    <p className="text-sm text-slate-500 mt-1">ISO 55000:2024 Series · AMS · AIM · PSM — 5-step 6M maturity assessment</p>
                 </div>
                 <button
                     onClick={handleStartNew}
@@ -400,7 +400,7 @@ export const AuditsPage: React.FC = () => {
                                                     <div key={s} className={`w-1.5 h-4 rounded-sm ${s <= (a.current_step || 1) ? 'bg-blue-400' : 'bg-slate-200'}`} />
                                                 ))}
                                             </div>
-                                            <span className="text-[10px] text-slate-400 mt-1">Step {a.current_step || 1}/7</span>
+                                            <span className="text-[10px] text-slate-400 mt-1">Step {a.current_step || 1}/5</span>
                                         </div>
                                     )}
                                 </div>
@@ -536,9 +536,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function StepBadge({ step }: { step: number }) {
+    // Mirrors ASSESSMENT_STEPS (the live 5-step wizard), not the retired 7-step flow.
     const STEP_LABELS: Record<number, string> = {
-        1: 'Intake', 2: 'Documents', 3: 'Site Walk', 4: 'Interviews',
-        5: '6M Assessment', 6: 'Findings', 7: 'Report',
+        1: 'Intake', 2: 'Documents', 3: '6M Assessment', 4: 'Findings', 5: 'Report',
     };
     return (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 uppercase">

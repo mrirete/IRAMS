@@ -189,6 +189,10 @@ export interface AuditCorrectiveAction {
     wo_number?: string;
     escalated: boolean;
     escalation_reason?: string;
+    /** Provenance (0308): the 6M assessment and scored finding this action closes. */
+    assessment_id?: string | null;
+    assessment_number?: string | null;
+    finding_ref?: string | null;
     created_at: string;
 }
 

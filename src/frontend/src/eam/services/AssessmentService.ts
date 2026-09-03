@@ -18,6 +18,7 @@ import { supabase } from '../lib/supabase';
 import type { AuditRegistration, DimensionResult, AuditReport, ImprovementRoadmap } from './AuditAssessor';
 import type { AuditAssessmentState, AuditIntakeData, DocumentReviewItem, SiteVerificationItem, InterviewRecord, ScoredFinding } from './AuditTypes';
 import { auditPeopleBridge } from './AuditPeopleBridge';
+import { orgContextService } from './OrgContextService';
 import { computeIntakeAnalysis, type IntakeAnalysis } from './IntakeQuickAnalysis';
 
 // ─── DB Row Type ──────────────────────────────────────────────────
@@ -217,10 +218,10 @@ function dehydrateState(state: AuditAssessmentState): Record<string, any> {
         // Step 6: Scored Findings
         scored_findings: state.scoredFindings || [],
 
-        // Step 7: Report
-        overall_maturity: state.overallMaturity || (state.reportData as any)?.overallScore || null,
-        overall_percentage: state.overallPercentage || (state.reportData as any)?.overallPercentage || null,
-        maturity_level: state.maturityLevel || (state.reportData as any)?.maturityLevel || null,
+        // Step 7: Report (?? not ||: a genuine 0 must not collapse to null)
+        overall_maturity: state.overallMaturity ?? (state.reportData as any)?.overallScore ?? null,
+        overall_percentage: state.overallPercentage ?? (state.reportData as any)?.overallPercentage ?? null,
+        maturity_level: state.maturityLevel ?? (state.reportData as any)?.maturityLevel ?? null,
         report_data: state.reportData || null,
         roadmap_data: state.roadmapData || null,
 
@@ -500,6 +501,13 @@ export class AssessmentService {
         } else {
             const record = await this.createAssessment(state);
             recordId = record?.id || null;
+        }
+
+        // Bridge: the audit becomes the agents' context (0308, non-blocking).
+        // (planned rows never pass through saveState; syncFromAssessment also skips empty intakes)
+        if (recordId) {
+            orgContextService.syncFromAssessment({ ...state, id: recordId })
+                .catch(err => console.warn('[AssessmentService] org_context sync error:', err));
         }
 
         // Bridge: Sync assessor into People module (non-blocking)

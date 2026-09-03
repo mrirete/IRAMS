@@ -11,6 +11,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.5.0";
 import type { AgentProposal, AgentResponse, ToolContext } from "./types.ts";
 import { AGENTS } from "./agents.ts";
 import { MODEL, runToolLoop } from "./gemini.ts";
+import { loadOrgContext, formatOrgContextBlock } from "./orgContext.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -70,8 +71,15 @@ serve(async (req) => {
     }
 
     // 4. Run the tool-calling loop (history enables multi-turn copilots).
+    // The organisation's context (0308: industry, objectives, risks, governance
+    // status, self-reported maturity) is prepended to the system prompt so the
+    // agent advises THIS organisation, not a generic plant. Fails open: a
+    // context read error must never stop the agents answering.
     const ctx: ToolContext = { db, proposals: [], sources: [] };
-    const loop = await runToolLoop(agent, query, ctx, GEMINI_API_KEY, Array.isArray(history) ? history : []);
+    let orgBlock = "";
+    try { orgBlock = formatOrgContextBlock(await loadOrgContext(db)); } catch (e) { console.warn("[agent-run] org context unavailable:", String(e)); }
+    const runAgent = orgBlock ? { ...agent, systemPrompt: agent.systemPrompt + orgBlock } : agent;
+    const loop = await runToolLoop(runAgent, query, ctx, GEMINI_API_KEY, Array.isArray(history) ? history : []);
 
     const proposals: AgentProposal[] = ctx.proposals;
     const requiresApproval = proposals.length > 0; // any draft needs a human

@@ -17,6 +17,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.5.0";
 import type { ToolContext } from "../agent-run/types.ts";
 import { AGENTS } from "../agent-run/agents.ts";
 import { MODEL, runToolLoop } from "../agent-run/gemini.ts";
+import { loadOrgContext, formatOrgContextBlock } from "../agent-run/orgContext.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -38,8 +39,13 @@ serve(async (req) => {
 
   try {
     // 1. Produce the briefing (service-role context — scheduled, fleet-wide).
-    const agent = AGENTS["reliability_digest"];
+    const baseAgent = AGENTS["reliability_digest"];
     const ctx: ToolContext = { db: admin, proposals: [], sources: [] };
+    // Organisational context (0308) frames the briefing around the stated
+    // objectives and weakest self-reported dimension. Fails open.
+    let orgBlock = "";
+    try { orgBlock = formatOrgContextBlock(await loadOrgContext(admin)); } catch (e) { console.warn("[briefing] org context unavailable:", String(e)); }
+    const agent = orgBlock ? { ...baseAgent, systemPrompt: baseAgent.systemPrompt + orgBlock } : baseAgent;
     const query =
       "Produce this Monday morning's reliability & integrity briefing for the fleet. " +
       "It will be emailed to the maintenance leadership — keep it skimmable and lead with what to act on this week.";

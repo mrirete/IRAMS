@@ -673,6 +673,11 @@ export interface ScoredFinding {
     owner: string;
     dueDate: string;
     sixmCategory: string;
+    /** Set when the finding was drafted from a 6M checklist answer (sixmScoring). */
+    sourceQuestionId?: string;
+    /** Set once "Create corrective action" has written an audit_corrective_actions row (0308). */
+    correctiveActionId?: string;
+    correctiveActionNumber?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -14,6 +14,7 @@
 // @google/genai is loaded lazily via dynamic import() — zero cost if proxy is used.
 import type { AuditIntakeData, DocumentReviewItem, SiteVerificationItem, InterviewRecord } from './AuditTypes';
 import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
+import { scoreSummary, deterministicKeyFindings, deterministicRecommendations, deterministicRoadmap } from './sixmScoring';
 
 // SECURITY: In production, AI calls route through the backend proxy.
 // The direct Gemini client is a DEV-ONLY fallback.
@@ -434,12 +435,28 @@ Respond as JSON:
         dimensionResults: DimensionResult[],
         registration: AuditRegistration
     ): Promise<AuditReport> {
-        const overallScore = dimensionResults.reduce((sum, d) => sum + d.averageScore, 0) / dimensionResults.length;
-        const overallPct = Math.round((overallScore / 5) * 100);
+        // Score and band are DETERMINISTIC (sixmScoring): the same answers always
+        // give the same number, and an empty result list is "not assessed", never
+        // NaN. The LLM only narrates findings and recommendations over them.
+        const summary = scoreSummary(dimensionResults);
+        const overallScore = summary.overallScore;
+        const overallPct = summary.overallPercentage;
+
+        if (dimensionResults.length === 0) {
+            return {
+                overallScore,
+                overallPercentage: overallPct,
+                maturityLevel: summary.maturityLevel,
+                dimensionResults,
+                keyFindings: deterministicKeyFindings(dimensionResults),
+                priorityRecommendations: ['Complete the 6M checklist (Step 3) to score the assessment.'],
+                generatedAt: new Date().toISOString(),
+            };
+        }
 
         const prompt = `Generate an executive audit report for ${registration.company} (${registration.industrySector}).
 
-Overall maturity: ${overallScore.toFixed(1)}/5 (${overallPct}%)
+Overall maturity: ${overallScore.toFixed(1)}/5 (${overallPct}%) — band "${summary.maturityLevel}" (fixed; do not change it)
 
 Dimension results:
 ${dimensionResults.map(d => `${d.dimensionCode}: ${d.dimensionLabel} — ${d.averageScore.toFixed(1)}/5
@@ -460,22 +477,21 @@ Respond as JSON:
 
         const raw = await this.callGemini(prompt);
         const parsed = this.parseJSON<{
-            maturityLevel: string;
-            keyFindings: string[];
-            priorityRecommendations: string[];
-        }>(raw, {
-            maturityLevel: this.getMaturityLabel(overallScore),
-            keyFindings: ['Assessment completed successfully.'],
-            priorityRecommendations: ['Review dimension-level recommendations.'],
-        });
+            maturityLevel?: string;
+            keyFindings?: string[];
+            priorityRecommendations?: string[];
+            error?: string;
+        }>(raw, {});
+        const aiFindings = Array.isArray(parsed.keyFindings) ? parsed.keyFindings.filter(s => typeof s === 'string' && s.trim()) : [];
+        const aiRecs = Array.isArray(parsed.priorityRecommendations) ? parsed.priorityRecommendations.filter(s => typeof s === 'string' && s.trim()) : [];
 
         return {
             overallScore,
             overallPercentage: overallPct,
-            maturityLevel: parsed.maturityLevel,
+            maturityLevel: summary.maturityLevel,
             dimensionResults,
-            keyFindings: parsed.keyFindings,
-            priorityRecommendations: parsed.priorityRecommendations,
+            keyFindings: aiFindings.length ? aiFindings : deterministicKeyFindings(dimensionResults),
+            priorityRecommendations: aiRecs.length ? aiRecs : deterministicRecommendations(dimensionResults),
             generatedAt: new Date().toISOString(),
         };
     }
@@ -514,14 +530,22 @@ Respond as JSON:
     "expectedROI": "X-Y% improvement in..."
 }`;
 
+        if (report.dimensionResults.length === 0) return deterministicRoadmap([]);
+
         const raw = await this.callGemini(prompt);
-        return this.parseJSON<ImprovementRoadmap>(raw, {
-            thirtyDayActions: [],
-            ninetyDayActions: [],
-            yearActions: [],
-            estimatedInvestment: 'To be determined',
-            expectedROI: 'To be determined',
-        });
+        const parsed = this.parseJSON<Partial<ImprovementRoadmap> & { error?: string }>(raw, {});
+        const has = (k: keyof ImprovementRoadmap) => Array.isArray(parsed[k]) && (parsed[k] as unknown[]).length > 0;
+        if (!has('thirtyDayActions') && !has('ninetyDayActions') && !has('yearActions')) {
+            // AI off, quota hit, or unparseable — the roadmap still exists, built from the gaps.
+            return deterministicRoadmap(report.dimensionResults);
+        }
+        return {
+            thirtyDayActions: Array.isArray(parsed.thirtyDayActions) ? parsed.thirtyDayActions : [],
+            ninetyDayActions: Array.isArray(parsed.ninetyDayActions) ? parsed.ninetyDayActions : [],
+            yearActions: Array.isArray(parsed.yearActions) ? parsed.yearActions : [],
+            estimatedInvestment: parsed.estimatedInvestment || 'To be determined',
+            expectedROI: parsed.expectedROI || 'To be determined',
+        };
     }
 
     // ─── Private Helpers ──────────────────────────────────────────
@@ -586,14 +610,6 @@ Respond as JSON:
             console.warn('[AuditAssessor] JSON parse failed:', raw.substring(0, 300));
             return fallback;
         }
-    }
-
-    private getMaturityLabel(score: number): string {
-        if (score >= 4.5) return 'Optimizing';
-        if (score >= 3.5) return 'Competent';
-        if (score >= 2.5) return 'Developing';
-        if (score >= 1.5) return 'Aware';
-        return 'Innocent';
     }
 
     private getFallbackQuestions(dimension: SixMDimension): DimensionQuestion[] {
