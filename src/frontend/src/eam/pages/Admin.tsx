@@ -314,6 +314,14 @@ const DictionaryModal: React.FC<DictionaryModalProps> = ({ isOpen, onClose, onSa
     );
 };
 
+/** 14-character temporary password from the CSPRNG — no ambiguous glyphs (launch review B6). */
+function generateTempPassword(): string {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+    const bytes = new Uint8Array(14);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => alphabet[b % alphabet.length]).join('');
+}
+
 const ADMIN_MODULES: { key: ModuleName; label: string; tier?: string }[] = [
     { key: 'dashboard', label: 'Dashboard', tier: 'core' },
     { key: 'assets', label: 'Assets', tier: 'core' },
@@ -2081,10 +2089,11 @@ const UserPermissionManager: React.FC = () => {
                                         return; // Stop here, do not create new
                                     }
 
-                                    // System Analyst recommendation: Simplify flow for Admins.
-                                    // Use a standard default password that must be changed on first login (future feature).
-                                    // For now, use a consistent default to reduce friction.
-                                    if (confirm(`Grant System Access to ${c.name} (@${newUsername})?\n\nA user account will be created with the default password: ChangeMe123!`)) {
+                                    // Launch review B6: a random temporary password per user, shown
+                                    // ONCE to the admin, and users.must_change_password forces a
+                                    // change on the person's first sign-in (0310). No shared default.
+                                    const tempPassword = generateTempPassword();
+                                    if (confirm(`Grant System Access to ${c.name} (@${newUsername})?\n\nA temporary password will be generated and shown once. The user must change it on first sign-in.`)) {
                                         const db = DatabaseService.getInstance();
                                         try {
                                             const newUser: any = {
@@ -2095,14 +2104,21 @@ const UserPermissionManager: React.FC = () => {
                                                 contact_id: c.id,
                                                 roles: ['USER'],
                                                 active: true,
-                                                password: 'ChangeMe123!',
+                                                password: tempPassword,
                                                 mfaEnabled: false,
                                                 permissionOverrides: {},
                                                 dataScopeOverrides: {}
                                             };
 
-                                            await db.createUser(newUser);
-                                            setUsers([...users, newUser]);
+                                            const created = await db.createUser(newUser, tempPassword);
+                                            // Force a change on first sign-in (0310). Best-effort: the
+                                            // column may not exist on an un-migrated project.
+                                            if (created?.id) {
+                                                await supabase.from('users').update({ must_change_password: true }).eq('id', created.id);
+                                            }
+                                            setUsers([...users, { ...newUser, id: created?.id || newUser.id }]);
+                                            // Shown once. window.prompt gives the admin a selectable field to copy from.
+                                            window.prompt(`Account created for @${newUsername}. Copy this temporary password now — it is not stored or shown again. The user must change it on first sign-in.`, tempPassword);
                                         } catch (e) {
                                             showToast('Failed to create user: ' + e, 'error');
                                             console.error(e);

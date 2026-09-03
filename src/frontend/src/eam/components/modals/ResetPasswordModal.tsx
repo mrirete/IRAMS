@@ -15,11 +15,16 @@ interface Props {
     username: string;
     isSelf: boolean;      // current user changing their own password
     onClose: () => void;
+    /**
+     * Forced first-sign-in change (0310, users.must_change_password): no close
+     * control until the password is changed; success clears the flag server-side.
+     */
+    forced?: boolean;
 }
 
 const MIN = 8;
 
-export const ResetPasswordModal: React.FC<Props> = ({ userId, username, isSelf, onClose }) => {
+export const ResetPasswordModal: React.FC<Props> = ({ userId, username, isSelf, onClose, forced = false }) => {
     const { showToast } = useToast();
     const [pw, setPw] = useState('');
     const [confirm, setConfirm] = useState('');
@@ -50,6 +55,11 @@ export const ResetPasswordModal: React.FC<Props> = ({ userId, username, isSelf, 
                 const { error } = await supabase.rpc('admin_reset_password', { p_user_id: userId, p_new_password: pw });
                 if (error) throw new Error(error.message);
             }
+            if (forced) {
+                // Clear the caller's own flag (SECURITY DEFINER, scoped to auth.uid()).
+                const { error: clearErr } = await supabase.rpc('clear_must_change_password');
+                if (clearErr) console.warn('[ResetPasswordModal] could not clear must_change_password:', clearErr.message);
+            }
             setDone(true);
             showToast(isSelf ? 'Your password was changed.' : `Password reset for @${username}.`, 'success');
         } catch (e: any) {
@@ -58,15 +68,15 @@ export const ResetPasswordModal: React.FC<Props> = ({ userId, username, isSelf, 
     };
 
     return (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={forced && !done ? undefined : onClose}>
             <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
                 <div className="px-5 py-3 flex items-center gap-2 bg-primary-600 text-white">
                     <KeyRound size={18} />
                     <div className="min-w-0">
-                        <h3 className="font-bold text-sm leading-tight">{isSelf ? 'Change your password' : 'Reset password'}</h3>
-                        <p className="text-[11px] text-white/80 truncate">@{username}</p>
+                        <h3 className="font-bold text-sm leading-tight">{forced ? 'Set your own password to continue' : isSelf ? 'Change your password' : 'Reset password'}</h3>
+                        <p className="text-[11px] text-white/80 truncate">{forced ? 'You signed in with a temporary password issued by an administrator.' : `@${username}`}</p>
                     </div>
-                    <button onClick={onClose} className="ml-auto text-white/80 hover:text-white"><X size={18} /></button>
+                    {!(forced && !done) && <button onClick={onClose} className="ml-auto text-white/80 hover:text-white"><X size={18} /></button>}
                 </div>
 
                 {done ? (

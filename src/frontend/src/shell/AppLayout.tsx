@@ -8,6 +8,8 @@ import { usePullToRefresh } from '../eam/hooks/usePullToRefresh';
 import { useRelantern } from '../eam/contexts/RelanternContext';
 import { initOfflineExecutors } from '../eam/services/offlineExecutors';
 import { GlobalErrorToaster } from '../eam/components/GlobalErrorToaster';
+import { ResetPasswordModal } from '../eam/components/modals/ResetPasswordModal';
+import { supabase } from '../eam/lib/supabase';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { setLevelModel } from '../eam/services/hierarchyModel';
 import { registerRoutePrefetch } from '../lib/lazyWithReload';
@@ -36,6 +38,20 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
+    // Forced password change: one small read of the caller's own users row.
+    const [forcedPw, setForcedPw] = useState<{ id: string; username: string } | null>(null);
+    useEffect(() => {
+        let active = true;
+        (async () => {
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+                const { data } = await supabase.from('users').select('id, username, must_change_password').eq('id', user.id).maybeSingle();
+                if (active && data?.must_change_password) setForcedPw({ id: data.id, username: data.username || user.email || '' });
+            } catch { /* column absent on an un-migrated project — nothing to force */ }
+        })();
+        return () => { active = false; };
+    }, []);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isQuickReportOpen, setIsQuickReportOpen] = useState(false);
@@ -128,6 +144,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     {children}
                 </main>
             </div>
+
+            {/* Forced first-sign-in password change (0310 users.must_change_password). */}
+            {forcedPw && (
+                <ResetPasswordModal userId={forcedPw.id} username={forcedPw.username} isSelf forced onClose={() => setForcedPw(null)} />
+            )}
 
             {/* Specialist mission handoff — floats the active briefing mission's
                 walkthrough in whatever module the user landed in. */}

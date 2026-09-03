@@ -31,6 +31,12 @@ const SUB_STORAGE_KEY = 'ers_license_submodules';
 interface LicenseContextValue {
     enabledModules: Set<ModuleId>;
     enabledSubModules: Set<string>;
+    /** companies.tier (server truth, 0278); null until loaded / when unauthenticated. */
+    tier: string | null;
+    /** companies.trial_ends_at (0310); null when not on trial. */
+    trialEndsAt: string | null;
+    /** Module ids the plan licenses; null = no clamp (enterprise or not loaded). */
+    ceiling: Set<ModuleId> | null;
     isModuleEnabled: (id: ModuleId) => boolean;
     isSubModuleEnabled: (childId: string) => boolean;
     isRouteEnabled: (path: string) => boolean;
@@ -43,6 +49,9 @@ interface LicenseContextValue {
 const LicenseContext = createContext<LicenseContextValue>({
     enabledModules: new Set(LAUNCH_MODULE_IDS),
     enabledSubModules: new Set(ALL_SUB_MODULE_IDS),
+    tier: null,
+    trialEndsAt: null,
+    ceiling: null,
     isModuleEnabled: () => true,
     isSubModuleEnabled: () => true,
     isRouteEnabled: () => true,
@@ -99,19 +108,29 @@ export const LicenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
      * on every session and the clamp below wins.
      */
     const [ceiling, setCeiling] = useState<Set<ModuleId> | null>(null);
+    const [tier, setTier] = useState<string | null>(null);
+    const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
     useEffect(() => {
         let cancelled = false;
         const fetchTier = async () => {
             // RLS (0273) returns only the caller's own company row, so no id
             // is needed — "the one visible row" is the right one.
-            const { data, error } = await supabase.from('companies').select('tier').limit(1).maybeSingle();
-            if (!cancelled) setCeiling(error ? null : moduleCeiling(data?.tier));
+            let { data, error } = await supabase.from('companies').select('tier, trial_ends_at').limit(1).maybeSingle();
+            if (error) {
+                // 0310 not applied: fall back to the tier alone.
+                const r = await supabase.from('companies').select('tier').limit(1).maybeSingle();
+                data = r.data ? { ...r.data, trial_ends_at: null } as any : null; error = r.error;
+            }
+            if (cancelled) return;
+            setCeiling(error ? null : moduleCeiling(data?.tier));
+            setTier(error ? null : (data?.tier ?? null));
+            setTrialEndsAt(error ? null : ((data as any)?.trial_ends_at ?? null));
         };
         fetchTier();
         const { data: sub } = supabase.auth.onAuthStateChange((event) => {
             if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') fetchTier();
-            if (event === 'SIGNED_OUT') setCeiling(null);
+            if (event === 'SIGNED_OUT') { setCeiling(null); setTier(null); setTrialEndsAt(null); }
         });
         return () => { cancelled = true; sub.subscription.unsubscribe(); };
     }, []);
@@ -205,7 +224,7 @@ export const LicenseProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     return (
         <LicenseContext.Provider value={{
-            enabledModules, enabledSubModules,
+            enabledModules, enabledSubModules, tier, trialEndsAt, ceiling,
             isModuleEnabled, isSubModuleEnabled, isRouteEnabled,
             toggleModule, toggleSubModule,
             setModules, resetToFull,

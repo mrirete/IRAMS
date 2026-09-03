@@ -1,6 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertTriangle, RefreshCw, Copy, Check } from 'lucide-react';
 import { Button } from './ui';
+import { errorLog } from '../services/ErrorLogService';
 
 interface Props {
     children: ReactNode;
@@ -36,6 +37,15 @@ export class ErrorBoundary extends Component<Props, State> {
     public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
         console.error('Uncaught error:', error, errorInfo);
         this.setState({ error, errorInfo });
+        // Launch review B8: a render crash is the one error the global
+        // listeners never see — record it with the build and the page.
+        try {
+            errorLog.capture({
+                severity: 'critical', category: 'system', module: 'ui', action: 'render_crash',
+                message: error?.message || 'Render crash', error,
+                inputSnapshot: { page: window.location.pathname, build: buildSha, componentStack: (errorInfo?.componentStack || '').slice(0, 2000) },
+            });
+        } catch { /* never let telemetry break the fallback UI */ }
     }
 
     private details(): string {

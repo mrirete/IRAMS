@@ -4,6 +4,12 @@ import { BrowserRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 import { reloadOnceForStaleChunk } from './lib/lazyWithReload'
+// Launch review B8: instantiating the error log service attaches the global
+// window 'error' / 'unhandledrejection' listeners that write error_logs.
+// Before this import the listeners only attached once some page happened to
+// touch the service.
+import { errorLog } from './eam/services/ErrorLogService'
+void errorLog
 
 // ── Service-worker teardown ─────────────────────────────────────────────────
 // The app no longer ships a service worker (vite-plugin-pwa fully retired). We

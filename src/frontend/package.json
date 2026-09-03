@@ -6,6 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "build:vercel": "tsc --noEmit -p tsconfig.app.json && vite build",
+    "test:tenant-guard": "node tests/rls/tenant-completeness.mjs",
     "lint": "eslint .",
     "deadcode": "knip --include files",
     "preview": "vite preview",

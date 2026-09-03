@@ -338,10 +338,15 @@ class FinOpsServiceClass {
         const { data: policies } = await supabase.from('asset_insurance').select('insured_value').eq('status', 'ACTIVE');
         const insuranceCoverage = policies?.reduce((sum, p) => sum + (p.insured_value || 0), 0) || 0;
 
-        // Mock Depreciation MTD (would need complex query on schedules)
-        // Mock Depreciation MTD (would need complex query on schedules)
-        // For now, let's uses a placeholder as the column doesn't exist in the current schema
-        const depreciationMTD = 0;
+        // Depreciation MTD = schedule rows posted for the current fiscal period
+        // (launch review B5 — this tile was a hard-coded zero).
+        const now = new Date();
+        const { data: mtdRows } = await supabase
+            .from('depreciation_schedules')
+            .select('depreciation_amount')
+            .eq('fiscal_year', now.getFullYear())
+            .eq('period', now.getMonth() + 1);
+        const depreciationMTD = (mtdRows || []).reduce((s, r: any) => s + (Number(r.depreciation_amount) || 0), 0);
 
         return {
             activeWarranties: warrantyCount || 0,
@@ -1123,15 +1128,24 @@ class FinOpsServiceClass {
     /**
      * Run depreciation for all books of a specific type
      */
-    async runMonthlyDepreciation(bookType: string, fiscalYear: number, period: number): Promise<number> {
+    async runMonthlyDepreciation(bookType: string, fiscalYear: number, period: number): Promise<{ posted: number; skipped: number }> {
         const { data: books } = await supabase
             .from('depreciation_books')
             .select('id')
             .eq('book_type', bookType);
 
+        // Idempotent per book/period: a second click must not post twice.
+        const ids = (books || []).map(b => b.id);
+        const { data: done } = ids.length
+            ? await supabase.from('depreciation_schedules').select('book_id').in('book_id', ids).eq('fiscal_year', fiscalYear).eq('period', period)
+            : { data: [] as any[] };
+        const alreadyPosted = new Set((done || []).map((d: any) => d.book_id));
+
         let processedCount = 0;
+        let skipped = 0;
 
         for (const book of books || []) {
+            if (alreadyPosted.has(book.id)) { skipped++; continue; }
             const { amount, newValue } = await this.calculateDepreciation(book.id);
 
             // Insert schedule entry. processedCount is reported to the user as
@@ -1159,7 +1173,7 @@ class FinOpsServiceClass {
             processedCount++;
         }
 
-        return processedCount;
+        return { posted: processedCount, skipped };
     }
 
     // =====================================================

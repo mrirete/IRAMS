@@ -16,6 +16,7 @@ import { DatabaseService } from '../services/DatabaseService';
 import { buildWorkOrder } from '../lib/workOrder';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { DEMO_DATA } from '../../config/demoMode';
 import { AssignmentModal } from '../components/scheduling/AssignmentModal';
 import { CrewBoard } from '../components/scheduling/CrewBoard';
 import { ShiftHandoverModal } from '../components/scheduling/ShiftHandoverModal';
@@ -323,13 +324,16 @@ export const Scheduling: React.FC = () => {
                     setJobs(mappedWOs);
                     console.log(`[Scheduling] Loaded ${mappedWOs.length} live work orders`);
                 } else {
-                    // Fallback to mock data if DB is empty
-                    setJobs(MOCK_WORK_ORDERS);
-                    console.log('[Scheduling] No live WOs found, using mock data');
+                    // Empty tenant: an honest empty board. The illustrative jobs
+                    // are a DEMO_DATA surface only (launch review B4) — a planner
+                    // must never drag invented work onto real people.
+                    setJobs(DEMO_DATA ? MOCK_WORK_ORDERS : []);
+                    if (DEMO_DATA) console.log('[Scheduling] No live WOs found, using demo data');
                 }
             } catch (e) {
-                console.warn('[Scheduling] WO fetch failed, using mock data', e);
-                setJobs(MOCK_WORK_ORDERS);
+                console.warn('[Scheduling] WO fetch failed', e);
+                setJobs(DEMO_DATA ? MOCK_WORK_ORDERS : []);
+                showToast("Couldn't load work orders for the schedule — showing an empty board. Check your connection and refresh.", 'error', 6000);
             } finally {
                 setLoadingWOs(false);
             }

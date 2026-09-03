@@ -229,7 +229,7 @@ SELECT vault.create_secret('<same value as BRIEFING_CRON_KEY>', 'briefing_cron_k
 
 ```bash
 cd src/frontend
-for f in agent-run specialist-briefing notify-dispatch proposal-writeback sensor-sync detect-sweep audit-invite create-user; do
+for f in agent-run specialist-briefing notify-dispatch proposal-writeback sensor-sync detect-sweep audit-invite signup-tenant ingest-work-orders ingest-readings erp-export ai-proxy specialist-watchdog; do
   npx --no-install supabase functions deploy $f
 done
 npx --no-install supabase functions deploy ingest-readings --no-verify-jwt   # webhook, x-api-key auth
@@ -246,7 +246,7 @@ UPDATE companies SET edition = 'specialist' WHERE code = 'MAIN';
 
 ### 3.7 First admin user
 
-Use the `create-user` function or the Supabase dashboard, then confirm the row in `public.users` carries an admin role. Reference data (dictionaries, reference codes, the default `MAIN` company) is seeded by numbered migrations and needs no extra step.
+Create the first admin in the Supabase dashboard (Authentication → Users) or with the `create_auth_user` RPC from a service-role session, then confirm the row in `public.users` carries an admin role. (The former `create-user` edge function was removed on 2026-09-03: it accepted any authenticated caller and minted arbitrary roles.) Reference data (dictionaries, reference codes, the default `MAIN` company) is seeded by numbered migrations and needs no extra step.
 
 > `master_seed.sql` and `cleanup_finops.sql` are **not** numbered migrations and the runner ignores them by design — they carry demo data and must not run for a real customer.
 

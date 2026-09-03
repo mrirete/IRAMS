@@ -24,6 +24,8 @@ const ConnectorWizard = lazyWithReload(() => import('./pages/admin/ConnectorWiza
 const ConnectorDetail = lazyWithReload(() => import('./pages/admin/ConnectorDetail').then(m => ({ default: m.ConnectorDetail })));
 const GlobalSettingsPage = lazyWithReload(() => import('./pages/admin/GlobalSettingsPage').then(m => ({ default: m.GlobalSettingsPage })));
 const ErrorLogsPage = lazyWithReload(() => import('./pages/admin/ErrorLogsPage').then(m => ({ default: m.ErrorLogsPage })));
+const OpsHealthPage = lazyWithReload(() => import('./pages/admin/OpsHealthPage').then(m => ({ default: m.OpsHealthPage })));
+const NotFoundPage = lazyWithReload(() => import('./pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 const HierarchyConfigPage = lazyWithReload(() => import('./pages/HierarchyConfigPage').then(m => ({ default: m.HierarchyConfigPage })));
 const ManufacturersPage = lazyWithReload(() => import('./pages/ManufacturersPage').then(m => ({ default: m.ManufacturersPage })));
 const WorkCentersPage = lazyWithReload(() => import('./pages/WorkCentersPage').then(m => ({ default: m.WorkCentersPage })));
@@ -291,6 +293,9 @@ function App() {
                                 <Route path="/admin/companies" element={<PermissionGate module="admin"><CompaniesPage /></PermissionGate>} />
                                 <Route path="/admin/error-logs" element={<PermissionGate module="admin"><ErrorLogsPage /></PermissionGate>} />
                                 <Route path="/admin/activity-log" element={<PermissionGate module="activityLog"><AdminActivityPage /></PermissionGate>} />
+                                <Route path="/admin/ops-health" element={<PermissionGate module="admin"><OpsHealthPage /></PermissionGate>} />
+                                {/* Unknown URL: say so instead of a blank main (launch review B10). */}
+                                <Route path="*" element={<NotFoundPage />} />
                               </Routes>
                             </Suspense>
                             </ErrorBoundary>

@@ -9,9 +9,18 @@
  *
  * Visual idiom mirrors Login.tsx: white card, amber accent, slate text.
  */
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Building2, Mail, Lock, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+
+/**
+ * Cloudflare Turnstile (launch review B6). Renders only when the site key is
+ * configured; the signup-tenant function enforces the token only when its
+ * secret is configured. Set both to turn the challenge on:
+ *   VITE_TURNSTILE_SITE_KEY (Vercel env) + TURNSTILE_SECRET_KEY (Supabase secret)
+ */
+const TURNSTILE_SITE_KEY: string = (import.meta.env.VITE_TURNSTILE_SITE_KEY as string) || '';
+declare global { interface Window { turnstile?: { render: (el: HTMLElement, opts: Record<string, unknown>) => string; reset: (id?: string) => void } } }
 
 const ACCENT = '#f59e0b';
 
@@ -23,6 +32,31 @@ export const Signup: React.FC = () => {
     const [focusedField, setFocusedField] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
+    const [captchaToken, setCaptchaToken] = useState('');
+    const [honeypot, setHoneypot] = useState('');
+    const captchaRef = useRef<HTMLDivElement>(null);
+
+    // Load the Turnstile script once and render the widget into captchaRef.
+    useEffect(() => {
+        if (!TURNSTILE_SITE_KEY || !captchaRef.current) return;
+        let widgetId: string | undefined;
+        const render = () => {
+            if (!window.turnstile || !captchaRef.current || widgetId) return;
+            widgetId = window.turnstile.render(captchaRef.current, {
+                sitekey: TURNSTILE_SITE_KEY,
+                callback: (token: string) => setCaptchaToken(token),
+                'expired-callback': () => setCaptchaToken(''),
+                'error-callback': () => setCaptchaToken(''),
+            });
+        };
+        if (window.turnstile) { render(); return; }
+        const s = document.createElement('script');
+        s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        s.async = true; s.defer = true;
+        s.onload = render;
+        document.head.appendChild(s);
+        return () => { try { if (widgetId) window.turnstile?.reset(widgetId); } catch { /* ignore */ } };
+    }, []);
 
     const fieldStyle = (name: string) => ({
         background: '#f8fafc',
@@ -40,8 +74,9 @@ export const Signup: React.FC = () => {
             // The shared client resolves URL + anon key (never duplicate a
             // createClient — see eam/lib/supabase). A non-2xx from the function
             // surfaces as FunctionsHttpError with the Response in .context.
+            if (TURNSTILE_SITE_KEY && !captchaToken) { setError('Please complete the verification challenge.'); return; }
             const { data, error: fnErr } = await supabase.functions.invoke('signup-tenant', {
-                body: { company_name: companyName, admin_email: email, password },
+                body: { company_name: companyName, admin_email: email, password, captcha_token: captchaToken || undefined, website: honeypot },
             });
             if (fnErr || !data?.ok) {
                 let msg = 'Something went wrong — please try again.';
@@ -159,7 +194,10 @@ export const Signup: React.FC = () => {
                                 </div>
                             </div>
 
-                            <button type="submit" disabled={busy}
+                            {/* Honeypot — hidden from people, filled by bots; the function rejects a non-empty value. */}
+                            <input type="text" name="website" value={honeypot} onChange={e => setHoneypot(e.target.value)} tabIndex={-1} autoComplete="off" aria-hidden="true" style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }} />
+                            {TURNSTILE_SITE_KEY && <div ref={captchaRef} className="flex justify-center" />}
+                            <button type="submit" disabled={busy || (!!TURNSTILE_SITE_KEY && !captchaToken)}
                                     className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl text-[15px] font-bold text-white transition-all duration-200 disabled:opacity-60"
                                     style={{ background: ACCENT, boxShadow: '0 4px 14px rgba(245, 158, 11, 0.35)' }}>
                                 {busy ? (<><Loader2 size={17} className="animate-spin" /> Creating your workspace…</>)

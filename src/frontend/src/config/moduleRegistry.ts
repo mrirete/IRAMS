@@ -82,7 +82,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     {
         id: 'core', label: 'Core Platform', description: 'Dashboard, Assets, Admin & Settings',
         tier: 'core', icon: Home, path: '/',
-        routes: ['/', '/assets', '/admin', '/admin/companies', '/admin/migration', '/admin/connectors', '/admin/connectors/new', '/admin/connectors/:id', '/admin/api-keys', '/admin/settings', '/admin/error-logs', '/admin/activity-log', '/data-quality', '/login', '/eam-admin', '/system-health', '/notifications'],
+        routes: ['/', '/assets', '/admin', '/admin/companies', '/admin/migration', '/admin/connectors', '/admin/connectors/new', '/admin/connectors/:id', '/admin/api-keys', '/admin/settings', '/admin/error-logs', '/admin/ops-health', '/admin/activity-log', '/data-quality', '/login', '/eam-admin', '/system-health', '/notifications'],
         dependencies: [], section: 'eam',
     },
     {
@@ -187,7 +187,10 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
     {
         id: 'audits', label: 'Compliance & Audits',
         description: 'ISO 55001 Audit Management — Assessments, Templates, Scheduling, Corrective Actions, Regulatory',
-        tier: 'integrity', icon: ClipboardCheck, path: null,
+        // Core, not integrity (launch review B1): the maturity intake is the
+        // onboarding brain — it feeds org_context and every agent — so every
+        // tenant, Starter included, must be able to run it.
+        tier: 'core', icon: ClipboardCheck, path: null,
         children: [
             { id: 'audit-assessments', label: 'Assessments', path: '/audits' },
             { id: 'audit-templates', label: 'Templates', path: '/audits/templates' },

@@ -1696,11 +1696,30 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
         loadSchedule();
     }, []);
 
+    const [running, setRunning] = useState(false);
     const handleRunDepreciation = async () => {
-        // Mock run for now, or implement service call if ready
-        // await FinOpsService.runMonthlyDepreciation('CORPORATE', 2024, 1);
-        showToast('Depreciation run scheduled in background.', 'info');
-        loadSchedule();
+        // Real run (launch review B5): the current fiscal period, every book
+        // type on file, idempotent per book/period inside the service.
+        const now = new Date();
+        const fiscalYear = now.getFullYear();
+        const period = now.getMonth() + 1;
+        const bookTypes = Array.from(new Set((books || []).map(b => b.bookType).filter(Boolean)));
+        if (bookTypes.length === 0) { showToast('No depreciation books on file — set up a book on an asset first.', 'info'); return; }
+        if (!confirm(`Run depreciation for ${fiscalYear} period ${period} across ${bookTypes.length} book type(s)? Books already posted for this period are skipped.`)) return;
+        setRunning(true);
+        try {
+            let posted = 0, skipped = 0;
+            for (const bt of bookTypes) {
+                const r = await FinOpsService.runMonthlyDepreciation(bt, fiscalYear, period);
+                posted += r.posted; skipped += r.skipped;
+            }
+            showToast(`Depreciation posted for ${posted} book(s)${skipped ? `, ${skipped} already posted this period` : ''}.`, posted ? 'success' : 'info');
+        } catch (e: any) {
+            showToast(`Depreciation run failed: ${e?.message || e}`, 'error', 7000);
+        } finally {
+            setRunning(false);
+            loadSchedule();
+        }
     };
 
     // Pivot data for the table: Period -> { CORPORATE: $, TAX: $, TECHNICAL: $, Status }
@@ -1776,10 +1795,11 @@ const DepreciationTab: React.FC<DepreciationTabProps> = ({ books, fleetDepreciat
                     </h3>
                     <button
                         onClick={handleRunDepreciation}
-                        className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-500 transition-colors"
+                        disabled={running}
+                        className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-500 transition-colors disabled:opacity-50"
                     >
-                        <Zap size={14} />
-                        Run Depreciation
+                        <Zap size={14} className={running ? 'animate-pulse' : ''} />
+                        {running ? 'Posting…' : 'Run Depreciation'}
                     </button>
                 </div>
 

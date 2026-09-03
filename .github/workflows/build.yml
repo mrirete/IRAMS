@@ -23,6 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-cov pytest-asyncio
+      # Launch review B7: this step used to end in `|| true`, so a failing
+      # suite still turned the job green. Known-red cases stay deselected
+      # explicitly; everything else must pass.
       - name: Run Pytest
         env:
           PYTHONPATH: src
@@ -36,9 +39,29 @@ jobs:
             --deselect=tests/test_inventory_engines.py::TestInventoryEngine::test_abc_classification \
             --deselect=tests/test_knowledge_graph.py::TestKnowledgeDependency::test_exclusive_assets_detected \
             --deselect=tests/test_knowledge_graph.py::TestCausationChain::test_shared_cause_siblings \
-            --deselect=tests/test_knowledge_graph.py::TestSAMPContributors::test_at_risk_assets_flagged \
-            || true
-          
+            --deselect=tests/test_knowledge_graph.py::TestSAMPContributors::test_at_risk_assets_flagged
+
+  frontend-typecheck:
+    # The Vercel build now runs the same command (build:vercel), so a type
+    # error can no longer reach production. This job makes it visible on the PR.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: src/frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          cd src/frontend
+          npm install
+      - name: Typecheck (tsc, app project)
+        run: |
+          cd src/frontend
+          npm run typecheck
+
   frontend-tests:
     runs-on: ubuntu-latest
     steps:
@@ -57,9 +80,38 @@ jobs:
         run: |
           cd src/frontend
           npm run test
-          
+      - name: Silent-success scan
+        # Detects "toasted success but wrote nothing" patterns (real incidents
+        # in its header). Was manual-only; now blocks the PR.
+        run: |
+          cd src/frontend
+          npm run scan:silent
+
+  tenant-guard:
+    # Static row-security completeness (migration 0264) against the project
+    # the secrets point at. Skipped, not failed, when the secrets are absent
+    # (fork PRs) — same posture as security-scan's storage-audit.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Tenant policy completeness
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::warning::SUPABASE_ACCESS_TOKEN/PROJECT_REF not set — tenant guard skipped."
+            exit 0
+          fi
+          cd src/frontend
+          npm run test:tenant-guard
+
   docker-build:
-    needs: [python-tests, frontend-tests]
+    needs: [python-tests, frontend-typecheck, frontend-tests]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

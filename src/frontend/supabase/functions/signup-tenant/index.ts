@@ -26,6 +26,10 @@
  * Deploy: supabase functions deploy signup-tenant
  */
 import { corsHeaders } from "../_shared/cors.ts";
+import { verifyTurnstile } from "./turnstile.ts";
+
+/** Self-serve tenants start on the professional tier for this many days (0310). */
+const TRIAL_DAYS = 30;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -62,7 +66,7 @@ Deno.serve(async (req) => {
     if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
     if (req.method !== "POST") return reply(405, { error: "POST only" });
 
-    let payload: { company_name?: string; admin_email?: string; password?: string };
+    let payload: { company_name?: string; admin_email?: string; password?: string; captcha_token?: string; website?: string };
     try { payload = await req.json(); } catch { return reply(400, { error: "invalid JSON" }); }
 
     const companyName = (payload.company_name ?? "").trim();
@@ -71,6 +75,11 @@ Deno.serve(async (req) => {
     if (companyName.length < 2 || companyName.length > 80) return reply(400, { error: "Company name must be 2–80 characters." });
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(email)) return reply(400, { error: "A valid email address is required." });
     if (password.length < 10) return reply(400, { error: "Password must be at least 10 characters." });
+    // Honeypot: the form renders a hidden "website" field humans never fill.
+    if ((payload.website ?? "").trim() !== "") return reply(400, { error: "Could not create the workspace." });
+    // CAPTCHA (enforced when TURNSTILE_SECRET_KEY is set — see turnstile.ts).
+    const captcha = await verifyTurnstile(payload.captcha_token, req.headers.get("cf-connecting-ip") ?? req.headers.get("x-forwarded-for"));
+    if (!captcha.ok) return reply(400, { error: captcha.reason });
 
     // ── throttle (and audit) ────────────────────────────────────────────────
     const ip = (req.headers.get("x-forwarded-for") ?? "unknown").split(",")[0].trim();
@@ -114,13 +123,20 @@ Deno.serve(async (req) => {
     const prov = await rpc("provision_tenant", {
         p_name: companyName, p_code: code, p_seed_ids: seedIds,
         p_currency: null, p_country: null,
-        p_tier: "starter",   // pinned server-side; sales changes plans, not clients
+        // Pinned server-side; clients cannot choose a plan. Self-serve tenants
+        // start on a PROFESSIONAL trial (launch review B1) so the onboarding
+        // path — maturity intake, Specialist, import wizard — is reachable;
+        // trial_expiry_sweep (0310) drops them to starter after TRIAL_DAYS.
+        p_tier: "professional",
     });
     if (!prov.ok) {
         const msg = prov.body.includes("already exists") ? "That company appears to exist already." : "Could not create the workspace.";
         return reply(500, { error: msg });
     }
     const companyId = JSON.parse(prov.body);
+    const trialEnds = new Date(Date.now() + TRIAL_DAYS * 86_400_000).toISOString();
+    const trialSet = await rest(`companies?id=eq.${companyId}`, { method: "PATCH", body: JSON.stringify({ trial_ends_at: trialEnds }) });
+    if (!trialSet.ok) console.warn("[signup-tenant] could not stamp trial_ends_at (0310 applied?):", await trialSet.text());
 
     const username = email.split("@")[0];
     const madeUser = await rpc("create_auth_user", {

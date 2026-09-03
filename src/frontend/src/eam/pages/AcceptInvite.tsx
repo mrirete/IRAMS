@@ -81,7 +81,7 @@ export const AcceptInvite: React.FC = () => {
         e.preventDefault();
         setError('');
         if (form.password !== form.confirm) { setError('Passwords do not match.'); return; }
-        if (form.password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+        if (form.password.length < 10) { setError('Password must be at least 10 characters.'); return; }
         setSubmitting(true);
         try {
             const { data, error: rpcError } = await supabase.rpc('accept_invite', {
@@ -240,11 +240,11 @@ export const AcceptInvite: React.FC = () => {
                             <div className="relative rounded-xl" style={fieldStyle}>
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2" size={16} style={{ color: '#94a3b8' }} />
                                 <input
-                                    type={showPassword ? 'text' : 'password'} required minLength={6} value={form.password}
+                                    type={showPassword ? 'text' : 'password'} required minLength={10} value={form.password}
                                     onChange={e => setForm({ ...form, password: e.target.value })}
                                     autoComplete="new-password"
                                     className="w-full bg-transparent rounded-xl py-3 pl-11 pr-10 outline-none text-[14px] font-medium"
-                                    style={{ color: '#1e293b' }} placeholder="Min 6 characters"
+                                    style={{ color: '#1e293b' }} placeholder="Min 10 characters"
                                 />
                                 <button type="button" onClick={() => setShowPassword(!showPassword)} tabIndex={-1}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1" style={{ color: '#94a3b8' }}>
@@ -257,7 +257,7 @@ export const AcceptInvite: React.FC = () => {
                             <div className="relative rounded-xl" style={fieldStyle}>
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2" size={16} style={{ color: '#94a3b8' }} />
                                 <input
-                                    type={showPassword ? 'text' : 'password'} required minLength={6} value={form.confirm}
+                                    type={showPassword ? 'text' : 'password'} required minLength={10} value={form.confirm}
                                     onChange={e => setForm({ ...form, confirm: e.target.value })}
                                     autoComplete="new-password"
                                     className="w-full bg-transparent rounded-xl py-3 pl-11 pr-4 outline-none text-[14px] font-medium"
