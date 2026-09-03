@@ -36,7 +36,7 @@ export const OpsHealthPage: React.FC = () => {
     const load = async () => {
         setLoading(true); setErr(null);
         const { data, error } = await supabase.rpc('ops_health');
-        if (error) setErr(error.message.includes('ops_health') && error.message.includes('does not exist') ? 'Migration 0310 is not applied on this project yet.' : error.message);
+        if (error) setErr(/ops_health/.test(error.message) && /does not exist|Could not find/i.test(error.message) ? 'Migration 0310 is not applied on this project yet — run the tenant migration runner, then refresh.' : error.message);
         else setH(data as Health);
         setLoading(false);
     };
