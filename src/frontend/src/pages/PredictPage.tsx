@@ -17,7 +17,7 @@ import { SetupJourney } from '../components/predict/SetupJourney';
 import { usePredictSetup } from '../hooks/usePredictSetup';
 import { fetchGroundedFit, type GroundedRul } from '../lib/predict/groundedFit';
 import { conditionalRemainingQuantileHours } from '../eam/utils/weibull';
-import type { RULEstimate } from '../types/intelligence';
+import type { RULEstimate, PredictionAlert } from '../types/intelligence';
 import { agentService } from '../eam/services/AgentService';
 import { AgentReviewPanel } from '../components/predict/AgentReviewPanel';
 import { AlertPrecisionCard } from '../components/predict/AlertPrecisionCard';
