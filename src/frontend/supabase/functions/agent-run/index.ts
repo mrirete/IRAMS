@@ -12,16 +12,13 @@ import type { AgentProposal, AgentResponse, ToolContext } from "./types.ts";
 import { AGENTS } from "./agents.ts";
 import { MODEL, runToolLoop } from "./gemini.ts";
 import { loadOrgContext, formatOrgContextBlock } from "./orgContext.ts";
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+import { corsFor } from "../_shared/cors.ts";
 
 serve(async (req) => {
+  // Per-request CORS (launch review): the origin is echoed only when allowed.
+  const CORS = corsFor(req);
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 

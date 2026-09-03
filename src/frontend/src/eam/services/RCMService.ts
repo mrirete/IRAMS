@@ -147,7 +147,9 @@ export interface RCMTaskSummary {
 // The direct Gemini client is a DEV-ONLY fallback.
 // @google/genai is loaded lazily via dynamic import() — zero cost if proxy is used.
 
-const _devApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
+// DEV-gated like AIAnalysisEngine / AuditAssessor / geminiService: never let a
+// prod env var inline the raw key into the shipped bundle (launch review).
+const _devApiKey = import.meta.env.DEV ? (import.meta.env.VITE_GEMINI_API_KEY || '') : '';
 const _proxyConfigured = !!import.meta.env.VITE_AI_PROXY_URL;
 
 let _genaiModule: typeof import('@google/genai') | null = null;

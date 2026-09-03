@@ -1395,6 +1395,15 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         if (r.issuedParts > 0) {
                             showToast(`Goods issue: ${r.issuedParts} part line${r.issuedParts === 1 ? '' : 's'} consumed from stores.`, 'success');
                         }
+                        // Stock-low / stock-out from the REAL depletion event (0311) —
+                        // this used to fire only when someone re-saved the item form.
+                        for (const low of r.lowStock || []) {
+                            NotificationService.checkRules('inventory', low.onHand <= 0 ? 'STOCK_OUT' : 'STOCK_LOW', {
+                                id: low.itemId, code: low.code, itemCode: low.code, itemDescription: low.description,
+                                description: low.description, qtyOnHand: low.onHand, qtyAvailable: low.onHand,
+                                reorderPoint: low.minLevel, minLevel: low.minLevel, woNumber: updatedJob.woNumber,
+                            }, { currentUserId: (user as any)?.id || 'SYSTEM' });
+                        }
                         if (r.shortfalls.length > 0) {
                             showToast(`Stores records short on ${r.shortfalls.map(s => `${s.description} (−${s.short})`).join(', ')} — reconcile stock.`, 'warning');
                         }

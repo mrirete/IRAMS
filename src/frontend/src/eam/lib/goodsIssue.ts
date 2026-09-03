@@ -40,15 +40,38 @@ export function allocateIssue(qtyNeeded: number, locations: StockRow[]): IssueAl
     return { takes, shortfall: Math.max(0, remaining) };
 }
 
+export interface LowStockItem { itemId: string; code: string; description: string; onHand: number; minLevel: number }
+
 export interface GoodsIssueResult {
     issuedParts: number;
     issuedQty: number;
     alreadyIssued: number;
     shortfalls: { description: string; short: number }[];
+    /** Items at or below their reorder point after this issue (0311) — the caller raises STOCK_LOW / STOCK_OUT. */
+    lowStock: LowStockItem[];
 }
 
 export async function issueWorkOrderParts(woId: string, actor: string): Promise<GoodsIssueResult> {
-    const result: GoodsIssueResult = { issuedParts: 0, issuedQty: 0, alreadyIssued: 0, shortfalls: [] };
+    const result: GoodsIssueResult = { issuedParts: 0, issuedQty: 0, alreadyIssued: 0, shortfalls: [], lowStock: [] };
+
+    // Preferred path (0311): ONE database transaction — stock, ledger and part
+    // rows move together or not at all. The client steps below stay as the
+    // fallback for a project that has not applied 0311 yet.
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('ers_issue_work_order_parts', { p_wo_id: woId });
+    if (!rpcErr && rpcData && typeof rpcData === 'object') {
+        const d = rpcData as any;
+        result.issuedParts = Number(d.issued_parts) || 0;
+        result.issuedQty = Number(d.issued_qty) || 0;
+        result.alreadyIssued = Number(d.already_issued) || 0;
+        result.shortfalls = Array.isArray(d.shortfalls) ? d.shortfalls.map((s: any) => ({ description: String(s.description || 'part'), short: Number(s.short) || 0 })) : [];
+        result.lowStock = Array.isArray(d.low_stock) ? d.low_stock.map((l: any) => ({ itemId: String(l.item_id), code: String(l.code || ''), description: String(l.description || ''), onHand: Number(l.on_hand) || 0, minLevel: Number(l.min_level) || 0 })) : [];
+        await settleAfterIssue(woId, actor, result);
+        return result;
+    }
+    if (rpcErr && !/ers_issue_work_order_parts|does not exist|Could not find/i.test(rpcErr.message)) {
+        // The function exists and refused (RLS, lock, data) — surface it rather than double-issue client-side.
+        throw rpcErr;
+    }
 
     const { data: parts, error } = await supabase
         .from('work_order_parts')
@@ -108,22 +131,37 @@ export async function issueWorkOrderParts(woId: string, actor: string): Promise<
         result.issuedParts++;
         result.issuedQty += qty;
         if (shortfall > 0) result.shortfalls.push({ description, short: shortfall });
+
+        // Fallback path: reorder-point check on this item (on-hand across locations).
+        try {
+            const [{ data: item }, { data: levels }] = await Promise.all([
+                supabase.from('inventory_items').select('id, code, description, min_level').eq('id', part.item_id).maybeSingle(),
+                supabase.from('inventory_stock').select('quantity').eq('item_id', part.item_id),
+            ]);
+            const onHand = (levels || []).reduce((s: number, r: any) => s + (Number(r.quantity) || 0), 0);
+            if (item && Number(item.min_level) > 0 && onHand <= Number(item.min_level)) {
+                result.lowStock.push({ itemId: item.id, code: item.code || '', description: item.description || '', onHand, minLevel: Number(item.min_level) });
+            }
+        } catch { /* advisory */ }
     }
 
-    if (result.issuedParts > 0) {
-        console.log(`[GoodsIssue] WO ${woId}: issued ${result.issuedParts} part line(s) (${result.issuedQty} qty) by ${actor};` +
-            (result.shortfalls.length ? ` shortfalls: ${result.shortfalls.map(s => `${s.description} -${s.short}`).join(', ')}` : ' no shortfalls'));
-
-        // Material only becomes actual cost once it is issued (0245), and the
-        // settlement trigger fired on the status change a moment BEFORE these
-        // rows flipped — so it saw no material. Re-settle now that they have.
-        // Called by RPC rather than through FinOpsService to keep lib/ free of
-        // a dependency on services/. A delta posting, so this cannot double up,
-        // and ers_settlement_run() would catch it anyway if this call is lost.
-        const { error: settleErr } = await supabase.rpc('ers_settle_work_order', { p_wo_id: woId });
-        if (settleErr) {
-            console.warn('[GoodsIssue] material settlement deferred to the next run:', settleErr.message);
-        }
-    }
+    await settleAfterIssue(woId, actor, result);
     return result;
+}
+
+async function settleAfterIssue(woId: string, actor: string, result: GoodsIssueResult): Promise<void> {
+    if (result.issuedParts <= 0) return;
+    console.log(`[GoodsIssue] WO ${woId}: issued ${result.issuedParts} part line(s) (${result.issuedQty} qty) by ${actor};` +
+        (result.shortfalls.length ? ` shortfalls: ${result.shortfalls.map(s => `${s.description} -${s.short}`).join(', ')}` : ' no shortfalls'));
+
+    // Material only becomes actual cost once it is issued (0245), and the
+    // settlement trigger fired on the status change a moment BEFORE these
+    // rows flipped — so it saw no material. Re-settle now that they have.
+    // Called by RPC rather than through FinOpsService to keep lib/ free of
+    // a dependency on services/. A delta posting, so this cannot double up,
+    // and ers_settlement_run() would catch it anyway if this call is lost.
+    const { error: settleErr } = await supabase.rpc('ers_settle_work_order', { p_wo_id: woId });
+    if (settleErr) {
+        console.warn('[GoodsIssue] material settlement deferred to the next run:', settleErr.message);
+    }
 }

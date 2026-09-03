@@ -18,16 +18,15 @@
 // Secret:  supabase secrets set GEMINI_API_KEY=...   (SUPABASE_* are auto-provided)
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.5.0";
+import { corsFor } from "../_shared/cors.ts";
 
 const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
 const ENDPOINT = (key: string) =>
   `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// Per-request CORS (launch review): the origin is echoed only when allowed.
+// Response helpers are bound to the request inside serve() below.
+let CORS: Record<string, string> = corsFor(new Request("https://localhost/"));
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 // geminiService reads `error.detail` — keep the FastAPI error shape.
@@ -63,6 +62,7 @@ function burstOk(userId: string): boolean {
 }
 
 serve(async (req) => {
+  CORS = corsFor(req);
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return fail("Method not allowed", 405);
 

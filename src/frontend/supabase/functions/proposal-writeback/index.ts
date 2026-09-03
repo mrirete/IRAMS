@@ -103,6 +103,11 @@ serve(async (req) => {
 
     const cfg: TargetConfig = (target.config ?? {}) as TargetConfig;
     const { headers, warning } = buildHeaders(cfg);
+    // Launch review: a target that DECLARES a secret must not be called without
+    // it. A dry run may proceed (it reports the warning); a live send is refused.
+    if (warning && !dryRun) {
+      return json({ error: `Write-back refused: ${warning} Set the secret on the project, then retry.` }, 409);
+    }
 
     // 3. Authoritative proposal state — approval is checked here, not client-side.
     const proposalIds = [...new Set(actions.map((a) => String(a.proposal_id ?? "")).filter(Boolean))];

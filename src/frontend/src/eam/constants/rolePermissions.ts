@@ -119,6 +119,34 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     },
 
     // ────────────────────────────────────────────────────────
+    // STOREKEEPER: stores and receiving. Owns inventory (items, stock,
+    // adjustments, goods receipts) and works purchase orders without
+    // approving them; sees work orders to pick against, nothing more.
+    // Added 2026-09-04 — two seeded notification rules targeted this role
+    // while no such template existed, so "Storekeeper" fell back to view-only.
+    // ────────────────────────────────────────────────────────
+    STOREKEEPER: {
+        dashboard: BASIC_ACCESS,
+        assets: VIEW_ONLY_PERM,
+        requests: BASIC_ACCESS,
+        workOrders: VIEW_ONLY_PERM,
+        pm: VIEW_ONLY_PERM,
+        scheduling: VIEW_ONLY_PERM,
+        inventory: { ...FULL_ACCESS, approve: false, authorize: false, spendingLimit: 5000 },
+        purchasing: { ...BASIC_ACCESS, viewCosts: true, spendingLimit: 5000 },
+        readings: NO_ACCESS_PERM,
+        analytics: VIEW_ONLY_PERM,
+        contacts: VIEW_ONLY_PERM,
+        vendors: { ...BASIC_ACCESS, viewCosts: true },
+        taskLibrary: NO_ACCESS_PERM,
+        finops: NO_ACCESS_PERM, safety: NO_ACCESS_PERM,
+        moc: NO_ACCESS_PERM, notifications: BASIC_ACCESS, admin: NO_ACCESS_PERM,
+        // Product ruling: the Specialist is open to every role (view).
+        reliability: VIEW_ONLY_PERM, integrity: NO_ACCESS_PERM, sustain: NO_ACCESS_PERM,
+        audits: NO_ACCESS_PERM, activityLog: NO_ACCESS_PERM,
+    },
+
+    // ────────────────────────────────────────────────────────
     // RELIABILITY_ENG: Core + Condition Data + Analytics + Safety (view)
     // Focused on reliability analysis, failure coding, RCA
     // ────────────────────────────────────────────────────────

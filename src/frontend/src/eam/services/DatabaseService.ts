@@ -27,7 +27,7 @@ import {
 import type { MaintenanceStrategy, StrategyPackage } from '../../lib/maintenanceStrategy';
 import { evaluateReading } from '../../lib/readingAlarm';
 import { movementTypeFor } from '../lib/movementType';
-import { isPreventiveWoType } from '../lib/workOrder';
+import { isPreventiveWoType, buildWorkOrder } from '../lib/workOrder';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import {
     OperationActual,
@@ -3149,26 +3149,29 @@ export class DatabaseService {
             ? `WO-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}` // Fallback
             : seqData;
 
-        // 3. Create Work Order
-        const newWO: WorkOrderRecord = {
-            id: crypto.randomUUID(),
-            wo_number: woNumber,
-            title: req.description.substring(0, 50),
+        // 3. Create the work order through the ONE builder (launch review):
+        // the hand-rolled insert here dropped the request's triage — every
+        // converted order became MEDIUM with no work centre or cost centre.
+        const risk = Number(req.risk_score);
+        const priorityCode = req.priority_code || req.priority
+            || (req.is_breakdown ? 'HIGH' : Number.isFinite(risk) ? (risk >= 15 ? 'EMERGENCY' : risk >= 10 ? 'HIGH' : risk >= 5 ? 'MEDIUM' : 'LOW') : 'MEDIUM');
+        const row = buildWorkOrder({
+            woNumber,
+            title: String(req.title || req.description || 'Work request').substring(0, 80),
             description: req.description,
-            status: 'OPEN',
+            assetId: req.asset_id,
             type: req.is_breakdown ? 'BM' : 'CM', // Breakdown Maintenance vs Corrective
-            priority_code: 'MEDIUM',
-            asset_id: req.asset_id,
-            request_id: requestId, // Explicitly link
-            cost_frozen: false,
-            frozen_labor_cost: 0,
-            frozen_material_cost: 0,
-            created_by: actor && actor.length > 10 ? actor : undefined as any,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
+            priorityCode,
+            requestId,
+            workCenterId: req.work_center_id ?? undefined,
+            costCenterId: req.cost_center_id ?? undefined,
+            createdBy: actor && actor.length > 10 ? actor : null,
+            costFrozen: false, frozenLaborCost: 0, frozenMaterialCost: 0,
+            properties: { source: 'service_request', request_number: req.request_number || null, risk_score: Number.isFinite(risk) ? risk : null },
+        });
+        (row as any).id = crypto.randomUUID();
 
-        const { data: woData, error: woError } = await supabase.from('work_orders').insert(newWO).select().single();
+        const { data: woData, error: woError } = await supabase.from('work_orders').insert(row).select().single();
         if (woError) throw woError;
 
         return woData;

@@ -155,6 +155,24 @@ export const PredictPage: React.FC = () => {
         }
     };
 
+    // Alert → work: drafts a work request through the alert_to_wo agent for
+    // human review in the Agent Review panel. This handler existed as a service
+    // method with no caller (launch review): the button never rendered.
+    const handleCreateWorkOrder = async (alert: PredictionAlert) => {
+        if (!selectedAsset) return;
+        const a = selectedAsset as any;
+        const res = await agentService.draftWorkOrderFromAlert(alert, {
+            assetName: a.name || a.tag || 'Asset',
+            assetTag: a.tag,
+            assetCriticality: a.criticality,
+            assetType: a.asset_class || a.assetClass || a.type,
+        });
+        setAdapterNudge(res.success
+            ? `${res.message} Review it in the Agent Review panel below.`
+            : `Could not draft a work order from this alert: ${res.message}`);
+        if (!res.success) throw new Error(res.message);
+    };
+
     // ── #3: REAL condition alarms from R-4 measurement-point bands (not synthetic) ──
     const [conditionAlarms, setConditionAlarms] = useState<ConditionAlarms | null>(null);
     useEffect(() => {
@@ -1003,6 +1021,7 @@ export const PredictPage: React.FC = () => {
                         feedbackStats={feedbackStats}
                         alertFeedbackMap={alertFeedbackMap}
                         onAlertFeedback={handleAlertFeedback}
+                        onCreateWorkOrder={handleCreateWorkOrder}
                     />
                     {/* Measure → Forecast bridge: SMRP + PSC KPIs, measured vs simulated */}
                     <div className="mt-4">
