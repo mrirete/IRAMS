@@ -19,6 +19,7 @@ import { fetchGroundedFit, type GroundedRul } from '../lib/predict/groundedFit';
 import { conditionalRemainingQuantileHours } from '../eam/utils/weibull';
 import type { RULEstimate, PredictionAlert } from '../types/intelligence';
 import { agentService } from '../eam/services/AgentService';
+import type { PredictionAlert as ServiceAlert } from '../eam/services/PredictionService';
 import { AgentReviewPanel } from '../components/predict/AgentReviewPanel';
 import { AlertPrecisionCard } from '../components/predict/AlertPrecisionCard';
 import { KpiOutlook } from '../components/predict/KpiOutlook';
@@ -161,7 +162,26 @@ export const PredictPage: React.FC = () => {
     const handleCreateWorkOrder = async (alert: PredictionAlert) => {
         if (!selectedAsset) return;
         const a = selectedAsset as any;
-        const res = await agentService.draftWorkOrderFromAlert(alert, {
+        // The UI alert (types/intelligence) and the persisted alert
+        // (PredictionService) differ in severity vocabulary and nullability;
+        // map explicitly rather than cast.
+        const sev = alert.severity === 'emergency' ? 'critical' : alert.severity === 'info' ? 'low' : alert.severity;
+        const persisted: ServiceAlert = {
+            id: alert.alert_id,
+            alert_id: alert.alert_id,
+            asset_id: alert.asset_id,
+            alert_type: alert.alert_type as ServiceAlert['alert_type'],
+            severity: sev,
+            title: alert.title,
+            description: alert.description ?? null,
+            confidence: alert.confidence ?? null,
+            dqs_impact: alert.dqs_impact ?? null,
+            governance_tier: typeof alert.governance_tier === 'number' ? alert.governance_tier : null,
+            acknowledged: false, acknowledged_by: null, acknowledged_at: null,
+            created_at: alert.created_at,
+            diagnosis: alert.diagnosis ?? null,
+        } as ServiceAlert;
+        const res = await agentService.draftWorkOrderFromAlert(persisted, {
             assetName: a.name || a.tag || 'Asset',
             assetTag: a.tag,
             assetCriticality: a.criticality,
