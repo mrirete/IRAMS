@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Activity, AlertTriangle, TrendingDown, TrendingUp, Minus, Search, ChevronDown, ChevronLeft, ChevronRight, LayoutGrid, List, ArrowUpDown, SlidersHorizontal } from 'lucide-react';
 import type { FleetAssetHealth } from '../../types/intelligence';
+import { DEMO_DATA } from '../../config/demoMode';
 
 // ─────────────────────────────────────────────────────────
 //  Mock Fleet Data
@@ -90,7 +91,11 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
     const [sortOpen, setSortOpen] = useState(false);
 
     const hasRealData = totalAssetCount != null && totalAssetCount > 0;
-    const effectiveData = hasRealData ? (fleetData || []) : MOCK_FLEET;
+    // The illustrative fleet is a DEMO_DATA surface like every other mock in
+    // Predict (config/demoMode.ts). Production tenants with an empty register
+    // get an honest empty state, never eight invented machines.
+    const showingSample = !hasRealData && DEMO_DATA;
+    const effectiveData = hasRealData ? (fleetData || []) : (DEMO_DATA ? MOCK_FLEET : []);
 
     // Filter → Sort pipeline
     const processed = useMemo(() => {
@@ -259,7 +264,7 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
             )}
 
             {/* ═══ Sample-data ribbon — the mock fleet must never pass as real ═══ */}
-            {!hasRealData && (
+            {showingSample && (
                 <div className="mx-5 my-3 flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
                     <AlertTriangle size={13} className="text-amber-500 shrink-0" />
                     <p className="text-[11px] text-amber-700 font-medium">
@@ -272,8 +277,8 @@ export const FleetHealthMap: React.FC<Props> = ({ selectedAssetId, onAssetSelect
             {processed.length === 0 ? (
                 <div className="text-center py-16 px-5">
                     <Search size={28} className="mx-auto mb-2 text-slate-300" />
-                    <p className="text-sm font-medium text-slate-500">No matching assets</p>
-                    <p className="text-xs text-slate-400 mt-1">Adjust your search or filters to find assets</p>
+                    <p className="text-sm font-medium text-slate-500">{hasRealData ? 'No matching assets' : 'No assets in the register yet'}</p>
+                    <p className="text-xs text-slate-400 mt-1">{hasRealData ? 'Adjust your search or filters to find assets' : 'Import assets to see fleet health here.'}</p>
                 </div>
             ) : viewMode === 'grid' ? (
                 /* ── Grid View ── */

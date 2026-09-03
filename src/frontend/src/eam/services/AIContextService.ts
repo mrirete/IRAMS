@@ -8,6 +8,7 @@
  */
 
 import { DatabaseService } from './DatabaseService';
+import { isOpenWo } from '../../lib/woState';
 
 export class AIContextService {
     private static instance: AIContextService;
@@ -115,7 +116,7 @@ export class AIContextService {
             (wo.assetId === asset.id || wo.asset_id === asset.id)
         );
         const closedWOs = assetWOs.filter(wo => wo.status === 'CLOSED' || wo.status === 'TECO');
-        const openWOs = assetWOs.filter(wo => wo.status !== 'CLOSED' && wo.status !== 'CANC');
+        const openWOs = assetWOs.filter(wo => isOpenWo(wo.status));
         const correctiveWOs = assetWOs.filter(wo => wo.type === 'CM');
         const preventiveWOs = assetWOs.filter(wo => wo.type === 'PM');
         const inspectionWOs = assetWOs.filter(wo => wo.type === 'INSPECTION' || wo.type === 'INS');
@@ -360,7 +361,7 @@ Est Duration: ${wo.estDuration || 0}h | Est Downtime: ${wo.estDowntime || 0}h
                 ? Math.round(assets.reduce((s, a) => s + (a.healthScore || 0), 0) / totalAssets)
                 : 0;
 
-            const openWOs = workOrders.filter(wo => wo.status !== 'CLOSED' && wo.status !== 'CANC');
+            const openWOs = workOrders.filter(wo => isOpenWo(wo.status));
             const overdueWOs = openWOs.filter(wo => wo.dueDate && new Date(wo.dueDate) < new Date());
             const cmWOs = workOrders.filter(wo => wo.type === 'CM');
             const pmWOs = workOrders.filter(wo => wo.type === 'PM');

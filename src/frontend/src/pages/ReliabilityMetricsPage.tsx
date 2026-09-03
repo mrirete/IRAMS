@@ -101,6 +101,8 @@ export const ReliabilityMetricsPage: React.FC = () => {
     const [schedJobs, setSchedJobs] = useState<any[]>([]); // full WO set for execution metrics
     const [resources, setResources] = useState<any[]>([]); // crew roster for backlog capacity
     const [finRows, setFinRows] = useState<any[]>([]); // asset_financials.replacement_value for RAV
+    const [critAssessed, setCritAssessed] = useState<Set<string>>(new Set()); // SMRP 3.1: assets with a formal criticality analysis
+    const [invRows, setInvRows] = useState<any[]>([]); // SMRP 1.4: stocked MRO value
 
     // M4 — interactive controls: analysis window + asset filters.
     const [windowDays, setWindowDays] = useState(365);
@@ -140,7 +142,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                 const we = new Date(ws); we.setDate(we.getDate() + 6);
                 const range = { start: ws.toISOString().split('T')[0], end: we.toISOString().split('T')[0] };
 
-                const [woRes, aRes, allWOs, labor, finRes] = await Promise.all([
+                const [woRes, aRes, allWOs, labor, finRes, critRes, invRes] = await Promise.all([
                     supabase.from('work_orders')
                         // 0283/0289/0295 columns the shared engine classifies on: without
                         // breakdown / malfunction_start / secondary_failure this page used to
@@ -151,6 +153,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     db.getWorkOrders().catch(() => []),
                     db.getLaborAvailability(range).catch(() => ({ resources: [] })),
                     supabase.from('asset_financials').select('asset_id, replacement_value'),
+                    // SMRP 3.1 — a criticality ANALYSIS (ers_criticality_assessments), not merely a rating on the asset.
+                    supabase.from('ers_criticality_assessments').select('asset_id'),
+                    // SMRP 1.4 — stocked MRO value = Σ on-hand × unit cost (weighted average cost, IAS 2).
+                    supabase.from('inventory_items').select('id, stock_on_hand, unit_cost, is_capital_spare'),
                 ]);
                 if (!active) return;
                 if (woRes.error) throw woRes.error;
@@ -159,6 +165,8 @@ export const ReliabilityMetricsPage: React.FC = () => {
                 setSchedJobs(Array.isArray(allWOs) ? allWOs : []);
                 setResources((labor as any)?.resources || []);
                 setFinRows(((finRes as any)?.data as any[]) || []);
+                setCritAssessed(new Set((((critRes as any)?.data as any[]) || []).map(r => String(r.asset_id))));
+                setInvRows(((invRes as any)?.data as any[]) || []);
             } catch (e: any) {
                 if (active) setError(e?.message || 'Failed to load reliability data.');
             } finally {
@@ -299,15 +307,44 @@ export const ReliabilityMetricsPage: React.FC = () => {
             benchmark: '< 3% (top quartile 0.7–3.6%)',
             definition: `Total maintenance cost × 100 ÷ Replacement Asset Value, annualised from the ${windowLabel} window.`,
         };
-        return { rav, maint12: maintWin, pctRav, pctRavAnnual, kpi };
-    }, [finRows, filteredWos, assetFilterActive, filteredAssetIds, windowDays, windowLabel]);
+        // SMRP 1.4 — Stocked MRO Inventory Value as % of RAV. Plant-wide by
+        // definition (stores are not asset-scoped), so the asset filter does not
+        // narrow the numerator; RAV is the full register's when unfiltered.
+        const stockedValue = invRows.reduce((s, r) => s + (Number(r.stock_on_hand) || 0) * (Number(r.unit_cost) || 0), 0);
+        const ravAll = finRows.reduce((s, r) => s + (Number(r.replacement_value) || 0), 0);
+        const stockPct = ravAll > 0 && invRows.length > 0 ? Math.round((stockedValue / ravAll) * 1000) / 10 : null;
+        const stockKpi: ReliabilityKpi = {
+            key: 'stocked_mro_pct_rav', label: 'Stocked MRO % of RAV', smrpRef: 'SMRP 1.4', value: stockPct,
+            display: stockPct == null ? 'N/A' : `${stockPct}%`, unit: '%', direction: 'lower-better',
+            benchmark: '< 1.5% (top quartile 0.3–1.5%)',
+            definition: `Stocked MRO inventory value (Σ on-hand × weighted-average unit cost, ${invRows.length} items incl. capital spares) × 100 ÷ Replacement Asset Value. Needs replacement values on the register (asset_financials).`,
+        };
+        return { rav, maint12: maintWin, pctRav, pctRavAnnual, kpi, stockKpi, stockedValue };
+    }, [finRows, invRows, filteredWos, assetFilterActive, filteredAssetIds, windowDays, windowLabel]);
+
+    // SMRP 3.1 — Systems Covered by Criticality Analysis. A formal analysis
+    // row (ers_criticality_assessments) counts; a bare rating on the asset is
+    // reported alongside so the two are never confused.
+    const critCoverage = useMemo<ReliabilityKpi>(() => {
+        const total = filteredAssets.length;
+        const analysed = filteredAssets.filter(a => critAssessed.has(String(a.id))).length;
+        const rated = filteredAssets.filter(a => a.criticality).length;
+        const pctA = total > 0 ? Math.round((analysed / total) * 100) : null;
+        const pctR = total > 0 ? Math.round((rated / total) * 100) : null;
+        return {
+            key: 'criticality_coverage', label: 'Criticality analysis coverage', smrpRef: 'SMRP 3.1', value: pctA,
+            display: pctA == null ? 'N/A' : `${pctA}%`, unit: '%', direction: 'higher-better',
+            benchmark: '100% of systems',
+            definition: `Assets with a documented criticality analysis (${analysed} of ${total}) × 100 ÷ all assets in scope. ${pctR != null ? `${pctR}% carry a criticality rating; a rating without an analysis does not count.` : ''}`,
+        };
+    }, [filteredAssets, critAssessed]);
 
     const { role } = useAuth();
     const smrpRole = useMemo(() => smrpRoleForAppRole(role), [role]);
     // The vital-few band: the first six. Everything else is still computed and
     // lands on the SMRP Scorecard tab (Guideline 8.0) and in the AI context.
     const bandKpis = kpis.slice(0, 6);
-    const allKpis = useMemo(() => [...kpis, ...exec.kpis, cost.kpi], [kpis, exec.kpis, cost.kpi]);
+    const allKpis = useMemo(() => [...kpis, ...exec.kpis, cost.kpi, cost.stockKpi, critCoverage], [kpis, exec.kpis, cost.kpi, cost.stockKpi, critCoverage]);
 
     const ragColor = (k: ReliabilityKpi): string => {
         if (k.value == null) return 'text-slate-400';

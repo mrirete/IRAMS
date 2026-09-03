@@ -5,7 +5,8 @@
  * No file uploads — just Yes / Partial / No / N/A per document.
  * Quick-fill toolbar for fast completion.
  *
- * Full document review (with notes, custom docs) remains in AuditDocReview.tsx for Templates.
+ * The retired 7-step flow's full document review (notes, custom docs) was
+ * removed 2026-09-03; this readiness check is the only document step.
  */
 
 import React, { useState, useMemo } from 'react';

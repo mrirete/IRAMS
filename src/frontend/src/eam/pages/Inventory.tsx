@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { StorageImage } from '../components/ui/StorageImage';
+import { isOpenWo } from '../../lib/woState';
 import {
     Search, Plus, Filter, Save, Package, Truck, Layers,
     FileText, ShoppingCart, History, Box, Barcode,
@@ -1757,7 +1758,7 @@ function JobsTab({ item }: { item: InventoryItem }) {
 
     // Filter WOs that reference this inventory item
     const activeJobs = workOrders.filter(wo =>
-        wo.status !== 'CLOSED' && wo.inventory?.some((i: any) => i.inventoryId === item.id || i.description?.includes(item.code))
+        isOpenWo(wo.status) && wo.inventory?.some((i: any) => i.inventoryId === item.id || i.description?.includes(item.code))
     );
     const historyJobs = workOrders.filter(wo =>
         wo.status === 'CLOSED' && wo.inventory?.some((i: any) => i.inventoryId === item.id || i.description?.includes(item.code))

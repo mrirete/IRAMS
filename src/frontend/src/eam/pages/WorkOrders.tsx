@@ -46,6 +46,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 import { DatabaseService } from '../services/DatabaseService';
 import { buildWorkOrder, isPreventiveWoType } from '../lib/workOrder';
+import { isOpenWo } from '../../lib/woState';
 import { resolveLabourRate, labourRateSourceLabel } from '../lib/labourRate';
 import { issueWorkOrderParts } from '../lib/goodsIssue';
 import { ImageGallery } from '../components/ui/ImageGallery';
@@ -355,7 +356,7 @@ export const WorkOrders: React.FC = () => {
                 <div className="flex items-center gap-2">
                     <AskRelanternButton
                         contextType="workOrder"
-                        contextSummary={`Work Order Summary: ${workOrders.length} total WOs. Open: ${workOrders.filter(w => w.status === 'OPEN' || w.status === 'WIP').length}. Overdue: ${workOrders.filter(w => w.dueDate && new Date(w.dueDate) < new Date() && !['CLOSED', 'TECO', 'CANCELLED'].includes(w.status)).length}. PM-to-CM Ratio: ${workOrders.filter(w => (w.type as string) === 'PM').length}:${workOrders.filter(w => (w.type as string) === 'CM').length}.`}
+                        contextSummary={`Work Order Summary: ${workOrders.length} total WOs. Open: ${workOrders.filter(w => isOpenWo(w.status)).length}. Overdue: ${workOrders.filter(w => w.dueDate && new Date(w.dueDate) < new Date() && !['CLOSED', 'TECO', 'CANCELLED'].includes(w.status)).length}. PM-to-CM Ratio: ${workOrders.filter(w => (w.type as string) === 'PM').length}:${workOrders.filter(w => (w.type as string) === 'CM').length}.`}
                         compact
                     />
                     <div className="flex bg-slate-100 p-0.5 rounded-lg">

@@ -18,6 +18,13 @@
  * the plain-English shapes MaintainX-style exports produce.
  */
 
+/**
+ * Buckets follow EN 13306 completion semantics: 'done' = the maintenance
+ * action is complete (technically complete TECO/COMP, or business-closed
+ * CLOSED/CLSD); 'void' = cancelled before execution; 'open' = anything still
+ * in the work-management flow (created, planned, scheduled, in progress,
+ * waiting). "Open work order" everywhere in IREAMS means isOpenWo(status).
+ */
 export type WoState = 'open' | 'done' | 'void' | 'unknown';
 
 /** Uppercase, trim, and fold separators so "In Progress" == "IN_PROGRESS". */

@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { isOpenWo } from '../../lib/woState';
 import {
     Search, Filter, Plus, Activity, Zap, Check, AlertTriangle,
     BarChart2, Clock, Calendar, RefreshCcw, Save, Trash2, LineChart as LineChartIcon,
@@ -1804,8 +1805,7 @@ const RelatedWork: React.FC<{
         return () => { active = false; };
     }, [assetId]);
 
-    const CLOSED = new Set(['CLOSED', 'COMPLETED', 'COMPLETE', 'CANCELLED', 'CANCELED', 'DONE']);
-    const openWos = wos.filter(w => !CLOSED.has((w.status || '').toUpperCase()));
+    const openWos = wos.filter(w => isOpenWo(w.status));
     const activePMs = pms.filter(p => p.active !== false && (p.status || '').toUpperCase() !== 'INACTIVE');
 
     const statusTone = (s: string) => {

@@ -247,6 +247,12 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
         };
         setState(next);
         scheduleSave(next);
+        // 0309: append the immutable maturity snapshot once the row exists.
+        const id = recordIdRef.current || next.id;
+        if (id) {
+            assessmentService.recordMaturitySnapshot({ ...next, id })
+                .catch(e => console.warn('[AuditWizard] snapshot failed:', e));
+        }
     };
 
     // Findings drafted from the 6M answers (Step 4 seeds from these when empty).

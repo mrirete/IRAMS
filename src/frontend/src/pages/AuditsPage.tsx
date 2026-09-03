@@ -9,7 +9,7 @@ import { AuditWizard } from '../components/audit/AuditWizard';
 import { assessmentService } from '../eam/services/AssessmentService';
 import { useAuth } from '../eam/contexts/AuthContext';
 import { supabase } from '../eam/lib/supabase';
-import type { AssessmentListItem, AssessmentSummary } from '../eam/services/AssessmentService';
+import type { AssessmentListItem, AssessmentSummary, MaturitySnapshot } from '../eam/services/AssessmentService';
 import type { AuditAssessmentState } from '../eam/services/AuditTypes';
 import { MaturityGapCard } from '../components/specialist/MaturityGapCard';
 
@@ -30,6 +30,7 @@ export const AuditsPage: React.FC = () => {
     // List state
     const [assessments, setAssessments] = useState<AssessmentListItem[]>([]);
     const [summary, setSummary] = useState<AssessmentSummary | null>(null);
+    const [trend, setTrend] = useState<MaturitySnapshot[]>([]); // 0309 — oldest first
     const [listLoading, setListLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
@@ -90,12 +91,14 @@ export const AuditsPage: React.FC = () => {
     // ─── Load List ──────────────────────────────────────────
     const loadList = useCallback(async () => {
         setListLoading(true);
-        const [items, sum] = await Promise.all([
+        const [items, sum, trendRows] = await Promise.all([
             assessmentService.listAssessments({ search: search || undefined, status: statusFilter || undefined }),
             assessmentService.getSummary(),
+            assessmentService.getMaturityTrend(12).catch(() => []),
         ]);
         setAssessments(items);
         setSummary(sum);
+        setTrend(trendRows);
         setListLoading(false);
     }, [search, statusFilter]);
 
@@ -232,12 +235,27 @@ export const AuditsPage: React.FC = () => {
 
             {/* Summary Cards */}
             {summary && (
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
                     <SummaryCard label="Total" value={summary.total} color="#6366f1" />
                     <SummaryCard label="In Progress" value={summary.in_progress} color="#f59e0b" />
                     <SummaryCard label="Completed" value={summary.completed} color="#22c55e" />
                     <SummaryCard label="Archived" value={summary.archived} color="#94a3b8" />
                     <SummaryCard label="Avg Maturity" value={summary.avg_maturity != null ? `${summary.avg_maturity.toFixed(1)}/5` : '—'} color="#8b5cf6" />
+                    <SummaryCard
+                        label="Trend"
+                        value={(() => {
+                            const pts = trend.filter(t => t.sixm_overall != null);
+                            if (pts.length < 2) return pts.length === 1 ? `${Number(pts[0].sixm_overall).toFixed(1)} · 1 run` : '—';
+                            const a = Number(pts[0].sixm_overall), b = Number(pts[pts.length - 1].sixm_overall);
+                            return `${a.toFixed(1)} → ${b.toFixed(1)}`;
+                        })()}
+                        color={(() => {
+                            const pts = trend.filter(t => t.sixm_overall != null);
+                            if (pts.length < 2) return '#94a3b8';
+                            const d = Number(pts[pts.length - 1].sixm_overall) - Number(pts[0].sixm_overall);
+                            return d > 0 ? '#22c55e' : d < 0 ? '#ef4444' : '#94a3b8';
+                        })()}
+                    />
                 </div>
             )}
 

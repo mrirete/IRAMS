@@ -1,6 +1,6 @@
 # IREAMS — Standards Conformance Statement
 
-**Status:** Governance record · **Last reviewed:** 2026-09-03
+**Status:** Governance record · **Last reviewed:** 2026-09-03 (evening refresh after the code-verified conformance audit, RELANTERN-AS-01)
 **Purpose:** name the international standard that governs each capability, and state the posture toward vendor (SAP) terminology — so the product's canon is anchored to public standards, not to any vendor's intellectual property.
 **Scope note:** this is an engineering-governance document, not legal advice. Where a client contract makes vendor-IP posture load-bearing, have counsel confirm §4 specifically.
 
@@ -26,10 +26,16 @@ Three consequences of that principle, visible in the code:
 | Failure modes, causes, remedies; failure-event log | **ISO 14224** + **IEC 60812** (FMEA) | `wo_failure_data`, `sem_failure_events` (0183), failure-code catalogs |
 | **Primary vs. secondary (collateral) failures** | **ISO 14224** primary/secondary distinction | 0289 (`secondary_failure`, `caused_by_wo_id`); excluded from the victim's MTBF, always shown |
 | Failure-event definition (breakdown = loss of required function) and event timing (malfunction window, not paperwork dates) | **ISO 14224** failure definition; **EN 13306** terminology | 0283 (`breakdown`, `malfunction_start/end`), 0295 (breakdown-aware canonical predicate, client + SQL in lockstep) |
-| Maintenance terminology: corrective / preventive / predictive, technical vs. business completion | **EN 13306** (maintenance terminology) | canonical WO state (0233), TECO vs. CLOSED distinction |
-| Maintenance KPIs: MTBF, MTTR, MDT, MTBM, Ai/Ao, OEE/TEEP, work-management metrics | **SMRP Best Practices, 7th Edition** (Guidelines 4.0 mean metrics, 6.0 availability, 2.0 OEE, 8.0 getting started) / **EN 15341** (harmonized indicators) | `reliabilityMetrics.ts` + `lib/reliabilityKpis.ts` (3.5.x operating-time basis, MTTR ≠ MDT), `lib/smrpCatalog.ts` (metric numbers, targets, roles), `lib/oee7.ts` + `compute_oee` (0307), `sem_asset_reliability` v6 (0307) |
-| RCM decision logic | **SAE JA1011 / JA1012** | RCM module |
-| Weibull / life-data analysis | Standard reliability engineering practice (IEC 61649 is the reference for Weibull analysis) | Reliability module (β/η); censoring on the roadmap |
+| Maintenance terminology: corrective / preventive / predictive, technical vs. business completion | **EN 13306** (maintenance terminology) | canonical WO state (`lib/woState.ts`, 0233 `ers_wo_state`), work-order type families (`eam/lib/workOrder.ts` `PREVENTIVE_WO_TYPES`), TECO vs. CLOSED distinction — each cites the clause in code |
+| Dependability terms: MTBF, MTTR, MDT, availability (inherent vs. operational) | **IEC 61703** (mathematical expressions for dependability terms) — the definitions SMRP 3.5.x and Guideline 6.0 restate | `lib/reliabilityKpis.ts`, `sem_asset_reliability` v6 (0307): operating-time MTBF, repair-window MTTR, outage-window MDT, Ai = MTBF/(MTBF+MTTR), Ao = MTBM/(MTBM+MDT) |
+| Maintenance KPIs: MTBF, MTTR, MDT, MTBM, Ai/Ao, OEE/TEEP, work-management metrics | **SMRP Best Practices, 7th Edition** (Guidelines 4.0 mean metrics, 6.0 availability, 2.0 OEE, 8.0 getting started). **EN 15341** is a *reference* only: its E/T/O indicator families are not adopted; every live KPI carries an SMRP number | `reliabilityMetrics.ts` + `lib/reliabilityKpis.ts` (3.5.x operating-time basis, MTTR ≠ MDT), `lib/smrpCatalog.ts` (34 metrics catalogued; the Scorecard states which are computed), `lib/oee7.ts` + `compute_oee` (0307), `sem_asset_reliability` v6 (0307), Metrics page 1.4 / 1.5 / 3.1 |
+| OEE and manufacturing-operations KPIs | **ISO 22400-2** (KPIs for manufacturing operations management) alongside SMRP 2.1.1 | `compute_oee` / `get_plant_oee` (0307), Reports › OEE dashboard (cites both) |
+| RCM decision logic | **SAE JA1011 / JA1012** | `components/rcm/RCMDecisionWizard.tsx` — hidden-failure finding tasks, run-to-failure blocked for safety/environmental consequences |
+| FMEA / FMECA | **IEC 60812** | `components/analyze/FMEATable.tsx` — Severity × Occurrence × Detection → RPN |
+| Weibull / life-data analysis | **IEC 61649** (Weibull analysis) as the reference practice | `eam/utils/weibull.ts` — 2-parameter MLE **with right-censoring** (Johnson adjusted rank; shipped 2026-07-17), consumed by PM recommendation, strategy selection, Metrics and Monte-Carlo |
+| Permit to work, isolation (LOTO), job safety analysis | **ISO 45001** (OH&S management) / OSHA 1910.147 for isolation | `ptw_isolation_points` (0051), `jsa_assessments` + `jsa_hazards` (0026a, 0208), authorisation locks (0212) |
+| Risk-based inspection | **API 580 / 581** — *screening* level only, self-labelled "RBI-lite" | `lib/predict/rbi.ts` (PoF from thickness trend, CoF from criticality; no damage factors or generic frequencies) |
+| Fitness for service | **API 579** — results capture only | `ers_ffs_assessments` records Level 1–3 outcomes; no RSF/MAWP engine |
 | Asset management system context | **ISO 55000 / 55001** | product posture; asset register, criticality, strategy links |
 | Condition monitoring & alarm limits | ISO 17359 family (condition monitoring guidance); ISO 10816/20816 for vibration severity zones where applicable | `reading_definitions` warning/critical limits, P-F interval fields |
 
@@ -95,7 +101,10 @@ Where SAP vocabulary appears, and why each use is sound:
 - **FI-4 cost elements** — open by design for now; the ERP owns the chart of accounts.
 - **Single document currency per company** — parallel/group currencies are IAS 21 activities left to the ERP; stated, not hidden.
 - **Movement-type numeric codes as the internal vocabulary** — low risk (numbers + generic text, industry-mirrored), with a planned neutralization path: promote `MovementSemantic` to the canonical column, demote codes to an interchange alias.
-- **Weibull censoring** — required for defensible life-data analysis per IEC 61649 practice; on the reliability roadmap.
+- **SMRP coverage** — 34 metrics catalogued, 16 computed (3.5.1–3.5.5, 3.2–3.4, Ai/Ao, 2.1.1/2.1.2/2.2–2.5, 5.4.2, 5.4.4, 5.4.9, 5.4.13, 5.4.14, 1.4, 1.5, 3.1). The 5.1.x hours-mix, 5.3.x planning, most of 5.4.x/5.5.x and 5.6.1 wrench time need labour-hour and stores data the schema does not yet carry; the Scorecard says "not computed" rather than estimating. 5.1.9 continuous-improvement hours is not catalogued.
+- **ISO 55001 scope** — IREAMS *assesses* a client's asset-management system (6M maturity assessment, §9.2 audit programme) and *operates* §8 work management, MoC, §9 evaluation and §10 improvement. It holds no native asset-management policy, SAMP or cascaded-objectives record; those are captured as status fields on the assessment and in `org_context`. Say "supports an ISO 55001 system", never "is one".
+- **ISO 14224 failure mechanism** — `wo_failure_data` carries mode + cause + remedy + detection; the mechanism (Annex B.2) is collapsed into cause. API 571 damage mechanisms exist in the Integrity module but are not linked to routine failure coding.
+- **Weibull censoring** — shipped 2026-07-17 (`eam/utils/weibull.ts`); this register previously listed it as roadmap.
 
 ---
 

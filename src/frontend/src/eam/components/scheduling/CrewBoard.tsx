@@ -12,6 +12,7 @@
 import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { User, AlertTriangle, Wrench, CircleDashed, Inbox } from 'lucide-react';
+import { isOpenWo } from '../../../lib/woState';
 
 interface CrewBoardProps {
     jobs: any[];
@@ -19,7 +20,6 @@ interface CrewBoardProps {
 }
 
 const IN_PROGRESS = new Set(['WIP', 'INPRG', 'IN_PROGRESS']);
-const OPEN_EXCLUDED = new Set(['TECO', 'CLOSED', 'CANC', 'CANCELLED']);
 
 const dueOf = (j: any): string | undefined =>
     j.dateDueStart || j.dueDate || j.date_due_start || j.due_date || undefined;
@@ -38,7 +38,7 @@ export const CrewBoard: React.FC<CrewBoardProps> = ({ jobs, contacts }) => {
     const now = Date.now();
 
     const { rows, unassigned } = useMemo(() => {
-        const open = (jobs || []).filter(j => !OPEN_EXCLUDED.has(String(j.status || '').toUpperCase()));
+        const open = (jobs || []).filter(j => isOpenWo(j.status));
         const byAssignee = new Map<string, any[]>();
         const unassigned: any[] = [];
         for (const j of open) {

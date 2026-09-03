@@ -13,12 +13,13 @@ import { useNavigate } from 'react-router-dom';
 import { Compass, Loader2, ArrowRight, CheckCircle2, AlertTriangle, CircleDashed } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { assessmentService } from '../../eam/services/AssessmentService';
+import type { MaturitySnapshot } from '../../eam/services/AssessmentService';
 import type { IntakeDimensionKey } from '../../eam/services/IntakeQuickAnalysis';
 import { computeSayDoGap, type DimensionGap, type MeasuredSignals } from '../../lib/sayDoGap';
+import { isOpenWo, isDoneWo } from '../../lib/woState';
 
 const PREVENTIVE_RE = /PREVENT|PREDICT|INSPECT|SCHEDUL|\bPM\b|\bPDM\b/;
 const CORRECTIVE_RE = /CORRECT|BREAK|EMERG|REPAIR|\bCM\b|\bEM\b/;
-const CLOSED = new Set(['CLOSED', 'TECO']);
 
 /** Where each dimension's gap gets worked. */
 const DIMENSION_PATHS: Record<IntakeDimensionKey, { path: string; label: string }> = {
@@ -56,8 +57,8 @@ async function fetchMeasuredSignals(): Promise<MeasuredSignals> {
     };
 
     const failures = rows.filter(isFailureRow);
-    const closed = rows.filter(w => CLOSED.has(String(w.status ?? '').toUpperCase()));
-    const open = rows.filter(w => !CLOSED.has(String(w.status ?? '').toUpperCase()) && !String(w.status ?? '').toUpperCase().startsWith('CANC'));
+    const closed = rows.filter(w => isDoneWo(w.status));
+    const open = rows.filter(w => isOpenWo(w.status));
     const cost = (w: any) => (Number(w.frozen_labor_cost) || 0) + (Number(w.frozen_material_cost) || 0) || Number(w.total_actual_cost) || 0;
 
     const companyRate = Number(coQ.data?.[0]?.downtime_cost_per_hour);
@@ -86,6 +87,15 @@ export const MaturityGapCard: React.FC = () => {
         | { kind: 'none' }
         | { kind: 'ready'; gaps: DimensionGap[]; quickWins: { label: string; action: string; dimension: IntakeDimensionKey }[]; assessmentNumber: string; createdAt: string; headline: string | null; wizardMaturity: { score: number; level: string | null } | null }
     >({ kind: 'loading' });
+    // 0309: maturity over time (oldest first); only rows with a 6M score.
+    const [trend, setTrend] = useState<MaturitySnapshot[]>([]);
+    useEffect(() => {
+        let active = true;
+        assessmentService.getMaturityTrend(12)
+            .then(rows => { if (active) setTrend(rows.filter(r => r.sixm_overall != null)); })
+            .catch(() => undefined);
+        return () => { active = false; };
+    }, []);
 
     useEffect(() => {
         let active = true;
@@ -142,10 +152,20 @@ export const MaturityGapCard: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-800 m-0">Operating context — what you said vs what the data shows</h3>
                 {state.wizardMaturity && (
                     <span className="text-[10px] font-bold bg-primary-50 text-primary-700 border border-primary-100 rounded-full px-2 py-0.5"
-                        title="From the completed evidence-based assessment (7-step wizard), not the directional intake">
-                        evidence-based maturity {state.wizardMaturity.score}/5{state.wizardMaturity.level ? ` · ${state.wizardMaturity.level}` : ''}
+                        title="From the completed 6M checklist assessment (30 scored questions), not the directional intake">
+                        6M maturity {state.wizardMaturity.score}/5{state.wizardMaturity.level ? ` · ${state.wizardMaturity.level}` : ''}
                     </span>
                 )}
+                {trend.length >= 2 && (() => {
+                    const first = Number(trend[0].sixm_overall), last = Number(trend[trend.length - 1].sixm_overall);
+                    const d = Math.round((last - first) * 10) / 10;
+                    return (
+                        <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${d > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : d < 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-50 text-slate-500 border-slate-200'}`}
+                            title={`${trend.length} assessments since ${new Date(trend[0].created_at).toLocaleDateString()}`}>
+                            {first.toFixed(1)} → {last.toFixed(1)} over {trend.length} assessments
+                        </span>
+                    );
+                })()}
                 <span className="ml-auto text-[10px] text-slate-400">
                     self-reported intake {state.assessmentNumber} · {new Date(state.createdAt).toLocaleDateString()} · measured from your live records
                 </span>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, AlertTriangle, CheckCircle, Map, BarChart3, FileText, Save, CheckCheck, Shield, Wrench, Target, BookOpen } from 'lucide-react';
 import { auditAssessor, SIXM_DIMENSIONS } from '../../eam/services/AuditAssessor';
 import { assessmentService } from '../../eam/services/AssessmentService';
-import type { AssessmentRecord } from '../../eam/services/AssessmentService';
+import type { AssessmentRecord, MaturitySnapshot } from '../../eam/services/AssessmentService';
 import type { AuditRegistration, DimensionResult, AuditReport, ImprovementRoadmap, RoadmapAction } from '../../eam/services/AuditAssessor';
 import type { AuditAssessmentState, ScoredFinding } from '../../eam/services/AuditTypes';
 
@@ -47,6 +47,14 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
   const generatedOnce = React.useRef(false);
 
   useEffect(() => { if (wizardRecordId) setRecordId(wizardRecordId); }, [wizardRecordId]);
+
+  // 0309: "where you were" — the last snapshot from a different assessment.
+  const [previous, setPrevious] = useState<MaturitySnapshot | null>(null);
+  useEffect(() => {
+    let active = true;
+    assessmentService.getPreviousSnapshot(recordId).then(p => { if (active) setPrevious(p); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [recordId]);
 
   useEffect(() => {
     // 1. A report already exists (wizard state or a loaded record): show it, no LLM call.
@@ -139,6 +147,11 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
             <div className="mt-2 px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: maturityColor + '33', color: maturityColor }}>
               {report.maturityLevel}
             </div>
+            {previous?.sixm_overall != null && Number.isFinite(report.overallScore) && (
+              <p className="mt-1.5 text-[10px] text-blue-200" title={`Previous assessment ${previous.assessment_number || ''} on ${new Date(previous.created_at).toLocaleDateString()}`}>
+                {(() => { const d = Math.round((report.overallScore - Number(previous.sixm_overall)) * 10) / 10; return `${d > 0 ? '+' : ''}${d.toFixed(1)} vs ${previous.assessment_number || 'previous'}`; })()}
+              </p>
+            )}
           </div>
         </div>
         {/* 5-part summary stats */}

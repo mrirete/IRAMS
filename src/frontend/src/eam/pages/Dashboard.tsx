@@ -427,7 +427,7 @@ export const Dashboard: React.FC = () => {
   ].filter(d => d.value > 0);
 
   // ── Backlog Aging ──
-  const openWOsList = wos.filter((w: any) => w.status !== 'CLOSED' && w.status !== 'TECO' && w.status !== 'CANCELLED');
+  const openWOsList = wos.filter((w: any) => isOpenWo(w.status));
   const now = Date.now();
   const agingBuckets = [
     { label: '0-7d', min: 0, max: 7, count: 0, color: '#3b82f6' },

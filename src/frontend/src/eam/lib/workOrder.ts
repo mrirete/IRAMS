@@ -41,6 +41,13 @@ export interface WorkOrderInput {
  * gate (DatabaseService TECO validation) previously carried different lists,
  * so a PdM/SCHEDULED WO passed the client and was then rejected server-side.
  */
+/**
+ * EN 13306 (maintenance terminology) §7: these are the PREVENTIVE family —
+ * predetermined (PM/SCHEDULED/CALIBRATION), condition-based (INSPECTION) and
+ * predictive (PREDICTIVE/PDM). Everything else is treated as CORRECTIVE
+ * (deferred or immediate). The failure predicate in reliabilityMetrics.ts and
+ * the SQL view sem_asset_reliability use the same split.
+ */
 export const PREVENTIVE_WO_TYPES = [
     'PM', 'PREVENTIVE', 'PREVENTATIVE', 'SCHEDULED',
     'INSPECTION', 'PREDICTIVE', 'PDM', 'CALIBRATION',

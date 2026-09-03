@@ -105,6 +105,21 @@ export interface AssessmentSummary {
     avg_maturity: number | null;
 }
 
+/** One row of audit_maturity_snapshots (0309). */
+export interface MaturitySnapshot {
+    id: string;
+    assessment_id: string | null;
+    assessment_number: string | null;
+    site_name: string | null;
+    sixm_overall: number | null;
+    sixm_level: string | null;
+    sixm_by_dimension: Record<string, number>;
+    gap_count: number | null;
+    findings_count: number | null;
+    intake_overall: number | null;
+    created_at: string;
+}
+
 // ─── Hydration: DB Row → App State ───────────────────────────────
 
 function hydrateState(record: AssessmentRecord): AuditAssessmentState {
@@ -587,6 +602,75 @@ export class AssessmentService {
 
         if (error) { console.error('[AssessmentService] updateAssessment:', error); return false; }
         return true;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    //  MATURITY SNAPSHOTS (0309) — the assessment gets a memory
+    // ═══════════════════════════════════════════════════════════════
+
+    /**
+     * Append one immutable snapshot for a generated report. Called by the
+     * wizard right after the report is saved; idempotent per assessment +
+     * score (a re-generation with the same answers writes nothing new).
+     */
+    async recordMaturitySnapshot(state: AuditAssessmentState): Promise<boolean> {
+        const report = state.reportData as AuditReport | null;
+        if (!state.id || !report || !Number.isFinite(report.overallScore)) return false;
+        const { data: last } = await supabase
+            .from('audit_maturity_snapshots')
+            .select('sixm_overall, findings_count')
+            .eq('assessment_id', state.id)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        const findingsCount = state.scoredFindings?.length ?? 0;
+        if (last?.length && Number(last[0].sixm_overall) === report.overallScore && Number(last[0].findings_count) === findingsCount) return false;
+
+        const intake = computeIntakeAnalysis(state.intake);
+        const sixmDims: Record<string, number> = {};
+        for (const d of report.dimensionResults || []) sixmDims[d.dimensionKey] = d.averageScore;
+        const intakeDims: Record<string, number | null> = {};
+        for (const d of intake.dimensions) intakeDims[d.key] = d.score;
+        const { error } = await supabase.from('audit_maturity_snapshots').insert({
+            assessment_id: state.id,
+            assessment_number: state.assessmentNumber ?? null,
+            site_name: state.intake?.siteName || null,
+            sixm_overall: report.overallScore,
+            sixm_level: report.maturityLevel,
+            sixm_by_dimension: sixmDims,
+            gap_count: (report.dimensionResults || []).reduce((s, d) => s + (d.keyGaps?.length || 0), 0),
+            findings_count: findingsCount,
+            intake_overall: intake.overall,
+            intake_by_dimension: intakeDims,
+        });
+        if (error) {
+            if ((error as any).code !== '42P01') console.warn('[AssessmentService] snapshot insert failed:', error.message);
+            return false;
+        }
+        return true;
+    }
+
+    /** Newest snapshots, oldest first, for trend strips. */
+    async getMaturityTrend(limit = 12): Promise<MaturitySnapshot[]> {
+        const { data, error } = await supabase
+            .from('audit_maturity_snapshots')
+            .select('id, assessment_id, assessment_number, site_name, sixm_overall, sixm_level, sixm_by_dimension, gap_count, findings_count, intake_overall, created_at')
+            .order('created_at', { ascending: false })
+            .limit(limit);
+        if (error || !data) return [];
+        return (data as MaturitySnapshot[]).reverse();
+    }
+
+    /** The last snapshot from a DIFFERENT assessment — the "where you were" for a report. */
+    async getPreviousSnapshot(excludeAssessmentId: string | null | undefined): Promise<MaturitySnapshot | null> {
+        let q = supabase
+            .from('audit_maturity_snapshots')
+            .select('id, assessment_id, assessment_number, site_name, sixm_overall, sixm_level, sixm_by_dimension, gap_count, findings_count, intake_overall, created_at')
+            .order('created_at', { ascending: false })
+            .limit(1);
+        if (excludeAssessmentId) q = q.neq('assessment_id', excludeAssessmentId);
+        const { data, error } = await q;
+        if (error || !data?.length) return null;
+        return data[0] as MaturitySnapshot;
     }
 
     // ═══════════════════════════════════════════════════════════════
