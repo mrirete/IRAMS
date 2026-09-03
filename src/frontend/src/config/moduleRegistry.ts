@@ -152,7 +152,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
             { id: 'rcm-dash', label: 'Decide · RCM', path: '/rcm' },
             { id: 'predict-dash', label: 'Forecast · Predict (preview)', path: '/predict' },
         ],
-        routes: ['/reliability', '/reliability-metrics', '/analyze', '/analyze/rca', '/reliability-modelling', '/rcm', '/predict'],
+        routes: ['/reliability', '/reliability-metrics', '/failure-review', '/analyze', '/analyze/rca', '/reliability-modelling', '/rcm', '/predict'],
         dependencies: ['core'], section: 'ers', launchReady: true,
     },
 

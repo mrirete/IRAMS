@@ -638,12 +638,19 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     )}
 
                     {/* RF-01: FRACAS — confirm failure coding, queue that empties */}
-                    {tab === 'review' && (
+                    {tab === 'review' && (<>
+                        <div className="flex justify-end -mb-2">
+                            <button onClick={() => navigate('/failure-review')}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700"
+                            >
+                                Open as full page <ArrowRight size={12} />
+                            </button>
+                        </div>
                         <FailureReviewQueue
                             currentUser={(authUser as any)?.username || (authUser as any)?.email || 'engineer'}
                             onCountChange={setReviewCount}
                         />
-                    )}
+                    </>)}
 
                     {/* Success-centric layer: Potential Success Curve (Golden Spot / MTOP /
                         MTTRg / SR) — the complement to the failure-centric KPIs above. */}

@@ -218,7 +218,7 @@ export const ReliabilityView: React.FC<ViewProps> = ({ shared, openInsight }) =>
         </Band>
         <MainGrid>
             <FeedPanel icon={<ClipboardCheck size={16} className="text-blue-600" />} title="Failure Review — FRACAS" badge={reviewCount}
-                action={<button onClick={() => navigate('/reliability-metrics')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Reliability Metrics <ArrowRight size={12} /></button>}
+                action={<button onClick={() => navigate('/failure-review')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open full page <ArrowRight size={12} /></button>}
             >
                 <FailureReviewQueue currentUser={user?.username || profile?.username || user?.email || 'engineer'} onCountChange={setReviewCount} />
             </FeedPanel>
@@ -226,6 +226,9 @@ export const ReliabilityView: React.FC<ViewProps> = ({ shared, openInsight }) =>
                 {strips.badActors}
                 {strips.fleet}
                 {strips.backlog}
+                <Strip icon={<Gauge size={14} className="text-primary-600 flex-shrink-0" />} title="Reliability Metrics"
+                    right="KPIs · SMRP" chevron="arrow"
+                    onClick={() => navigate('/reliability-metrics')} />
                 <Strip icon={<Target size={14} className="text-blue-600 flex-shrink-0" />} title="Defect Elimination"
                     right={`${shared.deActive} active`} chevron="arrow"
                     onClick={() => navigate('/analyze?division=defect_elimination')} />

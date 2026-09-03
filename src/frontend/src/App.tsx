@@ -84,6 +84,7 @@ const PredictPage = lazyWithReload(() => import('./pages/PredictPage').then(m =>
 const AnalyzePage = lazyWithReload(() => import('./pages/AnalyzePage').then(m => ({ default: m.AnalyzePage })));
 const ReliabilityModellingPage = lazyWithReload(() => import('./pages/ReliabilityModellingPage'));
 const ReliabilityMetricsPage = lazyWithReload(() => import('./pages/ReliabilityMetricsPage').then(m => ({ default: m.ReliabilityMetricsPage })));
+const FailureReviewPage = lazyWithReload(() => import('./pages/FailureReviewPage').then(m => ({ default: m.FailureReviewPage })));
 const RCAInvestigationPage = lazyWithReload(() => import('./pages/RCAInvestigationPage').then(m => ({ default: m.RCAInvestigationPage })));
 const RCAReport = lazyWithReload(() => import('./components/analyze/RCAReport'));
 const FMEAWorksheetDetail = lazyWithReload(() => import('./pages/FMEAWorksheetDetail'));
@@ -231,6 +232,7 @@ function App() {
                                     (ask-first hero + intent chips + continue strip live there now). */}
                                 <Route path="/reliability" element={<Navigate to="/specialist" replace />} />
                                 <Route path="/reliability-metrics" element={<Gated moduleId="predict"><ReliabilityMetricsPage /></Gated>} />
+                                <Route path="/failure-review" element={<Gated moduleId="predict"><FailureReviewPage /></Gated>} />
                                 <Route path="/reliability-modelling" element={<Gated moduleId="predict"><ReliabilityModellingPage /></Gated>} />
                                 <Route path="/analyze" element={<Gated moduleId="predict"><AnalyzePage /></Gated>} />
                                 <Route path="/analyze/rca/:investigationId" element={<Gated moduleId="predict"><RCAInvestigationPage /></Gated>} />
