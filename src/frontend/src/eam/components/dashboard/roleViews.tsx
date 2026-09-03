@@ -115,6 +115,14 @@ const Rail: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div className="flex flex-col gap-2.5 md:gap-3 min-h-0 lg:overflow-y-auto">{children}</div>
 );
 
+// Shimmer rows while a hat's lazy query runs — a view must never look blank
+// or (worse) show an empty-state that is really a loading-state.
+const FeedSkeleton: React.FC = () => (
+    <div className="space-y-3 animate-pulse" aria-hidden>
+        {[1, 2, 3, 4, 5, 6].map(i => <div key={i} className="h-12 bg-slate-100 rounded-lg" />)}
+    </div>
+);
+
 const railStripsShared = (shared: DashboardShared, openInsight: (k: InsightKey) => void) => ({
     backlog: (
         <Strip key="backlog" icon={<Clock size={14} className="text-amber-600 flex-shrink-0" />} title="Backlog Aging"
@@ -242,7 +250,7 @@ export const SupervisorView: React.FC<ViewProps> = ({ shared, openInsight }) => 
     const navigate = useNavigate();
     const { user } = useAuth() as any;
     const [handoverOpen, setHandoverOpen] = useState(false);
-    const { data } = useQuery({
+    const { data, isLoading: crewLoading } = useQuery({
         queryKey: ['dash-crew'],
         queryFn: async () => {
             const db = DatabaseService.getInstance();
@@ -287,7 +295,7 @@ export const SupervisorView: React.FC<ViewProps> = ({ shared, openInsight }) => 
             <FeedPanel icon={<Users size={16} className="text-emerald-600" />} title="Crew Board"
                 action={<button onClick={() => navigate('/scheduling')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open Scheduling <ArrowRight size={12} /></button>}
             >
-                <CrewBoard jobs={jobs} contacts={crew} />
+                {crewLoading ? <FeedSkeleton /> : <CrewBoard jobs={jobs} contacts={crew} />}
             </FeedPanel>
             <Rail>
                 <Strip icon={<RefreshCcw size={14} className="text-primary-600 flex-shrink-0" />} title="Shift Handover"
@@ -372,7 +380,7 @@ export const AssetsView: React.FC<ViewProps> = ({ shared, openInsight }) => {
 // ── Finance / Executive view ────────────────────────────────────────────────
 export const FinanceView: React.FC<ViewProps> = ({ shared, openInsight }) => {
     const navigate = useNavigate();
-    const { data: rows = [] } = useLifecycleFleet(true);
+    const { data: rows = [], isLoading: rowsLoading } = useLifecycleFleet(true);
     const downtime = useDowntime12mo(shared.wos, true);
     const { data: rav = 0 } = useQuery({
         queryKey: ['dash-rav'],
@@ -407,7 +415,9 @@ export const FinanceView: React.FC<ViewProps> = ({ shared, openInsight }) => {
             <FeedPanel icon={<DollarSign size={16} className="text-blue-600" />} title="Where the Money Goes" flush
                 action={<button onClick={() => navigate('/finops')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open FinOps <ArrowRight size={12} /></button>}
             >
-                {topCost.length === 0 ? (
+                {rowsLoading ? (
+                    <div className="p-4"><FeedSkeleton /></div>
+                ) : topCost.length === 0 ? (
                     <div className="p-8 text-center text-sm text-slate-500">No maintenance cost captured in the last 12 months yet.</div>
                 ) : (
                     <div className="divide-y divide-slate-100 bg-white">

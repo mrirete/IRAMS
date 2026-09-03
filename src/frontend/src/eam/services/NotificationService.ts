@@ -506,6 +506,15 @@ export class NotificationService {
     }
 
     private static buildActionLink(module: string, entityId: string): string {
+        // Deep-link to the SUBJECT where the route contract supports it —
+        // a notification about a work order should land on that work order,
+        // not the module's list page (lib/notificationLink mirrors this for
+        // rows written before entity-aware links).
+        if (entityId) {
+            if (module === 'workOrders' || module === 'safety') return `/work-orders/${entityId}`;
+            if (module === 'assets') return `/assets?id=${entityId}`;
+            if (module === 'analyze') return `/analyze?division=defect_elimination&task=${entityId}`;
+        }
         const map: Record<string, string> = {
             'requests': '/requests',
             'workOrders': '/work-orders',

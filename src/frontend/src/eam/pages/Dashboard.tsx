@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query';
 import { isOpenWo } from '../../lib/woState';
 import { computePmCompliance } from '../../lib/reliabilityKpis';
 import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
+import { notificationTarget } from '../lib/notificationLink';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip as ReTooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Area, AreaChart
@@ -67,7 +68,7 @@ export const fetchDashboardData = async (userId?: string, siteIds?: string[] | n
     // 6. Notifications (user-specific, limited)
     userId
       ? supabase.from('notifications')
-          .select('id, title, message, severity, module, is_read, created_at, notification_type')
+          .select('id, title, message, severity, module, is_read, created_at, notification_type, entity_type, entity_id, action_link')
           .eq('recipient_id', userId)
           .eq('is_read', false)
           .order('created_at', { ascending: false })
@@ -769,9 +770,14 @@ export const Dashboard: React.FC = () => {
           {/* Tab content */}
           <div className="divide-y divide-slate-50 max-h-[320px] lg:max-h-none lg:flex-1 min-h-0 overflow-y-auto">
             {workTab === 'active' ? (
-              myWork.length > 0 ? myWork.map((wo: any) => (
+              myWork.length > 0 ? myWork.map((wo: any) => {
+                // Triage striping: overdue rows carry the same red left-accent
+                // the notifications feed uses — a queue, not a list. (Due-date
+                // ascending order already pins them first.)
+                const isOverdue = wo.due_date && new Date(wo.due_date) < new Date();
+                return (
                 <button key={wo.id} onClick={() => navigate(`/work-orders/${wo.id}`)}
-                  className="w-full p-3 sm:p-3.5 flex items-start sm:items-center gap-2.5 sm:gap-3 hover:bg-blue-50/30 transition text-left min-h-[52px]"
+                  className={`w-full p-3 sm:p-3.5 flex items-start sm:items-center gap-2.5 sm:gap-3 hover:bg-blue-50/30 transition text-left min-h-[52px] border-l-4 ${isOverdue ? 'border-l-red-500 bg-red-50/30' : 'border-l-transparent'}`}
                 >
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1.5 sm:mt-0" style={{ backgroundColor: STATUS_COLORS[wo.status] || '#94a3b8' }} />
                   <div className="flex-1 min-w-0">
@@ -788,12 +794,13 @@ export const Dashboard: React.FC = () => {
                     )}
                   </div>
                   {wo.due_date && (
-                    <span className={`text-xs font-medium flex-shrink-0 hidden sm:block ${new Date(wo.due_date) < new Date() ? 'text-red-500' : 'text-slate-500'}`}>
+                    <span className={`text-xs font-medium flex-shrink-0 hidden sm:block ${isOverdue ? 'text-red-500' : 'text-slate-500'}`}>
                       Due {new Date(wo.due_date).toLocaleDateString()}
                     </span>
-                  )}  
+                  )}
                 </button>
-              )) : (
+                );
+              }) : (
                 <div className="p-8 text-center">
                   <CheckCircle size={24} className="text-green-400 mx-auto mb-2" />
                   <p className="text-sm text-slate-500">No active work orders. All caught up!</p>
@@ -820,7 +827,17 @@ export const Dashboard: React.FC = () => {
               )
             ) : (
               notifications.length > 0 ? notifications.map((n: any) => (
-                <button key={n.id} onClick={() => navigate('/notifications')}
+                <button key={n.id}
+                  onClick={() => {
+                    // LinkedIn rule: tap → the thing itself. Mark read in
+                    // passing (fire-and-forget) so the badge tells the truth.
+                    if (!n.is_read) {
+                      supabase.from('notifications')
+                        .update({ is_read: true, read_at: new Date().toISOString() })
+                        .eq('id', n.id).then(() => { /* badge refreshes on next poll */ });
+                    }
+                    navigate(notificationTarget(n));
+                  }}
                   className={`w-full p-3 flex items-start gap-3 hover:bg-slate-50 transition text-left border-l-4 ${severityBg(n.severity)}`}
                 >
                   <div className="mt-0.5 flex-shrink-0">{severityIcon(n.severity)}</div>
