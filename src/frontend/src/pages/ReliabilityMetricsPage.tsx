@@ -7,11 +7,13 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench, Lock, ClipboardCheck } from 'lucide-react';
+import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench, Lock, ClipboardCheck, BookOpen } from 'lucide-react';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 import { PSCPanel } from '../components/metrics/PSCPanel';
+import { SmrpScorecard, smrpRoleForAppRole } from '../components/metrics/SmrpScorecard';
 import { supabase } from '../eam/lib/supabase';
 import { DatabaseService } from '../eam/services/DatabaseService';
+import { useAuth } from '../eam/contexts/AuthContext';
 import { useRelantern } from '../eam/contexts/RelanternContext';
 import { useToast } from '../eam/contexts/ToastContext';
 import analyzeService from '../eam/services/AnalyzeService';
@@ -57,13 +59,35 @@ function fleetScalars(rows: any[], windowDays: number) {
     for (const r of rows) { if (r.asset_id) (byAsset[r.asset_id] = byAsset[r.asset_id] || []).push(r); }
     const assetRel = Object.entries(byAsset).map(([id, recs]) => ({ id, rel: computeAssetReliability(recs, { windowDays }) }));
     const totalFailures = assetRel.reduce((s, a) => s + a.rel.failures12mo, 0);
-    const mtbfs = assetRel.map(a => a.rel.mtbfDays).filter((v): v is number => v != null);
-    const fleetMtbf = mtbfs.length ? Math.round(mtbfs.reduce((s, v) => s + v, 0) / mtbfs.length) : null;
-    const mttrs = assetRel.map(a => a.rel.mttrHours).filter((v): v is number => v != null);
-    const fleetMttr = mttrs.length ? Math.round((mttrs.reduce((s, v) => s + v, 0) / mttrs.length) * 10) / 10 : null;
-    const fleetAvail = (fleetMtbf != null && fleetMttr != null && (fleetMtbf + fleetMttr / 24) > 0)
-        ? Math.round((fleetMtbf / (fleetMtbf + fleetMttr / 24)) * 1000) / 10 : null;
-    return { proPct, pmEffKpi, fleetMtbf, fleetMttr, fleetAvail, totalFailures, assetRel };
+    // Fleet means of the per-asset SMRP 7th-ed mean metrics (G4.0). Assets with
+    // no failures contribute no MTBF/MTTR/MDT — a quiet asset is not "infinite".
+    const mean = (xs: number[], dp = 1) => (xs.length ? Math.round((xs.reduce((s, v) => s + v, 0) / xs.length) * 10 ** dp) / 10 ** dp : null);
+    const pick = (f: (r: AssetReliability) => number | undefined) => assetRel.map(a => f(a.rel)).filter((v): v is number => v != null);
+    const fleetMtbf = mean(pick(r => r.mtbfDays), 0);
+    const fleetMttr = mean(pick(r => r.mttrHours));
+    const fleetMdt = mean(pick(r => r.mdtHours));
+    const fleetMtbm = mean(pick(r => r.mtbmDays), 0);
+    // 3.5.5 — only assets with a replacement-closed failure carry an MTTF.
+    const fleetMttf = mean(pick(r => r.mttfDays), 0);
+    const replacements = assetRel.reduce((s, a) => s + a.rel.replacements12mo, 0);
+    const availOf = (upDays: number | null, downHours: number | null) =>
+        upDays != null && downHours != null && (upDays + downHours / 24) > 0
+            ? Math.round((upDays / (upDays + downHours / 24)) * 1000) / 10 : null;
+    const fleetAi = availOf(fleetMtbf, fleetMttr);
+    const fleetAo = availOf(fleetMtbm, fleetMdt);
+    // How many assets' MTTR rests on repair hours vs the outage-window proxy.
+    const mttrRepairBasis = assetRel.filter(a => a.rel.mttrBasis === 'repair').length;
+    const mttrProxyBasis = assetRel.filter(a => a.rel.mttrBasis === 'downtime-proxy').length;
+    // SMRP 3.2/3.3/3.4 — downtime against Total Available Time across the fleet.
+    const schedDt = assetRel.reduce((s, a) => s + a.rel.scheduledDowntimeHrs12mo, 0);
+    const unschedDt = assetRel.reduce((s, a) => s + a.rel.unscheduledDowntimeHrs12mo, 0);
+    const tat = windowDays * 24 * (assetRel.length || 0);
+    const pctTat = (h: number) => (tat > 0 ? Math.round((h / tat) * 1000) / 10 : null);
+    return {
+        proPct, pmEffKpi, fleetMtbf, fleetMttr, fleetMdt, fleetMtbm, fleetMttf, replacements, fleetAi, fleetAo, totalFailures, assetRel,
+        mttrRepairBasis, mttrProxyBasis,
+        downtime: { sched: Math.round(schedDt), unsched: Math.round(unschedDt), schedPct: pctTat(schedDt), unschedPct: pctTat(unschedDt), totalPct: pctTat(schedDt + unschedDt) },
+    };
 }
 
 export const ReliabilityMetricsPage: React.FC = () => {
@@ -86,7 +110,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
 
     // Calm-screens: the vital-few KPI band stays on screen; the deep sections live
     // behind tabs so the page fits one viewport and everything is a click away.
-    const [tab, setTab] = useState<'execution' | 'cost' | 'health' | 'badActors' | 'psc'>('execution');
+    const [tab, setTab] = useState<'smrp' | 'execution' | 'cost' | 'health' | 'badActors' | 'psc'>('smrp');
 
     // M5 — reliability studies + created PMs per asset, to surface on the bad-actor list.
     const [studyByAsset, setStudyByAsset] = useState<Record<string, { count: number; pm?: string }>>({});
@@ -118,7 +142,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
 
                 const [woRes, aRes, allWOs, labor, finRes] = await Promise.all([
                     supabase.from('work_orders')
-                        .select('id, type, status, est_duration, actual_downtime_hrs, total_actual_cost, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data!wo_id(failure_mode_code)')
+                        // 0283/0289/0295 columns the shared engine classifies on: without
+                        // breakdown / malfunction_start / secondary_failure this page used to
+                        // run the engine degraded (type heuristic only, paperwork dates).
+                        .select('id, type, status, est_duration, actual_downtime_hrs, actual_duration_hrs, est_downtime_hrs, malfunction_start, breakdown, total_actual_cost, asset_id, created_at, closed_at, parent_wo_id, recurring_work_id, job_tasks(description, instructions), work_order_labor(id), wo_failure_data!wo_id(failure_mode_code, remedy_code, object_part, secondary_failure)')
                         .gte('created_at', since),
                     supabase.from('assets').select('id, tag, name, criticality, hierarchy_level, asset_class, manufacturer_id, equipment_number'),
                     db.getWorkOrders().catch(() => []),
@@ -180,22 +207,45 @@ export const ReliabilityMetricsPage: React.FC = () => {
 
         const bad = cur.assetRel.filter(a => a.rel.failures12mo > 0).sort((a, b) => b.rel.failures12mo - a.rel.failures12mo).slice(0, 8);
 
+        // Metric numbers and targets are the SMRP Best Practices 7th Edition's
+        // (lib/smrpCatalog). The vital-few band shows the first six; the rest
+        // sit on the SMRP Scorecard tab, still one list for the Specialist.
+        const mttrBasisNote = cur.mttrRepairBasis > 0 && cur.mttrProxyBasis > 0
+            ? ` Basis: repair hours on ${cur.mttrRepairBasis} assets, outage window standing in on ${cur.mttrProxyBasis}.`
+            : cur.mttrProxyBasis > 0 ? ' Basis: no repair hours captured yet — the outage window (MDT) stands in.' : ' Basis: order-level repair hours.';
+        const dt = cur.downtime;
         const list: ReliabilityKpi[] = [
-            { key: 'pct_proactive', label: '% Proactive', value: cur.proPct, display: cur.proPct == null ? 'N/A' : `${cur.proPct}%`, unit: '%', direction: 'higher-better', benchmark: '>= 80%', definition: `Preventive or fully-planned work vs reactive (${windowLabel}). World-class >= 80%.` },
+            { key: 'pct_proactive', label: '% Proactive', smrpRef: 'SMRP 5.4.2', value: cur.proPct, display: cur.proPct == null ? 'N/A' : `${cur.proPct}%`, unit: '%', direction: 'higher-better', benchmark: '> 80%', definition: `Proactive Work — preventive, predictive and corrective-from-PM/PdM work vs reactive (${windowLabel}). Best-in-class > 80%.` },
             cur.pmEffKpi,
-            { key: 'availability', label: 'Availability', value: cur.fleetAvail, display: cur.fleetAvail == null ? 'N/A' : `${cur.fleetAvail}%`, unit: '%', direction: 'higher-better', benchmark: '>= 90%', definition: 'Inherent availability Ai = MTBF / (MTBF + MTTR). Driven by repair downtime (MTTR). World-class >= 90%.' },
-            { key: 'fleet_mtbf', label: 'Fleet MTBF', value: cur.fleetMtbf, display: cur.fleetMtbf == null ? 'N/A' : `${cur.fleetMtbf}d`, unit: 'days', direction: 'higher-better', definition: 'Mean Time Between Failures, averaged across assets (equipment reliability).' },
-            { key: 'fleet_mttr', label: 'Fleet MTTR', value: cur.fleetMttr, display: cur.fleetMttr == null ? 'N/A' : `${cur.fleetMttr}h`, unit: 'hours', direction: 'lower-better', definition: 'Mean Time To Repair, averaged across assets.' },
-            { key: 'failures_win', label: `Failures (${windowLabel})`, value: cur.totalFailures, display: String(cur.totalFailures), direction: 'lower-better', definition: `Total corrective failures across the fleet in the ${windowLabel} window.` },
+            { key: 'ai', label: 'Inherent Avail. (Ai)', smrpRef: 'SMRP G6.0 Ai', value: cur.fleetAi, display: cur.fleetAi == null ? 'N/A' : `${cur.fleetAi}%`, unit: '%', direction: 'higher-better', benchmark: '> 90%', definition: 'Guideline 6.0 inherent availability Ai = MTBF ÷ (MTBF + MTTR): design-driven, corrective repair time only.' },
+            { key: 'ao', label: 'Operational Avail. (Ao)', smrpRef: 'SMRP G6.0 Ao', value: cur.fleetAo, display: cur.fleetAo == null ? 'N/A' : `${cur.fleetAo}%`, unit: '%', direction: 'higher-better', benchmark: '≤ Ai; trend upward', definition: 'Guideline 6.0 operational availability Ao = MTBM ÷ (MTBM + MDT): PM/PdM interruptions and repair delays included — what the plant lived.' },
+            { key: 'fleet_mtbf', label: 'Fleet MTBF', smrpRef: 'SMRP 3.5.1', value: cur.fleetMtbf, display: cur.fleetMtbf == null ? 'N/A' : `${cur.fleetMtbf}d`, unit: 'days', direction: 'higher-better', benchmark: 'trend upward', definition: 'Mean Time Between Failures = operating time ÷ failures, per asset then averaged. Operating time = window less recorded downtime (calendar-hour basis).' },
+            { key: 'fleet_mttr', label: 'Fleet MTTR', smrpRef: 'SMRP 3.5.2', value: cur.fleetMttr, display: cur.fleetMttr == null ? 'N/A' : `${cur.fleetMttr}h`, unit: 'hours', direction: 'lower-better', benchmark: 'trend downward', definition: `Mean Time to Repair or Replace = repair start → repair complete, averaged across assets.${mttrBasisNote}` },
+            { key: 'fleet_mdt', label: 'Mean Downtime (MDT)', smrpRef: 'SMRP 3.5.4', value: cur.fleetMdt, display: cur.fleetMdt == null ? 'N/A' : `${cur.fleetMdt}h`, unit: 'hours', direction: 'lower-better', benchmark: 'trend downward', definition: 'Mean Downtime = failure → back in service, waits and delays included (malfunction window). MTTR plus the delays before and after the repair.' },
+            { key: 'fleet_mtbm', label: 'MTBM', smrpRef: 'SMRP 3.5.3', value: cur.fleetMtbm, display: cur.fleetMtbm == null ? 'N/A' : `${cur.fleetMtbm}d`, unit: 'days', direction: 'higher-better', benchmark: 'trend upward', definition: 'Mean Time Between Maintenance = operating time ÷ maintenance actions that interrupted the function (failures + PM/PdM with downtime).' },
+            { key: 'fleet_mttf', label: 'MTTF', smrpRef: 'SMRP 3.5.5', value: cur.fleetMttf, display: cur.fleetMttf == null ? 'N/A' : `${cur.fleetMttf}d`, unit: 'days', direction: 'higher-better', benchmark: 'trend upward', definition: cur.replacements > 0
+                ? `Mean Time To Failure = operating time ÷ items run to failure, for NON-repairable items only. IREAMS counts the ${cur.replacements} failure${cur.replacements === 1 ? '' : 's'} closed with the REPLACED remedy (${windowLabel}); failures closed by repair belong to MTBF.`
+                : `Mean Time To Failure applies to non-repairable items: failures closed with the REPLACED remedy code. None in the ${windowLabel} window — code the remedy at close-out and this fills in.` },
+            { key: 'downtime_total', label: 'Total Downtime', smrpRef: 'SMRP 3.2', value: dt.totalPct, display: dt.totalPct == null ? 'N/A' : `${dt.totalPct}%`, unit: '%', direction: 'lower-better', benchmark: '< 0.5–2% of Total Available Time', definition: `Scheduled + unscheduled maintenance downtime as % of Total Available Time (${windowLabel} × 24 h × assets in scope): ${dt.sched}h scheduled + ${dt.unsched}h unscheduled.` },
+            { key: 'downtime_sched', label: 'Scheduled Downtime', smrpRef: 'SMRP 3.3', value: dt.schedPct, display: dt.schedPct == null ? 'N/A' : `${dt.schedPct}%`, unit: '%', direction: 'lower-better', definition: `Downtime on preventive/scheduled work (actual, else planned) as % of Total Available Time — ${dt.sched}h.` },
+            { key: 'downtime_unsched', label: 'Unscheduled Downtime', smrpRef: 'SMRP 3.4', value: dt.unschedPct, display: dt.unschedPct == null ? 'N/A' : `${dt.unschedPct}%`, unit: '%', direction: 'lower-better', benchmark: 'every effort to avoid', definition: `Downtime on failures as % of Total Available Time — ${dt.unsched}h.` },
+            { key: 'failures_win', label: `Failures (${windowLabel})`, value: cur.totalFailures, display: String(cur.totalFailures), direction: 'lower-better', definition: `Total primary failures across the fleet in the ${windowLabel} window (ISO 14224 event count — not itself an SMRP metric).` },
         ];
 
         const d = (c: number | null, p: number | null) => (c != null && p != null ? Math.round((c - p) * 10) / 10 : null);
         const deltas: Record<string, number | null> = {
             pct_proactive: d(cur.proPct, prev.proPct),
             pm_pdm_effectiveness: d(cur.pmEffKpi.value, prev.pmEffKpi.value),
-            availability: d(cur.fleetAvail, prev.fleetAvail),
+            ai: d(cur.fleetAi, prev.fleetAi),
+            ao: d(cur.fleetAo, prev.fleetAo),
             fleet_mtbf: d(cur.fleetMtbf, prev.fleetMtbf),
             fleet_mttr: d(cur.fleetMttr, prev.fleetMttr),
+            fleet_mdt: d(cur.fleetMdt, prev.fleetMdt),
+            fleet_mtbm: d(cur.fleetMtbm, prev.fleetMtbm),
+            fleet_mttf: d(cur.fleetMttf, prev.fleetMttf),
+            downtime_total: d(cur.downtime.totalPct, prev.downtime.totalPct),
+            downtime_sched: d(cur.downtime.schedPct, prev.downtime.schedPct),
+            downtime_unsched: d(cur.downtime.unschedPct, prev.downtime.unschedPct),
             failures_win: d(cur.totalFailures, prev.totalFailures),
         };
         return { kpis: list, badActors: bad as BadActor[], deltas };
@@ -211,8 +261,8 @@ export const ReliabilityMetricsPage: React.FC = () => {
             sc, pmc, backlog,
             kpis: [
                 backlogWeeksKpi(backlog),
-                complianceKpi('schedule_compliance', 'Schedule Compliance', sc),
-                complianceKpi('pm_compliance', 'PM Compliance', pmc),
+                complianceKpi('schedule_compliance', 'Schedule Compliance', sc, '> 90%', 'SMRP 5.4.4'),
+                complianceKpi('pm_compliance', 'PM & PdM Compliance', pmc, '> 90%', 'SMRP 5.4.14'),
             ] as ReliabilityKpi[],
         };
     }, [schedJobs, resources]);
@@ -240,14 +290,30 @@ export const ReliabilityMetricsPage: React.FC = () => {
             .reduce((s, r) => s + (Number(r.replacement_value) || 0), 0);
         const maintWin = filteredWos.reduce((s, w) => s + (Number(w.total_actual_cost) || 0), 0);
         const pctRav = rav > 0 ? Math.round((maintWin / rav) * 1000) / 10 : null;
-        return { rav, maint12: maintWin, pctRav };
-    }, [finRows, filteredWos, assetFilterActive, filteredAssetIds]);
+        // SMRP 1.5 is an ANNUAL metric — a shorter window is annualised so the
+        // published top-quartile band (0.7–3.6%) applies; longer windows too.
+        const pctRavAnnual = pctRav == null ? null : Math.round(pctRav * (365 / windowDays) * 10) / 10;
+        const kpi: ReliabilityKpi = {
+            key: 'maint_cost_pct_rav', label: 'Maint. cost % of RAV', smrpRef: 'SMRP 1.5', value: pctRavAnnual,
+            display: pctRavAnnual == null ? 'N/A' : `${pctRavAnnual}%`, unit: '%', direction: 'lower-better',
+            benchmark: '< 3% (top quartile 0.7–3.6%)',
+            definition: `Total maintenance cost × 100 ÷ Replacement Asset Value, annualised from the ${windowLabel} window.`,
+        };
+        return { rav, maint12: maintWin, pctRav, pctRavAnnual, kpi };
+    }, [finRows, filteredWos, assetFilterActive, filteredAssetIds, windowDays, windowLabel]);
+
+    const { role } = useAuth();
+    const smrpRole = useMemo(() => smrpRoleForAppRole(role), [role]);
+    // The vital-few band: the first six. Everything else is still computed and
+    // lands on the SMRP Scorecard tab (Guideline 8.0) and in the AI context.
+    const bandKpis = kpis.slice(0, 6);
+    const allKpis = useMemo(() => [...kpis, ...exec.kpis, cost.kpi], [kpis, exec.kpis, cost.kpi]);
 
     const ragColor = (k: ReliabilityKpi): string => {
         if (k.value == null) return 'text-slate-400';
         if (k.key === 'pct_proactive') return k.value >= 80 ? 'text-emerald-600' : k.value >= 60 ? 'text-amber-500' : 'text-red-500';
         if (k.key === 'pm_pdm_effectiveness') return k.value >= 70 ? 'text-emerald-600' : k.value >= 40 ? 'text-amber-500' : 'text-red-500';
-        if (k.key === 'availability') return k.value >= 90 ? 'text-emerald-600' : k.value >= 75 ? 'text-amber-500' : 'text-red-500';
+        if (k.key === 'ai' || k.key === 'ao') return k.value >= 90 ? 'text-emerald-600' : k.value >= 75 ? 'text-amber-500' : 'text-red-500';
         return 'text-slate-800';
     };
 
@@ -282,19 +348,19 @@ export const ReliabilityMetricsPage: React.FC = () => {
     // N/A, the model would be reasoning about blanks — the page already says so.
     const askBlocked = filteredAssets.length === 0
         ? 'No assets in this scope — widen the filters before asking the Specialist.'
-        : [...kpis, ...exec.kpis].every(k => k.value == null)
+        : allKpis.every(k => k.value == null)
             ? 'Every KPI in this window is still N/A — there is no reliability history for the Specialist to read yet.'
             : '';
 
     const askSpecialist = () => {
         if (askBlocked) { showToast(askBlocked, 'info'); return; }
         const ctx = [
-            'RELIABILITY METRICS',
+            'RELIABILITY METRICS (SMRP Best Practices, 7th Edition numbering; MTBF = operating time ÷ failures on a calendar-hour basis; MTTR = repair hours, MDT = outage window; Ai = MTBF/(MTBF+MTTR), Ao = MTBM/(MTBM+MDT))',
             `Scope: ${windowLabel} window${critFilter !== 'ALL' ? `, Criticality ${critFilter}` : ''}${classFilter !== 'ALL' ? `, Class ${classFilter}` : ''} (${filteredAssets.length} assets).`,
-            kpisToAIContext([...kpis, ...exec.kpis]),
+            kpisToAIContext(allKpis),
             badActors.length ? `Top bad actors: ${badActors.slice(0, 6).map(a => `${assetName(a.id)} (${a.rel.failures12mo} failures/12mo${a.rel.mtbfDays != null ? `, MTBF ${a.rel.mtbfDays}d` : ''}${a.rel.recurringModes.length ? `, recurring: ${a.rel.recurringModes[0].mode}×${a.rel.recurringModes[0].count}` : ''})`).join('; ')}.` : '',
         ].filter(Boolean).join('\n');
-        const prompt = `As a reliability engineer, review these fleet reliability KPIs against industry reliability best practice. Be specific:\n1. The 3 biggest risks or opportunities in these numbers.\n2. A prioritised action plan — which bad actors to take to RCA, which PMs to optimise, and how to lift the proactive ratio.\n3. Any KPI that looks unreliable due to thin data, and what to capture to fix it.`;
+        const prompt = `As a reliability engineer, review these fleet reliability KPIs against the SMRP Best Practices 7th Edition targets cited with each metric. Be specific and cite metric numbers:\n1. The 3 biggest risks or opportunities in these numbers.\n2. A prioritised action plan — which bad actors to take to RCA, which PMs to optimise, and how to lift Proactive Work (5.4.2) and Operational Availability (Ao).\n3. Any KPI that looks unreliable due to thin data (note the MTTR basis), and what to capture to fix it.`;
         openRelantern(ctx, 'reliability', prompt);
     };
 
@@ -368,8 +434,8 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     {/* KPI cards — calm rule: only KPIs with real data get a tile;
                         the rest wait in ONE quiet line instead of six shouting N/As. */}
                     {(() => {
-                        const withData = kpis.filter(k => k.value != null);
-                        const awaiting = kpis.filter(k => k.value == null);
+                        const withData = bandKpis.filter(k => k.value != null);
+                        const awaiting = bandKpis.filter(k => k.value == null);
                         return (<>
                             {withData.length > 0 && (
                                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -408,6 +474,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     <div className="flex-1 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <Tabs
                             tabs={[
+                                { id: 'smrp', label: 'SMRP Scorecard', icon: BookOpen },
                                 { id: 'execution', label: 'Work Execution', icon: CalendarClock },
                                 { id: 'cost', label: 'Cost vs RAV', icon: Gauge },
                                 { id: 'health', label: 'Register Health', icon: Layers },
@@ -421,6 +488,12 @@ export const ReliabilityMetricsPage: React.FC = () => {
                             onTabChange={(id) => id === 'review' ? navigate('/failure-review') : setTab(id as typeof tab)}
                         />
                         <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-4 bg-slate-50/50">
+
+                    {/* Guideline 8.0 — every computed metric on the 7th-edition map,
+                        by role, with the cultural self-assessment. */}
+                    {tab === 'smrp' && (
+                        <SmrpScorecard kpis={allKpis} deltas={deltas} defaultRole={smrpRole} windowLabel={windowLabel} />
+                    )}
 
                     {tab === 'execution' && (
                     <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -482,10 +555,10 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                 const pctColor = pct == null ? 'text-slate-400' : pct <= 3 ? 'text-emerald-600' : pct <= 5 ? 'text-amber-500' : 'text-red-500';
                                 return (
                                     <>
-                                        <div className="p-4">
-                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Maint. cost % of RAV</div>
+                                        <div className="p-4" title={cost.kpi.definition}>
+                                            <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Maint. cost % of RAV <span className="text-slate-300">·1.5</span></div>
                                             <div className={`text-2xl font-extrabold mt-1 ${pctColor}`}>{pct == null ? 'N/A' : `${pct}%`}</div>
-                                            <div className="text-[10px] text-slate-400 mt-0.5">target ≤ 2–3% ({windowLabel})</div>
+                                            <div className="text-[10px] text-slate-400 mt-0.5">{windowLabel}{cost.pctRavAnnual != null && cost.pctRavAnnual !== pct ? ` · ${cost.pctRavAnnual}% annualised` : ''} · SMRP 1.5 &lt; 3% (top quartile 0.7–3.6%)</div>
                                         </div>
                                         <div className="p-4">
                                             <div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Maintenance cost ({windowLabel})</div>
@@ -641,8 +714,9 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     {tab === 'psc' && <PSCPanel />}
 
                     <p className="text-[11px] text-slate-400">
-                        Metrics computed over the {windowLabel} window via the shared reliability engine.
-                        Adjust the window or filters above to re-analyze. Hover a KPI for its definition.
+                        Metrics computed over the {windowLabel} window via the shared reliability engine, numbered and
+                        targeted per SMRP Best Practices, 7th Edition. Operating time is calendar hours less recorded downtime
+                        (no run-hour meters). Adjust the window or filters above to re-analyze. Hover a KPI for its definition.
                     </p>
                         </div>
                     </div>

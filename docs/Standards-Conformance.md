@@ -1,6 +1,6 @@
 # IREAMS — Standards Conformance Statement
 
-**Status:** Governance record · **Last reviewed:** 2026-08-24
+**Status:** Governance record · **Last reviewed:** 2026-09-03
 **Purpose:** name the international standard that governs each capability, and state the posture toward vendor (SAP) terminology — so the product's canon is anchored to public standards, not to any vendor's intellectual property.
 **Scope note:** this is an engineering-governance document, not legal advice. Where a client contract makes vendor-IP posture load-bearing, have counsel confirm §4 specifically.
 
@@ -27,7 +27,7 @@ Three consequences of that principle, visible in the code:
 | **Primary vs. secondary (collateral) failures** | **ISO 14224** primary/secondary distinction | 0289 (`secondary_failure`, `caused_by_wo_id`); excluded from the victim's MTBF, always shown |
 | Failure-event definition (breakdown = loss of required function) and event timing (malfunction window, not paperwork dates) | **ISO 14224** failure definition; **EN 13306** terminology | 0283 (`breakdown`, `malfunction_start/end`), 0295 (breakdown-aware canonical predicate, client + SQL in lockstep) |
 | Maintenance terminology: corrective / preventive / predictive, technical vs. business completion | **EN 13306** (maintenance terminology) | canonical WO state (0233), TECO vs. CLOSED distinction |
-| Maintenance KPIs: MTBF, MTTR, availability, PM compliance | **SMRP Best Practices** / **EN 15341** (maintenance KPIs) | `reliabilityMetrics.ts` (documented SMRP-aligned), `sem_asset_reliability` |
+| Maintenance KPIs: MTBF, MTTR, MDT, MTBM, Ai/Ao, OEE/TEEP, work-management metrics | **SMRP Best Practices, 7th Edition** (Guidelines 4.0 mean metrics, 6.0 availability, 2.0 OEE, 8.0 getting started) / **EN 15341** (harmonized indicators) | `reliabilityMetrics.ts` + `lib/reliabilityKpis.ts` (3.5.x operating-time basis, MTTR ≠ MDT), `lib/smrpCatalog.ts` (metric numbers, targets, roles), `lib/oee7.ts` + `compute_oee` (0307), `sem_asset_reliability` v6 (0307) |
 | RCM decision logic | **SAE JA1011 / JA1012** | RCM module |
 | Weibull / life-data analysis | Standard reliability engineering practice (IEC 61649 is the reference for Weibull analysis) | Reliability module (β/η); censoring on the roadmap |
 | Asset management system context | **ISO 55000 / 55001** | product posture; asset register, criticality, strategy links |
@@ -70,6 +70,10 @@ Where SAP vocabulary appears, and why each use is sound:
 | Movement types | Numeric codes (101, 261, 561…) with generic English descriptions | Numbers and generic descriptions; the **canonical semantic is vendor-neutral** (`MovementSemantic`), with codes retained as the interchange dialect the client's ERP speaks |
 | Tolerance keys | PP/DQ key names | The control is ICFR; the key names mirror the client's configuration for reconciliation. Renameable without semantic change |
 | Analyst/agent prompts, docs | SAP concepts explained for migration guidance | Descriptive/educational reference |
+
+**SMRP posture (2026-09-03):** metric numbers, formulas and best-in-class values from *SMRP Best Practices, 7th Edition* are cited as facts about the standard, in IREAMS' own wording (`lib/smrpCatalog.ts`); the document, its figures and its tables are not reproduced, the SMRP logo is not used, and every surface states that IREAMS is not affiliated with, certified by, or endorsed by SMRP. The culture check on the Metrics page is IREAMS' own questionnaire, guided by Guideline 8.0's principles, not the standard's appendix. Marketing language stays at "aligned with SMRP Best Practices". If "SMRP metrics" becomes a headline feature, confirm the position with SMRP's permissions contact.
+
+**Two deliberate proxies, stated on the surface:** MTTF (3.5.5) is defined for non-repairable items; IREAMS has no per-component repairable flag, so it counts failures closed with the REPLACED remedy code (`isReplacement` in `reliabilityMetrics.ts`, `mttf_hours` in `sem_asset_reliability`). Operating time for every mean metric is calendar hours less recorded downtime, not run-hour meters. The OEE best-in-class band follows the asset's `process_type` (batch 85 / discrete 90 / continuous 95), editable from the Reports › OEE "Asset Setup" panel.
 
 **Commitments:** SAP field names never become canonical schema names; "SAP-compatible" is claimed, "SAP-certified/endorsed" is not; marketing language is "standards-based (ISO 14224, EN 13306, EN 15341, IAS 2), compatible with SAP, Maximo, MaintainX and spreadsheet-based systems."
 

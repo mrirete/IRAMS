@@ -11,13 +11,53 @@
 import { isPreventiveWork } from './workReadiness';
 import { computePmCompliance as computeCanonicalPmCompliance } from '../../lib/reliabilityKpis';
 
+/**
+ * The mean metrics follow SMRP Best Practices, 7th Edition (Guideline 4.0 and
+ * metrics 3.5.1–3.5.4, Guideline 6.0 for the two availabilities):
+ *
+ *   MTBF (3.5.1) = operating time ÷ failures. Operating time is the analysis
+ *                  window in calendar hours less recorded downtime — the
+ *                  calendar-hour approximation every surface states.
+ *   MDT  (3.5.4) = total downtime ÷ downtime events: failure to back-in-service,
+ *                  delays included. Basis: actual_downtime_hrs (the malfunction
+ *                  window, 0283).
+ *   MTTR (3.5.2) = repair/replace time ÷ repair events: repair start to repair
+ *                  complete. Basis: actual_duration_hrs (order-level actual
+ *                  hours). When no failure carries repair hours the downtime
+ *                  chain stands in and mttrBasis says so — before the 7th-ed
+ *                  pass the engine silently reported MDT under the name MTTR.
+ *   MTBM (3.5.3) = operating time ÷ maintenance actions that interrupted the
+ *                  function (failures + PM/PdM work carrying downtime).
+ *   MTTF (3.5.5) = operating time ÷ non-repairable items run to failure. No
+ *                  per-component repairable flag exists, so the honest proxy
+ *                  is the recorded remedy: a failure closed with REPLACED
+ *                  ended an item's life; one closed with REPAIRED did not.
+ *   Ai (G6.0)    = MTBF ÷ (MTBF + MTTR)   — inherent, design-driven.
+ *   Ao (G6.0)    = MTBM ÷ (MTBM + MDT)    — operational, what the plant lived.
+ *
+ * `availabilityPct` remains the Ai alias so RBD, Predict and the dossier keep
+ * reading one field; `aiPct`/`aoPct` are the named 7th-edition pair.
+ */
 export interface AssetReliability {
-  failures12mo: number;        // corrective failures in the last 12 months
-  totalFailures: number;       // corrective failures on record
+  failures12mo: number;        // primary failures inside the analysis window
+  totalFailures: number;       // primary failures on record
   lastFailureDate?: string;    // ISO date of the most recent failure
-  mtbfDays?: number;           // SMRP: Mean Time Between Failures (days)
-  mttrHours?: number;          // SMRP: Mean Time To Repair (hours)
-  availabilityPct?: number;    // SMRP inherent availability Ai = MTBF/(MTBF+MTTR), %
+  mtbfDays?: number;           // SMRP 3.5.1 Mean Time Between Failures (days)
+  mtbfBasis?: 'stored' | 'operating-window' | 'lifetime-interarrival';
+  mttrHours?: number;          // SMRP 3.5.2 Mean Time To Repair or Replace (hours)
+  mttrBasis?: 'stored' | 'repair' | 'downtime-proxy';
+  mdtHours?: number;           // SMRP 3.5.4 Mean Downtime (hours) — failure → back in service
+  mtbmDays?: number;           // SMRP 3.5.3 Mean Time Between Maintenance (days)
+  maintenanceActions12mo: number; // failures + function-interrupting PM/PdM actions in window
+  mttfDays?: number;           // SMRP 3.5.5 Mean Time To Failure (days) — replacement-closed failures only
+  replacements12mo: number;    // window failures whose remedy was REPLACED (the MTTF denominator)
+  aiPct?: number;             // Guideline 6.0 inherent availability = MTBF/(MTBF+MTTR)
+  aoPct?: number;              // Guideline 6.0 operational availability = MTBM/(MTBM+MDT)
+  availabilityPct?: number;    // alias of aiPct (legacy consumers)
+  scheduledDowntimeHrs12mo: number;   // SMRP 3.3 — downtime on preventive/scheduled work in window
+  unscheduledDowntimeHrs12mo: number; // SMRP 3.4 — downtime on failures in window
+  operatingHrs12mo: number;    // window hours less all recorded downtime (the MTBF/MTBM numerator)
+  downtimeCoveragePct: number; // share of window failures carrying a downtime figure — the trust caveat
   collateral12mo: number;      // failures marked as collateral of ANOTHER failure (0289) — shown, never counted against this asset
   recurringModes: { mode: string; count: number }[]; // failure modes seen >=2× (12mo)
   recurringParts: { part: string; count: number }[]; // failed components seen >=2× (12mo, 0287 BOM link)
@@ -55,6 +95,17 @@ const failedPart = (r: any): string | undefined => {
 export const isSecondaryFailure = (r: any): boolean => {
   const fd = Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data;
   return fd?.secondary_failure === true || fd?.secondaryFailure === true;
+};
+
+// SMRP 3.5.5 MTTF is defined for NON-repairable items — the life that ends
+// with a replacement. There is no per-component repairable flag, so the
+// recorded remedy decides: 'RPL' (Replaced) in the REMEDY_CODE dictionary, or
+// any code spelling out replacement, marks the failure as an item run to
+// failure. A failure fixed by repair belongs to MTBF, not MTTF.
+export const isReplacement = (r: any): boolean => {
+  const fd = Array.isArray(r.wo_failure_data) ? r.wo_failure_data[0] : r.wo_failure_data;
+  const code = String(fd?.remedy_code || fd?.remedyCode || '').toUpperCase().trim();
+  return code === 'RPL' || /REPLAC/.test(code);
 };
 
 // Failure event time, best basis first: the recorded malfunction start (0283 —
@@ -103,7 +154,7 @@ export const isFailure = (r: any): boolean => {
  * that pass richer client-side records.
  */
 export const FAILURE_QUERY_COLUMNS =
-  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, malfunction_start, breakdown, wo_failure_data!wo_id(failure_mode_code, object_part, secondary_failure, caused_by_wo_id)';
+  'id, type, status, created_at, closed_at, actual_downtime_hrs, actual_duration_hrs, est_downtime_hrs, malfunction_start, breakdown, wo_failure_data!wo_id(failure_mode_code, remedy_code, object_part, secondary_failure, caused_by_wo_id)';
 
 /**
  * One derivation of the numbers the Modelling calculators auto-populate from an
@@ -113,9 +164,9 @@ export const FAILURE_QUERY_COLUMNS =
  */
 export interface FailureBasis {
   failures: number;          // failures in the fetched window
-  mtbfHours?: number;        // inter-arrival MTBF × 24; undefined when < 2 failures
+  mtbfHours?: number;        // SMRP 3.5.1 operating-time MTBF × 24 (lifetime inter-arrival fallback when the window is quiet)
   totalHours: number;        // operating-time basis st. totalHours/failures === MTBF (8760 fallback)
-  repairHours: number[];     // per-failure downtime series (same basis as engine MTTR)
+  repairHours: number[];     // per-failure downtime series (MDT basis — the outage the calculators model)
 }
 
 export function assetFailureBasis(records: any[]): FailureBasis {
@@ -176,28 +227,78 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     .map(([part, count]) => ({ part, count }))
     .sort((a, b) => b.count - a.count);
 
-  // MTTR — prefer the asset's stored value, else mean of actual repair durations.
-  const durs = failures.map(repairHoursOf).filter(d => d > 0);
-  const mttrHours = (opts.mttrHours ?? null) != null
-    ? Number(opts.mttrHours)
-    : (durs.length ? Math.round((durs.reduce((s, d) => s + d, 0) / durs.length) * 10) / 10 : undefined);
+  const windowDays = opts.windowDays ?? 365;
+  const mean1 = (xs: number[]) => (xs.length ? Math.round((xs.reduce((s, d) => s + d, 0) / xs.length) * 10) / 10 : undefined);
 
-  // MTBF — prefer the asset's stored value, else derive from failure-date spans.
-  let mtbfDays: number | undefined = (opts.mtbfDays ?? null) != null ? Number(opts.mtbfDays) : undefined;
-  if (mtbfDays == null && failures.length >= 2) {
+  // ── SMRP 3.5.4 MDT — failure to back-in-service (the malfunction window) ──
+  // Window failures only: the window is the observation period every other
+  // number here is expressed over. Falls back to all recorded failures when
+  // the window is quiet (imported-history tenants, 0298).
+  const mdtPool = failures12.length ? failures12 : failures;
+  const downs = mdtPool.map(repairHoursOf).filter(d => d > 0);
+  const mdtHours = mean1(downs);
+
+  // ── SMRP 3.5.2 MTTR — repair start to repair complete ─────────────────────
+  // Repair hours (actual_duration_hrs) when any failure carries them; else the
+  // downtime chain stands in, and the basis says so. A stored asset value wins.
+  const repairs = mdtPool.map(repairLaborHoursOf).filter(d => d > 0);
+  let mttrHours: number | undefined;
+  let mttrBasis: AssetReliability['mttrBasis'];
+  if ((opts.mttrHours ?? null) != null) { mttrHours = Number(opts.mttrHours); mttrBasis = 'stored'; }
+  else if (repairs.length) { mttrHours = mean1(repairs); mttrBasis = 'repair'; }
+  else if (downs.length) { mttrHours = mdtHours; mttrBasis = 'downtime-proxy'; }
+
+  // ── Downtime split (SMRP 3.3 / 3.4) and the operating-time basis ──────────
+  const unscheduledDowntimeHrs12mo = Math.round(failures12.map(repairHoursOf).reduce((s, d) => s + d, 0) * 10) / 10;
+  const interruptingPm = (records || []).filter(r => !isFailure(r) && isPreventiveType(r) && inWindow(r) && pmDowntimeOf(r) > 0);
+  const scheduledDowntimeHrs12mo = Math.round(interruptingPm.map(pmDowntimeOf).reduce((s, d) => s + d, 0) * 10) / 10;
+  const windowHours = windowDays * 24;
+  const operatingHrs12mo = Math.max(0, Math.round(windowHours - unscheduledDowntimeHrs12mo - scheduledDowntimeHrs12mo));
+
+  // ── SMRP 3.5.1 MTBF = operating time ÷ failures ───────────────────────────
+  // Operating time is the window less recorded downtime (calendar-hour
+  // approximation — no run-hour meters). A stored asset value wins. When the
+  // window has no failures but history does, the lifetime inter-arrival span
+  // is the fallback (matches sem_asset_reliability.mtbf_hours_lifetime).
+  let mtbfDays: number | undefined;
+  let mtbfBasis: AssetReliability['mtbfBasis'];
+  if ((opts.mtbfDays ?? null) != null) { mtbfDays = Number(opts.mtbfDays); mtbfBasis = 'stored'; }
+  else if (failures12.length > 0) {
+    mtbfDays = Math.round((operatingHrs12mo / failures12.length) / 24 * 10) / 10;
+    mtbfBasis = 'operating-window';
+  } else if (failures.length >= 2) {
     const times = failures.map(eventDate).filter(Boolean).map(d => new Date(d as string).getTime()).sort((a, b) => a - b);
-    if (times.length >= 2) {
-      const spanDays = (times[times.length - 1] - times[0]) / 86400000;
-      if (spanDays > 0) mtbfDays = Math.round(spanDays / (times.length - 1));
-    }
+    const spanDays = (times[times.length - 1] - times[0]) / 86400000;
+    if (spanDays > 0) { mtbfDays = Math.round(spanDays / (times.length - 1) * 10) / 10; mtbfBasis = 'lifetime-interarrival'; }
   }
 
-  // SMRP inherent availability Ai = MTBF / (MTBF + MTTR) — driven by repair downtime.
-  let availabilityPct: number | undefined;
-  if (mtbfDays != null && mttrHours != null) {
-    const denom = mtbfDays + mttrHours / 24;
-    if (denom > 0) availabilityPct = Math.round((mtbfDays / denom) * 1000) / 10;
-  }
+  // ── SMRP 3.5.3 MTBM = operating time ÷ function-interrupting actions ──────
+  const maintenanceActions12mo = failures12.length + interruptingPm.length;
+  const mtbmDays = maintenanceActions12mo > 0
+    ? Math.round((operatingHrs12mo / maintenanceActions12mo) / 24 * 10) / 10
+    : undefined;
+
+  // ── SMRP 3.5.5 MTTF = operating time ÷ items run to failure and replaced ──
+  // Same operating-time numerator as MTBF; the denominator is only the window
+  // failures the technician closed as REPLACED. Undefined when nothing was
+  // replaced — never zero, never a repair-based number under this name.
+  const replacements12mo = failures12.filter(isReplacement).length;
+  const mttfDays = replacements12mo > 0
+    ? Math.round((operatingHrs12mo / replacements12mo) / 24 * 10) / 10
+    : undefined;
+
+  // ── Guideline 6.0: Ai = MTBF/(MTBF+MTTR); Ao = MTBM/(MTBM+MDT) ────────────
+  const availOf = (upDays?: number, downHours?: number): number | undefined => {
+    if (upDays == null || downHours == null) return undefined;
+    const denom = upDays + downHours / 24;
+    return denom > 0 ? Math.round((upDays / denom) * 1000) / 10 : undefined;
+  };
+  const aiPct = availOf(mtbfDays, mttrHours);
+  const aoPct = availOf(mtbmDays, mdtHours);
+  const availabilityPct = aiPct;
+  const downtimeCoveragePct = failures12.length
+    ? Math.round((failures12.filter(r => repairHoursOf(r) > 0).length / failures12.length) * 100)
+    : 0;
 
   const lastFailureDate = failures.length
     ? failures.map(eventDate).filter(Boolean).sort((a, b) => new Date(b as string).getTime() - new Date(a as string).getTime())[0]
@@ -219,8 +320,21 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
     totalFailures: failures.length,
     lastFailureDate,
     mtbfDays,
+    mtbfBasis,
     mttrHours,
+    mttrBasis,
+    mdtHours,
+    mtbmDays,
+    maintenanceActions12mo,
+    mttfDays,
+    replacements12mo,
+    aiPct,
+    aoPct,
     availabilityPct,
+    scheduledDowntimeHrs12mo,
+    unscheduledDowntimeHrs12mo,
+    operatingHrs12mo,
+    downtimeCoveragePct,
     collateral12mo,
     recurringModes,
     recurringParts,
@@ -245,6 +359,34 @@ export function computeAssetReliability(records: any[], opts: ReliabilityOptions
 // fields to 0, and a 0 early in the chain must not mask a real value later.
 const repairHoursOf = (r: any): number => {
   for (const v of [r.actual_downtime_hrs, r.actual_duration_hrs, r.actual_duration, r.actualDowntime, r.actualDuration, r.actual_hours]) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+};
+
+// SMRP 3.5.2 repair time proper — the order's actual repair hours, NOT the
+// outage window. Only the repair-hour fields count here; when none is set the
+// engine falls back to the downtime chain and labels the basis.
+const repairLaborHoursOf = (r: any): number => {
+  for (const v of [r.actual_duration_hrs, r.actual_duration, r.actualDuration, r.actual_hours]) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 0;
+};
+
+// Preventive / scheduled work types (the same class isFailure treats as
+// non-failure by type). Used for SMRP 3.3 scheduled downtime and MTBM.
+const isPreventiveType = (r: any): boolean =>
+  /PREVENT|PREDICT|INSPECT|SCHEDUL|CALIB|\bPM\b|\bPDM\b/.test(String(r.type || '').toUpperCase());
+
+// Downtime a PM/PdM action imposed on the asset: recorded actual downtime
+// first, else the planned downtime from the job plan (est_downtime_hrs, 0283).
+// A PM with neither did not interrupt the function (SMRP 3.5.3 "maintenance
+// actions which require or result in function interruption").
+const pmDowntimeOf = (r: any): number => {
+  for (const v of [r.actual_downtime_hrs, r.actualDowntime, r.est_downtime_hrs, r.estDowntime]) {
     const n = Number(v);
     if (Number.isFinite(n) && n > 0) return n;
   }
@@ -448,6 +590,7 @@ export function backlogWeeksKpi(b: BacklogMetrics): ReliabilityKpi {
   return {
     key: 'ready_backlog_weeks',
     label: 'Ready Backlog',
+    smrpRef: 'SMRP 5.4.9',
     value: v,
     display: v == null ? 'N/A' : `${v} wks`,
     unit: 'weeks',
@@ -458,9 +601,9 @@ export function backlogWeeksKpi(b: BacklogMetrics): ReliabilityKpi {
 }
 
 /** Wrap a ComplianceResult as a harmonized KPI (Schedule / PM compliance). */
-export function complianceKpi(key: string, label: string, c: ComplianceResult, benchmark = '>= 90%'): ReliabilityKpi {
+export function complianceKpi(key: string, label: string, c: ComplianceResult, benchmark = '>= 90%', smrpRef?: string): ReliabilityKpi {
   return {
-    key, label, value: c.pct,
+    key, label, smrpRef, value: c.pct,
     display: c.pct == null ? 'N/A' : `${c.pct}%`,
     unit: '%', direction: 'higher-better', benchmark,
     definition: `${c.numerator} of ${c.denominator} completed on time.`,
@@ -473,6 +616,7 @@ export function pmEffectivenessKpi(eff: PMEffectiveness): ReliabilityKpi {
   return {
     key: 'pm_pdm_effectiveness',
     label: 'PM & PdM Effectiveness',
+    smrpRef: 'SMRP 5.4.13',
     value: v,
     display: v == null ? 'N/A' : `${v}% (${eff.overall.necessary}/${eff.overall.written})`,
     unit: '%',

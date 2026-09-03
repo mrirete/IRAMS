@@ -26,6 +26,8 @@ export interface KpiWoRow {
     closed_at?: string | null;
     due_date?: string | null;
     actual_downtime_hrs?: number | null;
+    /** Order-level actual repair hours (0283) — the SMRP 3.5.2 MTTR basis. */
+    actual_duration_hrs?: number | null;
 }
 
 export interface MtbfResult {
@@ -35,11 +37,17 @@ export interface MtbfResult {
     downtimeHrs: number;
     /** Operating hours = calendar hours across in-scope assets, less downtime. */
     operatingHrs: number;
-    /** Mean operating time between failures (hours); null when no failures. */
+    /** SMRP 3.5.1 — mean operating time between failures (hours); null when no failures. */
     mtbfHours: number | null;
-    /** Mean time to repair a failure (hours); null when no timed repairs. */
+    /**
+     * SMRP 3.5.2 — mean time to repair or replace (hours): repair hours when any
+     * failure carries them, else the downtime chain as a proxy (see mttrBasis).
+     */
     mttrHours: number | null;
-    /** Inherent availability = MTBF/(MTBF+MTTR) × 100; null when either is null. */
+    mttrBasis: 'repair' | 'downtime-proxy' | null;
+    /** SMRP 3.5.4 — mean downtime (hours): failure to back in service, delays included. */
+    mdtHours: number | null;
+    /** Guideline 6.0 inherent availability = MTBF/(MTBF+MTTR) × 100; null when either is null. */
     availabilityPct: number | null;
     /** Share of failures that carry a downtime figure — the trust caveat. */
     downtimeCoveragePct: number;
@@ -81,7 +89,13 @@ export function computeMtbfMttr(
     const operatingHrs = Math.max(0, calendarHrs - downtimeHrs);
 
     const mtbfHours = failures.length > 0 ? operatingHrs / failures.length : null;
-    const mttrHours = timed.length > 0 ? downtimeHrs / timed.length : null;
+    // 3.5.4 MDT: the outage window. 3.5.2 MTTR: repair hours proper, falling
+    // back to MDT (labelled) when no order carries repair hours.
+    const mdtHours = timed.length > 0 ? downtimeHrs / timed.length : null;
+    const repaired = failures.filter((w) => Number(w.actual_duration_hrs) > 0);
+    const repairHrs = repaired.reduce((s, w) => s + (Number(w.actual_duration_hrs) || 0), 0);
+    const mttrHours = repaired.length > 0 ? repairHrs / repaired.length : mdtHours;
+    const mttrBasis: MtbfResult['mttrBasis'] = repaired.length > 0 ? 'repair' : mdtHours != null ? 'downtime-proxy' : null;
     const availabilityPct = mtbfHours != null && mttrHours != null && (mtbfHours + mttrHours) > 0
         ? (mtbfHours / (mtbfHours + mttrHours)) * 100
         : null;
@@ -92,6 +106,8 @@ export function computeMtbfMttr(
         operatingHrs: Math.round(operatingHrs),
         mtbfHours: mtbfHours == null ? null : Math.round(mtbfHours),
         mttrHours: mttrHours == null ? null : Math.round(mttrHours * 10) / 10,
+        mttrBasis,
+        mdtHours: mdtHours == null ? null : Math.round(mdtHours * 10) / 10,
         availabilityPct: availabilityPct == null ? null : Math.round(availabilityPct * 10) / 10,
         downtimeCoveragePct: failures.length ? Math.round((timed.length / failures.length) * 100) : 0,
     };

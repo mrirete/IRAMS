@@ -7,12 +7,15 @@ import {
 } from 'recharts';
 import {
   Gauge, AlertTriangle, TrendingUp, Factory, Clock,
-  CheckCircle2, Loader2, Plus
+  CheckCircle2, Loader2, Plus, Settings2
 } from 'lucide-react';
 import { ReportChartCard } from './ReportChartCard';
 import { ReportKPICard } from './ReportKPICard';
 import { ReportDataTable, TableColumn } from './ReportDataTable';
 import { ProductionLogEntry } from './ProductionLogEntry';
+import { ProductionConfigEditor } from './ProductionConfigEditor';
+import { OeeCalculator } from '../../../components/metrics/OeeCalculator';
+import { OEE_TARGETS, OEE_LEG_TARGETS, type ProcessType } from '../../../lib/smrpCatalog';
 
 const COLORS = {
   blue: '#3b82f6', cyan: '#06b6d4', emerald: '#10b981', amber: '#f59e0b',
@@ -51,6 +54,7 @@ interface OEEDashboardProps {
 
 export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigate }) => {
   const [showLogEntry, setShowLogEntry] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<string | null>(null);
 
   const fromDate = dateRange?.from
@@ -156,10 +160,24 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
     }));
   }, [losses]);
 
+  // The plant-level best-in-class band follows the process type most of the
+  // logged assets carry (asset_production_config.process_type, 0307).
+  const plantProcess = useMemo<ProcessType>(() => {
+    const counts: Record<string, number> = {};
+    for (const a of assetOEEs as any[]) {
+      const pt = a.process_type || 'batch';
+      counts[pt] = (counts[pt] || 0) + 1;
+    }
+    const top = Object.entries(counts).sort((x, y) => y[1] - x[1])[0]?.[0];
+    return (top && top in OEE_TARGETS ? top : 'batch') as ProcessType;
+  }, [assetOEEs]);
+  const plantTarget = OEE_TARGETS[plantProcess].oee;
+
   // Asset OEE table columns
   const oeeColumns: TableColumn[] = [
     { key: 'asset_tag', label: 'Asset Tag', width: '100px' },
     { key: 'asset_name', label: 'Asset Name' },
+    { key: 'process_type', label: 'Process', width: '90px' },
     { key: 'availability_pct', label: 'Avail %', format: 'percent', dataBar: true,
       ragThresholds: { green: 90, amber: 75 } },
     { key: 'performance_pct', label: 'Perf %', format: 'percent', dataBar: true,
@@ -168,11 +186,15 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
       ragThresholds: { green: 95, amber: 85 } },
     { key: 'oee_pct', label: 'OEE %', format: 'percent', dataBar: true,
       ragThresholds: { green: 85, amber: 65 } },
+    { key: 'utilization_pct', label: 'Util %', format: 'percent', dataBar: true,
+      ragThresholds: { green: 90, amber: 70 } },
+    { key: 'teep_pct', label: 'TEEP %', format: 'percent', dataBar: true,
+      ragThresholds: { green: 85, amber: 65 } },
     { key: 'total_output', label: 'Output', format: 'number' },
     { key: 'defect_count', label: 'Defects', format: 'number' },
   ];
 
-  const getOEERag = (val: number) => val >= 85 ? 'green' : val >= 65 ? 'amber' : 'red';
+  const getOEERag = (val: number) => val >= plantTarget ? 'green' : val >= 65 ? 'amber' : 'red';
 
   const isLoading = loadingPlant || loadingAssets;
 
@@ -198,18 +220,35 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
           <div>
             <h3 className="text-lg font-extrabold text-white tracking-tight">OEE Dashboard</h3>
             <p className="text-xs text-slate-400 mt-0.5 font-medium">
-              ISO 22400-2 · <span className="text-white font-semibold">{fromDate}</span> → <span className="text-white font-semibold">{toDate}</span>
+              SMRP 2.1.1 (7th Ed.) · ISO 22400-2 · <span className="text-white font-semibold">{fromDate}</span> → <span className="text-white font-semibold">{toDate}</span>
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setShowLogEntry(!showLogEntry)}
-          className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400
-            rounded-lg text-sm text-white font-bold shadow-lg shadow-amber-500/25 transition flex items-center gap-2"
-        >
-          <Plus size={16} /> Log Production
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowSetup(!showSetup); if (!showSetup) setShowLogEntry(false); }}
+            className={`px-4 py-2.5 rounded-lg text-sm font-semibold transition flex items-center gap-2 border
+              ${showSetup ? 'bg-slate-700 border-slate-500 text-white' : 'bg-slate-800/60 border-slate-600 text-slate-200 hover:bg-slate-700'}`}
+            title="Best rate, process type and targets per asset"
+          >
+            <Settings2 size={15} /> Asset Setup
+          </button>
+          <button
+            onClick={() => { setShowLogEntry(!showLogEntry); if (!showLogEntry) setShowSetup(false); }}
+            className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400
+              rounded-lg text-sm text-white font-bold shadow-lg shadow-amber-500/25 transition flex items-center gap-2"
+          >
+            <Plus size={16} /> Log Production
+          </button>
+        </div>
       </div>
+
+      {showSetup && (
+        <ProductionConfigEditor
+          assetId={selectedAsset || undefined}
+          onClose={() => setShowSetup(false)}
+        />
+      )}
 
       {showLogEntry && (
         <ProductionLogEntry
@@ -223,8 +262,9 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
           <Factory size={48} className="mx-auto text-slate-600 mb-4" />
           <h4 className="text-lg font-bold text-slate-400 mb-2">No Production Data Yet</h4>
           <p className="text-sm text-slate-500 max-w-md mx-auto mb-4">
-            OEE requires production log data. Click "Log Production" above to start recording
-            shift-level output, quality, and downtime data for your assets.
+            OEE requires production log data. Set each asset's best rate and process type under
+            "Asset Setup", then click "Log Production" to start recording shift-level output,
+            quality, and downtime.
           </p>
           <button
             onClick={() => setShowLogEntry(true)}
@@ -242,17 +282,27 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
               title="Plant OEE"
               value={Number(plantOEE.oee_pct) || 0}
               format="percent"
-              target={85}
-              targetLabel="World-class: 85%"
+              subtitle={`SMRP 2.1.1 · A × P × Q while scheduled · ${OEE_TARGETS[plantProcess].label.toLowerCase()} band`}
+              target={plantTarget}
+              targetLabel={`Best-in-class: ${OEE_TARGETS.batch.oee} batch · ${OEE_TARGETS.discrete.oee} discrete · ${OEE_TARGETS.continuous.oee} continuous — set per asset under Asset Setup`}
               icon={<Gauge size={14} />}
               ragStatus={getOEERag(Number(plantOEE.oee_pct))}
+            />
+            <ReportKPICard
+              title="TEEP"
+              value={Number(plantOEE.teep_pct) || 0}
+              format="percent"
+              subtitle={`SMRP 2.1.2 · utilization ${Number(plantOEE.utilization_pct ?? 0)}% × OEE`}
+              icon={<Factory size={14} />}
+              ragStatus={Number(plantOEE.teep_pct) >= 85 ? 'green' : Number(plantOEE.teep_pct) >= 65 ? 'amber' : 'red'}
             />
             <ReportKPICard
               title="Availability"
               value={Number(plantOEE.availability_pct) || 0}
               format="percent"
+              subtitle="SMRP 2.2 · uptime ÷ (available − idle)"
               icon={<Clock size={14} />}
-              ragStatus={Number(plantOEE.availability_pct) >= 90 ? 'green' : Number(plantOEE.availability_pct) >= 75 ? 'amber' : 'red'}
+              ragStatus={Number(plantOEE.availability_pct) >= OEE_LEG_TARGETS.availability ? 'green' : Number(plantOEE.availability_pct) >= 75 ? 'amber' : 'red'}
             />
             <ReportKPICard
               title="Performance"
@@ -269,20 +319,48 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
               ragStatus={Number(plantOEE.quality_pct) >= 95 ? 'green' : Number(plantOEE.quality_pct) >= 85 ? 'amber' : 'red'}
             />
             <ReportKPICard
-              title="Total Output"
-              value={Number(plantOEE.total_output) || 0}
-              format="number"
-              icon={<Factory size={14} />}
-              ragStatus="neutral"
-            />
-            <ReportKPICard
               title="Defects"
               value={Number(plantOEE.defect_count) || 0}
               format="number"
+              subtitle={`of ${Number(plantOEE.total_output) || 0} produced`}
               icon={<AlertTriangle size={14} />}
               ragStatus={Number(plantOEE.defect_count) <= 5 ? 'green' : Number(plantOEE.defect_count) <= 20 ? 'amber' : 'red'}
             />
           </div>
+
+          {/* Guideline 2.0 time elements — where the logged hours went. Idle time
+              (no demand / no material) sits outside the availability denominator;
+              planned maintenance is scheduled downtime; the rest is unscheduled. */}
+          {(() => {
+            const tat = Number(plantOEE.planned_hrs) || 0;
+            const up = Number(plantOEE.actual_hrs) || 0;
+            const idle = Number(plantOEE.idle_hrs) || 0;
+            const sched = Number(plantOEE.scheduled_downtime_hrs) || 0;
+            const unsched = Number(plantOEE.unscheduled_downtime_hrs) || 0;
+            if (tat <= 0) return null;
+            const w = (h: number) => `${Math.max(0, Math.min(100, (h / tat) * 100))}%`;
+            const pct = (h: number) => `${Math.round((h / tat) * 1000) / 10}%`;
+            return (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">
+                  Time elements (SMRP Guideline 2.0) · {tat}h logged
+                  <span className="ml-auto normal-case font-medium">Utilization {Number(plantOEE.utilization_pct ?? 0)}% (2.5) · Idle {pct(idle)} (2.4) · Total downtime {pct(sched + unsched)} (3.2)</span>
+                </div>
+                <div className="flex h-5 rounded overflow-hidden border border-slate-200">
+                  <div className="bg-emerald-500" style={{ width: w(up) }} title={`Uptime ${up}h`} />
+                  <div className="bg-red-400" style={{ width: w(unsched) }} title={`Unscheduled downtime ${unsched}h`} />
+                  <div className="bg-orange-400" style={{ width: w(sched) }} title={`Scheduled downtime ${sched}h`} />
+                  <div className="bg-slate-300" style={{ width: w(idle) }} title={`Idle time ${idle}h`} />
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-slate-500 mt-1.5">
+                  <span><i className="inline-block w-2 h-2 rounded-sm bg-emerald-500 mr-1" />Uptime {up}h ({pct(up)} · 2.3)</span>
+                  <span><i className="inline-block w-2 h-2 rounded-sm bg-red-400 mr-1" />Unscheduled {unsched}h (3.4)</span>
+                  <span><i className="inline-block w-2 h-2 rounded-sm bg-orange-400 mr-1" />Scheduled {sched}h (3.3)</span>
+                  <span><i className="inline-block w-2 h-2 rounded-sm bg-slate-300 mr-1" />Idle {idle}h</span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Charts Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -371,6 +449,24 @@ export const OEEDashboard: React.FC<OEEDashboardProps> = ({ dateRange, onNavigat
           />
         </>
       )}
+
+      {/* What-if on the 7th-edition timeline — seeded from the plant totals when
+          logs exist, from the standard's own Table 1 example otherwise. */}
+      <OeeCalculator
+        seed={plantOEE && Number(plantOEE.planned_hrs) > 0 ? {
+          label: `plant ${fromDate} → ${toDate}`,
+          totalAvailableHrs: Number(plantOEE.planned_hrs),
+          idleHrs: Number(plantOEE.idle_hrs) || 0,
+          scheduledDowntimeHrs: Number(plantOEE.scheduled_downtime_hrs) || 0,
+          unscheduledDowntimeHrs: Number(plantOEE.unscheduled_downtime_hrs) || 0,
+          actualProduction: Number(plantOEE.total_output) || 0,
+          firstPassGood: Number(plantOEE.good_output) || 0,
+          // Best rate is per-asset config; the plant seed derives it from the measured performance leg.
+          bestRatePerHr: Number(plantOEE.actual_hrs) > 0 && Number(plantOEE.performance_pct) > 0
+            ? (Number(plantOEE.total_output) / Number(plantOEE.actual_hrs)) / (Number(plantOEE.performance_pct) / 100)
+            : undefined,
+        } : undefined}
+      />
     </div>
   );
 };

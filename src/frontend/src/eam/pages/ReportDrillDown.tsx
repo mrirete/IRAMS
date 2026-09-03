@@ -41,7 +41,7 @@ type DrillType = 'downtime' | 'mtbf-mttr' | 'availability' | 'downtime-by-asset'
 const DRILL_CONFIG: Record<DrillType, { title: string; description: string; icon: React.ReactNode }> = {
   'downtime':          { title: 'Total Downtime Analysis',       description: 'Planned vs Unplanned downtime over time with detailed asset-level breakdown',     icon: <Clock size={20} /> },
   'mtbf-mttr':         { title: 'MTBF & MTTR Trend Analysis',    description: 'Mean Time Between Failures and Mean Time To Repair trends over time',              icon: <TrendingUp size={20} /> },
-  'availability':      { title: 'Availability Over Time',         description: 'Asset availability percentage trend with target threshold',                         icon: <Gauge size={20} /> },
+  'availability':      { title: 'Availability Over Time',         description: 'Inherent availability Ai = MTBF/(MTBF+MTTR) per asset (SMRP Guideline 6.0) with target threshold',                         icon: <Gauge size={20} /> },
   'downtime-by-asset': { title: 'Downtime by Asset',              description: 'Planned vs Unplanned downtime per asset — identify your worst performers',          icon: <AlertTriangle size={20} /> },
   'downtime-by-reason':{ title: 'Downtime by Reason',             description: 'Root cause categorization of downtime events',                                     icon: <Wrench size={20} /> },
   'oee':               { title: 'OEE Breakdown',                  description: 'Overall Equipment Effectiveness — Availability × Performance × Quality',            icon: <Activity size={20} /> },

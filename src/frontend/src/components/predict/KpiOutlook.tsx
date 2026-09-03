@@ -116,7 +116,7 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                 if (!oeeRow) {
                     const [plRes, cfgRes] = await Promise.all([
                         supabase.from('production_logs')
-                            .select('planned_run_time_min, actual_run_time_min, total_output, good_output')
+                            .select('planned_run_time_min, actual_run_time_min, total_output, good_output, downtime_minutes, downtime_reason_code')
                             .eq('asset_id', assetId).gte('shift_date', from),
                         supabase.from('asset_production_config')
                             .select('design_capacity_per_hr').eq('asset_id', assetId).maybeSingle(),
@@ -201,8 +201,8 @@ export const KpiOutlook: React.FC<Props> = ({ assetId, groundedFit, equipmentCla
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Next 12mo</span>
                         </div>
                         <Row label="MTBF" meas={measured?.mtbfDays != null ? `${Math.round(measured.mtbfDays)}d` : '—'} simv={sim ? `${sim.metrics.mtbf_days}d` : '—'} />
-                        <Row label="MTTR" meas={measured?.mttrHours != null ? `${measured.mttrHours}h` : '—'} simv={sim ? `${DEFAULT_ECON.mttrHours}h` : '—'} chipSim="assumed" note="Simulated column assumes the Economics MTTR (repair times are not forecast)" />
-                        <Row label="Availability" meas={pct(measured?.availabilityPct)} simv={sim ? pct(sim.metrics.availability_pct) : '—'} />
+                        <Row label={`MTTR${measured?.mttrBasis === 'downtime-proxy' ? ' (outage proxy)' : ''}`} meas={measured?.mttrHours != null ? `${measured.mttrHours}h` : '—'} simv={sim ? `${DEFAULT_ECON.mttrHours}h` : '—'} chipSim="assumed" note="Simulated column assumes the Economics MTTR (repair times are not forecast)" />
+                        <Row label="Availability (Ai)" meas={pct(measured?.availabilityPct)} simv={sim ? pct(sim.metrics.availability_pct) : '—'} note="Inherent Ai = MTBF/(MTBF+MTTR), SMRP Guideline 6.0" />
                         <Row label="Failures / yr" meas={String(failures12)} simv={sim ? String(sim.financials.failuresPerYear) : '—'} />
                         <Row label="Downtime / yr" meas="—" simv={sim ? `${Math.round(sim.financials.downtimeHours)}h` : '—'} note="Measured downtime rollup lives on the Metrics page" />
                     </div>
