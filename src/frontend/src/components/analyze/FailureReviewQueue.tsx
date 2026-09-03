@@ -11,7 +11,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    ClipboardCheck, Loader2, CheckCircle2, AlertTriangle, Search, ExternalLink,
+    ClipboardCheck, Loader2, CheckCircle2, AlertTriangle, Search, ExternalLink, ChevronRight,
 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { isFailure, eventDate } from '../../eam/services/reliabilityMetrics';
@@ -30,7 +30,15 @@ interface QueueRow {
 
 interface CatalogCode { code: string; description: string | null; }
 
-export const FailureReviewQueue: React.FC<{ currentUser: string; onCountChange?: (n: number) => void }> = ({ currentUser, onCountChange }) => {
+export const FailureReviewQueue: React.FC<{
+    currentUser: string;
+    onCountChange?: (n: number) => void;
+    /** unreviewed + uncoded, for a host page's stat band */
+    onStatsChange?: (s: { unreviewed: number; uncoded: number }) => void;
+    /** 'card' = embedded card (default) · 'page' = fills /failure-review (no inner
+     *  max-height) · 'preview' = read-only rows that click through to the page */
+    variant?: 'card' | 'page' | 'preview';
+}> = ({ currentUser, onCountChange, onStatsChange, variant = 'card' }) => {
     const navigate = useNavigate();
     const [rows, setRows] = useState<QueueRow[]>([]);
     const [modes, setModes] = useState<CatalogCode[]>([]);
@@ -78,6 +86,7 @@ export const FailureReviewQueue: React.FC<{ currentUser: string; onCountChange?:
                 .sort((a, b) => (Number(!!a.mode) - Number(!!b.mode)) || String(b.event_at).localeCompare(String(a.event_at)));
             setRows(queue);
             onCountChange?.(queue.length);
+            onStatsChange?.({ unreviewed: queue.length, uncoded: queue.filter(r => !r.mode).length });
             setModes((modeQ.data ?? []) as CatalogCode[]);
             setCauses((causeQ.data ?? []) as CatalogCode[]);
         } catch (e) {
@@ -100,7 +109,12 @@ export const FailureReviewQueue: React.FC<{ currentUser: string; onCountChange?:
                 reviewed_at: new Date().toISOString(),
             }, { onConflict: 'wo_id' });
             if (err) throw err;
-            setRows(prev => { const next = prev.filter(r => r.id !== row.id); onCountChange?.(next.length); return next; });
+            setRows(prev => {
+                const next = prev.filter(r => r.id !== row.id);
+                onCountChange?.(next.length);
+                onStatsChange?.({ unreviewed: next.length, uncoded: next.filter(r => !r.mode).length });
+                return next;
+            });
         } catch (e) {
             setError(`Could not save the review: ${e instanceof Error ? e.message : String(e)} (migration 0300 applied?)`);
         } finally {
@@ -115,6 +129,46 @@ export const FailureReviewQueue: React.FC<{ currentUser: string; onCountChange?:
     }, [rows, filter]);
 
     const uncoded = rows.filter(r => !r.mode).length;
+
+    // Read-only preview (dashboard Reliability hat): the rows are a glimpse,
+    // the click is the destination — coding happens on /failure-review.
+    if (variant === 'preview') {
+        return (
+            <div className="bg-white rounded-card border border-slate-200 shadow-card overflow-hidden">
+                {loading ? (
+                    <div className="p-4 space-y-3 animate-pulse" aria-hidden>
+                        {[1, 2, 3, 4].map(i => <div key={i} className="h-10 bg-slate-100 rounded-lg" />)}
+                    </div>
+                ) : rows.length === 0 ? (
+                    <div className="py-10 text-center">
+                        <CheckCircle2 size={24} className="text-emerald-500 mx-auto mb-2" />
+                        <p className="text-sm font-semibold text-slate-700 m-0">Queue is empty</p>
+                        <p className="text-xs text-slate-500 mt-1">New failure events land here as work orders close.</p>
+                    </div>
+                ) : (
+                    <div className="divide-y divide-slate-50">
+                        {rows.slice(0, 6).map(r => (
+                            <button key={r.id} onClick={() => navigate('/failure-review')}
+                                className="w-full px-4 py-2.5 flex items-center gap-2.5 hover:bg-slate-50 transition text-left"
+                            >
+                                {!r.mode && <span className="text-[9px] font-bold uppercase tracking-wide bg-amber-50 text-amber-600 border border-amber-200 rounded-full px-1.5 py-0.5 shrink-0">uncoded</span>}
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-slate-800 truncate m-0">{r.wo_number} · {r.title}</p>
+                                    <p className="text-[11px] text-slate-500 m-0">{r.asset_tag} · {r.event_at ? new Date(r.event_at).toLocaleDateString() : '—'}</p>
+                                </div>
+                                <ChevronRight size={14} className="text-slate-300 shrink-0" />
+                            </button>
+                        ))}
+                        <button onClick={() => navigate('/failure-review')}
+                            className="w-full py-2.5 text-xs font-semibold text-primary-600 hover:bg-primary-50 transition"
+                        >
+                            Review all {rows.length} events →
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     return (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -146,7 +200,7 @@ export const FailureReviewQueue: React.FC<{ currentUser: string; onCountChange?:
                     <p className="text-xs text-slate-400 mt-1">Every failure event's coding has been confirmed. New failures land here as they close.</p>
                 </div>
             ) : (
-                <div className="divide-y divide-slate-50 max-h-[32rem] overflow-y-auto">
+                <div className={`divide-y divide-slate-50 overflow-y-auto ${variant === 'page' ? '' : 'max-h-[32rem]'}`}>
                     {shown.slice(0, 100).map(r => (
                         <div key={r.id} className="px-4 py-3 flex flex-col lg:flex-row lg:items-center gap-2.5">
                             <div className="min-w-0 flex-1">

@@ -8,8 +8,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Gauge, Loader2, Sparkles, AlertTriangle, TrendingUp, Repeat, ArrowRight, Layers, CalendarClock, Wrench, Lock, ClipboardCheck } from 'lucide-react';
-import { FailureReviewQueue } from '../components/analyze/FailureReviewQueue';
-import { useAuth } from '../eam/contexts/AuthContext';
 import { ReliabilityAdvisorModal } from '../components/analyze/ReliabilityAdvisorModal';
 import { PSCPanel } from '../components/metrics/PSCPanel';
 import { supabase } from '../eam/lib/supabase';
@@ -88,10 +86,7 @@ export const ReliabilityMetricsPage: React.FC = () => {
 
     // Calm-screens: the vital-few KPI band stays on screen; the deep sections live
     // behind tabs so the page fits one viewport and everything is a click away.
-    const [tab, setTab] = useState<'execution' | 'cost' | 'health' | 'badActors' | 'psc' | 'review'>('execution');
-    // RF-01 FRACAS queue badge — the component reports its own count.
-    const [reviewCount, setReviewCount] = useState(0);
-    const { user: authUser } = useAuth();
+    const [tab, setTab] = useState<'execution' | 'cost' | 'health' | 'badActors' | 'psc'>('execution');
 
     // M5 — reliability studies + created PMs per asset, to surface on the bad-actor list.
     const [studyByAsset, setStudyByAsset] = useState<Record<string, { count: number; pm?: string }>>({});
@@ -417,11 +412,13 @@ export const ReliabilityMetricsPage: React.FC = () => {
                                 { id: 'cost', label: 'Cost vs RAV', icon: Gauge },
                                 { id: 'health', label: 'Register Health', icon: Layers },
                                 { id: 'badActors', label: 'Bad Actors', icon: TrendingUp, badge: badActors.length },
-                                { id: 'review', label: 'Failure Review', icon: ClipboardCheck, badge: reviewCount },
+                                { id: 'review', label: 'Failure Review', icon: ClipboardCheck },
                                 { id: 'psc', label: 'Success Curve', icon: Sparkles },
                             ]}
                             activeTab={tab}
-                            onTabChange={(id) => setTab(id as typeof tab)}
+                            // Failure Review is a full working page, not a tab body —
+                            // the tab is its doorway.
+                            onTabChange={(id) => id === 'review' ? navigate('/failure-review') : setTab(id as typeof tab)}
                         />
                         <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-4 bg-slate-50/50">
 
@@ -638,19 +635,6 @@ export const ReliabilityMetricsPage: React.FC = () => {
                     )}
 
                     {/* RF-01: FRACAS — confirm failure coding, queue that empties */}
-                    {tab === 'review' && (<>
-                        <div className="flex justify-end -mb-2">
-                            <button onClick={() => navigate('/failure-review')}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-600 hover:text-primary-700"
-                            >
-                                Open as full page <ArrowRight size={12} />
-                            </button>
-                        </div>
-                        <FailureReviewQueue
-                            currentUser={(authUser as any)?.username || (authUser as any)?.email || 'engineer'}
-                            onCountChange={setReviewCount}
-                        />
-                    </>)}
 
                     {/* Success-centric layer: Potential Success Curve (Golden Spot / MTOP /
                         MTTRg / SR) — the complement to the failure-centric KPIs above. */}

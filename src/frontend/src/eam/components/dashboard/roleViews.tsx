@@ -228,7 +228,8 @@ export const ReliabilityView: React.FC<ViewProps> = ({ shared, openInsight }) =>
             <FeedPanel icon={<ClipboardCheck size={16} className="text-blue-600" />} title="Failure Review — FRACAS" badge={reviewCount}
                 action={<button onClick={() => navigate('/failure-review')} className="text-xs font-medium text-blue-600 hover:text-blue-800 inline-flex items-center gap-1">Open full page <ArrowRight size={12} /></button>}
             >
-                <FailureReviewQueue currentUser={user?.username || profile?.username || user?.email || 'engineer'} onCountChange={setReviewCount} />
+                {/* Read-only glimpse — the working queue lives on /failure-review */}
+                <FailureReviewQueue variant="preview" currentUser={user?.username || profile?.username || user?.email || 'engineer'} onCountChange={setReviewCount} />
             </FeedPanel>
             <Rail>
                 {strips.badActors}
