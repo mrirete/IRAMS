@@ -699,22 +699,11 @@ const RequestDetail: React.FC<{
             const db = DatabaseService.getInstance();
             const wo = await db.approveRequestAndConvert(request.id, currentUser.id);
             showToast(`Request approved! Work Order ${wo.wo_number} created.`, 'success');
+            // The parent's onStatusChange re-reads the request and raises
+            // SR_STATUS_CHANGE; the tenant rule "WR Converted to Work Order"
+            // (status = CONVERTED, dynamic recipient = requester) notifies the
+            // requester. No second, direct notification here.
             onStatusChange(request.id, RequestStatus.CONVERTED);
-            // Tell people (launch review): the rules for conversion, and the
-            // requester directly — before this, approval told nobody.
-            const entity = { ...(request as any), woId: wo.id, woNumber: wo.wo_number, wo_number: wo.wo_number, id: request.id };
-            NotificationService.checkRules('requests', 'SR_CONVERTED_TO_WO', entity, { currentUserId: currentUser.id });
-            const requesterId = (request as any).requesterId || (request as any).requester_id || (request as any).createdById;
-            if (requesterId && requesterId !== currentUser.id) {
-                NotificationService.notify({
-                    recipientId: requesterId,
-                    title: `Your request ${(request as any).requestNumber || (request as any).request_number || ''} is now work order ${wo.wo_number}`.replace(/\s+/g, ' '),
-                    message: `Approved and converted to a work order. Follow its progress from the link.`,
-                    severity: 'SUCCESS', notificationType: 'STATUS_CHANGE', module: 'requests',
-                    entityId: wo.id, entityType: 'WORK_ORDER', entityNumber: wo.wo_number,
-                    actionLink: `/work-orders/${wo.id}`, actionRequired: false, createdBy: currentUser.id,
-                });
-            }
         } catch (e: any) {
             showToast('Approval failed: ' + e.message, 'error');
         } finally {
