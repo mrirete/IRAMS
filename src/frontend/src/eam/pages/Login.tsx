@@ -309,7 +309,18 @@ export const Login: React.FC = () => {
                             <div className="mb-5 p-3.5 rounded-xl flex items-start gap-3"
                                  style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
                                 <AlertCircle className="flex-shrink-0 mt-0.5" size={17} style={{ color: '#ef4444' }} />
-                                <p className="text-[13px] font-medium" style={{ color: '#dc2626' }}>{error}</p>
+                                <div className="min-w-0">
+                                    <p className="text-[13px] font-medium" style={{ color: '#dc2626' }}>{error}</p>
+                                    {unverifiedEmail && (
+                                        <div className="mt-2">
+                                            <button type="button" onClick={resendVerification}
+                                                className="text-[13px] font-bold underline" style={{ color: '#1d4ed8' }}>
+                                                Resend the verification email to {unverifiedEmail}
+                                            </button>
+                                            {resendNote && <p className="text-[12px] mt-1" style={{ color: '#475569' }}>{resendNote}</p>}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         )}
 
