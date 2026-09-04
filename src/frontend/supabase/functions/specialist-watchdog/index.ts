@@ -36,6 +36,7 @@
 //          both schedules).
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.5.0";
+import { forEachTenant } from "../_shared/tenantSession.ts";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -69,20 +70,26 @@ serve(async (req) => {
   const started = Date.now();
   const now = Date.now();
 
+  // Per tenant (2026-09-04): the sweep used to run once as the service role —
+  // cross-tenant on a shared project, and every insert failed with 23502 once
+  // company_id became NOT NULL (0276). Now each company runs as one of its
+  // own admins (tenantSession.ts) and inserts stamp company_id explicitly.
+  const perCompany: Record<string, unknown>[] = [];
+  const run = await forEachTenant(admin, async ({ companyId, companyName, db }) => {
   try {
     // ── shared reads ──────────────────────────────────────────────────────
     const cutoff395 = new Date(now - 395 * DAY_MS).toISOString();
     const [woQ, assetQ, pmQ, failQ, existingQ] = await Promise.all([
-      admin.from("work_orders")
-        .select("id, asset_id, type, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs")
+      db.from("work_orders")
+        .select("id, asset_id, type, created_at, frozen_labor_cost, frozen_material_cost, total_actual_cost, actual_downtime_hrs").eq("company_id", companyId)
         .gte("created_at", cutoff395)
         .limit(20000),
-      admin.from("assets").select("id, tag, name, criticality").limit(10000),
-      admin.from("recurring_work").select("id, code, title, asset_id").eq("active", true).limit(3000),
-      admin.from("wo_failure_data").select("wo_id").limit(20000),
+      db.from("assets").select("id, tag, name, criticality").eq("company_id", companyId).limit(10000),
+      db.from("recurring_work").select("id, code, title, asset_id").eq("company_id", companyId).eq("active", true).limit(3000),
+      db.from("wo_failure_data").select("wo_id").eq("company_id", companyId).limit(20000),
       // Snooze set: anything watchdog-flagged that is pending or recently reviewed.
-      admin.from("ers_agent_actions")
-        .select("asset_id, action_type, status, reviewed_at, created_at")
+      db.from("ers_agent_actions")
+        .select("asset_id, action_type, status, reviewed_at, created_at").eq("company_id", companyId)
         .eq("agent_type", "watchdog")
         .gte("created_at", new Date(now - 60 * DAY_MS).toISOString())
         .limit(2000),
@@ -228,7 +235,7 @@ serve(async (req) => {
         const a = assetById.get(w.asset_id!);
         const day = w.created_at.slice(0, 10);
         const why = downtime >= RCA_MIN_DOWNTIME_HRS ? `${Math.round(downtime)}h downtime` : `${Math.round(c)} corrective cost`;
-        const { error } = await admin.from("ers_rca_investigations").insert({
+        const { error } = await db.from("ers_rca_investigations").insert({
           asset_id: w.asset_id,
           title: `RCA — ${a?.tag ?? "asset"}: major corrective event ${day} (${why})`,
           status: "draft",
@@ -244,6 +251,7 @@ serve(async (req) => {
           event_date: day,
           event_how_much: { cost: Math.round(c), downtime_hrs: Math.round(downtime) },
           created_by: "00000000-0000-0000-0000-000000000000",
+          company_id: companyId,
         });
         if (error) { console.error("rca draft failed:", error.message); continue; }
         rcaDrafts += 1;
@@ -258,11 +266,11 @@ serve(async (req) => {
     let driftFlags = 0;
     {
       const [defQ, logRecentQ] = await Promise.all([
-        admin.from("reading_definitions")
-          .select("id, asset_id, name, min_warning, max_warning, min_critical, max_critical")
+        db.from("reading_definitions")
+          .select("id, asset_id, name, min_warning, max_warning, min_critical, max_critical").eq("company_id", companyId)
           .eq("is_active", true).limit(20000),
-        admin.from("reading_logs")
-          .select("definition_id, asset_id, reading_date, reading_time, reading_value")
+        db.from("reading_logs")
+          .select("definition_id, asset_id, reading_date, reading_time, reading_value").eq("company_id", companyId)
           .gte("reading_date", new Date(now - DRIFT_LOOKBACK_DAYS * DAY_MS).toISOString().slice(0, 10))
           .order("reading_date", { ascending: false })
           .limit(10000),
@@ -326,13 +334,13 @@ serve(async (req) => {
     try {
       const FY = new Date().getFullYear();
       const [budQ, ccQ, notifQ, contactsQ, usersQ] = await Promise.all([
-        admin.from("budgets").select("id, cost_center_id, fiscal_year, opex_budget, committed, actual, currency, status").eq("fiscal_year", FY).gt("opex_budget", 0).limit(500),
-        admin.from("cost_centers").select("id, code, name").limit(1000),
-        admin.from("notifications").select("entity_id, severity")
+        db.from("budgets").select("id, cost_center_id, fiscal_year, opex_budget, committed, actual, currency, status").eq("company_id", companyId).eq("fiscal_year", FY).gt("opex_budget", 0).limit(500),
+        db.from("cost_centers").select("id, code, name").eq("company_id", companyId).limit(1000),
+        db.from("notifications").select("entity_id, severity").eq("company_id", companyId)
           .eq("notification_type", "BUDGET_BREACH")
           .gte("created_at", new Date(now - 30 * DAY_MS).toISOString()).limit(1000),
-        admin.from("contacts").select("id, roles").limit(5000),
-        admin.from("users").select("id, contact_id").limit(5000),
+        db.from("contacts").select("id, roles").eq("company_id", companyId).limit(5000),
+        db.from("users").select("id, contact_id").eq("company_id", companyId).limit(5000),
       ]);
       const ccById = new Map(((ccQ.data ?? []) as { id: string; code: string | null; name: string | null }[]).map((c) => [c.id, c]));
       const alerted = new Map(((notifQ.data ?? []) as { entity_id: string | null; severity: string }[])
@@ -374,11 +382,12 @@ serve(async (req) => {
               entity_id: b.id,
               entity_type: "budget",
               action_link: "/finops",
+              company_id: companyId,
             });
           }
         }
         if (notifRows.length) {
-          const { error } = await admin.from("notifications").insert(notifRows);
+          const { error } = await db.from("notifications").insert(notifRows);
           if (error) console.error("budget notification insert failed:", error.message);
         }
       }
@@ -389,7 +398,7 @@ serve(async (req) => {
     // ── persist ───────────────────────────────────────────────────────────
     let inserted = 0;
     if (proposals.length) {
-      const { error } = await admin.from("ers_agent_actions").insert(proposals);
+      const { error } = await db.from("ers_agent_actions").insert(proposals.map((p) => ({ ...p, company_id: companyId })));
       if (error) console.error("proposal insert failed:", error.message);
       else inserted = proposals.length;
     }
@@ -402,7 +411,7 @@ serve(async (req) => {
       `${dqNote ? " · data-quality regression flagged" : ""} · ${inserted} proposal(s) queued.` +
       (dqNote ? `\n\n${dqNote}` : "");
     try {
-      await admin.from("ers_ai_audit_log").insert({
+      await db.from("ers_ai_audit_log").insert({
         user_id: null,
         username: "specialist-watchdog",
         module: "reliability",
@@ -414,13 +423,14 @@ serve(async (req) => {
         model_used: "deterministic",
         tokens_used: 0,
         duration_ms: Date.now() - started,
+        company_id: companyId,
       });
     } catch (e) {
       console.error("audit log write failed:", e);
     }
 
-    return json({
-      ok: true,
+    perCompany.push({
+      company: companyName,
       scanned_wos: wos.length,
       spikes,
       pm_drift: drifts,
@@ -430,9 +440,18 @@ serve(async (req) => {
       dq_regression: Boolean(dqNote),
       proposals_queued: inserted,
       skipped_snoozed: snoozed.size,
-      duration_ms: Date.now() - started,
     });
   } catch (e) {
-    return json({ error: String(e) }, 500);
+    throw new Error(`${companyName}: ${String(e)}`);
   }
+  });
+
+  return json({
+    ok: run.errors.length === 0,
+    companies: run.companies,
+    tenant_scoped: run.scoped,
+    results: perCompany,
+    errors: run.errors,
+    duration_ms: Date.now() - started,
+  }, run.errors.length && !perCompany.length ? 500 : 200);
 });

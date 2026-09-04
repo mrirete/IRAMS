@@ -21,6 +21,8 @@
  * Deploy: supabase functions deploy notify-dispatch
  */
 
+import { corsHeaders } from "../_shared/cors.ts";
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
@@ -116,8 +118,11 @@ function notificationEmail(row: OutboxRow): string {
 // ── Handler ──
 
 Deno.serve(async (req) => {
+    // The app kicks this function from the browser (PM page, request approval)
+    // to drain the queue; without a CORS preflight answer every kick failed.
+    if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
     if (req.method !== "POST") {
-        return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+        return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: corsHeaders });
     }
 
     try {
@@ -134,7 +139,7 @@ Deno.serve(async (req) => {
             `notification_outbox?select=id&status=eq.PENDING&order=created_at.asc&limit=${BATCH_SIZE}`,
         ) as { id: string }[];
         if (pending.length === 0) {
-            return new Response(JSON.stringify({ processed: 0 }), { status: 200 });
+            return new Response(JSON.stringify({ processed: 0 }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         const claimed = await rest(
             `notification_outbox?id=in.(${pending.map((r) => r.id).join(",")})&status=eq.PENDING&select=*`,
@@ -175,9 +180,9 @@ Deno.serve(async (req) => {
             }
         }
 
-        return new Response(JSON.stringify({ processed: claimed.length, sent, failed, skipped }), { status: 200 });
+        return new Response(JSON.stringify({ processed: claimed.length, sent, failed, skipped }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } catch (error) {
         console.error("notify-dispatch error:", error);
-        return new Response(JSON.stringify({ error: String(error) }), { status: 500 });
+        return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 });

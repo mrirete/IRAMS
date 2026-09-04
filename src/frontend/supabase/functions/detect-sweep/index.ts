@@ -145,6 +145,10 @@ Deno.serve(async (req: Request) => {
                     action_link: notif.action_link,
                     action_required: true,
                     created_by: "SYSTEM_ESCALATION",
+                    // 0276 made company_id NOT NULL; this sessionless insert
+                    // failed with 23502 on every breach until the tenant was
+                    // carried over from the source notification (2026-09-04).
+                    company_id: notif.company_id ?? null,
                 }))),
             });
             escalations += targets.length;
@@ -159,6 +163,7 @@ Deno.serve(async (req: Request) => {
                         module: notif.module,
                         entity_number: notif.entity_number,
                         action_link: notif.action_link,
+                        company_id: notif.company_id ?? null,
                     });
                 }
             }
