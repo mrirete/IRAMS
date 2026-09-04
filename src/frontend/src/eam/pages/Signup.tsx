@@ -34,6 +34,9 @@ export const Signup: React.FC = () => {
     const [error, setError] = useState('');
     const [captchaToken, setCaptchaToken] = useState('');
     const [honeypot, setHoneypot] = useState('');
+    /** Set when the workspace exists but the admin must confirm their email first (0314). */
+    const [awaitingVerify, setAwaitingVerify] = useState<{ email: string; code: string } | null>(null);
+    const [resent, setResent] = useState('');
     const captchaRef = useRef<HTMLDivElement>(null);
 
     // Load the Turnstile script once and render the widget into captchaRef.
@@ -84,6 +87,13 @@ export const Signup: React.FC = () => {
                 setError(msg);
                 return;
             }
+            // Email verification (0314): the function un-confirmed the account and
+            // emailed a link. Sign-in would fail with "Email not confirmed" — show
+            // the inbox panel instead.
+            if (data?.verify_email) {
+                setAwaitingVerify({ email: email.trim().toLowerCase(), code: String(data.company_code ?? '') });
+                return;
+            }
             // Workspace exists; sign its first admin in and enter the app. A full
             // navigation (not SPA route) so every context boots fresh against the
             // new session — tier, settings, licence all resolve from the new tenant.
@@ -99,6 +109,32 @@ export const Signup: React.FC = () => {
             setBusy(false);
         }
     };
+
+    const resendLink = async () => {
+        if (!awaitingVerify) return;
+        setResent('');
+        const { data, error: fnErr } = await supabase.functions.invoke('signup-tenant', {
+            body: { action: 'resend_verification', admin_email: awaitingVerify.email },
+        });
+        setResent(fnErr || !data?.ok ? 'Could not resend right now — try again in a minute.' : 'Sent. Check your inbox (and spam folder).');
+    };
+
+    if (awaitingVerify) {
+        return (
+            <div className="min-h-screen flex items-center justify-center px-4" style={{ background: '#f1f5f9' }}>
+                <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-slate-200 p-8 text-center">
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.12em] mb-6" style={{ color: '#94a3b8' }}>IREAMS by Relantern</div>
+                    <h1 className="text-xl font-bold text-slate-900">Check your inbox</h1>
+                    <p className="mt-3 text-slate-600">
+                        Your workspace <span className="font-mono text-slate-800">{awaitingVerify.code}</span> is ready. We sent a confirmation link to <span className="font-semibold text-slate-800">{awaitingVerify.email}</span>. Open it to sign in as the administrator.
+                    </p>
+                    <p className="mt-2 text-sm text-slate-500">The link works once and expires in 24 hours.</p>
+                    <button type="button" onClick={resendLink} className="mt-6 text-blue-600 font-semibold hover:underline">Resend the link</button>
+                    {resent && <p className="mt-2 text-sm text-slate-600">{resent}</p>}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="min-h-screen flex flex-col" style={{ background: '#f1f5f9' }}>

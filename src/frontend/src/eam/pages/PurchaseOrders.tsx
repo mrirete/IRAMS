@@ -7,7 +7,7 @@ import {
     Download, Loader2
 } from 'lucide-react';
 import {
-    PurchaseOrder, POStatus, PurchaseOrderItem, Contact, Store, Vendor, InventoryItem
+    PurchaseOrder, POStatus, PurchaseOrderItem, Contact, Store, Vendor, InventoryItem, PoBudgetCheck
 } from '../types';
 
 type TabId = 'details' | 'items' | 'properties' | 'authorise';
@@ -15,7 +15,7 @@ type TabId = 'details' | 'items' | 'properties' | 'authorise';
 import { useSearchParams } from 'react-router-dom';
 import { DatabaseService } from '../services/DatabaseService';
 import { NotificationService } from '../services/NotificationService';
-import { FinOpsService } from '../services/FinOpsService';
+import { FinOpsService, type CostCenter } from '../services/FinOpsService';
 import { downloadPOItemsTemplate, parsePOItemsFile } from '../services/assetTemplates';
 import { emptyResult, tally, errMessage, type ImportResult } from '../services/importTypes';
 import { ImageGallery } from '../components/ui/ImageGallery';
@@ -58,6 +58,7 @@ export const PurchaseOrders: React.FC = () => {
     const [vendors, setVendors] = useState<Vendor[]>([]);
     const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
     const [workOrders, setWorkOrders] = useState<any[]>([]);
+    const [costCenters, setCostCenters] = useState<CostCenter[]>([]);
     // Confirmation modal state
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
@@ -85,14 +86,16 @@ export const PurchaseOrders: React.FC = () => {
     const loadData = async () => {
         try {
             const db = DatabaseService.getInstance();
-            const [dbOrders, dbContacts, dbLocations, dbVendors, dbInventory, dbWorkOrders] = await Promise.all([
+            const [dbOrders, dbContacts, dbLocations, dbVendors, dbInventory, dbWorkOrders, dbCostCenters] = await Promise.all([
                 db.getPurchaseOrders(),
                 db.getContacts(),
                 db.getInventoryLocations(),
                 db.getVendors(),
                 db.getInventory(),
-                db.getWorkOrders()
+                db.getWorkOrders(),
+                FinOpsService.getCostCenters().catch(() => [] as CostCenter[]),
             ]);
+            setCostCenters(dbCostCenters);
 
             setOrders(dbOrders);
             setContacts(dbContacts);
@@ -377,10 +380,10 @@ export const PurchaseOrders: React.FC = () => {
 
                     {/* Content */}
                     <div className="flex-1 overflow-y-auto p-6 bg-slate-50/30">
-                        {activeTab === 'details' && <DetailsTab po={selectedPO} onUpdate={handleUpdatePO} contacts={contacts} locations={inventoryLocations} vendors={vendors} />}
+                        {activeTab === 'details' && <DetailsTab po={selectedPO} onUpdate={handleUpdatePO} contacts={contacts} locations={inventoryLocations} vendors={vendors} costCenters={costCenters} />}
                         {activeTab === 'items' && <ItemsTab po={selectedPO} onUpdate={handleUpdatePO} inventoryItems={inventoryItems} workOrders={workOrders} />}
                         {activeTab === 'properties' && <PropertiesTab po={selectedPO} onUpdate={handleUpdatePO} />}
-                        {activeTab === 'authorise' && <AuthoriseTab po={selectedPO} onUpdate={handleUpdatePO} totalAmount={totalAmount} />}
+                        {activeTab === 'authorise' && <AuthoriseTab po={selectedPO} onAuthorized={handleUpdatePO} totalAmount={totalAmount} canApprove={canApprove} currentUserId={user?.id || 'SYSTEM'} />}
                     </div>
 
                     {/* Footer Totals */}
@@ -445,7 +448,7 @@ export const PurchaseOrders: React.FC = () => {
 
 // --- Sub-Components ---
 
-const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, contacts: Contact[], locations: Store[], vendors: Vendor[] }> = ({ po, onUpdate, contacts, locations, vendors }) => {
+const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, contacts: Contact[], locations: Store[], vendors: Vendor[], costCenters: CostCenter[] }> = ({ po, onUpdate, contacts, locations, vendors, costCenters }) => {
     // Filter Vendors: Unified separate Vendors table and Contacts with Vendor flag
     const supplierOptions = useMemo(() => {
         const contactVendors = contacts.filter(c =>
@@ -537,6 +540,18 @@ const DetailsTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOr
                             onChange={(e) => onUpdate({ dateRequired: e.target.value })}
                             className={RAIL_INPUT}
                         />
+                    </RailRow>
+                    <RailRow label="Cost Centre">
+                        {/* Header receiver (0315). A line linked to a work order settles to
+                            that order's receiver instead; this is the fallback and what the
+                            budget check reads for unlinked lines. */}
+                        <select value={po.costCenterId || ''} onChange={(e) => onUpdate({ costCenterId: e.target.value || undefined })}
+                            disabled={!!po.authorizedById} className={po.authorizedById ? RAIL_INPUT_LOCKED : RAIL_INPUT}>
+                            <option value="">— none —</option>
+                            {costCenters.filter(c => c.active !== false || c.id === po.costCenterId).map(c => (
+                                <option key={c.id} value={c.id}>{c.code} · {c.name}</option>
+                            ))}
+                        </select>
                     </RailRow>
                     <RailRow label="Date Finished">
                         <input type="date" value={po.dateFinished || ''} disabled className={RAIL_INPUT_LOCKED} />
@@ -1356,48 +1371,168 @@ const PropertiesTab: React.FC<{ po: PurchaseOrder; onUpdate: (u: Partial<Purchas
     </div>
 );
 
-const AuthoriseTab: React.FC<{ po: PurchaseOrder, onUpdate: (u: Partial<PurchaseOrder>) => void, totalAmount: number }> = ({ po, onUpdate, totalAmount }) => {
-    const { profile } = useAuth();
+const CHECK_TONE: Record<string, string> = {
+    OK: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    WARN: 'bg-amber-50 text-amber-700 border-amber-200',
+    EXCEEDED: 'bg-red-50 text-red-700 border-red-200',
+    BLOCKED: 'bg-red-100 text-red-800 border-red-300',
+    NO_BUDGET: 'bg-slate-100 text-slate-600 border-slate-200',
+    NO_COST_CENTER: 'bg-slate-100 text-slate-600 border-slate-200',
+};
+const CHECK_LABEL: Record<string, string> = {
+    OK: 'Within budget', WARN: 'Near budget', EXCEEDED: 'Over budget', BLOCKED: 'Hard block',
+    NO_BUDGET: 'No budget set', NO_COST_CENTER: 'No cost centre',
+};
+
+/**
+ * Authorise (0315). The server runs ers_po_budget_check — actual + other open
+ * commitments + this order, per cost centre, against the fiscal-year budget —
+ * and ers_authorize_purchase_order enforces it: purchasing.approve required,
+ * a hard budget block refuses outright, over budget needs a recorded reason.
+ * The verdict is frozen on the order so the audit trail shows what the
+ * approver saw.
+ */
+const AuthoriseTab: React.FC<{
+    po: PurchaseOrder; totalAmount: number; canApprove: boolean; currentUserId: string;
+    onAuthorized: (u: Partial<PurchaseOrder>) => void;
+}> = ({ po, totalAmount, canApprove, currentUserId, onAuthorized }) => {
     const { showToast } = useToast();
-    // Mock user permission check
-    const canAuthorise = true;
     const isAuthorized = !!po.authorizedById;
+    const [check, setCheck] = useState<PoBudgetCheck | null>(po.budgetCheck ?? null);
+    const [loading, setLoading] = useState(!isAuthorized);
+    const [reason, setReason] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        if (isAuthorized && po.budgetCheck) { setCheck(po.budgetCheck); setLoading(false); return; }
+        let live = true;
+        setLoading(true);
+        DatabaseService.getInstance().checkPurchaseOrderBudget(po.id)
+            .then(c => { if (live) setCheck(c as PoBudgetCheck); })
+            .catch(e => {
+                if (!live) return;
+                setCheck(null);
+                const m = String(e?.message || '');
+                setError(m.includes('ers_po_budget_check') ? 'Budget check unavailable - migration 0315 not applied.' : (m || 'Budget check failed.'));
+            })
+            .finally(() => { if (live) setLoading(false); });
+        return () => { live = false; };
+    }, [po.id, isAuthorized, po.items.length, po.costCenterId]);
+
+    const needsReason = check?.requires_override === true;
+    const blocked = check?.blocked === true;
+    const unsaved = po.status === POStatus.DRAFT && po.items.length === 0;
+
+    const authorise = async () => {
+        if (!canApprove) { showToast('Access Denied: purchasing.approve is required to authorise.', 'error'); return; }
+        if (needsReason && !reason.trim()) { setError('Give the reason for authorising over budget - it is recorded on the order.'); return; }
+        setBusy(true); setError('');
+        try {
+            const res = await DatabaseService.getInstance().authorizePurchaseOrder(po.id, needsReason ? reason.trim() : undefined) as PoBudgetCheck;
+            const stamped: Partial<PurchaseOrder> = {
+                authorizedById: res.authorized_by, authorizedAt: res.authorized_at, budgetCheck: res,
+                budgetOverrideReason: needsReason ? reason.trim() : null,
+                status: po.status === POStatus.DRAFT ? POStatus.OPEN : po.status,
+            };
+            onAuthorized(stamped);
+            setCheck(res);
+            showToast(`${po.poCode} authorised.`, 'success');
+            const entity = { ...po, ...stamped, totalAmount };
+            NotificationService.checkRules('purchasing', 'PO_APPROVED', entity, { currentUserId });
+            if (res.overall === 'EXCEEDED') NotificationService.checkRules('purchasing', 'PO_BUDGET_EXCEEDED', entity, { currentUserId });
+        } catch (e: any) {
+            const msg: string = e?.message || 'Authorisation failed.';
+            setError(msg.replace(/^BUDGET_[A-Z]+:\s*/, ''));
+        } finally { setBusy(false); }
+    };
+
+    const money = (v: number, cur?: string | null) => fmtMoney(v, cur || po.currency);
 
     return (
-        <div className="flex flex-col items-center justify-center h-full space-y-6 p-12">
-            <div className={`p-6 rounded-full ${isAuthorized ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
-                <CheckCircle size={64} />
+        <div className="animate-in fade-in ers-page-record space-y-4">
+            <div className="flex items-start gap-4 bg-white rounded-lg border border-slate-200 shadow-sm p-5">
+                <div className={`p-3 rounded-full ${isAuthorized ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}`}><CheckCircle size={28} /></div>
+                <div className="min-w-0 flex-1">
+                    <h3 className="text-lg font-bold text-slate-900">{isAuthorized ? 'Authorised' : 'Authorisation'}</h3>
+                    {isAuthorized ? (
+                        <p className="text-sm text-slate-600">
+                            By <span className="font-semibold">{po.authorizedById}</span>{po.authorizedAt ? ` on ${new Date(po.authorizedAt).toLocaleString()}` : ''}.
+                            {po.budgetOverrideReason && <> Over-budget override: <em>{po.budgetOverrideReason}</em></>}
+                        </p>
+                    ) : (
+                        <p className="text-sm text-slate-600">
+                            Order value {money(totalAmount)}. Authorising commits the open value against each cost centre's budget for FY {check?.fiscal_year ?? new Date().getFullYear()}.
+                        </p>
+                    )}
+                </div>
+                {check && <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${CHECK_TONE[check.overall] || CHECK_TONE.NO_BUDGET}`}>{CHECK_LABEL[check.overall] || check.overall}</span>}
             </div>
 
-            <div className="text-center space-y-2">
-                <h3 className="text-xl font-bold text-slate-900">
-                    {isAuthorized ? 'Purchase Order Authorized' : 'Authorization Required'}
-                </h3>
-                <p className="text-slate-500 max-w-md">
-                    {isAuthorized
-                        ? `Authorized by ${po.authorizedById} on ${po.dateCreated}.`
-                        : `This order requires approval. Total value ${fmtMoney(totalAmount, po.currency)} exceeds auto-approval limit.`}
-                </p>
+            <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+                    <h4 className="font-bold text-slate-800 text-sm">Budget check by cost centre</h4>
+                    <span className="text-[11px] text-slate-400">actual + other open orders + this order, against the OPEX budget</span>
+                </div>
+                {loading ? (
+                    <div className="p-6 text-sm text-slate-500">Checking budgets...</div>
+                ) : !check || check.lines.length === 0 ? (
+                    <div className="p-6 text-sm text-slate-500">{unsaved ? 'Add and save lines first - there is nothing to check yet.' : 'No lines carry a cost centre. Set one on the Details rail, or link lines to work orders.'}</div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+                                <tr>
+                                    <th className="text-left px-4 py-2 font-semibold">Cost centre</th>
+                                    <th className="text-right px-4 py-2 font-semibold">Budget</th>
+                                    <th className="text-right px-4 py-2 font-semibold">Actual</th>
+                                    <th className="text-right px-4 py-2 font-semibold">Other open POs</th>
+                                    <th className="text-right px-4 py-2 font-semibold">This order</th>
+                                    <th className="text-right px-4 py-2 font-semibold">Projected</th>
+                                    <th className="text-left px-4 py-2 font-semibold">Verdict</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {check.lines.map((l, i) => (
+                                    <tr key={l.cost_center_id || i}>
+                                        <td className="px-4 py-2 font-medium text-slate-800">{l.code ? `${l.code} - ${l.name}` : <span className="text-slate-400 italic">unassigned</span>}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{l.opex_budget > 0 ? money(l.opex_budget, l.currency) : '-'}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{money(l.actual, l.currency)}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{money(l.committed_other, l.currency)}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums font-semibold">{money(l.this_po, l.currency)}</td>
+                                        <td className="px-4 py-2 text-right tabular-nums">{money(l.projected, l.currency)}{l.utilisation_pct != null && <span className="text-slate-400 ml-1">({l.utilisation_pct}%)</span>}</td>
+                                        <td className="px-4 py-2"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${CHECK_TONE[l.status]}`}>{CHECK_LABEL[l.status]}</span></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             {!isAuthorized && (
-                <div className="flex gap-4">
-                    <button
-                        onClick={() => showToast('Notification sent to manager.', 'success')}
-                        className="px-6 py-3 border border-slate-300 rounded-lg font-bold text-slate-700 hover:bg-slate-50"
-                    >
-                        Request Approval
-                    </button>
-                    {canAuthorise && (
-                        <button
-                            onClick={() => onUpdate({ authorizedById: profile?.username || profile?.fullName || 'Unknown User' })}
-                            className="px-6 py-3 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-500 shadow-md"
-                        >
-                            Authorize Now
-                        </button>
+                <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-5 space-y-3">
+                    {blocked && <p className="text-sm text-red-700 font-medium">A hard budget block applies. Raise the budget or remove the block in Financial Ops before authorising.</p>}
+                    {needsReason && !blocked && (
+                        <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Reason for authorising over budget <span className="text-red-500">*</span></label>
+                            <textarea value={reason} onChange={e => setReason(e.target.value)} rows={2}
+                                placeholder="e.g. Safety-critical spare; budget transfer requested from CC-OPS-02"
+                                className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 outline-none" />
+                            <p className="text-[11px] text-slate-400 mt-1">Recorded on the order and sent to the Finance / Manager notification rule.</p>
+                        </div>
                     )}
+                    {error && <p className="text-sm text-red-600">{error}</p>}
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="text-[11px] text-slate-400">{canApprove ? 'You hold purchasing.approve.' : 'You do not hold purchasing.approve - ask a manager or finance to authorise.'}</p>
+                        <button onClick={authorise} disabled={busy || loading || blocked || !canApprove || unsaved}
+                            className="px-5 py-2.5 bg-primary-600 text-white rounded-lg font-bold hover:bg-primary-500 shadow-md disabled:opacity-50 disabled:cursor-not-allowed">
+                            {busy ? 'Authorising...' : needsReason ? 'Authorise with override' : 'Authorise'}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>
     );
 };
+

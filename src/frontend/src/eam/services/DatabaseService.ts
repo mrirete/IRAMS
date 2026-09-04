@@ -4749,8 +4749,32 @@ export class DatabaseService {
             invoiceContactId: row.invoice_contact_id,
             reference: row.reference,
             comments: row.comments,
-            dateFinished: row.date_finished
+            dateFinished: row.date_finished,
+            // 0315: header receiver + the authorisation record.
+            costCenterId: row.cost_center_id || undefined,
+            authorizedById: row.authorized_by_id || undefined,
+            authorizedAt: row.authorized_at || undefined,
+            budgetCheck: row.budget_check ?? null,
+            budgetOverrideReason: row.budget_override_reason ?? null,
         }));
+    }
+
+    /** ers_po_budget_check (0315): projected utilisation per cost centre if this order goes ahead. */
+    public async checkPurchaseOrderBudget(poId: string): Promise<any> {
+        const { data, error } = await supabase.rpc('ers_po_budget_check', { p_po: poId });
+        if (error) throw error;
+        return data;
+    }
+
+    /**
+     * ers_authorize_purchase_order (0315): the server checks purchasing.approve,
+     * runs the budget check, refuses a hard block, requires an override reason
+     * when a cost centre would exceed budget, and stamps the order.
+     */
+    public async authorizePurchaseOrder(poId: string, overrideReason?: string): Promise<any> {
+        const { data, error } = await supabase.rpc('ers_authorize_purchase_order', { p_po: poId, p_override_reason: overrideReason ?? null });
+        if (error) throw error;
+        return data;
     }
 
     /**
@@ -4815,7 +4839,8 @@ export class DatabaseService {
             invoice_contact_id: po.invoiceContactId,
             reference: po.reference,
             comments: po.comments,
-            date_finished: po.dateFinished
+            date_finished: po.dateFinished,
+            cost_center_id: po.costCenterId || null,
         };
 
         const { data, error } = await supabase.from('purchase_orders').insert(dbRow).select().single();
@@ -4850,7 +4875,9 @@ export class DatabaseService {
         if (updates.reference !== undefined) dbUpdates.reference = updates.reference;
         if (updates.comments !== undefined) dbUpdates.comments = updates.comments;
         if (updates.dateFinished !== undefined) dbUpdates.date_finished = updates.dateFinished;
-        if (updates.authorizedById !== undefined) dbUpdates.authorized_by = updates.authorizedById;
+        // authorized_by_id / authorized_at are stamped by ers_authorize_purchase_order (0315);
+        // the client only ever writes the header cost centre here.
+        if (updates.costCenterId !== undefined) dbUpdates.cost_center_id = updates.costCenterId || null;
 
         const { data, error } = await supabase
             .from('purchase_orders')

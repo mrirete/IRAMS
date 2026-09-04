@@ -38,6 +38,8 @@ export const NOTIFICATION_EVENTS: Record<string, NotificationEventDef[]> = {
     purchasing: [
         { code: 'PO_CREATED', description: 'Purchase order created' },
         { code: 'PO_RECEIVED', description: 'Purchase order goods received' },
+        { code: 'PO_APPROVED', description: 'Purchase order authorised (budget check passed or overridden)' },
+        { code: 'PO_BUDGET_EXCEEDED', description: 'Purchase order authorised over budget with an override reason — entity carries the budget check' },
     ],
     readings: [
         { code: 'READING_ALARM', description: 'Reading breached an alarm band (any level)' },

@@ -319,9 +319,12 @@ const NewTransactionModal: React.FC<NewTransactionModalProps> = ({ isOpen, onClo
                     formData.costCenterId,
                     parseFloat(formData.amount)
                 );
-                if (!result.canProceed && result.status === 'EXCEEDED') {
+                // BudgetCheckResult speaks in allowed / blockType / overrideRequired
+                // (FinOpsService.checkBudgetAvailability); the old canProceed/status
+                // reads matched nothing, so this banner never fired.
+                if (!result.allowed || result.overrideRequired) {
                     setBudgetWarning(`⛔ Budget exceeded — ${result.message}`);
-                } else if (result.status === 'WARNING') {
+                } else if (result.blockType === 'SOFT' || result.blockType === 'WARN' || (result.utilizationPct ?? 0) >= 90) {
                     setBudgetWarning(`⚠️ ${result.message}`);
                 } else {
                     setBudgetWarning(null);
@@ -1018,7 +1021,7 @@ const DashboardTab: React.FC<DashboardTabProps> = ({ metrics, transactions }) =>
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="font-semibold text-slate-800 flex items-center gap-2">
                             <Banknote size={18} className="text-emerald-600" />
-                            Budget Overview - Q1 2024
+                            Budget Overview - FY {new Date().getFullYear()}
                         </h3>
                         <select className="text-sm border-slate-200 rounded-lg text-slate-600">
                             <option>All Cost Centers</option>

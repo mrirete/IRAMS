@@ -1200,12 +1200,47 @@ export interface PurchaseOrder {
   // Meta
   createdById: string;
   authorizedById?: string;
+  /** Header cost centre (0315). Per line: line cost centre → work-order receiver → this. */
+  costCenterId?: string;
+  authorizedAt?: string;
+  /** Frozen verdict of ers_po_budget_check at authorisation (0315). */
+  budgetCheck?: PoBudgetCheck | null;
+  budgetOverrideReason?: string | null;
   requestedBy?: string; // Free text
   reference?: string;
   comments?: string;
 
   // Content
   items: PurchaseOrderItem[];
+}
+
+/** One cost centre's row in ers_po_budget_check (0315). */
+export interface PoBudgetCheckLine {
+  cost_center_id: string | null;
+  code: string | null;
+  name: string | null;
+  fiscal_year: number;
+  currency: string | null;
+  opex_budget: number;
+  actual: number;
+  committed_other: number;
+  this_po: number;
+  projected: number;
+  utilisation_pct: number | null;
+  status: 'OK' | 'WARN' | 'EXCEEDED' | 'BLOCKED' | 'NO_BUDGET' | 'NO_COST_CENTER';
+}
+export interface PoBudgetCheck {
+  po_id: string;
+  po_code: string;
+  fiscal_year: number;
+  this_po_total: number;
+  overall: PoBudgetCheckLine['status'];
+  requires_override: boolean;
+  blocked: boolean;
+  checked_at: string;
+  lines: PoBudgetCheckLine[];
+  authorized_by?: string;
+  authorized_at?: string;
 }
 
 export interface PurchaseOrderItem {
@@ -1226,7 +1261,8 @@ export interface PurchaseOrderItem {
 
   // Links
   jobId?: string; // Link to Work Order
-  glCode?: string; // Cost Center
+  glCode?: string; // GL account (legacy label said Cost Center)
+  costCenterId?: string; // Line cost centre (purchase_order_lines.cost_center_id, 0248)
 
   // Invoice Matching
   invoiceNumber?: string;

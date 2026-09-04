@@ -41,6 +41,24 @@ export const Login: React.FC = () => {
     const queryClient = useQueryClient();
 
     const from = (location.state as any)?.from?.pathname || '/';
+    /** Email verification (0314): set when sign-in was refused with "Email not confirmed". */
+    const [unverifiedEmail, setUnverifiedEmail] = useState('');
+    const [resendNote, setResendNote] = useState('');
+
+    // /login?email=… (from the verify-email page) prefills the identifier.
+    useEffect(() => {
+        const prefill = new URLSearchParams(location.search).get('email');
+        if (prefill && !username) setUsername(prefill);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.search]);
+
+    const resendVerification = async () => {
+        setResendNote('');
+        const { data, error: fnErr } = await supabase.functions.invoke('signup-tenant', {
+            body: { action: 'resend_verification', admin_email: unverifiedEmail },
+        });
+        setResendNote(fnErr || !data?.ok ? 'Could not resend right now — try again in a minute.' : 'Sent. Check your inbox (and spam folder).');
+    };
 
     // ── Prefetch dashboard data to eliminate post-login load delay ──
     const prefetchDashboard = async () => {
@@ -142,6 +160,7 @@ export const Login: React.FC = () => {
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
+        setUnverifiedEmail('');
         setLoading(true);
 
         try {
@@ -164,7 +183,13 @@ export const Login: React.FC = () => {
             const code = err.code || '';
             const invalidCreds = code === 'invalid_credentials'
                 || (err.message || '').toLowerCase().includes('invalid login credentials');
-            if (code === 'user_banned') {
+            const notConfirmed = code === 'email_not_confirmed'
+                || (err.message || '').toLowerCase().includes('email not confirmed');
+            if (notConfirmed) {
+                // Self-serve admin who has not clicked the verification link yet (0314).
+                setUnverifiedEmail(username.trim().toLowerCase());
+                setError('Confirm your email address first — open the link we sent you, or request a new one below.');
+            } else if (code === 'user_banned') {
                 // Suspended accounts (0164 ban pattern) — say so instead of
                 // letting the raw auth message through.
                 setError('This account has been suspended. Contact your administrator.');
