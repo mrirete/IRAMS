@@ -30,15 +30,23 @@ statement is aspirational or needs a legal decision, it is marked `[DECIDE: …]
    **controller** for account/signup data and its own operations. Both RoPA
    sections exist accordingly.
 
-## Known open items (honest list)
+## Known open items (honest list — re-checked against the code 2026-09-04)
 
-- Privacy notice is not yet linked from the app (login/signup footer) — code
-  change, tracked separately.
 - No cookie/consent banner: currently believed unnecessary (no third-party
-  trackers; only strictly-necessary auth storage) — re-verify if analytics is
-  ever added.
-- CAPTCHA / email-verification on /signup still open (see shared-DB tenancy
-  notes) — relevant to Art. 5(1)(f) as an anti-abuse control.
+  trackers; only strictly-necessary auth storage; re-grepped 2026-09-04, no
+  analytics SDK present) — re-verify if analytics is ever added.
+- Vercel production project is on the Hobby plan (non-commercial, outside
+  the processor clause) — upgrade to Pro before commercial go-live
+  (sub-processor register, Vercel row).
+- Turnstile (CAPTCHA) on /signup is wired but its site/secret keys must be
+  set in the production environment `[ACTION]`; email verification on
+  signup is live (migration 0314).
+- Gemini production key: confirm the GCP project is billing-enabled — the
+  no-training claim in the privacy notice depends on it `[ACTION]`.
+
+Closed since 2026-08-07: privacy notice is served at `/privacy` and linked
+from the login footer; `erase_person()` and the monthly `retention_sweep()`
+are live (migration 0282) — see the retention policy.
 - `[DECIDE]` markers throughout need a legal-entity pass: registered entity
   name & address, EU representative (Art. 27) if the entity is non-EU, DPO
   appointment decision (Art. 37 — likely not mandatory at current scale, but

@@ -17,11 +17,14 @@ One record per category of processing carried out on behalf of controllers
 - **Controllers:** IREAMS customers (list maintained in `companies` table; one
   row per tenant).
 - **Transfers outside the EU:** none for storage (eu-west-1); Google Gemini
-  API calls may be served outside the EU — safeguard: Google Cloud standard
-  contractual clauses `[DECIDE: confirm SCC module in force for the
-  Gemini API terms accepted]`. Resend (email) is US-based — safeguard: EU-US
-  Data Privacy Framework / SCCs `[DECIDE: confirm Resend's current DPF
-  certification status]`.
+  API calls may be served outside the EU — safeguard: Paid Services are
+  processed under Google's Data Processing Addendum (processor role) and
+  the SCCs it incorporates; verified 2026-08-10 against the Gemini API
+  Additional Terms (eff. 2026-03-23). Resend (email) is US-based —
+  safeguard: EU SCCs (Modules 2/3 + UK Addendum) incorporated in the
+  Resend DPA and deemed signed with it (verified 2026-08-10); Resend also
+  self-reports DPF certification, not independently confirmed — SCCs
+  govern regardless. Details and quotes in the sub-processor register.
 - **Security measures (Art. 32 summary):** tenant isolation via row-level
   security with JWT-derived company claim (migrations 0258–0281); private
   storage buckets with tenant-scoped policies and signed URLs (0281);

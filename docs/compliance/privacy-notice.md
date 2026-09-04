@@ -72,9 +72,10 @@ work-order note).
 - AI calls are made server-side through an authenticated proxy; your
   credentials are never shared with Google.
 - AI usage is metered with a daily budget per workspace.
-- We use the API under terms where Google does not use submitted content to
-  train its models `[DECIDE: verify current Google API data-use terms tier
-  in force for the production key, paid vs unpaid — the guarantee differs]`.
+- We use the API under paid-tier terms where Google does not use submitted
+  content to improve its products (Gemini API Additional Terms, verified
+  2026-08-10) `[ACTION: confirm the production key's project is
+  billing-enabled — this claim depends on it]`.
 - If your organisation does not want record data reaching an AI provider,
   the AI features can be disabled per workspace on request.
 
