@@ -209,8 +209,8 @@ export const AuditIntakeAnalysis: React.FC<Props> = ({ intake, onContinue, onRef
             <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-6 text-center">
                 <h3 className="text-lg font-black text-white">This is a directional snapshot — go deeper</h3>
                 <p className="text-sm text-slate-300 mt-1 max-w-xl mx-auto">
-                    The full assessment scores your operation against evidence across all 6M dimensions and produces an
-                    executive PDF report with a prioritized improvement roadmap and gap-by-gap recommendations.
+                    The full assessment scores your operation against evidence across the six ISO 55001 / GFMAM groups and produces an
+                    on-screen maturity report with a prioritized improvement roadmap and gap-by-gap recommendations.
                 </p>
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mt-5">
                     <button

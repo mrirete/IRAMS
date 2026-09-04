@@ -4,10 +4,10 @@
  *  ISO 55001:2024 §9.2 — what an assessment is scoped against
  *
  *  Honest contract (presentation-readiness assessment, 2026-09-03):
- *  every assessment runs the SAME engine — the 30-question 6M checklist
+ *  every assessment runs the SAME engine — the 36-question maturity checklist
  *  plus the 21-document readiness check (AuditWizard). A scope presets the
  *  objective and the standard it is framed against, and carries a clause-
- *  level question bank the assessor uses as reference during the 6M step.
+ *  level question bank the assessor uses as reference during the maturity step.
  *  The banks are the real files in eam/data/audit-templates — counts below
  *  are derived from them, not typed in.
  * ═══════════════════════════════════════════════════════════════════════
@@ -25,7 +25,7 @@ import { PreviewBanner } from '../components/common/PreviewBanner';
 import { ISO55001_TEMPLATE, ISO55001_SECTIONS } from '../eam/data/audit-templates/iso55001';
 import { PSM14_TEMPLATE, PSM14_SECTIONS } from '../eam/data/audit-templates/psm14';
 import { API_RBI_TEMPLATE, API_RBI_SECTIONS } from '../eam/data/audit-templates/apiRbi';
-import { SIXM_ASSESSMENT_QUESTIONS } from '../eam/services/SixMQuestionBank';
+import { MATURITY_QUESTIONS } from '../eam/services/MaturityQuestionBank';
 import { DEFAULT_DOCUMENTS } from '../eam/services/AuditTypes';
 
 // ─── Types ───────────────────────────────────────────────────
@@ -101,7 +101,7 @@ const SCOPES: AssessmentScope[] = [
     scopeFrom('API-RBI', 'mechanical_integrity', API_RBI_TEMPLATE, API_RBI_SECTIONS as unknown as BankSection[]),
 ];
 
-const ENGINE_QUESTIONS = SIXM_ASSESSMENT_QUESTIONS.length;   // 30
+const ENGINE_QUESTIONS = MATURITY_QUESTIONS.length;
 const ENGINE_DOCUMENTS = DEFAULT_DOCUMENTS.length;            // 21
 
 // ─── Page ────────────────────────────────────────────────────
@@ -157,14 +157,14 @@ export const AuditTemplatesPage: React.FC = () => {
             </div>
 
             <div className="mb-6">
-                <PreviewBanner message={`Every assessment runs the same engine: the ${ENGINE_QUESTIONS}-question 6M checklist and the ${ENGINE_DOCUMENTS}-document readiness check. A scope presets the objective and standard, and its clause-level question bank is the assessor's reference during the 6M step. Custom scopes are on the roadmap.`} />
+                <PreviewBanner message={`Every assessment runs the same engine: the ${ENGINE_QUESTIONS}-question maturity checklist and the ${ENGINE_DOCUMENTS}-document readiness check. A scope presets the objective and standard, and its clause-level question bank is the assessor's reference during the maturity step. Custom scopes are on the roadmap.`} />
             </div>
 
             {/* KPI Bar */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 <KpiCard label="Scopes" value={SCOPES.length} color="#6366f1" />
                 <KpiCard label="Reference questions" value={totalQuestions} color="#06b6d4" />
-                <KpiCard label="Engine questions (6M)" value={ENGINE_QUESTIONS} color="#8b5cf6" />
+                <KpiCard label="Engine questions" value={ENGINE_QUESTIONS} color="#8b5cf6" />
                 <KpiCard label="Readiness documents" value={ENGINE_DOCUMENTS} color="#22c55e" />
             </div>
 

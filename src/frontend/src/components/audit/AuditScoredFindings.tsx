@@ -2,9 +2,9 @@
  * AuditScoredFindings.tsx — Step 4: Score Findings
  *
  * Risk-rated finding register with impact analysis (ISO 55001 §10.1).
- * Findings are DRAFTED deterministically from the 6M checklist: every answer
+ * Findings are DRAFTED deterministically from the maturity checklist: every answer
  * at Aware level or below (score ≤ 2) becomes a finding whose recommended
- * action is the next rung of the same question (sixmScoring). The assessor
+ * action is the next rung of the same question (maturityScoring). The assessor
  * edits, removes or adds. Each finding can be raised as a corrective action
  * (audit_corrective_actions, 0308 provenance) — the page that converts
  * actions into work orders.
@@ -21,7 +21,7 @@ import type { AuditCorrectiveAction } from '../../types/audit';
 
 interface Props {
     initialData?: ScoredFinding[];
-    /** Findings drafted from the 6M answers (sixmScoring.draftFindingsFromAnswers). Seeds the list when it is empty. */
+    /** Findings drafted from the maturity answers (maturityScoring.draftFindingsFromAnswers). Seeds the list when it is empty. */
     suggested?: ScoredFinding[];
     /** The assessment row (needed to raise a corrective action with provenance). */
     assessmentId?: string | null;
@@ -43,10 +43,10 @@ const EMPTY_FINDING: Omit<ScoredFinding, 'id'> = {
 };
 
 export const AuditScoredFindings: React.FC<Props> = ({ initialData, suggested, assessmentId, assessmentNumber, onChange, onComplete, onBack }) => {
-    // Seed from the 6M drafts when nothing has been recorded yet.
+    // Seed from the checklist drafts when nothing has been recorded yet.
     const [findings, setFindings] = useState<ScoredFinding[]>(() => (initialData?.length ? initialData : (suggested || [])));
     const [expandedId, setExpandedId] = useState<string | null>(null);
-    const [seededFromSixM, setSeededFromSixM] = useState<boolean>(!initialData?.length && !!suggested?.length);
+    const [seededFromAnswers, setSeededFromAnswers] = useState<boolean>(!initialData?.length && !!suggested?.length);
     const [raising, setRaising] = useState<string | null>(null);
     const [raiseError, setRaiseError] = useState<string | null>(null);
     const auditService = AuditService.getInstance();
@@ -60,11 +60,11 @@ export const AuditScoredFindings: React.FC<Props> = ({ initialData, suggested, a
     }, [findings]);
 
     /** Replace unedited drafts with a fresh draft set; keep anything the assessor added or already raised. */
-    const redraftFromSixM = () => {
+    const redraftFromAnswers = () => {
         const keep = findings.filter(f => !f.sourceQuestionId || f.correctiveActionId);
         const keptIds = new Set(keep.map(f => f.id));
         setFindings([...(suggested || []).filter(s => !keptIds.has(s.id)), ...keep]);
-        setSeededFromSixM(true);
+        setSeededFromAnswers(true);
         setExpandedId(null);
     };
 
@@ -129,17 +129,17 @@ export const AuditScoredFindings: React.FC<Props> = ({ initialData, suggested, a
                 <p className="text-sm text-slate-500 mt-1">Risk-rated finding register with impact analysis and corrective actions</p>
             </div>
 
-            {/* Drafted-from-6M banner */}
+            {/* Drafted-from-checklist banner */}
             {(suggested?.length || 0) > 0 && (
                 <div className="flex items-start gap-3 bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
                     <Sparkles size={16} className="text-violet-500 mt-0.5 shrink-0" />
                     <div className="flex-1 text-xs text-violet-900">
-                        {seededFromSixM
-                            ? <><span className="font-bold">{suggested!.length} finding{suggested!.length === 1 ? '' : 's'} drafted from your 6M answers</span> — every practice you rated Aware or below. Each carries the question's standard reference and the next maturity rung as its action. Edit, remove, or add your own.</>
-                            : <>Your 6M answers would draft <span className="font-bold">{suggested!.length} finding{suggested!.length === 1 ? '' : 's'}</span>. Re-drafting replaces unedited drafts and keeps anything you added or already raised.</>}
+                        {seededFromAnswers
+                            ? <><span className="font-bold">{suggested!.length} finding{suggested!.length === 1 ? '' : 's'} drafted from your maturity answers</span> — every practice you rated Aware or below. Each carries the question's standard reference and the next maturity rung as its action. Edit, remove, or add your own.</>
+                            : <>Your maturity answers would draft <span className="font-bold">{suggested!.length} finding{suggested!.length === 1 ? '' : 's'}</span>. Re-drafting replaces unedited drafts and keeps anything you added or already raised.</>}
                     </div>
-                    <button onClick={redraftFromSixM} className="shrink-0 text-[11px] font-bold text-violet-700 hover:text-violet-900 flex items-center gap-1">
-                        <RefreshCw size={12} /> Re-draft from 6M
+                    <button onClick={redraftFromAnswers} className="shrink-0 text-[11px] font-bold text-violet-700 hover:text-violet-900 flex items-center gap-1">
+                        <RefreshCw size={12} /> Re-draft from answers
                     </button>
                 </div>
             )}
@@ -162,7 +162,7 @@ export const AuditScoredFindings: React.FC<Props> = ({ initialData, suggested, a
                 <div className="bg-white border border-slate-200 rounded-2xl px-8 py-12 text-center">
                     <Target size={32} className="text-slate-300 mx-auto mb-3" />
                     <p className="text-sm text-slate-500">No findings recorded yet.</p>
-                    <p className="text-xs text-slate-400 mt-1">Every 6M answer sits at Developing or better, so nothing was drafted. Add findings from your document review or your own observations.</p>
+                    <p className="text-xs text-slate-400 mt-1">Every checklist answer sits at Developing or better, so nothing was drafted. Add findings from your document review or your own observations.</p>
                 </div>
             ) : (
                 <div className="space-y-3">
@@ -224,7 +224,7 @@ export const AuditScoredFindings: React.FC<Props> = ({ initialData, suggested, a
                                                 </select>
                                             </div>
                                             <div>
-                                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">6M Root Cause</label>
+                                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Cause tag (Ishikawa, as in RCA)</label>
                                                 <select value={f.sixmCategory} onChange={e => updateFinding(f.id, { sixmCategory: e.target.value })} className="input-field text-xs">
                                                     {SIXM_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                                                 </select>
@@ -287,7 +287,7 @@ export const AuditScoredFindings: React.FC<Props> = ({ initialData, suggested, a
                                         <div className="flex justify-between items-center gap-3">
                                             {f.correctiveActionId ? (
                                                 <span className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
-                                                    <ClipboardCheck size={12} /> Corrective action {f.correctiveActionNumber} raised — track it under Audits › Corrective Actions
+                                                    <ClipboardCheck size={12} /> Corrective action {f.correctiveActionNumber} raised — track it under Assess & Improve › Corrective Actions
                                                 </span>
                                             ) : (
                                                 <button

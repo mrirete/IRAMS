@@ -332,6 +332,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                     );
                 })()}
 
+                {/* ── Section: Assess & Improve — the maturity loop every tenant runs (tier core) ── */}
+                {(() => {
+                    const assessModules = visibleModules.filter(m => m.section === 'assess');
+                    if (assessModules.length === 0) return null;
+                    return (
+                        <>
+                            <div className="px-3 pt-4 pb-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-500">Assess & Improve</span>
+                                    <div className="flex-1 h-px bg-gradient-to-r from-violet-200 to-transparent" />
+                                </div>
+                            </div>
+                            {assessModules.map(renderModule)}
+                        </>
+                    );
+                })()}
+
                 {/* ── Section 2: Reliability Suite — ERS ── */}
                 {(() => {
                     const ersModules = visibleModules.filter(m => m.section === 'ers');

@@ -1,8 +1,8 @@
 /**
  * MaturityGapCard — the audit becomes the system's brain (RF-01/AU, items A+B).
  *
- * Reads the newest audit intake's self-reported maturity (five ISO 55000-series
- * dimensions) and holds it against what the plant's OWN records show
+ * Reads the newest assessment intake's self-reported maturity (the six ISO 55001 /
+ * GFMAM groups) and holds it against what the plant's OWN records show
  * (lib/sayDoGap): failure-coding coverage, downtime capture, cost capture,
  * preventive share, assignment discipline. Verdicts are coarse on purpose —
  * supports / questions / unmeasured — a conversation-opener, not a score.
@@ -23,11 +23,12 @@ const CORRECTIVE_RE = /CORRECT|BREAK|EMERG|REPAIR|\bCM\b|\bEM\b/;
 
 /** Where each dimension's gap gets worked. */
 const DIMENSION_PATHS: Record<IntakeDimensionKey, { path: string; label: string }> = {
-    data: { path: '/reliability-metrics', label: 'Failure Review' },
-    financial: { path: '/finops', label: 'FinOps' },
-    governance: { path: '/recurring-work', label: 'PM programmes' },
+    strategy: { path: '/audits/schedule', label: 'Programme' },
+    decisions: { path: '/finops', label: 'FinOps' },
+    lifecycle: { path: '/recurring-work', label: 'PM programmes' },
+    information: { path: '/reliability-metrics', label: 'Failure Review' },
     people: { path: '/contacts', label: 'People & Org' },
-    regulatory: { path: '/audits', label: 'Audits' },
+    risk: { path: '/audits', label: 'Assessments' },
 };
 
 async function fetchMeasuredSignals(): Promise<MeasuredSignals> {
@@ -87,12 +88,12 @@ export const MaturityGapCard: React.FC = () => {
         | { kind: 'none' }
         | { kind: 'ready'; gaps: DimensionGap[]; quickWins: { label: string; action: string; dimension: IntakeDimensionKey }[]; assessmentNumber: string; createdAt: string; headline: string | null; wizardMaturity: { score: number; level: string | null } | null }
     >({ kind: 'loading' });
-    // 0309: maturity over time (oldest first); only rows with a 6M score.
+    // 0309: maturity over time (oldest first); only rows with a checklist score.
     const [trend, setTrend] = useState<MaturitySnapshot[]>([]);
     useEffect(() => {
         let active = true;
         assessmentService.getMaturityTrend(12)
-            .then(rows => { if (active) setTrend(rows.filter(r => r.sixm_overall != null)); })
+            .then(rows => { if (active) setTrend(rows.filter(r => r.maturity_overall != null)); })
             .catch(() => undefined);
         return () => { active = false; };
     }, []);
@@ -112,7 +113,7 @@ export const MaturityGapCard: React.FC = () => {
                     assessmentNumber: latest.assessmentNumber,
                     createdAt: latest.createdAt,
                     headline: latest.analysis.headline || null,
-                    // Evidence-based overall (the full 7-step wizard, when completed)
+                    // Evidence-based overall (the full checklist, when completed)
                     // outranks the directional intake — show it when it exists.
                     wizardMaturity: latest.overallMaturity != null
                         ? { score: latest.overallMaturity, level: latest.maturityLevel }
@@ -152,12 +153,12 @@ export const MaturityGapCard: React.FC = () => {
                 <h3 className="text-sm font-bold text-slate-800 m-0">Operating context — what you said vs what the data shows</h3>
                 {state.wizardMaturity && (
                     <span className="text-[10px] font-bold bg-primary-50 text-primary-700 border border-primary-100 rounded-full px-2 py-0.5"
-                        title="From the completed 6M checklist assessment (30 scored questions), not the directional intake">
-                        6M maturity {state.wizardMaturity.score}/5{state.wizardMaturity.level ? ` · ${state.wizardMaturity.level}` : ''}
+                        title="From the completed maturity checklist (scored answers), not the directional intake">
+                        Checklist maturity {state.wizardMaturity.score}/5{state.wizardMaturity.level ? ` · ${state.wizardMaturity.level}` : ''}
                     </span>
                 )}
                 {trend.length >= 2 && (() => {
-                    const first = Number(trend[0].sixm_overall), last = Number(trend[trend.length - 1].sixm_overall);
+                    const first = Number(trend[0].maturity_overall), last = Number(trend[trend.length - 1].maturity_overall);
                     const d = Math.round((last - first) * 10) / 10;
                     return (
                         <span className={`text-[10px] font-bold rounded-full px-2 py-0.5 border ${d > 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : d < 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-slate-50 text-slate-500 border-slate-200'}`}

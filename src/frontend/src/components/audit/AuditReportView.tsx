@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, TrendingUp, AlertTriangle, CheckCircle, Map, BarChart3, FileText, Save, CheckCheck, Shield, Wrench, Target, BookOpen } from 'lucide-react';
-import { auditAssessor, SIXM_DIMENSIONS } from '../../eam/services/AuditAssessor';
+import { auditAssessor } from '../../eam/services/AuditAssessor';
+import { MATURITY_DIMENSIONS } from '../../eam/services/MaturityQuestionBank';
 import { assessmentService } from '../../eam/services/AssessmentService';
 import type { AssessmentRecord, MaturitySnapshot } from '../../eam/services/AssessmentService';
 import type { AuditRegistration, DimensionResult, AuditReport, ImprovementRoadmap, RoadmapAction } from '../../eam/services/AuditAssessor';
@@ -26,13 +27,13 @@ interface Props {
   onSaved?: () => void;
 }
 
-type ReportTab = 'maturity' | 'integrity' | 'safety' | 'sixm' | 'roadmap';
+type ReportTab = 'maturity' | 'integrity' | 'safety' | 'dimensions' | 'roadmap';
 
 const TABS: { key: ReportTab; label: string; icon: React.ReactNode }[] = [
   { key: 'maturity', label: 'ISO Maturity', icon: <BarChart3 size={14} /> },
   { key: 'integrity', label: 'Asset Integrity', icon: <Shield size={14} /> },
   { key: 'safety', label: 'Process Safety', icon: <AlertTriangle size={14} /> },
-  { key: 'sixm', label: '6M Review', icon: <Target size={14} /> },
+  { key: 'dimensions', label: 'By Group', icon: <Target size={14} /> },
   { key: 'roadmap', label: 'Roadmap', icon: <Map size={14} /> },
 ];
 
@@ -112,7 +113,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
         <Loader2 size={28} className="animate-spin text-white" />
       </div>
       <h2 className="text-xl font-bold text-slate-700">Generating 5-Part Report...</h2>
-      <p className="text-sm text-slate-500">Synthesizing ISO Maturity, Integrity, Safety, 6M, and Roadmap</p>
+      <p className="text-sm text-slate-500">Synthesizing maturity scorecard, integrity, safety, group detail and roadmap</p>
     </div>
   );
 
@@ -129,7 +130,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 rounded-2xl p-6 text-white shadow-xl shadow-blue-500/20">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-blue-200 text-xs font-mono uppercase tracking-wider mb-1">Integrated Audit Report — ISO 55000:2024 Series</p>
+            <p className="text-blue-200 text-xs font-mono uppercase tracking-wider mb-1">Maturity Assessment Report — ISO 55001:2024 · GFMAM groups</p>
             <h1 className="text-2xl font-black">{registration.company}</h1>
             <p className="text-sm text-blue-200 mt-1">{registration.industrySector} · {registration.siteName || 'All Sites'}</p>
             <p className="text-xs text-blue-300 mt-1">Assessed by {registration.fullName} ({registration.jobTitle}) · {new Date(report.generatedAt).toLocaleDateString()}</p>
@@ -147,16 +148,16 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
             <div className="mt-2 px-3 py-1 rounded-full text-xs font-bold" style={{ backgroundColor: maturityColor + '33', color: maturityColor }}>
               {report.maturityLevel}
             </div>
-            {previous?.sixm_overall != null && Number.isFinite(report.overallScore) && (
+            {previous?.maturity_overall != null && Number.isFinite(report.overallScore) && (
               <p className="mt-1.5 text-[10px] text-blue-200" title={`Previous assessment ${previous.assessment_number || ''} on ${new Date(previous.created_at).toLocaleDateString()}`}>
-                {(() => { const d = Math.round((report.overallScore - Number(previous.sixm_overall)) * 10) / 10; return `${d > 0 ? '+' : ''}${d.toFixed(1)} vs ${previous.assessment_number || 'previous'}`; })()}
+                {(() => { const d = Math.round((report.overallScore - Number(previous.maturity_overall)) * 10) / 10; return `${d > 0 ? '+' : ''}${d.toFixed(1)} vs ${previous.assessment_number || 'previous'}`; })()}
               </p>
             )}
           </div>
         </div>
         {/* 5-part summary stats */}
         <div className="grid grid-cols-5 gap-2 mt-4 pt-4 border-t border-white/10">
-          <MiniStat label="Dimensions" value={`${report.dimensionResults.length}/6`} />
+          <MiniStat label="Groups" value={`${report.dimensionResults.length}/6`} />
           <MiniStat label="Findings" value={String(findings.length)} />
           <MiniStat label="Integrity" value={`${integrityFindings.length}`} />
           <MiniStat label="Safety" value={`${safetyFindings.length}`} />
@@ -204,7 +205,7 @@ export const AuditReportView: React.FC<Props> = ({ registration, results, auditS
       {tab === 'maturity' && <MaturityTab report={report} />}
       {tab === 'integrity' && <IntegrityTab findings={integrityFindings} siteChecks={auditState?.siteVerification || []} />}
       {tab === 'safety' && <SafetyTab findings={safetyFindings} />}
-      {tab === 'sixm' && <SixMTab report={report} />}
+      {tab === 'dimensions' && <GroupDetailTab report={report} />}
       {tab === 'roadmap' && (roadmap ? <RoadmapTab roadmap={roadmap} /> : <p className="text-slate-500 text-center py-8">Roadmap unavailable.</p>)}
     </div>
   );
@@ -217,7 +218,7 @@ const MaturityTab: React.FC<{ report: AuditReport }> = ({ report }) => (
       <h3 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2"><BarChart3 size={16} className="text-blue-500" /> ISO 55001 Maturity Scorecard</h3>
       <div className="space-y-3">
         {report.dimensionResults.map(d => {
-          const dim = SIXM_DIMENSIONS.find(dd => dd.key === d.dimensionKey);
+          const dim = MATURITY_DIMENSIONS.find(dd => dd.key === d.dimensionKey);
           return (
             <div key={d.dimensionKey} className="group">
               <div className="flex items-center justify-between mb-1">
@@ -251,7 +252,7 @@ const IntegrityTab: React.FC<{ findings: ScoredFinding[]; siteChecks: any[] }> =
     <div className="space-y-6">
       <div className="bg-white border border-slate-200 rounded-2xl p-6">
         <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><Shield size={16} className="text-blue-500" /> Asset Integrity Findings</h3>
-        {findings.length === 0 ? <p className="text-xs text-slate-400 text-center py-6">No asset integrity findings recorded in Step 6.</p> : (
+        {findings.length === 0 ? <p className="text-xs text-slate-400 text-center py-6">No asset integrity findings recorded in Step 4.</p> : (
           <div className="space-y-2">{findings.map((f, i) => <FindingRow key={i} finding={f} />)}</div>
         )}
       </div>
@@ -279,17 +280,17 @@ const SafetyTab: React.FC<{ findings: ScoredFinding[] }> = ({ findings }) => (
   <div className="space-y-6">
     <div className="bg-white border border-slate-200 rounded-2xl p-6">
       <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2"><AlertTriangle size={16} className="text-red-500" /> Process Safety Findings</h3>
-      {findings.length === 0 ? <p className="text-xs text-slate-400 text-center py-6">No process safety findings recorded in Step 6.</p> : (
+      {findings.length === 0 ? <p className="text-xs text-slate-400 text-center py-6">No process safety findings recorded in Step 4.</p> : (
         <div className="space-y-2">{findings.map((f, i) => <FindingRow key={i} finding={f} />)}</div>
       )}
     </div>
   </div>
 );
 
-// ─── Part 4: 6M Dimension Detail ──────────────────────────────
-const SixMTab: React.FC<{ report: AuditReport }> = ({ report }) => (
+// ─── Part 4: Group Detail ──────────────────────────────
+const GroupDetailTab: React.FC<{ report: AuditReport }> = ({ report }) => (
   <div className="bg-white border border-slate-200 rounded-2xl p-6">
-    <h3 className="text-sm font-bold text-slate-800 mb-4">6M Dimension Details</h3>
+    <h3 className="text-sm font-bold text-slate-800 mb-4">Maturity by Group</h3>
     <div className="space-y-3">
       {report.dimensionResults.map(d => (
         <details key={d.dimensionKey} className="group border border-slate-100 rounded-xl">
@@ -390,7 +391,7 @@ function FindingRow({ finding }: { finding: ScoredFinding }) {
         <p className="text-xs font-semibold text-slate-700">{finding.finding}</p>
         <div className="flex flex-wrap gap-2 mt-1">
           {finding.isoReference && <span className="text-[10px] font-mono text-slate-400">{finding.isoReference}</span>}
-          {finding.sixmCategory && <span className="text-[10px] text-slate-400">6M: {finding.sixmCategory}</span>}
+          {finding.sixmCategory && <span className="text-[10px] text-slate-400">Cause: {finding.sixmCategory}</span>}
           {finding.owner && <span className="text-[10px] text-slate-400">→ {finding.owner}</span>}
         </div>
         {finding.recommendedAction && <p className="text-[10px] text-blue-500 mt-1">Action: {finding.recommendedAction}</p>}

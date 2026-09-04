@@ -1,9 +1,10 @@
 /**
- * AuditAssessor — Gemini-powered 6M Conversational Audit Engine
- * 
- * Conducts a structured, AI-driven maturity assessment across 6 dimensions:
- * M1: Man, M2: Machine, M3: Method, M4: Material, M5: Measurement, M6: Mother Nature
- * 
+ * AuditAssessor — narrates the guided maturity assessment (report + roadmap prose).
+ *
+ * Scores are DETERMINISTIC (maturityScoring over MaturityQuestionBank: six
+ * ISO 55001 / GFMAM groups G1–G6). The model only writes findings,
+ * recommendations and the roadmap over those numbers — never the reverse.
+ *
  * HITL Principle: All outputs are ADVISORY. The AI assesses and recommends,
  * but humans validate and decide on corrective actions.
  * 
@@ -14,7 +15,7 @@
 // @google/genai is loaded lazily via dynamic import() — zero cost if proxy is used.
 import type { AuditIntakeData, DocumentReviewItem, SiteVerificationItem, InterviewRecord } from './AuditTypes';
 import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
-import { scoreSummary, deterministicKeyFindings, deterministicRecommendations, deterministicRoadmap } from './sixmScoring';
+import { scoreSummary, deterministicKeyFindings, deterministicRecommendations, deterministicRoadmap } from './maturityScoring';
 
 // SECURITY: In production, AI calls route through the backend proxy.
 // The direct Gemini client is a DEV-ONLY fallback.
@@ -39,65 +40,6 @@ const getAI = async () => {
     return _ai;
 };
 
-// ─── 6M Dimension Definitions ──────────────────────────────────────
-
-export interface SixMDimension {
-    key: string;
-    code: string;
-    label: string;
-    icon: string;
-    color: string;
-    gradient: string;
-    description: string;
-    standards: string[];
-    covers: string;
-}
-
-export const SIXM_DIMENSIONS: SixMDimension[] = [
-    {
-        key: 'man', code: 'M1', label: 'Man', icon: 'Users',
-        color: '#3b82f6', gradient: 'from-blue-500 to-blue-600',
-        description: 'People, Competency & HSE Culture',
-        covers: 'Staffing levels, competency frameworks, training programs, safety culture, leadership engagement, succession planning',
-        standards: ['ISO 55001 §7.2', 'CAMA2 Domain 1', 'OSHA PSM §1910.119(g)', 'ISO 45001'],
-    },
-    {
-        key: 'machine', code: 'M2', label: 'Machine', icon: 'Cog',
-        color: '#ef4444', gradient: 'from-red-500 to-red-600',
-        description: 'Asset Register, RBI & Condition Monitoring',
-        covers: 'Asset hierarchy, register completeness, condition monitoring, RBI programs, mechanical integrity, criticality assessment',
-        standards: ['API 510/570/653', 'ASME PCC-3', 'API 580/581', 'ISO 14224', 'ASME BPVC'],
-    },
-    {
-        key: 'method', code: 'M3', label: 'Method', icon: 'ClipboardList',
-        color: '#22c55e', gradient: 'from-green-500 to-green-600',
-        description: 'PTW, MOC, HAZOP & SOPs',
-        covers: 'Work management processes, permit to work, management of change, HAZOP/LOPA, SOPs, maintenance strategies (RCM/FMEA)',
-        standards: ['ISO 55001 §7.5/§8', 'IEC 61511', 'API RP 750', 'IEC 61882', 'SAE JA1011'],
-    },
-    {
-        key: 'material', code: 'M4', label: 'Material', icon: 'Package',
-        color: '#f59e0b', gradient: 'from-amber-500 to-amber-600',
-        description: 'Spares, MRO & Preservation',
-        covers: 'Spare parts management, MRO inventory, critical spares identification, preservation programs, vendor management, procurement',
-        standards: ['API 686', 'CAMA2 Domain 4', 'ISO 55001 §8.1', 'NORSOK Z-CR-002'],
-    },
-    {
-        key: 'measurement', code: 'M5', label: 'Measurement', icon: 'Gauge',
-        color: '#8b5cf6', gradient: 'from-blue-500 to-blue-600',
-        description: 'OEE, MTBF, MTTR & CMMS',
-        covers: 'KPIs, OEE tracking, MTBF/MTTR measurement, CMMS data quality, reporting, benchmarking, data-driven decision making',
-        standards: ['ISO 14224', 'SMRP Best Practices', 'ISO 55001 §9.1', 'EN 15341'],
-    },
-    {
-        key: 'mother_nature', code: 'M6', label: 'Mother Nature', icon: 'Cloud',
-        color: '#06b6d4', gradient: 'from-cyan-500 to-cyan-600',
-        description: 'Environment, Regulatory & Climate Risk',
-        covers: 'Environmental compliance, regulatory readiness, climate risk assessment, corrosion management, waste management, sustainability',
-        standards: ['ISO 14001:2015', 'API RP 752/753', 'ISO 55001 §4.1', 'TCFD'],
-    },
-];
-
 // ─── Assessment Types ──────────────────────────────────────────────
 
 export interface AuditRegistration {
@@ -116,9 +58,9 @@ export interface AuditContext {
     documentReview?: DocumentReviewItem[];
     siteVerification?: SiteVerificationItem[];
     interviews?: InterviewRecord[];
-    // 6M guided checklist (assessment flow)
-    sixmChecklistAnswers?: any[];
-    sixmDimensionNotes?: Record<string, string>;
+    // Guided maturity checklist (assessment flow)
+    maturityAnswers?: any[];
+    maturityDimensionNotes?: Record<string, string>;
 }
 
 export interface DimensionQuestion {
@@ -174,16 +116,16 @@ export interface RoadmapAction {
 
 // ─── System Prompt ─────────────────────────────────────────────────
 
-const AUDIT_ASSESSOR_SYSTEM_PROMPT = `You are the Relantern 6M Audit Assessor — a world-class industrial asset management auditor with deep expertise in ISO 55000, process safety, and asset integrity.
+const AUDIT_ASSESSOR_SYSTEM_PROMPT = `You are the Relantern Maturity Assessor — a world-class industrial asset management auditor with deep expertise in ISO 55000, process safety, and asset integrity.
 
 ═══ YOUR ROLE ═══
-You conduct structured maturity assessments across 6 dimensions (the "6M" framework):
-M1: MAN — People, Competency & HSE Culture (ISO 55001 §7.2, CAMA2, OSHA PSM)
-M2: MACHINE — Asset Register, RBI & Condition Monitoring (API 510/570/653, ASME PCC-3, API 580/581)
-M3: METHOD — PTW, MOC, HAZOP & SOPs (ISO 55001 §7.5/§8, IEC 61511, API RP 750)
-M4: MATERIAL — Spares, MRO & Preservation (API 686, CAMA2 Domain 4)
-M5: MEASUREMENT — OEE, MTBF, MTTR & CMMS (ISO 14224, SMRP, ISO 55001 §9.1)
-M6: MOTHER NATURE — Environment, Regulatory & Climate Risk (ISO 14001:2015, API RP 752/753)
+You narrate structured maturity assessments across the six GFMAM subject groups (ISO 55001 aligned):
+G1: STRATEGY & PLANNING — policy, SAMP, objectives and plans, demand planning (ISO 55001 §4–§6)
+G2: DECISION-MAKING — criticality, RCM/FMEA, RBI, spares strategy, investment and shutdown decisions (ISO 55001 §6.1, §8.1; ISO 55010)
+G3: LIFECYCLE DELIVERY — work management, PTW, SOPs, integrity, corrosion, stores, preservation, suppliers (ISO 55001 §8)
+G4: ASSET INFORMATION — register, information standards, data quality, KPIs, reliability metrics, analytics (ISO 55001 §7.5–§7.6; ISO 55013)
+G5: ORGANISATION & PEOPLE — competence, verification, training, safety culture, succession (ISO 55001 §7; ISO 55012)
+G6: RISK & REVIEW — MoC, asset health monitoring, environmental and climate risk, compliance, management review and audit (ISO 55001 §8.2, §9–§10; ISO 55011)
 
 ═══ MATURITY SCALE (1–5) ═══
 1 = Innocent: No formal processes, reactive, ad-hoc
@@ -193,8 +135,8 @@ M6: MOTHER NATURE — Environment, Regulatory & Climate Risk (ISO 14001:2015, AP
 5 = Optimizing: Best-in-class, data-driven, continuously optimized, benchmark leader
 
 ═══ ASSESSMENT RULES ═══
-1. Ask exactly 5 questions per dimension — targeted, industry-specific, and probing.
-2. After the user answers each question, score it 1–5 and provide brief, constructive feedback with a standard reference.
+1. The scores are fixed by the checklist; never change a score or a band. Explain them.
+2. Tie every finding and recommendation to a specific group and a standard clause.
 3. Be professional but conversational. Acknowledge good practices and highlight gaps constructively.
 4. Tailor questions to the user's industry sector (Oil & Gas, Manufacturing, Mining, etc.).
 5. Always reference specific standards in your feedback (ISO clause, API section, etc.).
@@ -271,8 +213,6 @@ function buildContextBlock(ctx?: AuditContext): string {
 // ─── Engine Class ──────────────────────────────────────────────────
 
 export class AuditAssessor {
-    private chat: any = null;
-    private registration: AuditRegistration | null = null;
     private auditContext: AuditContext | null = null;
 
     constructor() { }
@@ -283,159 +223,13 @@ export class AuditAssessor {
     }
 
     /**
-     * Generate 5 questions for a specific 6M dimension
-     */
-    async generateQuestions(
-        dimension: SixMDimension,
-        registration: AuditRegistration
-    ): Promise<DimensionQuestion[]> {
-        this.registration = registration;
-        const contextBlock = buildContextBlock(this.auditContext || undefined);
-
-        const prompt = `Generate exactly 5 audit assessment questions for the "${dimension.code}: ${dimension.label}" dimension.
-
-Context:
-- Assessor: ${registration.fullName} (${registration.jobTitle}) at ${registration.company}
-- Industry: ${registration.industrySector}
-- Site: ${registration.siteName || 'Not specified'}
-- Dimension covers: ${dimension.covers}
-- Key standards: ${dimension.standards.join(', ')}
-${contextBlock}
-
-Requirements:
-- Questions must be specific to the ${registration.industrySector} industry
-- Questions should probe for EVIDENCE of maturity (policies, records, KPIs, practices)
-- Progress from general governance to specific operational detail
-- Each question should map to a specific standard clause
-- If organizational vision/mission/objectives are provided above, tailor questions to assess alignment with those strategic goals
-- If document gaps or site findings are provided, probe deeper in those specific areas
-
-Respond as JSON:
-{
-    "questions": [
-        { "questionNumber": 1, "questionText": "..." },
-        { "questionNumber": 2, "questionText": "..." },
-        { "questionNumber": 3, "questionText": "..." },
-        { "questionNumber": 4, "questionText": "..." },
-        { "questionNumber": 5, "questionText": "..." }
-    ]
-}`;
-
-        const raw = await this.callGemini(prompt);
-        const fallback = this.getFallbackQuestions(dimension);
-        const parsed = this.parseJSON<{ questions?: DimensionQuestion[]; error?: string }>(raw, {
-            questions: fallback,
-        });
-
-        // If API returned an error message, throw so the UI can display it
-        if (parsed.error) {
-            throw new Error(parsed.error);
-        }
-
-        // Validate we got a real questions array; if not, use fallback
-        if (!Array.isArray(parsed.questions) || parsed.questions.length === 0) {
-            return fallback;
-        }
-        return parsed.questions;
-    }
-
-    /**
-     * Score a single answer within a dimension
-     */
-    async scoreAnswer(
-        dimension: SixMDimension,
-        question: DimensionQuestion,
-        answer: string,
-        registration: AuditRegistration
-    ): Promise<DimensionAnswer> {
-        const contextBlock = buildContextBlock(this.auditContext || undefined);
-        const orgContext = this.auditContext?.intake;
-        const valueContext = orgContext?.orgVision
-            ? `\n\nWhen scoring, consider alignment with the organization's stated vision: "${orgContext.orgVision}" and strategic objectives: "${orgContext.orgStrategicObjectives || 'Not specified'}". ISO 55001:2024 emphasizes VALUE REALIZATION — score higher when practices demonstrably connect to organizational value.`
-            : '';
-
-        const prompt = `You are assessing the "${dimension.code}: ${dimension.label}" dimension for ${registration.company} (${registration.industrySector}).
-${contextBlock}
-Question ${question.questionNumber}: "${question.questionText}"
-
-User's answer: "${answer}"${valueContext}
-
-Score this answer on the maturity scale (1-5) and provide constructive feedback with a specific standard reference.
-
-Respond as JSON:
-{
-    "questionNumber": ${question.questionNumber},
-    "questionText": "${question.questionText.replace(/"/g, '\\"')}",
-    "answer": "${answer.replace(/"/g, '\\"').replace(/\n/g, '\\n')}",
-    "score": <1-5>,
-    "feedback": "<2-3 sentences of constructive, standards-referenced feedback. Reference the organization's specific goals where relevant.>",
-    "standardRef": "<specific standard clause, e.g. 'ISO 55001 §7.2.1'>"
-}`;
-
-        const raw = await this.callGemini(prompt);
-        const fallback: DimensionAnswer = {
-            questionNumber: question.questionNumber,
-            questionText: question.questionText,
-            answer,
-            score: 2,
-            feedback: 'Unable to generate feedback at this time.',
-            standardRef: dimension.standards[0] || 'N/A',
-        };
-        const parsed = this.parseJSON<DimensionAnswer & { error?: string }>(raw, fallback);
-        if (parsed.error || typeof parsed.score !== 'number') return fallback;
-        return parsed;
-    }
-
-    /**
-     * Generate a summary for a completed dimension
-     */
-    async summarizeDimension(
-        dimension: SixMDimension,
-        answers: DimensionAnswer[],
-        registration: AuditRegistration
-    ): Promise<{ summary: string; keyStrengths: string[]; keyGaps: string[] }> {
-        const avgScore = answers.reduce((sum, a) => sum + a.score, 0) / answers.length;
-
-        const orgContext = this.auditContext?.intake;
-        const stratBlock = orgContext?.orgVision
-            ? `\nOrganization Vision: "${orgContext.orgVision}"\nStrategic Objectives: "${orgContext.orgStrategicObjectives || 'Not specified'}"\n`
-            : '';
-
-        const prompt = `Summarize the assessment results for "${dimension.code}: ${dimension.label}" at ${registration.company} (${registration.industrySector}).
-${stratBlock}
-Average score: ${avgScore.toFixed(1)}/5
-
-Individual scores:
-${answers.map(a => `Q${a.questionNumber}: Score ${a.score}/5 — "${a.questionText}" → Response: "${a.answer}"`).join('\n')}
-
-Provide a concise summary paragraph (referencing how findings align or misalign with the organization's stated strategic objectives), up to 3 key strengths, and up to 3 key gaps.
-
-Respond as JSON:
-{
-    "summary": "<1-2 paragraph summary>",
-    "keyStrengths": ["strength1", "strength2"],
-    "keyGaps": ["gap1", "gap2", "gap3"]
-}`;
-
-        const raw = await this.callGemini(prompt);
-        const fallback = {
-            summary: `Assessment of ${dimension.label} yielded an average maturity score of ${avgScore.toFixed(1)}/5.`,
-            keyStrengths: [] as string[],
-            keyGaps: [] as string[],
-        };
-        const parsed = this.parseJSON<typeof fallback & { error?: string }>(raw, fallback);
-        if (parsed.error || typeof parsed.summary !== 'string') return fallback;
-        return parsed;
-    }
-
-    /**
      * Generate the complete maturity report after all 6 dimensions are assessed
      */
     async generateReport(
         dimensionResults: DimensionResult[],
         registration: AuditRegistration
     ): Promise<AuditReport> {
-        // Score and band are DETERMINISTIC (sixmScoring): the same answers always
+        // Score and band are DETERMINISTIC (maturityScoring): the same answers always
         // give the same number, and an empty result list is "not assessed", never
         // NaN. The LLM only narrates findings and recommendations over them.
         const summary = scoreSummary(dimensionResults);
@@ -449,7 +243,7 @@ Respond as JSON:
                 maturityLevel: summary.maturityLevel,
                 dimensionResults,
                 keyFindings: deterministicKeyFindings(dimensionResults),
-                priorityRecommendations: ['Complete the 6M checklist (Step 3) to score the assessment.'],
+                priorityRecommendations: ['Complete the maturity checklist (Step 3) to score the assessment.'],
                 generatedAt: new Date().toISOString(),
             };
         }
@@ -517,15 +311,15 @@ Create a phased improvement plan:
 2. 90-day "Foundation Building" (3-5 actions, moderate investment)
 3. 365-day "Strategic Transformation" (3-5 actions, major initiatives)
 
-For each action, specify: action, dimension (M1-M6), priority (critical/high/medium/low), suggested owner role, and expected outcome.
+For each action, specify: action, dimension (G1-G6), priority (critical/high/medium/low), suggested owner role, and expected outcome.
 
 Also estimate total investment range and expected ROI.
 
 Respond as JSON:
 {
-    "thirtyDayActions": [{ "action": "...", "dimension": "M1", "priority": "high", "owner": "...", "expectedOutcome": "..." }],
-    "ninetyDayActions": [{ "action": "...", "dimension": "M2", "priority": "medium", "owner": "...", "expectedOutcome": "..." }],
-    "yearActions": [{ "action": "...", "dimension": "M3", "priority": "medium", "owner": "...", "expectedOutcome": "..." }],
+    "thirtyDayActions": [{ "action": "...", "dimension": "G1", "priority": "high", "owner": "...", "expectedOutcome": "..." }],
+    "ninetyDayActions": [{ "action": "...", "dimension": "G2", "priority": "medium", "owner": "...", "expectedOutcome": "..." }],
+    "yearActions": [{ "action": "...", "dimension": "G3", "priority": "medium", "owner": "...", "expectedOutcome": "..." }],
     "estimatedInvestment": "$X - $Y",
     "expectedROI": "X-Y% improvement in..."
 }`;
@@ -612,57 +406,6 @@ Respond as JSON:
         }
     }
 
-    private getFallbackQuestions(dimension: SixMDimension): DimensionQuestion[] {
-        // Hardcoded fallback in case AI fails
-        const fallbacks: Record<string, string[]> = {
-            man: [
-                'Does your organization have a formal competency framework for maintenance and reliability personnel?',
-                'How do you assess and verify the competence of personnel performing safety-critical maintenance tasks?',
-                'What training programs exist for developing asset management capabilities across your workforce?',
-                'How does your organization promote and measure safety culture within maintenance operations?',
-                'Do you have a succession plan for key technical and leadership roles in asset management?',
-            ],
-            machine: [
-                'How complete and accurate is your asset register, and what percentage of physical assets are captured in your CMMS?',
-                'Do you have a formal criticality ranking system applied to all assets, and how does it drive your maintenance strategy?',
-                'What condition monitoring technologies are deployed, and how is the data integrated into maintenance decision-making?',
-                'Do you operate a Risk-Based Inspection (RBI) program for static equipment, and what standards guide your inspection intervals?',
-                'How do you manage mechanical integrity for pressure-containing equipment (vessels, piping, relief devices)?',
-            ],
-            method: [
-                'Describe your work management process from work identification through to closeout and feedback.',
-                'How mature is your Permit to Work (PTW) system, and how does it integrate with your maintenance planning?',
-                'Do you have a formal Management of Change (MOC) process, and how consistently is it applied?',
-                'What maintenance strategy optimization tools do you use (RCM, FMEA, PMO)?',
-                'How are Standard Operating Procedures (SOPs) managed, versioned, and made accessible to frontline workers?',
-            ],
-            material: [
-                'How do you identify and manage critical spares to ensure equipment availability?',
-                'What is your process for setting min/max stock levels and reorder points for MRO inventory?',
-                'Do you have a formal preservation management program for stored equipment and spares?',
-                'How do you evaluate and manage vendor/supplier performance for maintenance services and parts?',
-                'What percentage of your maintenance materials are procured through managed contracts versus spot buys?',
-            ],
-            measurement: [
-                'What key performance indicators (KPIs) do you track for maintenance and reliability, and how are they reported?',
-                'Do you measure and track MTBF, MTTR, and OEE, and how do you use this data to drive improvement?',
-                'How would you rate the data quality in your CMMS/EAM system (completeness, accuracy, timeliness)?',
-                'Do you conduct regular benchmarking of your maintenance performance against industry standards?',
-                'How do you use data analytics to identify trends, predict failures, and optimize maintenance strategies?',
-            ],
-            mother_nature: [
-                'How does your organization assess and manage environmental risks related to asset operations?',
-                'What regulatory compliance management system do you use, and how do you track inspection deadlines?',
-                'Do you assess climate-related risks (extreme weather, temperature, corrosion) in your asset management planning?',
-                'How do you manage corrosion in your operating environment, and what mitigation strategies are in place?',
-                'Does your organization have sustainability targets that are integrated into asset lifecycle decisions?',
-            ],
-        };
-        return (fallbacks[dimension.key] || fallbacks.man).map((q, i) => ({
-            questionNumber: i + 1,
-            questionText: q,
-        }));
-    }
 }
 
 // Singleton export

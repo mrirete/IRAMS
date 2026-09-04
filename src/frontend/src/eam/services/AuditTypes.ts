@@ -6,7 +6,7 @@
  *  2. Pre-Audit Document Review
  *  3. Site Verification
  *  4. Interviews
- *  5. 6M Root-Cause Assessment (AI)
+ *  5. Maturity Assessment (guided, six ISO 55001 / GFMAM groups)
  *  6. Score Findings
  *  7. Report & Closeout
  *
@@ -24,7 +24,7 @@ export const AUDIT_STEPS = [
     { step: 2, key: 'documents',    label: 'Document Review',      shortLabel: 'Documents',  icon: 'FileSearch',      description: 'Pre-audit document request and status tracking' },
     { step: 3, key: 'site',         label: 'Site Verification',    shortLabel: 'Site Walk',  icon: 'HardHat',         description: 'Field walkdown observations and condition assessment' },
     { step: 4, key: 'interviews',   label: 'Interviews',           shortLabel: 'Interviews', icon: 'MessageSquare',   description: 'Department interviews to validate system-in-practice' },
-    { step: 5, key: 'sixm',         label: '6M Assessment',        shortLabel: '6M',         icon: 'Sparkles',        description: 'AI-powered root-cause analysis across 6 dimensions' },
+    { step: 5, key: 'maturity',     label: 'Maturity Assessment',  shortLabel: 'Maturity',   icon: 'ClipboardCheck',  description: 'Guided maturity assessment across six ISO 55001 / GFMAM groups' },
     { step: 6, key: 'findings',     label: 'Score Findings',       shortLabel: 'Findings',   icon: 'Target',          description: 'Risk-rated finding register with impact analysis' },
     { step: 7, key: 'report',       label: 'Report & Closeout',    shortLabel: 'Report',     icon: 'FileText',        description: '5-part report with roadmap and maturity scorecard' },
 ] as const;
@@ -33,7 +33,7 @@ export const AUDIT_STEPS = [
 export const ASSESSMENT_STEPS = [
     { step: 1, key: 'intake',       label: 'Intake & Scope',       shortLabel: 'Intake',     icon: 'ClipboardList',   description: 'Your details, audit scope, and organizational context' },
     { step: 2, key: 'documents',    label: 'Document Readiness',   shortLabel: 'Documents',  icon: 'FileSearch',      description: 'Quick document availability check — Yes / No / Partial / N/A' },
-    { step: 3, key: 'sixm',         label: '6M Assessment',        shortLabel: '6M',         icon: 'Sparkles',        description: 'Guided maturity assessment across 6 dimensions' },
+    { step: 3, key: 'maturity',     label: 'Maturity Assessment',  shortLabel: 'Maturity',   icon: 'ClipboardCheck',  description: 'Guided maturity assessment across six ISO 55001 / GFMAM groups' },
     { step: 4, key: 'findings',     label: 'Score Findings',       shortLabel: 'Findings',   icon: 'Target',          description: 'AI-generated findings with risk-rated scoring' },
     { step: 5, key: 'report',       label: 'Report & Roadmap',     shortLabel: 'Report',     icon: 'FileText',        description: 'Maturity report with improvement roadmap' },
 ] as const;
@@ -672,8 +672,9 @@ export interface ScoredFinding {
     recommendedAction: string;
     owner: string;
     dueDate: string;
+    /** Ishikawa cause tag — the vocabulary of the RCA fishbone, so a finding and an investigation can share a "why". */
     sixmCategory: string;
-    /** Set when the finding was drafted from a 6M checklist answer (sixmScoring). */
+    /** Set when the finding was drafted from a maturity checklist answer (maturityScoring). */
     sourceQuestionId?: string;
     /** Set once "Create corrective action" has written an audit_corrective_actions row (0308). */
     correctiveActionId?: string;
@@ -695,9 +696,11 @@ export interface AuditAssessmentState {
     siteVerification: SiteVerificationItem[];
     interviews: InterviewRecord[];
 
-    // 6M guided checklist (assessment flow)
-    sixmChecklistAnswers?: any[];
-    sixmDimensionNotes?: Record<string, string>;
+    // Guided maturity checklist (bank + grouping named by the row's maturity_framework, 0316)
+    maturityAnswers?: any[];
+    maturityDimensionNotes?: Record<string, string>;
+    /** Question bank + grouping the answers and dimension results belong to (maturityScoring.MATURITY_FRAMEWORK). */
+    maturityFramework?: string;
 
     dimensionResults: any[];
     dimensionsCompleted: number;

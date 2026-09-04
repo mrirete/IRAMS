@@ -344,7 +344,7 @@ const ADMIN_MODULES: { key: ModuleName; label: string; tier?: string }[] = [
     // Premium Suite Modules
     { key: 'reliability', label: 'Reliability Suite', tier: 'reliability' },
     { key: 'integrity', label: 'Integrity Suite', tier: 'integrity' },
-    { key: 'audits', label: 'Audit Suite', tier: 'audits' },
+    { key: 'audits', label: 'Assess & Improve', tier: 'audits' },
     { key: 'sustain', label: 'Sustainability Suite', tier: 'sustainability' },
 ];
 
@@ -1805,8 +1805,8 @@ const UserPermissionManager: React.FC = () => {
                                                 },
                                                 {
                                                     key: 'audits' as ModuleName,
-                                                    label: 'Audit Suite',
-                                                    description: 'ISO 55000 integrated audit assessments, 6M maturity scoring, corrective actions, templates, and collaborative audit workflows.',
+                                                    label: 'Assess & Improve',
+                                                    description: 'ISO 55001 / GFMAM maturity assessments, assessment programme, findings and corrective actions, reference scopes, and collaborative assessment workflows.',
                                                     icon: '📋',
                                                     color: 'amber',
                                                     routes: '/audits, /audits/templates, /audits/schedule, /audits/corrective-actions'

@@ -249,7 +249,7 @@ export const AuditCorrectiveActionsPage: React.FC = () => {
                                                 <button
                                                     onClick={() => navigate('/audits')}
                                                     className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 flex items-center gap-0.5 hover:bg-violet-200 transition-colors"
-                                                    title="Raised from a scored finding in the 6M assessment"
+                                                    title="Raised from a scored finding in the maturity assessment"
                                                 >
                                                     <Target size={8} /> {action.assessment_number || 'Assessment'} <ExternalLink size={8} />
                                                 </button>

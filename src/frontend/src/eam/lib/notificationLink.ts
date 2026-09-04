@@ -29,6 +29,7 @@ const TARGETS: Record<string, (id: string) => string> = {
     RCA_INVESTIGATION: (id) => `/analyze/rca/${id}`,      // route param (App.tsx)
     INVENTORY_ITEM: (id) => `/inventory?id=${id}`,        // Inventory reads ?id
     CONTACT: (id) => `/contacts?id=${id}`,                // Contacts reads ?id
+    ASSESSMENT: (id) => `/audits?open=${id}`,             // AuditsPage reads ?open
     BUDGET: () => `/finops?tab=dashboard`,                // FinOps has tabs, no per-budget anchor yet
 };
 

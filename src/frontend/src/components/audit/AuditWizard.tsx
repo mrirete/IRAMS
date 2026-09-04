@@ -2,7 +2,7 @@
  * AuditWizard.tsx — Streamlined 5-Step Assessment Orchestrator
  *
  * Client-friendly assessment flow:
- *   1. Intake & Scope  →  2. Document Readiness  →  3. 6M Assessment
+ *   1. Intake & Scope  →  2. Document Readiness  →  3. Maturity Assessment
  *   4. Score Findings  →  5. Report & Roadmap
  *
  * Manages unified state, step transitions, auto-save, AI context injection,
@@ -16,17 +16,17 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ArrowLeft, Check, Loader2, CheckCircle, AlertTriangle, Users } from 'lucide-react';
 import { ASSESSMENT_STEPS } from '../../eam/services/AuditTypes';
 import type { AuditAssessmentState, AuditIntakeData, ScoredFinding } from '../../eam/services/AuditTypes';
-import type { SixMChecklistAnswer } from '../../eam/services/SixMQuestionBank';
+import type { MaturityAnswer } from '../../eam/services/MaturityQuestionBank';
 import { auditAssessor } from '../../eam/services/AuditAssessor';
 import type { AuditReport, ImprovementRoadmap } from '../../eam/services/AuditAssessor';
 import { assessmentService } from '../../eam/services/AssessmentService';
-import { computeSixMResults, draftFindingsFromAnswers } from '../../eam/services/sixmScoring';
+import { computeMaturityResults, draftFindingsFromAnswers, MATURITY_FRAMEWORK } from '../../eam/services/maturityScoring';
 import { useAuth } from '../../eam/contexts/AuthContext';
 
 import { AuditIntake } from './AuditIntake';
 import { AuditIntakeAnalysis } from './AuditIntakeAnalysis';
 import { AuditDocReadiness } from './AuditDocReadiness';
-import { AuditSixMChecklist } from './AuditSixMChecklist';
+import { MaturityChecklist } from './MaturityChecklist';
 import { AuditScoredFindings } from './AuditScoredFindings';
 import { AuditReportView } from './AuditReportView';
 import { AssessmentInvite } from './AssessmentInvite';
@@ -57,8 +57,9 @@ const EMPTY_STATE: AuditAssessmentState = {
     documentReview: [],
     siteVerification: [],
     interviews: [],
-    sixmChecklistAnswers: [],
-    sixmDimensionNotes: {},
+    maturityAnswers: [],
+    maturityDimensionNotes: {},
+    maturityFramework: MATURITY_FRAMEWORK,
     dimensionResults: [],
     dimensionsCompleted: 0,
     scoredFindings: [],
@@ -171,11 +172,11 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
             auditAssessor.setContext({
                 intake: state.intake,
                 documentReview: state.documentReview,
-                sixmChecklistAnswers: state.sixmChecklistAnswers,
-                sixmDimensionNotes: state.sixmDimensionNotes,
+                maturityAnswers: state.maturityAnswers,
+                maturityDimensionNotes: state.maturityDimensionNotes,
             });
         }
-    }, [currentStep, state.intake, state.documentReview, state.sixmChecklistAnswers, state.sixmDimensionNotes]);
+    }, [currentStep, state.intake, state.documentReview, state.maturityAnswers, state.maturityDimensionNotes]);
 
     // ─── Step Handlers ──────────────────────────────────────
 
@@ -206,15 +207,16 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
         scheduleSave(next);
     };
 
-    const handleSixMComplete = (answers: SixMChecklistAnswer[], notes: Record<string, string>) => {
-        // Score the checklist deterministically here (sixmScoring) so the report
+    const handleMaturityComplete = (answers: MaturityAnswer[], notes: Record<string, string>) => {
+        // Score the checklist deterministically here (maturityScoring) so the report
         // always has dimension results — the step that used to be skipped.
-        const dimensionResults = computeSixMResults(answers, notes);
-        const answersChanged = JSON.stringify(answers) !== JSON.stringify(state.sixmChecklistAnswers || []);
+        const dimensionResults = computeMaturityResults(answers, notes);
+        const answersChanged = JSON.stringify(answers) !== JSON.stringify(state.maturityAnswers || []);
         const next: AuditAssessmentState = {
             ...state,
-            sixmChecklistAnswers: answers,
-            sixmDimensionNotes: notes,
+            maturityAnswers: answers,
+            maturityDimensionNotes: notes,
+            maturityFramework: MATURITY_FRAMEWORK,
             dimensionResults,
             dimensionsCompleted: dimensionResults.length,
             // A changed checklist invalidates a previously generated report.
@@ -255,10 +257,10 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
         }
     };
 
-    // Findings drafted from the 6M answers (Step 4 seeds from these when empty).
+    // Findings drafted from the maturity answers (Step 4 seeds from these when empty).
     const suggestedFindings = React.useMemo(
-        () => draftFindingsFromAnswers(state.sixmChecklistAnswers),
-        [state.sixmChecklistAnswers],
+        () => draftFindingsFromAnswers(state.maturityAnswers),
+        [state.maturityAnswers],
     );
 
     // Build registration object for report components
@@ -283,8 +285,8 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                             <ArrowLeft size={18} />
                         </button>
                         <div>
-                            <h1 className="text-lg font-black text-slate-800">Asset Management Assessment</h1>
-                            <p className="text-[11px] text-slate-400">ISO 55000:2024 Series · 6M Maturity Assessment</p>
+                            <h1 className="text-lg font-black text-slate-800">Asset Management Maturity Assessment</h1>
+                            <p className="text-[11px] text-slate-400">ISO 55001:2024 · six GFMAM groups · guided self-assessment</p>
                         </div>
                         {state.intake.company && (
                             <span className="ml-auto text-xs text-slate-500 bg-slate-100 px-3 py-1 rounded-lg">
@@ -374,10 +376,10 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                     />
                 )}
                 {currentStep === 3 && (
-                    <AuditSixMChecklist
-                        initialData={state.sixmChecklistAnswers}
-                        dimensionNotes={state.sixmDimensionNotes}
-                        onComplete={handleSixMComplete}
+                    <MaturityChecklist
+                        initialData={state.maturityAnswers}
+                        dimensionNotes={state.maturityDimensionNotes}
+                        onComplete={handleMaturityComplete}
                         onBack={() => goToStep(2)}
                     />
                 )}

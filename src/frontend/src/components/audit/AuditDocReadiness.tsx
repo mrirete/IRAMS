@@ -147,7 +147,7 @@ export const AuditDocReadiness: React.FC<Props> = ({ initialData, onComplete, on
                     onClick={() => onComplete(items)}
                     className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition-all flex items-center gap-2"
                 >
-                    Proceed to 6M Assessment <ArrowRight size={16} />
+                    Proceed to Maturity Assessment <ArrowRight size={16} />
                 </button>
             </div>
         </div>

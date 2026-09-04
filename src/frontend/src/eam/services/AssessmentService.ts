@@ -9,7 +9,7 @@
  *   Step 2: Document Review (JSONB)
  *   Step 3: Site Verification (JSONB)
  *   Step 4: Interviews (JSONB)
- *   Step 5: 6M Dimension Results (JSONB)
+ *   Dimension results (JSONB, scored from maturity_answers by maturityScoring)
  *   Step 6: Scored Findings (JSONB)
  *   Step 7: Report & Roadmap (JSONB)
  */
@@ -20,6 +20,7 @@ import type { AuditAssessmentState, AuditIntakeData, DocumentReviewItem, SiteVer
 import { auditPeopleBridge } from './AuditPeopleBridge';
 import { orgContextService } from './OrgContextService';
 import { computeIntakeAnalysis, type IntakeAnalysis } from './IntakeQuickAnalysis';
+import { MATURITY_FRAMEWORK, LEGACY_FRAMEWORK_SIXM, computeMaturityResults } from './maturityScoring';
 
 // ─── DB Row Type ──────────────────────────────────────────────────
 
@@ -71,8 +72,9 @@ export interface AssessmentRecord {
     updated_at: string;
     completed_at: string | null;
     archived_at: string | null;
-    sixm_checklist_answers?: any[];
-    sixm_dimension_notes?: Record<string, any>;
+    maturity_answers?: any[];
+    maturity_dimension_notes?: Record<string, any>;
+    maturity_framework?: string;
 }
 
 export interface AssessmentListItem {
@@ -105,15 +107,16 @@ export interface AssessmentSummary {
     avg_maturity: number | null;
 }
 
-/** One row of audit_maturity_snapshots (0309). */
+/** One row of audit_maturity_snapshots (0309, columns renamed 0316). Only rows of MATURITY_FRAMEWORK are read. */
 export interface MaturitySnapshot {
     id: string;
     assessment_id: string | null;
     assessment_number: string | null;
     site_name: string | null;
-    sixm_overall: number | null;
-    sixm_level: string | null;
-    sixm_by_dimension: Record<string, number>;
+    maturity_framework: string;
+    maturity_overall: number | null;
+    maturity_level: string | null;
+    maturity_by_dimension: Record<string, number>;
     gap_count: number | null;
     findings_count: number | null;
     intake_overall: number | null;
@@ -123,7 +126,7 @@ export interface MaturitySnapshot {
 // ─── Hydration: DB Row → App State ───────────────────────────────
 
 function hydrateState(record: AssessmentRecord): AuditAssessmentState {
-    return {
+    const state: AuditAssessmentState = {
         id: record.id,
         assessmentNumber: record.assessment_number,
         currentStep: record.current_step || 1,
@@ -165,8 +168,8 @@ function hydrateState(record: AssessmentRecord): AuditAssessmentState {
         documentReview: record.document_review || [],
         siteVerification: record.site_verification || [],
         interviews: record.interview_register || [],
-        sixmChecklistAnswers: record.sixm_checklist_answers || [],
-        sixmDimensionNotes: record.sixm_dimension_notes || {},
+        maturityAnswers: record.maturity_answers || [],
+        maturityDimensionNotes: record.maturity_dimension_notes || {},
         dimensionResults: record.dimension_results || [],
         dimensionsCompleted: record.dimensions_completed || 0,
         scoredFindings: record.scored_findings || [],
@@ -176,6 +179,32 @@ function hydrateState(record: AssessmentRecord): AuditAssessmentState {
         reportData: record.report_data,
         roadmapData: record.roadmap_data,
         notes: record.notes || '',
+        maturityFramework: record.maturity_framework || LEGACY_FRAMEWORK_SIXM,
+    };
+    return regroupIfLegacy(state);
+}
+
+/**
+ * An in-progress assessment saved under an earlier framework (sixm-v1) is
+ * re-scored under the current bank on load: answers keep their question ids,
+ * so grouping is re-derived and retired questions drop; a report generated
+ * under the old grouping is invalidated so it regenerates. Completed and
+ * archived assessments are left exactly as they were — history is history.
+ */
+function regroupIfLegacy(state: AuditAssessmentState): AuditAssessmentState {
+    if (state.maturityFramework === MATURITY_FRAMEWORK) return state;
+    if (state.status !== 'in_progress') return state;
+    const dimensionResults = computeMaturityResults(state.maturityAnswers as any, state.maturityDimensionNotes);
+    return {
+        ...state,
+        maturityFramework: MATURITY_FRAMEWORK,
+        dimensionResults,
+        dimensionsCompleted: dimensionResults.length,
+        reportData: null,
+        roadmapData: null,
+        overallMaturity: null,
+        overallPercentage: null,
+        maturityLevel: null,
     };
 }
 
@@ -222,11 +251,12 @@ function dehydrateState(state: AuditAssessmentState): Record<string, any> {
         site_verification: state.siteVerification || [],
         interview_register: state.interviews || [],
 
-        // 6M Guided Checklist (assessment flow)
-        sixm_checklist_answers: state.sixmChecklistAnswers || [],
-        sixm_dimension_notes: state.sixmDimensionNotes || {},
+        // Guided maturity checklist (0316: stamped with the framework that scored it)
+        maturity_answers: state.maturityAnswers || [],
+        maturity_dimension_notes: state.maturityDimensionNotes || {},
+        maturity_framework: state.maturityFramework || MATURITY_FRAMEWORK,
 
-        // Step 5: 6M Assessment (legacy/template)
+        // Dimension results (scored from maturity_answers)
         dimension_results: state.dimensionResults || [],
         dimensions_completed: state.dimensionsCompleted || state.dimensionResults?.length || 0,
 
@@ -476,6 +506,7 @@ export class AssessmentService {
                 assessor_mobile: reg.mobile || null,
                 assessor_site: reg.siteName || null,
                 industry_sector: reg.industrySector,
+                maturity_framework: MATURITY_FRAMEWORK,
                 status: isComplete ? 'completed' : 'in_progress',
                 dimensions_completed: dimensionResults?.length || 0,
                 overall_maturity: report?.overallScore || null,
@@ -618,25 +649,26 @@ export class AssessmentService {
         if (!state.id || !report || !Number.isFinite(report.overallScore)) return false;
         const { data: last } = await supabase
             .from('audit_maturity_snapshots')
-            .select('sixm_overall, findings_count')
+            .select('maturity_overall, findings_count')
             .eq('assessment_id', state.id)
             .order('created_at', { ascending: false })
             .limit(1);
         const findingsCount = state.scoredFindings?.length ?? 0;
-        if (last?.length && Number(last[0].sixm_overall) === report.overallScore && Number(last[0].findings_count) === findingsCount) return false;
+        if (last?.length && Number(last[0].maturity_overall) === report.overallScore && Number(last[0].findings_count) === findingsCount) return false;
 
         const intake = computeIntakeAnalysis(state.intake);
-        const sixmDims: Record<string, number> = {};
-        for (const d of report.dimensionResults || []) sixmDims[d.dimensionKey] = d.averageScore;
+        const dimScores: Record<string, number> = {};
+        for (const d of report.dimensionResults || []) dimScores[d.dimensionKey] = d.averageScore;
         const intakeDims: Record<string, number | null> = {};
         for (const d of intake.dimensions) intakeDims[d.key] = d.score;
         const { error } = await supabase.from('audit_maturity_snapshots').insert({
             assessment_id: state.id,
             assessment_number: state.assessmentNumber ?? null,
             site_name: state.intake?.siteName || null,
-            sixm_overall: report.overallScore,
-            sixm_level: report.maturityLevel,
-            sixm_by_dimension: sixmDims,
+            maturity_overall: report.overallScore,
+            maturity_level: report.maturityLevel,
+            maturity_by_dimension: dimScores,
+            maturity_framework: state.maturityFramework || MATURITY_FRAMEWORK,
             gap_count: (report.dimensionResults || []).reduce((s, d) => s + (d.keyGaps?.length || 0), 0),
             findings_count: findingsCount,
             intake_overall: intake.overall,
@@ -653,7 +685,8 @@ export class AssessmentService {
     async getMaturityTrend(limit = 12): Promise<MaturitySnapshot[]> {
         const { data, error } = await supabase
             .from('audit_maturity_snapshots')
-            .select('id, assessment_id, assessment_number, site_name, sixm_overall, sixm_level, sixm_by_dimension, gap_count, findings_count, intake_overall, created_at')
+            .select('id, assessment_id, assessment_number, site_name, maturity_framework, maturity_overall, maturity_level, maturity_by_dimension, gap_count, findings_count, intake_overall, created_at')
+            .eq('maturity_framework', MATURITY_FRAMEWORK)
             .order('created_at', { ascending: false })
             .limit(limit);
         if (error || !data) return [];
@@ -664,7 +697,8 @@ export class AssessmentService {
     async getPreviousSnapshot(excludeAssessmentId: string | null | undefined): Promise<MaturitySnapshot | null> {
         let q = supabase
             .from('audit_maturity_snapshots')
-            .select('id, assessment_id, assessment_number, site_name, sixm_overall, sixm_level, sixm_by_dimension, gap_count, findings_count, intake_overall, created_at')
+            .select('id, assessment_id, assessment_number, site_name, maturity_framework, maturity_overall, maturity_level, maturity_by_dimension, gap_count, findings_count, intake_overall, created_at')
+            .eq('maturity_framework', MATURITY_FRAMEWORK)
             .order('created_at', { ascending: false })
             .limit(1);
         if (excludeAssessmentId) q = q.neq('assessment_id', excludeAssessmentId);

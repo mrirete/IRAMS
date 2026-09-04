@@ -117,7 +117,7 @@ export const AuditSchedulePage: React.FC = () => {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-2xl font-black text-slate-800">Audit Schedule</h1>
+                    <h1 className="text-2xl font-black text-slate-800">Assessment Programme</h1>
                     <p className="text-sm text-slate-500 mt-1">ISO 55001 §9.2 — Assessment programme tracking across sites and assessors</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -125,7 +125,7 @@ export const AuditSchedulePage: React.FC = () => {
                         className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-1.5">
                         <Calendar size={15} /> Plan assessment
                     </button>
-                    <button onClick={() => navigate('/audits')} className="btn-primary"><Plus size={16} className="mr-2" />Start Audit</button>
+                    <button onClick={() => navigate('/audits')} className="btn-primary"><Plus size={16} className="mr-2" />Start assessment</button>
                 </div>
             </div>
 
@@ -213,9 +213,9 @@ export const AuditSchedulePage: React.FC = () => {
                         <Calendar size={28} className="text-slate-300" />
                     </div>
                     <h3 className="text-lg font-bold text-slate-600 mb-2">No assessments yet</h3>
-                    <p className="text-sm text-slate-400">Start your first audit to build the programme</p>
+                    <p className="text-sm text-slate-400">Start your first assessment to build the programme</p>
                     <button onClick={() => navigate('/audits')} className="mt-4 px-4 py-2 text-sm text-white bg-primary-500 rounded-lg hover:bg-primary-600 transition-colors">
-                        Start Audit
+                        Start assessment
                     </button>
                 </div>
             ) : (

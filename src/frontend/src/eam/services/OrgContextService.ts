@@ -3,8 +3,8 @@
  *
  * Maintains ONE org_context row per company from the newest saved assessment:
  * industry, stated objectives, key risks, ISO 55001 governance status, the
- * self-reported intake maturity vector (IntakeQuickAnalysis) and the 6M
- * checklist maturity vector (sixmScoring). The server-side agents read this
+ * self-reported intake maturity vector (IntakeQuickAnalysis) and the guided
+ * maturity checklist vector (maturityScoring, stamped with its framework — 0316). The server-side agents read this
  * row (agent-run/orgContext.ts) before advising.
  *
  * Fire-and-forget from AssessmentService.saveState — a failure here must
@@ -14,7 +14,7 @@
 import { supabase } from '../lib/supabase';
 import type { AuditAssessmentState } from './AuditTypes';
 import { computeIntakeAnalysis } from './IntakeQuickAnalysis';
-import { computeSixMResults, scoreSummary } from './sixmScoring';
+import { computeMaturityResults, scoreSummary, MATURITY_FRAMEWORK } from './maturityScoring';
 
 export interface OrgContextPayload {
     company_id: string;
@@ -37,10 +37,11 @@ export interface OrgContextPayload {
     intake_by_dimension: Record<string, number | null>;
     weakest_dimension: string | null;
     quick_wins: Array<{ label: string; isoRef: string; action: string; dimension: string; score: number }>;
-    sixm_overall: number | null;
-    sixm_level: string | null;
-    sixm_by_dimension: Record<string, number>;
-    sixm_gap_count: number | null;
+    maturity_overall: number | null;
+    maturity_level: string | null;
+    maturity_by_dimension: Record<string, number>;
+    maturity_gap_count: number | null;
+    maturity_framework: string;
     source_assessment_id: string | null;
     source_assessment_number: string | null;
     assessed_at: string;
@@ -61,7 +62,7 @@ export function buildOrgContextPayload(state: AuditAssessmentState, companyId: s
 
     const results = state.dimensionResults?.length
         ? state.dimensionResults
-        : computeSixMResults(state.sixmChecklistAnswers as any, state.sixmDimensionNotes);
+        : computeMaturityResults(state.maturityAnswers as any, state.maturityDimensionNotes);
     const six = scoreSummary(results);
     const sixDims: Record<string, number> = {};
     for (const r of results) sixDims[r.dimensionKey] = r.averageScore;
@@ -88,10 +89,11 @@ export function buildOrgContextPayload(state: AuditAssessmentState, companyId: s
         intake_by_dimension: intakeDims,
         weakest_dimension: weakest?.key ?? null,
         quick_wins: analysis.quickWins.slice(0, 5),
-        sixm_overall: results.length ? six.overallScore : null,
-        sixm_level: results.length ? six.maturityLevel : null,
-        sixm_by_dimension: sixDims,
-        sixm_gap_count: results.length ? results.reduce((s, r) => s + r.keyGaps.length, 0) : null,
+        maturity_overall: results.length ? six.overallScore : null,
+        maturity_level: results.length ? six.maturityLevel : null,
+        maturity_by_dimension: sixDims,
+        maturity_gap_count: results.length ? results.reduce((s, r) => s + r.keyGaps.length, 0) : null,
+        maturity_framework: state.maturityFramework || MATURITY_FRAMEWORK,
         source_assessment_id: state.id ?? null,
         source_assessment_number: state.assessmentNumber ?? null,
         assessed_at: now,

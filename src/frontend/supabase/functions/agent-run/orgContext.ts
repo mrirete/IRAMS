@@ -7,7 +7,7 @@
 // get_org_context tool returns the full record on demand.
 //
 // Two sources, kept distinct in the prompt:
-//   • org_context (self-reported — the onboarding audit's intake + 6M checklist)
+//   • org_context (self-reported — the onboarding assessment's intake + guided maturity checklist)
 //   • live facts (measured — register size, criticality mix, downtime rate)
 //
 // The block is deliberately short (≈ 300 tokens): it frames advice, it does
@@ -37,10 +37,11 @@ export interface OrgContextRow {
   intake_by_dimension: Record<string, number | null> | null;
   weakest_dimension: string | null;
   quick_wins: Array<{ label?: string; action?: string; isoRef?: string }> | null;
-  sixm_overall: number | null;
-  sixm_level: string | null;
-  sixm_by_dimension: Record<string, number | null> | null;
-  sixm_gap_count: number | null;
+  maturity_overall: number | null;
+  maturity_level: string | null;
+  maturity_by_dimension: Record<string, number | null> | null;
+  maturity_gap_count: number | null;
+  maturity_framework: string | null;
   source_assessment_number: string | null;
   assessed_at: string | null;
 }
@@ -124,10 +125,10 @@ export function formatOrgContextBlock(ctx: OrgContext): string {
     if (p.risk_framework_status) gov.push(`risk framework — ${p.risk_framework_status}`);
     if (p.budget_alignment_status) gov.push(`budget alignment — ${p.budget_alignment_status}`);
     if (gov.length) lines.push(`Governance (ISO 55001 §5–6, self-reported): ${gov.join("; ")}`);
-    if (p.intake_overall != null || p.sixm_overall != null) {
+    if (p.intake_overall != null || p.maturity_overall != null) {
       lines.push(
         `Self-reported maturity: intake ${p.intake_overall != null ? `${p.intake_overall}/5 ${p.intake_level ?? ""}` : "n/a"} — ${fmtDims(p.intake_by_dimension, "0–5")}; ` +
-          `6M ${p.sixm_overall != null ? `${p.sixm_overall}/5 ${p.sixm_level ?? ""}` : "n/a"} — ${fmtDims(p.sixm_by_dimension, "1–5")}` +
+          `guided maturity checklist ${p.maturity_overall != null ? `${p.maturity_overall}/5 ${p.maturity_level ?? ""}` : "n/a"} — ${fmtDims(p.maturity_by_dimension, "1–5")}` +
           (p.weakest_dimension ? `. Weakest: ${p.weakest_dimension}` : "") +
           (p.source_assessment_number ? ` [${p.source_assessment_number}${p.assessed_at ? `, ${p.assessed_at.slice(0, 10)}` : ""}]` : ""),
       );
@@ -145,7 +146,7 @@ export function formatOrgContextBlock(ctx: OrgContext): string {
 export const getOrgContext: AgentTool = {
   name: "get_org_context",
   description:
-    "Read the organisation's context record (ISO 55001 §4): industry, asset class, stated objectives, key risks and opportunities, asset-management governance status (policy, SAMP, roles, risk framework, budget alignment), self-reported maturity by dimension from the onboarding audit (intake and 6M checklist) with the weakest dimension and quick wins, plus measured register facts (asset count, criticality mix, downtime cost rate). Use it to tailor advice to what this organisation is trying to achieve and where it is weakest.",
+    "Read the organisation's context record (ISO 55001 §4): industry, asset class, stated objectives, key risks and opportunities, asset-management governance status (policy, SAMP, roles, risk framework, budget alignment), self-reported maturity by dimension from the onboarding audit (intake and the guided maturity checklist) with the weakest dimension and quick wins, plus measured register facts (asset count, criticality mix, downtime cost rate). Use it to tailor advice to what this organisation is trying to achieve and where it is weakest.",
   parameters: { type: "object", properties: {}, required: [] },
   tier: 1,
   async run(_args, ctx: ToolContext): Promise<ToolResult> {

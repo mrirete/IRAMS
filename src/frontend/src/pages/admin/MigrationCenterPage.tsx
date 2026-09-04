@@ -142,10 +142,10 @@ export interface MigrationOrigin { to?: string; label?: string }
  * intake exists (the Getting Started checklist sends people to run one).
  */
 const DIMENSION_PHASE_HINT: Partial<Record<IntakeDimensionKey, string>> = {
-    data: 'your quick win here is phases 7–8 — work-order history and failure-code catalogs are what turn the analytics on',
-    financial: 'export cost columns with your work-order history (phase 7) — money-ranked findings depend on them',
+    information: 'your quick win here is phases 7–8 — work-order history and failure-code catalogs are what turn the analytics on',
+    decisions: 'export cost columns with your work-order history (phase 7) — money-ranked findings depend on them',
     people: 'phase 2 (people & crafts) is where your gap closes first',
-    governance: 'get PM schedules & job plans in (phase 6) so the planned-work engine can carry the load',
+    lifecycle: 'get PM schedules & job plans in (phase 6) so the planned-work engine can carry the load',
 };
 
 const MaturityEmphasisHint: React.FC = () => {

@@ -37,7 +37,7 @@ export type ModuleId =
 export type ModuleTier = 'core' | 'reliability' | 'integrity' | 'intelligence' | 'sustainability' | 'financial';
 
 /** Sidebar package sections */
-export type ModuleSection = 'eam' | 'ers' | 'platform';
+export type ModuleSection = 'eam' | 'assess' | 'ers' | 'platform';
 
 export interface SidebarChild {
     id: string;
@@ -59,7 +59,7 @@ export interface ModuleDefinition {
     routes: string[];
     /** Other modules this depends on */
     dependencies: ModuleId[];
-    /** Sidebar section: 'eam' | 'ers' | 'platform' */
+    /** Sidebar section: 'eam' | 'assess' | 'ers' | 'platform' */
     section: ModuleSection;
     /** If false, module is hidden from default license (demo/mock data only). Admin can still enable manually. */
     launchReady?: boolean;
@@ -185,21 +185,22 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         dependencies: ['core'], section: 'ers',
     },
     {
-        id: 'audits', label: 'Compliance & Audits',
-        description: 'ISO 55001 Audit Management — Assessments, Templates, Scheduling, Corrective Actions, Regulatory',
+        id: 'audits', label: 'Assess & Improve',
+        description: 'The maturity loop every tenant runs — Assess (ISO 55001 / GFMAM maturity assessment), Plan (programme), Act (findings and corrective actions), plus reference scopes and regulatory',
         // Core, not integrity (launch review B1): the maturity intake is the
         // onboarding brain — it feeds org_context and every agent — so every
         // tenant, Starter included, must be able to run it.
         tier: 'core', icon: ClipboardCheck, path: null,
+        // Ordered as the loop so the section reads as one workflow (same verb pattern as the Reliability Tier).
         children: [
-            { id: 'audit-assessments', label: 'Assessments', path: '/audits' },
-            { id: 'audit-templates', label: 'Templates', path: '/audits/templates' },
-            { id: 'audit-schedule', label: 'Schedule', path: '/audits/schedule' },
-            { id: 'audit-ca', label: 'Corrective Actions', path: '/audits/corrective-actions' },
+            { id: 'audit-assessments', label: 'Assess · Maturity Assessments', path: '/audits' },
+            { id: 'audit-schedule', label: 'Plan · Programme', path: '/audits/schedule' },
+            { id: 'audit-ca', label: 'Act · Corrective Actions', path: '/audits/corrective-actions' },
+            { id: 'audit-templates', label: 'Reference · Scopes', path: '/audits/templates' },
             { id: 'reg', label: 'Regulatory (preview)', path: '/comply/regulatory' },
         ],
         routes: ['/audits', '/audits/templates', '/audits/schedule', '/audits/corrective-actions', '/comply/regulatory'],
-        dependencies: ['core'], section: 'ers',
+        dependencies: ['core'], section: 'assess',
     },
     {
         id: 'sustain', label: 'Sustain', description: 'Emissions tracking, ESG compliance',

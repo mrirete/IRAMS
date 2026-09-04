@@ -88,6 +88,15 @@ export const AuditsPage: React.FC = () => {
         }
     }, [location.state, location.pathname, navigate]);
 
+    // ─── Deep link: /audits?open=<id> (shared link from the invite panel, notifications) ──
+    useEffect(() => {
+        const id = new URLSearchParams(location.search).get('open');
+        if (!id) return;
+        navigate(location.pathname, { replace: true });
+        void handleEdit(id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [location.search]);
+
     // ─── Load List ──────────────────────────────────────────
     const loadList = useCallback(async () => {
         setListLoading(true);
@@ -218,15 +227,15 @@ export const AuditsPage: React.FC = () => {
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-2xl font-black text-slate-800">Integrated Audit Assessments</h1>
-                    <p className="text-sm text-slate-500 mt-1">ISO 55000:2024 Series · AMS · AIM · PSM — 5-step 6M maturity assessment</p>
+                    <h1 className="text-2xl font-black text-slate-800">Maturity Assessments</h1>
+                    <p className="text-sm text-slate-500 mt-1">ISO 55001:2024 · six GFMAM groups · 5-step guided self-assessment</p>
                 </div>
                 <button
                     onClick={handleStartNew}
                     className="px-5 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/20 hover:shadow-xl hover:scale-[1.02] transition-all flex items-center gap-2"
                 >
                     <ClipboardCheck size={18} />
-                    New Audit
+                    New Assessment
                 </button>
             </div>
 
@@ -244,15 +253,15 @@ export const AuditsPage: React.FC = () => {
                     <SummaryCard
                         label="Trend"
                         value={(() => {
-                            const pts = trend.filter(t => t.sixm_overall != null);
-                            if (pts.length < 2) return pts.length === 1 ? `${Number(pts[0].sixm_overall).toFixed(1)} · 1 run` : '—';
-                            const a = Number(pts[0].sixm_overall), b = Number(pts[pts.length - 1].sixm_overall);
+                            const pts = trend.filter(t => t.maturity_overall != null);
+                            if (pts.length < 2) return pts.length === 1 ? `${Number(pts[0].maturity_overall).toFixed(1)} · 1 run` : '—';
+                            const a = Number(pts[0].maturity_overall), b = Number(pts[pts.length - 1].maturity_overall);
                             return `${a.toFixed(1)} → ${b.toFixed(1)}`;
                         })()}
                         color={(() => {
-                            const pts = trend.filter(t => t.sixm_overall != null);
+                            const pts = trend.filter(t => t.maturity_overall != null);
                             if (pts.length < 2) return '#94a3b8';
-                            const d = Number(pts[pts.length - 1].sixm_overall) - Number(pts[0].sixm_overall);
+                            const d = Number(pts[pts.length - 1].maturity_overall) - Number(pts[0].maturity_overall);
                             return d > 0 ? '#22c55e' : d < 0 ? '#ef4444' : '#94a3b8';
                         })()}
                     />
@@ -300,7 +309,7 @@ export const AuditsPage: React.FC = () => {
                                 : 'text-slate-400 hover:text-slate-600'
                         }`}
                     >
-                        <Users size={13} /> My Audits
+                        <Users size={13} /> Mine
                         {myCollaborations.size > 0 && (
                             <span className="text-[9px] font-bold bg-blue-200 text-blue-700 px-1.5 py-0.5 rounded-full">
                                 {myCollaborations.size}
@@ -322,12 +331,12 @@ export const AuditsPage: React.FC = () => {
                         {auditScope === 'mine' ? <Users size={28} className="text-slate-300" /> : <ClipboardCheck size={28} className="text-slate-300" />}
                     </div>
                     <h3 className="text-lg font-bold text-slate-600 mb-2">
-                        {auditScope === 'mine' ? 'No audits assigned to you' : 'No audits yet'}
+                        {auditScope === 'mine' ? 'No assessments assigned to you' : 'No assessments yet'}
                     </h3>
                     <p className="text-sm text-slate-400 mb-6">
                         {auditScope === 'mine'
-                            ? 'You haven\'t been invited to any audits yet'
-                            : 'Start your first integrated 7-step audit assessment'
+                            ? 'You haven\'t been invited to any assessments yet'
+                            : 'Run your first maturity assessment — five steps, about thirty minutes'
                         }
                     </p>
                     {auditScope === 'mine' ? (
@@ -335,14 +344,14 @@ export const AuditsPage: React.FC = () => {
                             onClick={() => setAuditScope('all')}
                             className="text-sm text-blue-500 hover:underline font-semibold"
                         >
-                            Show all audits →
+                            Show all assessments →
                         </button>
                     ) : (
                         <button
                             onClick={handleStartNew}
                             className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl shadow-md"
                         >
-                            Begin Audit
+                            Begin Assessment
                         </button>
                     )}
                 </div>
@@ -414,7 +423,7 @@ export const AuditsPage: React.FC = () => {
                                     ) : (
                                         <div className="flex flex-col items-center">
                                             <div className="flex gap-0.5">
-                                                {[1,2,3,4,5,6,7].map(s => (
+                                                {[1,2,3,4,5].map(s => (
                                                     <div key={s} className={`w-1.5 h-4 rounded-sm ${s <= (a.current_step || 1) ? 'bg-blue-400' : 'bg-slate-200'}`} />
                                                 ))}
                                             </div>
@@ -433,7 +442,7 @@ export const AuditsPage: React.FC = () => {
                                             <button
                                                 onClick={() => handleEdit(a.id)}
                                                 className="p-2 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors"
-                                                title={a.status === 'in_progress' ? 'Resume Audit' : 'Edit Audit'}
+                                                title={a.status === 'in_progress' ? 'Resume assessment' : 'Edit assessment'}
                                             >
                                                 <Edit3 size={16} />
                                             </button>
@@ -556,7 +565,7 @@ function StatusBadge({ status }: { status: string }) {
 function StepBadge({ step }: { step: number }) {
     // Mirrors ASSESSMENT_STEPS (the live 5-step wizard), not the retired 7-step flow.
     const STEP_LABELS: Record<number, string> = {
-        1: 'Intake', 2: 'Documents', 3: '6M Assessment', 4: 'Findings', 5: 'Report',
+        1: 'Intake', 2: 'Documents', 3: 'Maturity', 4: 'Findings', 5: 'Report',
     };
     return (
         <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 uppercase">

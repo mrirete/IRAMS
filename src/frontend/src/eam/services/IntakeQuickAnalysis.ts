@@ -4,8 +4,8 @@
  * The intake (AuditIntake.tsx) collects ~16 ordinal "current state" selections
  * across organizational context (ISO 55001 §4–6) and the ISO 55000:2024 companion
  * series (55010/55011/55012/55013). Every one of those dropdowns is an ordered
- * best→worst scale, so we can score them instantly — no document review, 6M
- * deep-dive, or scored findings required.
+ * best→worst scale, so we can score them instantly — no document review,
+ * checklist, or scored findings required.
  *
  * This powers the FREE, lead-magnet "Preliminary Maturity Snapshot": a high-level
  * directional read + prioritized quick wins that points the client in the right
@@ -17,9 +17,11 @@
 
 import { ISO_ALIGNMENT_OPTIONS, type AuditIntakeData } from './AuditTypes';
 import { MATURITY_LEVELS } from '../../types/audit';
+import type { MaturityDimensionKey } from './MaturityQuestionBank';
 
-// ── Dimensions (aligned to ISO 55000 series) ──────────────────────
-export type IntakeDimensionKey = 'governance' | 'financial' | 'regulatory' | 'people' | 'data';
+// ── Dimensions: the same six ISO 55001 / GFMAM groups as the checklist (MaturityQuestionBank).
+// The intake has fields for five of them; Lifecycle Delivery is scored by the checklist only.
+export type IntakeDimensionKey = MaturityDimensionKey;
 
 export interface IntakeDimension {
     key: IntakeDimensionKey;
@@ -29,11 +31,11 @@ export interface IntakeDimension {
 }
 
 export const INTAKE_DIMENSIONS: IntakeDimension[] = [
-    { key: 'governance', label: 'Governance & Strategy', isoBadge: 'ISO 55001 §4–6', color: '#8b5cf6' },
-    { key: 'financial',  label: 'Financial Alignment',   isoBadge: 'ISO 55010',       color: '#b45309' },
-    { key: 'regulatory', label: 'Regulatory & Policy',   isoBadge: 'ISO 55011',       color: '#0369a1' },
-    { key: 'people',     label: 'People & Competence',   isoBadge: 'ISO 55012',       color: '#059669' },
-    { key: 'data',       label: 'Data Governance',       isoBadge: 'ISO 55013',       color: '#7c3aed' },
+    { key: 'strategy',    label: 'Strategy & Planning',   isoBadge: 'ISO 55001 §4–6', color: '#8b5cf6' },
+    { key: 'decisions',   label: 'Decision-Making',       isoBadge: 'ISO 55010',      color: '#b45309' },
+    { key: 'risk',        label: 'Risk & Review',         isoBadge: 'ISO 55011',      color: '#ef4444' },
+    { key: 'people',      label: 'Organisation & People', isoBadge: 'ISO 55012',      color: '#0ea5e9' },
+    { key: 'information', label: 'Asset Information',     isoBadge: 'ISO 55013',      color: '#3b82f6' },
 ];
 
 // ── Field catalog: ordered best→worst value scales + a quick-win action ──
@@ -87,38 +89,38 @@ const isoScale = (k: keyof typeof ISO_ALIGNMENT_OPTIONS): string[] =>
 
 const FIELDS: FieldDef[] = [
     // ── Governance & Strategy ──
-    { id: 'amPolicy', dimension: 'governance', label: 'Asset Management Policy', isoRef: 'ISO 55001 §5.2',
+    { id: 'amPolicy', dimension: 'strategy', label: 'Asset Management Policy', isoRef: 'ISO 55001 §5.2',
       scale: ORG_AM_POLICY, get: i => i.orgAMPolicy,
       quickWin: 'Draft a one-page Asset Management Policy and have leadership formally endorse it — the anchor ISO 55001 §5.2 requires, and a fast, high-visibility win.' },
-    { id: 'samp', dimension: 'governance', label: 'Strategic AM Plan (SAMP)', isoRef: 'ISO 55001 §6.2.1',
+    { id: 'samp', dimension: 'strategy', label: 'Strategic AM Plan (SAMP)', isoRef: 'ISO 55001 §6.2.1',
       scale: ORG_SAMP, get: i => i.orgSAMP,
       quickWin: 'Establish a lightweight SAMP that draws a clear line of sight from business objectives to asset plans (ISO 55001 §6.2.1).' },
-    { id: 'roles', dimension: 'governance', label: 'Roles & Authorities', isoRef: 'ISO 55001 §5.3',
+    { id: 'roles', dimension: 'people', label: 'Roles & Authorities', isoRef: 'ISO 55001 §5.3',
       scale: ORG_ROLES, get: i => i.orgRolesAuthorities,
       quickWin: 'Define a simple RACI for core asset-management functions so accountability is unambiguous (ISO 55001 §5.3).' },
-    { id: 'risk', dimension: 'governance', label: 'Risk-Based Decision Making', isoRef: 'ISO 55001 §6.1',
+    { id: 'risk', dimension: 'decisions', label: 'Risk-Based Decision Making', isoRef: 'ISO 55001 §6.1',
       scale: ORG_RISK, get: i => i.orgRiskFramework,
       quickWin: 'Adopt a consistent risk matrix and embed it in maintenance and replacement decisions (ISO 55001 §6.1, ISO 31000).' },
-    { id: 'budget', dimension: 'governance', label: 'Budget vs. Criticality', isoRef: 'ISO 55001 §6.2',
+    { id: 'budget', dimension: 'decisions', label: 'Budget vs. Criticality', isoRef: 'ISO 55001 §6.2',
       scale: ORG_BUDGET, get: i => i.orgBudgetAlignment,
       quickWin: 'Prioritize the next budget cycle by asset criticality rather than history — a quick reallocation of spend to the assets that matter most.' },
 
     // ── Financial Alignment (ISO 55010) ──
-    { id: 'fin_align', dimension: 'financial', label: 'Finance–Engineering Alignment', isoRef: 'ISO 55010',
+    { id: 'fin_align', dimension: 'decisions', label: 'Finance–Engineering Alignment', isoRef: 'ISO 55010',
       scale: isoScale('iso55010_financial_alignment'), get: i => i.isoAlignment.iso55010_financial_alignment,
       quickWin: 'Run a joint finance–engineering workshop to agree a shared definition of asset value and a common register basis (ISO 55010).' },
-    { id: 'fin_register', dimension: 'financial', label: 'Technical vs. Financial Register', isoRef: 'ISO 55010',
+    { id: 'fin_register', dimension: 'decisions', label: 'Technical vs. Financial Register', isoRef: 'ISO 55010',
       scale: isoScale('iso55010_register_alignment'), get: i => i.isoAlignment.iso55010_register_alignment,
       quickWin: 'Reconcile the technical asset register against the fixed-asset register to close ghost/zombie asset gaps (ISO 55010).' },
-    { id: 'fin_capex', dimension: 'financial', label: 'CAPEX–Lifecycle Integration', isoRef: 'ISO 55010',
+    { id: 'fin_capex', dimension: 'decisions', label: 'CAPEX–Lifecycle Integration', isoRef: 'ISO 55010',
       scale: isoScale('iso55010_capex_integration'), get: i => i.isoAlignment.iso55010_capex_integration,
       quickWin: 'Tie CAPEX cases to whole-life cost and criticality, not just failure or urgency (ISO 55010).' },
 
     // ── Regulatory & Policy (ISO 55011) ──
-    { id: 'reg_mapping', dimension: 'regulatory', label: 'Regulatory Obligation Mapping', isoRef: 'ISO 55011',
+    { id: 'reg_mapping', dimension: 'risk', label: 'Regulatory Obligation Mapping', isoRef: 'ISO 55011',
       scale: isoScale('iso55011_regulatory_mapping'), get: i => i.isoAlignment.iso55011_regulatory_mapping,
       quickWin: 'Build a single regulatory-obligations register mapping each requirement to an owner and its evidence (ISO 55011).' },
-    { id: 'reg_engagement', dimension: 'regulatory', label: 'Standards / Policy Engagement', isoRef: 'ISO 55011',
+    { id: 'reg_engagement', dimension: 'risk', label: 'Standards / Policy Engagement', isoRef: 'ISO 55011',
       scale: isoScale('iso55011_policy_engagement'), get: i => i.isoAlignment.iso55011_policy_engagement,
       quickWin: 'Assign an owner to monitor and engage with the industry standards bodies most relevant to your assets (ISO 55011).' },
 
@@ -134,13 +136,13 @@ const FIELDS: FieldDef[] = [
       quickWin: 'Extend competence verification to contractors performing asset-critical work (ISO 55012).' },
 
     // ── Data Governance (ISO 55013) ──
-    { id: 'data_gov', dimension: 'data', label: 'Data Governance Structure', isoRef: 'ISO 55013',
+    { id: 'data_gov', dimension: 'information', label: 'Data Governance Structure', isoRef: 'ISO 55013',
       scale: isoScale('iso55013_data_governance'), get: i => i.isoAlignment.iso55013_data_governance,
       quickWin: 'Appoint data stewards and adopt a basic EDM data-governance model for asset data (ISO 55013).' },
-    { id: 'data_quality', dimension: 'data', label: 'Data Quality Management', isoRef: 'ISO 55013',
+    { id: 'data_quality', dimension: 'information', label: 'Data Quality Management', isoRef: 'ISO 55013',
       scale: isoScale('iso55013_data_quality'), get: i => i.isoAlignment.iso55013_data_quality,
       quickWin: 'Stand up data-quality metrics (completeness, accuracy) and a cleansing routine for the asset register (ISO 55013).' },
-    { id: 'data_asset', dimension: 'data', label: 'Data-as-Asset Distinction', isoRef: 'ISO 55013',
+    { id: 'data_asset', dimension: 'information', label: 'Data-as-Asset Distinction', isoRef: 'ISO 55013',
       scale: isoScale('iso55013_data_asset_distinction'), get: i => i.isoAlignment.iso55013_data_asset_distinction,
       quickWin: 'Recognize asset data as a strategic asset with its own lifecycle and ownership (ISO 55013).' },
 ];

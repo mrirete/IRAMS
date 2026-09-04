@@ -4,7 +4,7 @@ import type { IntakeAnalysis } from '../eam/services/IntakeQuickAnalysis';
 
 const analysisWith = (scores: Partial<Record<string, number | null>>): IntakeAnalysis => ({
     overall: 3, overallPercentage: 60, band: null as any,
-    dimensions: (['governance', 'financial', 'regulatory', 'people', 'data'] as const).map(k => ({
+    dimensions: (['strategy', 'decisions', 'risk', 'people', 'information'] as const).map(k => ({
         key: k, label: k, isoBadge: '', color: '',
         score: scores[k] ?? null, answeredCount: 1, totalCount: 3,
     })),
@@ -34,24 +34,35 @@ describe('verdictFor', () => {
 });
 
 describe('computeSayDoGap', () => {
-    it('regulatory is always unmeasured (no proxy exists) — honesty over invention', () => {
-        const gaps = computeSayDoGap(analysisWith({ regulatory: 4 }), signals());
-        expect(gaps.find(g => g.key === 'regulatory')!.verdict).toBe('unmeasured');
+    it('returns all six GFMAM groups in bank order', () => {
+        expect(computeSayDoGap(analysisWith({}), signals()).map(g => g.key))
+            .toEqual(['strategy', 'decisions', 'lifecycle', 'information', 'people', 'risk']);
     });
-    it('flags the classic gap: data self-rated 4, coding coverage 20%', () => {
+    it('strategy and risk are always unmeasured (no proxy exists) — honesty over invention', () => {
+        const gaps = computeSayDoGap(analysisWith({ risk: 4, strategy: 4 }), signals());
+        expect(gaps.find(g => g.key === 'risk')!.verdict).toBe('unmeasured');
+        expect(gaps.find(g => g.key === 'strategy')!.verdict).toBe('unmeasured');
+    });
+    it('lifecycle has no intake score but a measured proxy: unmeasured until self-assessed, labelled from the bank', () => {
+        const g = computeSayDoGap(analysisWith({}), signals({ preventiveSharePct: 60 })).find(x => x.key === 'lifecycle')!;
+        expect(g.verdict).toBe('unmeasured');
+        expect(g.label).toBe('Lifecycle Delivery');
+        expect(g.note).toMatch(/run the maturity intake/);
+    });
+    it('flags the classic gap: information self-rated 4, coding coverage 20%', () => {
         const gaps = computeSayDoGap(
-            analysisWith({ data: 4 }),
+            analysisWith({ information: 4 }),
             signals({ failureCodingPct: 20, downtimeCapturePct: 25 }),
         );
-        const d = gaps.find(g => g.key === 'data')!;
+        const d = gaps.find(g => g.key === 'information')!;
         expect(d.verdict).toBe('questions');
         expect(d.note).toMatch(/Failure Review/);
     });
-    it('counts a configured downtime rate as financial practice', () => {
-        const withRate = computeSayDoGap(analysisWith({ financial: 3 }), signals({ costCoveragePct: 50, downtimeRateConfigured: true }));
-        const without = computeSayDoGap(analysisWith({ financial: 3 }), signals({ costCoveragePct: 50, downtimeRateConfigured: false }));
-        expect(withRate.find(g => g.key === 'financial')!.verdict).toBe('supports');
+    it('counts a configured downtime rate as decision-making practice', () => {
+        const withRate = computeSayDoGap(analysisWith({ decisions: 3 }), signals({ costCoveragePct: 50, downtimeRateConfigured: true }));
+        const without = computeSayDoGap(analysisWith({ decisions: 3 }), signals({ costCoveragePct: 50, downtimeRateConfigured: false }));
+        expect(withRate.find(g => g.key === 'decisions')!.verdict).toBe('supports');
         // 3/5 claims 60%; measured avg (50+0)/2 = 25 < 30 → questioned
-        expect(without.find(g => g.key === 'financial')!.verdict).toBe('questions');
+        expect(without.find(g => g.key === 'decisions')!.verdict).toBe('questions');
     });
 });

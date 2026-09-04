@@ -189,8 +189,8 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                 try {
                     await NotificationService.notify({
                         recipientId: systemUserId,
-                        title: '📋 Audit Team Invitation',
-                        message: `You have been invited to collaborate on an audit assessment as a ${role}. Click to view the assessment.`,
+                        title: '📋 Assessment Team Invitation',
+                        message: `You have been invited to collaborate on a maturity assessment as a ${role}. Click to open it.`,
                         severity: 'INFO',
                         notificationType: 'ASSIGNMENT',
                         module: 'audits',
@@ -254,7 +254,7 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
 
     const copyLink = async () => {
         if (!assessmentId) return;
-        const link = `${window.location.origin}/audits/assessment/${assessmentId}`;
+        const link = `${window.location.origin}/audits?open=${assessmentId}`;
         await navigator.clipboard.writeText(link);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
