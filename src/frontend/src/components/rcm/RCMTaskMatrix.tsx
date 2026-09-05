@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import type { RCMTaskMatrixProps } from './types';
 import { STRATEGY_LABELS } from './types';
+import { canCreatePMForDecision } from '../../eam/services/rcmReadiness';
+import { strategyProducesPM } from '../../eam/services/rcmPlan';
 
 export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
   study, taskSummaries, decisions, aiLoading, aiReport,
@@ -171,8 +173,14 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
                           <CheckCircle size={14} />
                           <ArrowUpRight size={10} />
                         </Link>
-                      ) : (
-                        <span className="text-slate-300">—</span>
+                      ) : strategyProducesPM(task.recommended_strategy_code) ? (() => {
+                        // Say why this row has no PM yet — the generator never skips silently.
+                        const g = canCreatePMForDecision(study.asset_id, decisions.get(task.failure_mode_id));
+                        return g.ok
+                          ? <span className="text-[10px] font-bold text-primary-600" title={g.reason}>ready</span>
+                          : <span className="inline-flex items-center gap-0.5 text-amber-600" title={g.reason}><Lock size={11} /><span className="text-[10px]">{g.missing[0]?.split(' (')[0]}</span></span>;
+                      })() : (
+                        <span className="text-slate-300" title={task.recommended_strategy_code === 'RTF' ? 'Run-to-Failure schedules nothing' : task.recommended_strategy_code === 'REDESIGN' ? 'Redesign is a one-off change, not a PM' : 'No strategy yet'}>—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">

@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './RCMService';
 import type { ActionGate } from './workReadiness';
+import { parseIntervalText, strategyProducesPM, UUID_RE } from './rcmPlan';
 
 export type { ActionGate };
 
@@ -206,25 +207,56 @@ export function canSpecialistReviewProgram(fmCount: number, strategyCount: numbe
   );
 }
 
+/** A decision that can become a PM right now: proactive strategy, task, structured interval, not yet generated. */
+export function isDecisionPMReady(d: RCMDecision): boolean {
+  return strategyProducesPM(d.recommended_strategy_code)
+    && described(d.task_description)
+    && parseIntervalText(d.task_interval).n !== null
+    && !d.recurring_work_id;
+}
+
+/**
+ * Create the PM for ONE decision. Everything a schedule needs to be served
+ * by Work Management is checked here, with the reason spelled out: a
+ * register asset to attach to, a strategy that schedules work at all
+ * (Run-to-Failure and Redesign don't), the task, and an interval with a
+ * value and a unit — the generator never guesses a cadence.
+ */
+export function canCreatePMForDecision(assetId: string | null | undefined, decision?: RCMDecision): ActionGate {
+  const missing: string[] = [];
+  if (!assetId || !UUID_RE.test(assetId)) missing.push('Asset linked from the register');
+  if (decision?.recurring_work_id) {
+    return { ok: false, missing: ['Already generated'], reason: `Already in Work Management as ${decision.recurring_work_id}.` };
+  }
+  const code = decision?.recommended_strategy_code;
+  if (!code) missing.push('A strategy chosen');
+  else if (!strategyProducesPM(code)) {
+    missing.push(code === 'RTF' ? 'A proactive strategy (Run-to-Failure schedules nothing)' : 'A proactive strategy (Redesign is a one-off change, not a PM)');
+  }
+  if (!described(decision?.task_description)) missing.push('Task description');
+  if (parseIntervalText(decision?.task_interval).n === null) missing.push('Interval (value + unit)');
+  return gate(
+    missing,
+    'Create this task as a PM in Work Management',
+    'A PM is a real work record. Still missing',
+  );
+}
+
 /**
  * Generate the PM schedule into Work Management. Creates real recurring-work
- * records planners must then live with — so it needs the asset they attach to
- * and at least one decision that is actually actionable (a proactive strategy
- * with a task written; Run-to-Failure generates nothing by definition).
+ * records planners must then live with — so it needs the register asset they
+ * attach to and at least one decision that is actually ready.
  */
 export function canGeneratePM(assetId: string | null | undefined, decisions: RCMDecision[]): ActionGate {
   const missing: string[] = [];
-  if (!assetId) missing.push('Asset linked (PMs attach to it)');
-  const actionable = decisions.filter(d =>
-    d.recommended_strategy_code && d.recommended_strategy_code !== 'RTF' &&
-    described(d.task_description) && !d.recurring_work_id
-  );
-  if (actionable.length === 0) {
-    missing.push('An actionable decision — proactive strategy + task description, not yet generated');
+  if (!assetId || !UUID_RE.test(assetId)) missing.push('Asset linked from the register (PMs attach to it)');
+  const ready = decisions.filter(isDecisionPMReady);
+  if (ready.length === 0) {
+    missing.push('A ready decision — proactive strategy + task + interval, not yet generated');
   }
   return gate(
     missing,
-    `Create ${actionable.length} PM task${actionable.length !== 1 ? 's' : ''} in Work Management from the decisions`,
+    `Create ${ready.length} PM task${ready.length !== 1 ? 's' : ''} in Work Management from the decisions`,
     'PM generation creates real work records. Still missing',
   );
 }

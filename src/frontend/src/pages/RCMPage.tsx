@@ -38,9 +38,10 @@ import { CRIT_COLORS, CONSEQUENCE_OPTIONS } from '../components/rcm/types';
 import {
   assessStudyData, canSpecialistDraft, canSpecialistCompleteRow,
   canSpecialistExpandFunction, canSpecialistRecommendStrategy,
-  canSpecialistReviewProgram, canGeneratePM, canApproveStudy,
+  canSpecialistReviewProgram, canGeneratePM, canApproveStudy, canCreatePMForDecision,
   completableRows, isRowComplete, MIN_CONTEXT_CHARS,
 } from '../eam/services/rcmReadiness';
+import { normalizeRecommendation, recommendationToDecisionUpdates } from '../eam/services/rcmPlan';
 
 // ── Types ─────────────────────────────────────────────────
 type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
@@ -768,23 +769,95 @@ export const RCMPage: React.FC = () => {
   };
 
   const handleAIRecommend = async (fm: RCMFailureMode) => {
+    if (!selectedStudy) return;
     const decision = decisions.find(d => d.failure_mode_id === fm.id);
     // JA1012: the strategy decision branches on the consequence class — no Q5,
     // no grounded recommendation, no AI call.
     const gate = canSpecialistRecommendStrategy(fm, decision);
     if (!gate.ok) { showToast(gate.reason, 'error'); return; }
     setAiLoading(`recommend-${fm.id}`);
-    const rec = await rcmService.aiRecommendStrategy(fm, decision?.consequence_code || undefined);
-    if (rec) {
-      await handleUpdateDecision(fm.id, {
-        ai_recommendation: rec, recommended_strategy_code: rec.strategy,
-        task_description: rec.reasoning?.substring(0, 200),
-        task_interval: rec.suggested_interval || '', justification: rec.reasoning,
-      });
-    } else {
-      showToast('Specialist could not produce a recommendation — check the AI configuration', 'error');
-    }
+    const fn = functions.find(f => f.id === fm.function_id);
+    const rec = await rcmService.aiRecommendStrategy(fm, {
+      study: selectedStudy,
+      consequenceCode: decision?.consequence_code || undefined,
+      isHidden: !!decision?.is_hidden_failure,
+      functionDescription: fn?.function_description,
+    });
     setAiLoading(null);
+    if (!rec) {
+      showToast('Specialist could not produce a recommendation — check the AI configuration', 'error');
+      return;
+    }
+    // Nothing written by a person yet → the draft lands straight in the
+    // fields (marked applied). Otherwise it waits for Accept, so a human's
+    // task text is never overwritten by the model without a click. The old
+    // handler always applied on receipt, which left Accept with nothing to do.
+    const untouched = !decision?.recommended_strategy_code
+      && isBlank(decision?.task_description) && isBlank(decision?.task_interval) && isBlank(decision?.justification);
+    if (untouched) {
+      await handleUpdateDecision(fm.id, {
+        ai_recommendation: { ...rec, accepted_at: new Date().toISOString() },
+        ...recommendationToDecisionUpdates(rec),
+      });
+      showToast('Specialist drafted the strategy and task — review and edit the fields');
+    } else {
+      await handleUpdateDecision(fm.id, { ai_recommendation: rec });
+      showToast('Specialist recommendation ready — Accept to write it into the task');
+    }
+  };
+
+  const handleAcceptRecommendation = async (fm: RCMFailureMode) => {
+    const decision = decisions.find(d => d.failure_mode_id === fm.id);
+    const rec = normalizeRecommendation(decision?.ai_recommendation);
+    if (!rec) { showToast('No recommendation to apply', 'error'); return; }
+    const updates = recommendationToDecisionUpdates(rec);
+    if (Object.keys(updates).length === 0) {
+      showToast('This recommendation carries no strategy, task or interval to apply', 'error');
+      return;
+    }
+    await handleUpdateDecision(fm.id, {
+      ...updates,
+      ai_recommendation: { ...rec, accepted_at: new Date().toISOString() },
+    });
+    const parts = [
+      updates.recommended_strategy_code ? 'strategy' : '',
+      updates.task_description ? 'task' : '',
+      updates.task_interval ? 'interval' : '',
+      updates.justification ? 'justification' : '',
+    ].filter(Boolean);
+    showToast(`Recommendation applied — ${parts.join(', ')} written into the fields`);
+  };
+
+  const handleDismissRecommendation = async (fm: RCMFailureMode) => {
+    await handleUpdateDecision(fm.id, { ai_recommendation: null });
+  };
+
+  const pmGateFor = useCallback(
+    (fm: RCMFailureMode) => canCreatePMForDecision(selectedStudy?.asset_id, decisionMap.get(fm.id)),
+    [selectedStudy?.asset_id, decisionMap],
+  );
+
+  const handleCreatePMForMode = async (fm: RCMFailureMode) => {
+    if (!selectedStudy) return;
+    const decision = decisionMap.get(fm.id);
+    const gate = canCreatePMForDecision(selectedStudy.asset_id, decision);
+    if (!gate.ok) { showToast(gate.reason, 'error'); return; }
+    // Wait for any queued autosave on this decision so the row exists server-side.
+    const pending = decisionChains.current.get(fm.id);
+    if (pending) await pending;
+    setAiLoading(`pm-${fm.id}`);
+    const res = await rcmService.createPMForDecision(selectedStudy.id, fm.id);
+    setAiLoading(null);
+    if (res.ok) {
+      setDecisions(prev => prev.map(d => d.failure_mode_id === fm.id ? { ...d, recurring_work_id: res.pmCode } : d));
+      showToast(res.meterCadence
+        ? `PM ${res.pmCode} created — running-hours cadence, served by meter readings`
+        : `PM ${res.pmCode} created in Work Management`);
+      const tasks = await rcmService.getTaskSummaries(selectedStudy.id);
+      setTaskSummaries(tasks);
+    } else {
+      showToast(`PM not created — ${res.reason}`, 'error');
+    }
   };
 
   const optimizeGate = useMemo(
@@ -813,13 +886,22 @@ export const RCMPage: React.FC = () => {
     if (!selectedStudy) return;
     if (!pmGate.ok) { showToast(pmGate.reason, 'error'); return; }
     setAiLoading('pm');
-    const count = await rcmService.generatePMSchedule(selectedStudy.id);
+    const res = await rcmService.generatePMSchedule(selectedStudy.id);
     setAiLoading(null);
-    if (count > 0) {
-      showToast(`${count} PM task${count !== 1 ? 's' : ''} created in Work Management`);
+    const n = res.created.length;
+    if (n > 0) {
+      const meter = res.created.filter(c => c.meterCadence).length;
+      showToast(
+        `${n} PM task${n !== 1 ? 's' : ''} created in Work Management`
+        + (meter ? ` (${meter} on running-hours meters)` : '')
+        + (res.failed.length ? ` · ${res.failed.length} skipped — see the plan` : ''),
+      );
       await loadStudyDetail(selectedStudy.id);
+    } else if (res.failed.length > 0) {
+      const first = res.failed[0];
+      showToast(`No PM created — ${first.failureMode}: ${first.reason}${res.failed.length > 1 ? ` (+${res.failed.length - 1} more)` : ''}`, 'error');
     } else {
-      showToast('No new PM tasks — decisions need a strategy first, or PMs already exist', 'error');
+      showToast('Nothing to generate — every proactive decision already has its PM', 'error');
     }
   };
 
@@ -1059,6 +1141,10 @@ export const RCMPage: React.FC = () => {
           lifeEvidence={lifeEvidence}
           onUpdateDecision={handleUpdateDecision}
           onAIRecommend={handleAIRecommend}
+          onAcceptRecommendation={handleAcceptRecommendation}
+          onDismissRecommendation={handleDismissRecommendation}
+          onCreatePM={handleCreatePMForMode}
+          pmGateFor={pmGateFor}
         />
       )}
 

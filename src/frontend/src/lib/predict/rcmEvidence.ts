@@ -46,8 +46,15 @@ export interface DecisionCheck {
 
 /** Flag decisions whose TASK TYPE contradicts the fitted failure pattern. */
 export function checkDecisionAgainstPattern(d: RCMDecision, v: PatternVerdict): DecisionCheck {
-    const timeBased = !!((d.restoration_applicable && d.scheduled_restoration_task) || (d.discard_applicable && d.scheduled_discard_task));
-    const onCondition = !!(d.on_condition_applicable && d.on_condition_task);
+    // The Strategy tab records the decision as recommended_strategy_code; the
+    // per-task-type columns are only filled by imported studies. Reading just
+    // the columns made every wizard decision "neutral", so the living-RCM
+    // check never flagged a time-based task on a random-failure asset.
+    const code = d.recommended_strategy_code;
+    const timeBased = !!((d.restoration_applicable && d.scheduled_restoration_task) || (d.discard_applicable && d.scheduled_discard_task))
+        || code === 'PM_TIME' || code === 'COMBINATION';
+    const onCondition = !!(d.on_condition_applicable && d.on_condition_task)
+        || code === 'PM_CONDITION' || code === 'PM_PREDICTIVE' || code === 'COMBINATION';
 
     if (v.pattern === 'unknown' || (!timeBased && !onCondition)) {
         return { failureModeId: d.failure_mode_id, support: 'neutral', note: v.pattern === 'unknown' ? 'no life data to check against' : 'no applicable task selected' };

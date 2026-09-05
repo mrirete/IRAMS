@@ -11,6 +11,13 @@
 import { supabase } from '../lib/supabase';
 import { RELANTERN_SYSTEM_INSTRUCTION } from '../constants';
 import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
+import { buildPMStrategy } from '../lib/pmStrategy';
+import {
+  buildPMFromDecision, normalizeRecommendation, pmCodeFor, strategyProducesPM,
+  type AIRecommendation,
+} from './rcmPlan';
+
+export type { AIRecommendation } from './rcmPlan';
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -111,14 +118,6 @@ export interface RCMDecision {
   spares_requirements: SpareRequirement[];
   created_at: string;
   updated_at: string;
-}
-
-export interface AIRecommendation {
-  strategy: string;
-  reasoning: string;
-  confidence: number;
-  suggested_interval?: string;
-  suggested_technology?: string;
 }
 
 export interface SpareRequirement {
@@ -774,73 +773,85 @@ class RCMServiceImpl {
     return imported;
   }
 
-  /** Generate PM schedule: create recurring_work entries from approved decisions */
-  async generatePMSchedule(studyId: string): Promise<number> {
+  /**
+   * Turn ONE decision into a recurring_work record through the canonical PM
+   * builder (same path as the Weibull modal), or say exactly why it can't be.
+   * The old generator hand-rolled the insert: no next_due_date (so the PM was
+   * never due and the Autopilot never took it), a '1'/'2'/'3' priority no
+   * Work Management surface recognises, a 30-day fallback for any interval it
+   * couldn't parse, and every DB error swallowed into "no new PM tasks".
+   */
+  async createPMForDecision(studyId: string, failureModeId: string): Promise<{ ok: true; pmCode: string; meterCadence: boolean } | { ok: false; reason: string }> {
     const study = await this.getStudy(studyId);
-    if (!study?.asset_id) return 0;
-
+    if (!study) return { ok: false, reason: 'study not found' };
+    // Keyed on the failure mode (UNIQUE since 0234) — the page may still hold
+    // a pending- placeholder id while the autosave lands.
     const decisions = await this.getDecisions(studyId);
-    // Skip decisions already linked to a PM — re-running the generator after
-    // adding new strategies must only create the new ones, not re-attempt
-    // (and collide with) the ones that exist.
-    const actionable = decisions.filter(d =>
-      d.recommended_strategy_code && d.recommended_strategy_code !== 'RTF' &&
-      d.task_description && !d.recurring_work_id
-    );
+    const d = decisions.find(x => x.failure_mode_id === failureModeId);
+    if (!d) return { ok: false, reason: 'decision not saved yet - wait for autosave and retry' };
+    const fms = await this.getFailureModesByStudy(studyId);
+    const fm = fms.find(x => x.id === d.failure_mode_id);
+    return this.insertPMForDecision(study, d, fm?.failure_mode_description || 'Failure mode');
+  }
 
-    let created = 0;
-    for (const d of actionable) {
-      // Parse interval into frequency components
-      const { interval, unit } = parseInterval(d.task_interval || '30 Days');
-
-      // Decision-scoped code: deterministic, idempotent, and collision-free —
-      // the old `-${created + 1}` counter restarted at 1 on every run, so a
-      // second run collided with the first run's codes and created nothing.
-      const pmCode = `RCM-${studyId.slice(0, 8)}-${d.id.slice(0, 8)}`;
-      const { error } = await supabase
-        .from('recurring_work')
-        .insert({
-          id: pmCode,
-          code: pmCode,
-          title: d.task_description || 'RCM-generated task',
-          description: `Generated from RCM study. Strategy: ${d.recommended_strategy_code}. ${d.justification || ''}`,
-          status: 'ACTIVE',
-          asset_id: study.asset_id,
-          // 0305 cadence contract: an Hours interval (e.g. a measured-Weibull
-          // "1,700 h") is a running-meter cadence — it must be a READING
-          // schedule, or the DB constraint rejects it (TIME needs a calendar
-          // unit the 0304 Autopilot can serve).
-          schedule_type: (d.recommended_strategy_code === 'PM_CONDITION' || unit === 'Hours') ? 'READING' : 'TIME',
-          frequency_interval: interval,
-          frequency_unit: unit,
-          lead_time_days: 7,
-          job_type: strategyToJobType(d.recommended_strategy_code),
-          priority_code: consequenceToPriority(d.consequence_code),
-          est_duration: 0,
-          est_downtime: 0,
-          active: true,
-          // 0299: structured provenance — the schedule can answer "why does
-          // this PM exist" from data, not just the description free text.
-          origin: {
-            source: 'rcm',
-            study_id: studyId,
-            decision_id: d.id,
-            strategy_code: d.recommended_strategy_code,
-            consequence_code: d.consequence_code ?? null,
-            created_at: new Date().toISOString(),
-          },
-        });
-
-      if (!error) {
-        // Link back to decision
-        await this.updateDecision(d.id, { recurring_work_id: pmCode });
-        created++;
-      } else {
-        console.error('[RCM] generatePMSchedule insert error:', error);
-      }
+  private async insertPMForDecision(
+    study: RCMStudy, d: RCMDecision, failureModeDescription: string,
+  ): Promise<{ ok: true; pmCode: string; meterCadence: boolean } | { ok: false; reason: string }> {
+    const built = buildPMFromDecision(study, d, failureModeDescription);
+    if (!built.ok) return built;
+    let row: Record<string, unknown>;
+    try {
+      row = buildPMStrategy(built.input);
+    } catch (e) {
+      return { ok: false, reason: e instanceof Error ? e.message : String(e) };
     }
+    // Decision-scoped id = code: deterministic and idempotent, so a re-run can
+    // only collide (and report it), never mint a duplicate schedule.
+    const pmCode = pmCodeFor(study.id, d.id);
+    row.id = pmCode;
 
-    return created;
+    const { error } = await supabase.from('recurring_work').insert(row);
+    if (error) {
+      console.error('[RCM] createPMForDecision insert error:', error);
+      const reason = error.code === '23505'
+        ? `${pmCode} already exists in Work Management`
+        : error.code === '42501'
+          ? 'you do not have permission to create PMs'
+          : error.message || 'insert rejected';
+      return { ok: false, reason };
+    }
+    const linked = await this.updateDecision(d.id, { recurring_work_id: pmCode });
+    if (!linked) console.warn('[RCM] PM created but decision link failed', pmCode);
+    return { ok: true, pmCode, meterCadence: built.meterCadence };
+  }
+
+  /**
+   * Generate the whole maintenance plan into Work Management. Every decision
+   * that can't become a PM is reported with its reason - nothing is skipped
+   * silently. Already-generated decisions are left alone.
+   */
+  async generatePMSchedule(studyId: string): Promise<{
+    created: { pmCode: string; failureMode: string; meterCadence: boolean }[];
+    failed: { failureMode: string; reason: string }[];
+  }> {
+    const out = {
+      created: [] as { pmCode: string; failureMode: string; meterCadence: boolean }[],
+      failed: [] as { failureMode: string; reason: string }[],
+    };
+    const study = await this.getStudy(studyId);
+    if (!study) return out;
+    const [decisions, fms] = await Promise.all([this.getDecisions(studyId), this.getFailureModesByStudy(studyId)]);
+    const fmName = new Map(fms.map(f => [f.id, f.failure_mode_description || 'Failure mode']));
+
+    for (const d of decisions) {
+      // Only decisions that are meant to become a PM and haven't yet.
+      if (!strategyProducesPM(d.recommended_strategy_code) || d.recurring_work_id) continue;
+      const name = fmName.get(d.failure_mode_id) || 'Failure mode';
+      const res = await this.insertPMForDecision(study, d, name);
+      if (res.ok) out.created.push({ pmCode: res.pmCode, failureMode: name, meterCadence: res.meterCadence });
+      else out.failed.push({ failureMode: name, reason: res.reason });
+    }
+    return out;
   }
 
   /** Get task recommendation summary for output tab */
@@ -984,49 +995,55 @@ Return ONLY valid JSON with this structure:
     }
   }
 
-  /** AI Feature 2: Recommend maintenance strategy for a failure mode */
-  async aiRecommendStrategy(failureMode: RCMFailureMode, consequenceCategory?: string): Promise<AIRecommendation | null> {
+  /**
+   * Specialist: recommend the Q6-Q7 strategy for ONE failure mode and draft
+   * the executable task with it - a task statement, a structured interval, the
+   * craft and a justification, kept separate from the decision-tree reasoning.
+   * The old prompt returned only prose, and the page copied the first 200
+   * characters of that prose into the task field.
+   */
+  async aiRecommendStrategy(
+    failureMode: RCMFailureMode,
+    opts: { study?: RCMStudy; consequenceCode?: string; isHidden?: boolean; functionDescription?: string } = {},
+  ): Promise<AIRecommendation | null> {
     if (!isAIAvailable()) return null;
 
-    const prompt = `Given this failure mode from an RCM study per SAE JA1012 decision logic:
-
+    const assetCtx = opts.study ? await this.assetContextFor(opts.study) : '';
+    const prompt = `Recommend the maintenance strategy for this failure mode using the SAE JA1012 decision logic.
+${assetCtx ? `\n${assetCtx}\n` : ''}${opts.study?.operating_context ? `Operating context: ${opts.study.operating_context}\n` : ''}
+Function: ${opts.functionDescription || 'Not specified'}
 Failure Mode: ${failureMode.failure_mode_description}
 Cause: ${failureMode.failure_cause_description || 'Not specified'}
 Local Effect: ${failureMode.failure_effect_local || 'Not specified'}
 System Effect: ${failureMode.failure_effect_system || 'Not specified'}
-Plant Effect: ${failureMode.failure_effect_plant || 'Not specified'}
-Consequence Category: ${consequenceCategory || 'Not yet classified'}
+Plant Effect: ${failureMode.end_effect || failureMode.failure_effect_plant || 'Not specified'}
+Consequence class (Q5): ${opts.consequenceCode || 'Not yet classified'}${opts.isHidden ? ' - HIDDEN failure (a failure-finding task is the first candidate)' : ''}
 Historical MTBF: ${failureMode.historical_mtbf_days ? failureMode.historical_mtbf_days + ' days' : 'No data'}
 Historical WO Count: ${failureMode.historical_wo_count}
-Severity: ${failureMode.severity || 'Not rated'}/10
-Occurrence: ${failureMode.occurrence || 'Not rated'}/10
-Detection: ${failureMode.detection || 'Not rated'}/10
-RPN: ${failureMode.rpn || 'N/A'}
+Severity: ${failureMode.severity || 'Not rated'}/10 - Occurrence: ${failureMode.occurrence || 'Not rated'}/10 - Detection: ${failureMode.detection || 'Not rated'}/10
 
-Walk through the SAE JA1012 decision logic tree and recommend:
-1. The optimal maintenance task type (On-Condition, Scheduled Restoration, Scheduled Discard, Failure-Finding, or Run-to-Failure)
-2. Specific task description
-3. Recommended interval with justification (reference P-F interval if applicable)
-4. PdM technology if applicable (vibration, thermography, oil analysis, ultrasonic, etc.)
-5. Cost-benefit reasoning
-
-Return ONLY valid JSON:
+Walk the decision logic (technically feasible? worth doing? on-condition -> scheduled restoration -> scheduled discard -> failure-finding -> default action) and return ONLY valid JSON with these keys:
 {
   "strategy": "PM_TIME|PM_CONDITION|PM_PREDICTIVE|RTF|REDESIGN|COMBINATION",
-  "reasoning": "Detailed justification...",
+  "task_description": "ONE imperative task statement for the technician, max 140 characters (e.g. 'Replace ignitor plug and verify spark gap 2.0 mm'). Never the reasoning.",
+  "interval_value": 6,
+  "interval_unit": "Hours|Days|Weeks|Months|Years",
+  "task_owner_craft": "e.g. Instrument Technician",
+  "justification": "2-4 sentences: why this task type and interval (P-F interval, failure pattern, consequence, cost-benefit).",
+  "reasoning": "The step-by-step JA1012 walk-through you followed.",
   "confidence": 0.85,
-  "suggested_interval": "Every 3 months",
-  "suggested_technology": "Vibration analysis"
-}`;
+  "suggested_technology": "PdM technology if on-condition, else empty"
+}
+Rules: interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value to null and describe the default action in task_description.`;
 
     try {
       const raw = await callRCMGemini(prompt, 0.2);
       const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]) as AIRecommendation;
-      }
-      return null;
+      if (!jsonMatch) return null;
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed && typeof parsed === 'object' && 'error' in parsed && !('strategy' in parsed)) return null;
+      return normalizeRecommendation(parsed);
     } catch (error) {
       console.error('[RCM] aiRecommendStrategy error:', error);
       return null;
@@ -1280,58 +1297,6 @@ Format in markdown.`;
 }
 
 // ─── Utility Helpers ─────────────────────────────────────────
-
-function parseInterval(interval: string): { interval: number; unit: string } {
-  // Accept the forms the app itself produces: "Every 3 months", "1,700 h"
-  // (the wizard's measured-Weibull interval), "6 wks", "90 days". The old
-  // regex missed bare "h" and thousands separators, so a measured 1,700-hour
-  // interval silently became the 30-day default — a wrong PM frequency with
-  // no warning. recurring_work supports Hours natively (0001).
-  const cleaned = interval.replace(/,/g, '');
-  const match = cleaned.match(/(\d+(?:\.\d+)?)\s*(hours?|hrs?|h\b|days?|d\b|weeks?|wks?|w\b|months?|mos?|years?|yrs?|y\b)/i);
-  if (match) {
-    const n = Math.max(1, Math.round(parseFloat(match[1])));
-    const u = match[2].toLowerCase();
-    const unit = u.startsWith('h') ? 'Hours'
-      : u.startsWith('d') ? 'Days'
-      : u.startsWith('w') ? 'Weeks'
-      : u.startsWith('y') ? 'Years'
-      : 'Months';
-    return { interval: n, unit };
-  }
-  return { interval: 30, unit: 'Days' };
-}
-
-function strategyToJobType(strategy: string | null): string {
-  switch (strategy) {
-    case 'PM_TIME': return 'PM';
-    case 'PM_CONDITION': return 'PdM';
-    case 'PM_PREDICTIVE': return 'PdM';
-    case 'REDESIGN': return 'PRJ';
-    default: return 'PM';
-  }
-}
-
-function consequenceToPriority(consequence: string | null): string {
-  if (!consequence) return '3';
-  // Handle comma-separated multi-codes — pick highest priority (lowest number)
-  const codes = consequence.split(',').map(c => c.trim()).filter(Boolean);
-  const priorityMap: Record<string, number> = {
-    'SAFETY_ENV': 1,
-    'HIDDEN_SAFETY': 1,
-    'OPERATIONAL': 2,
-    'HIDDEN_NON_SAFETY': 3,
-    'REPAIR_COST': 3,
-    'REPUTATION': 2,
-    'NON_OPERATIONAL': 3,
-  };
-  let best = 3;
-  for (const code of codes) {
-    const p = priorityMap[code] ?? 3;
-    if (p < best) best = p;
-  }
-  return String(best);
-}
 
 // ── Phase 5: Full RCM Worksheet Interface ────────────────────
 
