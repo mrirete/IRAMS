@@ -9,6 +9,7 @@ import type {
   RCMTaskSummary, AIRecommendation
 } from '../../eam/services/RCMService';
 import type { StudyCollaborator } from '../../eam/services/AnalyzeService';
+import type { AssetBreakdown } from '../../lib/rcmBreakdown';
 
 // Re-export for convenience
 export type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision, RCMTaskSummary, AIRecommendation, StudyCollaborator };
@@ -141,6 +142,8 @@ export interface RCMDecisionWizardProps {
   aiLoading: string | null;
   /** Latest saved Weibull fit for the study's asset — drives measured-interval suggestions. */
   lifeEvidence?: RCMLifeEvidence | null;
+  /** 0318 — the asset's BOM (and components): the spares a task can name. */
+  breakdown?: AssetBreakdown;
   onUpdateDecision: (failureModeId: string, updates: Partial<RCMDecision>) => void;
   onAIRecommend: (fm: RCMFailureMode) => void;
   /** Apply / clear the Specialist's stored recommendation. */

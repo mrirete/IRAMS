@@ -19,6 +19,59 @@ import {
   INTERVAL_UNITS, parseIntervalText, canonicalInterval, strategyProducesPM, UUID_RE,
   type IntervalUnit, type AIRecommendation,
 } from '../../eam/services/rcmPlan';
+import type { SpareRequirement } from '../../eam/services/RCMService';
+import type { BreakdownPart } from '../../lib/rcmBreakdown';
+
+// ── Spares from the BOM ─────────────────────────────────────────────────────
+const SparesPicker: React.FC<{
+  spares: SpareRequirement[];
+  parts: BreakdownPart[];
+  /** the BOM line the failure mode itself is pinned to — offered first */
+  pinnedPartId: string | null;
+  onChange: (next: SpareRequirement[]) => void;
+}> = ({ spares, parts, pinnedPartId, onChange }) => {
+  const has = (p: BreakdownPart) => spares.some(s => (p.partNumber && s.part_number === p.partNumber) || (!p.partNumber && s.description === p.description));
+  const toReq = (p: BreakdownPart): SpareRequirement => ({ part_number: p.partNumber || '', description: p.description, qty: p.qty || 1 });
+  const pinned = pinnedPartId ? parts.find(p => p.id === pinnedPartId) : null;
+  const add = (p: BreakdownPart) => { if (!has(p)) onChange([...spares, toReq(p)]); };
+  const remove = (i: number) => onChange(spares.filter((_, j) => j !== i));
+  const setQty = (i: number, qty: number) => onChange(spares.map((s, j) => (j === i ? { ...s, qty } : s)));
+  return (
+    <div>
+      <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Spares the task consumes</label>
+      <div className="mt-1 space-y-1">
+        {spares.map((s, i) => (
+          <div key={`${s.part_number}|${s.description}|${i}`} className="flex items-center gap-2 text-xs">
+            <span className="flex-1 min-w-0 truncate text-slate-700">{s.part_number ? <span className="font-mono text-slate-500">{s.part_number} · </span> : null}{s.description}</span>
+            <span className="text-slate-400">×</span>
+            <input type="number" min={1} value={s.qty || 1} onChange={e => setQty(i, Math.max(1, Number(e.target.value) || 1))} className="w-14 text-xs border border-slate-200 rounded px-1.5 py-0.5 tabular-nums" />
+            <button type="button" onClick={() => remove(i)} className="text-slate-300 hover:text-red-500" title="Remove"><X size={12} /></button>
+          </div>
+        ))}
+        {spares.length === 0 && <p className="text-[11px] text-slate-400 italic">No spares named yet.</p>}
+        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+          {pinned && !has(pinned) && (
+            <button type="button" onClick={() => add(pinned)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-primary-700 bg-primary-50 border border-primary-200 rounded-full px-2.5 py-0.5 hover:bg-primary-100">
+              + {pinned.partNumber || pinned.description} <span className="text-primary-400 font-normal">(this mode's part)</span>
+            </button>
+          )}
+          {parts.length > 0 && (
+            <select
+              value=""
+              onChange={e => { const p = parts.find(x => x.id === e.target.value); if (p) add(p); }}
+              className="text-[11px] border border-dashed border-slate-300 rounded-full px-2 py-0.5 bg-white text-slate-500"
+            >
+              <option value="">Add from BOM…</option>
+              {parts.map(p => (
+                <option key={p.id} value={p.id} disabled={has(p)}>{p.partNumber ? `${p.partNumber} — ` : ''}{p.description}{p.critical ? ' ★' : ''}</option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const STRATEGY_ICONS: Record<string, React.ReactNode> = {
   PM_TIME: <Clock size={13} />,
@@ -200,7 +253,7 @@ const Reasoning: React.FC<{ text: string }> = ({ text }) => {
 
 // ── Main Component ──────────────────────────────────────────
 export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
-  study, failureModes, functions, decisions, aiLoading, lifeEvidence,
+  study, failureModes, functions, decisions, aiLoading, lifeEvidence, breakdown,
   onUpdateDecision, onAIRecommend, onAcceptRecommendation, onDismissRecommendation, onCreatePM, pmGateFor,
 }) => {
   const [expandedFM, setExpandedFM] = useState<string | null>(
@@ -540,6 +593,18 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                         maxRows={14}
                       />
                     </div>
+
+                    {/* Spares the task consumes — from the asset's BOM (0318). A
+                        scheduled-discard or restoration task that names no part is a
+                        task the storekeeper cannot plan for. */}
+                    {stratCode && strategyProducesPM(stratCode) && (breakdown?.parts.length || (decision?.spares_requirements?.length ?? 0) > 0) ? (
+                      <SparesPicker
+                        spares={decision?.spares_requirements || []}
+                        parts={breakdown?.parts || []}
+                        pinnedPartId={fm.bom_item_id || null}
+                        onChange={next => onUpdateDecision(fm.id, { spares_requirements: next })}
+                      />
+                    ) : null}
                   </div>
 
                   {/* Specialist recommendation */}

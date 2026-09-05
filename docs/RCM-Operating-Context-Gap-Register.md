@@ -28,8 +28,8 @@
 | D-5 | `SUBSYSTEM` is not an ISO level | Kept for existing data (1 asset) and labelled as L5 sub-section; a tenant that does not need it can remove it in Admin | Documentation only |
 | D-6 | Reliability Modelling / Weibull does not read design vs operating | A derated pump's β/η could be annotated with its duty point | Show utilisation next to the fit; later, condition on duty |
 | D-7 | Data hygiene | 2 duplicate "Crude Oil Unit" studies with no asset; 4 decisions with prose intervals (from the 2026-09-04 audit) | Manual clean-up |
-| D-9 | Decision spares picker (G10) | A decision's `spares_requirements` still has no UI; the BOM is now loaded on the study, so the Strategy tab could offer it | Picker on the decision wizard that writes `spares_requirements` from `asset_bom` lines |
-| D-10 | Coverage in the approval gate | `canApproveStudy` checks every mode is classified and strategised, not that every registered component has a mode | Add "uncovered components" as a soft (warning) item in `rcmReadiness` |
+| ~~D-9~~ | Decision spares picker (G10) | **CLOSED 2026-09-05:** Strategy tab shows "Spares the task consumes" on every PM-producing decision — add from the asset BOM (critical spares starred), one-tap add of the part the failure mode is pinned to, editable quantity; writes `spares_requirements`. | — |
+| ~~D-10~~ | Coverage in the readiness gate | **CLOSED 2026-09-05:** `assessStudyData` gains a *recommended* item "Components covered · n/N" when the register has components — unmet lists the uncovered tags; never blocks (a study may be scoped to one subunit). | — |
 
 ## Where things live
 

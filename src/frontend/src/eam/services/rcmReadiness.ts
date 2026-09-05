@@ -21,6 +21,7 @@ import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './RCMSe
 import type { ActionGate } from './workReadiness';
 import { parseIntervalText, strategyProducesPM, UUID_RE } from './rcmPlan';
 import { contextCompleteness } from '../../lib/operatingContext';
+import { breakdownCoverage, type AssetBreakdown } from '../../lib/rcmBreakdown';
 
 export type { ActionGate };
 
@@ -64,7 +65,13 @@ export function assessStudyData(
   study: RCMStudy,
   functions: RCMFunction[] = [],
   failureModes: RCMFailureMode[] = [],
+  breakdown?: AssetBreakdown | null,
 ): RCMReadinessResult {
+  // 0318: when the register knows the asset's components, the study should
+  // have looked at each of them. Recommended, not required — a study can be
+  // legitimately scoped to one subunit — but it shows on the readiness chips
+  // and in the Specialist's "what do you still need?" answer.
+  const coverage = breakdown && breakdown.components.length > 0 ? breakdownCoverage(breakdown, failureModes) : null;
   const context = text(study.operating_context);
   // 0317: a structured context snapshotted from the register (mode + duty +
   // at least one design/operating pair) is a complete context in its own
@@ -120,6 +127,15 @@ export function assessStudyData(
       severity: 'recommended',
       hint: 'Known failure modes from history keep the study grounded. The Specialist can propose the rest.',
     },
+    ...(coverage ? [{
+      id: 'coverage',
+      label: `Components covered · ${coverage.covered.length}/${breakdown!.components.length}`,
+      met: coverage.uncovered.length === 0,
+      severity: 'recommended' as const,
+      hint: coverage.uncovered.length === 0
+        ? 'Every registered component has at least one failure mode pinned to it.'
+        : `${coverage.uncovered.length} registered component${coverage.uncovered.length !== 1 ? 's' : ''} (${coverage.uncovered.slice(0, 4).map(c => c.tag).join(', ')}${coverage.uncovered.length > 4 ? '…' : ''}) still have no failure mode — JA1011 asks whether every reasonably likely mode was identified. Pin modes on the Worksheet or let the Specialist draft through the breakdown.`,
+    }] : []),
   ];
 
   const weight = (it: RCMReadinessItem) => (it.severity === 'required' ? 2 : 1);

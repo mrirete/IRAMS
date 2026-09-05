@@ -170,8 +170,8 @@ export const RCMPage: React.FC = () => {
   // drive the chips on its bar and lock its actions until the study is worth
   // spending an AI call on. See eam/services/rcmReadiness.ts.
   const studyReadiness = useMemo(
-    () => selectedStudy ? assessStudyData(selectedStudy, functions, failureModes) : null,
-    [selectedStudy, functions, failureModes],
+    () => selectedStudy ? assessStudyData(selectedStudy, functions, failureModes, breakdown) : null,
+    [selectedStudy, functions, failureModes, breakdown],
   );
   const draftGate = useMemo(
     () => studyReadiness ? canSpecialistDraft(studyReadiness) : null,
@@ -1214,6 +1214,7 @@ export const RCMPage: React.FC = () => {
           failureModes={failureModes}
           functions={functions}
           decisions={decisionMap}
+          breakdown={breakdown}
           aiLoading={aiLoading}
           lifeEvidence={lifeEvidence}
           onUpdateDecision={handleUpdateDecision}
