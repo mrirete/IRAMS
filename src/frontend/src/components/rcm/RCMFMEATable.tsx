@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { RCMContextualHelp } from './RCMContextualHelp';
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './types';
+import type { AssetBreakdown } from '../../lib/rcmBreakdown';
 import { EVIDENT_CONSEQUENCES, HIDDEN_CONSEQUENCES, CONSEQUENCE_OPTIONS, STRATEGY_LABELS, parseConsequenceCodes } from './types';
 import {
   canSpecialistCompleteRow, canSpecialistExpandFunction, isRowComplete,
@@ -371,6 +372,8 @@ export interface RCMFMEATableProps {
   functions: RCMFunction[];
   failureModes: RCMFailureMode[];
   decisions: Map<string, RCMDecision>;
+  /** 0318 — the asset's registered components + BOM a failure mode can be pinned to */
+  breakdown?: AssetBreakdown;
   aiLoading: string | null;
   onAddFunction: () => void;
   onUpdateFunction: (id: string, updates: Partial<RCMFunction>) => void;
@@ -407,7 +410,7 @@ export interface RCMFMEATableProps {
 const COL_COUNT = 12;
 
 export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
-  study, functions, failureModes, decisions, aiLoading,
+  study, functions, failureModes, decisions, breakdown, aiLoading,
   onAddFunction, onUpdateFunction, onDeleteFunction,
   onAddFailureMode, onUpdateFailureMode, onDeleteFailureMode,
   onUpdateDecision, onSpecialistSuggestModes, onSpecialistCompleteRow, onBlocked,
@@ -798,6 +801,39 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                 placeholder="What failed? e.g. Shaft seal leaking"
                                 onCommit={v => onUpdateFailureMode(fm.id, { failure_mode_description: v })}
                               />
+                              {/* Pin to the register's breakdown (0318): which subunit/component or BOM part this mode is about */}
+                              {breakdown && (breakdown.components.length > 0 || breakdown.parts.length > 0) && (
+                                <select
+                                  value={fm.component_asset_id ? `c:${fm.component_asset_id}` : fm.bom_item_id ? `p:${fm.bom_item_id}` : ''}
+                                  onChange={e => {
+                                    const v = e.target.value;
+                                    onUpdateFailureMode(fm.id, {
+                                      component_asset_id: v.startsWith('c:') ? v.slice(2) : null,
+                                      bom_item_id: v.startsWith('p:') ? v.slice(2) : null,
+                                    });
+                                  }}
+                                  title="Which component or part this failure mode belongs to"
+                                  className={`mt-0.5 w-full text-[10px] rounded border px-1 py-0.5 bg-white truncate ${
+                                    fm.component_asset_id || fm.bom_item_id ? 'border-primary-200 text-primary-700' : 'border-dashed border-slate-200 text-slate-400'
+                                  }`}
+                                >
+                                  <option value="">Whole asset — pin to a component…</option>
+                                  {breakdown.components.length > 0 && (
+                                    <optgroup label="Components">
+                                      {breakdown.components.map(c => (
+                                        <option key={c.id} value={`c:${c.id}`}>{'  '.repeat(Math.max(0, c.depth - 1))}{c.tag} — {c.name}</option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                  {breakdown.parts.length > 0 && (
+                                    <optgroup label="BOM parts">
+                                      {breakdown.parts.map(p => (
+                                        <option key={p.id} value={`p:${p.id}`}>{p.partNumber ? `${p.partNumber} — ` : ''}{p.description}{p.critical ? ' ★' : ''}</option>
+                                      ))}
+                                    </optgroup>
+                                  )}
+                                </select>
+                              )}
                             </td>
                             <td className={td}>
                               <GridCell

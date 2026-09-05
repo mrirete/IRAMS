@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   normalizeContext, mergeTemplate, utilisationOf, deviationFlag, contextCompleteness,
-  composeOperatingContext, takeSnapshot, contextChangedSince, type AssetOperatingContext,
+  composeOperatingContext, takeSnapshot, contextChangedSince, parseImportContext, type AssetOperatingContext,
 } from './operatingContext';
 import { parameterTemplateFor, CLASS_PARAMETERS } from './iso14224Parameters';
 import { CLASSES, isOtherCode } from './iso14224Taxonomy';
@@ -116,6 +116,37 @@ describe('composeOperatingContext', () => {
     expect(composeOperatingContext({ tag: 'X-1', name: 'Thing', description: 'Feeds the dryer' }, null))
       .toBe('X-1 — Thing.\nFeeds the dryer.');
     expect(composeOperatingContext({ tag: 'X-1', name: 'Thing', description: 'Thing' }, null)).toBe('X-1 — Thing.');
+  });
+});
+
+describe('parseImportContext (bulk import columns)', () => {
+  it('returns null when the row carries no context columns', () => {
+    expect(parseImportContext({ tag: 'P-1', name: 'x' }, 'PUMP', 'ROTATING')).toBeNull();
+  });
+  it('maps the columns, template keys, custom keys and redundancy aliases', () => {
+    const ctx = parseImportContext({
+      operatingmode: 'Continuous', utilisationpct: '95%', hoursperyear: '8300', redundancy: 'duty/standby',
+      environment: 'Outdoor; Sour service (H₂S)', servicemedium: 'Crude oil',
+      designvalues: 'flow=500; head=120; speed=2980; seal_type=Plan 53B; inlet_strainer=DN150',
+      operatingvalues: 'flow=380; head=118; speed=2980',
+    }, 'PUMP', 'ROTATING')!;
+    expect(ctx.mode).toBe('continuous');
+    expect(ctx.utilisation_pct).toBe(95);
+    expect(ctx.hours_per_year).toBe(8300);
+    expect(ctx.redundancy).toBe('2x100');
+    expect(ctx.environment).toEqual(['Outdoor', 'Sour service (H₂S)']);
+    const flow = ctx.parameters!.find(p => p.key === 'flow')!;
+    expect(flow.design).toBe(500); expect(flow.operating).toBe(380); expect(flow.unit).toBe('m³/h');   // unit from the PUMP template
+    expect(ctx.parameters!.find(p => p.key === 'seal_type')!.design).toBe('Plan 53B');
+    const custom = ctx.parameters!.find(p => p.key === 'inlet_strainer')!;
+    expect(custom.custom).toBe(true); expect(custom.design).toBe('DN150');
+    expect(ctx.parameters!.some(p => p.key === 'npsh')).toBe(false);   // empty template rows are not stored
+    expect(contextCompleteness(ctx).complete).toBe(true);
+  });
+  it('an unknown mode is dropped, not guessed; unknown redundancy becomes other', () => {
+    const ctx = parseImportContext({ operatingmode: 'sometimes', redundancy: 'twin' }, null, null)!;
+    expect(ctx.mode).toBeNull();
+    expect(ctx.redundancy).toBe('other');
   });
 });
 

@@ -21,9 +21,11 @@ import {
   type AssetOperatingContext, type ContextSnapshot, type ContextAssetLike,
 } from '../../lib/operatingContext';
 import { getCategory, getClass, getType } from '../../lib/iso14224Taxonomy';
+import { renderBreakdownForPrompt, EMPTY_BREAKDOWN, type AssetBreakdown, type BreakdownComponent, type BreakdownPart } from '../../lib/rcmBreakdown';
 
 export type { AIRecommendation } from './rcmPlan';
 export type { ContextSnapshot, AssetOperatingContext } from '../../lib/operatingContext';
+export type { AssetBreakdown, BreakdownComponent, BreakdownPart } from '../../lib/rcmBreakdown';
 
 /** The register asset as the RCM module reads it — classification + operating context. */
 export interface RCMAssetContext extends ContextAssetLike {
@@ -108,6 +110,10 @@ export interface RCMFailureMode {
   historical_mtbf_days: number | null;
   data_source: 'manual' | 'fmea_import' | 'wo_history' | 'ai_generated';
   sort_order: number;
+  /** 0318 — the registered subunit/component (child asset) this mode belongs to */
+  component_asset_id?: string | null;
+  /** 0318 — the asset_bom line (maintainable item / spare) this mode is about */
+  bom_item_id?: string | null;
   created_at: string;
   updated_at: string;
   // Nested
@@ -622,8 +628,64 @@ class RCMServiceImpl {
       .insert(fm)
       .select()
       .single();
-    if (error) { console.error('[RCM] createFailureMode error:', error); return null; }
+    if (error) {
+      // Before 0318 the component/BOM link columns do not exist — keep the
+      // worksheet working, just without the pin.
+      if (/component_asset_id|bom_item_id/i.test(error.message || '') && (fm.component_asset_id || fm.bom_item_id)) {
+        const { component_asset_id: _c, bom_item_id: _b, ...rest } = fm;
+        void _c; void _b;
+        const retry = await supabase.from('ers_rcm_failure_modes').insert(rest).select().single();
+        if (retry.error) { console.error('[RCM] createFailureMode error:', retry.error); return null; }
+        return retry.data as RCMFailureMode;
+      }
+      console.error('[RCM] createFailureMode error:', error);
+      return null;
+    }
     return data as RCMFailureMode;
+  }
+
+  // ─── Physical breakdown (ISO 14224 L7–L9) ──────────────────────────────
+
+  /**
+   * The study asset's registered children (subunits / components, up to
+   * three levels down) and its BOM lines. What the Specialist is told the
+   * machine is made of, and what a failure mode can be pinned to.
+   */
+  async getAssetBreakdown(assetId: string | null | undefined): Promise<AssetBreakdown> {
+    if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) return EMPTY_BREAKDOWN;
+    const components: BreakdownComponent[] = [];
+    let frontier = [assetId];
+    for (let depth = 1; depth <= 3 && frontier.length; depth++) {
+      const { data, error } = await supabase
+        .from('assets')
+        .select('id, tag, name, hierarchy_level, criticality, asset_class, asset_type_code, parent_id')
+        .in('parent_id', frontier)
+        .order('tag');
+      if (error || !data) break;
+      const rows = data.filter(r => {
+        const lvl = String(r.hierarchy_level || '').toUpperCase();
+        // Equipment-class children only — a location under an equipment row is a data error, not a component.
+        return !['SITE', 'AREA', 'UNIT', 'SYSTEM', 'SUBSYSTEM'].includes(lvl);
+      });
+      for (const r of rows) {
+        components.push({
+          id: r.id, tag: r.tag, name: r.name, level: r.hierarchy_level ?? null, criticality: r.criticality ?? null,
+          assetClass: r.asset_class ?? null, assetType: r.asset_type_code ?? null, parentId: r.parent_id ?? null, depth,
+        });
+      }
+      frontier = rows.map(r => r.id);
+    }
+    const { data: bom } = await supabase
+      .from('asset_bom')
+      .select('id, part_number, description, quantity, uom, is_critical, inventory_item_id, replacement_interval_days')
+      .eq('asset_id', assetId)
+      .order('is_critical', { ascending: false })
+      .order('description');
+    const parts: BreakdownPart[] = (bom || []).map(b => ({
+      id: b.id, partNumber: b.part_number || '', description: b.description, qty: Number(b.quantity) || 1, uom: b.uom || 'EA',
+      critical: !!b.is_critical, inventoryItemId: b.inventory_item_id ?? null, replacementIntervalDays: b.replacement_interval_days ?? null,
+    }));
+    return { components, parts };
   }
 
   async updateFailureMode(id: string, updates: Partial<RCMFailureMode>): Promise<RCMFailureMode | null> {
@@ -995,6 +1057,10 @@ class RCMServiceImpl {
         effect_local: string;
         effect_system: string;
         effect_plant: string;
+        /** the registered component tag this mode belongs to (echoed from the breakdown), or '' */
+        component?: string;
+        /** the BOM part number / description the mode is about, or '' */
+        part?: string;
       }>;
     }>;
   } | null> {
@@ -1008,7 +1074,10 @@ Operating Context: ${study.operating_context || 'General industrial service'}
 Study Type: ${study.study_type}
 
 Generate a comprehensive list of functions, functional failures, and failure modes for this asset.
-Use ISO 14224 failure coding conventions.
+Use ISO 14224 failure coding conventions. Where the register lists components and a bill of
+materials above, work THROUGH them: every registered component with a plausible failure should
+get at least one failure mode, pinned to it by its tag, and a mode about a listed part should
+name that part. Do not invent components the register does not have.
 
 Return ONLY valid JSON with this structure:
 {
@@ -1025,7 +1094,9 @@ Return ONLY valid JSON with this structure:
           "cause": "Root cause",
           "effect_local": "Component-level effect",
           "effect_system": "System-level effect",
-          "effect_plant": "Plant-level end effect"
+          "effect_plant": "Plant-level end effect",
+          "component": "Tag of the registered component this belongs to, exactly as listed, or empty",
+          "part": "Part number of the BOM line this is about, exactly as listed, or empty"
         }
       ]
     }
@@ -1131,6 +1202,9 @@ Rules: interval_value must be a single integer with a unit - never a range or 'p
     // The narrative already opens with the tag/name line — drop it here.
     const narrative = ctx.narrative.split('\n').slice(1).join('\n').trim();
     if (narrative) lines.push('Operating context from the asset register (design vs operating — treat "ABOVE DESIGN" as accelerated-wear evidence):', narrative);
+    // What the machine is made of (0318): components to pin modes to, parts a task consumes.
+    const breakdown = renderBreakdownForPrompt(await this.getAssetBreakdown(study.asset_id));
+    if (breakdown) lines.push('Physical breakdown from the register (ISO 14224 subunits / maintainable items):', breakdown);
     return lines.join('\n');
   }
 
@@ -1147,6 +1221,8 @@ Rules: interval_value must be a single integer with a unit - never a range or 'p
     effect_plant: string;
     severity?: number;
     occurrence?: number;
+    component?: string;
+    part?: string;
   }> | null> {
     if (!isAIAvailable()) return null;
 
@@ -1163,7 +1239,9 @@ Functional Failure: ${fn.functional_failure || 'Not stated'}
 ${existing.length > 0 ? `\nAlready listed (do NOT repeat these):\n${existing.map(fm => `- ${fm.failure_mode_description}`).join('\n')}` : ''}
 
 List the reasonably likely failure modes for THIS functional failure only, using ISO 14224
-coding conventions. 4–8 modes. Severity and occurrence are 1–10 FMEA scales.
+coding conventions. 4–8 modes. Severity and occurrence are 1–10 FMEA scales. Where the register
+lists components and parts above, pin each mode to the component tag it belongs to and name the
+part it is about; do not invent components the register does not have.
 
 Return ONLY valid JSON:
 {
@@ -1175,7 +1253,9 @@ Return ONLY valid JSON:
       "effect_system": "System-level effect",
       "effect_plant": "Plant / production end effect",
       "severity": 1,
-      "occurrence": 1
+      "occurrence": 1,
+      "component": "Registered component tag exactly as listed, or empty",
+      "part": "BOM part number exactly as listed, or empty"
     }
   ]
 }`;

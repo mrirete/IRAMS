@@ -18,6 +18,7 @@ import {
   contextChangedSince, contextCompleteness, deviationFlag, utilisationOf, hasAnyValue,
   OPERATING_MODES, REDUNDANCY_OPTIONS, type AssetOperatingContext,
 } from '../../lib/operatingContext';
+import { breakdownCoverage, isEmptyBreakdown, type AssetBreakdown } from '../../lib/rcmBreakdown';
 
 interface RCMStudyOverviewProps {
   study: RCMStudy;
@@ -33,6 +34,8 @@ interface RCMStudyOverviewProps {
   liveContext?: AssetOperatingContext | null;
   /** Re-snapshot from the register; absent when the study has no register asset. */
   onRefreshContext?: () => void;
+  /** 0318 — the asset's registered components + BOM, for the coverage card. */
+  breakdown?: AssetBreakdown;
 }
 
 const StatChip: React.FC<{
@@ -63,8 +66,11 @@ const Chip: React.FC<{ tone?: 'muted' | 'warn' | 'danger'; children: React.React
 
 export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
   study, functions, failureModes, decisions, taskSummaries, collaborators,
-  onNavigate, onInviteTeam, onEditStudy, liveContext, onRefreshContext,
+  onNavigate, onInviteTeam, onEditStudy, liveContext, onRefreshContext, breakdown,
 }) => {
+  // Physical-breakdown coverage (0318): which registered components have a failure mode
+  const coverage = useMemo(() => breakdownCoverage(breakdown, failureModes), [breakdown, failureModes]);
+  const hasBreakdown = !isEmptyBreakdown(breakdown);
   // Structured context the study was analysed against (0317)
   const snap = study.context_snapshot?.context ?? null;
   const snapDone = contextCompleteness(snap);
@@ -241,6 +247,45 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Physical breakdown — ISO 14224 L7–L9 coverage (0318) */}
+      {hasBreakdown && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
+          <div className="flex items-baseline justify-between gap-2 mb-2 flex-wrap">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Boxes size={11} /> Physical breakdown
+            </h3>
+            <span className="text-[10px] text-slate-400">
+              {breakdown!.components.length} component{breakdown!.components.length !== 1 ? 's' : ''} · {breakdown!.parts.length} BOM line{breakdown!.parts.length !== 1 ? 's' : ''}
+              {breakdown!.components.length > 0 && <> · <strong className={coverage.pct === 100 ? 'text-emerald-600' : 'text-slate-600'}>{coverage.pct}%</strong> with a failure mode</>}
+            </span>
+          </div>
+          {breakdown!.components.length > 0 && (
+            <>
+              <div className="flex h-2 rounded-full overflow-hidden bg-slate-100 mb-2.5">
+                <div style={{ width: `${coverage.pct}%` }} className={coverage.pct === 100 ? 'bg-emerald-500' : 'bg-primary-500'} />
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {coverage.covered.map(({ component, modeCount }) => (
+                  <Chip key={component.id}>{component.tag} · {modeCount} mode{modeCount !== 1 ? 's' : ''}</Chip>
+                ))}
+                {coverage.uncovered.map(c => (
+                  <Chip key={c.id} tone="warn">{c.tag} · none yet</Chip>
+                ))}
+              </div>
+            </>
+          )}
+          <p className="text-[11px] text-slate-500 mt-2.5">
+            {coverage.uncovered.length > 0
+              ? <>{coverage.uncovered.length} component{coverage.uncovered.length !== 1 ? 's' : ''} without a failure mode — JA1011 asks whether every reasonably likely mode was identified. Pin modes on the <button onClick={() => onNavigate('functions')} className="font-bold text-accent-cyan hover:underline">Worksheet</button>, or let the Specialist draft through the breakdown.</>
+              : coverage.unpinned > 0
+                ? <>{coverage.unpinned} failure mode{coverage.unpinned !== 1 ? 's' : ''} not pinned to a component — pin them on the <button onClick={() => onNavigate('functions')} className="font-bold text-accent-cyan hover:underline">Worksheet</button> so the study reads per component.</>
+                : breakdown!.parts.length > 0 && coverage.partsReferenced === 0
+                  ? <>{breakdown!.parts.filter(p => p.critical).length} critical spare{breakdown!.parts.filter(p => p.critical).length !== 1 ? 's' : ''} on the BOM and no failure mode names one yet.</>
+                  : <>Every registered component is covered; {coverage.partsReferenced} BOM line{coverage.partsReferenced !== 1 ? 's' : ''} referenced.</>}
+          </p>
+        </div>
+      )}
 
       {/* Register context moved on since the study snapshotted it */}
       {contextStale && onRefreshContext && (

@@ -7,6 +7,9 @@
 import * as XLSX from 'xlsx';
 import type { Asset, BomItem } from '../types';
 import { getLevels } from './hierarchyModel';
+import { CATEGORIES, CLASSES, TYPES, typesOf, isOtherCode } from '../../lib/iso14224Taxonomy';
+import { CLASS_PARAMETERS, CATEGORY_PARAMETERS } from '../../lib/iso14224Parameters';
+import { OPERATING_MODES, REDUNDANCY_OPTIONS, ENVIRONMENT_OPTIONS } from '../../lib/operatingContext';
 
 /** Native browser download — bypasses file-saver for reliable filenames */
 function downloadBlob(blob: Blob, filename: string): void {
@@ -40,18 +43,33 @@ const ASSET_COLUMNS = [
     { header: 'tag', description: 'Unique asset tag identifier (e.g. GT-301)', required: true },
     { header: 'name', description: 'Descriptive name (e.g. Gas Turbine #1)', required: true },
     { header: 'hierarchyLevel', description: 'Where this row sits in the tree — see the Instructions sheet for the valid codes. Leave blank only if assetType is itself a level code.', required: false },
-    { header: 'assetType', description: 'Equipment kind / ISO 14224 class: PUMP, MOTOR, COMPRESSOR, VESSEL, VALVE…', required: true },
     { header: 'parentTag', description: 'Parent asset tag for hierarchy placement (leave blank for root). May be an earlier row in this file or an existing asset.', required: false },
     { header: 'equipmentNumber', description: 'Internal Equipment Number (IEN). Leave blank to auto-generate EQ-NNNNNN. Provide to migrate from SAP/Maximo.', required: false },
     { header: 'criticality', description: 'A = Safety Critical, B = Production, C = General, D = Low Impact. Required for equipment-class levels (see Instructions).', required: false },
     { header: 'status', description: 'ACTIVE, MAINTENANCE, STANDBY, DOWN, or DECOMMISSIONED', required: false },
+    // ── ISO 14224 classification (equipment rows) ──
+    { header: 'assetCategory', description: 'ISO 14224 equipment category code — see the "ISO 14224 Codes" sheet (ROTATING, STATIC, ELECTRICAL, INSTRUMENTATION…). Filled in for you when assetClass is given.', required: false },
+    { header: 'assetClass', description: 'ISO 14224 equipment class code — PUMP, COMPRESSOR, GAS_TURBINE, ELECTRIC_MOTOR, HEAT_EXCHANGER, VALVE… Use <CATEGORY>_OTHER when yours is not listed.', required: false },
+    { header: 'assetTypeCode', description: 'ISO 14224 equipment type code under that class — PUMP_CENTRIFUGAL, COMPRESSOR_SCREW, VALVE_GATE… (optional; <CLASS>_OTHER if unsure)', required: false },
+    { header: 'assetType', description: 'LEGACY single column. Still accepted (PUMP, MOTOR, CENTRIFUGAL_PUMP…) and mapped onto the ISO codes; prefer the three columns above.', required: false },
+    // ── Operating context (ISO 14224 §7) — what RCM and the Reliability Specialist read ──
+    { header: 'operatingMode', description: 'continuous | intermittent | standby | seasonal | batch', required: false },
+    { header: 'utilisationPct', description: '% of calendar time in operation, e.g. 95', required: false },
+    { header: 'hoursPerYear', description: 'Operating hours per year, e.g. 8300', required: false },
+    { header: 'startsPerYear', description: 'Start/stop cycles per year', required: false },
+    { header: 'redundancy', description: 'none | 2x100 | 3x50 | n+1 | other', required: false },
+    { header: 'environment', description: 'Semicolon-separated: Outdoor; Offshore; Hazardous area (Ex); Sour service (H₂S)… (see Instructions)', required: false },
+    { header: 'serviceMedium', description: 'What it handles: "Sour crude 32 °API", "Instrument air", "Seawater"', required: false },
+    { header: 'designValues', description: 'Nameplate / rated values as key=value pairs separated by ";" — keys per class on the "Parameter Keys" sheet, e.g. flow=500; head=120; rated_power=250', required: false },
+    { header: 'operatingValues', description: 'Normal operating values, same keys: flow=380; head=118. RCM compares these with the design values.', required: false },
+    // ── Other ──
     { header: 'department', description: 'Department name (stored as an asset property)', required: false },
     { header: 'costCenter', description: 'Cost-center code — must match an existing cost centre, otherwise the asset imports without it', required: false },
     { header: 'location', description: 'Physical location description (stored as an asset property)', required: false },
     { header: 'manufacturer', description: 'OEM manufacturer name', required: false },
     { header: 'model', description: 'Model number', required: false },
     { header: 'serialNumber', description: 'Equipment serial number', required: false },
-    { header: 'description', description: 'Extended description or notes', required: false },
+    { header: 'description', description: 'What the asset does and how it is run — this is the duty narrative RCM studies quote', required: false },
 ];
 
 const BOM_COLUMNS = [
@@ -64,18 +82,70 @@ const BOM_COLUMNS = [
 ];
 
 // ─── Sample Data ────────────────────────────────────────────────
+// Worked examples — a site → unit → system tree, then one equipment unit with
+// its subunit and component (ISO 14224 L6 → L7 → L8), a duty/standby pump
+// pair with full operating context, and the motor that drives one of them.
+// Everything below is what an RCM study reads, so the examples fill it in.
 const ASSET_EXAMPLES = [
-    { tag: 'SITE-HOU', name: 'Houston Production Site', hierarchyLevel: 'SITE', assetType: 'SITE', parentTag: '', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Operations', costCenter: 'CC-001', location: 'Houston, TX', manufacturer: '', model: '', serialNumber: '', description: 'Main production facility' },
-    { tag: 'UNIT-300', name: 'Gas Turbine Generation Unit', hierarchyLevel: 'UNIT', assetType: 'UNIT', parentTag: 'SITE-HOU', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Power Generation', costCenter: 'CC-003', location: 'Block 300', manufacturer: '', model: '', serialNumber: '', description: 'Combined cycle power generation' },
-    { tag: 'SYS-300-GTG', name: 'Gas Turbine Generator System', hierarchyLevel: 'SYSTEM', assetType: 'SYSTEM', parentTag: 'UNIT-300', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Power Generation', costCenter: 'CC-003', location: 'Block 300', manufacturer: '', model: '', serialNumber: '', description: 'Turbine generator process system' },
-    { tag: 'GT-301', name: 'Gas Turbine #1', hierarchyLevel: 'EQUIPMENT', assetType: 'COMPRESSOR', parentTag: 'SYS-300-GTG', equipmentNumber: 'EQ-LEGACY-50291', criticality: 'A', status: 'ACTIVE', department: 'Mechanical', costCenter: 'CC-003', location: 'Block 300 Bay 1', manufacturer: 'GE', model: 'LM2500', serialNumber: 'SN-50291', description: 'Frame 5 gas turbine' },
-    { tag: 'GT-301-BRG1', name: 'GT-301 Thrust Bearing', hierarchyLevel: 'COMPONENT', assetType: 'BEARING', parentTag: 'GT-301', equipmentNumber: '', criticality: 'B', status: 'ACTIVE', department: 'Mechanical', costCenter: 'CC-003', location: 'Block 300 Bay 1', manufacturer: 'SKF', model: '7220', serialNumber: '', description: 'Thrust bearing assembly' },
+    { tag: 'SITE-HOU', name: 'Houston Production Site', hierarchyLevel: 'SITE', parentTag: '', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Operations', costCenter: 'CC-001', location: 'Houston, TX', description: 'Main production facility' },
+    { tag: 'UNIT-300', name: 'Gas Turbine Generation Unit', hierarchyLevel: 'UNIT', parentTag: 'SITE-HOU', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Power Generation', costCenter: 'CC-003', location: 'Block 300', description: 'Combined cycle power generation' },
+    { tag: 'SYS-300-GTG', name: 'Gas Turbine Generator System', hierarchyLevel: 'SYSTEM', parentTag: 'UNIT-300', equipmentNumber: '', criticality: '', status: 'ACTIVE', department: 'Power Generation', costCenter: 'CC-003', location: 'Block 300', description: 'Turbine generator process system' },
+    {
+        tag: 'GT-301', name: 'Gas Turbine #1', hierarchyLevel: 'EQUIPMENT', parentTag: 'SYS-300-GTG', equipmentNumber: 'EQ-LEGACY-50291', criticality: 'A', status: 'ACTIVE',
+        assetCategory: 'ROTATING', assetClass: 'GAS_TURBINE', assetTypeCode: 'GAS_TURBINE_AERODERIVATIVE',
+        operatingMode: 'continuous', utilisationPct: 92, hoursPerYear: 8050, startsPerYear: 14, redundancy: 'n+1', environment: 'Outdoor; High ambient temperature; Hazardous area (Ex)', serviceMedium: 'Fuel gas, 38 MJ/Nm³',
+        designValues: 'power=24.5; exhaust_temperature=540; speed=3600; heat_rate=9800', operatingValues: 'power=21.8; exhaust_temperature=522; speed=3600; heat_rate=10150',
+        department: 'Mechanical', costCenter: 'CC-003', location: 'Block 300 Bay 1', manufacturer: 'GE', model: 'LM2500', serialNumber: 'SN-50291',
+        description: 'Base-load generator driver; runs 24/7 with GT-302 as the N+1 spare. Derated 10 % in summer for exhaust temperature.',
+    },
+    {
+        tag: 'GT-301-LUBE', name: 'GT-301 Lube Oil System', hierarchyLevel: 'SUBUNIT', parentTag: 'GT-301', equipmentNumber: '', criticality: 'A', status: 'ACTIVE',
+        assetCategory: 'ROTATING', assetClass: 'ROTATING_OTHER', department: 'Mechanical', costCenter: 'CC-003', location: 'Block 300 Bay 1',
+        description: 'Subunit (ISO 14224 L7): main + auxiliary lube pumps, cooler, filters. Failure modes in the RCM study are pinned to rows like this.',
+    },
+    {
+        tag: 'GT-301-BRG1', name: 'GT-301 Thrust Bearing', hierarchyLevel: 'COMPONENT', parentTag: 'GT-301-LUBE', equipmentNumber: '', criticality: 'B', status: 'ACTIVE',
+        assetCategory: 'ROTATING', assetClass: 'ROTATING_OTHER', department: 'Mechanical', costCenter: 'CC-003', location: 'Block 300 Bay 1', manufacturer: 'SKF', model: '7220',
+        description: 'Maintainable item (ISO 14224 L8). Spares for it go in the BOM import.',
+    },
+    {
+        tag: 'P-101A', name: 'Crude Charge Pump A', hierarchyLevel: 'EQUIPMENT', parentTag: 'SYS-300-GTG', equipmentNumber: '', criticality: 'A', status: 'ACTIVE',
+        assetCategory: 'ROTATING', assetClass: 'PUMP', assetTypeCode: 'PUMP_CENTRIFUGAL',
+        operatingMode: 'continuous', utilisationPct: 96, hoursPerYear: 8400, startsPerYear: 6, redundancy: '2x100', environment: 'Outdoor; Sour service (H₂S)', serviceMedium: 'Sour crude 32 °API, 2 % BS&W',
+        designValues: 'flow=500; head=120; speed=2980; rated_power=250; suction_pressure=2.5; discharge_pressure=14.5; npsh=4.2; design_pressure=25; design_temperature=120; fluid=Crude oil; seal_type=Plan 53B',
+        operatingValues: 'flow=380; head=118; speed=2980; rated_power=205; suction_pressure=2.1; discharge_pressure=14.1; npsh=5.0',
+        department: 'Mechanical', costCenter: 'CC-005', location: 'Unit 11 pump row', manufacturer: 'Sulzer', model: 'MSD 6x8x11', serialNumber: 'SZ-118822',
+        description: 'Charges the crude unit from the desalter. Runs at 76 % of rated flow (off-BEP) since the 2024 throughput cut; P-101B is the installed spare.',
+    },
+    {
+        tag: 'P-101B', name: 'Crude Charge Pump B (standby)', hierarchyLevel: 'EQUIPMENT', parentTag: 'SYS-300-GTG', equipmentNumber: '', criticality: 'A', status: 'STANDBY',
+        assetCategory: 'ROTATING', assetClass: 'PUMP', assetTypeCode: 'PUMP_CENTRIFUGAL',
+        operatingMode: 'standby', utilisationPct: 4, hoursPerYear: 350, startsPerYear: 26, redundancy: '2x100', environment: 'Outdoor; Sour service (H₂S)', serviceMedium: 'Sour crude 32 °API, 2 % BS&W',
+        designValues: 'flow=500; head=120; speed=2980; rated_power=250; design_pressure=25; design_temperature=120; fluid=Crude oil; seal_type=Plan 53B', operatingValues: 'flow=380; head=118; speed=2980',
+        department: 'Mechanical', costCenter: 'CC-005', location: 'Unit 11 pump row', manufacturer: 'Sulzer', model: 'MSD 6x8x11', serialNumber: 'SZ-118823',
+        description: 'Installed spare for P-101A; auto-starts on low discharge pressure and is run-tested fortnightly.',
+    },
+    {
+        tag: 'M-101A', name: 'P-101A Drive Motor', hierarchyLevel: 'EQUIPMENT', parentTag: 'SYS-300-GTG', equipmentNumber: '', criticality: 'A', status: 'ACTIVE',
+        assetCategory: 'ROTATING', assetClass: 'ELECTRIC_MOTOR', assetTypeCode: 'ELECTRIC_MOTOR_AC_INDUCTION',
+        operatingMode: 'continuous', utilisationPct: 96, hoursPerYear: 8400, redundancy: '2x100', environment: 'Outdoor; Hazardous area (Ex)', serviceMedium: '',
+        designValues: 'rated_power=250; voltage=6600; current=27; speed=2980; frequency=50; ip_rating=IP55; insulation_class=F; ex_rating=Ex d IIB T3', operatingValues: 'rated_power=205; current=23; speed=2980; load=82; ambient_temperature=38',
+        department: 'Electrical', costCenter: 'CC-005', location: 'Unit 11 pump row', manufacturer: 'WEG', model: 'W22 Xd', serialNumber: 'WG-771203',
+        description: 'Drives P-101A; motor runs at 82 % load, well inside its thermal envelope.',
+    },
 ];
 
+// Examples follow the Assets template: spares against the equipment unit
+// (GT-301, P-101A) and, where the register has the component row, against
+// the component itself (GT-301-BRG1) so an RCM failure mode can name it.
 const BOM_EXAMPLES = [
     { assetTag: 'GT-301', inventoryCode: 'FLT-0023', description: 'Air Inlet Filter — 24x24x12', quantity: 4, uom: 'EA', critical: 'YES' },
-    { assetTag: 'GT-301', inventoryCode: 'BRG-0041', description: 'Thrust Bearing Assembly', quantity: 1, uom: 'EA', critical: 'YES' },
     { assetTag: 'GT-301', inventoryCode: 'LUB-0012', description: 'Synthetic Turbine Oil ISO VG 32', quantity: 20, uom: 'LTR', critical: 'NO' },
+    { assetTag: 'GT-301-BRG1', inventoryCode: 'BRG-0041', description: 'Thrust Bearing Assembly SKF 7220', quantity: 1, uom: 'EA', critical: 'YES' },
+    { assetTag: 'P-101A', inventoryCode: 'SEAL-2210', description: 'Mechanical seal cartridge, Plan 53B, 60 mm', quantity: 1, uom: 'EA', critical: 'YES' },
+    { assetTag: 'P-101A', inventoryCode: 'BRG-6310', description: 'Deep-groove ball bearing 6310-2RS', quantity: 2, uom: 'EA', critical: 'YES' },
+    { assetTag: 'P-101A', inventoryCode: 'IMP-118', description: 'Impeller, 316 SS, 280 mm trim', quantity: 1, uom: 'EA', critical: 'NO' },
+    { assetTag: 'P-101A', inventoryCode: 'GSK-118', description: 'Casing gasket set', quantity: 1, uom: 'SET', critical: 'NO' },
 ];
 
 // ─── Template Generation ────────────────────────────────────────
@@ -108,9 +178,33 @@ export function downloadAssetTemplate(): void {
             c.header === 'criticality' ? `A, B, C, D — mandatory for: ${mandatoryCrit.join(', ')}` :
                 c.header === 'status' ? 'ACTIVE, MAINTENANCE, STANDBY, DOWN, DECOMMISSIONED' :
                     c.header === 'hierarchyLevel' ? levelCodes :
-                        c.header === 'assetType' ? 'PUMP, MOTOR, COMPRESSOR, VESSEL, VALVE, HEAT_EXCHANGER, BEARING… (or a level code)' :
-                            c.header === 'equipmentNumber' ? 'Leave blank for auto-generation (EQ-NNNNNN) or provide existing IEN from SAP/Maximo' : ''
+                        c.header === 'assetCategory' ? CATEGORIES.map(x => x.code).join(', ') :
+                            c.header === 'assetClass' ? `${CLASSES.length} codes — see the "ISO 14224 Codes" sheet` :
+                                c.header === 'assetTypeCode' ? `${TYPES.length} codes — see the "ISO 14224 Codes" sheet` :
+                                    c.header === 'assetType' ? 'PUMP, MOTOR, COMPRESSOR, VALVE, TANK, CENTRIFUGAL_PUMP… (legacy words, mapped for you)' :
+                                        c.header === 'operatingMode' ? OPERATING_MODES.map(m => m.code).join(', ') :
+                                            c.header === 'redundancy' ? REDUNDANCY_OPTIONS.map(r => r.code.replace('n_plus_1', 'n+1')).join(', ') :
+                                                c.header === 'environment' ? ENVIRONMENT_OPTIONS.join('; ') :
+                                                    c.header === 'designValues' || c.header === 'operatingValues' ? 'key=value; key=value — keys on the "Parameter Keys" sheet' :
+                                                        c.header === 'equipmentNumber' ? 'Leave blank for auto-generation (EQ-NNNNNN) or provide existing IEN from SAP/Maximo' : ''
         ]),
+        [],
+        ['ISO 14224 classification — Category → Class → Type'],
+        ['• assetClass is the one that matters: it selects the failure-mode list, the subunit list and the design/operating parameter set. Category is filled in from it.'],
+        ['• Type is optional detail (centrifugal vs reciprocating). Use <CLASS>_OTHER when unsure, or <CATEGORY>_OTHER when the class itself is not listed.'],
+        ['• Every code is on the "ISO 14224 Codes" sheet. Custom codes added under Admin › Dictionaries are accepted too.'],
+        ['• Location rows (SITE, UNIT, SYSTEM…) take no classification — leave the three columns blank.'],
+        [],
+        ['Operating context — what an RCM study reads'],
+        ['• Fill it for equipment rows. The examples on the Assets sheet (GT-301, P-101A, P-101B, M-101A) show the shape.'],
+        ['• designValues = nameplate / rated values; operatingValues = how it actually runs. RCM works on the gap: a pump at 76 % of rated flow is off-BEP; a motor above 100 % load is a thermal-ageing problem.'],
+        ['• Keys per class are on the "Parameter Keys" sheet (flow, head, rated_power…). Units come from the key. Unknown keys are kept as custom parameters.'],
+        ['• Text values are fine where the key is text (fluid=Crude oil; seal_type=Plan 53B).'],
+        ['• description is the duty narrative: what it does, for which process, how it is run, what spares it. RCM studies quote it verbatim.'],
+        [],
+        ['Components and BOM — the physical breakdown'],
+        ['• Import subunits (SUBUNIT level) and components (COMPONENT level) as rows under their equipment, like GT-301-LUBE and GT-301-BRG1.'],
+        ['• Import spares with the BOM template against the equipment tag. RCM failure modes can then be pinned to a component or a BOM part, and the study shows which components have no failure mode yet.'],
         [],
         ['Hierarchy Levels — the shape of your register'],
         ['Level', 'Label', 'Object class', 'Numbering', 'Criticality', 'Allowed child levels'],
@@ -147,6 +241,34 @@ export function downloadAssetTemplate(): void {
     instrWs['!cols'] = [{ wch: 20 }, { wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 40 }];
     XLSX.utils.book_append_sheet(wb, instrWs, 'Instructions');
 
+    // Sheet 3 — the ISO 14224 taxonomy, generated from the same source the
+    // register and the database use, so the template can never list a code
+    // the importer would not accept.
+    const codeRows: (string | number)[][] = [['Category', 'Category label', 'Class', 'Class label', 'Type', 'Type label', 'ISO 14224 ref']];
+    for (const cat of CATEGORIES) {
+        for (const cls of CLASSES.filter(c => c.category === cat.code)) {
+            const types = typesOf(cls.code);
+            if (types.length === 0) { codeRows.push([cat.code, cat.label, cls.code, cls.label, '', '', cls.isoRef || '']); continue; }
+            for (const t of types) codeRows.push([cat.code, cat.label, cls.code, cls.label, t.code, t.label, cls.isoRef || '']);
+        }
+    }
+    const codesWs = XLSX.utils.aoa_to_sheet(codeRows);
+    codesWs['!cols'] = [{ wch: 16 }, { wch: 30 }, { wch: 22 }, { wch: 32 }, { wch: 36 }, { wch: 30 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, codesWs, 'ISO 14224 Codes');
+
+    // Sheet 4 — parameter keys per class for designValues / operatingValues.
+    const keyRows: string[][] = [['Class', 'Key', 'Parameter', 'Unit', 'Design only?', 'Example']];
+    const example = (key: string, unit: string, text: boolean) => text ? `${key}=…` : `${key}=<number>${unit ? ' (' + unit + ')' : ''}`;
+    for (const cls of CLASSES.filter(c => !isOtherCode(c.code))) {
+        for (const p of CLASS_PARAMETERS[cls.code] || []) keyRows.push([cls.code, p.key, p.label, p.unit, p.kind === 'design' ? 'yes (nameplate)' : 'no — give design AND operating', example(p.key, p.unit, !!p.text)]);
+    }
+    for (const [cat, params] of Object.entries(CATEGORY_PARAMETERS)) {
+        for (const p of params) keyRows.push([`${cat}_OTHER (any ${cat} class without its own set)`, p.key, p.label, p.unit, p.kind === 'design' ? 'yes (nameplate)' : 'no — give design AND operating', example(p.key, p.unit, !!p.text)]);
+    }
+    const keysWs = XLSX.utils.aoa_to_sheet(keyRows);
+    keysWs['!cols'] = [{ wch: 24 }, { wch: 22 }, { wch: 34 }, { wch: 10 }, { wch: 30 }, { wch: 28 }];
+    XLSX.utils.book_append_sheet(wb, keysWs, 'Parameter Keys');
+
     downloadWorkbook(wb, 'ERS_Asset_Import_Template.xlsx');
 }
 
@@ -170,6 +292,12 @@ export function downloadBOMTemplate(): void {
             c.header === 'uom' ? 'EA, SET, MTR, KG, LTR, BOX, PCE' :
                 c.header === 'critical' ? 'YES, NO' : ''
         ]),
+        [],
+        ['Why the BOM matters to reliability'],
+        ['• RCM studies read the BOM: the Reliability Specialist is told which parts the machine has, failure modes can be pinned to a BOM line, and a decision can name the spare its task replaces.'],
+        ['• Mark critical = YES for spares whose absence stops the asset (seals, bearings, filters on a critical unit). The study flags critical spares that no failure mode covers yet.'],
+        ['• assetTag may be the equipment unit (P-101A) or a registered component row (GT-301-BRG1) — put the spare where it is fitted.'],
+        ['• inventoryCode that matches a material in Inventory links the line to stock; anything else imports as a text BOM line.'],
     ];
     const instrWs = XLSX.utils.aoa_to_sheet(instrData);
     instrWs['!cols'] = [{ wch: 18 }, { wch: 10 }, { wch: 50 }, { wch: 30 }];
@@ -988,7 +1116,7 @@ export function parseDateValue(raw: string): string | null {
     // d/m/y or m/d/y — ambiguous; prefer d/m/y when the first part can't be a month
     const m = v.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
     if (m) {
-        let [, a, b, y] = m;
+        const [, a, b, y] = m;
         let day = Number(a), month = Number(b);
         if (day <= 12 && month > 12) { const t = day; day = month; month = t; }
         const year = Number(y.length === 2 ? `20${y}` : y);

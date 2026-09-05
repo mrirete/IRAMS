@@ -29,6 +29,7 @@ import {
     type ImportResult, type RowOutcome,
 } from './importTypes';
 import { getCategory, getClass, getType, LEGACY_CLASS_MAP } from '../../lib/iso14224Taxonomy';
+import { parseImportContext } from '../../lib/operatingContext';
 
 /**
  * ISO 14224 classification for an import row. Explicit assetCategory /
@@ -190,6 +191,9 @@ async function applyAssetUpdates(
             set('asset_category', cls.category);
             set('asset_class', cls.cls);
             set('asset_type_code', cls.type);
+            // Operating context columns (0317) — only when the file carries any.
+            const oc = parseImportContext(d, cls.cls, cls.category);
+            if (oc) patch.operating_context = oc;
         }
 
         const ccCode = (d['costcenter'] || '').toUpperCase();
@@ -426,6 +430,10 @@ export async function importAssets(
             if (d.data['description']) props.description = d.data['description'];
             if (batchId) props.import_batch_id = batchId;
 
+            // ISO 14224 classification + operating context (0317)
+            const cls = classifyImportRow(d.data);
+            const oc = parseImportContext(d.data, cls.cls, cls.category);
+
             payload.push({
                 draft: d,
                 row: {
@@ -439,7 +447,10 @@ export async function importAssets(
                     serial_number: d.data['serialnumber'] || null,
                     manufacturer: d.data['manufacturer'] || null,
                     model: d.data['model'] || null,            // no more model←category stuffing
-                    ...(() => { const c = classifyImportRow(d.data); return { asset_category: c.category || null, asset_class: c.cls || null, asset_type_code: c.type || null }; })(),
+                    asset_category: cls.category || null,
+                    asset_class: cls.cls || null,
+                    asset_type_code: cls.type || null,
+                    ...(oc ? { operating_context: oc } : {}),
                     cost_center_id: ccId ?? null,
                     // Inherit the parent's company when there is one, and
                     // OMIT the key otherwise — never send an explicit null.

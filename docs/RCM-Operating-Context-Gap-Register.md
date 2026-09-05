@@ -20,13 +20,16 @@
 
 | # | Gap | Why it matters | Suggested build |
 |---|-----|----------------|-----------------|
-| D-1 | Bulk-import template has no `assetCategory` / `assetClass` / operating-context columns | Migrations from SAP/Maximo arrive with class codes; today only the legacy single `assetType` column is read (mapped through the ISO table) | Add the three taxonomy columns + a flat `oc_*` column set to `assetTemplates.ts` and `bulkImportService` |
+| ~~D-1~~ | Bulk-import template columns | **CLOSED 2026-09-05 (0318 commit):** `assetCategory` / `assetClass` / `assetTypeCode` + `operatingMode`, `utilisationPct`, `hoursPerYear`, `startsPerYear`, `redundancy`, `environment`, `serviceMedium`, `designValues`, `operatingValues` (key=value pairs). Eight worked example rows (site→unit→system, GT-301 with its SUBUNIT and COMPONENT, P-101A/B duty-standby pair, M-101A motor), an "ISO 14224 Codes" sheet generated from the taxonomy, and a "Parameter Keys" sheet per class. `bulkImportService` reads all of it (`parseImportContext`). | — |
+| ~~D-8~~ | RCM blind to the asset's components and BOM | **CLOSED 2026-09-05 (0318):** `ers_rcm_failure_modes.component_asset_id` / `bom_item_id`; `RCMService.getAssetBreakdown` (child assets 3 levels down + `asset_bom`); the breakdown is in every Specialist prompt and the model is asked to pin each mode to a component tag and part number (`matchComponent` / `matchPart` map it back); Worksheet rows carry a component/part picker; the study Overview shows a coverage bar — which registered components still have no failure mode, unpinned modes, critical spares nobody names. | — |
 | D-2 | Class-aware reading limits | Rated speed/power + ISO 20816 vibration zones could seed reading definitions with correct alarm bands | Derive from `operating_context.parameters` when a reading point is created on a classified asset |
 | D-3 | Agent tools do not expose operating context | `get_org_context` exists; there is no `get_asset_context` for the Specialist agents outside RCM | Semantic-layer view + one tool in `agent-run` |
 | D-4 | Failure capture cannot pick from *registered* subunits | With SUBUNIT now a level, a WO on an equipment unit could offer its registered subunit rows as the subunit picker | Extend the WO Analysis tab picker to union asset children at level SUBUNIT |
 | D-5 | `SUBSYSTEM` is not an ISO level | Kept for existing data (1 asset) and labelled as L5 sub-section; a tenant that does not need it can remove it in Admin | Documentation only |
 | D-6 | Reliability Modelling / Weibull does not read design vs operating | A derated pump's β/η could be annotated with its duty point | Show utilisation next to the fit; later, condition on duty |
 | D-7 | Data hygiene | 2 duplicate "Crude Oil Unit" studies with no asset; 4 decisions with prose intervals (from the 2026-09-04 audit) | Manual clean-up |
+| D-9 | Decision spares picker (G10) | A decision's `spares_requirements` still has no UI; the BOM is now loaded on the study, so the Strategy tab could offer it | Picker on the decision wizard that writes `spares_requirements` from `asset_bom` lines |
+| D-10 | Coverage in the approval gate | `canApproveStudy` checks every mode is classified and strategised, not that every registered component has a mode | Add "uncovered components" as a soft (warning) item in `rcmReadiness` |
 
 ## Where things live
 

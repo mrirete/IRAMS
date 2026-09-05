@@ -267,6 +267,32 @@ describe('field carry-through', () => {
         expect(a.properties).toMatchObject({ department: 'Mechanical', location: 'Bay 1', description: 'Frame 5' });
     });
 
+    it('lands the ISO 14224 columns and the operating context (0317 template columns)', async () => {
+        const res = await importAssets([row({
+            tag: 'P-9', hierarchylevel: 'EQUIPMENT', criticality: 'A',
+            assetcategory: 'ROTATING', assetclass: 'PUMP', assettypecode: 'PUMP_CENTRIFUGAL',
+            operatingmode: 'continuous', utilisationpct: '96', redundancy: '2x100', environment: 'Outdoor; Sour service (H₂S)',
+            servicemedium: 'Sour crude', designvalues: 'flow=500; head=120', operatingvalues: 'flow=380; head=118',
+        })]);
+        expect(res.inserted).toBe(1);
+        const a = byTag('P-9')!;
+        expect(a.asset_category).toBe('ROTATING');
+        expect(a.asset_class).toBe('PUMP');
+        expect(a.asset_type_code).toBe('PUMP_CENTRIFUGAL');
+        const oc = a.operating_context as any;
+        expect(oc.mode).toBe('continuous');
+        expect(oc.redundancy).toBe('2x100');
+        expect(oc.parameters.find((p: any) => p.key === 'flow')).toMatchObject({ design: 500, operating: 380, unit: 'm³/h' });
+    });
+
+    it('a class code alone fills the category; a row without context columns sends no operating_context', async () => {
+        await importAssets([row({ tag: 'M-9', hierarchylevel: 'EQUIPMENT', criticality: 'B', assetclass: 'ELECTRIC_MOTOR' })]);
+        const a = byTag('M-9')!;
+        expect(a.asset_category).toBe('ROTATING');
+        expect(a.asset_class).toBe('ELECTRIC_MOTOR');
+        expect('operating_context' in a).toBe(false);
+    });
+
     it('does not stuff assetType into a blank model', async () => {
         await importAssets([row({ tag: 'GT-7', hierarchylevel: 'EQUIPMENT', assettype: 'PUMP', criticality: 'B' })]);
         expect(byTag('GT-7')?.model).toBeNull();

@@ -244,6 +244,79 @@ export function composeOperatingContext(asset: ContextAssetLike, ctx: AssetOpera
   return lines.join('\n');
 }
 
+// ── Bulk import ─────────────────────────────────────────────────────────────
+
+const IMPORT_MODES = new Set<string>(OPERATING_MODES.map(m => m.code));
+const IMPORT_REDUNDANCY: Record<string, Redundancy> = {
+  none: 'none', single: 'none', '2x100': '2x100', '2x100%': '2x100', 'duty/standby': '2x100', 'duty standby': '2x100',
+  '3x50': '3x50', '3x50%': '3x50', 'n+1': 'n_plus_1', n_plus_1: 'n_plus_1', other: 'other',
+};
+
+/** `key=value; key=value` → map (keys lower-cased, values trimmed). Accepts ',' or ';' or newline separators. */
+export function parseKeyValues(text: string | null | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const pair of String(text || '').split(/[;\n]+/)) {
+    const i = pair.indexOf('=');
+    if (i <= 0) continue;
+    const k = pair.slice(0, i).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    const v = pair.slice(i + 1).trim();
+    if (k && v) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * The operating context carried by a bulk-import row (headers already
+ * lower-cased by the importer). Returns null when the row carries none of
+ * the context columns, so a file without them never blanks stored context.
+ * Design/operating values are `key=value` pairs whose keys are the class
+ * template's parameter keys (flow, head, rated_power…); units come from the
+ * template, and unknown keys become custom rows.
+ */
+export function parseImportContext(
+  row: Record<string, string | undefined>,
+  classCode?: string | null,
+  categoryCode?: string | null,
+): AssetOperatingContext | null {
+  const g = (k: string) => String(row[k] ?? '').trim();
+  const has = ['operatingmode', 'utilisationpct', 'hoursperyear', 'startsperyear', 'redundancy', 'environment', 'servicemedium', 'designvalues', 'operatingvalues']
+    .some(k => g(k) !== '');
+  if (!has) return null;
+
+  const modeRaw = g('operatingmode').toLowerCase();
+  const mode = IMPORT_MODES.has(modeRaw) ? (modeRaw as OperatingMode) : null;
+  const redRaw = g('redundancy').toLowerCase().replace(/\s+/g, ' ');
+  const redundancy = IMPORT_REDUNDANCY[redRaw] ?? IMPORT_REDUNDANCY[redRaw.replace(/\s/g, '')] ?? (redRaw ? 'other' : null);
+  const environment = g('environment').split(/[;|]/).map(s => s.trim()).filter(Boolean);
+  const num = (k: string) => { const v = g(k); if (!v) return null; const n = Number(v.replace('%', '')); return Number.isFinite(n) ? n : null; };
+
+  const base: AssetOperatingContext = {
+    mode, redundancy, environment,
+    utilisation_pct: num('utilisationpct'), hours_per_year: num('hoursperyear'), starts_per_year: num('startsperyear'),
+    service_medium: g('servicemedium') || null,
+    parameters: [],
+  };
+  const merged = mergeTemplate(base, classCode, categoryCode);
+  const design = parseKeyValues(g('designvalues'));
+  const operating = parseKeyValues(g('operatingvalues'));
+  const known = new Map(merged.parameters!.map(p => [p.key, p]));
+  const coerce = (v: string): number | string => { const n = Number(v); return Number.isFinite(n) && v !== '' ? n : v; };
+  for (const [k, v] of Object.entries(design)) {
+    const p = known.get(k);
+    if (p) p.design = coerce(v);
+    else merged.parameters!.push({ key: k, label: k.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()), unit: '', kind: 'both', custom: true, design: coerce(v), operating: null, max: null });
+  }
+  const known2 = new Map(merged.parameters!.map(p => [p.key, p]));
+  for (const [k, v] of Object.entries(operating)) {
+    const p = known2.get(k);
+    if (p) p.operating = coerce(v);
+    else merged.parameters!.push({ key: k, label: k.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()), unit: '', kind: 'both', custom: true, design: null, operating: coerce(v), max: null });
+  }
+  // keep only rows that carry a value — the template is re-applied on read anyway
+  merged.parameters = merged.parameters!.filter(hasAnyValue);
+  return { ...merged, updated_at: new Date().toISOString() };
+}
+
 /** Snapshot kept on the RCM study: what the analysis assumed. */
 export interface ContextSnapshot {
   taken_at: string;

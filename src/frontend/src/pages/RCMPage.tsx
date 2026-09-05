@@ -44,6 +44,7 @@ import {
 import { normalizeRecommendation, recommendationToDecisionUpdates } from '../eam/services/rcmPlan';
 import type { RCMAssetContext } from '../eam/services/RCMService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
+import { matchComponent, matchPart, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
 
 // ── Types ─────────────────────────────────────────────────
 type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
@@ -123,6 +124,8 @@ export const RCMPage: React.FC = () => {
   const [newStudyContext, setNewStudyContext] = useState<RCMAssetContext | null>(null);
   const [newContextAuto, setNewContextAuto] = useState(false);   // narrative was auto-composed, not typed
   const [liveAssetContext, setLiveAssetContext] = useState<RCMAssetContext | null>(null);
+  // 0318 — the asset's registered components + BOM: what modes are pinned to.
+  const [breakdown, setBreakdown] = useState<AssetBreakdown>(EMPTY_BREAKDOWN);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -232,6 +235,7 @@ export const RCMPage: React.FC = () => {
     // The asset's CURRENT operating context — the Overview compares it with
     // the study's snapshot and offers a refresh when the register moved on.
     setLiveAssetContext(study.asset_id ? await rcmService.getAssetContext(study.asset_id) : null);
+    setBreakdown(await rcmService.getAssetBreakdown(study.asset_id));
 
     // Pull the asset's latest saved Weibull fit from Reliability Modelling.
     setLifeEvidence(null);
@@ -670,6 +674,9 @@ export const RCMPage: React.FC = () => {
           occurrence: clampScore(m.occurrence),
           data_source: 'ai_generated',
           sort_order: base + i + 1,
+          // Pin to the register's breakdown when the Specialist named a component / part
+          component_asset_id: matchComponent(m.component, breakdown)?.id ?? null,
+          bom_item_id: matchPart(m.part, breakdown)?.id ?? null,
         });
       }
       await loadStudyDetail(selectedStudy.id);
@@ -819,6 +826,8 @@ export const RCMPage: React.FC = () => {
               // Both columns: end_effect is what the worksheet's End Effect cell reads.
               failure_effect_plant: fm.effect_plant, end_effect: fm.effect_plant,
               data_source: 'ai_generated', sort_order: 0,
+              component_asset_id: matchComponent(fm.component, breakdown)?.id ?? null,
+              bom_item_id: matchPart(fm.part, breakdown)?.id ?? null,
             });
           }
         }
@@ -1141,6 +1150,7 @@ export const RCMPage: React.FC = () => {
           onEditStudy={() => handleOpenEditStudy(selectedStudy)}
           liveContext={liveAssetContext?.operating_context ?? null}
           onRefreshContext={selectedStudy.asset_id ? handleRefreshStudyContext : undefined}
+          breakdown={breakdown}
         />
       )}
 
@@ -1176,6 +1186,7 @@ export const RCMPage: React.FC = () => {
           functions={functions}
           failureModes={failureModes}
           decisions={decisionMap}
+          breakdown={breakdown}
           aiLoading={aiLoading}
           onAddFunction={handleAddFunction}
           onUpdateFunction={handleUpdateFunction}

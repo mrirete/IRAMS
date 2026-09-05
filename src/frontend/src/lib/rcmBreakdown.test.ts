@@ -1,0 +1,72 @@
+import { describe, it, expect } from 'vitest';
+import {
+  renderBreakdownForPrompt, breakdownCoverage, matchComponent, matchPart, componentLabel, isEmptyBreakdown,
+  type AssetBreakdown,
+} from './rcmBreakdown';
+
+const B: AssetBreakdown = {
+  components: [
+    { id: 'c1', tag: 'GT-301-BRG1', name: 'Thrust bearing', level: 'COMPONENT', criticality: 'B', assetClass: 'GEARBOX', depth: 1 },
+    { id: 'c2', tag: 'GT-301-LUBE', name: 'Lube oil system', level: 'SUBUNIT', depth: 1 },
+    { id: 'c3', tag: 'GT-301-LUBE-P1', name: 'Main lube pump', level: 'COMPONENT', parentId: 'c2', depth: 2 },
+  ],
+  parts: [
+    { id: 'p1', partNumber: 'FLT-0023', description: 'Air inlet filter 24x24x12', qty: 4, uom: 'EA', critical: true },
+    { id: 'p2', partNumber: '', description: 'Synthetic turbine oil ISO VG 32', qty: 20, uom: 'LTR', critical: false, replacementIntervalDays: 180 },
+  ],
+};
+
+describe('renderBreakdownForPrompt', () => {
+  it('indents the tree, marks critical spares, and is empty for nothing', () => {
+    const t = renderBreakdownForPrompt(B);
+    expect(t).toContain('Registered components (3)');
+    expect(t).toContain('- GT-301-BRG1 — Thrust bearing [GEARBOX] (crit B)');
+    expect(t).toContain('  - GT-301-LUBE-P1 — Main lube pump');   // depth 2 indented
+    expect(t).toContain('Bill of materials (2 lines)');
+    expect(t).toContain('- FLT-0023 — Air inlet filter 24x24x12 × 4 EA [CRITICAL SPARE]');
+    expect(t).toContain('(no part no.) — Synthetic turbine oil ISO VG 32 × 20 LTR (replace every 180 d)');
+    expect(renderBreakdownForPrompt(null)).toBe('');
+    expect(renderBreakdownForPrompt({ components: [], parts: [] })).toBe('');
+    expect(isEmptyBreakdown({ components: [], parts: [] })).toBe(true);
+  });
+  it('caps the BOM', () => {
+    const big = { components: [], parts: Array.from({ length: 80 }, (_, i) => ({ id: `p${i}`, partNumber: `PN-${i}`, description: `Part ${i}`, qty: 1, uom: 'EA', critical: false })) };
+    const t = renderBreakdownForPrompt(big, { maxParts: 10 });
+    expect(t).toContain('80 lines, first 10 shown');
+    expect(t).not.toContain('PN-11 ');
+  });
+});
+
+describe('breakdownCoverage', () => {
+  it('counts modes per component, lists the uncovered, and the unpinned', () => {
+    const cov = breakdownCoverage(B, [
+      { component_asset_id: 'c1' }, { component_asset_id: 'c1' }, { bom_item_id: 'p1' }, {}, { component_asset_id: 'zzz' },
+    ]);
+    expect(cov.covered).toEqual([{ component: B.components[0], modeCount: 2 }]);
+    expect(cov.uncovered.map(c => c.id)).toEqual(['c2', 'c3']);
+    expect(cov.unpinned).toBe(1);
+    expect(cov.pct).toBe(33);
+    expect(cov.partsReferenced).toBe(1);
+    expect(breakdownCoverage(null, [{}]).pct).toBe(0);
+  });
+});
+
+describe('matching the Specialist answer back', () => {
+  it('matches by tag, tag-in-text, then name — and parts by number then description', () => {
+    expect(matchComponent('GT-301-BRG1', B)?.id).toBe('c1');
+    expect(matchComponent('the thrust bearing', B)?.id).toBe('c1');
+    expect(matchComponent('Lube oil system (GT-301-LUBE)', B)?.id).toBe('c2');
+    expect(matchComponent('main lube pump', B)?.id).toBe('c3');
+    expect(matchComponent('gearbox output shaft', B)).toBeNull();
+    expect(matchComponent('', B)).toBeNull();
+    expect(matchPart('FLT-0023', B)?.id).toBe('p1');
+    expect(matchPart('replace synthetic turbine oil iso vg 32', B)?.id).toBe('p2');
+    expect(matchPart('coupling', B)).toBeNull();
+  });
+  it('labels a pinned mode', () => {
+    expect(componentLabel({ component_asset_id: 'c2' }, B)).toBe('GT-301-LUBE — Lube oil system');
+    expect(componentLabel({ bom_item_id: 'p2' }, B)).toBe('Synthetic turbine oil ISO VG 32');
+    expect(componentLabel({ bom_item_id: 'p1' }, B)).toBe('FLT-0023 — Air inlet filter 24x24x12');
+    expect(componentLabel({}, B)).toBe('');
+  });
+});
