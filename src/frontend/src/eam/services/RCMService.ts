@@ -30,6 +30,7 @@ export interface RCMAssetContext extends ContextAssetLike {
   id: string;
   tag: string;
   name: string;
+  description: string | null;
   hierarchy_level: string | null;
   criticality: string | null;
   manufacturer: string | null;
@@ -399,6 +400,9 @@ class RCMServiceImpl {
     const operating_context = normalizeContext(data.operating_context);
     const base = {
       id: data.id, tag: data.tag, name: data.name,
+      // The duty narrative lives in the register's description (properties.description) —
+      // there is no separate duty field on the operating context.
+      description: data.properties?.description ?? null,
       hierarchy_level: data.hierarchy_level ?? null, criticality: data.criticality ?? null,
       manufacturer: data.manufacturer ?? null, model: data.model ?? null,
       asset_category: data.asset_category ?? null, asset_class: data.asset_class ?? null, asset_type_code: data.asset_type_code ?? null,

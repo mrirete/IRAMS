@@ -6,7 +6,7 @@ import {
 import { parameterTemplateFor, CLASS_PARAMETERS } from './iso14224Parameters';
 import { CLASSES, isOtherCode } from './iso14224Taxonomy';
 
-const PUMP = { tag: 'P-101A', name: 'Crude charge pump', criticality: 'A', assetCategory: 'ROTATING', assetClass: 'PUMP', assetType: 'PUMP_CENTRIFUGAL', manufacturer: 'Sulzer', model: 'MSD 6x8' };
+const PUMP = { tag: 'P-101A', name: 'Crude charge pump', description: 'Charges the crude unit from the desalter', criticality: 'A', assetCategory: 'ROTATING', assetClass: 'PUMP', assetType: 'PUMP_CENTRIFUGAL', manufacturer: 'Sulzer', model: 'MSD 6x8' };
 
 describe('parameter templates', () => {
   it('every ISO class has a template with at least one design+operating row', () => {
@@ -56,9 +56,11 @@ describe('utilisation & deviation', () => {
 });
 
 describe('contextCompleteness', () => {
-  it('needs mode, duty/medium, and one design+operating pair', () => {
+  it('needs mode, a setting (medium or environment), and one design+operating pair', () => {
     expect(contextCompleteness(null).complete).toBe(false);
-    expect(contextCompleteness(null).missing).toHaveLength(3);
+    expect(contextCompleteness(null).missing).toEqual([
+      'Operating mode', 'Service medium or environment', 'At least one parameter with design and operating values',
+    ]);
     const ok: AssetOperatingContext = {
       mode: 'continuous', service_medium: 'Crude oil',
       parameters: [{ key: 'flow', label: 'Flow', unit: 'm³/h', design: 500, operating: 380 }],
@@ -67,10 +69,14 @@ describe('contextCompleteness', () => {
     expect(r.complete).toBe(true);
     expect(r.filledParameters).toBe(1);
     expect(r.score).toBeGreaterThan(0);
-    expect(r.score).toBeLessThan(100);   // redundancy/environment/utilisation not given
+    expect(r.score).toBeLessThan(100);   // redundancy/utilisation not given
+  });
+  it('environment alone satisfies the setting requirement', () => {
+    const r = contextCompleteness({ mode: 'standby', environment: ['Offshore'], parameters: [{ key: 'flow', label: 'Flow', unit: '', design: 10, operating: 8 }] });
+    expect(r.complete).toBe(true);
   });
   it('a design-only row does not satisfy the pair requirement', () => {
-    const r = contextCompleteness({ mode: 'standby', duty_description: 'Fire water jockey pump keeping the ring main pressurised', parameters: [{ key: 'design_pressure', label: '', unit: 'barg', kind: 'design', design: 16 }] });
+    const r = contextCompleteness({ mode: 'standby', service_medium: 'Fire water', parameters: [{ key: 'design_pressure', label: '', unit: 'barg', kind: 'design', design: 16 }] });
     expect(r.complete).toBe(false);
     expect(r.missing).toEqual(['At least one parameter with design and operating values']);
   });
@@ -81,7 +87,6 @@ describe('composeOperatingContext', () => {
     const ctx: AssetOperatingContext = {
       mode: 'continuous', utilisation_pct: 95, hours_per_year: 8300, redundancy: '2x100',
       environment: ['Outdoor', 'Sour service (H₂S)'], service_medium: 'Crude oil, 32 °API',
-      duty_description: 'Charges the crude unit from the desalter',
       parameters: [
         { key: 'flow', label: 'Flow rate', unit: 'm³/h', design: 500, operating: 380 },
         { key: 'design_pressure', label: 'Design pressure', unit: 'barg', kind: 'design', design: 40 },
@@ -106,6 +111,11 @@ describe('composeOperatingContext', () => {
   });
   it('an empty context still names the asset', () => {
     expect(composeOperatingContext({ tag: 'X-1', name: 'Thing' }, null)).toBe('X-1 — Thing.');
+  });
+  it('takes the duty narrative from the register description, and never repeats the name', () => {
+    expect(composeOperatingContext({ tag: 'X-1', name: 'Thing', description: 'Feeds the dryer' }, null))
+      .toBe('X-1 — Thing.\nFeeds the dryer.');
+    expect(composeOperatingContext({ tag: 'X-1', name: 'Thing', description: 'Thing' }, null)).toBe('X-1 — Thing.');
   });
 });
 

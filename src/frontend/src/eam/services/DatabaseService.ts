@@ -1701,6 +1701,14 @@ export class DatabaseService {
             equipmentGeneration: row.equipment_generation || 1,
             // ISO 14224 operating context (0317) — {} before the column is filled
             operatingContext: row.operating_context && typeof row.operating_context === 'object' ? row.operating_context : null,
+            // The properties bag MUST round-trip. It carries the import
+            // description, legacy equipment numbers, the old BOM payload and
+            // the custom fields — and updateAsset writes the column from this
+            // value, so not reading it here meant every save from the register
+            // blanked it.
+            properties: row.properties && typeof row.properties === 'object' ? row.properties : {},
+            description: row.properties?.description || '',
+            customFields: Array.isArray(row.properties?.customFields) ? row.properties.customFields : [],
         }));
     }
 
@@ -1741,7 +1749,8 @@ export class DatabaseService {
             asset_type_code: asset.assetType || null,
             asset_class: asset.assetClass || null,
             properties: {
-                ...(asset.properties || {})
+                ...(asset.properties || {}),
+                ...(Array.isArray(asset.customFields) && asset.customFields.length ? { customFields: asset.customFields } : {}),
             },
             ...(asset.operatingContext && typeof asset.operatingContext === 'object' ? { operating_context: asset.operatingContext } : {}),
         };
@@ -1797,10 +1806,17 @@ export class DatabaseService {
             asset_category: asset.assetCategory || null,
             asset_type_code: asset.assetType || null,
             asset_class: asset.assetClass || null,
-            properties: {
-                ...(asset.properties || {}) // BOM now managed via asset_bom table
-            }
         };
+        // The properties bag is SHARED state (import description, legacy
+        // equipment numbers, the old BOM payload, custom fields). Sending
+        // `{...(asset.properties || {})}` unconditionally blanked it for every
+        // caller that did not read the column back — which was all of them,
+        // because getAssets did not map it. Write it only when the caller
+        // actually carries the bag, and fold custom fields into that copy.
+        if (asset.properties && typeof asset.properties === 'object') {
+            row.properties = { ...asset.properties };
+            if (Array.isArray(asset.customFields)) row.properties.customFields = asset.customFields;
+        }
         // Only include hierarchy_level if we determined one
         if (hierarchy_level) row.hierarchy_level = hierarchy_level;
         // 0317 — operating context travels only when the UI carried it, so

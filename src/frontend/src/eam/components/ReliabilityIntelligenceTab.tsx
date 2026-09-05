@@ -291,17 +291,28 @@ export const ReliabilityIntelligenceTab: React.FC<ReliabilityIntelligenceTabProp
         return (
             <div className="space-y-4">
                 <AssetReliabilityStudiesCard asset={{ id: asset.id, tag: asset.tag, name: asset.name, criticality: asset.criticality }} />
+                {/* Honest, actionable empty state. This used to print
+                    "Set VITE_ERS_API_URL in Vercel environment variables" —
+                    a deployment instruction shown to reliability engineers,
+                    for an optional service. Predictive intelligence simply
+                    needs condition data; say that, and point at the next step. */}
                 <div className="bg-white border border-slate-200 rounded-xl p-8 text-center">
                     <Cpu size={48} className="mx-auto mb-4 text-slate-300" />
-                    <h3 className="text-lg font-bold text-slate-700 mb-2">No Reliability Intelligence Available</h3>
-                    <p className="text-sm text-slate-500 mb-4 max-w-md mx-auto">
-                        {error || 'Run a Digital Twin snapshot or RUL analysis from the Predictions module to generate intelligence for this asset.'}
+                    <h3 className="text-lg font-bold text-slate-700 mb-2">No predictive intelligence yet</h3>
+                    <p className="text-sm text-slate-500 mb-2 max-w-lg mx-auto">
+                        {error || 'Health index, remaining useful life and failure probability are computed from this asset’s condition data. Nothing has been recorded for it yet.'}
                     </p>
-                    {!ersApi.isConfigured && (
-                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700 inline-block">
-                            <AlertTriangle size={12} className="inline mr-1" />
-                            Backend API not configured. Set <code className="bg-amber-100 px-1 rounded">VITE_ERS_API_URL</code> in Vercel environment variables.
-                        </div>
+                    <p className="text-xs text-slate-400 mb-5 max-w-lg mx-auto">
+                        Add reading points on the <strong>Readings</strong> tab and log a few readings, then run a Digital Twin snapshot in Predict.
+                        The Weibull fit above needs only work-order history, so it can be run today.
+                    </p>
+                    {hasReliabilitySuite && (
+                        <button
+                            onClick={() => navigate(`/predict?asset=${asset.id}`)}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold text-white bg-primary-600 hover:bg-primary-500 shadow-sm transition-colors"
+                        >
+                            <Activity size={14} /> Open Predict
+                        </button>
                     )}
                 </div>
             </div>
@@ -589,11 +600,17 @@ Type: ${asset.assetType || (asset as any).category || 'N/A'} | Criticality: ${as
 
             {/* ── API Source Indicator ─────────────────────────── */}
             <div className="text-[9px] text-slate-400 text-right flex items-center justify-end gap-2">
-                <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
-                    ersApi.isConfigured ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'
-                }`}>
+                {/* Provenance in the user's language, not the deployment's. */}
+                <span
+                    title={ersApi.isConfigured
+                        ? 'Scored by the predictive engine (ensemble models)'
+                        : 'Computed from the Digital Twin and RUL records stored in IREAMS'}
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ${
+                        ersApi.isConfigured ? 'bg-green-50 text-green-600' : 'bg-slate-100 text-slate-500'
+                    }`}
+                >
                     <span className={`w-1.5 h-1.5 rounded-full ${ersApi.isConfigured ? 'bg-green-400' : 'bg-slate-400'}`} />
-                    {ersApi.isConfigured ? 'Railway API' : 'Supabase Fallback'}
+                    {ersApi.isConfigured ? 'Predictive engine' : 'Stored analyses'}
                 </span>
                 {asset.criticality && (
                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border ${

@@ -43,7 +43,7 @@ import {
 } from '../eam/services/rcmReadiness';
 import { normalizeRecommendation, recommendationToDecisionUpdates } from '../eam/services/rcmPlan';
 import type { RCMAssetContext } from '../eam/services/RCMService';
-import { takeSnapshot, type ContextSnapshot } from '../lib/operatingContext';
+import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
 
 // ── Types ─────────────────────────────────────────────────
 type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
@@ -434,7 +434,15 @@ export const RCMPage: React.FC = () => {
     if (!selectedStudy?.asset_id) return;
     const r = await trackSave(rcmService.refreshContextSnapshot(selectedStudy.id, selectedStudy.asset_id));
     if (!r?.study) { showToast('Could not refresh the operating context from the register', 'error'); return; }
-    const keepNarrative = (selectedStudy.operating_context || '').trim().length > 0 && selectedStudy.operating_context !== selectedStudy.context_snapshot?.context?.duty_description;
+    // Replace the narrative only when it is still the one WE composed. The
+    // composition is deterministic, so re-composing from the old snapshot
+    // reproduces exactly what was written last time — anything else is the
+    // facilitator's own words and must survive a refresh.
+    const current = (selectedStudy.operating_context || '').trim();
+    const previouslyComposed = selectedStudy.context_snapshot && liveAssetContext
+      ? composeOperatingContext(liveAssetContext, selectedStudy.context_snapshot.context).trim()
+      : '';
+    const keepNarrative = current.length > 0 && current !== previouslyComposed;
     const patch = keepNarrative ? {} : { operating_context: r.narrative };
     const merged = { ...selectedStudy, ...r.study, ...patch };
     if (!keepNarrative) await rcmService.updateStudy(selectedStudy.id, patch);

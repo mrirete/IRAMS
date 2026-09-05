@@ -64,8 +64,6 @@ export interface AssetOperatingContext {
   redundancy?: Redundancy | null;
   environment?: string[];
   service_medium?: string | null;
-  /** What the asset is for and how it is run — the JA1011 narrative */
-  duty_description?: string | null;
   parameters?: OperatingParameter[];
   updated_at?: string | null;
   updated_by?: string | null;
@@ -73,6 +71,8 @@ export interface AssetOperatingContext {
 
 export interface ContextAssetLike {
   tag?: string | null; name?: string | null;
+  /** The register's Description field — carries the duty narrative (no separate duty field). */
+  description?: string | null;
   criticality?: string | null;
   manufacturer?: string | null; model?: string | null;
   assetCategory?: string | null; assetClass?: string | null; assetType?: string | null;
@@ -93,7 +93,6 @@ export function normalizeContext(raw: unknown): AssetOperatingContext {
     redundancy: (r.redundancy as Redundancy) || null,
     environment: Array.isArray(r.environment) ? r.environment.map(String) : [],
     service_medium: (r.service_medium as string) || null,
-    duty_description: (r.duty_description as string) || null,
     parameters: Array.isArray(r.parameters) ? (r.parameters as OperatingParameter[]).filter(p => p && p.key) : [],
     updated_at: (r.updated_at as string) || null,
     updated_by: (r.updated_by as string) || null,
@@ -166,19 +165,21 @@ export interface ContextCompleteness {
 
 /**
  * What RCM needs from the register before a study is worth an AI call:
- * a mode, a duty narrative or service medium, and at least one parameter
- * with both a design and an operating value.
+ * a mode, what the asset handles or where it sits, and at least one
+ * parameter with both a design and an operating value. The duty narrative
+ * comes from the asset's own Description field, not a second free-text box.
  */
 export function contextCompleteness(ctx: AssetOperatingContext | null | undefined): ContextCompleteness {
   const c = ctx || EMPTY_CONTEXT;
   const params = c.parameters || [];
   const filled = params.filter(p => (p.kind === 'design' ? p.design != null && String(p.design).trim() !== '' : hasBoth(p))).length;
   const anyBoth = params.some(hasBoth);
+  const hasSetting = !!c.service_medium || (c.environment || []).length > 0;
   const missing: string[] = [];
   if (!c.mode) missing.push('Operating mode');
-  if (!(c.duty_description && c.duty_description.trim().length >= 20) && !c.service_medium) missing.push('Duty description or service medium');
+  if (!hasSetting) missing.push('Service medium or environment');
   if (!anyBoth) missing.push('At least one parameter with design and operating values');
-  const checks = [!!c.mode, !!(c.duty_description && c.duty_description.trim().length >= 20) || !!c.service_medium, anyBoth, !!c.redundancy, (c.environment || []).length > 0, c.utilisation_pct != null || c.hours_per_year != null];
+  const checks = [!!c.mode, hasSetting, anyBoth, !!c.redundancy, c.utilisation_pct != null || c.hours_per_year != null];
   const score = Math.round((checks.filter(Boolean).length / checks.length) * 100);
   return { complete: missing.length === 0, score, missing, filledParameters: filled, totalParameters: params.length };
 }
@@ -214,7 +215,9 @@ export function composeOperatingContext(asset: ContextAssetLike, ctx: AssetOpera
   const head = [asset.tag, asset.name].filter(Boolean).join(' — ');
   if (head || cls) lines.push(`${head}${cls ? ` (${cls})` : ''}${asset.criticality ? `, criticality ${asset.criticality}` : ''}.`);
   if (asset.manufacturer || asset.model) lines.push(`Make/model: ${[asset.manufacturer, asset.model].filter(Boolean).join(' ')}.`);
-  if (c.duty_description) lines.push(c.duty_description.trim().replace(/\.?$/, '.'));
+  // The duty narrative is the register's Description — there is no second box.
+  const desc = String(asset.description || '').trim();
+  if (desc && desc !== String(asset.name || '').trim()) lines.push(desc.replace(/\.?$/, '.'));
 
   const duty: string[] = [];
   if (c.mode) duty.push(`${OPERATING_MODES.find(m => m.code === c.mode)?.label || c.mode} duty`);

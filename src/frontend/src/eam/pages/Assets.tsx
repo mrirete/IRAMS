@@ -16,7 +16,7 @@ import { ImageCapture } from '../components/ui/ImageCapture';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts';
-import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
+import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor, CustomField } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
 import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, isValidChild, showsEquipmentFields, isoLevelName } from '../services/hierarchyModel';
@@ -2171,6 +2171,14 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
         onUpdate({ ...asset, [field]: value });
     };
 
+    // ── Custom fields (G7) ──
+    // Persisted in assets.properties.customFields; the page's Save writes them.
+    const customFields = asset.customFields || [];
+    const setCustomFields = (next: CustomField[]) => onUpdate({ ...asset, customFields: next });
+    const addCustomField = () => setCustomFields([...customFields, { id: `cf-${Date.now()}`, key: '', value: '', type: 'TEXT' }]);
+    const updateCustomField = (id: string, patch: Partial<CustomField>) => setCustomFields(customFields.map(f => (f.id === id ? { ...f, ...patch } : f)));
+    const removeCustomField = (id: string) => setCustomFields(customFields.filter(f => f.id !== id));
+
     // F-008/F-002: object class drives terminology (FLOC ID vs Asset Tag) and field visibility.
     const isFloc = isFunctionalLocation({ hierarchyLevel: (asset as any).hierarchyLevel, assetType: asset.assetType, category: asset.category });
     const idLabel = isFloc ? 'Functional Location ID' : 'Asset Tag';
@@ -2614,34 +2622,85 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                 </div>
             </div>
 
-            {/* ── Custom Fields (G7) ── */}
+            {/* ── Custom Fields (G7) ── editable; saved into assets.properties.customFields */}
             <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
-                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4 flex items-center justify-between">
+                <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3 flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2"><FileText size={16} className="text-slate-400" /> Custom Fields</span>
-                    <span className="text-[10px] text-slate-400 font-normal">{(asset.customFields || []).length} fields</span>
+                    <button
+                        type="button"
+                        onClick={addCustomField}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-primary-600 border border-dashed border-primary-300 hover:bg-primary-50 transition-colors"
+                    >
+                        <Plus size={13} /> Add field
+                    </button>
                 </h3>
-                <div className="divide-y divide-slate-100">
-                    {(asset.customFields || []).map(cf => (
-                        <div key={cf.id} className="py-2 flex items-center justify-between gap-3">
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
-                                    cf.type === 'NUMBER' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-                                    cf.type === 'DATE' ? 'bg-blue-50 text-blue-600 border-blue-200' :
-                                    cf.type === 'BOOLEAN' ? 'bg-amber-50 text-amber-600 border-amber-200' :
-                                    cf.type === 'DROPDOWN' ? 'bg-primary-50 text-primary-600 border-primary-200' :
-                                    'bg-slate-50 text-slate-600 border-slate-200'
-                                }`}>{cf.type}</span>
-                                <span className="text-sm font-medium text-slate-700 truncate">{cf.key}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                <span className="text-sm font-semibold text-slate-900">{cf.value}</span>
-                                {cf.unit && <span className="text-xs text-slate-400">{cf.unit}</span>}
-                            </div>
+                <div className="space-y-2">
+                    {customFields.map(cf => (
+                        <div key={cf.id} className="flex items-center gap-2">
+                            <input
+                                value={cf.key}
+                                onChange={e => updateCustomField(cf.id, { key: e.target.value })}
+                                placeholder="Field name"
+                                className="flex-1 min-w-0 text-sm border border-slate-300 rounded-md p-1.5 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none"
+                            />
+                            <select
+                                value={cf.type}
+                                onChange={e => updateCustomField(cf.id, { type: e.target.value as CustomField['type'], value: '' })}
+                                className="w-24 shrink-0 text-xs border border-slate-300 rounded-md p-1.5 bg-white"
+                            >
+                                <option value="TEXT">Text</option>
+                                <option value="NUMBER">Number</option>
+                                <option value="DATE">Date</option>
+                                <option value="BOOLEAN">Yes/No</option>
+                                {cf.type === 'DROPDOWN' && <option value="DROPDOWN">Dropdown</option>}
+                            </select>
+                            {cf.type === 'BOOLEAN' ? (
+                                <label className="w-32 shrink-0 flex items-center gap-1.5 text-sm text-slate-600 px-1.5">
+                                    <input
+                                        type="checkbox"
+                                        checked={cf.value === 'true'}
+                                        onChange={e => updateCustomField(cf.id, { value: e.target.checked ? 'true' : 'false' })}
+                                        className="rounded text-primary-600"
+                                    />
+                                    {cf.value === 'true' ? 'Yes' : 'No'}
+                                </label>
+                            ) : cf.type === 'DROPDOWN' ? (
+                                <select
+                                    value={cf.value}
+                                    onChange={e => updateCustomField(cf.id, { value: e.target.value })}
+                                    className="w-32 shrink-0 text-sm border border-slate-300 rounded-md p-1.5 bg-white"
+                                >
+                                    <option value="">—</option>
+                                    {(cf.dropdownOptions || []).map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                            ) : (
+                                <input
+                                    type={cf.type === 'DATE' ? 'date' : cf.type === 'NUMBER' ? 'number' : 'text'}
+                                    value={cf.value}
+                                    onChange={e => updateCustomField(cf.id, { value: e.target.value })}
+                                    placeholder="Value"
+                                    className="w-32 shrink-0 text-sm border border-slate-300 rounded-md p-1.5 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none"
+                                />
+                            )}
+                            <input
+                                value={cf.unit || ''}
+                                onChange={e => updateCustomField(cf.id, { unit: e.target.value })}
+                                placeholder="unit"
+                                className="w-16 shrink-0 text-xs border border-slate-300 rounded-md p-1.5 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => removeCustomField(cf.id)}
+                                className="shrink-0 text-slate-300 hover:text-red-500 transition-colors p-1"
+                                title="Remove field"
+                            >
+                                <Trash2 size={14} />
+                            </button>
                         </div>
                     ))}
-                    {!(asset.customFields || []).length && (
+                    {!customFields.length && (
                         <div className="py-4 text-center text-sm text-slate-400 italic">
-                            No custom fields defined yet. Track asset-specific attributes like pressure ratings, flow capacities, etc.
+                            No custom fields yet. Track asset-specific attributes the standard fields do not cover — a warranty reference, a coating spec, an area classification.
                         </div>
                     )}
                 </div>
