@@ -11,6 +11,84 @@ import { AvatarStack } from '../analyze/CollaboratorPicker';
 import { useAssetLookup } from '../../hooks/useAssetLookup';
 import type { RCMDashboardProps, RCMStudy } from './types';
 import { STATUS_COLORS, CRIT_COLORS } from './types';
+import type { RCMCoverageRow } from '../../eam/services/RCMService';
+
+// ── Coverage strip — which critical assets have a study, and how far it got ──
+// The manager's question ("how much of the critical plant is covered, and how
+// much of it reached the CMMS") answered from the same view the maturity
+// assessment and the Specialist read (sem_rcm_coverage, 0319).
+const CoverageStrip: React.FC<{
+  coverage: RCMCoverageRow[];
+  assets: { id: string; tag: string; name: string; criticality: string }[];
+  onStartStudy: (asset: { id: string; tag: string; name: string }) => void;
+}> = ({ coverage, assets, onStartStudy }) => {
+  const rows = React.useMemo(() => {
+    const byAsset = new Map<string, RCMCoverageRow[]>();
+    coverage.forEach(c => { if (c.asset_id) byAsset.set(c.asset_id, [...(byAsset.get(c.asset_id) || []), c]); });
+    const best = (list: RCMCoverageRow[] | undefined) => {
+      if (!list?.length) return null;
+      const rank: Record<string, number> = { approved: 4, review: 3, in_progress: 2, draft: 1, closed: 0 };
+      return [...list].sort((a, b) => (rank[b.status] ?? 0) - (rank[a.status] ?? 0))[0];
+    };
+    return (['A', 'B'] as const).map(crit => {
+      const pool = assets.filter(a => String(a.criticality || '').toUpperCase() === crit);
+      const covered = pool.filter(a => { const b = best(byAsset.get(a.id)); return b && (b.status === 'review' || b.status === 'approved'); });
+      const started = pool.filter(a => { const b = best(byAsset.get(a.id)); return b && b.status !== 'review' && b.status !== 'approved'; });
+      const uncovered = pool.filter(a => !byAsset.has(a.id));
+      return { crit, total: pool.length, covered: covered.length, started: started.length, uncovered };
+    });
+  }, [coverage, assets]);
+  const proactive = coverage.reduce((n, c) => n + (c.proactive_count || 0), 0);
+  const implemented = coverage.reduce((n, c) => n + (c.pm_count || 0), 0);
+  const gaps = rows.flatMap(r => r.uncovered.map(a => ({ ...a, crit: r.crit }))).slice(0, 8);
+  if (assets.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5">
+      <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
+        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Coverage of the critical plant</h3>
+        <span className="text-[11px] text-slate-500">
+          {proactive > 0
+            ? <><strong className="text-slate-700">{implemented}</strong> of {proactive} proactive decisions are PMs in Work Management</>
+            : 'No proactive decisions yet'}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {rows.map(r => {
+          const pct = r.total ? Math.round((r.covered / r.total) * 100) : 0;
+          return (
+            <div key={r.crit} className="border border-slate-100 rounded-lg px-3 py-2.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className={`font-bold px-1.5 py-0.5 rounded border ${CRIT_COLORS[r.crit]}`}>Criticality {r.crit}</span>
+                <span className="text-slate-600 tabular-nums"><strong className="text-slate-800">{r.covered}</strong> / {r.total} covered{r.started ? <span className="text-slate-400"> · {r.started} in progress</span> : null}</span>
+              </div>
+              <div className="mt-2 h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">"Covered" = a study in review or approved. {r.total === 0 ? 'No assets at this criticality.' : `${pct}%`}</p>
+            </div>
+          );
+        })}
+      </div>
+      {gaps.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">No study yet</span>
+          {gaps.map(a => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => onStartStudy(a)}
+              title={`Start an RCM study for ${a.tag} — ${a.name}`}
+              className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border hover:bg-slate-50 ${a.crit === 'A' ? 'border-red-200 text-red-700' : 'border-amber-200 text-amber-700'}`}
+            >
+              <Plus size={10} /> {a.tag}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── KPI Card — compact on mobile (2×2 chips), roomy on desktop ──
 const KPICard: React.FC<{
@@ -107,9 +185,10 @@ const StudyCardMenu: React.FC<{
 // ── Main Component ───────────────────────────────────────────
 export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
   studies, loading, searchQuery, onSelectStudy, onCreateStudy, onEditStudy, onDeleteStudy, onDuplicateStudy,
+  coverage = [], onStartStudyForAsset,
 }) => {
   const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
-  const { getAssetName } = useAssetLookup();
+  const { getAssetName, assetOptions } = useAssetLookup();
 
   // Cards show the asset as people know it (tag — name), not a raw UUID; a
   // manual tag that isn't in the register passes through unchanged.
@@ -144,6 +223,15 @@ export const RCMStudyDashboard: React.FC<RCMDashboardProps> = ({
           <KPICard key={i} {...kpi} />
         ))}
       </div>
+
+      {/* Coverage of the critical plant — which A/B assets still have no study */}
+      {!loading && onStartStudyForAsset && (
+        <CoverageStrip
+          coverage={coverage}
+          assets={assetOptions.map(a => ({ id: a.id, tag: a.tag, name: a.name, criticality: String(a.criticality || '') }))}
+          onStartStudy={onStartStudyForAsset}
+        />
+      )}
 
       {/* Study Cards */}
       {loading ? (

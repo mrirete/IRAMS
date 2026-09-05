@@ -34,6 +34,10 @@ export interface MeasuredSignals {
     assignmentCoveragePct: number | null;
     /** is a production-loss rate configured anywhere? */
     downtimeRateConfigured: boolean;
+    /** A/B-critical assets with an RCM study in review or approved, % (null = no critical assets or view absent) */
+    rcmCoverageCriticalPct?: number | null;
+    /** proactive RCM decisions that reached Work Management as a PM, % (null = no proactive decisions yet) */
+    rcmImplementedPct?: number | null;
 }
 
 export interface ProxyReading { label: string; display: string; pct: number | null; }
@@ -101,9 +105,14 @@ export function computeSayDoGap(analysis: IntakeAnalysis, m: MeasuredSignals): D
             [
                 { label: 'Cost captured on closed work', display: pctDisplay(m.costCoveragePct), pct: m.costCoveragePct },
                 { label: 'Production-loss rate configured', display: m.downtimeRateConfigured ? 'yes' : 'no', pct: m.downtimeRateConfigured ? 100 : 0 },
+                // RCM programme (bank question m3_q4): level 3 is "studies on a few
+                // systems", level 4 is "results driving the CMMS". Coverage of the
+                // critical plant and the implemented share are those two levels, measured.
+                ...(m.rcmCoverageCriticalPct != null ? [{ label: 'A/B-critical assets with an RCM study', display: pctDisplay(m.rcmCoverageCriticalPct), pct: m.rcmCoverageCriticalPct }] : []),
+                ...(m.rcmImplementedPct != null ? [{ label: 'RCM decisions implemented as PMs', display: pctDisplay(m.rcmImplementedPct), pct: m.rcmImplementedPct }] : []),
             ],
-            'Money data lags the claimed decision-making maturity — cost capture at close-out and a downtime rate would make every ranking real.',
-            'Cost capture supports the claimed decision-making maturity.'),
+            'The decision record lags the claim — cost capture at close-out, a downtime rate, and RCM studies that actually reach the CMMS on the critical plant would make every ranking real.',
+            'Cost capture and the RCM programme support the claimed decision-making maturity.'),
         build('lifecycle',
             [{ label: 'Preventive share of work', display: pctDisplay(m.preventiveSharePct), pct: m.preventiveSharePct }],
             'The work mix is more reactive than the claimed delivery maturity implies — the PM programme is where the say-do gap closes.',

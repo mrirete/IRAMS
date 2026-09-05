@@ -10,7 +10,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Shield, Plus, Search, ArrowLeft, LayoutList, Layers, GitBranch, Wrench,
-  Users, Edit3, Trash2, Save, X, RefreshCw, CheckCircle, AlertTriangle,
+  Users, Edit3, Trash2, Save, X, RefreshCw, CheckCircle, AlertTriangle, Unlock,
 } from 'lucide-react';
 import { ScrollTabStrip } from '../eam/components/ui';
 import { rcmService } from '../eam/services/RCMService';
@@ -38,11 +38,12 @@ import { CRIT_COLORS, CONSEQUENCE_OPTIONS } from '../components/rcm/types';
 import {
   assessStudyData, canSpecialistDraft, canSpecialistCompleteRow,
   canSpecialistExpandFunction, canSpecialistRecommendStrategy,
-  canSpecialistReviewProgram, canGeneratePM, canApproveStudy, canCreatePMForDecision,
+  canSpecialistReviewProgram, canApproveStudy, canCreatePMForDecision,
   completableRows, isRowComplete, MIN_CONTEXT_CHARS,
 } from '../eam/services/rcmReadiness';
 import { normalizeRecommendation, recommendationToDecisionUpdates } from '../eam/services/rcmPlan';
-import type { RCMAssetContext } from '../eam/services/RCMService';
+import type { RCMAssetContext, RCMCoverageRow } from '../eam/services/RCMService';
+import { DatabaseService } from '../eam/services/DatabaseService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
 import { matchComponent, matchPart, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
 
@@ -126,6 +127,9 @@ export const RCMPage: React.FC = () => {
   const [liveAssetContext, setLiveAssetContext] = useState<RCMAssetContext | null>(null);
   // 0318 — the asset's registered components + BOM: what modes are pinned to.
   const [breakdown, setBreakdown] = useState<AssetBreakdown>(EMPTY_BREAKDOWN);
+  // 0319 — job plans a decision can execute with, and the coverage strip's rows.
+  const [libraryTasks, setLibraryTasks] = useState<{ id: string; code: string; title: string; estimatedDuration?: number }[]>([]);
+  const [coverage, setCoverage] = useState<RCMCoverageRow[]>([]);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -213,8 +217,9 @@ export const RCMPage: React.FC = () => {
   // ── Load Data ──────────────────────────────────────────
   const loadStudies = useCallback(async () => {
     setLoading(true);
-    const data = await rcmService.getStudies();
+    const [data, cov] = await Promise.all([rcmService.getStudies(), rcmService.getCoverage()]);
     setStudies(data);
+    setCoverage(cov);
     setLoading(false);
   }, []);
 
@@ -231,6 +236,9 @@ export const RCMPage: React.FC = () => {
     setDecisions(decs);
     const tasks = await rcmService.getTaskSummaries(id);
     setTaskSummaries(tasks);
+    DatabaseService.getInstance().getLibraryTasks()
+      .then(ts => setLibraryTasks(ts.map(t => ({ id: t.id, code: t.code, title: t.title, estimatedDuration: t.estimatedDuration }))))
+      .catch(() => setLibraryTasks([]));
 
     // The asset's CURRENT operating context — the Overview compares it with
     // the study's snapshot and offers a refresh when the register moved on.
@@ -364,6 +372,11 @@ export const RCMPage: React.FC = () => {
 
   const handleInlineStudyUpdate = (field: string, value: any) => {
     if (!selectedStudy) return;
+    // Leaving "approved" for anything but closed is a revision (0319 freeze).
+    if (field === 'status' && selectedStudy.status === 'approved' && value !== 'approved' && value !== 'closed') {
+      void handleReviseStudy();
+      return;
+    }
     // Approval is a record, not just a status — stamp who and when. Moving
     // OFF approved clears the stamp so a re-approval re-records it.
     const updates: Record<string, any> = { [field]: value };
@@ -910,8 +923,10 @@ export const RCMPage: React.FC = () => {
     [selectedStudy?.asset_id, decisionMap],
   );
 
-  const handleCreatePMForMode = async (fm: RCMFailureMode) => {
+  const handleCreatePMForMode = async (target: RCMFailureMode | string) => {
     if (!selectedStudy) return;
+    const fm = typeof target === 'string' ? failureModes.find(f => f.id === target) : target;
+    if (!fm) return;
     const decision = decisionMap.get(fm.id);
     const gate = canCreatePMForDecision(selectedStudy.asset_id, decision);
     if (!gate.ok) { showToast(gate.reason, 'error'); return; }
@@ -925,7 +940,7 @@ export const RCMPage: React.FC = () => {
       setDecisions(prev => prev.map(d => d.failure_mode_id === fm.id ? { ...d, recurring_work_id: res.pmCode } : d));
       showToast(res.meterCadence
         ? `PM ${res.pmCode} created — running-hours cadence, served by meter readings`
-        : `PM ${res.pmCode} created in Work Management`);
+        : `PM ${res.pmCode} created in Work Management${res.packageLabel ? ` · package ${res.packageLabel} of the asset's RCM strategy` : ''}`);
       const tasks = await rcmService.getTaskSummaries(selectedStudy.id);
       setTaskSummaries(tasks);
     } else {
@@ -950,31 +965,42 @@ export const RCMPage: React.FC = () => {
     setAiLoading(null);
   };
 
-  const pmGate = useMemo(
-    () => canGeneratePM(selectedStudy?.asset_id, decisions),
-    [selectedStudy?.asset_id, decisions],
-  );
+  /**
+   * An on-condition or predictive decision is a paper task until a measurement
+   * point exists behind it. Create the reading definition here, named after
+   * the failure mode, with the bands left for the Condition Data page.
+   */
+  const handleCreateReadingPoint = async (fm: RCMFailureMode) => {
+    if (!selectedStudy?.asset_id) return;
+    const decision = decisionMap.get(fm.id);
+    const tech = (decision?.ai_recommendation as { suggested_technology?: string } | null)?.suggested_technology;
+    const name = `${tech ? `${tech} — ` : ''}${fm.failure_mode_description}`.slice(0, 80);
+    const slug = name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'CONDITION';
+    try {
+      await DatabaseService.getInstance().addReadingDefinition({
+        assetId: selectedStudy.asset_id,
+        readingTypeCode: `${slug}_${Date.now().toString(36).toUpperCase()}`,
+        name,
+        unit: '—',
+        category: 'CONDITION',
+        pfIntervalDays: null,
+        limitSource: null,
+      });
+      showToast(`Reading point "${name}" created — set its unit and alarm bands under Condition Data`);
+    } catch (e) {
+      showToast(`Reading point not created — ${e instanceof Error ? e.message : String(e)}`, 'error');
+    }
+  };
 
-  const handleGeneratePM = async () => {
+  /** Reopen an approved study: revision + 1, back to in progress. The 0319 trigger refuses every other edit while approved. */
+  const handleReviseStudy = async () => {
     if (!selectedStudy) return;
-    if (!pmGate.ok) { showToast(pmGate.reason, 'error'); return; }
-    setAiLoading('pm');
-    const res = await rcmService.generatePMSchedule(selectedStudy.id);
-    setAiLoading(null);
-    const n = res.created.length;
-    if (n > 0) {
-      const meter = res.created.filter(c => c.meterCadence).length;
-      showToast(
-        `${n} PM task${n !== 1 ? 's' : ''} created in Work Management`
-        + (meter ? ` (${meter} on running-hours meters)` : '')
-        + (res.failed.length ? ` · ${res.failed.length} skipped — see the plan` : ''),
-      );
-      await loadStudyDetail(selectedStudy.id);
-    } else if (res.failed.length > 0) {
-      const first = res.failed[0];
-      showToast(`No PM created — ${first.failureMode}: ${first.reason}${res.failed.length > 1 ? ` (+${res.failed.length - 1} more)` : ''}`, 'error');
+    const updated = await rcmService.reviseStudy(selectedStudy);
+    if (updated) {
+      setSelectedStudy(prev => (prev ? { ...prev, ...updated } : updated));
+      showToast(`Study reopened as revision ${updated.revision ?? (selectedStudy.revision ?? 1) + 1} — decisions can be edited again`);
     } else {
-      showToast('Nothing to generate — every proactive decision already has its PM', 'error');
+      showToast('Could not reopen the study', 'error');
     }
   };
 
@@ -1031,6 +1057,18 @@ export const RCMPage: React.FC = () => {
               <span className={`text-[10px] uppercase font-bold px-2.5 py-1 rounded-lg border ${CRIT_COLORS[selectedStudy.criticality_rank || 'C']}`}>
                 Criticality {selectedStudy.criticality_rank || '—'}
               </span>
+              {(selectedStudy.revision ?? 1) > 1 && (
+                <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-500 border border-slate-200" title="Study revision (0319)">rev {selectedStudy.revision}</span>
+              )}
+              {selectedStudy.status === 'approved' && (
+                <button
+                  onClick={() => void handleReviseStudy()}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100"
+                  title="Approved studies are frozen — reopen as a new revision to edit decisions"
+                >
+                  <Unlock size={13} /> Revise
+                </button>
+              )}
               <select value={selectedStudy.status} onChange={e => handleInlineStudyUpdate('status', e.target.value)}
                 className="text-xs font-medium bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-600 focus:outline-none focus:border-accent-cyan appearance-none cursor-pointer">
                 <option value="draft">Draft</option>
@@ -1163,6 +1201,12 @@ export const RCMPage: React.FC = () => {
           onSearchChange={setSearchQuery}
           onSelectStudy={handleSelectStudy}
           onCreateStudy={() => setShowNewStudy(true)}
+          coverage={coverage}
+          onStartStudyForAsset={asset => {
+            setNewStudyForm({ title: `RCM — ${asset.tag}${asset.name ? ` ${asset.name}` : ''}`.trim(), asset_id: asset.id, operating_context: '', study_type: 'classical' });
+            if (hasAssetAccess) setAssetInputMode('search');
+            setShowNewStudy(true);
+          }}
           onEditStudy={handleOpenEditStudy}
           onDeleteStudy={(study) => setConfirmDelete({ type: 'study', id: study.id, name: study.title })}
           onDuplicateStudy={async (study) => {
@@ -1223,6 +1267,9 @@ export const RCMPage: React.FC = () => {
           onDismissRecommendation={handleDismissRecommendation}
           onCreatePM={handleCreatePMForMode}
           pmGateFor={pmGateFor}
+          libraryTasks={libraryTasks}
+          onCreateReadingPoint={handleCreateReadingPoint}
+          locked={selectedStudy.status === 'approved'}
         />
       )}
 
@@ -1234,8 +1281,8 @@ export const RCMPage: React.FC = () => {
           decisions={decisionMap}
           aiLoading={aiLoading}
           aiReport={aiReport}
-          onGeneratePM={handleGeneratePM}
-          pmGate={pmGate}
+          onCreatePM={id => void handleCreatePMForMode(id)}
+          pmGateFor={id => canCreatePMForDecision(selectedStudy.asset_id, decisionMap.get(id))}
           onAIOptimize={handleAIOptimize}
           optimizeGate={optimizeGate}
           onGoToStrategy={() => setActiveTab('decisions')}

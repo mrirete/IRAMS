@@ -52,9 +52,9 @@ export function checkDecisionAgainstPattern(d: RCMDecision, v: PatternVerdict): 
     // check never flagged a time-based task on a random-failure asset.
     const code = d.recommended_strategy_code;
     const timeBased = !!((d.restoration_applicable && d.scheduled_restoration_task) || (d.discard_applicable && d.scheduled_discard_task))
-        || code === 'PM_TIME' || code === 'COMBINATION';
+        || code === 'PM_TIME';
     const onCondition = !!(d.on_condition_applicable && d.on_condition_task)
-        || code === 'PM_CONDITION' || code === 'PM_PREDICTIVE' || code === 'COMBINATION';
+        || code === 'PM_CONDITION' || code === 'PM_PREDICTIVE';
 
     if (v.pattern === 'unknown' || (!timeBased && !onCondition)) {
         return { failureModeId: d.failure_mode_id, support: 'neutral', note: v.pattern === 'unknown' ? 'no life data to check against' : 'no applicable task selected' };

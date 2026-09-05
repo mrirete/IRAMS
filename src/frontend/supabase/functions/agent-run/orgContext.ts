@@ -49,6 +49,8 @@ export interface OrgContextRow {
 export interface LiveFacts {
   asset_count: number;
   criticality_mix: Record<string, number>;
+  /** RCM programme (sem_rcm_coverage, 0319) — null until the view exists. */
+  rcm: { studies: number; critical_total: number; critical_covered: number; proactive_decisions: number; pms_generated: number } | null;
   downtime_cost_per_hour: number | null;
   currency: string | null;
   company_name: string | null;
@@ -62,25 +64,40 @@ export interface OrgContext {
 
 // deno-lint-ignore no-explicit-any
 export async function loadOrgContext(db: any): Promise<OrgContext> {
-  const [profileQ, companyQ, assetsQ] = await Promise.all([
+  const [profileQ, companyQ, assetsQ, rcmQ] = await Promise.all([
     db.from("org_context").select("*").order("updated_at", { ascending: false }).limit(1),
     db.from("companies").select("name, currency, tier, downtime_cost_per_hour").limit(1),
-    db.from("assets").select("criticality").limit(20000),
+    db.from("assets").select("id, criticality").limit(20000),
+    db.from("sem_rcm_coverage").select("asset_id, status, proactive_count, pm_count"),
   ]);
 
   const profile = (profileQ?.data?.[0] as OrgContextRow | undefined) ?? null;
   const company = companyQ?.data?.[0] ?? null;
-  const assets: Array<{ criticality: string | null }> = assetsQ?.data ?? [];
+  const assets: Array<{ id: string; criticality: string | null }> = assetsQ?.data ?? [];
   const mix: Record<string, number> = {};
   for (const a of assets) {
     const k = (a.criticality ?? "unrated").toString().toUpperCase();
     mix[k] = (mix[k] ?? 0) + 1;
+  }
+  let rcm: LiveFacts["rcm"] = null;
+  if (!rcmQ?.error) {
+    const rows: Array<{ asset_id: string | null; status: string; proactive_count: number; pm_count: number }> = rcmQ?.data ?? [];
+    const covered = new Set(rows.filter((r) => r.asset_id && (r.status === "review" || r.status === "approved")).map((r) => r.asset_id));
+    const critical = assets.filter((a) => ["A", "B"].includes((a.criticality ?? "").toString().toUpperCase()));
+    rcm = {
+      studies: rows.length,
+      critical_total: critical.length,
+      critical_covered: critical.filter((a) => covered.has(a.id)).length,
+      proactive_decisions: rows.reduce((n, r) => n + (Number(r.proactive_count) || 0), 0),
+      pms_generated: rows.reduce((n, r) => n + (Number(r.pm_count) || 0), 0),
+    };
   }
   return {
     profile,
     facts: {
       asset_count: assets.length,
       criticality_mix: mix,
+      rcm,
       downtime_cost_per_hour: company?.downtime_cost_per_hour ?? null,
       currency: company?.currency ?? null,
       company_name: company?.name ?? null,
@@ -110,6 +127,13 @@ export function formatOrgContextBlock(ctx: OrgContext): string {
           ? ` (criticality ${Object.entries(f.criticality_mix).map(([k, v]) => `${k}:${v}`).join(" ")})`
           : "") +
         (f.downtime_cost_per_hour ? `; downtime valued at ${f.currency ?? ""} ${f.downtime_cost_per_hour}/h` : "; no downtime cost rate configured — cost-of-downtime claims must say so"),
+    );
+  }
+  if (f.rcm) {
+    lines.push(
+      f.rcm.studies === 0
+        ? "RCM programme: no studies on record (measured)"
+        : `RCM programme (measured): ${f.rcm.studies} studies; ${f.rcm.critical_covered}/${f.rcm.critical_total} A/B-critical assets covered by a study in review or approved; ${f.rcm.pms_generated}/${f.rcm.proactive_decisions} proactive decisions implemented as PMs in Work Management`,
     );
   }
   if (p) {
@@ -146,7 +170,7 @@ export function formatOrgContextBlock(ctx: OrgContext): string {
 export const getOrgContext: AgentTool = {
   name: "get_org_context",
   description:
-    "Read the organisation's context record (ISO 55001 §4): industry, asset class, stated objectives, key risks and opportunities, asset-management governance status (policy, SAMP, roles, risk framework, budget alignment), self-reported maturity by dimension from the onboarding audit (intake and the guided maturity checklist) with the weakest dimension and quick wins, plus measured register facts (asset count, criticality mix, downtime cost rate). Use it to tailor advice to what this organisation is trying to achieve and where it is weakest.",
+    "Read the organisation's context record (ISO 55001 §4): industry, asset class, stated objectives, key risks and opportunities, asset-management governance status (policy, SAMP, roles, risk framework, budget alignment), self-reported maturity by dimension from the onboarding audit (intake and the guided maturity checklist) with the weakest dimension and quick wins, plus measured register facts (asset count, criticality mix, downtime cost rate, RCM programme coverage of the critical plant and how much of it reached Work Management). Use it to tailor advice to what this organisation is trying to achieve and where it is weakest.",
   parameters: { type: "object", properties: {}, required: [] },
   tier: 1,
   async run(_args, ctx: ToolContext): Promise<ToolResult> {

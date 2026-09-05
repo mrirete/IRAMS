@@ -1465,7 +1465,56 @@ const findPositiveDeviants: AgentTool = {
   },
 };
 
+// ── RCM coverage (sem_rcm_coverage, 0319) ────────────────────────────────────
+// Which assets have an RCM study, how far each study got, and how much of the
+// decided programme reached Work Management. Reads the same view the RCM
+// landing page and the maturity say-do card read, so every surface agrees.
+const getRcmCoverage: AgentTool = {
+  name: "get_rcm_coverage",
+  description:
+    "RCM programme coverage: every RCM study with its asset (tag, criticality), status and revision, counts of failure modes / consequences classified / strategies decided / proactive decisions / PMs generated in Work Management, plus the A- and B-critical assets that have NO study. Use it before claiming anything about maintenance-strategy maturity, before recommending an RCM study (do not recommend one that exists), and to name the critical assets whose decided tasks never reached the CMMS.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: { type: "string", description: "Limit to one asset tag (optional)." },
+      status: { type: "string", description: "Limit to one study status: draft | in_progress | review | approved | closed (optional)." },
+    },
+    required: [],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    let q = ctx.db.from("sem_rcm_coverage").select("*");
+    if (typeof args?.asset_tag === "string" && args.asset_tag.trim()) q = q.ilike("asset_tag", args.asset_tag.trim());
+    if (typeof args?.status === "string" && args.status.trim()) q = q.eq("status", args.status.trim());
+    const { data, error } = await q;
+    if (error) throw new Error(`sem_rcm_coverage query failed: ${error.message}`);
+    const rows = (data ?? []) as Array<{ study_id: string; title: string; status: string; asset_id: string | null; asset_tag: string | null; criticality: string | null; proactive_count: number; pm_count: number }>;
+
+    const { data: critAssets } = await ctx.db.from("assets").select("id, tag, name, criticality").in("criticality", ["A", "B"]).limit(5000);
+    const covered = new Set(rows.filter((r) => r.asset_id && (r.status === "review" || r.status === "approved")).map((r) => r.asset_id));
+    const started = new Set(rows.filter((r) => r.asset_id).map((r) => r.asset_id));
+    const critical = (critAssets ?? []) as Array<{ id: string; tag: string; name: string; criticality: string }>;
+    const uncovered = critical.filter((a) => !started.has(a.id)).slice(0, 40);
+    const proactive = rows.reduce((n, r) => n + (Number(r.proactive_count) || 0), 0);
+    const implemented = rows.reduce((n, r) => n + (Number(r.pm_count) || 0), 0);
+
+    for (const r of rows) ctx.sources.push({ kind: "rcm_study", ref: r.study_id, label: `RCM study ${r.title}${r.asset_tag ? ` (${r.asset_tag})` : ""}` });
+    return {
+      data: {
+        studies: rows,
+        critical_assets: { total: critical.length, covered_review_or_approved: critical.filter((a) => covered.has(a.id)).length, with_any_study: critical.filter((a) => started.has(a.id)).length },
+        uncovered_critical_assets: uncovered,
+        implementation: { proactive_decisions: proactive, pms_in_work_management: implemented, implemented_pct: proactive ? Math.round((implemented / proactive) * 100) : null },
+        note: "Coverage counts a study in review or approved. Level 3 of the maturity question on RCM/FMEA is studies on a few systems; level 4 is results driving the CMMS — implementation.implemented_pct is that distinction, measured.",
+      },
+      sources: [{ kind: "rcm_study", ref: "sem_rcm_coverage", label: `${rows.length} RCM studies over ${critical.length} A/B-critical assets` }],
+      warnings: rows.length === 0 ? ["No RCM studies on record for this organisation."] : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
+  [getRcmCoverage.name]: getRcmCoverage,
   [queryPid.name]: queryPid,
   [searchManuals.name]: searchManuals,
   [analyzeWeibull.name]: analyzeWeibull,

@@ -34,6 +34,18 @@ describe('verdictFor', () => {
 });
 
 describe('computeSayDoGap', () => {
+    it('adds the RCM programme proxies to the decisions group only when measured', () => {
+        const none = computeSayDoGap(analysisWith({ decisions: 4 }), signals({ costCoveragePct: 90, downtimeRateConfigured: true }));
+        expect(none.find(g => g.key === 'decisions')!.proxies.map(p => p.label)).not.toContain('RCM decisions implemented as PMs');
+        const withRcm = computeSayDoGap(analysisWith({ decisions: 4 }), signals({ costCoveragePct: 90, downtimeRateConfigured: true, rcmCoverageCriticalPct: 10, rcmImplementedPct: 5 }));
+        const d = withRcm.find(g => g.key === 'decisions')!;
+        expect(d.proxies.map(p => p.label)).toContain('A/B-critical assets with an RCM study');
+        // 90 / 100 / 10 / 5 → mean 51 ≥ 40 (half of the 80% a score-4 claims) → still supports; the strip shows the weak proxies
+        expect(d.verdict).toBe('supports');
+        const weak = computeSayDoGap(analysisWith({ decisions: 4 }), signals({ costCoveragePct: 20, downtimeRateConfigured: false, rcmCoverageCriticalPct: 10, rcmImplementedPct: 5 }));
+        expect(weak.find(g => g.key === 'decisions')!.verdict).toBe('questions');
+    });
+
     it('returns all six GFMAM groups in bank order', () => {
         expect(computeSayDoGap(analysisWith({}), signals()).map(g => g.key))
             .toEqual(['strategy', 'decisions', 'lifecycle', 'information', 'people', 'risk']);

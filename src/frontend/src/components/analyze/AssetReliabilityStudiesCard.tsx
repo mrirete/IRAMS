@@ -11,6 +11,9 @@ import { useNavigate, Link } from 'react-router-dom';
 import { FlaskConical, TrendingUp, Wrench, ArrowUpRight, ArrowRight } from 'lucide-react';
 import analyzeService from '../../eam/services/AnalyzeService';
 import type { ReliabilityAnalysis } from '../../eam/services/AnalyzeService';
+import { rcmService } from '../../eam/services/RCMService';
+import type { RCMCoverageRow } from '../../eam/services/RCMService';
+import { STATUS_COLORS } from '../rcm/types';
 
 interface Props {
     asset: { id: string; tag?: string; name?: string; criticality?: string };
@@ -29,6 +32,14 @@ export const AssetReliabilityStudiesCard: React.FC<Props> = ({ asset }) => {
     const navigate = useNavigate();
     const [analyses, setAnalyses] = useState<ReliabilityAnalysis[]>([]);
     const [loading, setLoading] = useState(true);
+    // Decide · RCM — the study (and the PMs it produced) belong on the dossier
+    // beside the Weibull fits: the same asset, the same loop.
+    const [rcm, setRcm] = useState<RCMCoverageRow[]>([]);
+    useEffect(() => {
+        let alive = true;
+        rcmService.getCoverage().then(rows => { if (alive) setRcm(rows.filter(r => r.asset_id === asset.id)); }).catch(() => undefined);
+        return () => { alive = false; };
+    }, [asset.id]);
 
     useEffect(() => {
         let alive = true;
@@ -144,6 +155,40 @@ export const AssetReliabilityStudiesCard: React.FC<Props> = ({ asset }) => {
                     )}
                 </div>
             )}
+
+            {/* RCM studies (sem_rcm_coverage, 0319) */}
+            <div className="border-t border-slate-100">
+                <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">RCM · Decide</span>
+                    {rcm.length === 0 && (
+                        <button
+                            onClick={() => navigate('/rcm', { state: { seed: { asset: { id: asset.id, name: asset.name || '', tag: asset.tag || '' } } } })}
+                            className="text-[10px] font-bold text-primary-600 hover:underline"
+                        >
+                            Start an RCM study →
+                        </button>
+                    )}
+                </div>
+                {rcm.length > 0 && (
+                    <div className="divide-y divide-slate-50">
+                        {rcm.slice(0, 3).map(r => {
+                            const sc = STATUS_COLORS[r.status] || STATUS_COLORS.draft;
+                            return (
+                                <Link key={r.study_id} to={`/rcm/${r.study_id}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors">
+                                    <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border shrink-0 ${sc.bg} ${sc.text} ${sc.border}`}>{r.status.replace('_', ' ')}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-medium text-slate-700 truncate">{r.title}{(r.revision || 1) > 1 ? ` · rev ${r.revision}` : ''}</p>
+                                        <p className="text-[10px] text-slate-400">
+                                            {r.failure_mode_count} failure mode{r.failure_mode_count !== 1 ? 's' : ''} · {r.strategy_count} decided · {r.pm_count}/{r.proactive_count} PM{r.proactive_count !== 1 ? 's' : ''} in Work Management
+                                        </p>
+                                    </div>
+                                    <ArrowUpRight size={12} className="text-slate-300 shrink-0" />
+                                </Link>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

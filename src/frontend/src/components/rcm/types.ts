@@ -6,7 +6,7 @@
  */
 import type {
   RCMStudy, RCMFunction, RCMFailureMode, RCMDecision,
-  RCMTaskSummary, AIRecommendation
+  RCMTaskSummary, AIRecommendation, RCMCoverageRow,
 } from '../../eam/services/RCMService';
 import type { StudyCollaborator } from '../../eam/services/AnalyzeService';
 import type { AssetBreakdown } from '../../lib/rcmBreakdown';
@@ -38,8 +38,13 @@ export const STRATEGY_LABELS: Record<string, { label: string; color: string; ico
   PM_PREDICTIVE:{ label: 'Predictive',      color: 'bg-violet-100 text-violet-700',  icon: '🤖', hint: 'On-condition via monitoring technology (vibration, thermography, oil, sensors)' },
   RTF:          { label: 'Run-to-Failure',  color: 'bg-orange-100 text-orange-700',  icon: '⚡', hint: 'No scheduled task — repair on failure (never for safety/environmental consequences)' },
   REDESIGN:     { label: 'Redesign',        color: 'bg-red-100 text-red-700',        icon: '🔧', hint: 'Default action: change the design, procedure or operating context' },
-  COMBINATION:  { label: 'Combined',        color: 'bg-emerald-100 text-emerald-700',icon: '🔀', hint: 'More than one task type together (e.g. on-condition plus scheduled discard)' },
 };
+
+/** Retired codes still on old rows — shown, never offered. */
+export const LEGACY_STRATEGY_LABELS: Record<string, { label: string; color: string; icon: string; hint: string }> = {
+  COMBINATION: { label: 'Combined (retired)', color: 'bg-slate-100 text-slate-500', icon: '🔀', hint: 'Retired 2026-09-05 — choose the one strategy that applies' },
+};
+export const strategyLabel = (code: string | null | undefined) => (code ? STRATEGY_LABELS[code] || LEGACY_STRATEGY_LABELS[code] || null : null);
 
 /** Selector pill styling per strategy: resting vs chosen. */
 export const STRATEGY_TONES: Record<string, { idle: string; selected: string; dot: string }> = {
@@ -48,7 +53,6 @@ export const STRATEGY_TONES: Record<string, { idle: string; selected: string; do
   PM_PREDICTIVE:{ idle: 'border-violet-200 text-violet-700 hover:bg-violet-50', selected: 'bg-violet-600 border-violet-600 text-white',   dot: 'bg-violet-500' },
   RTF:          { idle: 'border-orange-200 text-orange-700 hover:bg-orange-50', selected: 'bg-orange-500 border-orange-500 text-white',   dot: 'bg-orange-500' },
   REDESIGN:     { idle: 'border-red-200 text-red-700 hover:bg-red-50',          selected: 'bg-red-600 border-red-600 text-white',         dot: 'bg-red-500' },
-  COMBINATION:  { idle: 'border-emerald-200 text-emerald-700 hover:bg-emerald-50', selected: 'bg-emerald-600 border-emerald-600 text-white', dot: 'bg-emerald-500' },
 };
 
 // Evident failure consequence cards (shown when Hidden = No)
@@ -118,6 +122,10 @@ export interface RCMDashboardProps {
   onDeleteStudy: (study: RCMStudy) => void;
   /** Clone worksheet + decisions as a fresh draft (no PM links, no approval). */
   onDuplicateStudy: (study: RCMStudy) => void;
+  /** sem_rcm_coverage rows (0319) for the coverage strip; empty before the migration. */
+  coverage?: RCMCoverageRow[];
+  /** Coverage strip: open the New Study form seeded with an uncovered critical asset. */
+  onStartStudyForAsset?: (asset: { id: string; tag: string; name: string }) => void;
 }
 
 // The FMEA worksheet owns its own props (see RCMFMEATable.tsx) — they include
@@ -152,6 +160,12 @@ export interface RCMDecisionWizardProps {
   /** Per-decision PM creation — the gate says why it is locked; the page re-checks. */
   onCreatePM: (fm: RCMFailureMode) => void;
   pmGateFor: (fm: RCMFailureMode) => { ok: boolean; missing: string[]; reason: string };
+  /** Task Library plans the decision can execute with (0319). */
+  libraryTasks?: { id: string; code: string; title: string; estimatedDuration?: number }[];
+  /** Condition / predictive decisions create the measurement point they depend on. */
+  onCreateReadingPoint?: (fm: RCMFailureMode) => void;
+  /** Approved studies are frozen (0319) — the wizard says so instead of failing saves. */
+  locked?: boolean;
 }
 
 export interface RCMTaskMatrixProps {
@@ -160,9 +174,9 @@ export interface RCMTaskMatrixProps {
   decisions: Map<string, RCMDecision>;
   aiLoading: string | null;
   aiReport: string | null;
-  onGeneratePM: () => void;
-  /** PM generation creates real work records — gated on asset + actionable decisions. */
-  pmGate: { ok: boolean; missing: string[]; reason: string };
+  /** Per-failure-mode PM creation — the plan is generated row by row, like a WO. */
+  onCreatePM: (failureModeId: string) => void;
+  pmGateFor: (failureModeId: string) => { ok: boolean; missing: string[]; reason: string };
   /** Specialist program review — fires only when optimizeGate.ok. */
   onAIOptimize: () => void;
   optimizeGate: { ok: boolean; missing: string[]; reason: string };

@@ -1,23 +1,25 @@
 /**
  * RCMTaskMatrix — the Maintenance Plan: what the strategy decisions produce
  * One row per failure mode: consequence → chosen strategy → task, interval,
- * owner — and the PM it became in Work Management. The Specialist's program
- * review lives here too (gated: no strategies, nothing to review).
+ * owner — and the PM it became in Work Management. PMs are created per row,
+ * the way a corrective WO is raised per row: the plan is built one decision
+ * at a time, with the reason spelled out when a row is not ready. The
+ * Specialist's program review lives here too (gated: no strategies, nothing
+ * to review).
  */
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Wrench, Sparkles, Lock, RefreshCw, CheckCircle, X,
-  AlertTriangle, BarChart3, ArrowUpRight, ArrowRight,
+  AlertTriangle, BarChart3, ArrowUpRight, ArrowRight, Plus,
 } from 'lucide-react';
 import type { RCMTaskMatrixProps } from './types';
-import { STRATEGY_LABELS } from './types';
-import { canCreatePMForDecision } from '../../eam/services/rcmReadiness';
-import { strategyProducesPM } from '../../eam/services/rcmPlan';
+import { strategyLabel } from './types';
+import { strategyProducesPM, parseIntervalText } from '../../eam/services/rcmPlan';
 
 export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
   study, taskSummaries, decisions, aiLoading, aiReport,
-  onGeneratePM, pmGate, onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport,
+  onCreatePM, pmGateFor, onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport,
 }) => {
   // Strategy distribution
   const stratDist = useMemo(() => {
@@ -28,7 +30,7 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
       counts[key] = (counts[key] || 0) + 1;
     });
     Object.entries(counts).forEach(([code, count]) => {
-      const s = STRATEGY_LABELS[code] || { label: code, color: 'bg-slate-100 text-slate-500', icon: '❓' };
+      const s = strategyLabel(code) || { label: code === 'UNRESOLVED' ? 'No strategy' : code, color: 'bg-slate-100 text-slate-500', icon: '❓' };
       dist.push({ code, label: s.label, color: s.color, icon: s.icon, count });
     });
     return dist.sort((a, b) => b.count - a.count);
@@ -37,6 +39,7 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
   const maxCount = Math.max(...stratDist.map(s => s.count), 1);
   const resolvedCount = taskSummaries.filter(t => t.recommended_strategy_code).length;
   const pmCount = taskSummaries.filter(t => t.recurring_work_id).length;
+  const readyCount = taskSummaries.filter(t => !t.recurring_work_id && pmGateFor(t.failure_mode_id).ok).length;
   const wmQuery = `RCM-${study.id.slice(0, 8)}`;
 
   // Corrective WO drill-through — seed asset only when it's a register UUID
@@ -45,23 +48,17 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
   const raiseWOUrl = (desc: string) =>
     `/work-orders?action=create&type=CM${assetSeed}&title=${encodeURIComponent(`Corrective — ${desc}`)}`;
 
+  const intervalCell = (raw: string | null) => {
+    const p = parseIntervalText(raw);
+    if (!raw) return <span className="text-slate-300">—</span>;
+    if (p.n === null) return <span className="text-amber-700" title={raw}>needs value + unit</span>;
+    return <span className="whitespace-nowrap">{p.n} {p.unit}</span>;
+  };
+
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
       {/* Actions Bar */}
       <div className="flex items-center gap-3 flex-wrap">
-        <button
-          onClick={onGeneratePM}
-          aria-disabled={aiLoading === 'pm'}
-          title={pmGate.reason}
-          className={`flex items-center gap-2 px-5 py-2.5 font-bold rounded-lg text-sm transition-colors ${
-            pmGate.ok
-              ? 'bg-accent-cyan hover:bg-primary-400 text-brand-900 shadow-[0_0_15px_rgba(6,182,212,0.2)]'
-              : 'bg-slate-100 text-slate-500 border border-slate-200 hover:bg-slate-200'
-          }`}
-        >
-          {aiLoading === 'pm' ? <RefreshCw size={14} className="animate-spin" /> : pmGate.ok ? <Wrench size={14} /> : <Lock size={14} />}
-          Generate PM Schedule
-        </button>
         <button
           onClick={onAIOptimize}
           aria-disabled={aiLoading === 'optimize'}
@@ -83,11 +80,9 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
             View {pmCount} PM{pmCount !== 1 ? 's' : ''} in Work Mgmt <ArrowUpRight size={13} />
           </Link>
         )}
-        <div className="ml-auto flex items-center gap-1.5">
-          <BarChart3 size={14} className="text-slate-400" />
-          <span className="text-xs text-slate-500 font-medium">
-            <strong className="text-slate-700">{resolvedCount}</strong> / {taskSummaries.length} tasks resolved
-          </span>
+        <div className="ml-auto flex items-center gap-3 text-xs text-slate-500 font-medium">
+          <span className="flex items-center gap-1.5"><BarChart3 size={14} className="text-slate-400" /><strong className="text-slate-700">{resolvedCount}</strong> / {taskSummaries.length} decided</span>
+          <span><strong className="text-slate-700">{pmCount}</strong> PM{pmCount !== 1 ? 's' : ''}{readyCount > 0 ? <span className="text-primary-600"> · {readyCount} ready</span> : null}</span>
         </div>
       </div>
 
@@ -134,8 +129,12 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
             </thead>
             <tbody>
               {taskSummaries.map((task, idx) => {
-                const style = STRATEGY_LABELS[task.recommended_strategy_code || ''] || { label: '—', color: 'bg-slate-100 text-slate-500', icon: '' };
+                const style = strategyLabel(task.recommended_strategy_code) || { label: '—', color: 'bg-slate-100 text-slate-500', icon: '' };
                 const missing = !task.recommended_strategy_code;
+                const gate = pmGateFor(task.failure_mode_id);
+                const busy = aiLoading === `pm-${task.failure_mode_id}`;
+                const stale = !!task.recurring_work_id && !!task.pm_created_at && !!task.decision_updated_at
+                  && new Date(task.decision_updated_at).getTime() > new Date(task.pm_created_at).getTime() + 5000;
                 return (
                   <tr
                     key={task.failure_mode_id}
@@ -153,34 +152,48 @@ export const RCMTaskMatrix: React.FC<RCMTaskMatrixProps> = ({
                     <td className="px-4 py-3 text-slate-500">{task.consequence_code || '—'}</td>
                     <td className="px-4 py-3">
                       {task.recommended_strategy_code ? (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${style.color}`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md whitespace-nowrap ${style.color}`}>
                           {style.icon} {style.label}
                         </span>
                       ) : (
                         <span className="text-[10px] text-slate-400 italic">No strategy</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-slate-600 max-w-[200px] truncate">{task.task_description || '—'}</td>
-                    <td className="px-4 py-3 text-slate-500">{task.task_interval || '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 max-w-[260px]"><span className="line-clamp-2" title={task.task_description || ''}>{task.task_description || '—'}</span></td>
+                    <td className="px-4 py-3 text-slate-500">{intervalCell(task.task_interval)}</td>
                     <td className="px-4 py-3 text-slate-500">{task.task_owner_craft || '—'}</td>
                     <td className="px-4 py-3 text-center">
                       {task.recurring_work_id ? (
-                        <Link
-                          to={`/recurring-work?q=${task.recurring_work_id}`}
-                          title={`Open ${task.recurring_work_id} in Work Management`}
-                          className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 hover:underline"
+                        <div className="inline-flex flex-col items-center gap-0.5">
+                          <Link
+                            to={`/recurring-work?q=${task.recurring_work_id}`}
+                            title={`Open ${task.recurring_work_id} in Work Management`}
+                            className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 hover:underline"
+                          >
+                            <CheckCircle size={14} />
+                            <ArrowUpRight size={10} />
+                          </Link>
+                          {stale && (
+                            <span className="text-[9px] font-bold text-amber-600 whitespace-nowrap" title="The decision was edited after this PM was generated — update the PM in Work Management or revise the study">changed since</span>
+                          )}
+                        </div>
+                      ) : strategyProducesPM(task.recommended_strategy_code) ? (
+                        <button
+                          type="button"
+                          onClick={() => onCreatePM(task.failure_mode_id)}
+                          aria-disabled={busy}
+                          title={gate.reason}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-colors ${
+                            gate.ok
+                              ? 'bg-accent-cyan/10 border-accent-cyan/40 text-slate-800 hover:bg-accent-cyan/20'
+                              : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'
+                          }`}
                         >
-                          <CheckCircle size={14} />
-                          <ArrowUpRight size={10} />
-                        </Link>
-                      ) : strategyProducesPM(task.recommended_strategy_code) ? (() => {
-                        // Say why this row has no PM yet — the generator never skips silently.
-                        const g = canCreatePMForDecision(study.asset_id, decisions.get(task.failure_mode_id));
-                        return g.ok
-                          ? <span className="text-[10px] font-bold text-primary-600" title={g.reason}>ready</span>
-                          : <span className="inline-flex items-center gap-0.5 text-amber-600" title={g.reason}><Lock size={11} /><span className="text-[10px]">{g.missing[0]?.split(' (')[0]}</span></span>;
-                      })() : (
-                        <span className="text-slate-300" title={task.recommended_strategy_code === 'RTF' ? 'Run-to-Failure schedules nothing' : task.recommended_strategy_code === 'REDESIGN' ? 'Redesign is a one-off change, not a PM' : 'No strategy yet'}>—</span>
+                          {busy ? <RefreshCw size={11} className="animate-spin" /> : gate.ok ? <Plus size={11} /> : <Lock size={11} />}
+                          {gate.ok ? 'Create' : (gate.missing[0]?.split(' (')[0] || 'Not ready')}
+                        </button>
+                      ) : (
+                        <span className="text-slate-300" title={task.recommended_strategy_code === 'RTF' ? 'Run-to-Failure schedules nothing' : task.recommended_strategy_code === 'REDESIGN' ? 'Redesign is a one-off change, not a PM' : task.recommended_strategy_code ? '"Combined" is retired — choose one strategy' : 'No strategy yet'}>—</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-center">

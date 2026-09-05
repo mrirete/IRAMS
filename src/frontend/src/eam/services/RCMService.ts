@@ -14,7 +14,7 @@ import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
 import { buildPMStrategy } from '../lib/pmStrategy';
 import {
   buildPMFromDecision, normalizeRecommendation, pmCodeFor, strategyProducesPM,
-  type AIRecommendation,
+  type AIRecommendation, type JobPlanForPM, type SpareMatch,
 } from './rcmPlan';
 import {
   normalizeContext, composeOperatingContext, takeSnapshot,
@@ -63,6 +63,8 @@ export interface RCMStudy {
   notes: string | null;
   /** What the study assumed about the asset's operating context (0317, SAE JA1011 §5.1). */
   context_snapshot?: ContextSnapshot | null;
+  /** 0319 — bumped by Revise on an approved study; PMs stamp origin.study_revision. */
+  revision?: number;
   created_at: string;
   updated_at: string;
   // Joined fields (not in DB)
@@ -147,6 +149,8 @@ export interface RCMDecision {
   justification: string | null;
   ai_recommendation: AIRecommendation | null;
   recurring_work_id: string | null;
+  /** 0319 — Task Library job plan the generated PM carries (steps, roles, parts). */
+  task_library_item_id?: string | null;
   spares_requirements: SpareRequirement[];
   created_at: string;
   updated_at: string;
@@ -171,6 +175,29 @@ export interface RCMTaskSummary {
   task_owner_craft: string | null;
   spares_requirements: SpareRequirement[];
   recurring_work_id: string | null;
+  /** For the "changed since its PM was generated" flag on the plan. */
+  decision_updated_at?: string | null;
+  pm_created_at?: string | null;
+}
+
+/** One row of sem_rcm_coverage (0319). */
+export interface RCMCoverageRow {
+  study_id: string;
+  title: string;
+  status: RCMStudy['status'];
+  revision: number;
+  asset_id: string | null;
+  asset_tag: string | null;
+  asset_name: string | null;
+  criticality: string | null;
+  approved_at: string | null;
+  updated_at: string;
+  function_count: number;
+  failure_mode_count: number;
+  decided_count: number;
+  strategy_count: number;
+  proactive_count: number;
+  pm_count: number;
 }
 
 // ─── AI Setup ────────────────────────────────────────────────
@@ -359,6 +386,47 @@ class RCMServiceImpl {
       .eq('id', id)
       .single();
     if (error) { console.error('[RCM] getStudy error:', error); return null; }
+    return data as RCMStudy;
+  }
+
+  /** Studies on one register asset, newest first (asset dossier, RCA bridge, coverage). */
+  async getStudiesForAsset(assetId: string): Promise<RCMStudy[]> {
+    if (!assetId) return [];
+    const { data, error } = await supabase
+      .from('ers_rcm_studies')
+      .select('*')
+      .eq('asset_id', assetId)
+      .order('updated_at', { ascending: false });
+    if (error) { console.error('[RCM] getStudiesForAsset error:', error); return []; }
+    return (data || []) as RCMStudy[];
+  }
+
+  /**
+   * sem_rcm_coverage (0319): one row per study with the asset's criticality and
+   * the study's counts. Empty (not an error) before the migration is applied.
+   */
+  async getCoverage(): Promise<RCMCoverageRow[]> {
+    const { data, error } = await supabase.from('sem_rcm_coverage').select('*');
+    if (error) {
+      if (error.code !== '42P01') console.warn('[RCM] getCoverage:', error.message);
+      return [];
+    }
+    return (data || []) as RCMCoverageRow[];
+  }
+
+  /**
+   * Reopen an approved study for editing: revision + 1, back to in_progress,
+   * approval stamp cleared. The freeze trigger (0319) refuses every other edit
+   * while the study is approved.
+   */
+  async reviseStudy(study: RCMStudy): Promise<RCMStudy | null> {
+    const { data, error } = await supabase
+      .from('ers_rcm_studies')
+      .update({ status: 'in_progress', revision: (study.revision ?? 1) + 1, approved_by: null, approved_at: null, updated_at: new Date().toISOString() })
+      .eq('id', study.id)
+      .select()
+      .single();
+    if (error) { console.error('[RCM] reviseStudy error:', error); return null; }
     return data as RCMStudy;
   }
 
@@ -905,12 +973,13 @@ class RCMServiceImpl {
   /**
    * Turn ONE decision into a recurring_work record through the canonical PM
    * builder (same path as the Weibull modal), or say exactly why it can't be.
-   * The old generator hand-rolled the insert: no next_due_date (so the PM was
-   * never due and the Autopilot never took it), a '1'/'2'/'3' priority no
-   * Work Management surface recognises, a 30-day fallback for any interval it
-   * couldn't parse, and every DB error swallowed into "no new PM tasks".
+   * The PM carries a job plan — the task as its first step (with the Task
+   * Library plan's instructions when one is attached), the craft as a planned
+   * labour line, the named spares as planned parts — and, for calendar
+   * cadences, joins the asset's RCM strategy as a package so same-day longer
+   * services absorb it (0292).
    */
-  async createPMForDecision(studyId: string, failureModeId: string): Promise<{ ok: true; pmCode: string; meterCadence: boolean } | { ok: false; reason: string }> {
+  async createPMForDecision(studyId: string, failureModeId: string): Promise<{ ok: true; pmCode: string; meterCadence: boolean; packageLabel: string | null } | { ok: false; reason: string }> {
     const study = await this.getStudy(studyId);
     if (!study) return { ok: false, reason: 'study not found' };
     // Keyed on the failure mode (UNIQUE since 0234) — the page may still hold
@@ -923,10 +992,90 @@ class RCMServiceImpl {
     return this.insertPMForDecision(study, d, fm?.failure_mode_description || 'Failure mode');
   }
 
+  /** The Task Library plan a decision points at, in the shape the PM builder consumes. */
+  private async resolveJobPlan(id: string | null | undefined): Promise<JobPlanForPM | null> {
+    if (!id) return null;
+    const [item, roles, inv] = await Promise.all([
+      supabase.from('task_library_items').select('id, code, title, estimated_duration_hours, instructions').eq('id', id).maybeSingle(),
+      supabase.from('task_library_roles').select('role_code, quantity, estimated_hours').eq('task_id', id),
+      supabase.from('task_library_inventory').select('inventory_item_id, quantity, notes, inventory_items(code, description)').eq('task_id', id),
+    ]);
+    const it = item.data as { id: string; code: string; title: string; estimated_duration_hours: number | null; instructions: unknown } | null;
+    if (!it) return null;
+    return {
+      id: it.id, code: it.code, title: it.title,
+      estimatedHours: Number(it.estimated_duration_hours) || 0,
+      instructions: Array.isArray(it.instructions) ? it.instructions : [],
+      roles: ((roles.data || []) as { role_code: string; quantity: number | null; estimated_hours: number | null }[])
+        .map(r => ({ contactType: r.role_code, headcount: r.quantity ?? 1, hours: Number(r.estimated_hours) || undefined })),
+      inventory: ((inv.data || []) as { inventory_item_id: string; quantity: number | null; notes: string | null; inventory_items?: { code?: string; description?: string } | null }[])
+        .map(i => ({ inventoryId: i.inventory_item_id, description: [i.inventory_items?.code, i.inventory_items?.description].filter(Boolean).join(' — ') || i.notes || '', qty: Number(i.quantity) || 1 })),
+    };
+  }
+
+  /** Match the decision's named spares to stock items by part number, then by description. */
+  private async matchSpares(spares: SpareRequirement[] | null | undefined): Promise<SpareMatch[]> {
+    const list = (spares || []).filter(s => s && (s.part_number || s.description));
+    if (list.length === 0) return [];
+    const codes = list.map(s => s.part_number).filter(Boolean);
+    const byCode = new Map<string, string>();
+    if (codes.length) {
+      const { data } = await supabase.from('inventory_items').select('id, code').in('code', codes);
+      for (const row of (data || []) as { id: string; code: string }[]) byCode.set(row.code, row.id);
+    }
+    const out: SpareMatch[] = [];
+    for (const s of list) {
+      let inventoryId = s.part_number ? byCode.get(s.part_number) ?? null : null;
+      if (!inventoryId && s.description) {
+        const { data } = await supabase.from('inventory_items').select('id').ilike('description', s.description).limit(1);
+        inventoryId = (data?.[0] as { id: string } | undefined)?.id ?? null;
+      }
+      out.push({ part_number: s.part_number, description: s.description, qty: s.qty || 1, inventoryId });
+    }
+    return out;
+  }
+
+  /**
+   * Join the PM to the asset's RCM strategy as a package (0292). Strategy
+   * writes are governance (admin) under 0186, so for a non-admin this is a
+   * quiet skip, never a failed PM.
+   */
+  private async attachStrategyPackage(study: RCMStudy, pmId: string, label: string, intervalDays: number): Promise<string | null> {
+    try {
+      const { data: asset } = await supabase.from('assets').select('tag').eq('id', study.asset_id).maybeSingle();
+      const name = `RCM — ${(asset as { tag?: string } | null)?.tag || study.title}`;
+      let stratId: string | null = null;
+      const existing = await supabase.from('maintenance_strategies').select('id').eq('name', name).maybeSingle();
+      stratId = (existing.data as { id: string } | null)?.id ?? null;
+      if (!stratId) {
+        const ins = await supabase.from('maintenance_strategies')
+          .insert({ name, description: `Packages generated from RCM study "${study.title}" — same-day longer packages absorb shorter ones.`, active: true })
+          .select('id').single();
+        if (ins.error) return null;
+        stratId = (ins.data as { id: string }).id;
+      }
+      const pkg = await supabase.from('strategy_packages').select('id').eq('strategy_id', stratId).eq('label', label).maybeSingle();
+      if (!pkg.data) {
+        const insP = await supabase.from('strategy_packages')
+          .insert({ strategy_id: stratId, label, interval_days: intervalDays, task_count: 1, sort_order: intervalDays })
+          .select('id').single();
+        if (insP.error) return null;
+      }
+      const { error } = await supabase.from('recurring_work').update({ strategy_id: stratId, strategy_package: label }).eq('id', pmId);
+      return error ? null : label;
+    } catch {
+      return null;
+    }
+  }
+
   private async insertPMForDecision(
     study: RCMStudy, d: RCMDecision, failureModeDescription: string,
-  ): Promise<{ ok: true; pmCode: string; meterCadence: boolean } | { ok: false; reason: string }> {
-    const built = buildPMFromDecision(study, d, failureModeDescription);
+  ): Promise<{ ok: true; pmCode: string; meterCadence: boolean; packageLabel: string | null } | { ok: false; reason: string }> {
+    const [jobPlan, spares] = await Promise.all([
+      this.resolveJobPlan(d.task_library_item_id),
+      this.matchSpares(d.spares_requirements),
+    ]);
+    const built = buildPMFromDecision(study, d, failureModeDescription, { jobPlan, spares });
     if (!built.ok) return built;
     let row: Record<string, unknown>;
     try {
@@ -951,7 +1100,10 @@ class RCMServiceImpl {
     }
     const linked = await this.updateDecision(d.id, { recurring_work_id: pmCode });
     if (!linked) console.warn('[RCM] PM created but decision link failed', pmCode);
-    return { ok: true, pmCode, meterCadence: built.meterCadence };
+    const packageLabel = built.packageLabel && built.intervalDays
+      ? await this.attachStrategyPackage(study, pmCode, built.packageLabel, built.intervalDays)
+      : null;
+    return { ok: true, pmCode, meterCadence: built.meterCadence, packageLabel };
   }
 
   /**
@@ -992,6 +1144,17 @@ class RCMServiceImpl {
     const decisionMap = new Map(decisions.map(d => [d.failure_mode_id, d]));
     const fnMap = new Map(functions.map(f => [f.id, f]));
 
+    // When each linked PM was generated — a decision edited after that is a
+    // plan the CMMS no longer matches.
+    const pmIds = decisions.map(d => d.recurring_work_id).filter((v): v is string => !!v);
+    const pmCreated = new Map<string, string>();
+    if (pmIds.length > 0) {
+      const { data: pms } = await supabase.from('recurring_work').select('id, created_at, origin').in('id', pmIds);
+      for (const p of (pms || []) as { id: string; created_at: string; origin?: { created_at?: string } | null }[]) {
+        pmCreated.set(p.id, p.origin?.created_at || p.created_at);
+      }
+    }
+
     return failureModes.map(fm => {
       const decision = decisionMap.get(fm.id);
       const fn = fnMap.get(fm.function_id);
@@ -1006,7 +1169,9 @@ class RCMServiceImpl {
         task_type_code: decision?.task_type_code || null,
         task_owner_craft: decision?.task_owner_craft || null,
         spares_requirements: decision?.spares_requirements || [],
-        recurring_work_id: decision?.recurring_work_id || null
+        recurring_work_id: decision?.recurring_work_id || null,
+        decision_updated_at: decision?.updated_at || null,
+        pm_created_at: decision?.recurring_work_id ? pmCreated.get(decision.recurring_work_id) || null : null,
       };
     });
   }
@@ -1147,8 +1312,9 @@ Severity: ${failureMode.severity || 'Not rated'}/10 - Occurrence: ${failureMode.
 
 Walk the decision logic (technically feasible? worth doing? on-condition -> scheduled restoration -> scheduled discard -> failure-finding -> default action) and return ONLY valid JSON with these keys:
 {
-  "strategy": "PM_TIME|PM_CONDITION|PM_PREDICTIVE|RTF|REDESIGN|COMBINATION",
-  "task_description": "ONE imperative task statement for the technician, max 140 characters (e.g. 'Replace ignitor plug and verify spark gap 2.0 mm'). Never the reasoning.",
+  "strategy": "PM_TIME|PM_CONDITION|PM_PREDICTIVE|RTF|REDESIGN",
+  "task_type": "SCHEDULED_RESTORATION|SCHEDULED_DISCARD (for PM_TIME) | ON_CONDITION|FAILURE_FINDING (for PM_CONDITION) | ON_CONDITION (for PM_PREDICTIVE) | null",
+  "task_description": "ONE imperative task statement for the technician, max 140 characters (e.g. 'Replace ignitor plug and verify spark gap 2.0 mm'). Never the reasoning, never a list.",
   "interval_value": 6,
   "interval_unit": "Hours|Days|Weeks|Months|Years",
   "task_owner_craft": "e.g. Instrument Technician",
@@ -1157,7 +1323,7 @@ Walk the decision logic (technically feasible? worth doing? on-condition -> sche
   "confidence": 0.85,
   "suggested_technology": "PdM technology if on-condition, else empty"
 }
-Rules: interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value to null and describe the default action in task_description.`;
+Rules: pick exactly ONE strategy (there is no combined option - if two tasks are needed, recommend the one that controls the dominant failure mechanism and mention the other in justification). interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value and task_type to null and describe the default action in task_description.`;
 
     try {
       const raw = await callRCMGemini(prompt, 0.2);

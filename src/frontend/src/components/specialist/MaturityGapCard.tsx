@@ -24,7 +24,7 @@ const CORRECTIVE_RE = /CORRECT|BREAK|EMERG|REPAIR|\bCM\b|\bEM\b/;
 /** Where each dimension's gap gets worked. */
 const DIMENSION_PATHS: Record<IntakeDimensionKey, { path: string; label: string }> = {
     strategy: { path: '/audits/schedule', label: 'Programme' },
-    decisions: { path: '/finops', label: 'FinOps' },
+    decisions: { path: '/rcm', label: 'RCM coverage' },
     lifecycle: { path: '/recurring-work', label: 'PM programmes' },
     information: { path: '/reliability-metrics', label: 'Failure Review' },
     people: { path: '/contacts', label: 'People & Org' },
@@ -32,15 +32,33 @@ const DIMENSION_PATHS: Record<IntakeDimensionKey, { path: string; label: string 
 };
 
 async function fetchMeasuredSignals(): Promise<MeasuredSignals> {
-    const [woQ, coQ, rateQ] = await Promise.all([
+    const [woQ, coQ, rateQ, rcmQ, critQ] = await Promise.all([
         supabase.from('work_orders')
             .select('type, status, breakdown, actual_downtime_hrs, total_actual_cost, frozen_labor_cost, frozen_material_cost, assigned_to, wo_failure_data!wo_id(failure_mode_code)')
             .order('created_at', { ascending: false })
             .limit(5000),
         supabase.from('companies').select('downtime_cost_per_hour').limit(1),
         supabase.from('asset_financials').select('id', { count: 'exact', head: true }).gt('downtime_cost_per_hour', 0),
+        // 0319 coverage view — absent before the migration, which reads as "unmeasured", never as zero.
+        supabase.from('sem_rcm_coverage').select('asset_id, criticality, status, proactive_count, pm_count'),
+        supabase.from('assets').select('id, criticality').in('criticality', ['A', 'B']).limit(10000),
     ]);
     const rows = (woQ.data ?? []) as any[];
+
+    // RCM programme proxies
+    let rcmCoverageCriticalPct: number | null = null;
+    let rcmImplementedPct: number | null = null;
+    if (!rcmQ.error) {
+        const cov = (rcmQ.data ?? []) as { asset_id: string | null; criticality: string | null; status: string; proactive_count: number; pm_count: number }[];
+        const critical = (critQ.data ?? []) as { id: string }[];
+        if (critical.length > 0) {
+            const covered = new Set(cov.filter(c => c.asset_id && (c.status === 'review' || c.status === 'approved')).map(c => c.asset_id));
+            rcmCoverageCriticalPct = (critical.filter(a => covered.has(a.id)).length / critical.length) * 100;
+        }
+        const proactive = cov.reduce((n, c) => n + (Number(c.proactive_count) || 0), 0);
+        const implemented = cov.reduce((n, c) => n + (Number(c.pm_count) || 0), 0);
+        if (proactive > 0) rcmImplementedPct = Math.min(100, (implemented / proactive) * 100);
+    }
     const pct = (num: number, den: number): number | null => (den > 0 ? (num / den) * 100 : null);
 
     // Mirrors the canonical isFailure precedence (breakdown → type → coded mode).
@@ -70,6 +88,8 @@ async function fetchMeasuredSignals(): Promise<MeasuredSignals> {
         preventiveSharePct: pct(rows.filter(w => PREVENTIVE_RE.test(String(w.type ?? '').toUpperCase())).length, rows.length),
         assignmentCoveragePct: pct(open.filter(w => !!w.assigned_to).length, open.length),
         downtimeRateConfigured: (Number.isFinite(companyRate) && companyRate > 0) || (rateQ.count ?? 0) > 0,
+        rcmCoverageCriticalPct,
+        rcmImplementedPct,
     };
 }
 

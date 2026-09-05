@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './RCMService';
 import type { ActionGate } from './workReadiness';
-import { parseIntervalText, strategyProducesPM, UUID_RE } from './rcmPlan';
+import { parseIntervalText, strategyProducesPM, isLegacyStrategyCode, UUID_RE } from './rcmPlan';
 import { contextCompleteness } from '../../lib/operatingContext';
 import { breakdownCoverage, type AssetBreakdown } from '../../lib/rcmBreakdown';
 
@@ -257,7 +257,11 @@ export function canCreatePMForDecision(assetId: string | null | undefined, decis
   const code = decision?.recommended_strategy_code;
   if (!code) missing.push('A strategy chosen');
   else if (!strategyProducesPM(code)) {
-    missing.push(code === 'RTF' ? 'A proactive strategy (Run-to-Failure schedules nothing)' : 'A proactive strategy (Redesign is a one-off change, not a PM)');
+    missing.push(
+      code === 'RTF' ? 'A proactive strategy (Run-to-Failure schedules nothing)'
+        : isLegacyStrategyCode(code) ? 'One strategy ("Combined" is retired — pick the task type that applies)'
+          : 'A proactive strategy (Redesign is a one-off change, not a PM)',
+    );
   }
   if (!described(decision?.task_description)) missing.push('Task description');
   if (parseIntervalText(decision?.task_interval).n === null) missing.push('Interval (value + unit)');

@@ -14,6 +14,7 @@ import RCAStepGuide from '../components/analyze/RCAStepGuide';
 import { getStepCompletion } from '../components/analyze/RCAStepIndicator';
 import { friendlyAIError } from '../eam/lib/aiError';
 import { analyzeService, scopeNodesToMethod, rcaMethodLabel, rcaMethodColor, EVIDENCE_GRADES, bestEvidenceGrade, nodeConfidence, rootCauseConfidence, confidenceFromScore } from '../eam/services/AnalyzeService';
+import { rcmService } from '../eam/services/RCMService';
 import { EvidenceGradeBadge } from '../components/analyze/RCAEvidencePanel';
 import { nodeSupport } from '../components/analyze/NodeEvidenceChip';
 import { DatabaseService } from '../eam/services/DatabaseService';
@@ -142,6 +143,53 @@ export function RCAInvestigationPage() {
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
         setToast({ message, type });
         setTimeout(() => setToast(null), 3000);
+    };
+
+    /**
+     * Diagnose → Decide. A root cause the investigation has established is a
+     * failure mode the asset's RCM study should analyse; without this edge the
+     * study stays a binder. Adds the mode under the study's primary function,
+     * or opens a seeded New Study when the asset has none.
+     */
+    const [addingToRcm, setAddingToRcm] = useState(false);
+    const handleAddToRcmStudy = async () => {
+        const assetId = inv?.asset_id || draft.asset_id;
+        if (!assetId) { showToast('Link the investigation to an asset first', 'error'); return; }
+        setAddingToRcm(true);
+        try {
+            const rootCauses = nodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
+            const modeText = (inv?.event_what || inv?.problem_statement || inv?.title || '').trim();
+            const causeText = rootCauses.map(n => n.description).join('; ') || inv?.root_cause_summary || '';
+            const asset = allHierarchyAssets.find(a => a.id === assetId);
+            const studies = await rcmService.getStudiesForAsset(assetId);
+            const study = studies.find(st => st.status !== 'closed' && st.status !== 'approved') || studies.find(st => st.status !== 'closed');
+            if (!study) {
+                navigate('/rcm', { state: { seed: { asset: { id: assetId, name: asset?.name, tag: asset?.tag } } } });
+                return;
+            }
+            if (study.status === 'approved') {
+                showToast(`Study "${study.title}" is approved — choose Revise on it, then add the failure mode`, 'error');
+                navigate(`/rcm/${study.id}`);
+                return;
+            }
+            const fns = await rcmService.getFunctions(study.id);
+            if (fns.length === 0) { navigate(`/rcm/${study.id}`); return; }
+            const fn = fns.find(f => f.function_type === 'primary') || fns[0];
+            const existing = await rcmService.getFailureModesByStudy(study.id);
+            const dup = existing.find(m => modeText && m.failure_mode_description?.trim().toLowerCase() === modeText.toLowerCase());
+            if (dup) { showToast('This failure mode is already in the study'); navigate(`/rcm/${study.id}`); return; }
+            const created = await rcmService.createFailureMode({
+                function_id: fn.id,
+                failure_mode_description: modeText || `Failure investigated in RCA ${inv?.id?.slice(0, 8) || ''}`.trim(),
+                failure_cause_description: causeText || null,
+                data_source: 'wo_history',
+                sort_order: existing.filter(m => m.function_id === fn.id).length + 1,
+            });
+            if (created) { showToast(`Added to RCM study "${study.title}" — classify its consequence on the Worksheet`); navigate(`/rcm/${study.id}`); }
+            else showToast('Could not add the failure mode to the study', 'error');
+        } finally {
+            setAddingToRcm(false);
+        }
     };
 
     // Mobile viewport detector for indent dampening
@@ -1682,9 +1730,22 @@ export function RCAInvestigationPage() {
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
                                 <Wrench className="w-4 h-4 text-primary-600" /> Corrective Actions & Recommendations
                             </div>
-                            <p className="text-xs text-slate-400 font-medium mb-5">
+                            <p className="text-xs text-slate-400 font-medium mb-3">
                                 Formulate corrective action plans. Group recommendations cleanly under cause categories (Physical, Human, Latent).
                             </p>
+                            {/* Diagnose → Decide: the established cause becomes a failure mode in the asset's RCM study */}
+                            <div className="mb-5 flex items-center gap-2 flex-wrap">
+                                <button
+                                    type="button"
+                                    onClick={() => void handleAddToRcmStudy()}
+                                    disabled={addingToRcm}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-primary-50 border border-primary-200 text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                                    title="Add this failure (and its established cause) to the asset's RCM study so a maintenance strategy is decided for it"
+                                >
+                                    <Wrench className="w-3.5 h-3.5" /> {addingToRcm ? 'Adding…' : 'Add to RCM study'}
+                                </button>
+                                <span className="text-[11px] text-slate-400">A corrective action fixes this occurrence; the RCM study decides what prevents the next one.</span>
+                            </div>
                             
                             {CAUSE_CATEGORIES.map(cat => {
                                 const catActions = actions.filter(a => a.cause_category === cat.value);
