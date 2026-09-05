@@ -9,7 +9,7 @@ import React, { useEffect, useState } from 'react';
 import { Layers, Save, Loader2, RotateCcw, CheckCircle, Info, Hash, Plus, Trash2 } from 'lucide-react';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { useToast } from '../eam/contexts/ToastContext';
-import { getLevels, DEFAULT_LEVELS, setLevelModel, type LevelConfig } from '../eam/services/hierarchyModel';
+import { getLevels, DEFAULT_LEVELS, setLevelModel, isoLevelName, ISO_LEVEL_NAMES, type LevelConfig } from '../eam/services/hierarchyModel';
 
 export const HierarchyConfigPage: React.FC = () => {
     const { showToast } = useToast();
@@ -96,8 +96,8 @@ export const HierarchyConfigPage: React.FC = () => {
                     <p className="text-xs text-slate-500">The single source of truth for level behaviour — numbering, field visibility, criticality and child rules all derive from this.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button onClick={handleReset} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50">
-                        <RotateCcw size={14} /> Reset to default
+                    <button onClick={handleReset} title="ISO 14224:2016 Table 3 numbering — Site L3, Unit L4, System L5, Equipment L6, Subunit L7, Component L8" className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50">
+                        <RotateCcw size={14} /> Reset to ISO 14224 default
                     </button>
                     <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-primary-600 hover:bg-primary-500 shadow-sm disabled:opacity-50">
                         {saving ? <Loader2 size={15} className="animate-spin" /> : saved ? <CheckCircle size={15} /> : <Save size={15} />}
@@ -109,6 +109,13 @@ export const HierarchyConfigPage: React.FC = () => {
             <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100 text-[12px] text-blue-800">
                 <Info size={15} className="mt-0.5 shrink-0" />
                 <span><strong>Object class</strong> sets whether a level is a Functional Location (FLOC → <code>FL-</code> numbering, equipment fields hidden) or Equipment (→ <code>EQ-</code> numbering, equipment fields shown). Changing it re-derives numbering and field visibility on save.</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-500">
+                <span className="font-bold text-slate-600 uppercase tracking-wide text-[10px]">ISO 14224:2016 Table 3</span>
+                {Object.entries(ISO_LEVEL_NAMES).map(([n, name]) => (
+                    <span key={n} className={Number(n) < 3 ? 'text-slate-400' : ''}><span className="font-mono font-bold">L{n}</span> {name}</span>
+                ))}
+                <span className="text-slate-400">· L1–L2 sit above a register; L9 parts live in the BOM.</span>
             </div>
 
             {loading ? (
@@ -137,8 +144,9 @@ export const HierarchyConfigPage: React.FC = () => {
                                     <td className="px-3 py-2.5 whitespace-nowrap">
                                         <div className="flex items-center gap-1">
                                             <span className="text-[10px] text-slate-400">L</span>
-                                            <input type="number" min={1} value={l.isoLevel} onChange={e => update(idx, { isoLevel: Number(e.target.value) || 1 })} className="w-11 text-[11px] border border-slate-300 rounded p-1" />
+                                            <input type="number" min={1} max={9} value={l.isoLevel} onChange={e => update(idx, { isoLevel: Number(e.target.value) || 1 })} className="w-11 text-[11px] border border-slate-300 rounded p-1" title={isoLevelName(l.isoLevel) || 'ISO 14224 level'} />
                                         </div>
+                                        {isoLevelName(l.isoLevel) && <span className="block mt-0.5 text-[9px] text-slate-400 leading-tight max-w-[80px]">{isoLevelName(l.isoLevel)}</span>}
                                         {isNew ? (
                                             <input value={l.code} onChange={e => update(idx, { code: e.target.value.toUpperCase().replace(/\s/g, '_') })} placeholder="CODE" className="mt-1 w-20 text-[11px] font-mono border border-amber-300 bg-amber-50 rounded p-1 uppercase" />
                                         ) : (

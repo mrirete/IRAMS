@@ -13,6 +13,8 @@
  * declared or inferred, and can correct it in the register.
  */
 
+import { predictClassFor } from '../iso14224Taxonomy';
+
 export type PredictEquipmentClass = 'rotating' | 'static' | 'electrical' | 'instrument' | 'other';
 
 export interface ClassResolution {
@@ -22,18 +24,18 @@ export interface ClassResolution {
     note: string;
 }
 
-/** Dictionary codes (eam ASSET_CLASS / ASSET_CATEGORY / ASSET_TYPE) → predict class. */
-const DECLARED_MAP: Record<string, PredictEquipmentClass> = {
-    // categories
-    ROTATING: 'rotating', STATIC: 'static', ELECTRICAL: 'electrical', INSTRUMENT: 'instrument',
-    // classes (constants.ts ASSET_CLASS dictionary)
+/**
+ * Legacy codes that pre-date the ISO 14224 taxonomy (0317) and are not in its
+ * legacy map — kept so an old register still resolves. Everything current goes
+ * through predictClassFor(), which reads the one taxonomy source.
+ */
+const LEGACY_MAP: Record<string, PredictEquipmentClass> = {
+    INSTRUMENT: 'instrument',
     STATIC_PRESSURE: 'static', HEAT_TRANSFER: 'static', PROCESS_PIPING: 'static',
-    MOTORS_DRIVES: 'rotating', GENERATORS: 'rotating', CENTRIFUGAL_PUMP: 'rotating',
+    MOTORS_DRIVES: 'rotating', GENERATORS: 'rotating',
     POWER_DISTRIBUTION: 'electrical',
-    PROCESS_CONTROL: 'instrument', ANALYZERS: 'instrument', FIRE_GAS: 'instrument', ESD: 'instrument', PSV: 'instrument',
-    // common type codes
-    PUMP: 'rotating', COMPRESSOR: 'rotating', TURBINE: 'rotating', FAN: 'rotating', MOTOR: 'rotating',
-    VESSEL: 'static', EXCHANGER: 'static', TANK: 'static', PIPING: 'static', VALVE: 'static',
+    PROCESS_CONTROL: 'instrument', ANALYZERS: 'instrument',
+    PIPING: 'static',
 };
 
 // Keyword inference. ROTATING is checked FIRST: "Boiler Feed Pump" and
@@ -49,13 +51,16 @@ export function resolveEquipmentClass(asset: {
 } | null | undefined): ClassResolution {
     if (!asset) return { cls: 'other', basis: 'default', note: 'no asset context' };
 
-    // 1. Declared classification (most specific field first)
+    // 1. Declared classification — the ISO 14224 taxonomy (class → category),
+    //    with its own legacy map, then the pre-taxonomy codes kept here.
+    const declared = predictClassFor(asset);
+    if (declared) return { cls: declared.cls, basis: 'declared', note: declared.note };
     for (const [field, value] of [
         ['asset_class', asset.assetClass], ['asset_type', asset.assetType], ['asset_category', asset.assetCategory],
     ] as const) {
         const code = (value || '').toUpperCase().trim();
-        if (code && DECLARED_MAP[code]) {
-            return { cls: DECLARED_MAP[code], basis: 'declared', note: `${field}=${code}` };
+        if (code && LEGACY_MAP[code]) {
+            return { cls: LEGACY_MAP[code], basis: 'declared', note: `${field}=${code}` };
         }
     }
 

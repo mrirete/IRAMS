@@ -319,6 +319,10 @@ export interface Asset {
 
   // Downtime (G8)
   downtimeEvents?: DowntimeEvent[];
+
+  // ISO 14224 §7 operating context + Annex A design/operating parameters (0317).
+  // Shape: lib/operatingContext.ts AssetOperatingContext. Read by RCM and the Specialist.
+  operatingContext?: Record<string, any> | null;
 }
 
 export interface BomItem {

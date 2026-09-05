@@ -68,6 +68,7 @@ import { AskRelanternButton } from '../components/AskRelanternButton';
 import { UnifiedDetailHeader } from '../components/ui/UnifiedDetailHeader';
 import { assessReadiness, assessCloseout, classifyWork, canReviewPlan, canReviewCloseout, canRaiseRCA, type ReadinessResult, type ActionGate } from '../services/workReadiness';
 import { computeAssetReliability, computePMEffectiveness, pmEffectivenessKpi, kpisToAIContext, type AssetReliability } from '../services/reliabilityMetrics';
+import { failureScopeFor } from '../../lib/iso14224Taxonomy';
 import { useRelantern } from '../contexts/RelanternContext';
 import { UnifiedTabBar } from '../components/ui/UnifiedTabBar';
 import { FloatingActionButton } from '../components/ui/FloatingActionButton';
@@ -1114,7 +1115,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         DatabaseService.getInstance().getAssets().then((assets: any[]) => {
             const asset = assets.find((a: any) => a.id === localJob.assetId);
             if (asset) {
-                setResolvedAssetClass(asset.assetClass || asset.assetCategory || asset.asset_class || asset.asset_category || '');
+                // The failure-mode / subunit rows are scoped by a scope GROUP
+                // (ROTATING, STATIC_PRESSURE, ELECTRICAL…), not by the ISO class
+                // code itself — resolve it from the register's classification.
+                setResolvedAssetClass(failureScopeFor(asset));
             }
         }).catch(() => {});
     }, [localJob.assetId]);

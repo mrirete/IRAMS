@@ -42,6 +42,8 @@ import {
   completableRows, isRowComplete, MIN_CONTEXT_CHARS,
 } from '../eam/services/rcmReadiness';
 import { normalizeRecommendation, recommendationToDecisionUpdates } from '../eam/services/rcmPlan';
+import type { RCMAssetContext } from '../eam/services/RCMService';
+import { takeSnapshot, type ContextSnapshot } from '../lib/operatingContext';
 
 // ── Types ─────────────────────────────────────────────────
 type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
@@ -115,6 +117,12 @@ export const RCMPage: React.FC = () => {
     operating_context: '',
     study_type: 'classical',
   });
+  // 0317 (ISO 14224 operating context) — the register asset's context. On the New Study form the
+  // narrative is composed from it and the snapshot travels with the insert; on
+  // a loaded study the live context is compared with the study's snapshot.
+  const [newStudyContext, setNewStudyContext] = useState<RCMAssetContext | null>(null);
+  const [newContextAuto, setNewContextAuto] = useState(false);   // narrative was auto-composed, not typed
+  const [liveAssetContext, setLiveAssetContext] = useState<RCMAssetContext | null>(null);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -221,6 +229,10 @@ export const RCMPage: React.FC = () => {
     const tasks = await rcmService.getTaskSummaries(id);
     setTaskSummaries(tasks);
 
+    // The asset's CURRENT operating context — the Overview compares it with
+    // the study's snapshot and offers a refresh when the register moved on.
+    setLiveAssetContext(study.asset_id ? await rcmService.getAssetContext(study.asset_id) : null);
+
     // Pull the asset's latest saved Weibull fit from Reliability Modelling.
     setLifeEvidence(null);
     if (study.asset_id) {
@@ -260,6 +272,11 @@ export const RCMPage: React.FC = () => {
     if (hasAssetAccess) setAssetInputMode('search');
     setNewStudyForm({ title: `RCM — ${label}`, asset_id: a.id, operating_context: weibullContext, study_type: 'classical' });
     setShowNewStudy(true);
+    // Register context under the Weibull evidence: narrative first, then the fit.
+    rcmService.getAssetContext(a.id).then(ctx => {
+      setNewStudyContext(ctx);
+      if (ctx?.narrative) setNewStudyForm(f => ({ ...f, operating_context: [ctx.narrative, f.operating_context].filter(Boolean).join('\n\n') }));
+    });
     // Clear the seed from history so a refresh/back doesn't re-open the form.
     navigate('/rcm', { replace: true });
   }, [rcmSeed, hasAssetAccess, navigate]);
@@ -277,18 +294,37 @@ export const RCMPage: React.FC = () => {
   }, []);
 
   // ── Handlers ───────────────────────────────────────────
+  // Register asset chosen on the New Study form: read its operating context,
+  // compose the JA1011 narrative when the box is empty (or still holds an
+  // earlier auto-composed text), and carry the snapshot into the insert.
+  const applyAssetContextToNewStudy = useCallback(async (assetId: string, force = false) => {
+    const ctx = await rcmService.getAssetContext(assetId);
+    setNewStudyContext(ctx);
+    if (!ctx) return;
+    setNewStudyForm(f => {
+      const replace = force || !f.operating_context.trim() || newContextAuto;
+      return replace ? { ...f, operating_context: ctx.narrative } : f;
+    });
+    setNewContextAuto(true);
+  }, [newContextAuto]);
+
   const handleCreateStudy = async () => {
     setSaving(true);
+    const snapshot: ContextSnapshot | undefined = newStudyContext && newStudyContext.id === newStudyForm.asset_id
+      ? takeSnapshot(newStudyContext, newStudyContext.operating_context)
+      : undefined;
     const study = await rcmService.createStudy({
       title: newStudyForm.title,
       asset_id: newStudyForm.asset_id || null,
       operating_context: newStudyForm.operating_context || null,
       study_type: newStudyForm.study_type,
+      ...(snapshot ? { context_snapshot: snapshot } : {}),
     });
     setSaving(false);
     if (study) {
       setShowNewStudy(false);
       setNewStudyForm({ title: '', asset_id: '', operating_context: '', study_type: 'classical' });
+      setNewStudyContext(null); setNewContextAuto(false);
       showToast('RCM Study created successfully');
       await loadStudies();
       navigate(`/rcm/${study.id}`);
@@ -381,10 +417,30 @@ export const RCMPage: React.FC = () => {
     });
     setSaving(false);
     if (updated) {
+      // Asset changed → the snapshot must describe the NEW asset.
+      if (updated.asset_id && updated.asset_id !== editingStudy.asset_id) {
+        const r = await rcmService.refreshContextSnapshot(updated.id, updated.asset_id);
+        if (r?.study) Object.assign(updated, r.study);
+      }
       setEditingStudy(null); showToast('Study updated successfully');
       await loadStudies();
-      if (selectedStudy?.id === updated.id) setSelectedStudy(updated);
+      if (selectedStudy?.id === updated.id) { setSelectedStudy(updated); setLiveAssetContext(updated.asset_id ? await rcmService.getAssetContext(updated.asset_id) : null); }
     } else { showToast('Failed to update study', 'error'); }
+  };
+
+  // Re-snapshot the asset's current context onto the loaded study (and, if the
+  // narrative was never hand-written, refresh that too).
+  const handleRefreshStudyContext = async () => {
+    if (!selectedStudy?.asset_id) return;
+    const r = await trackSave(rcmService.refreshContextSnapshot(selectedStudy.id, selectedStudy.asset_id));
+    if (!r?.study) { showToast('Could not refresh the operating context from the register', 'error'); return; }
+    const keepNarrative = (selectedStudy.operating_context || '').trim().length > 0 && selectedStudy.operating_context !== selectedStudy.context_snapshot?.context?.duty_description;
+    const patch = keepNarrative ? {} : { operating_context: r.narrative };
+    const merged = { ...selectedStudy, ...r.study, ...patch };
+    if (!keepNarrative) await rcmService.updateStudy(selectedStudy.id, patch);
+    setSelectedStudy(merged);
+    setLiveAssetContext(await rcmService.getAssetContext(selectedStudy.asset_id));
+    showToast('Operating context refreshed from the asset register');
   };
 
   // Delete
@@ -1075,6 +1131,8 @@ export const RCMPage: React.FC = () => {
           onNavigate={setActiveTab}
           onInviteTeam={() => setShowTeamPanel(true)}
           onEditStudy={() => handleOpenEditStudy(selectedStudy)}
+          liveContext={liveAssetContext?.operating_context ?? null}
+          onRefreshContext={selectedStudy.asset_id ? handleRefreshStudyContext : undefined}
         />
       )}
 
@@ -1256,6 +1314,8 @@ export const RCMPage: React.FC = () => {
                           asset_id: selectedId,
                           title: f.title ? f.title : asset ? `${asset.tag} — ${asset.name} RCM Study` : ''
                         }));
+                        if (selectedId) void applyAssetContextToNewStudy(selectedId);
+                        else { setNewStudyContext(null); setNewContextAuto(false); }
                       }}
                       className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-accent-cyan appearance-none cursor-pointer"
                     >
@@ -1275,10 +1335,27 @@ export const RCMPage: React.FC = () => {
                 )}
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Operating Context</label>
-                <textarea value={newStudyForm.operating_context} onChange={e => setNewStudyForm(f => ({ ...f, operating_context: e.target.value }))}
-                  placeholder="Describe the duty cycle, environment, load profile, etc." rows={3}
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-accent-cyan placeholder:text-slate-400 resize-none" />
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Operating Context</label>
+                  {newStudyContext && newStudyContext.id === newStudyForm.asset_id && (
+                    <button type="button" onClick={() => applyAssetContextToNewStudy(newStudyForm.asset_id, true)}
+                      className="inline-flex items-center gap-1 text-[10px] font-bold text-primary-600 hover:text-primary-700">
+                      <RefreshCw size={11} /> Refresh from register
+                    </button>
+                  )}
+                </div>
+                <textarea value={newStudyForm.operating_context} onChange={e => { setNewContextAuto(false); setNewStudyForm(f => ({ ...f, operating_context: e.target.value })); }}
+                  placeholder="Describe the duty cycle, environment, load profile, etc. — or link a register asset with its Operating Context filled and this composes itself." rows={newContextAuto ? 6 : 3}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:border-accent-cyan placeholder:text-slate-400 resize-y" />
+                {newStudyContext && newStudyContext.id === newStudyForm.asset_id && (
+                  <p className="text-[10px] mt-1 text-slate-500">
+                    {newContextAuto
+                      ? <>Composed from the asset register (ISO 14224 operating context). Edit freely — the structured data is snapshotted on the study either way.</>
+                      : (newStudyContext.operating_context.mode || (newStudyContext.operating_context.parameters || []).length)
+                        ? <>The register has an operating context for this asset — <button type="button" className="font-bold text-primary-600 hover:underline" onClick={() => applyAssetContextToNewStudy(newStudyForm.asset_id, true)}>use it</button>.</>
+                        : <>This asset has no operating context on the register yet — fill it on the asset's Details tab so every study starts from the same facts.</>}
+                  </p>
+                )}
                 <p className={`text-[10px] mt-1 ${newStudyForm.operating_context.trim().length >= MIN_CONTEXT_CHARS ? 'text-emerald-600' : 'text-amber-600'}`}>
                   {newStudyForm.operating_context.trim().length >= MIN_CONTEXT_CHARS
                     ? '✓ Enough context for the Reliability Specialist to draft from'

@@ -19,7 +19,9 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, isValidChild, showsEquipmentFields } from '../services/hierarchyModel';
+import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, isValidChild, showsEquipmentFields, isoLevelName } from '../services/hierarchyModel';
+import { OperatingContextCard } from '../components/OperatingContextCard';
+import { isOtherCode } from '../../lib/iso14224Taxonomy';
 import { errorLog } from '../services/ErrorLogService';
 import { DataMapper } from '../services/DataMapper';
 import { computeAssetReliability, type AssetReliability } from '../services/reliabilityMetrics';
@@ -2447,8 +2449,11 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             onChange={(code) => {
                                 onUpdate({ ...asset, assetType: code, category: code });
                             }}
-                            placeholder={asset.assetClass ? "Select Type..." : "Select Class first..."}
+                            placeholder={!asset.assetClass ? "Select Class first..." : isOtherCode(asset.assetClass) ? "Type (optional for an 'Other' class)" : "Select Type..."}
                         />
+                        {asset.assetClass && isOtherCode(asset.assetClass) && (
+                            <p className="text-[10px] text-slate-400 mt-1">Not in ISO 14224? Add your own class under Admin › Dictionaries › Asset Classes.</p>
+                        )}
                     </div>
                     </>)}
 
@@ -2461,10 +2466,10 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                             className="w-full text-sm border border-slate-300 shadow-sm rounded-md bg-white p-2 focus:border-blue-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors"
                         >
                             {getLevels().map(l => (
-                                <option key={l.code} value={l.code}>L{l.isoLevel} · {l.label} ({l.objectClass === 'FLOC' ? 'Location' : 'Equipment'})</option>
+                                <option key={l.code} value={l.code}>L{l.isoLevel} · {l.label} ({l.objectClass === 'FLOC' ? 'Location' : 'Equipment'}{isoLevelName(l.isoLevel) ? ` · ISO ${isoLevelName(l.isoLevel)}` : ''})</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-slate-400 mt-1">Re-classify the hierarchy level. Updates numbering, fields & criticality on save.</p>
+                        <p className="text-[10px] text-slate-400 mt-1">ISO 14224 Table 3 level. Re-classifying updates numbering, fields & criticality on save.</p>
                     </div>
 
                     <div>
@@ -2495,6 +2500,9 @@ function DetailsTab({ asset, assetTypes, contacts, vendors, costCenters, diction
                     </div>
                 </div>
             </div>
+
+            {/* ISO 14224 operating context — equipment levels only (0317) */}
+            {showEquipFields && <OperatingContextCard asset={asset} onUpdate={onUpdate} />}
 
             <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
                 <h3 className="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-4">Specification & Location</h3>
@@ -3385,7 +3393,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                             options={availableLevels.map(l => ({
                                 value: l.code,
                                 label: `L${l.isoLevel} · ${l.label}`,
-                                description: `${l.objectClass === 'FLOC' ? 'Functional Location' : 'Equipment'} · ISO 14224 Level ${l.isoLevel}`,
+                                description: `${l.objectClass === 'FLOC' ? 'Functional Location' : 'Equipment'} · ISO 14224 Level ${l.isoLevel}${isoLevelName(l.isoLevel) ? ` (${isoLevelName(l.isoLevel)})` : ''}`,
                                 badge: `L${l.isoLevel}`,
                                 badgeColor: l.objectClass === 'FLOC' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             }))}

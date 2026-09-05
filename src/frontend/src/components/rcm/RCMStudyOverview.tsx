@@ -1,18 +1,23 @@
 /**
  * RCMStudyOverview — the Dashboard tab inside a selected study.
- * A calm health card: completion, stage counts, risk profile, WM link, next step.
+ * A calm health card: completion, stage counts, risk profile, WM link, next step,
+ * and (0317) the operating context the study was analysed against.
  */
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Layers, GitBranch, Wrench, Users, ArrowUpRight, ArrowRight,
-  AlertTriangle, FileText, Boxes,
+  AlertTriangle, FileText, Boxes, Gauge, RefreshCw,
 } from 'lucide-react';
 import { AvatarStack } from '../analyze/CollaboratorPicker';
 import { computeCompletionPct } from '../../eam/services/RCMService';
 import type {
   RCMStudy, RCMFunction, RCMFailureMode, RCMDecision, RCMTaskSummary, StudyCollaborator,
 } from './types';
+import {
+  contextChangedSince, contextCompleteness, deviationFlag, utilisationOf, hasAnyValue,
+  OPERATING_MODES, REDUNDANCY_OPTIONS, type AssetOperatingContext,
+} from '../../lib/operatingContext';
 
 interface RCMStudyOverviewProps {
   study: RCMStudy;
@@ -24,6 +29,10 @@ interface RCMStudyOverviewProps {
   onNavigate: (tab: 'functions' | 'decisions' | 'tasks' | 'evidence') => void;
   onInviteTeam: () => void;
   onEditStudy: () => void;
+  /** The asset's CURRENT register context (0317) — compared with the study's snapshot. */
+  liveContext?: AssetOperatingContext | null;
+  /** Re-snapshot from the register; absent when the study has no register asset. */
+  onRefreshContext?: () => void;
 }
 
 const StatChip: React.FC<{
@@ -43,10 +52,25 @@ const StatChip: React.FC<{
   </button>
 );
 
+const Chip: React.FC<{ tone?: 'muted' | 'warn' | 'danger'; children: React.ReactNode }> = ({ tone = 'muted', children }) => (
+  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-medium ${
+    tone === 'danger' ? 'bg-red-50 text-red-700 border-red-200'
+      : tone === 'warn' ? 'bg-amber-50 text-amber-700 border-amber-200'
+        : 'bg-slate-50 text-slate-600 border-slate-200'}`}>
+    {children}
+  </span>
+);
+
 export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
   study, functions, failureModes, decisions, taskSummaries, collaborators,
-  onNavigate, onInviteTeam, onEditStudy,
+  onNavigate, onInviteTeam, onEditStudy, liveContext, onRefreshContext,
 }) => {
+  // Structured context the study was analysed against (0317)
+  const snap = study.context_snapshot?.context ?? null;
+  const snapDone = contextCompleteness(snap);
+  const contextStale = contextChangedSince(study.context_snapshot, liveContext);
+  const snapParams = (snap?.parameters || []).filter(hasAnyValue);
+  const aboveDesign = snapParams.filter(p => deviationFlag(p) === 'above_design');
   const decisionList = useMemo(() => Array.from(decisions.values()), [decisions]);
   const decidedCount = decisionList.filter(d => !!d.consequence_code).length;
   const strategyCount = decisionList.filter(d => !!d.recommended_strategy_code).length;
@@ -218,13 +242,59 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
         </div>
       </div>
 
-      {/* Operating context */}
-      {study.operating_context && (
+      {/* Register context moved on since the study snapshotted it */}
+      {contextStale && onRefreshContext && (
+        <button
+          onClick={onRefreshContext}
+          className="w-full flex items-center gap-2.5 px-3.5 py-3 bg-amber-50 border border-amber-200 rounded-xl text-left hover:bg-amber-100/70 transition-colors"
+        >
+          <RefreshCw size={16} className="text-amber-500 shrink-0" />
+          <span className="text-xs text-amber-800 min-w-0">
+            <strong>The asset's operating context changed since this study was analysed.</strong> Tap to re-read it from the register — then review functions and failure modes that depend on duty, load or environment.
+          </span>
+        </button>
+      )}
+
+      {/* Operating context — structured snapshot (0317) + narrative */}
+      {(study.operating_context || snap) && (
         <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
-          <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <FileText size={11} /> Operating Context
-          </h3>
-          <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">{study.operating_context}</p>
+          <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <FileText size={11} /> Operating Context
+            </h3>
+            {study.context_snapshot && (
+              <span className="text-[10px] text-slate-400 flex items-center gap-2">
+                <span title="Snapshot taken from the asset register (SAE JA1011 §5.1)"><Gauge size={11} className="inline mr-1" />from register · {new Date(study.context_snapshot.taken_at).toLocaleDateString()}</span>
+                {onRefreshContext && !contextStale && (
+                  <button onClick={onRefreshContext} className="font-bold text-primary-600 hover:underline inline-flex items-center gap-1"><RefreshCw size={10} /> refresh</button>
+                )}
+              </span>
+            )}
+          </div>
+          {snap && (snap.mode || snapParams.length > 0) && (
+            <div className="flex flex-wrap gap-1.5 mb-2.5">
+              {snap.mode && <Chip>{OPERATING_MODES.find(m => m.code === snap.mode)?.label || snap.mode}</Chip>}
+              {snap.utilisation_pct != null && <Chip>{snap.utilisation_pct}% utilisation</Chip>}
+              {snap.hours_per_year != null && <Chip>{snap.hours_per_year.toLocaleString()} h/yr</Chip>}
+              {snap.redundancy && <Chip>{REDUNDANCY_OPTIONS.find(r => r.code === snap.redundancy)?.label || snap.redundancy}</Chip>}
+              {(snap.environment || []).map(e => <Chip key={e}>{e}</Chip>)}
+              {snap.service_medium && <Chip>{snap.service_medium}</Chip>}
+              {snapParams.slice(0, 8).map(p => {
+                const u = utilisationOf(p);
+                const flag = deviationFlag(p);
+                return (
+                  <Chip key={p.key} tone={flag === 'above_design' ? 'danger' : flag === 'far_below_design' ? 'warn' : 'muted'}>
+                    {p.label}: {p.kind === 'design' || p.text ? String(p.design) : `${p.operating ?? '—'}/${p.design ?? '—'}`}{p.unit ? ` ${p.unit}` : ''}{u !== null ? ` (${u}%)` : ''}
+                  </Chip>
+                );
+              })}
+              {!snapDone.complete && <Chip tone="warn">incomplete · {snapDone.missing[0]}</Chip>}
+            </div>
+          )}
+          {aboveDesign.length > 0 && (
+            <p className="text-[11px] text-red-700 mb-2 flex items-center gap-1"><AlertTriangle size={11} /> Operating above design: {aboveDesign.map(p => p.label).join(', ')} — expect accelerated wear-out patterns.</p>
+          )}
+          {study.operating_context && <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap">{study.operating_context}</p>}
         </div>
       )}
     </div>

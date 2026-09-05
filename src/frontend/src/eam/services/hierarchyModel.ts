@@ -22,7 +22,7 @@ export type CriticalityRule = 'optional' | 'mandatory';
 
 export interface LevelConfig {
   code: string;                 // stored in assets.hierarchy_level (UPPERCASE)
-  isoLevel: number;             // ISO 14224 taxonomy level (1..6)
+  isoLevel: number;             // ISO 14224:2016 Table 3 taxonomy level (1..9)
   label: string;                // UI label (Admin-overridable)
   objectClass: ObjectClass;     // FLOC = position, EQUIPMENT = maintainable item
   numbering: NumberingScheme;   // which number range issues the identifier
@@ -31,18 +31,45 @@ export interface LevelConfig {
   allowedChildCodes: string[];  // valid child level codes (integrity)
 }
 
-// ── Default seed — ISO 14224 Table 2/3 subset (pragmatic, configurable) ──
-// NOTE: the full ISO 14224 Table 3 defines up to nine levels; this six-level
-// seed is a deliberate, configurable subset (documented in the closeout plan).
+// ── ISO 14224:2016 Table 3 — the nine taxonomy levels ──
+// Levels 1–2 (Industry, Business category) sit above any one register and are
+// not modelled as assets; a CMMS tree starts at the Installation (L3).
+export const ISO_LEVEL_NAMES: Record<number, string> = {
+  1: 'Industry',
+  2: 'Business category',
+  3: 'Installation',
+  4: 'Plant / Unit',
+  5: 'Section / System',
+  6: 'Equipment unit',
+  7: 'Subunit',
+  8: 'Component / Maintainable item',
+  9: 'Part',
+};
+export function isoLevelName(n: number | null | undefined): string {
+  return (n != null && ISO_LEVEL_NAMES[n]) || '';
+}
+
+// ── Default seed — ISO 14224:2016 Table 3 numbering ──
+// Before 0317 this seed (and the global hierarchy_config row) had Equipment at
+// L5 and Component at L6, one level shy of the standard — while the failure
+// taxonomy (0285/0288) was already built on Equipment = L6 and Subunit = L7.
+// The numbers below are the standard's. AREA and UNIT are both L4 (Plant/Unit);
+// SUBSYSTEM is a sub-section of L5 (ISO has no level between System and
+// Equipment unit). SUBUNIT (L7) is optional: most registers record subunits on
+// the failure report, not as asset rows, but the level exists for those that do.
 export const DEFAULT_LEVELS: LevelConfig[] = [
-  { code: 'SITE',      isoLevel: 1, label: 'Site',             objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['AREA', 'UNIT'] },
-  { code: 'AREA',      isoLevel: 2, label: 'Area / Plant',     objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['UNIT', 'SYSTEM'] },
-  { code: 'UNIT',      isoLevel: 2, label: 'Plant / Unit',     objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['SYSTEM'] },
-  { code: 'SYSTEM',    isoLevel: 3, label: 'System / Process', objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['SUBSYSTEM', 'EQUIPMENT'] },
-  { code: 'SUBSYSTEM', isoLevel: 4, label: 'Sub-system',       objectClass: 'FLOC',      numbering: 'FL', criticality: 'mandatory', showEquipmentFields: false, allowedChildCodes: ['SUBSYSTEM', 'EQUIPMENT'] },
-  { code: 'EQUIPMENT', isoLevel: 5, label: 'Equipment',        objectClass: 'EQUIPMENT', numbering: 'EQ', criticality: 'mandatory', showEquipmentFields: true,  allowedChildCodes: ['COMPONENT'] },
-  { code: 'COMPONENT', isoLevel: 6, label: 'Component',        objectClass: 'EQUIPMENT', numbering: 'EQ', criticality: 'mandatory', showEquipmentFields: true,  allowedChildCodes: [] },
+  { code: 'SITE',      isoLevel: 3, label: 'Site',             objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['AREA', 'UNIT'] },
+  { code: 'AREA',      isoLevel: 4, label: 'Area / Plant',     objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['UNIT', 'SYSTEM'] },
+  { code: 'UNIT',      isoLevel: 4, label: 'Plant / Unit',     objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['SYSTEM'] },
+  { code: 'SYSTEM',    isoLevel: 5, label: 'System / Process', objectClass: 'FLOC',      numbering: 'FL', criticality: 'optional',  showEquipmentFields: false, allowedChildCodes: ['SUBSYSTEM', 'EQUIPMENT'] },
+  { code: 'SUBSYSTEM', isoLevel: 5, label: 'Sub-system',       objectClass: 'FLOC',      numbering: 'FL', criticality: 'mandatory', showEquipmentFields: false, allowedChildCodes: ['SUBSYSTEM', 'EQUIPMENT'] },
+  { code: 'EQUIPMENT', isoLevel: 6, label: 'Equipment',        objectClass: 'EQUIPMENT', numbering: 'EQ', criticality: 'mandatory', showEquipmentFields: true,  allowedChildCodes: ['SUBUNIT', 'COMPONENT'] },
+  { code: 'SUBUNIT',   isoLevel: 7, label: 'Subunit',          objectClass: 'EQUIPMENT', numbering: 'EQ', criticality: 'optional',  showEquipmentFields: true,  allowedChildCodes: ['COMPONENT'] },
+  { code: 'COMPONENT', isoLevel: 8, label: 'Component',        objectClass: 'EQUIPMENT', numbering: 'EQ', criticality: 'mandatory', showEquipmentFields: true,  allowedChildCodes: [] },
 ];
+
+/** ISO Table 3 level numbers keyed by our level codes — what 0317 patches saved configs with. */
+export const ISO_LEVEL_BY_CODE: Record<string, number> = Object.fromEntries(DEFAULT_LEVELS.map(l => [l.code, l.isoLevel]));
 
 // Active level set. Swap this (or hydrate from DB) to apply an Admin override.
 let ACTIVE_LEVELS: LevelConfig[] = DEFAULT_LEVELS;

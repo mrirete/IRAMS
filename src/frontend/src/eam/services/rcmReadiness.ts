@@ -20,6 +20,7 @@
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './RCMService';
 import type { ActionGate } from './workReadiness';
 import { parseIntervalText, strategyProducesPM, UUID_RE } from './rcmPlan';
+import { contextCompleteness } from '../../lib/operatingContext';
 
 export type { ActionGate };
 
@@ -65,6 +66,11 @@ export function assessStudyData(
   failureModes: RCMFailureMode[] = [],
 ): RCMReadinessResult {
   const context = text(study.operating_context);
+  // 0317: a structured context snapshotted from the register (mode + duty +
+  // at least one design/operating pair) is a complete context in its own
+  // right, whatever the narrative's length.
+  const structured = contextCompleteness(study.context_snapshot?.context);
+  const contextMet = context.length >= MIN_CONTEXT_CHARS || structured.complete;
 
   const items: RCMReadinessItem[] = [
     {
@@ -80,14 +86,18 @@ export function assessStudyData(
       // "Booster pump in fire water section" is a label, not a context, and
       // showing the count teaches what to fix instead of contradicting the
       // user who can see their text on the Overview.
-      label: context.length === 0
-        ? 'Operating context'
-        : `Operating context · ${context.length}/${MIN_CONTEXT_CHARS} chars`,
-      met: context.length >= MIN_CONTEXT_CHARS,
+      label: contextMet
+        ? (structured.complete ? 'Operating context · from register' : 'Operating context')
+        : context.length === 0
+          ? 'Operating context'
+          : `Operating context · ${context.length}/${MIN_CONTEXT_CHARS} chars`,
+      met: contextMet,
       severity: 'required',
-      hint: context.length === 0
-        ? `Describe duty cycle, environment, load profile and redundancy (at least ${MIN_CONTEXT_CHARS} characters). This is what makes the failure modes specific to your plant rather than generic.`
-        : `Too brief for the Specialist to draft from — add duty cycle (continuous or standby?), environment, load and redundancy until it reaches ${MIN_CONTEXT_CHARS} characters.`,
+      hint: contextMet
+        ? 'The Specialist reads the duty, environment and design-vs-operating values from here.'
+        : context.length === 0
+          ? `Fill the asset's Operating Context on the register (Details tab) and link it, or describe duty cycle, environment, load profile and redundancy here (at least ${MIN_CONTEXT_CHARS} characters). This is what makes the failure modes specific to your plant rather than generic.`
+          : `Too brief for the Specialist to draft from — add duty cycle (continuous or standby?), environment, load and redundancy until it reaches ${MIN_CONTEXT_CHARS} characters, or fill the asset's Operating Context on the register and refresh.`,
     },
     {
       id: 'title',

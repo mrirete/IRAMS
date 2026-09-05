@@ -1699,6 +1699,8 @@ export class DatabaseService {
             // Internal Equipment Number (SAP PM parity)
             equipmentNumber: row.equipment_number || undefined,
             equipmentGeneration: row.equipment_generation || 1,
+            // ISO 14224 operating context (0317) — {} before the column is filled
+            operatingContext: row.operating_context && typeof row.operating_context === 'object' ? row.operating_context : null,
         }));
     }
 
@@ -1740,7 +1742,8 @@ export class DatabaseService {
             asset_class: asset.assetClass || null,
             properties: {
                 ...(asset.properties || {})
-            }
+            },
+            ...(asset.operatingContext && typeof asset.operatingContext === 'object' ? { operating_context: asset.operatingContext } : {}),
         };
 
         // Try DB Insert
@@ -1800,6 +1803,9 @@ export class DatabaseService {
         };
         // Only include hierarchy_level if we determined one
         if (hierarchy_level) row.hierarchy_level = hierarchy_level;
+        // 0317 — operating context travels only when the UI carried it, so
+        // saves keep working before the column exists.
+        if (asset.operatingContext && typeof asset.operatingContext === 'object') row.operating_context = asset.operatingContext;
         // 0179 — persist responsible work group only when the field is present, so
         // asset saves keep working before the migration is applied (unknown column).
         if (asset.responsibleWorkCenterId !== undefined) row.responsible_work_center_id = asset.responsibleWorkCenterId || null;
@@ -1881,6 +1887,13 @@ export class DatabaseService {
             // Spread extended properties from JSONB 'properties' column
             // This restores hourlyRate, permissions, suppression, colorCode, sequence, categoryRef etc.
             ...(d.properties || {}),
+            // The parent link lives in TWO places: Admin-managed rows keep it in
+            // properties.categoryRef, migration-seeded rows (FAILURE_MODE 0285,
+            // SUBUNIT 0288, the ISO taxonomy 0317) in the category_ref column.
+            // Until 0317 only the JSONB one reached the UI, so 131 scoped rows
+            // filtered as "general" and the work-order pickers showed every
+            // failure mode for every asset. Column wins only when JSONB is blank.
+            categoryRef: (d.properties && d.properties.categoryRef) || d.category_ref || undefined,
             // Keep raw properties for Cost Center and other compound data
             properties: d.properties,
             // Scope carrier (0267 config model): null = the product's standard

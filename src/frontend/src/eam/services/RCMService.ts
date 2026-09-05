@@ -16,8 +16,31 @@ import {
   buildPMFromDecision, normalizeRecommendation, pmCodeFor, strategyProducesPM,
   type AIRecommendation,
 } from './rcmPlan';
+import {
+  normalizeContext, composeOperatingContext, takeSnapshot,
+  type AssetOperatingContext, type ContextSnapshot, type ContextAssetLike,
+} from '../../lib/operatingContext';
+import { getCategory, getClass, getType } from '../../lib/iso14224Taxonomy';
 
 export type { AIRecommendation } from './rcmPlan';
+export type { ContextSnapshot, AssetOperatingContext } from '../../lib/operatingContext';
+
+/** The register asset as the RCM module reads it — classification + operating context. */
+export interface RCMAssetContext extends ContextAssetLike {
+  id: string;
+  tag: string;
+  name: string;
+  hierarchy_level: string | null;
+  criticality: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  asset_category: string | null;
+  asset_class: string | null;
+  asset_type_code: string | null;
+  operating_context: AssetOperatingContext;
+  /** The JA1011 narrative composed from the structured data. */
+  narrative: string;
+}
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -35,6 +58,8 @@ export interface RCMStudy {
   rcm_source: 'new' | 'imported_fmea' | 'ai_generated';
   ai_confidence: number | null;
   notes: string | null;
+  /** What the study assumed about the asset's operating context (0317, SAE JA1011 §5.1). */
+  context_snapshot?: ContextSnapshot | null;
   created_at: string;
   updated_at: string;
   // Joined fields (not in DB)
@@ -331,15 +356,13 @@ class RCMServiceImpl {
   }
 
   async createStudy(study: Partial<RCMStudy>): Promise<RCMStudy | null> {
-    // Auto-load criticality from asset
+    // Auto-load criticality from asset — and, unless the caller already
+    // snapshotted it, the operating context the study is analysed against.
     if (study.asset_id) {
-      const { data: asset } = await supabase
-        .from('assets')
-        .select('criticality, name, tag')
-        .eq('id', study.asset_id)
-        .single();
-      if (asset) {
-        study.criticality_rank = asset.criticality;
+      const ctx = await this.getAssetContext(study.asset_id);
+      if (ctx) {
+        study.criticality_rank = ctx.criticality;
+        if (!study.context_snapshot) study.context_snapshot = takeSnapshot(ctx, ctx.operating_context);
       }
     }
 
@@ -348,8 +371,48 @@ class RCMServiceImpl {
       .insert(study)
       .select()
       .single();
-    if (error) { console.error('[RCM] createStudy error:', error); return null; }
+    if (error) {
+      // Before 0317 the column does not exist — keep study creation working.
+      if (/context_snapshot/i.test(error.message || '') && study.context_snapshot) {
+        const { context_snapshot: _drop, ...rest } = study;
+        void _drop;
+        const retry = await supabase.from('ers_rcm_studies').insert(rest).select().single();
+        if (retry.error) { console.error('[RCM] createStudy error:', retry.error); return null; }
+        return retry.data as RCMStudy;
+      }
+      console.error('[RCM] createStudy error:', error);
+      return null;
+    }
     return data as RCMStudy;
+  }
+
+  /**
+   * The register asset with its ISO 14224 classification and operating
+   * context (0317), plus the composed JA1011 narrative. select('*') so it
+   * still answers before the column exists. Accepts only register UUIDs —
+   * a manual tag has no context to read.
+   */
+  async getAssetContext(assetId: string | null | undefined): Promise<RCMAssetContext | null> {
+    if (!assetId || !/^[0-9a-f-]{36}$/i.test(assetId)) return null;
+    const { data, error } = await supabase.from('assets').select('*').eq('id', assetId).maybeSingle();
+    if (error || !data) return null;
+    const operating_context = normalizeContext(data.operating_context);
+    const base = {
+      id: data.id, tag: data.tag, name: data.name,
+      hierarchy_level: data.hierarchy_level ?? null, criticality: data.criticality ?? null,
+      manufacturer: data.manufacturer ?? null, model: data.model ?? null,
+      asset_category: data.asset_category ?? null, asset_class: data.asset_class ?? null, asset_type_code: data.asset_type_code ?? null,
+      operating_context,
+    };
+    return { ...base, narrative: composeOperatingContext(base, operating_context) };
+  }
+
+  /** Re-read the asset and store a fresh snapshot on the study. */
+  async refreshContextSnapshot(studyId: string, assetId: string): Promise<{ study: RCMStudy | null; narrative: string } | null> {
+    const ctx = await this.getAssetContext(assetId);
+    if (!ctx) return null;
+    const study = await this.updateStudy(studyId, { context_snapshot: takeSnapshot(ctx, ctx.operating_context), criticality_rank: ctx.criticality });
+    return { study, narrative: ctx.narrative };
   }
 
   async updateStudy(id: string, updates: Partial<RCMStudy>): Promise<RCMStudy | null> {
@@ -933,22 +996,7 @@ class RCMServiceImpl {
   } | null> {
     if (!isAIAvailable()) return null;
 
-    // Get asset details for context
-    let assetContext = '';
-    if (study.asset_id) {
-      const { data: asset } = await supabase
-        .from('assets')
-        .select('tag, name, hierarchy_level, criticality, manufacturer, model')
-        .eq('id', study.asset_id)
-        .single();
-      if (asset) {
-        assetContext = `Asset: ${asset.tag} - ${asset.name}
-Type: ${asset.hierarchy_level}
-Criticality: ${asset.criticality}
-Manufacturer: ${asset.manufacturer || 'Unknown'}
-Model: ${asset.model || 'Unknown'}`;
-      }
-    }
+    const assetContext = await this.assetContextFor(study);
 
     const prompt = `You are performing an RCM study per SAE JA1011.
 ${assetContext}
@@ -1055,19 +1103,31 @@ Rules: interval_value must be a single integer with a unit - never a range or 'p
    * answers about a generic machine, which is exactly what the readiness gate
    * in rcmReadiness.ts exists to prevent.
    */
+  /**
+   * The asset block every Specialist prompt opens with: identity, ISO 14224
+   * classification, criticality, make/model, and the operating context from
+   * the register (design vs operating values, derating flags). Before 0317
+   * the prompts carried tag/level/criticality/make/model only, so the model
+   * drafted a textbook study for an unnamed machine.
+   */
   private async assetContextFor(study: RCMStudy): Promise<string> {
-    if (!study.asset_id) return '';
-    const { data: asset } = await supabase
-      .from('assets')
-      .select('tag, name, hierarchy_level, criticality, manufacturer, model')
-      .eq('id', study.asset_id)
-      .single();
-    if (!asset) return '';
-    return `Asset: ${asset.tag} - ${asset.name}
-Type: ${asset.hierarchy_level}
-Criticality: ${asset.criticality}
-Manufacturer: ${asset.manufacturer || 'Unknown'}
-Model: ${asset.model || 'Unknown'}`;
+    const ctx = await this.getAssetContext(study.asset_id);
+    if (!ctx) return '';
+    const cat = getCategory(ctx.asset_category)?.label || ctx.asset_category || 'unclassified';
+    const cls = getClass(ctx.asset_class)?.label || ctx.asset_class || '';
+    const typ = getType(ctx.asset_type_code)?.label || ctx.asset_type_code || '';
+    const lines = [
+      `Asset: ${ctx.tag} - ${ctx.name}`,
+      `Hierarchy level: ${ctx.hierarchy_level || 'EQUIPMENT'} (ISO 14224 equipment unit)`,
+      `ISO 14224 classification: ${[cat, cls, typ].filter(Boolean).join(' > ')}`,
+      `Criticality: ${ctx.criticality || 'not rated'}`,
+      `Manufacturer: ${ctx.manufacturer || 'Unknown'}`,
+      `Model: ${ctx.model || 'Unknown'}`,
+    ];
+    // The narrative already opens with the tag/name line — drop it here.
+    const narrative = ctx.narrative.split('\n').slice(1).join('\n').trim();
+    if (narrative) lines.push('Operating context from the asset register (design vs operating — treat "ABOVE DESIGN" as accelerated-wear evidence):', narrative);
+    return lines.join('\n');
   }
 
   /**

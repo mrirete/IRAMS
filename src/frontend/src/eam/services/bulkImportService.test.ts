@@ -134,8 +134,11 @@ describe('level resolution', () => {
         const res = await importAssets([row({ tag: 'S1', hierarchylevel: 'SYSTEM', assettype: 'PUMP' })]);
         expect(res.inserted).toBe(1);
         expect(byTag('S1')?.hierarchy_level).toBe('SYSTEM');
-        // assetType survives as the equipment kind, not the level.
-        expect(byTag('S1')?.asset_type_code).toBe('PUMP');
+        // assetType survives as the equipment kind, not the level — read
+        // through the ISO 14224 table (0317): the legacy word PUMP is a CLASS.
+        expect(byTag('S1')?.asset_class).toBe('PUMP');
+        expect(byTag('S1')?.asset_category).toBe('ROTATING');
+        expect(byTag('S1')?.asset_type_code).toBeNull();
     });
 
     it('falls back to assetType when it names a level', async () => {

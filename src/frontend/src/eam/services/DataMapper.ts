@@ -718,7 +718,10 @@ export class DataMapper {
 
             bomItems: [],
             readings: [],
-            trackingLog: []
+            trackingLog: [],
+            // ISO 14224 operating context (0317) — carried through so an edit
+            // never starts from a blank and overwrites the stored context.
+            operatingContext: (record as any).operating_context && typeof (record as any).operating_context === 'object' ? (record as any).operating_context : null,
         } as Asset;
     }
 

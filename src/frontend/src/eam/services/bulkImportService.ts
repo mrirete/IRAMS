@@ -28,6 +28,36 @@ import {
     emptyResult, tally, errMessage, isUniqueViolation,
     type ImportResult, type RowOutcome,
 } from './importTypes';
+import { getCategory, getClass, getType, LEGACY_CLASS_MAP } from '../../lib/iso14224Taxonomy';
+
+/**
+ * ISO 14224 classification for an import row. Explicit assetCategory /
+ * assetClass columns win; the legacy single `assetType` column is read
+ * through the ISO tables (a class code, a type code, or a legacy alias such
+ * as MOTOR → ELECTRIC_MOTOR). A LEVEL code in assetType (SITE, AREA, UNIT…)
+ * is placement only and yields no classification — it used to be written
+ * straight into asset_type_code.
+ */
+export function classifyImportRow(d: Record<string, string | undefined>): { category?: string; cls?: string; type?: string } {
+    const up = (k: string) => (d[k] || '').toString().trim().toUpperCase() || undefined;
+    let category = up('assetcategory');
+    let cls = up('assetclass');
+    let type = up('assettypecode') || undefined;
+    const legacy = up('assettype');
+    if (legacy) {
+        if (getType(legacy)) { type = type || legacy; cls = cls || getType(legacy)!.cls; }
+        else if (getClass(legacy)) cls = cls || legacy;
+        else if (LEGACY_CLASS_MAP[legacy]) {
+            const m = LEGACY_CLASS_MAP[legacy];
+            cls = cls || m.cls; type = type || m.type; category = category || m.category;
+        } else if (getCategory(legacy)) category = category || legacy;
+        // else: a level code or an unknown word — not a classification
+    }
+    if (!category && cls) category = getClass(cls)?.category;
+    if (!cls && type) cls = getType(type)?.cls;
+    if (!category && cls) category = getClass(cls)?.category;
+    return { category, cls, type };
+}
 
 /** Assets insert in small chunks: the numbering trigger takes a row lock on
  *  numbering_config for EVERY row, and an AFTER trigger writes an audit row. */
@@ -151,8 +181,16 @@ async function applyAssetUpdates(
         set('serial_number', d['serialnumber']);
         set('manufacturer', d['manufacturer']);
         set('model', d['model']);
-        set('asset_category', d['assettype']);
-        set('asset_type_code', d['assettype']);
+        // Taxonomy: explicit category/class/type columns win; the legacy single
+        // assetType column is mapped through the ISO table, and a level code
+        // (SITE/AREA/…) is placement, never a type — it used to land in
+        // asset_type_code and pollute the register.
+        {
+            const cls = classifyImportRow(d);
+            set('asset_category', cls.category);
+            set('asset_class', cls.cls);
+            set('asset_type_code', cls.type);
+        }
 
         const ccCode = (d['costcenter'] || '').toUpperCase();
         if (ccCode) {
@@ -401,8 +439,7 @@ export async function importAssets(
                     serial_number: d.data['serialnumber'] || null,
                     manufacturer: d.data['manufacturer'] || null,
                     model: d.data['model'] || null,            // no more model←category stuffing
-                    asset_category: d.data['assettype'] || null,
-                    asset_type_code: d.data['assettype'] || null,
+                    ...(() => { const c = classifyImportRow(d.data); return { asset_category: c.category || null, asset_class: c.cls || null, asset_type_code: c.type || null }; })(),
                     cost_center_id: ccId ?? null,
                     // Inherit the parent's company when there is one, and
                     // OMIT the key otherwise — never send an explicit null.

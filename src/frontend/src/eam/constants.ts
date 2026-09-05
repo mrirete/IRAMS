@@ -4,6 +4,7 @@ import {
     Contact, User, ServiceRequest, RequestStatus, PermissionSet, ModuleName, ModulePermissions, RecurringJob, InventoryItem,
     ReadingDefinition, ReadingLogEntry, PurchaseOrder, POStatus, Store, NotificationRule, Alert
 } from './types';
+import { taxonomyDictionaryRows } from '../lib/iso14224Taxonomy';
 
 export const RELANTERN_SYSTEM_INSTRUCTION = `You are the Reliability Specialist, an advanced Industrial Asset Value Advisor embedded inside IREAMS (Integrated Reliability and Enterprise Management System).
 Your mission: help engineers, managers, and executives MAXIMIZE THE VALUE their physical assets generate while MINIMIZING lifecycle costs. Every recommendation must connect maintenance actions to financial outcomes.
@@ -704,51 +705,9 @@ export const MOCK_DICTIONARIES: DictionaryEntry[] = [
 
 
     // ═══ ISO 14224 Equipment Taxonomy — Category → Class → Type ═══
-
-    // Asset Categories (top-level, no parent)
-    { id: 'acat1', type: 'ASSET_CATEGORY', code: 'MECHANICAL', description: 'Mechanical Equipment', active: true },
-    { id: 'acat2', type: 'ASSET_CATEGORY', code: 'ELECTRICAL', description: 'Electrical Equipment', active: true },
-    { id: 'acat3', type: 'ASSET_CATEGORY', code: 'INSTRUMENT', description: 'Instrumentation', active: true },
-    { id: 'acat4', type: 'ASSET_CATEGORY', code: 'PIPING', description: 'Piping Systems', active: true },
-    { id: 'acat5', type: 'ASSET_CATEGORY', code: 'STRUCTURAL', description: 'Structural', active: true },
-    { id: 'acat6', type: 'ASSET_CATEGORY', code: 'SAFETY_SYSTEM', description: 'Safety Systems', active: true },
-    { id: 'acat7', type: 'ASSET_CATEGORY', code: 'SUBSEA', description: 'Subsea Equipment', active: true },
-
-    // Asset Classes (categoryRef → Category code)
-    { id: 'acls1', type: 'ASSET_CLASS', code: 'ROTATING', description: 'Rotating Equipment', active: true, categoryRef: 'MECHANICAL' },
-    { id: 'acls2', type: 'ASSET_CLASS', code: 'STATIC_PRESSURE', description: 'Static / Pressure Vessels', active: true, categoryRef: 'MECHANICAL' },
-    { id: 'acls3', type: 'ASSET_CLASS', code: 'HEAT_TRANSFER', description: 'Heat Transfer Equipment', active: true, categoryRef: 'MECHANICAL' },
-    { id: 'acls4', type: 'ASSET_CLASS', code: 'POWER_DISTRIBUTION', description: 'Power Distribution', active: true, categoryRef: 'ELECTRICAL' },
-    { id: 'acls5', type: 'ASSET_CLASS', code: 'MOTORS_DRIVES', description: 'Motors & Drives', active: true, categoryRef: 'ELECTRICAL' },
-    { id: 'acls6', type: 'ASSET_CLASS', code: 'GENERATORS', description: 'Generators', active: true, categoryRef: 'ELECTRICAL' },
-    { id: 'acls7', type: 'ASSET_CLASS', code: 'PROCESS_CONTROL', description: 'Process Control', active: true, categoryRef: 'INSTRUMENT' },
-    { id: 'acls8', type: 'ASSET_CLASS', code: 'ANALYZERS', description: 'Analyzers', active: true, categoryRef: 'INSTRUMENT' },
-    { id: 'acls9', type: 'ASSET_CLASS', code: 'PROCESS_PIPING', description: 'Process Piping', active: true, categoryRef: 'PIPING' },
-    { id: 'acls10', type: 'ASSET_CLASS', code: 'FIRE_GAS', description: 'Fire & Gas Detection', active: true, categoryRef: 'SAFETY_SYSTEM' },
-    { id: 'acls11', type: 'ASSET_CLASS', code: 'ESD', description: 'Emergency Shutdown', active: true, categoryRef: 'SAFETY_SYSTEM' },
-    { id: 'acls12', type: 'ASSET_CLASS', code: 'PSV', description: 'Pressure Safety Valves', active: true, categoryRef: 'SAFETY_SYSTEM' },
-
-    // Asset Types (categoryRef → Class code)
-    { id: 'atyp1', type: 'ASSET_TYPE', code: 'CENTRIFUGAL_PUMP', description: 'Centrifugal Pump', active: true, categoryRef: 'ROTATING' },
-    { id: 'atyp2', type: 'ASSET_TYPE', code: 'RECIPROCATING_PUMP', description: 'Reciprocating Pump', active: true, categoryRef: 'ROTATING' },
-    { id: 'atyp3', type: 'ASSET_TYPE', code: 'CENTRIFUGAL_COMPRESSOR', description: 'Centrifugal Compressor', active: true, categoryRef: 'ROTATING' },
-    { id: 'atyp4', type: 'ASSET_TYPE', code: 'RECIPROCATING_COMPRESSOR', description: 'Reciprocating Compressor', active: true, categoryRef: 'ROTATING' },
-    { id: 'atyp5', type: 'ASSET_TYPE', code: 'GAS_TURBINE', description: 'Gas Turbine', active: true, categoryRef: 'ROTATING' },
-    { id: 'atyp6', type: 'ASSET_TYPE', code: 'STEAM_TURBINE', description: 'Steam Turbine', active: true, categoryRef: 'ROTATING' },
-    { id: 'atyp7', type: 'ASSET_TYPE', code: 'ELECTRIC_MOTOR', description: 'Electric Motor', active: true, categoryRef: 'MOTORS_DRIVES' },
-    { id: 'atyp8', type: 'ASSET_TYPE', code: 'VSD', description: 'Variable Speed Drive', active: true, categoryRef: 'MOTORS_DRIVES' },
-    { id: 'atyp9', type: 'ASSET_TYPE', code: 'PRESSURE_VESSEL', description: 'Pressure Vessel', active: true, categoryRef: 'STATIC_PRESSURE' },
-    { id: 'atyp10', type: 'ASSET_TYPE', code: 'STORAGE_TANK', description: 'Storage Tank', active: true, categoryRef: 'STATIC_PRESSURE' },
-    { id: 'atyp11', type: 'ASSET_TYPE', code: 'SEPARATOR', description: 'Separator', active: true, categoryRef: 'STATIC_PRESSURE' },
-    { id: 'atyp12', type: 'ASSET_TYPE', code: 'HEAT_EXCHANGER', description: 'Shell & Tube Heat Exchanger', active: true, categoryRef: 'HEAT_TRANSFER' },
-    { id: 'atyp13', type: 'ASSET_TYPE', code: 'AIR_COOLER', description: 'Air-Cooled Exchanger', active: true, categoryRef: 'HEAT_TRANSFER' },
-    { id: 'atyp14', type: 'ASSET_TYPE', code: 'TRANSFORMER', description: 'Power Transformer', active: true, categoryRef: 'POWER_DISTRIBUTION' },
-    { id: 'atyp15', type: 'ASSET_TYPE', code: 'SWITCHGEAR', description: 'Switchgear', active: true, categoryRef: 'POWER_DISTRIBUTION' },
-    { id: 'atyp16', type: 'ASSET_TYPE', code: 'FLOW_METER', description: 'Flow Meter', active: true, categoryRef: 'PROCESS_CONTROL' },
-    { id: 'atyp17', type: 'ASSET_TYPE', code: 'CONTROL_VALVE', description: 'Control Valve', active: true, categoryRef: 'PROCESS_CONTROL' },
-    { id: 'atyp18', type: 'ASSET_TYPE', code: 'PRESSURE_TRANSMITTER', description: 'Pressure Transmitter', active: true, categoryRef: 'PROCESS_CONTROL' },
-    { id: 'atyp19', type: 'ASSET_TYPE', code: 'GAS_DETECTOR', description: 'Gas Detector', active: true, categoryRef: 'FIRE_GAS' },
-    { id: 'atyp20', type: 'ASSET_TYPE', code: 'FIRE_DETECTOR', description: 'Fire Detector', active: true, categoryRef: 'FIRE_GAS' },
+    // Generated from the single source (lib/iso14224Taxonomy.ts), the same
+    // rows migration 0317 seeds into reference_codes. Never hand-edit here.
+    ...taxonomyDictionaryRows(),
 
     // Status Codes (SSOT for Requests & WO)
     { id: 'st1', type: 'STATUS_CODE', code: 'OPEN', description: 'Open / New', active: true },
@@ -803,38 +762,8 @@ export const MOCK_DICTIONARIES: DictionaryEntry[] = [
     { id: 'd4', type: 'WORK_TYPE', code: 'CM', description: 'Corrective Maintenance', active: true },
     { id: 'd5', type: 'WORK_TYPE', code: 'PM', description: 'Preventive Maintenance', active: true },
     { id: 'd6', type: 'WORK_TYPE', code: 'DE', description: 'Defect Elimination', active: true },
-    // Asset Types (Replacing old hardcoded Categories) - linked to Categories via categoryRef
-    { id: 'at1', type: 'ASSET_TYPE', code: 'PUMP', description: 'Pump', active: true, categoryRef: 'ROTATING' },
-    { id: 'at2', type: 'ASSET_TYPE', code: 'MOTOR', description: 'Electric Motor', active: true, categoryRef: 'ELECTRICAL' },
-    { id: 'at3', type: 'ASSET_TYPE', code: 'VALVE', description: 'Valve', active: true, categoryRef: 'STATIC' },
-    { id: 'at4', type: 'ASSET_TYPE', code: 'TANK', description: 'Storage Tank', active: true, categoryRef: 'STATIC' },
-    { id: 'at5', type: 'ASSET_TYPE', code: 'COMPRESSOR', description: 'Compressor', active: true, categoryRef: 'ROTATING' },
-    { id: 'at6', type: 'ASSET_TYPE', code: 'FAN', description: 'Fan / Blower', active: true, categoryRef: 'ROTATING' },
-    { id: 'at7', type: 'ASSET_TYPE', code: 'CONVEYOR', description: 'Conveyor Belt', active: true, categoryRef: 'ROTATING' },
-    // Locations as Asset Types (if user wants them unified)
-    { id: 'at8', type: 'ASSET_TYPE', code: 'SITE', description: 'Site / Plant', active: true },
-    { id: 'at9', type: 'ASSET_TYPE', code: 'AREA', description: 'Area / Zone', active: true },
-    { id: 'at10', type: 'ASSET_TYPE', code: 'UNIT', description: 'Process Unit', active: true },
-    { id: 'at11', type: 'ASSET_TYPE', code: 'SYSTEM', description: 'System', active: true },
-
-    // Asset Categories (New)
-    { id: 'cat1', type: 'ASSET_CATEGORY', code: 'ROTATING', description: 'Rotating Equipment', active: true },
-    { id: 'cat2', type: 'ASSET_CATEGORY', code: 'STATIC', description: 'Static Equipment', active: true },
-    { id: 'cat3', type: 'ASSET_CATEGORY', code: 'ELECTRICAL', description: 'Electrical', active: true },
-    { id: 'cat4', type: 'ASSET_CATEGORY', code: 'INSTRUMENTATION', description: 'Instrumentation', active: true },
-
-    // Asset Classes (New) - linked to Types via categoryRef
-    { id: 'cls1', type: 'ASSET_CLASS', code: 'CENTRIFUGAL_PUMP', description: 'Centrifugal Pump', active: true, categoryRef: 'PUMP' },
-    { id: 'cls2', type: 'ASSET_CLASS', code: 'RECIPROCATING_PUMP', description: 'Reciprocating Pump', active: true, categoryRef: 'PUMP' },
-    { id: 'cls3', type: 'ASSET_CLASS', code: 'SCREW_COMPRESSOR', description: 'Screw Compressor', active: true, categoryRef: 'COMPRESSOR' },
-    { id: 'cls4', type: 'ASSET_CLASS', code: 'RECIPROCATING_COMPRESSOR', description: 'Reciprocating Compressor', active: true, categoryRef: 'COMPRESSOR' },
-    { id: 'cls5', type: 'ASSET_CLASS', code: 'PRESSURE_VESSEL', description: 'Pressure Vessel', active: true, categoryRef: 'TANK' },
-    { id: 'cls6', type: 'ASSET_CLASS', code: 'STORAGE_TANK', description: 'Storage Tank', active: true, categoryRef: 'TANK' },
-    { id: 'cls7', type: 'ASSET_CLASS', code: 'HEAT_EXCHANGER', description: 'Heat Exchanger', active: true, categoryRef: 'TANK' },
-    { id: 'cls8', type: 'ASSET_CLASS', code: 'GATE_VALVE', description: 'Gate Valve', active: true, categoryRef: 'VALVE' },
-    { id: 'cls9', type: 'ASSET_CLASS', code: 'BALL_VALVE', description: 'Ball Valve', active: true, categoryRef: 'VALVE' },
-
-
+    // (legacy PUMP/MOTOR/… asset types and the inverted class rows were
+    // replaced by the ISO 14224 taxonomy above — see lib/iso14224Taxonomy.ts)
 
     { id: 'd7', type: 'COST_CENTRE', code: 'CC-M100', description: 'Main Maintenance', active: true },
 
