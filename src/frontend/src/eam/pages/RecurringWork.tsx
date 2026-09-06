@@ -55,7 +55,15 @@ const CONTROL_HIERARCHY = ['Elimination', 'Substitution', 'Engineering', 'Admin'
 
 export const RecurringWork: React.FC = () => {
     const { showToast } = useToast();
-    const { user } = useAuth();
+    const { user, permissions } = useAuth();
+    // PM strategies are planner work. The page had no permission checks at all
+    // (2026-09-06 walk-through): a TECHNICIAN (pm: view only) could create,
+    // edit, delete and generate orders from strategies. RLS on recurring_work
+    // is tenant-only for INSERT/UPDATE, so the page is the gate.
+    const canCreatePM = permissions?.pm?.create === true;
+    const canEditPM = permissions?.pm?.edit === true;
+    const canDeletePM = permissions?.pm?.delete === true || permissions?.admin?.view === true;
+    const denied = (what: string) => showToast(`Your role cannot ${what} (needs Recurring Work · ${what === 'delete strategies' ? 'Delete' : what === 'create strategies' ? 'Create' : 'Edit'}).`, 'error');
     const [jobs, setJobs] = useState<RecurringJob[]>([]);
     const [selectedJob, setSelectedJob] = useState<RecurringJob | null>(null);
     const [activeTab, setActiveTab] = useState<TabId>('details');
@@ -420,6 +428,7 @@ export const RecurringWork: React.FC = () => {
 
     const handleDuplicate = async () => {
         if (!selectedJob) return;
+        if (!canCreatePM) { denied('create strategies'); return; }
         const dupAssetId = selectedJob.assignedAssets?.[0]?.assetId;
         if (!dupAssetId) { showToast('Cannot duplicate: this strategy has no assigned asset.', 'error'); return; }
         setDuplicating(true);
@@ -457,6 +466,7 @@ export const RecurringWork: React.FC = () => {
 
     const handleDelete = async () => {
         if (!selectedJob) return;
+        if (!canDeletePM) { denied('delete strategies'); return; }
         console.log('[RecurringWork] handleDelete triggered for:', selectedJob.id, selectedJob.code);
         setShowDeleteConfirm(true);
     };
@@ -530,12 +540,14 @@ export const RecurringWork: React.FC = () => {
 
     // Bulk actions (Phase 4A)
     const handleBulkStatusChange = (newStatus: 'ACTIVE' | 'PAUSED') => {
+        if (!canEditPM) { denied('pause or activate strategies'); return; }
         setJobs(prev => prev.map(j => selectedIds.has(j.id) ? { ...j, status: newStatus } : j));
         showToast(`${selectedIds.size} job(s) set to ${newStatus}`, 'success');
         setSelectedIds(new Set());
     };
 
     const handleBulkGenerate = () => {
+        if (!canEditPM) { denied('generate work orders from strategies'); return; }
         setShowGenerator(true);
         // Pre-load generator with selected items only
     };
@@ -584,6 +596,7 @@ export const RecurringWork: React.FC = () => {
 
     const handleSave = async () => {
         if (!selectedJob) return;
+        if (!canEditPM) { denied('edit strategies'); return; }
         setSaving(true);
         setSaveStatus('idle');
         try {
@@ -887,13 +900,19 @@ export const RecurringWork: React.FC = () => {
                             <Upload size={16} /> <span className="hidden xl:inline">Import</span>
                         </button>
                         <button
-                            onClick={() => setShowGenerator(true)}
-                            className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm"
-                            title="Run Job Generator"
+                            onClick={() => canEditPM ? setShowGenerator(true) : denied('generate work orders from strategies')}
+                            disabled={!canEditPM}
+                            className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={canEditPM ? 'Run Job Generator' : 'Needs Recurring Work · Edit'}
                         >
                             <Zap size={16} /> <span className="hidden xl:inline">Generate</span>
                         </button>
-                        <button onClick={() => setIsCreatePMOpen(true)} className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2">
+                        <button
+                            onClick={() => canCreatePM ? setIsCreatePMOpen(true) : denied('create strategies')}
+                            disabled={!canCreatePM}
+                            title={canCreatePM ? 'New strategy' : 'Needs Recurring Work · Create'}
+                            className="bg-primary-600 hover:bg-primary-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
                             <Plus size={16} /> New
                         </button>
                     </div>
@@ -1159,8 +1178,8 @@ export const RecurringWork: React.FC = () => {
                             </button>
                             <button
                                 onClick={handleDelete}
-                                disabled={deleting}
-                                title="Delete strategy"
+                                disabled={deleting || !canDeletePM}
+                                title={canDeletePM ? 'Delete strategy' : 'Needs Recurring Work · Delete'}
                                 className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-sm font-medium flex items-center gap-2 bg-red-50 hover:bg-red-100 text-red-600 disabled:opacity-60"
                             >
                                 {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
@@ -1168,7 +1187,8 @@ export const RecurringWork: React.FC = () => {
                             </button>
                             <button
                                 onClick={handleSave}
-                                disabled={saving}
+                                disabled={saving || !canEditPM}
+                                title={canEditPM ? 'Save' : 'Needs Recurring Work · Edit'}
                                 className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition ${saveStatus === 'saved' ? 'bg-green-600 text-white' :
                                     saveStatus === 'error' ? 'bg-red-600 text-white' :
                                         'bg-primary-600 hover:bg-primary-500 text-white'

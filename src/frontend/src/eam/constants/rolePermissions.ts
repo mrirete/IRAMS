@@ -185,7 +185,12 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     SUPERVISOR: {
         dashboard: BASIC_ACCESS,
         assets: BASIC_ACCESS,
-        requests: { ...BASIC_ACCESS, approve: true, assign: true, spendingLimit: 5000 },
+        // authorize: the request state machine is NEW → REVIEW → AUTHORIZED →
+        // APPROVED → converted. Until 2026-09-06 only SUPER/SYS_ADMIN held
+        // requests.authorize, so no line role could move a request past
+        // Review. The supervisor authorises the technical need; the planner /
+        // manager approves the commitment (SAP: notification → order).
+        requests: { ...BASIC_ACCESS, approve: true, authorize: true, assign: true, spendingLimit: 5000 },
         workOrders: { ...BASIC_ACCESS, approve: true, assign: true, spendingLimit: 5000 },
         pm: { ...BASIC_ACCESS, approve: true, assign: true },
         scheduling: { ...BASIC_ACCESS, approve: true, assign: true },
@@ -213,7 +218,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     MANAGER: {
         dashboard: { ...BASIC_ACCESS, viewCosts: true },
         assets: { ...BASIC_ACCESS, viewCosts: true },
-        requests: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 25000 },
+        requests: { ...BASIC_ACCESS, approve: true, authorize: true, assign: true, viewCosts: true, spendingLimit: 25000 },
         workOrders: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 25000 },
         pm: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true },
         scheduling: { ...BASIC_ACCESS, approve: true, assign: true },
@@ -245,7 +250,7 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     ASSET_MANAGER: {
         dashboard: { ...BASIC_ACCESS, viewCosts: true },
         assets: { ...BASIC_ACCESS, approve: true, viewCosts: true },
-        requests: { ...BASIC_ACCESS, approve: true, assign: true, viewCosts: true, spendingLimit: 25000 },
+        requests: { ...BASIC_ACCESS, approve: true, authorize: true, assign: true, viewCosts: true, spendingLimit: 25000 },
         workOrders: { ...BASIC_ACCESS, approve: true, viewCosts: true, spendingLimit: 25000 },
         pm: { ...BASIC_ACCESS, approve: true, viewCosts: true },
         scheduling: VIEW_ONLY_PERM,
@@ -310,9 +315,15 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
         inventory: VIEW_ONLY_PERM,
         readings: BASIC_ACCESS,
         taskLibrary: VIEW_ONLY_PERM,
+        // contacts is VIEW_ONLY, not NO_ACCESS (2026-09-06): the contacts RLS
+        // policy enforces contacts.view, and work orders resolve assignees,
+        // labour lines and confirmations through contacts. With NO_ACCESS a
+        // technician saw blank names on their own job and could not post time
+        // against themselves. Seeing the crew list is not a privilege.
+        contacts: VIEW_ONLY_PERM,
         // Blocked
         purchasing: NO_ACCESS_PERM, analytics: NO_ACCESS_PERM,
-        contacts: NO_ACCESS_PERM, vendors: NO_ACCESS_PERM,
+        vendors: NO_ACCESS_PERM,
         // safety is VIEW_ONLY, not NO_ACCESS: a technician completes the JSA on
         // their own job and performs the lockout/tagout. Withholding it was a
         // matrix error, not a policy — JSATab, WorkOrders and RecurringWork all
@@ -362,11 +373,19 @@ export const ROLE_PERMISSION_TEMPLATES: Record<string, Record<string, ModulePerm
     },
 };
 
-// Fallback for unknown/new roles (fail-closed per NIST/ISO 55000)
+// Fallback for unknown/new roles (fail-closed per NIST/ISO 55000).
+//
+// 2026-09-06: this used to hand BASIC_ACCESS (create + edit) on assets, work
+// orders, PMs and scheduling to any role code with no template — which is
+// what a VENDOR, a legacy ELEC/R-ENG code, or the 'USER' placeholder that
+// Grant System Access wrote all resolved to. "Fail-closed" meant the opposite.
+// Now view-only everywhere, plus the one thing every person in a plant should
+// be able to do: raise a maintenance request.
 export const BASE_PACKAGE_DEFAULTS: Record<string, ModulePermissions> = {
-    dashboard: BASIC_ACCESS, assets: BASIC_ACCESS, requests: BASIC_ACCESS,
-    workOrders: BASIC_ACCESS, inventory: VIEW_ONLY_PERM, contacts: VIEW_ONLY_PERM,
-    pm: BASIC_ACCESS, scheduling: BASIC_ACCESS, purchasing: VIEW_ONLY_PERM,
+    dashboard: VIEW_ONLY_PERM, assets: VIEW_ONLY_PERM,
+    requests: { ...VIEW_ONLY_PERM, create: true },
+    workOrders: VIEW_ONLY_PERM, inventory: VIEW_ONLY_PERM, contacts: VIEW_ONLY_PERM,
+    pm: VIEW_ONLY_PERM, scheduling: VIEW_ONLY_PERM, purchasing: VIEW_ONLY_PERM,
     vendors: VIEW_ONLY_PERM, taskLibrary: VIEW_ONLY_PERM,
     // Premium — Restricted by default
     finops: NO_ACCESS_PERM, analytics: NO_ACCESS_PERM, readings: NO_ACCESS_PERM,

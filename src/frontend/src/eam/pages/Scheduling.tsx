@@ -122,7 +122,13 @@ function isToday(d: Date): boolean {
 // ========================================
 export const Scheduling: React.FC = () => {
     const { showToast } = useToast();
-    const { dataScope, permissions, user } = useAuth();
+    const { dataScope, permissions, profile, user } = useAuth();
+    // scheduling.edit moves work on the board; scheduling.assign (or the WO
+    // assign right) puts a person on it. A TECHNICIAN holds view only, so the
+    // board is read-only for them — the drag handlers and assignment paths
+    // refuse with a toast instead of writing and letting RLS decide.
+    const canSchedule = permissions?.scheduling?.edit === true;
+    const canAssign = permissions?.scheduling?.assign === true || permissions?.workOrders?.assign === true;
     const [handoverOpen, setHandoverOpen] = useState(false);
     const [viewMode, setViewMode] = useState<ViewMode>('CALENDAR');
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -551,6 +557,10 @@ export const Scheduling: React.FC = () => {
         // RISK markers are advisory — never reschedulable (belt & braces; they
         // also aren't draggable in the renderers).
         if (source !== 'WO' && source !== 'PM') return;
+        if (!canSchedule) {
+            showToast('Your role can view the schedule but not move work on it (needs Scheduling · Edit).', 'error');
+            return;
+        }
         const db = DatabaseService.getInstance();
 
         if (source === 'WO') {
@@ -598,7 +608,7 @@ export const Scheduling: React.FC = () => {
                 table_name: 'work_orders',
                 record_id: woId,
                 action: 'UPDATE',
-                changed_by: permissions?.username || 'scheduler',
+                changed_by: profile?.username || 'scheduler',
                 timestamp: new Date().toISOString(),
                 changes: JSON.stringify({
                     override_type: action,
@@ -755,7 +765,7 @@ export const Scheduling: React.FC = () => {
                 date_due_start: newDate,
                 due_date: newDate,
                 status: newStatus || 'SCHED',
-            }, (permissions?.username || 'scheduler') as string);
+            }, (profile?.username || 'scheduler') as string);
             showToast(`${wo?.woNumber || 'WO'} scheduled for ${new Date(newDate).toLocaleDateString()}`, 'success');
 
             // GAP-G: Send notification to assigned technician on reschedule
@@ -772,7 +782,7 @@ export const Scheduling: React.FC = () => {
                         entityType: 'WORK_ORDER',
                         entityNumber: wo?.woNumber || '',
                         actionLink: '/work-orders',
-                        createdBy: (permissions?.username || 'scheduler') as string,
+                        createdBy: (profile?.username || 'scheduler') as string,
                     });
                 } catch (notifErr) {
                     console.warn('[Scheduling] Reschedule notification failed (non-blocking):', notifErr);
@@ -1043,7 +1053,7 @@ export const Scheduling: React.FC = () => {
                                     date_due_start: newStart,
                                     due_date: newEnd,
                                     status: (wo.status === 'OPEN' || wo.status === 'PLAN') ? 'SCHED' : wo.status as string,
-                                }, (permissions?.username || 'scheduler') as string);
+                                }, (profile?.username || 'scheduler') as string);
                                 showToast(`${wo.woNumber} rescheduled: ${new Date(newStart).toLocaleDateString()} — ${new Date(newEnd).toLocaleDateString()}`, 'success');
                             } catch (err) {
                                 console.error('[Gantt] Reschedule failed:', err);
@@ -1069,6 +1079,10 @@ export const Scheduling: React.FC = () => {
                             currentDate={currentDate}
                             onDateChange={setCurrentDate}
                             onAssignJob={async (woId, contactId, date) => {
+                                if (!canAssign) {
+                                    showToast('Your role cannot assign work (needs Scheduling · Assign).', 'error');
+                                    return;
+                                }
                                 const db = DatabaseService.getInstance();
                                 // Optimistic UI update
                                 setJobs(prev => prev.map(j => j.id === woId ? { ...j, assignedTo: contactId, dateDueStart: date, dueDate: date, status: (j.status === 'OPEN' || j.status === 'PLAN') ? 'SCHED' as any : j.status } : j));
@@ -1078,7 +1092,7 @@ export const Scheduling: React.FC = () => {
                                         date_due_start: date,
                                         due_date: date,
                                         status: 'SCHED',
-                                    }, (permissions?.username || 'scheduler') as string);
+                                    }, (profile?.username || 'scheduler') as string);
                                     showToast('Job assigned and scheduled', 'success');
 
                                     // GAP-G: Notify assigned technician
@@ -1096,7 +1110,7 @@ export const Scheduling: React.FC = () => {
                                             entityType: 'WORK_ORDER',
                                             entityNumber: wo?.woNumber || '',
                                             actionLink: '/work-orders',
-                                            createdBy: (permissions?.username || 'scheduler') as string,
+                                            createdBy: (profile?.username || 'scheduler') as string,
                                         });
                                     } catch { /* non-blocking */ }
                                 } catch (err) {
@@ -1132,6 +1146,11 @@ export const Scheduling: React.FC = () => {
                 isOpen={assignModalOpen}
                 onClose={() => { setAssignModalOpen(false); setAssignTargetIds(new Set()); }}
                 onAssign={(contactId, contactName) => {
+                    if (!canAssign) {
+                        showToast('Your role cannot assign work (needs Scheduling · Assign).', 'error');
+                        setAssignModalOpen(false);
+                        return;
+                    }
                     const updated = jobs.map(j => assignTargetIds.has(j.id) ? { ...j, assignedTo: contactId } : j);
                     setJobs(updated);
                     // Persist each assignment, then notify the assignee (GAP-G parity with MRS drag-drop)
@@ -1151,7 +1170,7 @@ export const Scheduling: React.FC = () => {
                                     entityType: 'WORK_ORDER',
                                     entityNumber: wo?.woNumber || '',
                                     actionLink: '/work-orders',
-                                    createdBy: (permissions?.username || 'scheduler') as string,
+                                    createdBy: (profile?.username || 'scheduler') as string,
                                 });
                             })
                             .catch(console.error);

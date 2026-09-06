@@ -1102,15 +1102,18 @@ const UserPermissionManager: React.FC = () => {
 
     // Derived Data
     const roles = useMemo(() => {
-        const all = dictionaries.filter(d => d.type === 'CONTACT_TYPE');
-        // Deduplicate by Description (keep first)
-        const seen = new Set<string>();
-        return all.filter(r => {
+        const all = dictionaries.filter(d => d.type === 'CONTACT_TYPE' && d.active !== false);
+        // Deduplicate by description — but when two codes share one (the legacy
+        // R-ENG next to RELIABILITY_ENG), the code that HAS a permission template
+        // must win. Picking the other silently gave the person the no-template
+        // defaults instead of the role the admin thought they assigned.
+        const byKey = new Map<string, DictionaryEntry>();
+        for (const r of all) {
             const key = (r.description || r.code).toLowerCase().trim();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
+            const cur = byKey.get(key);
+            if (!cur || (!ROLE_PERMISSION_TEMPLATES[cur.code] && ROLE_PERMISSION_TEMPLATES[r.code])) byKey.set(key, r);
+        }
+        return all.filter(r => byKey.get((r.description || r.code).toLowerCase().trim()) === r);
     }, [dictionaries]);
     const sites = useMemo(() => assets.filter(a => a.category === 'Site' || a.category === 'Area'), [assets]);
 
@@ -1910,9 +1913,14 @@ const UserPermissionManager: React.FC = () => {
                                                 <Shield size={16} className="text-blue-600" /> Effective Permission Matrix
                                             </h3>
                                             <div className="border border-slate-200 rounded-lg overflow-x-auto shadow-sm">
-                                                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-center gap-2 text-xs text-blue-800">
-                                                    <AlertCircle size={14} />
-                                                    <span>Permissions below are a union of the Base Role and User Overrides.</span>
+                                                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 flex items-start gap-2 text-xs text-blue-800">
+                                                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                                                    <span>
+                                                        Permissions below are a union of the Base Role and User Overrides.
+                                                        {(linkedContact?.types || []).some(t => ROLE_PERMISSION_TEMPLATES[t]) && (
+                                                            <> The base for {(linkedContact?.types || []).filter(t => ROLE_PERMISSION_TEMPLATES[t]).join(', ')} is the version-controlled role template — editing that role's permissions in the Dictionaries tab has no effect. Change access for this person with the overrides here.</>
+                                                        )}
+                                                    </span>
                                                 </div>
                                                 <table className="min-w-full divide-y divide-slate-200">
                                                     <thead className="bg-slate-50">
@@ -2096,13 +2104,20 @@ const UserPermissionManager: React.FC = () => {
                                     if (confirm(`Grant System Access to ${c.name} (@${newUsername})?\n\nA temporary password will be generated and shown once. The user must change it on first sign-in.`)) {
                                         const db = DatabaseService.getInstance();
                                         try {
+                                            // The login gets the PERSON's roles. This used to write
+                                            // 'USER' — a code with no template — so every account
+                                            // granted here started on the no-template defaults until
+                                            // someone noticed. And a contact with no email registered
+                                            // the auth account under '' ; fall back to the username
+                                            // convention the Login screen derives.
+                                            const grantedRoles = (c.types || []).filter(t => ROLE_PERMISSION_TEMPLATES[t]);
                                             const newUser: any = {
                                                 id: crypto.randomUUID(),
                                                 username: newUsername,
-                                                email: c.email,
+                                                email: c.email || `${newUsername.toLowerCase()}@cainergy.com`,
                                                 contactId: c.id,
                                                 contact_id: c.id,
-                                                roles: ['USER'],
+                                                roles: grantedRoles.length ? grantedRoles : ['INTERNAL'],
                                                 active: true,
                                                 password: tempPassword,
                                                 mfaEnabled: false,

@@ -4,6 +4,18 @@ import { X, Shield, Key, Network, Loader2 } from 'lucide-react';
 import { Contact, DictionaryEntry, OrganizationUnit } from '../../types';
 import { DatabaseService } from '../../services/DatabaseService';
 import { useToast } from '../../contexts/ToastContext';
+import { ROLE_PERMISSION_TEMPLATES } from '../../constants/rolePermissions';
+
+/**
+ * The system roles a person can be given here — the codes that HAVE a
+ * permission template. The CONTACT_TYPE dictionary mixes entity types
+ * (INTERNAL, VENDOR, MANUFACTURER) with roles; the form used to write the
+ * entity type as the login's role, so every technician started life as
+ * INTERNAL (view-only) until an admin noticed. SUPER_ADMIN is never handed
+ * out from a form.
+ */
+const ASSIGNABLE_ROLES = Object.keys(ROLE_PERMISSION_TEMPLATES).filter(r => r !== 'SUPER_ADMIN');
+const DEFAULT_ROLE = 'TECHNICIAN';
 
 interface AddContactModalProps {
     onClose: () => void;
@@ -18,6 +30,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
     const { showToast } = useToast();
     const [formData, setFormData] = useState({
         code: '', firstName: '', lastName: '', title: '', email: '', type: initialType || 'INTERNAL',
+        role: DEFAULT_ROLE,
         orgUnitId: '', costCenterId: '', country: '', phone: ''
     });
     // Manufacturer mode (UAT F-003): a manufacturer is a business partner, NOT a
@@ -131,7 +144,11 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                 code: formData.code,
                 email: '',
                 phone: '', mobile: '', active: true,
-                types: ['INTERNAL'], defaultType: 'INTERNAL',
+                // The person's ROLE is what contacts.roles / users.roles carry
+                // (Admin → Access Control syncs the two). INTERNAL is an entity
+                // type, not a role — writing it here is what gave new
+                // technicians a view-only login.
+                types: [formData.role], defaultType: formData.role,
                 organizationUnitId: null,
                 costCenterId: undefined,
                 hourlyRate: 85, currency: 'USD',
@@ -174,7 +191,7 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                         email: userEmail,
                         contact_id: contactId,
                         status: 'active',
-                        roles: [formData.type], // Use selected type as role
+                        roles: [formData.role], // the chosen system role, not the entity type
                         created_at: new Date().toISOString(),
                         updated_at: new Date().toISOString()
                     } as any, userCreds.password); // password MUST be the 2nd arg — that's what routes
@@ -296,7 +313,25 @@ export const AddContactModal: React.FC<AddContactModalProps> = ({ onClose, onSav
                     </div>
 
 
-                    {/* Fields moved to details page: First Name, Last Name, Email, Role/Type, Cost Center */}
+                    {/* System role — drives the permission template for the contact AND the login */}
+                    <div>
+                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">System Role <span className="text-red-500">*</span></label>
+                        <select
+                            required
+                            className="w-full text-sm border-slate-300 rounded-md p-2 bg-white"
+                            value={formData.role}
+                            onChange={e => setFormData({ ...formData, role: e.target.value })}
+                        >
+                            {ASSIGNABLE_ROLES.map(r => (
+                                <option key={r} value={r}>
+                                    {contactTypes.find(t => t.code === r)?.description || r.replace(/_/g, ' ')}
+                                </option>
+                            ))}
+                        </select>
+                        <p className="text-[11px] text-slate-400 mt-1">Sets what this person can see and do. Fine-tune per person later in Admin → Access Control.</p>
+                    </div>
+
+                    {/* Fields moved to details page: First Name, Last Name, Email, Cost Center */}
 
                     {/* Organization Unit removed - assign via Admin module instead */}
 

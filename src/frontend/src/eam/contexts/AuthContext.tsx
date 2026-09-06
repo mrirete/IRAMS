@@ -14,6 +14,13 @@ interface AuthContextType {
     role: string | null;      // Current Role Code (e.g. TECHNICIAN)
     dataScope: DataScope | null; // Resolved Data Scope (site/department boundaries)
     loading: boolean;
+    /**
+     * True when the access token carries no app_metadata.company_id. Every
+     * tenant-scoped policy then denies (0258 caller_company is fail-closed),
+     * so the app renders as if the company had no data. Surfaced as a banner
+     * rather than left in a console log — see AppLayout.
+     */
+    tenantMissing: boolean;
     signOut: () => Promise<void>;
 }
 
@@ -24,8 +31,18 @@ const AuthContext = createContext<AuthContextType>({
     role: null,
     dataScope: null,
     loading: true,
+    tenantMissing: false,
     signOut: async () => { },
 });
+
+/** Does this JWT carry a tenant claim? Decoded locally — no network. */
+const tokenHasTenant = (accessToken: string | undefined | null): boolean => {
+    if (!accessToken) return true; // unknown → don't alarm
+    try {
+        const payload = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        return !!payload?.app_metadata?.company_id;
+    } catch { return true; }
+};
 
 // ── Optimistic profile cache ────────────────────────────────────────────────
 // Last-known profile/permissions are cached per-user so warm loads paint
@@ -66,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [role, setRole] = useState<string | null>(null);
     const [dataScope, setDataScope] = useState<DataScope | null>(null);
     const [loading, setLoading] = useState(true);
+    const [tenantMissing, setTenantMissing] = useState(false);
     // Which user id we've already initiated a profile fetch for (dedupes the
     // getSession + INITIAL_SESSION double-signal without a stale closure).
     const fetchedForUserRef = useRef<string | null>(null);
@@ -99,6 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (!mounted) return;
             setUser(session?.user ?? null);
             if (session?.user) {
+                setTenantMissing(!tokenHasTenant(session.access_token));
                 initProfile(session.user);
             } else {
                 clearProfileCache();
@@ -118,6 +137,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (!mounted) return;
             setUser(session?.user ?? null);
             if (session?.user) {
+                // Re-evaluated on every token (incl. TOKEN_REFRESHED): an admin
+                // repairing users.company_id clears the banner on the next mint.
+                setTenantMissing(!tokenHasTenant(session.access_token));
                 if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
                     setTimeout(() => { if (mounted) initProfile(session.user); }, 0);
                 }
@@ -129,6 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 setPermissions(null);
                 setRole(null);
                 setDataScope(null);
+                setTenantMissing(false);
                 setLoading(false);
             }
         });
@@ -332,10 +355,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setPermissions(null);
         setRole(null);
         setDataScope(null);
+        setTenantMissing(false);
     };
 
     return (
-        <AuthContext.Provider value={{ user, profile, permissions, role, dataScope, loading, signOut }}>
+        <AuthContext.Provider value={{ user, profile, permissions, role, dataScope, loading, tenantMissing, signOut }}>
             {children}
         </AuthContext.Provider>
     );

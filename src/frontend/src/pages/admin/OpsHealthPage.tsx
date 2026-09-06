@@ -9,7 +9,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, RefreshCw, AlertTriangle, CheckCircle2, Clock, Mail, Bug, Loader2 } from 'lucide-react';
+import { Activity, RefreshCw, AlertTriangle, CheckCircle2, Clock, Mail, Bug, Loader2, Users } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 
 interface CronRow { jobname: string; schedule: string; active: boolean; last_status: string | null; last_run: string | null; last_message: string | null }
@@ -17,6 +17,8 @@ interface Health {
     checked_at: string; pg_cron: boolean; crons: CronRow[];
     outbox_failed_7d: number; outbox_pending: number; errors_24h: number; errors_7d: number;
     last_briefing: string | null; last_watchdog: string | null;
+    /** 0321 — absent on a project where 0321 is not applied yet. */
+    users_without_tenant?: number; users_without_tenant_names?: string[]; contacts_unlinked?: number;
 }
 
 const ago = (iso: string | null): string => {
@@ -53,6 +55,8 @@ export const OpsHealthPage: React.FC = () => {
         if (h.outbox_failed_7d > 0) problems.push(`${h.outbox_failed_7d} notification email(s) failed to send in the last 7 days — check RESEND_API_KEY on notify-dispatch.`);
         if (stale(h.last_briefing, 24 * 8)) problems.push('No Monday briefing in the last 8 days — check the briefing cron and the vault secrets project_url / briefing_cron_key.');
         if (stale(h.last_watchdog, 48)) problems.push('No nightly watchdog run in the last 48 hours.');
+        if ((h.users_without_tenant ?? 0) > 0) problems.push(`${h.users_without_tenant} active login(s) have no company: ${(h.users_without_tenant_names || []).join(', ')}. They see an empty Asset Register and no work orders. Fix: set users.company_id (Admin → Access Control, or SQL), then the person signs out and back in.`);
+        if ((h.contacts_unlinked ?? 0) > 0) problems.push(`${h.contacts_unlinked} person record(s) have a login but no user_id back-link — assignment notifications to them can be misaddressed. Migration 0321 repairs this on apply.`);
     }
 
     return (
@@ -79,7 +83,8 @@ export const OpsHealthPage: React.FC = () => {
                             : <ul className="list-disc pl-5 space-y-1">{problems.map((p, i) => <li key={i}>{p}</li>)}</ul>}
                     </div>
 
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+                        <Tile label="Logins without company" value={h.users_without_tenant === undefined ? '—' : String(h.users_without_tenant)} sub={h.users_without_tenant === undefined ? 'apply 0321' : `${h.contacts_unlinked ?? 0} unlinked persons`} icon={<Users size={14} />} tone={(h.users_without_tenant ?? 0) > 0 ? 'bad' : 'ok'} />
                         <Tile label="Cron jobs" value={`${h.crons.filter(c => c.active).length}/${h.crons.length}`} sub="active" icon={<Clock size={14} />} />
                         <Tile label="Email failed · 7d" value={String(h.outbox_failed_7d)} sub={`${h.outbox_pending} pending`} icon={<Mail size={14} />} tone={h.outbox_failed_7d > 0 ? 'bad' : 'ok'} />
                         <Tile label="Client errors · 24h" value={String(h.errors_24h)} sub={`${h.errors_7d} in 7 days`} icon={<Bug size={14} />} tone={h.errors_24h > 20 ? 'bad' : 'ok'} />

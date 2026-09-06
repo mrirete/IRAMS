@@ -56,7 +56,15 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
         }
     };
 
+    // taskLibrary.view opens the page; create/edit/delete are separate rights.
+    // A TECHNICIAN holds view only (J.tech has a per-user override for
+    // create+edit — that is what the override mechanism is for).
+    const canCreateTL = permissions?.taskLibrary?.create === true;
+    const canEditTL = permissions?.taskLibrary?.edit === true;
+    const canDeleteTL = permissions?.taskLibrary?.delete === true;
+
     const handleCreate = () => {
+        if (!canCreateTL) { alert('Your role cannot create task templates (needs Task Library · Create).'); return; }
         setEditingTask({
             id: '', // New
             code: '',
@@ -77,6 +85,7 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     };
 
     const handleEdit = async (task: LibraryTask) => {
+        if (!canEditTL) { alert('Your role cannot edit task templates (needs Task Library · Edit).'); return; }
         // Fetch full details
         try {
             const fullTask = await db.getLibraryTask(task.id);
@@ -90,6 +99,7 @@ export const TaskLibraryManager: React.FC<TaskLibraryManagerProps> = () => {
     };
 
     const handleDelete = async (id: string) => {
+        if (!canDeleteTL) { alert('Your role cannot delete task templates (needs Task Library · Delete).'); return; }
         const task = tasks.find(t => t.id === id);
         if (task?.isLocked) {
             alert('🔒 This template is locked (used on a completed Work Order). It cannot be deleted. Create a new version instead.');

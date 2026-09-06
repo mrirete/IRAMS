@@ -4163,6 +4163,13 @@ const CloseoutReadinessStrip: React.FC<{ readiness: ReadinessResult; onReview?: 
 // --- Other Tabs (Unchanged except minor prop threading if needed, mostly static in this refactor) ---
 
 const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[] }> = ({ job, onUpdate, dictionaries }) => {
+    // Terminal states are a decision, not an edit. Complete goes through the
+    // closeout modal (TECO), financial close through finops.edit; cancelling
+    // or closing from this dropdown needs workOrders.approve. A technician
+    // holds edit only, so the dropdown offers them execution states.
+    const { permissions: detailPerms } = useAuth();
+    const canDecide = detailPerms?.workOrders?.approve === true;
+    const DECISION_STATES = ['CANC', 'CANCELLED', 'CLOSED'];
     // Default expanded: this state only gates the field cards on < lg screens
     // (desktop always shows them via `hidden lg:block`), and collapsed-by-default
     // left the mobile Details tab as a near-blank page under the readiness strip.
@@ -4375,9 +4382,13 @@ const DetailsTab: React.FC<{ job: WorkOrder, onUpdate: (u: Partial<WorkOrder>) =
                             {/* STATUS_CODE is a merged dictionary (WO + request + PM statuses, 0038a).
                                 Only wo_status enum members are offerable — picking e.g. REVIEW or
                                 APPROVED produced a raw Postgres enum-cast error. */}
-                            {dictionaries.filter(d => d.type === 'STATUS_CODE' && d.active && WO_STATUS_ENUM.includes(String(d.code).toUpperCase())).map(s => (
-                                <option key={s.id} value={s.code}>{s.description}</option>
-                            ))}
+                            {dictionaries
+                                .filter(d => d.type === 'STATUS_CODE' && d.active && WO_STATUS_ENUM.includes(String(d.code).toUpperCase()))
+                                // Keep the current value selectable even when the role could not choose it.
+                                .filter(d => canDecide || !DECISION_STATES.includes(String(d.code).toUpperCase()) || d.code === job.status)
+                                .map(s => (
+                                    <option key={s.id} value={s.code}>{s.description}</option>
+                                ))}
                             {!dictionaries.some(d => d.type === 'STATUS_CODE' && d.code === job.status) && (
                                 <option value={job.status}>{job.status}</option>
                             )}
@@ -5780,7 +5791,12 @@ const TaskEditor: React.FC<{
     const [confUserId, setConfUserId] = useState('');
     const [confFinal, setConfFinal] = useState(false);
     const [posting, setPosting] = useState(false);
-    const { user } = useAuth();
+    const { user, permissions: taskPerms } = useAuth();
+    // Assigning people is `assign`, not `edit`. A technician may still put
+    // themselves on a task they are executing (self-assignment), nobody else.
+    const canAssignOthers = taskPerms?.workOrders?.assign === true || taskPerms?.scheduling?.assign === true;
+    const authUserId = (user as any)?.id;
+    const authUsername = (user as any)?.email?.split('@')[0]?.toLowerCase();
 
     // State for Picker
     const [isPartPickerOpen, setIsPartPickerOpen] = useState(false);
@@ -6798,6 +6814,8 @@ const TaskEditor: React.FC<{
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isAssigned}
+                                                                    disabled={!canAssignOthers && !(user.id === authUserId || String(user.username || '').toLowerCase() === authUsername)}
+                                                                    title={!canAssignOthers ? 'Your role can assign yourself only — assigning others needs the Assign permission' : undefined}
                                                                     onChange={() => {
                                                                         if (!isAssigned && outsideCrew) {
                                                                             const wcLabel = [crewWorkCenter?.code, crewWorkCenter?.name].filter(Boolean).join(' ') || 'work center';

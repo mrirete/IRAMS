@@ -1,7 +1,8 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, AlertTriangle } from 'lucide-react';
 import { Sidebar } from './Sidebar';
+import { useAuth } from '../eam/contexts/AuthContext';
 import { TopBar } from './TopBar';
 import { MobileBottomNav } from './MobileBottomNav';
 import { usePullToRefresh } from '../eam/hooks/usePullToRefresh';
@@ -38,6 +39,7 @@ interface AppLayoutProps {
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
+    const { tenantMissing, loading: authLoading } = useAuth();
     // Forced password change: one small read of the caller's own users row.
     const [forcedPw, setForcedPw] = useState<{ id: string; username: string } | null>(null);
     useEffect(() => {
@@ -123,6 +125,18 @@ export const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
                     onTogglePreview={isMainFrame ? () => setIsPreviewOpen(true) : undefined}
                 />
+
+                {/* A login with no tenant claim sees an empty company (0258 fail-closed).
+                    Say so, instead of letting "Asset Register is empty" be the only clue. */}
+                {tenantMissing && !authLoading && (
+                    <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs md:text-sm px-4 py-2 flex items-start gap-2">
+                        <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600" />
+                        <span>
+                            <strong>This login is not attached to a company</strong>, so assets, work orders and every other record will appear empty.
+                            Sign out and back in first. If this message stays, an administrator must set your company under Admin → Access Control (Ops Health lists affected logins).
+                        </span>
+                    </div>
+                )}
 
                 {/* bg-slate-50 + text-slate-900: light content area so EAM page headers are visible */}
                 <main ref={containerRef as any} className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-6 relative bg-slate-50 text-slate-900">
