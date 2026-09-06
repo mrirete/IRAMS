@@ -1513,7 +1513,135 @@ const getRcmCoverage: AgentTool = {
   },
 };
 
+// ── get_asset_context ────────────────────────────────────────────────────
+// What the RCM module's Specialist already reads (0317/0318), for every other
+// agent: ISO 14224 classification, criticality, make/model, the operating
+// context (mode, duty, environment, medium, design vs operating values with
+// derating flags), the physical breakdown (registered subunits/components and
+// the BOM), the RCM studies on the asset, and its condition-monitoring points.
+// Self-contained rendering — the edge bundle cannot import the app's lib.
+const getAssetContext: AgentTool = {
+  name: "get_asset_context",
+  description:
+    "Read one asset's engineering context from the register: ISO 14224 category/class/type, criticality, make/model, the operating context (mode, utilisation, hours and starts per year, redundancy, environment, service medium) and its design-vs-operating parameter table with derating flags (operating above design = accelerated wear), the physical breakdown (registered subunits/components and BOM lines, critical spares marked), RCM studies on the asset, and its reading points with alarm bands. Call this before advising on ANY named asset — failure modes, PM intervals, strategy, spares, condition monitoring — so the advice is specific to how this machine is built and run, not generic. Provide asset_tag or asset_id.",
+  parameters: {
+    type: "object",
+    properties: {
+      asset_tag: { type: "string", description: "Asset tag (e.g. P-101A)." },
+      asset_id: { type: "string", description: "Asset UUID (if known)." },
+    },
+    required: [],
+  },
+  tier: 1,
+  async run(args, ctx: ToolContext): Promise<ToolResult> {
+    let assetId: string | null = typeof args?.asset_id === "string" && args.asset_id.trim() ? args.asset_id.trim() : null;
+    const tag = typeof args?.asset_tag === "string" ? args.asset_tag.trim() : "";
+    if (!assetId && tag) {
+      const { data: a } = await ctx.db.from("assets").select("id").ilike("tag", tag).limit(1);
+      if (a && a[0]) assetId = a[0].id;
+    }
+    if (!assetId) {
+      return { data: { found: false, asset_tag: tag || null }, sources: [], warnings: ["No matching asset — provide a valid asset_tag or asset_id."] };
+    }
+
+    const { data: asset, error } = await ctx.db
+      .from("assets")
+      .select("id, tag, name, hierarchy_level, criticality, status_code, manufacturer, model, serial_number, asset_category, asset_class, asset_type_code, operating_context, properties, mtbf_days, mttr_hours, running_hours")
+      .eq("id", assetId)
+      .maybeSingle();
+    if (error) throw new Error(`assets query failed: ${error.message}`);
+    if (!asset) return { data: { found: false }, sources: [], warnings: ["Asset not found (or not visible to this user)."] };
+
+    // Classification labels from the reference catalogue (global + tenant rows).
+    const codes = [asset.asset_category, asset.asset_class, asset.asset_type_code].filter(Boolean) as string[];
+    const labels = new Map<string, string>();
+    if (codes.length) {
+      const { data: refs } = await ctx.db.from("reference_codes_effective").select("category, code, description").in("code", codes).in("category", ["ASSET_CATEGORY", "ASSET_CLASS", "ASSET_TYPE"]);
+      for (const r of refs ?? []) labels.set(`${r.category}:${r.code}`, r.description);
+    }
+    const classification = {
+      category: asset.asset_category ? { code: asset.asset_category, label: labels.get(`ASSET_CATEGORY:${asset.asset_category}`) ?? asset.asset_category } : null,
+      class: asset.asset_class ? { code: asset.asset_class, label: labels.get(`ASSET_CLASS:${asset.asset_class}`) ?? asset.asset_class } : null,
+      type: asset.asset_type_code ? { code: asset.asset_type_code, label: labels.get(`ASSET_TYPE:${asset.asset_type_code}`) ?? asset.asset_type_code } : null,
+    };
+
+    // Operating context (0317) with derating flags.
+    const oc = (asset.operating_context && typeof asset.operating_context === "object" ? asset.operating_context : {}) as Record<string, unknown>;
+    const params = (Array.isArray(oc.parameters) ? oc.parameters : []) as Array<Record<string, unknown>>;
+    const num = (v: unknown) => { if (v === null || v === undefined || String(v).trim() === "") return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
+    const parameters = params
+      .filter((p) => [p.design, p.operating, p.max].some((v) => v !== null && v !== undefined && String(v).trim() !== ""))
+      .map((p) => {
+        const d = num(p.design), o = num(p.operating);
+        const pct = d !== null && o !== null && d !== 0 ? Math.round((o / d) * 1000) / 10 : null;
+        return {
+          key: p.key, label: p.label, unit: p.unit ?? "",
+          design: p.design ?? null, operating: p.operating ?? null, max: p.max ?? null,
+          operating_pct_of_design: pct,
+          flag: pct === null ? null : pct > 100 ? "ABOVE_DESIGN" : pct < 50 ? "FAR_BELOW_DESIGN" : null,
+        };
+      });
+    const aboveDesign = parameters.filter((p) => p.flag === "ABOVE_DESIGN").map((p) => p.label);
+    const operating_context = {
+      mode: oc.mode ?? null, utilisation_pct: oc.utilisation_pct ?? null, hours_per_year: oc.hours_per_year ?? null, starts_per_year: oc.starts_per_year ?? null,
+      redundancy: oc.redundancy ?? null, environment: Array.isArray(oc.environment) ? oc.environment : [], service_medium: oc.service_medium ?? null,
+      description: (asset.properties as Record<string, unknown> | null)?.description ?? null,
+      parameters, above_design: aboveDesign, updated_at: oc.updated_at ?? null,
+      complete: !!oc.mode && (!!oc.service_medium || (Array.isArray(oc.environment) && oc.environment.length > 0)) && parameters.some((p) => p.operating_pct_of_design !== null),
+    };
+
+    // Physical breakdown (0318): registered children ≤3 levels + BOM.
+    const components: Array<Record<string, unknown>> = [];
+    let frontier = [assetId];
+    for (let depth = 1; depth <= 3 && frontier.length; depth++) {
+      const { data: kids } = await ctx.db.from("assets").select("id, tag, name, hierarchy_level, criticality, asset_class, parent_id").in("parent_id", frontier).order("tag").limit(500);
+      const rows = (kids ?? []).filter((k: Record<string, unknown>) => !["SITE", "AREA", "UNIT", "SYSTEM", "SUBSYSTEM"].includes(String(k.hierarchy_level ?? "").toUpperCase()));
+      for (const k of rows) components.push({ id: k.id, tag: k.tag, name: k.name, level: k.hierarchy_level, criticality: k.criticality, asset_class: k.asset_class, depth });
+      frontier = rows.map((k: Record<string, unknown>) => String(k.id));
+    }
+    const { data: bom } = await ctx.db.from("asset_bom").select("id, part_number, description, quantity, uom, is_critical, replacement_interval_days").eq("asset_id", assetId).order("is_critical", { ascending: false }).limit(200);
+    const parts = (bom ?? []).map((b: Record<string, unknown>) => ({ id: b.id, part_number: b.part_number ?? "", description: b.description, qty: Number(b.quantity) || 1, uom: b.uom ?? "EA", critical: !!b.is_critical, replacement_interval_days: b.replacement_interval_days ?? null }));
+
+    // RCM studies on this asset (0319 view where available, else the table).
+    let rcm: Array<Record<string, unknown>> = [];
+    const cov = await ctx.db.from("sem_rcm_coverage").select("study_id, title, status, proactive_count, pm_count").eq("asset_id", assetId);
+    if (!cov.error) rcm = cov.data ?? [];
+    else {
+      const { data: studies } = await ctx.db.from("ers_rcm_studies").select("id, title, status").eq("asset_id", assetId);
+      rcm = (studies ?? []).map((s: Record<string, unknown>) => ({ study_id: s.id, title: s.title, status: s.status }));
+    }
+
+    // Condition-monitoring points.
+    const { data: points } = await ctx.db.from("reading_definitions").select("name, unit, category, min_warning, max_warning, min_critical, max_critical, limit_source, monitoring_frequency_days").eq("asset_id", assetId).eq("is_active", true).limit(50);
+
+    ctx.sources.push({ kind: "assets", ref: asset.id, label: `register record ${asset.tag}` });
+    if (oc.updated_at) ctx.sources.push({ kind: "assets", ref: `${asset.id}#operating_context`, label: `operating context (updated ${String(oc.updated_at).slice(0, 10)})` });
+    for (const r of rcm) ctx.sources.push({ kind: "rcm_study", ref: String(r.study_id), label: `RCM study ${r.title}` });
+
+    const warnings: string[] = [];
+    if (!asset.asset_class) warnings.push("No ISO 14224 class on the register — classify the asset before relying on class-specific failure modes.");
+    if (!operating_context.complete) warnings.push("Operating context is incomplete (needs mode, medium/environment and at least one design+operating value) — advice on duty, load or derating is unsupported until it is filled.");
+    if (aboveDesign.length) warnings.push(`Operating ABOVE DESIGN on: ${aboveDesign.join(", ")} — treat as accelerated-wear evidence.`);
+
+    return {
+      data: {
+        found: true,
+        asset: { id: asset.id, tag: asset.tag, name: asset.name, level: asset.hierarchy_level, criticality: asset.criticality, status: asset.status_code, manufacturer: asset.manufacturer, model: asset.model, serial_number: asset.serial_number, mtbf_days: asset.mtbf_days, mttr_hours: asset.mttr_hours, running_hours: asset.running_hours },
+        classification,
+        operating_context,
+        breakdown: { components, parts, critical_spares: parts.filter((p) => p.critical).length },
+        rcm_studies: rcm,
+        reading_points: points ?? [],
+        note: "Classification, context, breakdown and points are register data entered by the organisation (ISO 14224 §7 / Annex A). 'operating_pct_of_design' > 100 means the asset runs beyond its rated value.",
+      },
+      sources: [{ kind: "assets", ref: asset.id, label: `asset context ${asset.tag}: ${components.length} components, ${parts.length} BOM lines, ${rcm.length} RCM studies, ${(points ?? []).length} reading points` }],
+      warnings: warnings.length ? warnings : undefined,
+    };
+  },
+};
+
 export const TOOLS: Record<string, AgentTool> = {
+  [getAssetContext.name]: getAssetContext,
   [getRcmCoverage.name]: getRcmCoverage,
   [queryPid.name]: queryPid,
   [searchManuals.name]: searchManuals,

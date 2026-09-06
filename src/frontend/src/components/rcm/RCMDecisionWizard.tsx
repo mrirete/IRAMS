@@ -337,6 +337,19 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   const showSpares = !!stratCode && strategyProducesPM(stratCode) && ((breakdown?.parts.length ?? 0) > 0 || (decision?.spares_requirements?.length ?? 0) > 0);
   const justification = decision?.justification || '';
   const justPreview = justification.replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  // Duty the measured life data was collected under (0317 snapshot): a β/η
+  // fitted at 76 % of rated flow does not transfer to a pump run at 100 %.
+  const dutyNote = (() => {
+    const c = study.context_snapshot?.context;
+    if (!c) return null;
+    const bits: string[] = [];
+    if (c.mode) bits.push(`${c.mode} duty`);
+    if (c.utilisation_pct != null) bits.push(`${c.utilisation_pct}% utilisation`);
+    const keyed = (c.parameters || []).filter(p => p.design != null && p.operating != null && Number(p.design) > 0 && Number.isFinite(Number(p.operating)));
+    const lead = keyed.find(p => ['flow', 'load', 'power', 'rated_power', 'capacity', 'current'].includes(p.key)) || keyed[0];
+    if (lead) bits.push(`${lead.label.toLowerCase()} at ${Math.round((Number(lead.operating) / Number(lead.design)) * 100)}% of design`);
+    return bits.length ? `Measured under: ${bits.join(', ')} — re-fit if the duty changes.` : null;
+  })();
 
   return (
     <div className="space-y-3 animate-in fade-in duration-300">
@@ -352,6 +365,9 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
             {' · '}B10 = <strong>{lifeEvidence.b10.toLocaleString()} h</strong>
           </span>
           <span className="text-xs text-emerald-700 font-semibold">Suggested interval ≈ {lifeEvidence.interval.toLocaleString()} h</span>
+          {/* The fit is only as good as the duty it was measured under — say
+              what that duty is (from the study's register snapshot, 0317). */}
+          {dutyNote && <span className="text-[11px] text-slate-500 basis-full">{dutyNote}</span>}
         </div>
       )}
 

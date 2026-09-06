@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Activity, AlertTriangle, Clock, RefreshCcw, Save, X } from 'lucide-react';
 import { Asset } from '../../types';
 import { Button } from '../ui';
-import { resolveMachineClass, vibrationBands, isVibrationUnit, TEMPERATURE_BANDS, ISO20816_ZONES } from '../../../lib/predict/limitLibrary';
+import { resolveMachineClass, vibrationBands, isVibrationUnit, TEMPERATURE_BANDS, ISO20816_ZONES, suggestPointsForAsset, ratedPowerKw, type SuggestedPoint } from '../../../lib/predict/limitLibrary';
 
 // ── Reading Point editor ─────────────────────────────────────────────────────
 // A real measuring-point definition (SAP PM "measuring point" / Maximo "meter"):
@@ -74,10 +74,16 @@ export const AddReadingPointModal: React.FC<{
     // Band provenance (1.5): the cited source of the current band values.
     // Hand-editing any band voids the citation → 'manual'.
     const [limitSource, setLimitSource] = useState<string | null>(null);
-    // ISO 20816-3 machine class for vibration bands (size × mounting).
-    const [over300kW, setOver300kW] = useState(false);
+    // ISO 20816-3 machine class for vibration bands (size × mounting). Size
+    // comes from the register's rated power when the operating context has it
+    // (0317); mounting is not in the register, so it stays a question.
+    const registerKw = ratedPowerKw(asset?.operatingContext as any);
+    const [over300kW, setOver300kW] = useState(() => (registerKw ?? 0) > 300);
     const [flexMount, setFlexMount] = useState(false);
     const machineClass = resolveMachineClass(over300kW, flexMount);
+    // Whole points the register can justify for THIS asset — class + rated values.
+    const suggested: SuggestedPoint[] = asset ? suggestPointsForAsset(asset as any) : [];
+    const [suggestionLabel, setSuggestionLabel] = useState<string | null>(null);
     // Unit picker: preset dropdown + remembered custom units.
     const [customUnits, setCustomUnits] = useState<string[]>(() => {
         try { return JSON.parse(localStorage.getItem('readings.customUnits') || '[]'); } catch { return []; }
@@ -108,6 +114,17 @@ export const AddReadingPointModal: React.FC<{
         setMinWarning(''); setMinCritical('');
     };
 
+    const applySuggestion = (s: SuggestedPoint) => {
+        setName(s.name); setCategory(s.category); setUnit(s.unit); setUnitMode('pick');
+        const b = s.bands;
+        setMinCritical(b.minCritical == null ? '' : String(b.minCritical));
+        setMinWarning(b.minWarning == null ? '' : String(b.minWarning));
+        setMaxWarning(b.maxWarning == null ? '' : String(b.maxWarning));
+        setMaxCritical(b.maxCritical == null ? '' : String(b.maxCritical));
+        setLimitSource(b.maxWarning != null || b.maxCritical != null ? b.source : null);
+        setSuggestionLabel(b.label);
+    };
+
     // Machine-class change re-cites ISO-sourced vibration bands in place.
     const applyMachineClass = (big: boolean, flex: boolean) => {
         setOver300kW(big); setFlexMount(flex);
@@ -119,7 +136,7 @@ export const AddReadingPointModal: React.FC<{
     };
 
     // Hand-edits void the citation.
-    const editBand = (set: (v: string) => void) => (v: string) => { set(v); setLimitSource('manual'); };
+    const editBand = (set: (v: string) => void) => (v: string) => { set(v); setLimitSource('manual'); setSuggestionLabel(null); };
 
     // Guard against crossed bands (min critical should be ≤ min warning ≤ max warning ≤ max critical).
     const bandOrderOk = (() => {
@@ -175,9 +192,27 @@ export const AddReadingPointModal: React.FC<{
                 </div>
 
                 <div className="p-5 space-y-4 overflow-y-auto">
+                    {/* Points the register can justify for THIS asset (class + rated values, 0317) */}
+                    {suggested.length > 0 && (
+                        <div>
+                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">
+                                From this asset's class and operating context
+                                {registerKw !== null && <span className="ml-1 font-normal normal-case text-slate-400">· {registerKw} kW rated</span>}
+                            </label>
+                            <div className="flex flex-wrap gap-1.5">
+                                {suggested.map(s => (
+                                    <button key={s.name} onClick={() => applySuggestion(s)} title={`${s.bands.label} (from ${s.derivedFrom})`}
+                                        className="text-[11px] font-semibold px-2.5 py-1 rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition">
+                                        {s.name}{s.bands.maxWarning != null ? ` · ${s.bands.maxWarning}/${s.bands.maxCritical} ${s.unit}` : ''}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Quick-start templates */}
                     <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Quick start</label>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">Quick start{suggested.length > 0 ? ' (generic)' : ''}</label>
                         <div className="flex flex-wrap gap-1.5">
                             {QUICK_POINTS.map(t => (
                                 <button key={t.label} onClick={() => applyTemplate(t)}
@@ -272,7 +307,7 @@ export const AddReadingPointModal: React.FC<{
                         )}
                         {limitSource && limitSource !== 'manual' && (
                             <p className="text-[11px] text-relantern-700 mt-1.5">
-                                Source: {limitSource.startsWith('iso20816') ? ISO20816_ZONES[machineClass].describe : 'class template (typical cited values)'} — editing a value marks it manual.
+                                Source: {suggestionLabel ?? (limitSource.startsWith('iso20816') ? ISO20816_ZONES[machineClass].describe : 'class template (typical cited values)')} — editing a value marks it manual.
                             </p>
                         )}
                         <p className="text-[11px] text-slate-400 mt-1.5">A reading outside the warning band raises a warning alarm; outside critical raises a critical alarm and can auto-raise corrective work.</p>

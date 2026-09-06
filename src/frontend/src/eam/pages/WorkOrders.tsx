@@ -1110,8 +1110,13 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
 
     // Resolve asset class for failure mode context filtering
     const [resolvedAssetClass, setResolvedAssetClass] = useState<string>('');
+    // The asset's REGISTERED subunits / components (child rows at SUBUNIT or
+    // COMPONENT level) — offered in the subunit picker beside the generic ISO
+    // 14224 subunit codes, so a failure can be pinned to the actual lube-oil
+    // system row rather than "Lubrication system" in the abstract.
+    const [registeredSubunits, setRegisteredSubunits] = useState<{ id: string; code: string; description: string }[]>([]);
     useEffect(() => {
-        if (!localJob.assetId) return;
+        if (!localJob.assetId) { setRegisteredSubunits([]); return; }
         DatabaseService.getInstance().getAssets().then((assets: any[]) => {
             const asset = assets.find((a: any) => a.id === localJob.assetId);
             if (asset) {
@@ -1120,6 +1125,10 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 // code itself — resolve it from the register's classification.
                 setResolvedAssetClass(failureScopeFor(asset));
             }
+            const isSub = (a: any) => ['SUBUNIT', 'COMPONENT'].includes(String(a.hierarchyLevel || '').toUpperCase());
+            const direct = assets.filter((a: any) => a.parentId === localJob.assetId && isSub(a));
+            const grand = assets.filter((a: any) => direct.some((d: any) => d.id === a.parentId) && isSub(a));
+            setRegisteredSubunits([...direct, ...grand].map((a: any) => ({ id: a.id, code: a.tag, description: `${a.tag} — ${a.name}` })));
         }).catch(() => {});
     }, [localJob.assetId]);
 
@@ -2056,7 +2065,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     {activeTab === 'resources' && <ResourcesTab job={localJob} users={users} contacts={contacts} onNavigateToTask={(taskId) => { setActiveTab('tasks'); }} dictionaries={dictionaries} />}
                     {activeTab === 'cost' && <CostTab job={localJob} refreshKey={costRefreshKey} />}
                     {activeTab === 'files' && <FilesTab job={localJob} onUpdate={updateJob} tasks={localJob.tasks || []} />}
-                    {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} bomItems={bomItems} />}
+                    {activeTab === 'analysis' && <AnalysisTab job={localJob} onUpdate={updateJob} dictionaries={dictionaries} isPreventive={isPreventiveType} onOpenCompleteModal={() => setShowCompleteModal(true)} followUpDescription={followUpDescription} onFollowUpDescriptionChange={setFollowUpDescription} assetClassCode={resolvedAssetClass} bomItems={bomItems} registeredSubunits={registeredSubunits} />}
                     {activeTab === 'discussion' && localJob.id && (
                         <div className="h-[60vh] border border-slate-200 rounded-xl overflow-hidden">
                             <ThreadPanel threadType="work_order" threadId={localJob.id} threadLabel={localJob.woNumber || 'this work order'} />
@@ -2928,7 +2937,7 @@ const SearchableSelect: React.FC<{
     );
 };
 
-const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void, assetClassCode?: string, bomItems?: any[] }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange, assetClassCode, bomItems = [] }) => {
+const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) => void, dictionaries: DictionaryEntry[], isPreventive?: boolean, onOpenCompleteModal?: () => void, followUpDescription?: string, onFollowUpDescriptionChange?: (val: string) => void, assetClassCode?: string, bomItems?: any[], registeredSubunits?: { id: string; code: string; description: string }[] }> = ({ job, onUpdate, dictionaries, isPreventive = false, onOpenCompleteModal, followUpDescription = '', onFollowUpDescriptionChange, assetClassCode, bomItems = [], registeredSubunits = [] }) => {
     const { profile } = useAuth();
     // Dropdown Data — all failure modes (unfiltered, for duplicate validation)
     const allFailureModes = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_MODE' && d.active), [dictionaries]);
@@ -2943,10 +2952,13 @@ const AnalysisTab: React.FC<{ job: WorkOrder; onUpdate: (u: Partial<WorkOrder>) 
     const allFailureCauses = useMemo(() => dictionaries.filter(d => d.type === 'FAILURE_CAUSE' && d.active), [dictionaries]);
     const failureCauses = allFailureCauses; // Causes are not asset-specific
     const detectionMethods = useMemo(() => dictionaries.filter(d => d.type === 'DETECTION_METHOD' && d.active), [dictionaries]);
-    // ISO 14224 level-7 subunits, scoped to the asset class like failure modes (0288)
-    const subunits = useMemo(() => dictionaries.filter(d =>
-        d.type === 'SUBUNIT' && d.active && (!d.categoryRef || d.categoryRef === assetClassCode)
-    ), [dictionaries, assetClassCode]);
+    // ISO 14224 level-7 subunits, scoped to the asset class like failure modes
+    // (0288) — with the asset's REGISTERED subunit/component rows first, when
+    // the register has them (their tag is stored as the code).
+    const subunits = useMemo(() => [
+        ...registeredSubunits.map(r => ({ id: r.id, type: 'SUBUNIT', code: r.code, description: `${r.description} (registered)`, active: true } as DictionaryEntry)),
+        ...dictionaries.filter(d => d.type === 'SUBUNIT' && d.active && (!d.categoryRef || d.categoryRef === assetClassCode)),
+    ], [dictionaries, assetClassCode, registeredSubunits]);
 
     // AI-assisted failure effects
     const [aiSuggestingEffects, setAiSuggestingEffects] = useState(false);
