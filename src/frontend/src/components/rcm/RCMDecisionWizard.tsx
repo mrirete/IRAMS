@@ -381,11 +381,11 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
       {/* Stage filter + pager */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
         {failureModes.length > 1 && (
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap" title="Filter the pager by where each failure mode stands: consequence (Q5) still unclassified on the Worksheet, strategy (Q6–Q7) still to choose here, or decided">
             {([
-              ['all', 'All', 'text-slate-700 border-slate-300 bg-white'],
-              ['needs_q5', 'Needs Q5', 'text-amber-700 border-amber-300 bg-amber-50'],
-              ['needs_strategy', 'Needs strategy', 'text-primary-700 border-primary-300 bg-primary-50'],
+              ['all', 'All modes', 'text-slate-700 border-slate-300 bg-white'],
+              ['needs_q5', 'Consequence missing', 'text-amber-700 border-amber-300 bg-amber-50'],
+              ['needs_strategy', 'Strategy missing', 'text-primary-700 border-primary-300 bg-primary-50'],
               ['done', 'Decided', 'text-emerald-700 border-emerald-300 bg-emerald-50'],
             ] as const).map(([key, label, tone]) => (
               <button
@@ -453,7 +453,6 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-primary-50 text-primary-700 border border-primary-200"><ShieldAlert size={10} /> Hidden</span>
                   )}
                   {stratOpt && <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${stratOpt.color}`}>{stratOpt.icon} {stratOpt.label}</span>}
-                  {linkedPM && <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200">✓ PM</span>}
                 </div>
               </div>
               {(() => {
@@ -660,21 +659,17 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                 />
               )}
 
-              {/* Justification — a preview here, the full text in a pop-up */}
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Justification</label>
-                <button
-                  type="button"
-                  onClick={() => setJustOpen(true)}
-                  className="mt-1 w-full text-left px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg hover:border-slate-300 hover:bg-white transition-colors flex items-start gap-2"
-                  title="Open the justification"
-                >
-                  <span className={`flex-1 text-sm leading-relaxed ${justPreview ? 'text-slate-700 line-clamp-2' : 'text-slate-400 italic'}`}>
-                    {justPreview || 'Why this task type and interval — tap to write it.'}
-                  </span>
-                  <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold text-primary-600 mt-0.5"><Maximize2 size={12} /> {justPreview ? 'Open' : 'Write'}</span>
-                </button>
-              </div>
+              {/* Justification lives in its pop-up; here only the door to it */}
+              <button
+                type="button"
+                onClick={() => setJustOpen(true)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
+                  justPreview ? 'bg-white border-slate-200 text-slate-700 hover:border-slate-300' : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                }`}
+                title={justPreview ? 'Open the justification' : 'No justification written yet'}
+              >
+                <Maximize2 size={12} /> {justPreview ? 'Justification' : 'Write justification'}
+              </button>
             </div>
 
             {/* The PM this decision becomes */}

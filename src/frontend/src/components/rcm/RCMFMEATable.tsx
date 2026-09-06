@@ -664,15 +664,17 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                     <tr>
                       <td colSpan={COL_COUNT} className="p-0 border border-slate-200">
                         <div
-                          className="px-2 py-2 cursor-pointer hover:bg-slate-50/80 transition-colors"
-                          style={{ borderLeft: `4px solid ${accent}`, background: `linear-gradient(90deg, ${accent}0c, transparent 40%)` }}
+                          className="px-2 py-2 cursor-pointer bg-slate-100/80 hover:bg-slate-100 transition-colors border-b border-slate-200"
+                          style={{ borderLeft: `4px solid ${accent}` }}
                           onClick={() => toggleFn(fn.id)}
                         >
-                          {/* Q1 — Function */}
+                          {/* Q1 — Function. The band spans the whole worksheet: it is the
+                              group the failure-mode rows below belong to, not a row of them. */}
                           <div className="flex items-center gap-2">
                             <span className="text-slate-400 shrink-0">
                               {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
                             </span>
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500 shrink-0 w-[92px]">Function · Q1</span>
                             <span
                               className="text-[10px] font-bold px-2 py-0.5 rounded border shrink-0"
                               style={{ background: `${accent}18`, color: accent, borderColor: `${accent}45` }}
@@ -728,11 +730,11 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                           </div>
 
                           {/* Q2 — Functional failure */}
-                          <div className="flex items-center gap-2 mt-1 pl-[22px]">
+                          <div className="flex items-center gap-2 mt-1.5 pl-[22px]">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-cyan-700 shrink-0 w-[92px]" title="How the function fails — total loss, partial loss or degraded performance">Functional failure · Q2</span>
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-cyan-50 text-cyan-700 border-cyan-200 shrink-0">
                               {fn.function_number ? fn.function_number.replace(/^F/i, 'FF') : 'FF'}
                             </span>
-                            <span className="text-[9px] text-slate-400 italic shrink-0 hidden md:inline">Functional failure — how it fails</span>
                             <input
                               type="text"
                               defaultValue={fn.functional_failure || ''}
