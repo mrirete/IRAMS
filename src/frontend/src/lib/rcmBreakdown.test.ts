@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   renderBreakdownForPrompt, breakdownCoverage, matchComponent, matchPart, componentLabel, isEmptyBreakdown,
+  inferComponentLink, pinFailureMode,
   type AssetBreakdown,
 } from './rcmBreakdown';
 
@@ -68,5 +69,44 @@ describe('matching the Specialist answer back', () => {
     expect(componentLabel({ bom_item_id: 'p2' }, B)).toBe('Synthetic turbine oil ISO VG 32');
     expect(componentLabel({ bom_item_id: 'p1' }, B)).toBe('FLT-0023 — Air inlet filter 24x24x12');
     expect(componentLabel({}, B)).toBe('');
+  });
+});
+
+describe('inferring the pin from the failure mode text', () => {
+  const G: AssetBreakdown = {
+    components: [
+      { id: 'v', tag: 'GT-1-FCV', name: 'Valve', level: 'COMPONENT', depth: 1 },
+      { id: 'cv', tag: 'GT-1-CV', name: 'Control valve', level: 'COMPONENT', depth: 1 },
+      { id: 'fcv', tag: 'GT-1-FCV1', name: 'Fuel control valve', level: 'COMPONENT', depth: 1 },
+      { id: 'ign', tag: 'GT-1-IGN', name: 'Ignitor plug', level: 'COMPONENT', depth: 1 },
+      { id: 'noz', tag: 'GT-1-NZ', name: 'Fuel nozzle', level: 'COMPONENT', depth: 1 },
+    ],
+    parts: [
+      { id: 'p1', partNumber: 'FLT-0023', description: 'Air inlet filter', qty: 1, uom: 'EA', critical: false },
+    ],
+  };
+  it('pins to the longest whole-word component mention', () => {
+    expect(inferComponentLink(['Fuel Control Valve stuck closed'], G).component_asset_id).toBe('fcv');
+    expect(inferComponentLink(['Control valve leaks past the seat'], G).component_asset_id).toBe('cv');
+    expect(inferComponentLink(['Ignitor Plug failure'], G).component_asset_id).toBe('ign');
+    expect(inferComponentLink(['Fuel Nozzle / Atomizer clogged'], G).component_asset_id).toBe('noz');
+    expect(inferComponentLink(['', 'wear on the GT-1-IGN electrode'], G).component_asset_id).toBe('ign');
+  });
+  it('does not match inside longer words, short names, or empty breakdowns', () => {
+    expect(inferComponentLink(['Valves galore'], G).component_asset_id).toBeNull();
+    expect(inferComponentLink(['Shaft seal leaking'], G)).toEqual({ component_asset_id: null, bom_item_id: null });
+    expect(inferComponentLink(['Fuel control valve stuck'], { components: [], parts: [] })).toEqual({ component_asset_id: null, bom_item_id: null });
+    expect(inferComponentLink([null, undefined], G)).toEqual({ component_asset_id: null, bom_item_id: null });
+  });
+  it('falls back to a BOM line, and components win over parts', () => {
+    expect(inferComponentLink(['Air inlet filter blocked'], G).bom_item_id).toBe('p1');
+    expect(inferComponentLink(['FLT-0023 torn'], G).bom_item_id).toBe('p1');
+    expect(inferComponentLink(['Fuel nozzle blocked by air inlet filter debris'], G)).toEqual({ component_asset_id: 'noz', bom_item_id: null });
+  });
+  it('pinFailureMode keeps an explicit pin and only fills an empty one', () => {
+    expect(pinFailureMode({ failure_mode_description: 'Ignitor plug failure', component_asset_id: 'v' }, G).component_asset_id).toBe('v');
+    expect(pinFailureMode({ failure_mode_description: 'Ignitor plug failure' }, G).component_asset_id).toBe('ign');
+    const untouched = { failure_mode_description: 'Shaft seal leaking' };
+    expect(pinFailureMode(untouched, G)).toBe(untouched);
   });
 });

@@ -45,7 +45,7 @@ import { normalizeRecommendation, recommendationToDecisionUpdates } from '../eam
 import type { RCMAssetContext, RCMCoverageRow } from '../eam/services/RCMService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
-import { matchComponent, matchPart, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
+import { matchComponent, matchPart, pinFailureMode, inferComponentLink, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
 
 // ── Types ─────────────────────────────────────────────────
 type RCMTab = 'dashboard' | 'functions' | 'decisions' | 'tasks' | 'evidence';
@@ -548,6 +548,18 @@ export const RCMPage: React.FC = () => {
     // from Severity straight into Occurrence — never read a stale row.
     const payload: Partial<RCMFailureMode> = { ...updates };
     delete payload.rpn;
+    // A row that has never been pinned gets pinned the moment its text names
+    // a registered component ("Fuel control valve stuck closed"). Only on an
+    // unpinned row, and only when the pin is not itself being edited — a
+    // deliberate "Whole asset" choice is made by clearing the pin, which this
+    // never touches.
+    if (typeof updates.failure_mode_description === 'string' && !('component_asset_id' in updates) && !('bom_item_id' in updates)) {
+      const row = failureModesRef.current.find(fm => fm.id === id);
+      if (row && !row.component_asset_id && !row.bom_item_id) {
+        const link = inferComponentLink([updates.failure_mode_description, row.failure_cause_description], breakdown);
+        if (link.component_asset_id || link.bom_item_id) Object.assign(payload, link);
+      }
+    }
     failureModesRef.current = failureModesRef.current.map(fm => fm.id === id ? { ...fm, ...payload } : fm);
     setFailureModes(prev => prev.map(fm => fm.id === id ? { ...fm, ...payload } : fm));
 
@@ -675,7 +687,9 @@ export const RCMPage: React.FC = () => {
       const base = failureModes.filter(fm => fm.function_id === fn.id).length;
       for (let i = 0; i < modes.length; i++) {
         const m = modes[i];
-        await rcmService.createFailureMode({
+        // Pin to the register's breakdown: the component / part the Specialist
+        // named, else the one the mode text itself names ("Ignitor plug failure").
+        await rcmService.createFailureMode(pinFailureMode({
           function_id: fn.id,
           failure_mode_description: m.description,
           failure_cause_description: m.cause,
@@ -687,10 +701,9 @@ export const RCMPage: React.FC = () => {
           occurrence: clampScore(m.occurrence),
           data_source: 'ai_generated',
           sort_order: base + i + 1,
-          // Pin to the register's breakdown when the Specialist named a component / part
           component_asset_id: matchComponent(m.component, breakdown)?.id ?? null,
           bom_item_id: matchPart(m.part, breakdown)?.id ?? null,
-        });
+        }, breakdown));
       }
       await loadStudyDetail(selectedStudy.id);
       showToast(`Specialist added ${modes.length} failure mode${modes.length !== 1 ? 's' : ''}`);
@@ -833,7 +846,7 @@ export const RCMPage: React.FC = () => {
           wroteFns++;
           for (const fm of fn.failure_modes || []) {
             wroteModes++;
-            await rcmService.createFailureMode({
+            await rcmService.createFailureMode(pinFailureMode({
               function_id: created.id, failure_mode_description: fm.description, failure_cause_description: fm.cause,
               failure_effect_local: fm.effect_local, failure_effect_system: fm.effect_system,
               // Both columns: end_effect is what the worksheet's End Effect cell reads.
@@ -841,7 +854,7 @@ export const RCMPage: React.FC = () => {
               data_source: 'ai_generated', sort_order: 0,
               component_asset_id: matchComponent(fm.component, breakdown)?.id ?? null,
               bom_item_id: matchPart(fm.part, breakdown)?.id ?? null,
-            });
+            }, breakdown));
           }
         }
       }
@@ -1299,13 +1312,13 @@ export const RCMPage: React.FC = () => {
           decisions={decisionMap}
           onAddObservedMode={async (code, description, functionId) => {
             const count = failureModes.filter(fm => fm.function_id === functionId).length;
-            const created = await trackSave(rcmService.createFailureMode({
+            const created = await trackSave(rcmService.createFailureMode(pinFailureMode({
               function_id: functionId,
               failure_mode_code: code,
               failure_mode_description: description,
               data_source: 'wo_history',
               sort_order: count + 1,
-            }));
+            }, breakdown)));
             if (created) {
               setFailureModes(prev => [...prev, created]);
               showToast(`${code} added to the study from WO history — complete its row on the Worksheet`);

@@ -15,6 +15,7 @@ import { getStepCompletion } from '../components/analyze/RCAStepIndicator';
 import { friendlyAIError } from '../eam/lib/aiError';
 import { analyzeService, scopeNodesToMethod, rcaMethodLabel, rcaMethodColor, EVIDENCE_GRADES, bestEvidenceGrade, nodeConfidence, rootCauseConfidence, confidenceFromScore } from '../eam/services/AnalyzeService';
 import { rcmService } from '../eam/services/RCMService';
+import { pinFailureMode } from '../lib/rcmBreakdown';
 import { EvidenceGradeBadge } from '../components/analyze/RCAEvidencePanel';
 import { nodeSupport } from '../components/analyze/NodeEvidenceChip';
 import { DatabaseService } from '../eam/services/DatabaseService';
@@ -178,13 +179,15 @@ export function RCAInvestigationPage() {
             const existing = await rcmService.getFailureModesByStudy(study.id);
             const dup = existing.find(m => modeText && m.failure_mode_description?.trim().toLowerCase() === modeText.toLowerCase());
             if (dup) { showToast('This failure mode is already in the study'); navigate(`/rcm/${study.id}`); return; }
-            const created = await rcmService.createFailureMode({
+            // Pin the mode to the component its text names, when the register has one.
+            const breakdown = await rcmService.getAssetBreakdown(study.asset_id);
+            const created = await rcmService.createFailureMode(pinFailureMode({
                 function_id: fn.id,
                 failure_mode_description: modeText || `Failure investigated in RCA ${inv?.id?.slice(0, 8) || ''}`.trim(),
                 failure_cause_description: causeText || null,
                 data_source: 'wo_history',
                 sort_order: existing.filter(m => m.function_id === fn.id).length + 1,
-            });
+            }, breakdown));
             if (created) { showToast(`Added to RCM study "${study.title}" — classify its consequence on the Worksheet`); navigate(`/rcm/${study.id}`); }
             else showToast('Could not add the failure mode to the study', 'error');
         } finally {

@@ -165,3 +165,70 @@ export function componentLabel(fm: ComponentLinkLike, b: AssetBreakdown | null |
   }
   return '';
 }
+
+// ── Inferring the pin from the failure mode's own words ─────────────────────
+
+/** Escape for use inside a RegExp. */
+const rx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Does `needle` occur in `hay` as whole words (not inside a longer token)? */
+function mentions(hay: string, needle: string): boolean {
+  if (!needle) return false;
+  return new RegExp(`(^|[^a-z0-9])${rx(needle)}([^a-z0-9]|$)`, 'i').test(hay);
+}
+
+/**
+ * A failure mode written by a person, an import or the Specialist usually
+ * names its component in the mode text itself — "Fuel control valve stuck
+ * closed", "Ignitor plug failure". When nothing pinned it explicitly, read
+ * the text and pin it to the component (or BOM line) it names.
+ *
+ * Deliberately stricter than matchComponent(): that one maps a short answer
+ * the model was ASKED to give ("the thrust bearing") and can afford loose
+ * containment. Here the input is a sentence, so a component called "Valve"
+ * must not swallow every mode that mentions a valve — matches are whole-word,
+ * names shorter than 4 characters are ignored, and the LONGEST match wins so
+ * "fuel control valve" beats "control valve" beats "valve". Components win
+ * over parts (a maintainable item is what RCM pins to; a part is a spare).
+ */
+export function inferComponentLink(
+  texts: Array<string | null | undefined>,
+  b: AssetBreakdown | null | undefined,
+): { component_asset_id: string | null; bom_item_id: string | null } {
+  const none = { component_asset_id: null, bom_item_id: null };
+  if (isEmptyBreakdown(b)) return none;
+  const hay = texts.map(t => norm(t)).filter(Boolean).join(' \n ');
+  if (!hay) return none;
+
+  let best: { id: string; len: number } | null = null;
+  for (const c of b!.components) {
+    for (const key of [norm(c.name), norm(c.tag)]) {
+      if (key.length < 4 || (best && key.length <= best.len)) continue;
+      if (mentions(hay, key)) best = { id: c.id, len: key.length };
+    }
+  }
+  if (best) return { component_asset_id: best.id, bom_item_id: null };
+
+  best = null;
+  for (const p of b!.parts) {
+    for (const key of [norm(p.description), norm(p.partNumber)]) {
+      if (key.length < 4 || (best && key.length <= best.len)) continue;
+      if (mentions(hay, key)) best = { id: p.id, len: key.length };
+    }
+  }
+  return best ? { component_asset_id: null, bom_item_id: best.id } : none;
+}
+
+/**
+ * Pin a NEW failure mode: keep whatever the caller resolved explicitly, and
+ * only infer from the text when nothing was pinned.
+ */
+export function pinFailureMode<T extends ComponentLinkLike & { failure_mode_description?: string | null; failure_cause_description?: string | null }>(
+  fm: T,
+  b: AssetBreakdown | null | undefined,
+): T {
+  if (fm.component_asset_id || fm.bom_item_id) return fm;
+  const link = inferComponentLink([fm.failure_mode_description, fm.failure_cause_description], b);
+  if (!link.component_asset_id && !link.bom_item_id) return fm;
+  return { ...fm, ...link };
+}

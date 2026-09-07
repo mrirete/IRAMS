@@ -21,7 +21,7 @@ import {
   type AssetOperatingContext, type ContextSnapshot, type ContextAssetLike,
 } from '../../lib/operatingContext';
 import { getCategory, getClass, getType } from '../../lib/iso14224Taxonomy';
-import { renderBreakdownForPrompt, EMPTY_BREAKDOWN, type AssetBreakdown, type BreakdownComponent, type BreakdownPart } from '../../lib/rcmBreakdown';
+import { renderBreakdownForPrompt, pinFailureMode, EMPTY_BREAKDOWN, type AssetBreakdown, type BreakdownComponent, type BreakdownPart } from '../../lib/rcmBreakdown';
 
 export type { AIRecommendation } from './rcmPlan';
 export type { ContextSnapshot, AssetOperatingContext } from '../../lib/operatingContext';
@@ -868,10 +868,12 @@ class RCMServiceImpl {
       targetFnId = functions[0].id;
     }
 
-    // 3. Map FMEA items → RCM failure modes
+    // 3. Map FMEA items → RCM failure modes, pinned to the component each names
+    const study = await this.getStudy(studyId);
+    const breakdown = await this.getAssetBreakdown(study?.asset_id);
     let imported = 0;
     for (const item of fmeaItems) {
-      const fm = await this.createFailureMode({
+      const fm = await this.createFailureMode(pinFailureMode({
         function_id: targetFnId,
         fmea_item_id: item.id,
         failure_mode_description: item.failure_mode || 'Unknown',
@@ -882,7 +884,7 @@ class RCMServiceImpl {
         detection: item.detection,
         data_source: 'fmea_import',
         sort_order: imported + 1
-      });
+      }, breakdown));
       if (fm) imported++;
     }
 
@@ -938,7 +940,8 @@ class RCMServiceImpl {
       targetFnId = functions[0].id;
     }
 
-    // Create failure modes from aggregated data
+    // Create failure modes from aggregated data, pinned where the code or cause names a component
+    const breakdown = await this.getAssetBreakdown(study.asset_id);
     let imported = 0;
     for (const [modeCode, agg] of modeMap) {
       // Calculate MTBF from dates
@@ -953,7 +956,7 @@ class RCMServiceImpl {
         mtbfDays = intervals.reduce((a, b) => a + b, 0) / intervals.length;
       }
 
-      const fm = await this.createFailureMode({
+      const fm = await this.createFailureMode(pinFailureMode({
         function_id: targetFnId,
         failure_mode_code: modeCode,
         failure_mode_description: `Historical: ${modeCode}`,
@@ -963,7 +966,7 @@ class RCMServiceImpl {
         historical_mtbf_days: mtbfDays,
         data_source: 'wo_history',
         sort_order: imported + 1
-      });
+      }, breakdown));
       if (fm) imported++;
     }
 

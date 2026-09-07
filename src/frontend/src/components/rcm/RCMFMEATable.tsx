@@ -18,11 +18,11 @@ import React, { useState, useCallback, useEffect, useLayoutEffect, useRef, useMe
 import {
   Plus, Trash2, ChevronDown, ChevronRight, Layers, Sparkles, Lock,
   RefreshCw, EyeOff, ShieldAlert, CheckCircle2, Info, ChevronsDownUp, ChevronsUpDown,
-  ArrowDown10, Download, Wand2,
+  ArrowDown10, Download, Wand2, MapPin,
 } from 'lucide-react';
 import { RCMContextualHelp } from './RCMContextualHelp';
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from './types';
-import type { AssetBreakdown } from '../../lib/rcmBreakdown';
+import { inferComponentLink, type AssetBreakdown } from '../../lib/rcmBreakdown';
 import { EVIDENT_CONSEQUENCES, HIDDEN_CONSEQUENCES, CONSEQUENCE_OPTIONS, STRATEGY_LABELS, parseConsequenceCodes } from './types';
 import {
   canSpecialistCompleteRow, canSpecialistExpandFunction, isRowComplete,
@@ -424,6 +424,20 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
   // what the scores are FOR. Off = the worksheet's stored order.
   const [rankByRpn, setRankByRpn] = useState(false);
   const [exporting, setExporting] = useState(false);
+  // Unpinned rows show a quiet "Pin to component" link; the picker itself
+  // opens only for the row being pinned, so a column of unpinned modes does
+  // not read as a column of empty dashed boxes.
+  const [pinEditing, setPinEditing] = useState<Set<string>>(new Set());
+  const hasBreakdown = !!breakdown && (breakdown.components.length > 0 || breakdown.parts.length > 0);
+  // Unpinned rows whose own text names a registered component — one click pins them all.
+  const autoPins = useMemo(() => {
+    if (!hasBreakdown) return [] as Array<{ id: string; link: ReturnType<typeof inferComponentLink> }>;
+    return failureModes
+      .filter(fm => !fm.component_asset_id && !fm.bom_item_id)
+      .map(fm => ({ id: fm.id, link: inferComponentLink([fm.failure_mode_description, fm.failure_cause_description], breakdown) }))
+      .filter(x => x.link.component_asset_id || x.link.bom_item_id);
+  }, [failureModes, breakdown, hasBreakdown]);
+  const autoPinAll = () => { for (const { id, link } of autoPins) onUpdateFailureMode(id, link); };
 
   const toggleFn = (id: string) => setCollapsed(prev => {
     const next = new Set(prev);
@@ -554,6 +568,16 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
               : specialistLocked ? <Lock size={12} /> : <Sparkles size={12} />}
             {failureModes.length === 0 ? 'Draft the worksheet' : 'Draft more functions'}
           </button>
+          {autoPins.length > 0 && (
+            <button
+              onClick={autoPinAll}
+              title="These rows name a registered component in their text but are not pinned to it yet — pin them all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-primary-200 rounded-lg text-[11px] font-semibold text-primary-700 hover:bg-primary-50 transition-colors"
+            >
+              <MapPin size={12} />
+              Pin {autoPins.length} row{autoPins.length !== 1 ? 's' : ''} to components
+            </button>
+          )}
           {failureModes.length > 1 && (
             <button
               onClick={() => setRankByRpn(v => !v)}
@@ -803,23 +827,37 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                 placeholder="What failed? e.g. Shaft seal leaking"
                                 onCommit={v => onUpdateFailureMode(fm.id, { failure_mode_description: v })}
                               />
-                              {/* Pin to the register's breakdown (0318): which subunit/component or BOM part this mode is about */}
-                              {breakdown && (breakdown.components.length > 0 || breakdown.parts.length > 0) && (
+                              {/* Pin to the register's breakdown (0318): which subunit/component or BOM part this mode is about.
+                                  Pinned → the chip-styled picker. Unpinned → a quiet link until clicked. */}
+                              {hasBreakdown && !fm.component_asset_id && !fm.bom_item_id && !pinEditing.has(fm.id) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPinEditing(prev => new Set(prev).add(fm.id))}
+                                  title="Whole asset — click to pin this failure mode to a component or BOM part"
+                                  className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-slate-400 hover:text-primary-600 transition-colors"
+                                >
+                                  <MapPin size={10} /> Pin to component
+                                </button>
+                              )}
+                              {hasBreakdown && (fm.component_asset_id || fm.bom_item_id || pinEditing.has(fm.id)) && (
                                 <select
+                                  autoFocus={pinEditing.has(fm.id)}
                                   value={fm.component_asset_id ? `c:${fm.component_asset_id}` : fm.bom_item_id ? `p:${fm.bom_item_id}` : ''}
                                   onChange={e => {
                                     const v = e.target.value;
+                                    setPinEditing(prev => { const n = new Set(prev); n.delete(fm.id); return n; });
                                     onUpdateFailureMode(fm.id, {
                                       component_asset_id: v.startsWith('c:') ? v.slice(2) : null,
                                       bom_item_id: v.startsWith('p:') ? v.slice(2) : null,
                                     });
                                   }}
+                                  onBlur={() => setPinEditing(prev => { if (!prev.has(fm.id)) return prev; const n = new Set(prev); n.delete(fm.id); return n; })}
                                   title="Which component or part this failure mode belongs to"
                                   className={`mt-0.5 w-full text-[10px] rounded border px-1 py-0.5 bg-white truncate ${
-                                    fm.component_asset_id || fm.bom_item_id ? 'border-primary-200 text-primary-700' : 'border-dashed border-slate-200 text-slate-400'
+                                    fm.component_asset_id || fm.bom_item_id ? 'border-primary-200 text-primary-700' : 'border-primary-300 text-slate-600'
                                   }`}
                                 >
-                                  <option value="">Whole asset — pin to a component…</option>
+                                  <option value="">Whole asset — no component</option>
                                   {breakdown.components.length > 0 && (
                                     <optgroup label="Components">
                                       {breakdown.components.map(c => (
