@@ -36,7 +36,16 @@
 | 5 | `trg_rca_audit` on investigations, nodes, evidence, actions, barriers writes `ers_rca_audit_log` (SECURITY DEFINER, existing vocabulary extended). | 12 rows after the walkthrough: created, action_added@j.tech, effectiveness_reviewed@j.supeervisor, closed@j.supeervisor, … |
 | — | Side fix: effectiveness date/verdict selects read `e.target.value` after an await, so the page state lagged the database; value is captured first now. | Verdict select enables the sign-off immediately. |
 
-Still open: #7 (committed method survives a rewrite without a prompt), #8 (invite row-click affordance), #9 (username typo), and one new observation: the Bad-actors Pareto counted 1 of P-101-A's 4 corrective work orders "by cost" — only work orders with frozen costs contribute, so the ranking under-reads assets whose orders were never settled.
+Closed afterwards (migration 0334):
+
+| # | Fix | Verified by |
+|---|-----|-------------|
+| 7 | The method banner shows "The problem definition changed after this method was chosen — reconsider it" whenever a `definition_updated` audit row is newer than `method_locked_at`. | Notice visible on this investigation after the technician's rewrite. |
+| 8 | Each search result carries an explicit "Add as editor / reviewer …" button that names the role about to be granted. | Search for P.test1 shows the button. |
+| 9 | Username and contact renamed to J.Supervisor, and the stored team list on this investigation updated. The login email is unchanged (j.supeervisor@cainergy.com) so the person can still sign in. | `users`, `contacts`, `collaborators` rows. |
+| — | Pareto counts every non-cancelled work order in range and prices settled ones by their frozen figures, then labour + parts lines, then total_actual_cost. | P-101-A now ranks with 4 events ($1,040, #3 by cost, #1 by frequency); 4 assets analysed instead of 1. |
+
+Nothing from this walkthrough remains open.
 
 
 ## The 5-Why itself (run as the team editor, J.tech)

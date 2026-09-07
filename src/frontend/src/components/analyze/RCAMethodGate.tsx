@@ -40,9 +40,11 @@ interface Props {
     advisorSlot?: React.ReactNode;
     /** Viewer: show the choice, allow none of it. */
     readOnly?: boolean;
+    /** The problem definition was edited after this method was chosen — say so. */
+    definitionChangedAfterCommit?: boolean;
 }
 
-const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, onOpenWorkspace, suggestion, advisorSlot, readOnly = false }) => {
+const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, onOpenWorkspace, suggestion, advisorSlot, readOnly = false, definitionChangedAfterCommit = false }) => {
     const committed = !!investigation.method_locked_at && !!investigation.method;
 
     const [switching, setSwitching] = useState(false);
@@ -97,6 +99,11 @@ const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, onO
                 <span className="text-xs text-slate-500">
                     Analysis method for this investigation · {causeCount} cause{causeCount === 1 ? '' : 's'} recorded
                 </span>
+                {definitionChangedAfterCommit && (
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800" title="The method was chosen for a different statement of the problem. Confirm it still fits, or change it.">
+                        <AlertTriangle size={12} /> The problem definition changed after this method was chosen — reconsider it
+                    </span>
+                )}
                 {!readOnly && (
                     <button
                         onClick={() => setSwitching(true)}

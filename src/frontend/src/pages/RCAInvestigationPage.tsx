@@ -1148,6 +1148,10 @@ export function RCAInvestigationPage() {
     // rows resurface inside the fault tree as intermediate gate events.
     const methodCommitted = !!inv?.method_locked_at && !!inv?.method;
     const scopedNodes = scopeNodesToMethod(nodes, inv?.method);
+    // Did the problem definition change after the method was committed? The 0332
+    // audit trigger writes 'definition_updated' on title / statement / asset edits.
+    const definitionChangedAfterCommit = !!inv?.method_locked_at && auditLog.some(l =>
+        l.action === 'definition_updated' && new Date(l.created_at).getTime() > new Date(inv.method_locked_at as string).getTime());
     // Root causes the committed method established — what a corrective action must point at.
     const rootCauseNodes = scopedNodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
     // Causal steps (whys, causes, root causes) that cite no supporting evidence. The
@@ -1796,6 +1800,7 @@ export function RCAInvestigationPage() {
                             onOpenWorkspace={() => setCauseFullscreen(true)}
                             suggestion={methodSuggestion}
                             readOnly={readOnly}
+                            definitionChangedAfterCommit={definitionChangedAfterCommit}
                             advisorSlot={
                                 <button
                                     onClick={runMethodAdvisor}

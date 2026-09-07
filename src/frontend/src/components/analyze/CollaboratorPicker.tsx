@@ -227,7 +227,9 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                                                 {already ? (
                                                     <span className="text-[9px] text-slate-400 font-medium shrink-0">Added</span>
                                                 ) : (
-                                                    <UserPlus size={14} className="text-slate-300 shrink-0" />
+                                                    <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-primary-200 bg-primary-50 text-primary-700 text-[11px] font-bold">
+                                                        <UserPlus size={12} /> Add as {ROLE_META[selectedRole]?.label?.toLowerCase() || selectedRole}
+                                                    </span>
                                                 )}
                                             </div>
                                         );
