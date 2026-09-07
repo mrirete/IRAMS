@@ -92,10 +92,16 @@ export const Readings: React.FC = () => {
 
     // Deep link (?asset=<id>) — e.g. the Predict setup guide's "log daily rounds
     // here" hand-off lands with the asset already selected on the entry sheet.
+    // `&point=<definition id>` (RCM Strategy "Open reading point", Evidence
+    // "trend") lands on that point's trend instead of the entry sheet.
     const location = useLocation();
+    const [deepLinkDefId, setDeepLinkDefId] = useState<string | null>(null);
     useEffect(() => {
-        const q = new URLSearchParams(location.search).get('asset');
-        if (q) { setSelectedAssetId(q); setActiveTab('entry'); }
+        const params = new URLSearchParams(location.search);
+        const q = params.get('asset');
+        const point = params.get('point');
+        if (q) { setSelectedAssetId(q); setActiveTab(point ? 'history' : 'entry'); }
+        if (point) setDeepLinkDefId(point);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -779,6 +785,7 @@ export const Readings: React.FC = () => {
                                     definitions={definitions.filter(d => d.assetId === selectedAsset.id)}
                                     logs={logs}
                                     onToggleActive={handleToggleActive}
+                                    initialDefId={deepLinkDefId}
                                 />
                             )}
                             {activeTab === 'definitions' && (
@@ -970,9 +977,17 @@ const TrendAnalysis: React.FC<{
     definitions: ReadingDefinition[];
     logs: ReadingLogEntry[];
     onToggleActive: (id: string, currentStatus: boolean) => void;
-}> = ({ definitions, logs, onToggleActive }) => {
-    const [selectedDefId, setSelectedDefId] = useState<string>(definitions[0]?.id || '');
+    /** Point to open first (deep link); ignored when it is not one of this asset's points. */
+    initialDefId?: string | null;
+}> = ({ definitions, logs, onToggleActive, initialDefId }) => {
+    const [selectedDefId, setSelectedDefId] = useState<string>(
+        (initialDefId && definitions.some(d => d.id === initialDefId)) ? initialDefId : (definitions[0]?.id || ''),
+    );
     const selectedDef = definitions.find(d => d.id === selectedDefId);
+    useEffect(() => {
+        if (initialDefId && definitions.some(d => d.id === initialDefId)) setSelectedDefId(initialDefId);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialDefId, definitions.length]);
 
     // Date-range filter for the chart + history (AMPRO/SAP graph filtering).
     const [fromDate, setFromDate] = useState('');

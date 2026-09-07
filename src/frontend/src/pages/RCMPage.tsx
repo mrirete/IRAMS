@@ -985,12 +985,18 @@ export const RCMPage: React.FC = () => {
    */
   const handleCreateReadingPoint = async (fm: RCMFailureMode) => {
     if (!selectedStudy?.asset_id) return;
+    // Wait for any queued autosave on this decision so the row exists server-side.
+    const pending = decisionChains.current.get(fm.id);
+    if (pending) await pending;
     const decision = decisionMap.get(fm.id);
-    const tech = (decision?.ai_recommendation as { suggested_technology?: string } | null)?.suggested_technology;
+    if (!decision) { showToast('Choose a strategy first — the reading point hangs off the decision', 'error'); return; }
+    if (decision.reading_definition_id) { showToast('This decision already has a reading point — open it from the Work Management row'); return; }
+    const tech = (decision.ai_recommendation as { suggested_technology?: string } | null)?.suggested_technology;
     const name = `${tech ? `${tech} — ` : ''}${fm.failure_mode_description}`.slice(0, 80);
     const slug = name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'CONDITION';
+    setAiLoading(`point-${fm.id}`);
     try {
-      await DatabaseService.getInstance().addReadingDefinition({
+      const created = await DatabaseService.getInstance().addReadingDefinition({
         assetId: selectedStudy.asset_id,
         readingTypeCode: `${slug}_${Date.now().toString(36).toUpperCase()}`,
         name,
@@ -999,9 +1005,16 @@ export const RCMPage: React.FC = () => {
         pfIntervalDays: null,
         limitSource: null,
       });
+      // 0324: the decision remembers its point — the button becomes a link and
+      // the Evidence tab reads live values against this failure mode.
+      const linked = await rcmService.updateDecision(decision.id, { reading_definition_id: created.id });
+      if (!linked) throw new Error('point created but the decision could not be linked to it (0324 applied?)');
+      setDecisions(prev => prev.map(d => d.id === decision.id ? { ...d, reading_definition_id: created.id } : d));
       showToast(`Reading point "${name}" created — set its unit and alarm bands under Condition Data`);
     } catch (e) {
       showToast(`Reading point not created — ${e instanceof Error ? e.message : String(e)}`, 'error');
+    } finally {
+      setAiLoading(null);
     }
   };
 

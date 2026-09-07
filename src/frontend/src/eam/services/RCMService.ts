@@ -151,6 +151,8 @@ export interface RCMDecision {
   recurring_work_id: string | null;
   /** 0319 — Task Library job plan the generated PM carries (steps, roles, parts). */
   task_library_item_id?: string | null;
+  /** 0324 — the Condition Data measurement point an on-condition / predictive decision monitors. NULL = paper task. */
+  reading_definition_id?: string | null;
   spares_requirements: SpareRequirement[];
   created_at: string;
   updated_at: string;
@@ -198,6 +200,9 @@ export interface RCMCoverageRow {
   strategy_count: number;
   proactive_count: number;
   pm_count: number;
+  /** 0324 — on-condition / predictive decisions, and how many of them have a linked measurement point. */
+  cbm_count?: number;
+  reading_point_count?: number;
 }
 
 // ─── AI Setup ────────────────────────────────────────────────

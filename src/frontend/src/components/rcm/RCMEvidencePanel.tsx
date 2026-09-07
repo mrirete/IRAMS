@@ -6,7 +6,8 @@
  * where the study and the field disagree.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { FlaskConical, Loader2, CheckCircle2, AlertTriangle, Radio, Plus, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { FlaskConical, Loader2, CheckCircle2, AlertTriangle, Radio, Plus, RefreshCw, ArrowUpRight, Link2 } from 'lucide-react';
 import { supabase } from '../../eam/lib/supabase';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 import { fetchGroundedFit } from '../../lib/predict/groundedFit';
@@ -14,6 +15,40 @@ import {
     patternVerdict, checkDecisionAgainstPattern, reconcileModes, checkCbmCoverage,
     type PatternVerdict, type DecisionCheck, type CbmCoverageRow,
 } from '../../lib/predict/rcmEvidence';
+
+/** A measurement point as the Evidence tab needs it: identity, bands, and its newest log. */
+interface EvidencePoint {
+    id: string;
+    name: string;
+    unit: string | null;
+    isActive?: boolean;
+    minCritical: number | null;
+    minWarning: number | null;
+    maxWarning: number | null;
+    maxCritical: number | null;
+}
+interface LatestReading { value: number; date: string; time?: string | null; isAlarm?: boolean }
+type BandState = 'ok' | 'warning' | 'critical' | 'no-bands';
+
+function bandState(p: EvidencePoint, v: number): BandState {
+    const has = [p.minCritical, p.minWarning, p.maxWarning, p.maxCritical].some(x => x != null);
+    if (!has) return 'no-bands';
+    if ((p.maxCritical != null && v >= Number(p.maxCritical)) || (p.minCritical != null && v <= Number(p.minCritical))) return 'critical';
+    if ((p.maxWarning != null && v >= Number(p.maxWarning)) || (p.minWarning != null && v <= Number(p.minWarning))) return 'warning';
+    return 'ok';
+}
+
+/** Newest active log per definition — reading_definitions carries no last-reading column. */
+function latestByDefinition(logs: { definitionId: string; value: number; date: string; time?: string | null; isActive?: boolean; isAlarm?: boolean }[]): Map<string, LatestReading> {
+    const out = new Map<string, LatestReading>();
+    for (const l of logs) {
+        if (l.isActive === false || l.value == null) continue;
+        const stamp = `${l.date}T${l.time || '00:00'}`;
+        const cur = out.get(l.definitionId);
+        if (!cur || stamp > `${cur.date}T${cur.time || '00:00'}`) out.set(l.definitionId, { value: Number(l.value), date: l.date, time: l.time, isAlarm: l.isAlarm });
+    }
+    return out;
+}
 import type { RCMStudy, RCMFunction, RCMFailureMode, RCMDecision } from '../../eam/services/RCMService';
 
 interface Props {
@@ -35,7 +70,8 @@ export const RCMEvidencePanel: React.FC<Props> = ({ study, functions, failureMod
     const [verdict, setVerdict] = useState<PatternVerdict | null>(null);
     const [observedCounts, setObservedCounts] = useState<Record<string, number>>({});
     const [modeDict, setModeDict] = useState<Record<string, string>>({});
-    const [readingDefs, setReadingDefs] = useState<{ name: string; isActive?: boolean }[]>([]);
+    const [readingDefs, setReadingDefs] = useState<EvidencePoint[]>([]);
+    const [latest, setLatest] = useState<Map<string, LatestReading>>(new Map());
     const [addTarget, setAddTarget] = useState<string>('');   // function id for adds
     const [addingCode, setAddingCode] = useState<string | null>(null);
 
@@ -50,10 +86,11 @@ export const RCMEvidencePanel: React.FC<Props> = ({ study, functions, failureMod
         setLoading(true);
         (async () => {
             try {
-                if (!study.asset_id) { setVerdict(null); setObservedCounts({}); setReadingDefs([]); return; }
-                const [fit, defs, { data: wos }, { data: dict }] = await Promise.all([
+                if (!study.asset_id) { setVerdict(null); setObservedCounts({}); setReadingDefs([]); setLatest(new Map()); return; }
+                const [fit, defs, logs, { data: wos }, { data: dict }] = await Promise.all([
                     fetchGroundedFit(study.asset_id),
                     DatabaseService.getInstance().getReadingDefinitions(study.asset_id),
+                    DatabaseService.getInstance().getReadingLogs(study.asset_id),
                     supabase.from('work_orders')
                         .select('id, wo_failure_data!wo_id(failure_mode_code)')
                         .eq('asset_id', study.asset_id),
@@ -73,7 +110,8 @@ export const RCMEvidencePanel: React.FC<Props> = ({ study, functions, failureMod
                 }
                 setObservedCounts(counts);
                 setModeDict(Object.fromEntries((dict || []).map(d => [String(d.code).toUpperCase(), d.description])));
-                setReadingDefs(defs || []);
+                setReadingDefs((defs || []) as EvidencePoint[]);
+                setLatest(latestByDefinition(logs || []));
             } finally {
                 if (active) setLoading(false);
             }
@@ -107,6 +145,38 @@ export const RCMEvidencePanel: React.FC<Props> = ({ study, functions, failureMod
     );
     const contradicted = checks.filter(c => c.support === 'contradicted');
     const uncovered = coverage.filter(c => !c.covered);
+    const pointById = useMemo(() => new Map(readingDefs.map(d => [d.id, d])), [readingDefs]);
+
+    /** Latest value against the point's bands — the "is it actually being watched" cell. */
+    const renderLatest = (c: CbmCoverageRow) => {
+        if (!c.matchedPointId) return <span className="text-slate-400">—</span>;
+        const p = pointById.get(c.matchedPointId);
+        const l = latest.get(c.matchedPointId);
+        const href = `/readings?asset=${study.asset_id}&point=${c.matchedPointId}`;
+        if (!p) return <span className="text-slate-400">—</span>;
+        if (!l) {
+            return (
+                <span className="text-amber-700">
+                    no readings yet · <Link to={href} className="font-bold hover:underline">log one <ArrowUpRight size={10} className="inline -mt-0.5" /></Link>
+                </span>
+            );
+        }
+        const state = bandState(p, l.value);
+        const pill = state === 'critical' ? 'bg-red-50 text-red-700 border-red-200'
+            : state === 'warning' ? 'bg-amber-50 text-amber-700 border-amber-200'
+            : state === 'ok' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+            : 'bg-slate-50 text-slate-500 border-slate-200';
+        const label = state === 'no-bands' ? 'no bands' : state;
+        const unit = p.unit && p.unit !== '—' ? ` ${p.unit}` : '';
+        return (
+            <span className="inline-flex items-center gap-1.5 flex-wrap">
+                <span className="text-slate-800 font-medium">{l.value.toLocaleString()}{unit}</span>
+                <span className="text-slate-400">{l.date}</span>
+                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full border ${pill}`}>{label}</span>
+                <Link to={href} className="text-primary-600 font-bold hover:underline" title="Open this point in Condition Data">trend <ArrowUpRight size={10} className="inline -mt-0.5" /></Link>
+            </span>
+        );
+    };
 
     if (!study.asset_id) {
         return (
@@ -216,22 +286,26 @@ export const RCMEvidencePanel: React.FC<Props> = ({ study, functions, failureMod
                     <h3 className="text-base font-semibold text-slate-800">On-condition task coverage</h3>
                     {uncovered.length > 0 && <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">{uncovered.length} uncovered</span>}
                 </div>
-                <p className="text-xs text-slate-400 mb-3">A CBM task with no measurement point behind it is a paper task — each on-condition decision is checked against the asset's actual points (Condition Data).</p>
+                <p className="text-xs text-slate-400 mb-3">A CBM task with no measurement point behind it is a paper task — each on-condition decision is checked against the asset's actual points (Condition Data), and its latest reading is shown against the point's alarm bands. <Link2 size={10} className="inline -mt-0.5" /> marks a point the decision is linked to; the rest are matched by name.</p>
                 {coverage.length === 0 ? (
                     <p className="text-xs text-slate-400">No on-condition tasks in this study's decisions yet.</p>
                 ) : (
                     <div className="border border-slate-200 rounded-lg overflow-hidden">
-                        <div className="grid grid-cols-[1.4fr_0.7fr_1.3fr] gap-2 px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                            <span>Task</span><span>Needs</span><span>Coverage</span>
+                        <div className="grid grid-cols-[1.3fr_0.5fr_1.2fr_1.2fr] gap-2 px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            <span>Failure mode · task</span><span>Needs</span><span>Coverage</span><span>Latest reading</span>
                         </div>
                         {coverage.map((c, i) => (
-                            <div key={i} className="grid grid-cols-[1.4fr_0.7fr_1.3fr] gap-2 px-3 py-2 border-b border-slate-100 last:border-b-0 text-xs items-center">
-                                <span className="text-slate-700 truncate" title={c.task}>{c.task}{c.technology ? <span className="text-slate-400"> · {c.technology}</span> : null}</span>
+                            <div key={i} className="grid grid-cols-[1.3fr_0.5fr_1.2fr_1.2fr] gap-2 px-3 py-2 border-b border-slate-100 last:border-b-0 text-xs items-center">
+                                <span className="min-w-0">
+                                    <span className="block text-slate-800 font-medium truncate" title={fmById.get(c.failureModeId)?.failure_mode_description}>{fmById.get(c.failureModeId)?.failure_mode_description || 'Failure mode'}</span>
+                                    <span className="block text-slate-500 truncate" title={c.task}>{c.task}{c.technology ? <span className="text-slate-400"> · {c.technology}</span> : null}</span>
+                                </span>
                                 <span className="text-slate-500">{c.neededKind ?? '—'}</span>
                                 <span className={c.covered ? 'text-emerald-700' : 'text-red-600 font-medium'}>
-                                    {c.covered ? <CheckCircle2 size={12} className="inline mr-1 -mt-0.5" /> : <AlertTriangle size={12} className="inline mr-1 -mt-0.5" />}
+                                    {c.covered ? (c.linked ? <Link2 size={12} className="inline mr-1 -mt-0.5" /> : <CheckCircle2 size={12} className="inline mr-1 -mt-0.5" />) : <AlertTriangle size={12} className="inline mr-1 -mt-0.5" />}
                                     {c.note}
                                 </span>
+                                <span>{renderLatest(c)}</span>
                             </div>
                         ))}
                     </div>

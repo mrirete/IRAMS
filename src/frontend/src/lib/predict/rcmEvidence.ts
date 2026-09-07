@@ -122,6 +122,12 @@ export function requiredKind(taskText: string): SensorKind | null {
     return null;
 }
 
+export interface CbmPoint {
+    id: string;
+    name: string;
+    isActive?: boolean;
+}
+
 export interface CbmCoverageRow {
     failureModeId: string;
     task: string;
@@ -129,46 +135,88 @@ export interface CbmCoverageRow {
     neededKind: SensorKind | null;
     /** matching measurement point name, if one exists */
     matchedPoint: string | null;
+    /** its id — the Evidence tab reads the latest value and deep-links to Condition Data with it */
+    matchedPointId: string | null;
+    /** true when the decision carries the point's id (0324), not a guess from words */
+    linked: boolean;
     covered: boolean;
     note: string;
 }
 
+/**
+ * Which decisions are CBM decisions, and what text describes their task.
+ * The Strategy page (Q6-Q7) writes recommended_strategy_code + task_description
+ * + ai_recommendation.suggested_technology; the older four-column worksheet
+ * wrote on_condition_*. Both count.
+ */
+export function cbmDecisionText(d: RCMDecision): { task: string; technology: string | null } | null {
+    const modern = d.recommended_strategy_code === 'PM_CONDITION' || d.recommended_strategy_code === 'PM_PREDICTIVE';
+    const legacy = !!d.on_condition_applicable && !!d.on_condition_task;
+    if (!modern && !legacy) return null;
+    const ai = d.ai_recommendation as { suggested_technology?: string | null } | null;
+    return {
+        task: (d.task_description || d.on_condition_task || 'On-condition task').trim(),
+        technology: d.on_condition_technology || ai?.suggested_technology || null,
+    };
+}
+
 export function checkCbmCoverage(
     decisions: RCMDecision[],
-    readingDefs: { name: string; isActive?: boolean }[],
+    readingDefs: CbmPoint[],
 ): CbmCoverageRow[] {
     const activeDefs = readingDefs.filter(d => d.isActive !== false);
-    const byKind = new Map<SensorKind, string>();
+    const byId = new Map(readingDefs.map(d => [d.id, d]));
+    const byKind = new Map<SensorKind, CbmPoint>();
     for (const d of activeDefs) {
         const k = sensorKind(d.name);
-        if (!byKind.has(k)) byKind.set(k, d.name);
+        if (!byKind.has(k)) byKind.set(k, d);
     }
-    return decisions
-        .filter(d => d.on_condition_applicable && d.on_condition_task)
-        .map(d => {
-            const text = `${d.on_condition_task} ${d.on_condition_technology || ''}`;
-            const kind = requiredKind(text);
-            if (kind) {
-                const point = byKind.get(kind) ?? null;
-                return {
-                    failureModeId: d.failure_mode_id,
-                    task: d.on_condition_task!,
-                    technology: d.on_condition_technology,
-                    neededKind: kind,
-                    matchedPoint: point,
-                    covered: !!point,
-                    note: point ? `monitored by "${point}"` : `no ${kind} measurement point on this asset — the task can't execute`,
-                };
-            }
-            const any = activeDefs[0]?.name ?? null;
-            return {
-                failureModeId: d.failure_mode_id,
-                task: d.on_condition_task!,
-                technology: d.on_condition_technology,
-                neededKind: null,
-                matchedPoint: any,
-                covered: !!any,
-                note: any ? 'technique not inferable from the task text — asset has condition points' : 'asset has NO condition measurement points at all',
-            };
+    const rows: CbmCoverageRow[] = [];
+    for (const d of decisions) {
+        const text = cbmDecisionText(d);
+        if (!text) continue;
+        const base = { failureModeId: d.failure_mode_id, task: text.task, technology: text.technology };
+
+        // 0324: the decision names its point. That is coverage, not a guess.
+        const linkedDef = d.reading_definition_id ? byId.get(d.reading_definition_id) : undefined;
+        if (linkedDef) {
+            const dead = linkedDef.isActive === false;
+            rows.push({
+                ...base,
+                neededKind: requiredKind(`${text.task} ${text.technology || ''}`),
+                matchedPoint: linkedDef.name,
+                matchedPointId: linkedDef.id,
+                linked: true,
+                covered: !dead,
+                note: dead ? `linked point "${linkedDef.name}" is deactivated — reactivate it or create another` : `monitored by "${linkedDef.name}"`,
+            });
+            continue;
+        }
+
+        const kind = requiredKind(`${text.task} ${text.technology || ''}`);
+        if (kind) {
+            const point = byKind.get(kind) ?? null;
+            rows.push({
+                ...base,
+                neededKind: kind,
+                matchedPoint: point?.name ?? null,
+                matchedPointId: point?.id ?? null,
+                linked: false,
+                covered: !!point,
+                note: point ? `probably monitored by "${point.name}" (matched by name, not linked)` : `no ${kind} measurement point on this asset — the task can't execute`,
+            });
+            continue;
+        }
+        const any = activeDefs[0] ?? null;
+        rows.push({
+            ...base,
+            neededKind: null,
+            matchedPoint: any?.name ?? null,
+            matchedPointId: any?.id ?? null,
+            linked: false,
+            covered: !!any,
+            note: any ? 'technique not inferable from the task text — asset has condition points, none linked' : 'asset has NO condition measurement points at all',
         });
+    }
+    return rows;
 }
