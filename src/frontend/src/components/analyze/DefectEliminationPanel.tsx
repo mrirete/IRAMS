@@ -8,7 +8,7 @@
  *
  * Implements the user rule: monthly automated Pareto for top 5 bad actors.
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Target, DollarSign, Sparkles, AlertTriangle,
     CheckCircle2, Clock, ArrowRight, ArrowLeft, Zap, Shield,
@@ -49,7 +49,10 @@ interface DefectEliminationPanelProps {
     onUpdateTaskStatus?: (taskId: string, status: DefectEliminationTask['status']) => void;
     onEditTask?: (taskId: string, updates: Partial<DefectEliminationTask>) => void;
     onDeleteTask?: (taskId: string) => void;
-    onNavigateToRCA?: (assetId: string) => void;
+    /** rcaId when the task was born from an investigation — open THAT one, not a new RCA. */
+    onNavigateToRCA?: (assetId: string, rcaId?: string | null) => void;
+    /** Task to open on mount (from ?task= in the URL). */
+    initialTaskId?: string | null;
     onUpdateTaskCollaborators?: (taskId: string, collaborators: StudyCollaborator[]) => void;
     onGenerateWO?: (taskId: string, woData: { title: string; description: string; type: string; priority: string; asset_id: string | null; due_date?: string }) => void;
     onCreatePM?: (taskId: string, pmData: { code: string; description: string; asset_id: string; schedule_type: string; frequency_interval: number; frequency_unit: string; work_type: string; estimated_hours: number }) => void;
@@ -127,8 +130,9 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
     onCreatePM,
     linkedWOs,
     criteria: _criteria = 'cost',
+    initialTaskId,
 }) => {
-    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(tasks[0]?.id || null);
+    const [selectedTaskId, setSelectedTaskId] = useState<string | null>(initialTaskId || tasks[0]?.id || null);
     const [editingTask, setEditingTask] = useState<DefectEliminationTask | null>(null);
     const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
     const [aiInsights, setAiInsights] = useState<Map<string, DefectPattern>>(new Map());
@@ -144,7 +148,9 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
     });
 
     // ─── Portfolio → Workspace state ──────────────────────────
-    const [viewMode, setViewMode] = useState<'portfolio' | 'workspace'>('portfolio');
+    const [viewMode, setViewMode] = useState<'portfolio' | 'workspace'>(initialTaskId ? 'workspace' : 'portfolio');
+    // A deep link (?task=) lands on that task's workspace, not the portfolio table.
+    useEffect(() => { if (initialTaskId) { setSelectedTaskId(initialTaskId); setViewMode('workspace'); } }, [initialTaskId]);
     const [deSearch, setDeSearch] = useState('');
     const [deFilter, setDeFilter] = useState<string>('all');
 
@@ -825,8 +831,8 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
                                     <p style={{ fontSize: 15, color: TEXT_WHITE, margin: 0, lineHeight: 1.85, whiteSpace: 'pre-wrap' }}>
                                         {selectedTask.rootCauseSummary}
                                     </p>
-                                    {(selectedTask.rcaId || onNavigateToRCA) && (
-                                        <button onClick={() => onNavigateToRCA?.(selectedTask.assetId)}
+                                    {selectedTask.rcaId && onNavigateToRCA && (
+                                        <button onClick={() => onNavigateToRCA(selectedTask.assetId, selectedTask.rcaId)}
                                             style={{
                                                 marginTop: 18, display: 'inline-flex', alignItems: 'center', gap: 7,
                                                 padding: '10px 18px', borderRadius: 12, fontSize: 13, fontWeight: 600,

@@ -17,7 +17,8 @@ interface DefectEliminationDivisionProps {
     onUpdateTaskStatus: (taskId: string, status: DefectEliminationTask['status']) => void;
     onEditTask?: (taskId: string, updates: Partial<DefectEliminationTask>) => void;
     onDeleteTask?: (taskId: string) => void;
-    onNavigateToRCA: (assetId: string) => void;
+    onNavigateToRCA: (assetId: string, rcaId?: string | null) => void;
+    initialTaskId?: string | null;
     onUpdateTaskCollaborators?: (taskId: string, collaborators: StudyCollaborator[]) => void;
     onGenerateWO?: (taskId: string, woData: { title: string; description: string; type: string; priority: string; asset_id: string | null; due_date?: string }) => void;
     onCreatePM?: (taskId: string, pmData: { code: string; description: string; asset_id: string; schedule_type: string; frequency_interval: number; frequency_unit: string; work_type: string; estimated_hours: number }) => void;
@@ -47,6 +48,7 @@ export const DefectEliminationDivision: React.FC<DefectEliminationDivisionProps>
     onGenerateWO,
     onCreatePM,
     linkedWOs,
+    initialTaskId,
     badActors = [],
     criteria = 'cost',
 }) => {
@@ -87,6 +89,7 @@ export const DefectEliminationDivision: React.FC<DefectEliminationDivisionProps>
                 onEditTask={onEditTask}
                 onDeleteTask={onDeleteTask}
                 onNavigateToRCA={onNavigateToRCA}
+                initialTaskId={initialTaskId}
                 onUpdateTaskCollaborators={onUpdateTaskCollaborators}
                 onGenerateWO={onGenerateWO}
                 onCreatePM={onCreatePM}

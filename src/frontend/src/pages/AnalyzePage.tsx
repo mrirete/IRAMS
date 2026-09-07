@@ -70,6 +70,8 @@ export const AnalyzePage: React.FC = () => {
     // ── Asset context from query params ───────────────────────
     const assetIdFromUrl = searchParams.get('asset') || '';
     const tabFromUrl = (searchParams.get('tab') || searchParams.get('division')) as Division | null;
+    // DE notifications deep-link to a task: /analyze?division=defect_elimination&task=<id>
+    const taskFromUrl = searchParams.get('task');
 
     const [contextAsset, setContextAsset] = useState<Asset | null>(null);
     const [assetLoading, setAssetLoading] = useState(false);
@@ -804,7 +806,8 @@ export const AnalyzePage: React.FC = () => {
                             onGenerateWO={handleGenerateWO}
                             onCreatePM={handleCreatePMFromDE}
                             linkedWOs={deLinkedWOs}
-                            onNavigateToRCA={(assetId: string) => navigate(`/analyze/rca/new?asset=${assetId}`)}
+                            onNavigateToRCA={(assetId: string, rcaId?: string | null) => navigate(rcaId ? `/analyze/rca/${rcaId}` : `/analyze/rca/new?asset=${assetId}`)}
+                            initialTaskId={taskFromUrl}
                             badActors={paretoData}
                             criteria={paretoCriteria}
                         />

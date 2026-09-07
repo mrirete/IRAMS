@@ -16,6 +16,8 @@ import { friendlyAIError } from '../eam/lib/aiError';
 import { analyzeService, scopeNodesToMethod, rcaMethodLabel, rcaMethodColor, EVIDENCE_GRADES, bestEvidenceGrade, nodeConfidence, rootCauseConfidence, confidenceFromScore } from '../eam/services/AnalyzeService';
 import { rcmService } from '../eam/services/RCMService';
 import { pinFailureMode } from '../lib/rcmBreakdown';
+import { suggestRcaMethod } from '../lib/rcaMethodSuggest';
+import { classifyWoStatus } from '../lib/woState';
 import { EvidenceGradeBadge } from '../components/analyze/RCAEvidencePanel';
 import { nodeSupport } from '../components/analyze/NodeEvidenceChip';
 import { DatabaseService } from '../eam/services/DatabaseService';
@@ -726,6 +728,20 @@ export function RCAInvestigationPage() {
 
     // The cause tool opens as a full-screen workspace (all four methods).
     const [causeFullscreen, setCauseFullscreen] = useState(false);
+    // Live status of the work orders raised for actions — step 5 shows it beside each action.
+    const [woStatuses, setWoStatuses] = useState<Record<string, { wo_number: string; status: string }>>({});
+    useEffect(() => {
+        const ids = actions.map(a => a.work_order_id).filter((x): x is string => !!x);
+        if (ids.length === 0) { setWoStatuses({}); return; }
+        analyzeService.getWorkOrderStatuses(ids).then(setWoStatuses);
+    }, [actions]);
+    // People an action can be assigned to: the RCA team first, then every user.
+    const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
+    useEffect(() => {
+        DatabaseService.getInstance().getUsers()
+            .then(us => setPeople(us.filter(u => u.status === 'active').map(u => ({ id: u.id, name: u.username || u.email }))))
+            .catch(() => setPeople([]));
+    }, []);
     // Fishbone has two views that each want the whole screen — the entry list, and the
     // diagram. One tap flips between them; state is shared so nothing is lost.
     const [fishboneView, setFishboneView] = useState<'causes' | 'diagram'>('causes');
@@ -775,19 +791,36 @@ export function RCAInvestigationPage() {
 
     const addAction = async () => {
         if (!inv || !newActionDesc.trim()) return;
+        const who = newActionAssignee.trim().toLowerCase();
+        const assigneeId = who
+            ? (rcaCollaborators.find(c => c.type === 'contact' && c.name.toLowerCase() === who)?.ref_id
+                ?? people.find(p => p.name.toLowerCase() === who)?.id ?? null)
+            : null;
         const act = await analyzeService.addRCACorrectiveAction({
             investigation_id: inv.id, cause_node_id: null,
             cause_category: newActionCategory as any,
             action_description: newActionDesc.trim(),
             action_type: newActionType as any,
             assigned_to: newActionAssignee || null,
+            assignee_id: assigneeId,
             due_date: newActionDue || null, status: 'open',
             requires_moc: false, completion_date: null,
             completion_notes: null, risk_of_not_acting: null,
             work_order_id: null,
-        });
+        } as any);
         if (act) {
             setActions(a => [...a, act]);
+            // An action with an owner tells the owner. notify() resolves contact ids to users.
+            if (assigneeId && assigneeId !== currentUserId) {
+                NotificationService.notify({
+                    recipientId: assigneeId,
+                    title: `Corrective action assigned: ${inv.title}`,
+                    message: `${newActionDesc.trim().slice(0, 160)}${newActionDue ? ` — due ${newActionDue}` : ''}`,
+                    severity: 'INFO', notificationType: 'ASSIGNMENT', module: 'analyze',
+                    entityId: inv.id, entityType: 'RCA_INVESTIGATION',
+                    actionLink: `/analyze/rca/${inv.id}`, actionRequired: true, createdBy: currentUserId,
+                }).catch(console.warn);
+            }
             setNewActionDesc(''); setNewActionAssignee(''); setNewActionDue('');
             setAddActionOpen(false);
         }
@@ -831,6 +864,22 @@ export function RCAInvestigationPage() {
     // A step is done when its work exists. getStepCompletion already encoded exactly
     // this; it was only ever called from unreachable code.
     // NOTE: must stay above the `if (loading)` early return — it's a hook.
+    // Credit-free method suggestion from facts already on the record (lib/rcaMethodSuggest).
+    const methodSuggestion = useMemo(() => inv ? suggestRcaMethod({
+        safetyTier: (inv.event_how_much as any)?.safety_tier,
+        category: inv.rca_category,
+        criticality: formAssetDetail?.criticality,
+        priorRcaCount: relatedRCAs.length,
+        triggerType: inv.trigger_type,
+        cmCount12mo: formAssetTrends?.totalCM,
+        evidenceTypes: evidence.map(e => e.evidence_type),
+        problemText: inv.problem_statement,
+    }) : null, [inv, formAssetDetail, relatedRCAs, formAssetTrends, evidence]);
+    // NOTE: hook — must stay above the `if (loading)` early return.
+
+    // Effectiveness can only be judged once the fixes are actually in place.
+    const actionsSettled = actions.length > 0 && actions.every(a => a.status === 'completed' || a.status === 'cancelled');
+
     const stepDone = useMemo(() => getStepCompletion({
         hasProblemStatement: !!(inv?.problem_statement || draft.problem_statement || '').trim(),
         // Step 1 is defined when the statement exists and the event is anchored to
@@ -1465,6 +1514,8 @@ export function RCAInvestigationPage() {
                             investigation={inv}
                             nodes={nodes}
                             onCommitted={setInv}
+                            onOpenWorkspace={() => setCauseFullscreen(true)}
+                            suggestion={methodSuggestion}
                             advisorSlot={
                                 <button
                                     onClick={runMethodAdvisor}
@@ -1997,13 +2048,28 @@ export function RCAInvestigationPage() {
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0">
                                             {/* Close the loop: corrective action → real work in Work Management */}
-                                            {a.work_order_id ? (
+                                            {a.work_order_id ? (() => {
+                                                const wo = woStatuses[a.work_order_id];
+                                                const st = classifyWoStatus(wo?.status);
+                                                const tone = st === 'done' ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                                    : st === 'void' ? 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                                    : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100';
+                                                return (
+                                                    <button
+                                                        onClick={() => navigate(`/work-orders/${a.work_order_id}`)}
+                                                        className={`px-2.5 py-1 text-[10px] font-extrabold rounded-md border transition-colors flex items-center gap-1 ${tone}`}
+                                                        title="Open the linked work order — the action follows its status"
+                                                    >
+                                                        <Wrench size={10} /> {wo?.wo_number || 'WO'} · {wo?.status || '…'} ↗
+                                                    </button>
+                                                );
+                                            })() : a.work_request_id ? (
                                                 <button
-                                                    onClick={() => navigate(`/work-orders/${a.work_order_id}`)}
-                                                    className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors flex items-center gap-1"
-                                                    title="Open the linked work order"
+                                                    onClick={() => navigate('/requests')}
+                                                    className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-colors flex items-center gap-1"
+                                                    title="A maintenance request was raised; when it converts, the work order links here"
                                                 >
-                                                    <Wrench size={10} /> WO linked ↗
+                                                    <ClipboardList size={10} /> Request raised ↗
                                                 </button>
                                             ) : (
                                                 <button
@@ -2062,8 +2128,16 @@ export function RCAInvestigationPage() {
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Effectiveness Verification Status</label>
-                                    <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm cursor-pointer"
+                                    {!actionsSettled && (
+                                        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-1.5">
+                                            Verification opens once every corrective action is complete
+                                            ({actions.filter(a => a.status === 'completed' || a.status === 'cancelled').length} of {actions.length}).
+                                            {actions.length === 0 && ' Add at least one action in step 4.'}
+                                        </p>
+                                    )}
+                                    <select
+                                        disabled={!actionsSettled}
+                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                                         value={inv.effectiveness_status || 'pending'} 
                                         onChange={async e => {
                                             await analyzeService.updateRCAInvestigation(inv.id, { effectiveness_status: e.target.value } as any);
@@ -2354,7 +2428,14 @@ export function RCAInvestigationPage() {
                 ~980px of layout; inside the step column on a phone it was unusable. Here it
                 gets the whole viewport, with the page's own chrome out of the way. */}
             {causeFullscreen && inv && methodCommitted && createPortal(
-                <div className="fixed inset-0 z-[80] bg-slate-50 flex flex-col">
+                <div
+                    className="fixed inset-0 z-[80] bg-slate-900/45 backdrop-blur-[2px] flex items-center justify-center sm:p-4 md:p-6"
+                    onMouseDown={e => { if (e.target === e.currentTarget) setCauseFullscreen(false); }}
+                >
+                <div
+                    className="w-full h-full sm:w-[92vw] sm:max-w-[1400px] sm:h-[92vh] bg-slate-50 sm:rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
+                    role="dialog" aria-modal="true" aria-label="Cause analysis workspace"
+                >
                     <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-white border-b border-slate-200 shrink-0">
                         <div className="flex items-center gap-2.5 min-w-0">
                             <span
@@ -2432,6 +2513,7 @@ export function RCAInvestigationPage() {
                             />
                         )}
                     </div>
+                </div>
                 </div>,
                 document.body,
             )}
@@ -2545,12 +2627,17 @@ export function RCAInvestigationPage() {
                             <Input type="date" value={newActionDue} onChange={e => setNewActionDue(e.target.value)} />
                         </Field>
                     </div>
-                    <Field label="Assignee" hint="An action with no owner is a wish.">
+                    <Field label="Assignee" hint="An action with no owner is a wish. A named person is notified.">
                         <Input
                             placeholder="Who owns this?"
+                            list="rca-action-people"
                             value={newActionAssignee}
                             onChange={e => setNewActionAssignee(e.target.value)}
                         />
+                        <datalist id="rca-action-people">
+                            {rcaCollaborators.filter(c => c.type === 'contact').map(c => <option key={`c-${c.ref_id}`} value={c.name} />)}
+                            {people.map(p => <option key={`u-${p.id}`} value={p.name} />)}
+                        </datalist>
                     </Field>
                 </div>
             </Drawer>
@@ -2600,14 +2687,19 @@ export function RCAInvestigationPage() {
                         sourceLabel="RCA"
                         faultTypes={rcaFaultTypes}
                         contextNote={`From RCA "${inv.title}" — corrective action (${raiseAction.cause_category || 'uncategorised'}): ${raiseAction.action_description}${inv.root_cause_summary ? `\nRoot cause: ${inv.root_cause_summary}` : ''}`}
+                        woProperties={{ rca_id: inv.id, rca_action_id: raiseAction.id }}
                         onCreated={async (kind, id) => {
-                            if (kind === 'WO' && id) {
-                                const updated = await analyzeService.updateRCACorrectiveAction(raiseAction.id, {
-                                    work_order_id: id,
-                                    status: raiseAction.status === 'open' ? 'in_progress' : raiseAction.status,
-                                } as any);
-                                if (updated) setActions(acts => acts.map(x => x.id === raiseAction.id ? updated : x));
-                            }
+                            if (!id) return;
+                            // WO: link now. REQUEST: remember it; the 0328 trigger links the WO when
+                            // the planner converts it. PM: a strategy, not a one-off — note it and
+                            // leave the action open for its first execution.
+                            const patch = kind === 'WO'
+                                ? { work_order_id: id, status: raiseAction.status === 'open' ? 'in_progress' : raiseAction.status }
+                                : kind === 'REQUEST'
+                                    ? { work_request_id: id }
+                                    : { completion_notes: `PM strategy ${id} created for this action` };
+                            const updated = await analyzeService.updateRCACorrectiveAction(raiseAction.id, patch as any);
+                            if (updated) setActions(acts => acts.map(x => x.id === raiseAction.id ? updated : x));
                         }}
                         onClose={() => setRaiseAction(null)}
                     />

@@ -37,6 +37,9 @@ interface Props {
     dueDate?: string;
     /** Prefill for kind=PM (e.g. Predict What-If → adopt simulated interval). */
     initialPmIntervalDays?: number;
+    /** Stamped into work_orders.properties so the WO can be traced back to its source
+     *  (e.g. { rca_id, rca_action_id }). The DE path stamps { de_task_id } the same way. */
+    woProperties?: Record<string, unknown>;
 }
 
 const PRIORITIES = [{ v: 'LOW', l: 'Low' }, { v: 'MEDIUM', l: 'Medium' }, { v: 'HIGH', l: 'High' }];
@@ -45,7 +48,7 @@ const METER_UNITS = ['Hours', 'Km', 'Cycles', 'Starts'];
 const riskFor = (p: string) => (p === 'HIGH' ? 80 : p === 'MEDIUM' ? 50 : 20);
 const unitToDays: Record<string, number> = { Days: 1, Weeks: 7, Months: 30, Years: 365 };
 
-export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, initialPmIntervalDays }) => {
+export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, actor, requesterId, contextNote, sourceLabel = 'Condition Data', faultTypes, onCreated, onClose, initialTitle, initialWorkType, dueDate, initialPmIntervalDays, woProperties }) => {
     const { showToast } = useToast();
     const { permissions } = useAuth();
     const navigate = useNavigate();
@@ -85,6 +88,7 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                     title, description, assetId: asset.id, type: workType,
                     priorityCode: priority, status: 'OPEN', workCenterId: workCenterId || null,
                     ...(dueDate ? { dueDate } : {}),
+                    ...(woProperties ? { properties: woProperties } : {}),
                 }), actor);
                 if (onCreated) await onCreated('WO', (wo as any)?.id ?? null);
                 showToast('Work order raised.', 'success');
@@ -116,13 +120,14 @@ export const RaiseWorkModal: React.FC<Props> = ({ asset, kind: initialKind, acto
                 if ((req as any)?.id) navigate('/requests');
             } else {
                 const days = scheduleType === 'TIME' ? (unitToDays[freqUnit] || 30) * interval : 0;
-                await db.createPM(buildPMStrategy({
+                const pm = await db.createPM(buildPMStrategy({
                     title, description, assetId: asset.id,
                     scheduleType, frequencyInterval: interval, frequencyUnit: freqUnit,
                     priorityCode: priority, workCenterId: workCenterId || null,
                     createdBy: requesterId || null,
                     nextDueDate: new Date(Date.now() + days * 86400000).toISOString(),
                 }));
+                if (onCreated) await onCreated('PM', (pm as any)?.id ?? null);
                 showToast('PM strategy created.', 'success');
                 onClose();
                 navigate('/recurring-work');

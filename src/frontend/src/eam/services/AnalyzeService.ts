@@ -163,22 +163,22 @@ export interface RCAMethodDef {
 export const RCA_METHODS: RCAMethodDef[] = [
     {
         value: 'five_why', label: '5-Why', color: '#0891b2',
-        bestFor: 'Simple / single-cause',
+        bestFor: 'One clear thread, first occurrence',
         why: 'A linear cause chain. Fast for straightforward failures with one obvious thread to pull.',
     },
     {
         value: 'fishbone', label: 'Fishbone (Ishikawa)', color: '#d97706',
-        bestFor: 'Many candidate causes',
+        bestFor: 'Wide cause space, several suspects',
         why: 'Category-based brainstorming (6Ms / 4Ps) when you need to widen the net before narrowing it.',
     },
     {
         value: 'fault_tree', label: 'Fault Tree (FTA)', color: '#e11d48',
-        bestFor: 'Safety-critical / quantitative',
+        bestFor: 'Safety consequence or quantitative',
         why: 'Boolean AND/OR gates with probabilities. The right tool for SIL and PSM work.',
     },
     {
         value: 'logic_tree', label: 'Logic Tree (LTA)', color: '#7c3aed',
-        bestFor: 'Chronic / recurring',
+        bestFor: 'Repeat failure, systemic root',
         why: 'Physical → Human → Latent ladder. The RCFA workhorse when the root is systemic.',
     },
 ];
@@ -363,6 +363,10 @@ export interface RCACorrectiveAction {
     completion_notes: string | null;
     risk_of_not_acting: string | null;
     work_order_id: string | null;
+    /** Maintenance request raised for this action (0328); converts into work_order_id via trigger. */
+    work_request_id?: string | null;
+    /** users.id / contacts.id behind assigned_to, for notifications (0328). */
+    assignee_id?: string | null;
     created_at: string;
 }
 
@@ -1932,6 +1936,20 @@ class AnalyzeService {
         }
     }
 
+    /** Status of the work orders raised for RCA actions — what step 5 shows beside each action. */
+    async getWorkOrderStatuses(ids: string[]): Promise<Record<string, { wo_number: string; status: string }>> {
+        const clean = Array.from(new Set(ids.filter(Boolean)));
+        if (clean.length === 0) return {};
+        const { data, error } = await supabase
+            .from('work_orders')
+            .select('id, wo_number, status')
+            .in('id', clean);
+        if (error) { console.error('AnalyzeService.getWorkOrderStatuses:', error); return {}; }
+        const out: Record<string, { wo_number: string; status: string }> = {};
+        for (const r of data || []) out[r.id] = { wo_number: r.wo_number, status: r.status };
+        return out;
+    }
+
     /** Fetch all Work Orders linked to a DE task via properties.de_task_id */
     async getLinkedWOs(deTaskId: string): Promise<{ id: string; wo_number: string; title: string; status: string; type: string; priority_code: string | null; created_at: string }[]> {
         try {
@@ -1964,66 +1982,8 @@ class AnalyzeService {
         }
     }
 
-    /**
-     * Auto-advance DE task status when all linked WOs are CLOSED/TECO.
-     * Called after WO status transitions to ensure the DE lifecycle progresses.
-     * Only advances tasks in 'identified' or 'in_progress' status.
-     */
-    async checkAndAdvanceDEStatus(deTaskId: string): Promise<boolean> {
-        try {
-            // 1. Verify DE task exists and is in a progressable state
-            const { data: task, error: taskErr } = await supabase
-                .from('ers_defect_elimination_tasks')
-                .select('id, status')
-                .eq('id', deTaskId)
-                .single();
-            if (taskErr || !task) return false;
-            if (task.status !== 'identified' && task.status !== 'in_progress') return false;
-
-            // 2. Fetch all linked WOs
-            const linkedWOs = await this.getLinkedWOs(deTaskId);
-            if (linkedWOs.length === 0) return false;
-
-            // 3. Check if ALL linked WOs are terminal (CLOSED or TECO)
-            const allClosed = linkedWOs.every(wo =>
-                wo.status === 'CLOSED' || wo.status === 'TECO'
-            );
-
-            if (allClosed) {
-                // Auto-advance to 'resolved'
-                const { error: updateErr } = await supabase
-                    .from('ers_defect_elimination_tasks')
-                    .update({ status: 'resolved', updated_at: new Date().toISOString() })
-                    .eq('id', deTaskId);
-                if (updateErr) {
-                    console.error('AnalyzeService.checkAndAdvanceDEStatus update error:', updateErr);
-                    return false;
-                }
-                console.log(`[DE] Task ${deTaskId} auto-advanced to 'resolved' — all ${linkedWOs.length} WOs closed.`);
-                return true;
-            }
-
-            // If at least one WO is in progress, advance DE to 'in_progress'
-            if (task.status === 'identified') {
-                const anyWIP = linkedWOs.some(wo =>
-                    wo.status === 'WIP' || wo.status === 'SCHEDULED' || wo.status === 'PLAN'
-                );
-                if (anyWIP) {
-                    await supabase
-                        .from('ers_defect_elimination_tasks')
-                        .update({ status: 'in_progress', updated_at: new Date().toISOString() })
-                        .eq('id', deTaskId);
-                    console.log(`[DE] Task ${deTaskId} auto-advanced to 'in_progress' — linked WOs active.`);
-                    return true;
-                }
-            }
-
-            return false;
-        } catch (e) {
-            console.error('Error in checkAndAdvanceDEStatus:', e);
-            return false;
-        }
-    }
+    // checkAndAdvanceDEStatus used to live here. It had zero callers; the 0328
+    // trigger on work_orders now advances DE tasks (and RCA actions) in the database.
 
     /**
      * Create a PM (recurring_work) entry from a resolved DE task.
