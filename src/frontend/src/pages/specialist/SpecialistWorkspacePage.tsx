@@ -45,7 +45,7 @@ const PROPOSAL_HOMES: Record<string, { label: string; path: string }> = {
     threshold_adapter: { label: 'Predict — Agent Review', path: '/predict' },
     alert_to_wo: { label: 'Predict — Agent Review', path: '/predict' },
     pm_optimizer: { label: 'PM schedules', path: '/recurring-work' },
-    watchdog: { label: 'Analyze', path: '/analyze' },
+    watchdog: { label: 'Diagnose', path: '/analyze' },
     strategy_engine: { label: 'Assessment', path: '/specialist/assessment' },
 };
 

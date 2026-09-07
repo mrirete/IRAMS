@@ -21,16 +21,16 @@ const STEP_GUIDANCE: {
 }[] = [
     {
         title: 'Step 1 — Define the Problem',
-        summary: 'Clearly articulate the failure event. Use the 3W2H framework (What, Where, When, How, How Much) to capture all dimensions.',
+        summary: 'State the failure event as facts: which asset, when, what happened, and what it cost. Causes come later.',
         tips: [
             'Be specific: "Pump P-101A seized" is better than "pump failed".',
-            'Include the operational impact — was there a shutdown, safety incident, or production loss?',
-            'Attach the Work Order or Work Request that triggered this investigation.',
+            'Name the failed component if it is already known; leave it blank if the evidence has to show it.',
+            'Record the impact — downtime, cost, safety or environmental consequence — it sets the depth of the investigation.',
         ],
         checklist: [
             'Problem statement written (concise, factual)',
-            '3W2H summary completed',
-            'Asset criticality & functional location noted',
+            'Asset or failed component named',
+            'Impact recorded',
         ],
     },
     {

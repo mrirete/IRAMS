@@ -147,7 +147,7 @@ export const MODULE_REGISTRY: ModuleDefinition[] = [
         children: [
             // Start·Home merged into the Specialist workspace (/reliability redirects there).
             { id: 'reliability-metrics', label: 'Measure · Metrics', path: '/reliability-metrics' },
-            { id: 'analyze-dash', label: 'Diagnose · Analyze', path: '/analyze' },
+            { id: 'analyze-dash', label: 'Diagnose', path: '/analyze' },
             { id: 'reliability-modelling', label: 'Model · Reliability Modelling', path: '/reliability-modelling' },
             { id: 'rcm-dash', label: 'Decide · RCM', path: '/rcm' },
             { id: 'predict-dash', label: 'Forecast · Predict (preview)', path: '/predict' },

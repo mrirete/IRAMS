@@ -1488,7 +1488,10 @@ class AnalyzeService {
 
     // ── Related / Re-occurrence ──────────────────────────────
 
-    async getRelatedRCAs(assetId: string): Promise<RCAInvestigation[]> {
+    async getRelatedRCAs(assetId: string | null | undefined): Promise<RCAInvestigation[]> {
+        // An investigation with no asset has nothing to recur against (asset_id is
+        // nullable since 0117); `.eq('asset_id', null)` is a PostgREST error, not "none".
+        if (!assetId) return [];
         try {
             const { data, error } = await supabase
                 .from('ers_rca_investigations')

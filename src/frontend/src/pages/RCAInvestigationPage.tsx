@@ -40,7 +40,7 @@ import type {
 
 // ── Step definitions ─────────────────────────────────────────
 const STEPS = [
-    { num: 1, label: 'Define Problem', icon: FileText, desc: 'Event summary & 3W2H' },
+    { num: 1, label: 'Define Problem', icon: FileText, desc: 'What happened' },
     { num: 2, label: 'Collect Evidence', icon: Search, desc: 'Data, timeline, linked records' },
     { num: 3, label: 'Identify Causes', icon: AlertTriangle, desc: 'Analysis Method, 5-Why, Fishbone, barriers' },
     { num: 4, label: 'Develop Solutions', icon: Wrench, desc: 'Corrective actions plan' },
@@ -59,6 +59,9 @@ const RCA_CATEGORIES = [
 // duplicated here, in RCATab and in the step guide, and the three copies had drifted.
 // Methods that have a dedicated editor; anything else falls back to the flat cause list.
 const VISUAL_DIAGRAM_METHODS = ['five_why', 'fishbone', 'fault_tree', 'logic_tree'];
+
+const LABEL_CLS = 'block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5';
+const INPUT_CLS = 'w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm';
 
 const CAUSE_CATEGORIES = [
     { value: 'physical', label: 'Physical', color: '#ef4444', desc: 'Tangible component failure' },
@@ -225,9 +228,15 @@ export function RCAInvestigationPage() {
         rca_category: 'asset_failure' as string,
         investigation_type: 'reactive' as string,
         problem_statement: '', event_what: '', event_how: '',
-        event_location: '', event_date: '',
+        event_location: '', event_date: new Date().toISOString().split('T')[0],
         event_how_much: { cost: 0, downtime_hrs: 0, safety_tier: '', env_impact: '' },
     });
+    // Impact fields live behind one disclosure; it opens itself once any of them holds a value.
+    const [impactOpen, setImpactOpen] = useState(false);
+    // Registered subunits / components of the linked asset, offered as suggestions for
+    // "Failed component" so the text lines up with the register (and pins in RCM later).
+    const [componentOptions, setComponentOptions] = useState<string[]>([]);
+    const [formError, setFormError] = useState<string | null>(null);
 
     const location = useLocation();
     const { assets: allHierarchyAssets } = useAssetContext();
@@ -434,13 +443,30 @@ export function RCAInvestigationPage() {
         }
     }, [isNew, location.state]);
 
+    // The "title and statement" nudge clears itself as soon as both are present.
+    useEffect(() => {
+        if (formError && draft.title.trim() && draft.problem_statement.trim()) setFormError(null);
+    }, [formError, draft.title, draft.problem_statement]);
+
+    useEffect(() => {
+        const hm = draft.event_how_much || {};
+        if (hm.cost || hm.downtime_hrs || hm.safety_tier || hm.env_impact) setImpactOpen(true);
+    }, [draft.event_how_much]);
+
     // ── Load EAM Asset context card when asset changes ──
     useEffect(() => {
         if (!draft.asset_id) {
             setFormAssetDetail(null);
             setFormAssetTrends(null);
+            setComponentOptions([]);
             return;
         }
+        rcmService.getAssetBreakdown(draft.asset_id)
+            .then(b => setComponentOptions(Array.from(new Set([
+                ...b.components.map(c => [c.tag, c.name].filter(Boolean).join(' — ')),
+                ...b.parts.map(p => (p as any).name || (p as any).description || '').filter(Boolean),
+            ].filter(Boolean)))))
+            .catch(() => setComponentOptions([]));
         let cancelled = false;
         setFormAssetLoading(true);
         Promise.all([
@@ -465,12 +491,21 @@ export function RCAInvestigationPage() {
     }, [draft.asset_id]);
 
     // ── Save / Create ────────────────────────────────────────
-    const handleSave = useCallback(async () => {
+    const handleSave = useCallback(async (): Promise<boolean> => {
+        if (isNew && (!draft.title.trim() || !draft.problem_statement.trim())) {
+            setFormError('Give the investigation a title and a problem statement before saving.');
+            return false;
+        }
+        setFormError(null);
         setSaving(true);
+        let ok = false;
         try {
             if (isNew) {
                 const created = await analyzeService.createRCAInvestigation({
-                    asset_id: draft.asset_id || '00000000-0000-0000-0000-000000000000',
+                    // asset_id is nullable (0117) and has an FK to assets. The old
+                    // all-zero placeholder matched no asset row, so every unlinked
+                    // investigation was rejected with a 23503 and never saved.
+                    asset_id: draft.asset_id || null,
                     title: draft.title || 'Untitled Investigation',
                     // No method at creation. It is chosen at the step-3 gate, once the
                     // evidence is in — picking one here would be picking before looking.
@@ -491,6 +526,7 @@ export function RCAInvestigationPage() {
                     previous_rca_id: null,
                 });
                 if (created) {
+                    ok = true;
                     navigate(`/analyze/rca/${created.id}`, { replace: true });
                 } else {
                     showToast('Could not save the investigation — please try again (check the console for details).', 'error');
@@ -511,9 +547,11 @@ export function RCAInvestigationPage() {
                     current_step: activeStep,
                 } as any);
                 await fetchAll(inv.id);
+                ok = true;
             }
         } catch (e) { console.error('Save error:', e); }
         setSaving(false);
+        return ok;
     }, [isNew, draft, inv, activeStep, navigate, fetchAll]);
 
     // ── Step navigation ──────────────────────────────────────
@@ -778,10 +816,9 @@ export function RCAInvestigationPage() {
     // NOTE: must stay above the `if (loading)` early return — it's a hook.
     const stepDone = useMemo(() => getStepCompletion({
         hasProblemStatement: !!(inv?.problem_statement || draft.problem_statement || '').trim(),
-        has5W2H: [
-            draft.event_what, draft.event_how, draft.event_location, draft.event_date,
-            (draft.event_how_much?.cost || draft.event_how_much?.downtime_hrs) ? 'x' : '',
-        ].filter(v => !!v && String(v).trim()).length >= 2,
+        // Step 1 is defined when the statement exists and the event is anchored to
+        // an asset or a named component.
+        has5W2H: !!(draft.asset_id || draft.event_what.trim()),
         evidenceCount: evidence.length,
         // "Target for FACTS": a pile of opinions/hearsay doesn't complete Collect.
         // Ungraded legacy items still pass, so old investigations don't regress.
@@ -852,12 +889,12 @@ export function RCAInvestigationPage() {
                                 className="text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                                 onClick={() => navigate('/analyze')}
                             >
-                                Analyze
+                                Diagnose
                             </button>
                         </nav>
                         <div className="flex items-center gap-3 flex-wrap">
                             <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">
-                                {isNew ? 'New RCA Investigation' : (inv?.title || 'Investigation')}
+                                {isNew ? 'New Investigation' : (inv?.title || 'Investigation')}
                             </h1>
                             <span className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full border tracking-wide uppercase ${
                                 inv?.status === 'closed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
@@ -984,63 +1021,28 @@ export function RCAInvestigationPage() {
 
                 {/* ── STEP 1: Define Problem ─────────────────────────── */}
                 {activeStep === 1 && (
-                    <div className="space-y-6">
-                        <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
-                            <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-5 flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-primary-600" /> Problem Definition & 3W2H
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Investigation Title *</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
-                                        value={draft.title} 
-                                        onChange={e => setDraft(d => ({ ...d, title: e.target.value }))} 
-                                        placeholder="e.g. Premature Seal Failure — PMP-411" 
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">RCA Category</label>
-                                    <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm cursor-pointer"
-                                        value={draft.rca_category} 
-                                        onChange={e => setDraft(d => ({ ...d, rca_category: e.target.value }))}
-                                    >
-                                        {RCA_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                    </select>
-                                </div>
-                            </div>
+                    <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
+                        <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-5 flex items-center gap-2">
+                            <FileText className="w-4 h-4 text-primary-600" /> What happened?
+                        </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Investigation Type</label>
-                                    <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm cursor-pointer"
-                                        value={draft.investigation_type} 
-                                        onChange={e => setDraft(d => ({ ...d, investigation_type: e.target.value }))}
-                                    >
-                                        <option value="reactive">Reactive (post-failure)</option>
-                                        <option value="proactive">Proactive (near-miss / risk-based)</option>
-                                    </select>
-                                </div>
-                                <div />
-                            </div>
-
-                            <div className="mb-5">
-                                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Problem Statement (What happened?) *</label>
-                                <textarea 
-                                    className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm min-h-[90px] resize-y"
-                                    value={draft.problem_statement} 
-                                    onChange={e => setDraft(d => ({ ...d, problem_statement: e.target.value }))} 
-                                    placeholder="Describe the failure event, symptoms, and sequence of events…" 
+                        {/* Order follows the incident narrative: which asset, when, what happened,
+                            then which part failed and how. The component is often unknown until
+                            evidence arrives, so it sits after the statement and is optional. */}
+                        <div className="space-y-4">
+                            <div>
+                                <label className={LABEL_CLS}>Title *</label>
+                                <input
+                                    className={`${INPUT_CLS} ${formError && !draft.title.trim() ? 'border-rose-300' : ''}`}
+                                    value={draft.title}
+                                    onChange={e => setDraft(d => ({ ...d, title: e.target.value }))}
+                                    placeholder="e.g. Premature seal failure — PMP-411"
                                 />
                             </div>
 
-                            {/* EAM Asset register integration */}
                             {hasEAMAssets && (
-                                <div className="mb-5">
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Linked EAM Asset</label>
+                                <div>
+                                    <label className={LABEL_CLS}>Asset</label>
                                     {draft.asset_id ? (
                                         <div className="flex items-center gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
                                             <Database size={16} className="text-primary-600 shrink-0" />
@@ -1053,14 +1055,15 @@ export function RCAInvestigationPage() {
                                                     </div>
                                                 ) : <span className="text-sm text-slate-400">Unknown asset</span>;
                                             })()}
-                                            <button 
+                                            <button
                                                 onClick={() => {
-                                                    setDraft(d => ({ ...d, asset_id: '', event_location: '', event_what: '' }));
+                                                    setDraft(d => ({ ...d, asset_id: '', event_location: '' }));
                                                     setFormAssetDetail(null);
                                                     setFormAssetTrends(null);
                                                     setShowNewAssetDropdown(true);
                                                 }}
                                                 className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer shrink-0 ml-auto"
+                                                aria-label="Unlink asset"
                                             >
                                                 <X size={15} />
                                             </button>
@@ -1068,26 +1071,28 @@ export function RCAInvestigationPage() {
                                     ) : (
                                         <div className="relative">
                                             <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                            <input 
+                                            <input
                                                 value={newAssetSearch}
                                                 onChange={e => { setNewAssetSearch(e.target.value); setShowNewAssetDropdown(true); }}
                                                 onFocus={() => setShowNewAssetDropdown(true)}
-                                                placeholder="Search asset register by tag, name, or level…"
-                                                className="w-full pl-9 pr-3 py-2.5 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
+                                                placeholder="Search the register by tag or name…"
+                                                className={`${INPUT_CLS} pl-9 py-2.5`}
                                             />
                                             {showNewAssetDropdown && (
-                                                <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto border-t border-slate-100">
+                                                <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
                                                     {filteredHierarchyAssets.length === 0 && (
                                                         <div className="p-4 text-center text-xs text-slate-400 font-medium">No assets found</div>
                                                     )}
                                                     {filteredHierarchyAssets.map(a => {
                                                         const badge = TAXONOMY_BADGES[a.taxonomy_level] || TAXONOMY_BADGES.equipment;
                                                         return (
-                                                            <button 
+                                                            <button
                                                                 key={a.id}
                                                                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left cursor-pointer border-b border-slate-100/60 last:border-0"
                                                                 onClick={() => {
-                                                                    setDraft(d => ({ ...d, asset_id: a.id, event_what: a.tag }));
+                                                                    // The asset is the asset; the failed component is a
+                                                                    // separate question, so its tag is NOT copied there.
+                                                                    setDraft(d => ({ ...d, asset_id: a.id }));
                                                                     setShowNewAssetDropdown(false);
                                                                     setNewAssetSearch('');
                                                                 }}
@@ -1106,14 +1111,14 @@ export function RCAInvestigationPage() {
                                         </div>
                                     )}
 
-                                    {/* EAM Asset Context Card */}
+                                    {/* Asset context: location, criticality, recent work. This is where the
+                                        functional location lives now — it is not asked for a second time. */}
                                     {formAssetLoading ? (
-                                        <div className="flex items-center gap-2 p-4 text-xs font-semibold text-slate-500">
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary-600" /> Loading asset context...
+                                        <div className="flex items-center gap-2 p-3 text-xs font-semibold text-slate-500">
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-primary-600" /> Loading asset context…
                                         </div>
                                     ) : formAssetDetail ? (
-                                        <div className="mt-3 bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-3">
-                                            {/* Breadcrumb */}
+                                        <div className="mt-2.5 bg-slate-50 border border-slate-200/80 rounded-xl px-4 py-3 space-y-2">
                                             {formAssetDetail.breadcrumb?.length > 0 && (
                                                 <div className="flex items-center gap-1.5 flex-wrap text-xs font-semibold text-slate-500">
                                                     <MapPin size={12} className="text-primary-600 shrink-0" />
@@ -1127,142 +1132,202 @@ export function RCAInvestigationPage() {
                                                     ))}
                                                 </div>
                                             )}
-                                            {/* Identity row */}
-                                            <div className="flex items-center gap-2 flex-wrap">
+                                            <div className="flex items-center gap-2 flex-wrap text-xs text-slate-600">
                                                 {(() => {
                                                     const cc = (formAssetDetail.criticality || 'C').toUpperCase();
                                                     const ccStyle = cc === 'A' ? 'bg-red-50 text-red-700 border-red-200' : cc === 'B' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-primary-50 text-primary-700 border-primary-200';
                                                     const label = cc === 'A' ? 'Safety Critical' : cc === 'B' ? 'Production Critical' : cc === 'C' ? 'Standard' : 'Low';
                                                     return (
-                                                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md border text-[10px] font-extrabold ${ccStyle}`}>
+                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10px] font-extrabold ${ccStyle}`}>
                                                             <Shield size={10} strokeWidth={2.5} /> {cc} — {label}
                                                         </span>
                                                     );
                                                 })()}
-                                                <span className="text-xs text-slate-700 font-medium">
+                                                <span className="font-medium">
                                                     {formAssetDetail.equipment_type || 'Equipment'}
-                                                    {formAssetDetail.manufacturer ? ` │ ${formAssetDetail.manufacturer}` : ''}
-                                                    {formAssetDetail.model ? ` │ ${formAssetDetail.model}` : ''}
+                                                    {formAssetDetail.manufacturer ? ` · ${formAssetDetail.manufacturer}` : ''}
+                                                    {formAssetDetail.model ? ` ${formAssetDetail.model}` : ''}
                                                 </span>
-                                            </div>
-                                            {/* Quick KPIs */}
-                                            {formAssetTrends && (
-                                                <div className="flex items-center gap-3 text-xs text-slate-600 bg-white border border-slate-200/60 p-2.5 rounded-lg w-fit shadow-xs">
+                                                {formAssetTrends && (formAssetTrends.totalCM + formAssetTrends.totalPM) > 0 && (
                                                     <span className="flex items-center gap-1 font-medium">
+                                                        <span className="text-slate-300">│</span>
                                                         <Wrench size={12} className="text-slate-400" /> {formAssetTrends.totalCM + formAssetTrends.totalPM} WOs
                                                         <span className="text-rose-600 font-semibold">({formAssetTrends.totalCM} CM)</span>
-                                                    </span>
-                                                    {formAssetTrends.totalCost > 0 && (
-                                                        <>
-                                                            <span className="text-slate-200">│</span>
-                                                            <span className="font-semibold text-slate-700">
-                                                                ${formAssetTrends.totalCost >= 1e3 ? `${(formAssetTrends.totalCost / 1e3).toFixed(1)}K` : formAssetTrends.totalCost.toFixed(0)} cost (12mo)
+                                                        {formAssetTrends.totalCost > 0 && (
+                                                            <span className="font-semibold text-slate-700 ml-1">
+                                                                · ${formAssetTrends.totalCost >= 1e3 ? `${(formAssetTrends.totalCost / 1e3).toFixed(1)}K` : formAssetTrends.totalCost.toFixed(0)} (12mo)
                                                             </span>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            )}
+                                                        )}
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
                                     ) : null}
                                 </div>
                             )}
 
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label className={LABEL_CLS}>Event date</label>
+                                    <input
+                                        className={INPUT_CLS}
+                                        type="date"
+                                        value={draft.event_date}
+                                        onChange={e => setDraft(d => ({ ...d, event_date: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className={LABEL_CLS}>Type</label>
+                                    <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden" role="radiogroup">
+                                        {([['reactive', 'Reactive'], ['proactive', 'Proactive']] as const).map(([v, l]) => (
+                                            <button
+                                                key={v}
+                                                type="button"
+                                                role="radio"
+                                                aria-checked={draft.investigation_type === v}
+                                                onClick={() => setDraft(d => ({ ...d, investigation_type: v }))}
+                                                title={v === 'reactive' ? 'After a failure' : 'Near-miss or risk-based, before a failure'}
+                                                className={`flex-1 px-3 py-2 text-xs font-bold transition-colors cursor-pointer ${
+                                                    draft.investigation_type === v
+                                                        ? 'bg-primary-50 text-primary-700'
+                                                        : 'text-slate-500 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                {l}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className={LABEL_CLS}>Category</label>
+                                    <select
+                                        className={`${INPUT_CLS} cursor-pointer`}
+                                        value={draft.rca_category}
+                                        onChange={e => setDraft(d => ({ ...d, rca_category: e.target.value }))}
+                                    >
+                                        {RCA_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label.replace('-based', '')}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Location is asked only when there is no asset to derive it from. */}
+                            {(!hasEAMAssets || !draft.asset_id) && (
+                                <div>
+                                    <label className={LABEL_CLS}>Location</label>
+                                    <input
+                                        className={INPUT_CLS}
+                                        value={draft.event_location}
+                                        onChange={e => setDraft(d => ({ ...d, event_location: e.target.value }))}
+                                        placeholder="e.g. Site A › Unit 1 › Cooling water system"
+                                    />
+                                </div>
+                            )}
+
+                            <div>
+                                <label className={LABEL_CLS}>Problem statement *</label>
+                                <textarea
+                                    className={`${INPUT_CLS} min-h-[90px] resize-y ${formError && !draft.problem_statement.trim() ? 'border-rose-300' : ''}`}
+                                    value={draft.problem_statement}
+                                    onChange={e => setDraft(d => ({ ...d, problem_statement: e.target.value }))}
+                                    placeholder="What happened, what was seen, and in what order. Facts only — causes come later."
+                                />
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Event Date</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
-                                        type="date" 
-                                        value={draft.event_date} 
-                                        onChange={e => setDraft(d => ({ ...d, event_date: e.target.value }))} 
+                                    <label className={LABEL_CLS}>Failed component</label>
+                                    <input
+                                        className={INPUT_CLS}
+                                        list={componentOptions.length ? 'rca-component-options' : undefined}
+                                        value={draft.event_what}
+                                        onChange={e => setDraft(d => ({ ...d, event_what: e.target.value }))}
+                                        placeholder={componentOptions.length ? 'Pick from the asset breakdown or type' : 'e.g. Mechanical seal, carbon face'}
                                     />
+                                    {componentOptions.length > 0 && (
+                                        <datalist id="rca-component-options">
+                                            {componentOptions.map(c => <option key={c} value={c} />)}
+                                        </datalist>
+                                    )}
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Event Location / Functional Path</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
-                                        value={draft.event_location} 
-                                        onChange={e => setDraft(d => ({ ...d, event_location: e.target.value }))} 
-                                        placeholder="e.g. Site A › Unit 1 › System A" 
-                                    />
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* 3W2H Details */}
-                        <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
-                            <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-5 flex items-center gap-2">
-                                <Search className="w-4 h-4 text-primary-600" /> 3W2H Causal Assessment (Event Details)
-                            </div>
-                            
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">What component failed? (What)</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
-                                        value={draft.event_what} 
-                                        onChange={e => setDraft(d => ({ ...d, event_what: e.target.value }))} 
-                                        placeholder="e.g. Pump Mechanical Seal Carbon Face" 
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">How did it fail? (How)</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
-                                        value={draft.event_how} 
-                                        onChange={e => setDraft(d => ({ ...d, event_how: e.target.value }))} 
-                                        placeholder="e.g. Heavy thermal cracking and chipping along face" 
+                                    <label className={LABEL_CLS}>How it failed</label>
+                                    <input
+                                        className={INPUT_CLS}
+                                        value={draft.event_how}
+                                        onChange={e => setDraft(d => ({ ...d, event_how: e.target.value }))}
+                                        placeholder="e.g. Thermal cracking and chipping along the face"
                                     />
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Downtime (Hours)</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
-                                        type="number" 
-                                        value={draft.event_how_much.downtime_hrs || ''} 
-                                        onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, downtime_hrs: Number(e.target.value) } }))} 
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Estimated Cost ($)</label>
-                                    <input 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm"
-                                        type="number" 
-                                        value={draft.event_how_much.cost || ''} 
-                                        onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, cost: Number(e.target.value) } }))} 
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Safety Tier Impact</label>
-                                    <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm cursor-pointer"
-                                        value={draft.event_how_much.safety_tier || ''} 
-                                        onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, safety_tier: e.target.value } }))}
+                            {/* Impact is one disclosure, not four always-on fields. It opens itself when
+                                a work order already brought downtime or cost with it. */}
+                            <div className="border-t border-slate-100 pt-3">
+                                {!impactOpen ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => setImpactOpen(true)}
+                                        className="text-xs font-bold text-primary-700 hover:text-primary-800 inline-flex items-center gap-1.5 cursor-pointer"
                                     >
-                                        <option value="">None</option>
-                                        <option value="tier_1">Tier 1 Process Safety Event (PSE)</option>
-                                        <option value="tier_2">Tier 2 Process Safety Event (PSE)</option>
-                                        <option value="lti">Lost Time Injury (LTI)</option>
-                                        <option value="first_aid">First Aid Case</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Environmental Impact</label>
-                                    <select 
-                                        className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm cursor-pointer"
-                                        value={draft.event_how_much.env_impact || ''} 
-                                        onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, env_impact: e.target.value } }))}
-                                    >
-                                        <option value="">None</option>
-                                        <option value="major">Major (uncontained spill)</option>
-                                        <option value="minor">Minor (contained release)</option>
-                                        <option value="permit_deviation">Regulatory Permit Deviation</option>
-                                    </select>
-                                </div>
+                                        <Plus size={13} strokeWidth={2.5} /> Add impact
+                                        <span className="font-medium text-slate-400">— downtime, cost, safety, environment</span>
+                                    </button>
+                                ) : (
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                        <div>
+                                            <label className={LABEL_CLS}>Downtime (h)</label>
+                                            <input
+                                                className={INPUT_CLS}
+                                                type="number" min={0}
+                                                value={draft.event_how_much.downtime_hrs || ''}
+                                                onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, downtime_hrs: Number(e.target.value) } }))}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className={LABEL_CLS}>Cost ($)</label>
+                                            <input
+                                                className={INPUT_CLS}
+                                                type="number" min={0}
+                                                value={draft.event_how_much.cost || ''}
+                                                onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, cost: Number(e.target.value) } }))}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className={LABEL_CLS}>Safety</label>
+                                            <select
+                                                className={`${INPUT_CLS} cursor-pointer`}
+                                                value={draft.event_how_much.safety_tier || ''}
+                                                onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, safety_tier: e.target.value } }))}
+                                            >
+                                                <option value="">None</option>
+                                                <option value="tier_1">Tier 1 PSE</option>
+                                                <option value="tier_2">Tier 2 PSE</option>
+                                                <option value="lti">Lost time injury</option>
+                                                <option value="first_aid">First aid case</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className={LABEL_CLS}>Environment</label>
+                                            <select
+                                                className={`${INPUT_CLS} cursor-pointer`}
+                                                value={draft.event_how_much.env_impact || ''}
+                                                onChange={e => setDraft(d => ({ ...d, event_how_much: { ...d.event_how_much, env_impact: e.target.value } }))}
+                                            >
+                                                <option value="">None</option>
+                                                <option value="major">Major (uncontained spill)</option>
+                                                <option value="minor">Minor (contained release)</option>
+                                                <option value="permit_deviation">Permit deviation</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
+
+                            {formError && (
+                                <div className="text-xs font-semibold text-rose-600 flex items-center gap-1.5">
+                                    <AlertTriangle size={13} /> {formError}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -2205,7 +2270,7 @@ export function RCAInvestigationPage() {
                     {activeStep < 6 ? (
                         <button 
                             className="px-4 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow"
-                            onClick={async () => { await handleSave(); goStep(activeStep + 1); }}
+                            onClick={async () => { if (await handleSave()) goStep(activeStep + 1); }}
                         >
                             Next <ChevronRight size={15} strokeWidth={2.5} />
                         </button>

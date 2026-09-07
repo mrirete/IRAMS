@@ -704,7 +704,7 @@ export const AnalyzePage: React.FC = () => {
                         >
                             <ArrowLeft size={14} strokeWidth={2.5} /> Back to Reliability
                         </button>
-                        <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight truncate leading-tight">Analyze</h1>
+                        <h1 className="text-xl sm:text-2xl font-bold text-slate-800 font-sans tracking-tight truncate leading-tight">Diagnose</h1>
                     </div>
                 </div>
 
