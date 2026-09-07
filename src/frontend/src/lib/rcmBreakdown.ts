@@ -226,7 +226,7 @@ export function inferComponentLink(
 export function pinFailureMode<T extends ComponentLinkLike & { failure_mode_description?: string | null; failure_cause_description?: string | null }>(
   fm: T,
   b: AssetBreakdown | null | undefined,
-): T {
+): T & ComponentLinkLike {
   if (fm.component_asset_id || fm.bom_item_id) return fm;
   const link = inferComponentLink([fm.failure_mode_description, fm.failure_cause_description], b);
   if (!link.component_asset_id && !link.bom_item_id) return fm;
