@@ -31,7 +31,7 @@ import type { SuggestedPoint } from '../../lib/predict/limitLibrary';
 import { CONSEQUENCE_OPTIONS, strategyLabel, parseConsequenceCodes } from './types';
 import { RCMModeRail, groupModesByFunction, modeTitle, type RailTone } from './RCMModeRail';
 import { IntervalField, SyncedField } from './RCMFields';
-import { implementationSteps, implementationState, type ImplStep, type ImplState } from '../../eam/services/rcmImplementation';
+import { implementationSteps, implementationState, dueState, type ImplStep, type ImplState } from '../../eam/services/rcmImplementation';
 import { parseIntervalText, TASK_TYPE_LABELS, isTaskTypeCode, UUID_RE } from '../../eam/services/rcmPlan';
 import type { RCMTaskSummary } from '../../eam/services/RCMService';
 
@@ -187,11 +187,79 @@ const ReportModal: React.FC<{ report: string | null; onClose: () => void }> = ({
   );
 };
 
+// ── Owner and due date (0336) ───────────────────────────────────────────────
+// One quiet row: who carries this decision into Work Management, and by when.
+// Team members first; anyone else through a short search. Editable in any
+// study status — assigning is implementing, not editing.
+const OwnerRow: React.FC<{
+  ownerId: string | null; ownerName: string | null; dueDate: string | null; state: ImplState;
+  team: Array<{ id: string; name: string; role: string }>;
+  searchPeople?: (q: string) => Promise<Array<{ id: string; name: string; title?: string }>>;
+  onChange: (patch: { ownerContactId?: string | null; ownerName?: string | null; dueDate?: string | null }) => void;
+}> = ({ ownerId, ownerName, dueDate, state, team, searchPeople, onChange }) => {
+  const [searching, setSearching] = useState(false);
+  const [q, setQ] = useState('');
+  const [hits, setHits] = useState<Array<{ id: string; name: string; title?: string }>>([]);
+  useEffect(() => {
+    if (!searching || !searchPeople || q.trim().length < 2) { setHits([]); return; }
+    let live = true;
+    const t = setTimeout(() => { searchPeople(q.trim()).then(r => { if (live) setHits(r.slice(0, 8)); }).catch(() => setHits([])); }, 250);
+    return () => { live = false; clearTimeout(t); };
+  }, [q, searching, searchPeople]);
+  const due = dueState(dueDate, state);
+  const tone = due === 'overdue' ? 'text-red-700 bg-red-50 border-red-200' : due === 'due-soon' ? 'text-amber-700 bg-amber-50 border-amber-200' : due === 'unscheduled' ? 'text-slate-500 bg-slate-50 border-slate-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
+  const label = due === 'overdue' ? 'overdue' : due === 'due-soon' ? 'due soon' : due === 'unscheduled' ? 'no date' : due === 'scheduled' ? 'scheduled' : 'done';
+  const onTeam = ownerId ? team.some(m => m.id === ownerId) : false;
+  const sel = 'text-[11px] bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 focus:outline-none focus:border-accent-cyan';
+  return (
+    <div className="flex items-center gap-2 flex-wrap text-[11px] text-slate-500">
+      <span className="font-bold uppercase tracking-wider text-[9px] text-slate-400">Owner</span>
+      <select
+        className={sel}
+        value={searching ? '__search' : (ownerId || '')}
+        onChange={e => {
+          const v = e.target.value;
+          if (v === '__search') { setSearching(true); return; }
+          setSearching(false);
+          const m = team.find(x => x.id === v);
+          onChange({ ownerContactId: v || null, ownerName: m?.name ?? null });
+        }}
+        title="Who carries this decision into Work Management"
+      >
+        <option value="">Unassigned</option>
+        {team.map(m => <option key={m.id} value={m.id}>{m.name} · {m.role}</option>)}
+        {ownerId && !onTeam && <option value={ownerId}>{ownerName || 'Assigned'}</option>}
+        {searchPeople && <option value="__search">Someone else…</option>}
+      </select>
+      {searching && (
+        <span className="relative">
+          <input autoFocus className={`${sel} w-40`} placeholder="Search people" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { setSearching(false); setQ(''); } }} />
+          {hits.length > 0 && (
+            <ul className="absolute z-20 mt-1 left-0 w-56 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
+              {hits.map(h => (
+                <li key={h.id}>
+                  <button type="button" className="w-full text-left px-2.5 py-1.5 hover:bg-slate-50" onClick={() => { onChange({ ownerContactId: h.id, ownerName: h.name }); setSearching(false); setQ(''); }}>
+                    <span className="font-semibold text-slate-700">{h.name}</span>{h.title ? <span className="text-slate-400"> · {h.title}</span> : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </span>
+      )}
+      <span className="font-bold uppercase tracking-wider text-[9px] text-slate-400 ml-1">Due</span>
+      <input type="date" className={sel} value={dueDate || ''} onChange={e => onChange({ dueDate: e.target.value || null })} title="When the implementation is due" />
+      {due && <span className={`px-2 py-0.5 rounded-md border font-semibold ${tone}`}>{label}</span>}
+    </div>
+  );
+};
+
 // ── Main ────────────────────────────────────────────────────────────────────
 export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
   study, functions, failureModes, decisions, taskSummaries, breakdown, aiLoading, aiReport, locked, initialFailureModeId,
   onCreatePM, pmGateFor, onSyncPM, onCreateReadingPoint, onCreateRedesignWO, onUpdateDecision,
   onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport, assetHasFeed, pointSuggestions,
+  teamMembers, onAssignOwner, searchPeople,
 }) => {
   const groups = useMemo(() => groupModesByFunction(functions, failureModes), [functions, failureModes]);
   const ordered = useMemo(() => groups.flatMap(g => g.modes), [groups]);
@@ -236,6 +304,8 @@ export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
   const statusOf = (m: RCMFailureMode): { tone: RailTone; title: string } => {
     if (staleFor(summaryByFm.get(m.id))) return { tone: 'red', title: 'Decision changed after its PM was generated' };
     const s = stateFor(m);
+    const due = dueState(summaryByFm.get(m.id)?.impl_due_date, s);
+    if (due === 'overdue') return { tone: 'red', title: `Implementation overdue — due ${fmtDate(summaryByFm.get(m.id)?.impl_due_date)}${summaryByFm.get(m.id)?.impl_owner_name ? ` · ${summaryByFm.get(m.id)?.impl_owner_name}` : ''}` };
     if (s === 'done') return { tone: 'emerald', title: 'Implemented' };
     if (s === 'partial') return { tone: 'primary', title: 'Partly implemented' };
     if (s === 'ready') return { tone: 'slate', title: 'Ready to implement' };
@@ -465,6 +535,15 @@ export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
                 </div>
               ) : (
                 <>
+                  <OwnerRow
+                    ownerId={summary?.impl_owner_contact_id ?? null}
+                    ownerName={summary?.impl_owner_name ?? null}
+                    dueDate={summary?.impl_due_date ?? null}
+                    state={stateFor(fm)}
+                    team={(teamMembers || []).filter(m => m.type === 'contact').map(m => ({ id: m.ref_id, name: m.name, role: m.role }))}
+                    searchPeople={searchPeople}
+                    onChange={patch => onAssignOwner(fm.id, patch)}
+                  />
                   {/* The task as it will travel */}
                   {steps.some(s => s.kind === 'PM' || s.kind === 'POINT' || s.kind === 'SENSOR') && (
                     <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-2">

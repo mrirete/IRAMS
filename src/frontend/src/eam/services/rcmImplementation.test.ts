@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { implementationSteps, implementationState, readsBySensor, readsByPerson, decisionTechnology } from './rcmImplementation';
+import { implementationSteps, implementationState, readsBySensor, readsByPerson, decisionTechnology, dueState } from './rcmImplementation';
 
 describe('implementation steps (Maintenance Plan)', () => {
   const base = { recommended_strategy_code: null as string | null, task_type_code: null as string | null };
@@ -40,6 +40,16 @@ describe('implementation steps (Maintenance Plan)', () => {
     expect(readsByPerson('periodic lab analysis for oil')).toBe(true);
     expect(readsByPerson('Visual inspection of seal vent')).toBe(true);
     expect(readsByPerson(null)).toBe(false);
+  });
+  it('reads an open implementation against its due date', () => {
+    const today = new Date(2026, 8, 7);
+    expect(dueState('2026-09-01', 'ready', today)).toBe('overdue');
+    expect(dueState('2026-09-07', 'ready', today)).toBe('due-soon');
+    expect(dueState('2026-09-14', 'partial', today)).toBe('due-soon');
+    expect(dueState('2026-10-07', 'ready', today)).toBe('scheduled');
+    expect(dueState(null, 'ready', today)).toBe('unscheduled');
+    expect(dueState('2026-09-01', 'done', today)).toBeNull();
+    expect(dueState('2026-09-01', 'undecided', today)).toBeNull();
   });
   it('marks done steps and summarises the state', () => {
     const s = implementationSteps({ ...base, recommended_strategy_code: 'PM_CONDITION', task_type_code: 'ON_CONDITION', reading_definition_id: 'rd1' });

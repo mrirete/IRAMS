@@ -119,6 +119,20 @@ export function implementationSteps(d: ImplDecisionLike, opts: ImplOptions = {})
   return [];
 }
 
+/** Where an open implementation stands against its due date (0336). */
+export type DueState = 'overdue' | 'due-soon' | 'scheduled' | 'unscheduled' | null;
+export function dueState(dueDate: string | null | undefined, state: ImplState, today: Date = new Date()): DueState {
+  if (state === 'done' || state === 'undecided') return null;
+  if (!dueDate) return 'unscheduled';
+  const due = new Date(`${dueDate}T00:00:00`);
+  if (Number.isNaN(due.getTime())) return 'unscheduled';
+  const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const days = Math.round((due.getTime() - t0.getTime()) / 86400000);
+  if (days < 0) return 'overdue';
+  if (days <= 7) return 'due-soon';
+  return 'scheduled';
+}
+
 export type ImplState = 'undecided' | 'ready' | 'partial' | 'done';
 export function implementationState(steps: ImplStep[], decided: boolean): ImplState {
   if (!decided || steps.length === 0) return 'undecided';

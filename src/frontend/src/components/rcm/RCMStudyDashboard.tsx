@@ -1,6 +1,7 @@
 /**
  * RCMStudyDashboard — Premium dashboard with KPIs, study cards, and loading skeletons
  */
+import { Link } from 'react-router-dom';
 import React from 'react';
 import {
   FileText, Clock, CheckCircle, AlertTriangle, Shield,
@@ -38,8 +39,14 @@ const CoverageStrip: React.FC<{
       return { crit, total: pool.length, covered: covered.length, started: started.length, uncovered };
     });
   }, [coverage, assets]);
-  const proactive = coverage.reduce((n, c) => n + (c.proactive_count || 0), 0);
-  const implemented = coverage.reduce((n, c) => n + (c.pm_count || 0), 0);
+  // 0336 — the plan as carried out, not as decided: implemented / open / overdue
+  // across every study (sem_rcm_coverage). An approved study with open steps is
+  // named, so "covered" never stands for a plan nobody has done.
+  const decided = coverage.reduce((n, c) => n + (c.strategy_count || 0), 0);
+  const implemented = coverage.reduce((n, c) => n + (c.implemented_count || 0), 0);
+  const open = coverage.reduce((n, c) => n + (c.open_count || 0), 0);
+  const overdue = coverage.reduce((n, c) => n + (c.overdue_count || 0), 0);
+  const planOpen = coverage.filter(c => c.status === 'approved' && (c.open_count || 0) > 0).sort((a, b) => (b.overdue_count || 0) - (a.overdue_count || 0)).slice(0, 6);
   const gaps = rows.flatMap(r => r.uncovered.map(a => ({ ...a, crit: r.crit }))).slice(0, 8);
   if (assets.length === 0) return null;
 
@@ -47,12 +54,31 @@ const CoverageStrip: React.FC<{
     <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-4 sm:p-5">
       <div className="flex items-baseline justify-between gap-3 flex-wrap mb-3">
         <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Coverage of the critical plant</h3>
-        <span className="text-[11px] text-slate-500">
-          {proactive > 0
-            ? <><strong className="text-slate-700">{implemented}</strong> of {proactive} proactive decisions are PMs in Work Management</>
-            : 'No proactive decisions yet'}
+        <span className="text-[11px] text-slate-500" title="Implemented = the decision holds its PM, work order, instrument-fed point or named spares">
+          {decided > 0
+            ? <>
+                <strong className="text-slate-700">{implemented}</strong> of {decided} decisions implemented
+                {open > 0 ? <> · <span className="text-amber-700">{open} open</span></> : null}
+                {overdue > 0 ? <> · <span className="text-red-600 font-semibold">{overdue} overdue</span></> : null}
+              </>
+            : 'No decisions yet'}
         </span>
       </div>
+      {planOpen.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Approved · plan open</span>
+          {planOpen.map(c => (
+            <Link
+              key={c.study_id}
+              to={`/rcm/${c.study_id}`}
+              title={`${c.title}: ${c.open_count} open${c.overdue_count ? `, ${c.overdue_count} overdue` : ''}${c.next_due_date ? `, next due ${c.next_due_date}` : ''}`}
+              className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border hover:bg-slate-50 ${(c.overdue_count || 0) > 0 ? 'border-red-200 text-red-700' : 'border-amber-200 text-amber-700'}`}
+            >
+              {c.asset_tag || c.title} · {c.open_count} open{(c.overdue_count || 0) > 0 ? ` · ${c.overdue_count} overdue` : ''}
+            </Link>
+          ))}
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {rows.map(r => {
           const pct = r.total ? Math.round((r.covered / r.total) * 100) : 0;

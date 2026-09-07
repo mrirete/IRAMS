@@ -186,6 +186,11 @@ export interface RCMDecision {
   reading_definition_id?: string | null;
   /** 0326 — the work order raised to carry out a REDESIGN decision. */
   work_order_id?: string | null;
+  /** 0336 — who carries this decision into Work Management, and by when. */
+  impl_owner_contact_id?: string | null;
+  impl_due_date?: string | null;
+  impl_assigned_at?: string | null;
+  impl_assigned_by?: string | null;
   spares_requirements: SpareRequirement[];
   created_at: string;
   updated_at: string;
@@ -224,6 +229,10 @@ export interface RCMTaskSummary {
   pm?: { id: string; title: string; next_due_date: string | null; schedule_type: string | null; strategy_package: string | null; frequency_interval: number | null; frequency_unit: string | null; active: boolean } | null;
   point?: { id: string; name: string; unit: string | null; has_bands: boolean; pf_interval_days: number | null; is_active: boolean; sensor_tag: string | null; has_feed: boolean; last_feed_at: string | null } | null;
   wo?: { id: string; wo_number: string | null; status: string | null } | null;
+  /** 0336 — implementation owner and due date. */
+  impl_owner_contact_id: string | null;
+  impl_owner_name: string | null;
+  impl_due_date: string | null;
 }
 
 /** One row of sem_rcm_coverage (0319). */
@@ -247,6 +256,12 @@ export interface RCMCoverageRow {
   /** 0324 — on-condition / predictive decisions, and how many of them have a linked measurement point. */
   cbm_count?: number;
   reading_point_count?: number;
+  /** 0336 — how much of the plan is real: implemented / open / overdue / unassigned decisions, and the earliest open due date. */
+  implemented_count?: number;
+  open_count?: number;
+  overdue_count?: number;
+  unassigned_count?: number;
+  next_due_date?: string | null;
 }
 
 // ─── AI Setup ────────────────────────────────────────────────
@@ -1337,6 +1352,14 @@ class RCMServiceImpl {
       }
     }
 
+    // 0336 — who owns each implementation, by name (the plan shows a person, not an id).
+    const ownerIds = [...new Set(decisions.map(d => d.impl_owner_contact_id).filter((v): v is string => !!v))];
+    const ownerNames = new Map<string, string>();
+    if (ownerIds.length > 0) {
+      const { data } = await supabase.from('contacts').select('id, name').in('id', ownerIds);
+      for (const r of (data || []) as { id: string; name: string | null }[]) ownerNames.set(r.id, r.name || '');
+    }
+
     return failureModes.map(fm => {
       const decision = decisionMap.get(fm.id);
       const fn = fnMap.get(fm.function_id);
@@ -1364,6 +1387,9 @@ class RCMServiceImpl {
         pm: decision?.recurring_work_id ? pmRows.get(decision.recurring_work_id) || null : null,
         point: decision?.reading_definition_id ? pointRows.get(decision.reading_definition_id) || null : null,
         wo: decision?.work_order_id ? woRows.get(decision.work_order_id) || null : null,
+        impl_owner_contact_id: decision?.impl_owner_contact_id || null,
+        impl_owner_name: decision?.impl_owner_contact_id ? ownerNames.get(decision.impl_owner_contact_id) || null : null,
+        impl_due_date: decision?.impl_due_date || null,
       };
     });
   }

@@ -19,6 +19,7 @@ import {
   OPERATING_MODES, REDUNDANCY_OPTIONS, type AssetOperatingContext,
 } from '../../lib/operatingContext';
 import { breakdownCoverage, isEmptyBreakdown, type AssetBreakdown } from '../../lib/rcmBreakdown';
+import { implementationSteps, implementationState, dueState } from '../../eam/services/rcmImplementation';
 
 interface RCMStudyOverviewProps {
   study: RCMStudy;
@@ -100,15 +101,37 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
   }, [failureModes]);
   const riskTotal = risk.critical + risk.high + risk.medium + risk.low;
 
+  // Implementation (0336) — per decided mode: done / open / overdue, and the earliest open due item.
+  const impl = useMemo(() => {
+    const byFm = new Map(taskSummaries.map(t => [t.failure_mode_id, t]));
+    let decided = 0, implemented = 0, open = 0, overdue = 0, unassigned = 0;
+    let next: RCMTaskSummary | null = null;
+    failureModes.forEach(fm => {
+      const d = decisions.get(fm.id);
+      if (!d?.recommended_strategy_code) return;
+      decided++;
+      const t = byFm.get(fm.id);
+      const steps = implementationSteps(d, { sparesNamed: (t?.spares_requirements?.length ?? 0) > 0 || !!fm.bom_item_id });
+      const state = implementationState(steps, true);
+      if (state === 'done') { implemented++; return; }
+      open++;
+      if (!t?.impl_owner_contact_id) unassigned++;
+      if (dueState(t?.impl_due_date, state) === 'overdue') overdue++;
+      if (t?.impl_due_date && (!next || !next.impl_due_date || t.impl_due_date < next.impl_due_date)) next = t;
+    });
+    return { decided, implemented, open, overdue, unassigned, next: next as RCMTaskSummary | null };
+  }, [failureModes, decisions, taskSummaries]);
+
   // Next step nudge — first incomplete stage of the workflow
   const nextStep = useMemo(() => {
     if (functions.length === 0) return { tab: 'functions' as const, label: 'Define the asset functions (Q1)' };
     if (fmCount === 0) return { tab: 'functions' as const, label: 'Capture failure modes (Q3)' };
     if (decidedCount < fmCount) return { tab: 'functions' as const, label: `Classify consequences — ${fmCount - decidedCount} remaining (Q5)` };
     if (strategyCount < fmCount) return { tab: 'decisions' as const, label: `Select strategies — ${fmCount - strategyCount} remaining (Q6–Q7)` };
-    if (pmCount === 0) return { tab: 'tasks' as const, label: 'Generate the PM schedule into Work Management' };
+    if (impl.overdue > 0) return { tab: 'tasks' as const, label: `Implement the plan — ${impl.overdue} overdue` };
+    if (impl.open > 0) return { tab: 'tasks' as const, label: `Implement the plan — ${impl.open} of ${impl.decided} open${impl.next?.impl_due_date ? `, next due ${impl.next.impl_due_date}` : ''}` };
     return { tab: 'evidence' as const, label: 'Check the study against live asset data' };
-  }, [functions.length, fmCount, decidedCount, strategyCount, pmCount]);
+  }, [functions.length, fmCount, decidedCount, strategyCount, impl]);
 
   const wmQuery = `RCM-${study.id.slice(0, 8)}`;
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -205,20 +228,31 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
         </div>
       )}
 
-      {/* Work Management link */}
+      {/* Implementation (0336) — is the approved plan being carried out, by whom, by when */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className={`p-2 rounded-lg shrink-0 ${pmCount > 0 ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-50 text-slate-400'}`}>
+            <div className={`p-2 rounded-lg shrink-0 ${impl.overdue > 0 ? 'bg-red-50 text-red-600' : impl.implemented > 0 && impl.open === 0 ? 'bg-emerald-50 text-emerald-600' : impl.open > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'}`}>
               <Boxes size={18} />
             </div>
             <div className="min-w-0">
-              <p className="text-xs font-bold text-slate-700">Work Management</p>
+              <p className="text-xs font-bold text-slate-700">Implementation</p>
               <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                {pmCount > 0
-                  ? `${pmCount} PM task${pmCount !== 1 ? 's' : ''} generated from this study`
-                  : 'No PM tasks generated yet — complete decisions, then generate the schedule'}
+                {impl.decided === 0
+                  ? 'Nothing to implement yet — decide strategies first'
+                  : <>
+                      <strong className="text-slate-600">{impl.implemented}</strong> of {impl.decided} implemented
+                      {impl.open > 0 ? <> · <span className="text-amber-700">{impl.open} open</span></> : null}
+                      {impl.overdue > 0 ? <> · <span className="text-red-600 font-semibold">{impl.overdue} overdue</span></> : null}
+                      {impl.unassigned > 0 ? <> · {impl.unassigned} unassigned</> : null}
+                      {pmCount > 0 ? <> · {pmCount} PM{pmCount !== 1 ? 's' : ''}</> : null}
+                    </>}
               </p>
+              {impl.next && (
+                <button type="button" onClick={() => onNavigate('tasks')} className="text-[10px] text-slate-500 mt-0.5 truncate hover:text-primary-600 text-left block max-w-full" title="Open it on the Maintenance Plan">
+                  Next due {impl.next.impl_due_date}{impl.next.impl_owner_name ? ` · ${impl.next.impl_owner_name}` : ' · unassigned'} — {impl.next.failure_mode_description}
+                </button>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">

@@ -195,6 +195,12 @@ export interface RCMMaintenancePlanProps {
   assetHasFeed?: boolean;
   /** Cited band suggestions for this asset's class (limitLibrary) — prefill the point sheet. */
   pointSuggestions?: SuggestedPoint[];
+  /** 0336 — the study team (offered first in the owner picker). */
+  teamMembers?: StudyCollaborator[];
+  /** 0336 — who carries this decision out, and by when. */
+  onAssignOwner: (failureModeId: string, patch: { ownerContactId?: string | null; ownerName?: string | null; dueDate?: string | null }) => void;
+  /** Search any person in the tenant for the owner picker. */
+  searchPeople?: (query: string) => Promise<Array<{ id: string; name: string; title?: string }>>;
   /** Which mode to open first (a hand-off from Strategy). */
   initialFailureModeId?: string | null;
   /** Per-failure-mode implementation — one decision at a time, like a WO. */

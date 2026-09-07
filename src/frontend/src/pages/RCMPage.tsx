@@ -495,12 +495,23 @@ export const RCMPage: React.FC = () => {
         if (!r.ok) { showToast(r.reason, 'error'); return; }
         setSelectedStudy(prev => (prev ? { ...prev, ...r.study } : r.study));
         if (value === 'approved') {
-          const n = await notifyTeam(studyCollaborators, c => ({
-            title: '✅ RCM study approved — implement the plan',
-            message: `"${selectedStudy.title}" was approved by ${updates.approved_by}. ${c.role === 'editor' || c.role === 'owner' ? 'The Maintenance Plan lists what to create: PMs, monitoring points, sensors, spares.' : 'The plan is on the Maintenance Plan tab.'}`,
-            actionRequired: c.role === 'editor' || c.role === 'owner',
-            severity: 'SUCCESS',
-          }));
+          // 0336: approval gave every unowned decision the facilitator and a
+          // due date — tell each person what they now own, and by when.
+          const fresh = await rcmService.getTaskSummaries(selectedStudy.id);
+          setTaskSummaries(fresh);
+          const ownedBy = (contactId: string) => fresh.filter(t => t.impl_owner_contact_id === contactId && t.recommended_strategy_code);
+          const n = await notifyTeam(studyCollaborators, c => {
+            const mine = ownedBy(c.ref_id);
+            const soonest = mine.map(t => t.impl_due_date).filter(Boolean).sort()[0];
+            return {
+              title: '✅ RCM study approved — implement the plan',
+              message: `"${selectedStudy.title}" was approved by ${updates.approved_by}. ${mine.length
+                ? `You own ${mine.length} implementation${mine.length !== 1 ? 's' : ''}${soonest ? `, first due ${soonest}` : ''}: ${mine.slice(0, 3).map(t => t.failure_mode_description).join('; ')}${mine.length > 3 ? '…' : ''}.`
+                : c.role === 'editor' || c.role === 'owner' ? 'The Maintenance Plan lists what to create: PMs, monitoring points, sensors, spares.' : 'The plan is on the Maintenance Plan tab.'}`,
+              actionRequired: mine.length > 0 || c.role === 'editor' || c.role === 'owner',
+              severity: 'SUCCESS',
+            };
+          });
           showToast(`Study approved${n ? ` — ${n} team member${n !== 1 ? 's' : ''} notified` : ''}`);
         } else if (value === 'review') {
           const n = await notifyTeam(studyCollaborators.filter(c => c.role === 'reviewer' || c.role === 'owner'), () => ({
@@ -1114,6 +1125,36 @@ export const RCMPage: React.FC = () => {
    * point exists behind it. Create the reading definition here, named after
    * the failure mode, with the bands left for the Condition Data page.
    */
+  // 0336 — who carries a decision into Work Management, by when. The freeze
+  // exempts these columns, so an approved plan can still be assigned.
+  const handleAssignOwner = async (failureModeId: string, patch: { ownerContactId?: string | null; ownerName?: string | null; dueDate?: string | null }) => {
+    if (!selectedStudy) return;
+    const pending = decisionChains.current.get(failureModeId);
+    if (pending) await pending;
+    const decision = decisionMap.get(failureModeId);
+    if (!decision) { showToast('Choose a strategy first — the owner hangs off the decision', 'error'); return; }
+    const updates: Partial<RCMDecision> = {};
+    if ('ownerContactId' in patch) {
+      updates.impl_owner_contact_id = patch.ownerContactId ?? null;
+      updates.impl_assigned_at = new Date().toISOString();
+      updates.impl_assigned_by = user?.id || null;
+    }
+    if ('dueDate' in patch) updates.impl_due_date = patch.dueDate ?? null;
+    const saved = await trackSave(rcmService.updateDecision(decision.id, updates));
+    if (!saved) { showToast('Could not save the owner / due date', 'error'); return; }
+    setDecisions(prev => prev.map(d => d.id === decision.id ? { ...d, ...updates } : d));
+    setTaskSummaries(await rcmService.getTaskSummaries(selectedStudy.id));
+    const fm = failureModes.find(m => m.id === failureModeId);
+    if ('ownerContactId' in patch && patch.ownerContactId && patch.ownerContactId !== decision.impl_owner_contact_id) {
+      const sent = await notifyTeam([{ id: 'owner', type: 'contact', ref_id: patch.ownerContactId, name: patch.ownerName || 'Owner', role: 'editor' } as StudyCollaborator], () => ({
+        title: '🛠️ RCM implementation assigned to you',
+        message: `"${fm?.failure_mode_description || 'A failure mode'}" on ${selectedStudy.asset_tag || selectedStudy.title}: create the PM / point / sensor / work order the decision calls for${(patch.dueDate ?? decision.impl_due_date) ? ` by ${patch.dueDate ?? decision.impl_due_date}` : ''}. Open the Maintenance Plan.`,
+        actionRequired: true,
+      }));
+      showToast(`${patch.ownerName || 'Owner'} owns this implementation${sent ? ' — notified' : ''}`);
+    }
+  };
+
   const handleCreateReadingPoint = async (failureModeId: string, setup: ReadingPointSetup) => {
     if (!selectedStudy?.asset_id) return;
     // Wait for any queued autosave on this decision so the row exists server-side.
@@ -1524,6 +1565,9 @@ export const RCMPage: React.FC = () => {
           locked={selectedStudy.status === 'approved' || readOnly}
           assetHasFeed={monitoring?.hasLiveFeed}
           pointSuggestions={pointSuggestions}
+          teamMembers={studyCollaborators}
+          onAssignOwner={(id, patch) => void handleAssignOwner(id, patch)}
+          searchPeople={async q => (await analyzeService.searchContacts(q)).map(c => ({ id: c.id, name: c.name, title: c.title }))}
           initialFailureModeId={planFocusId}
           onCreatePM={id => void handleCreatePMForMode(id)}
           pmGateFor={id => canCreatePMForDecision(selectedStudy.asset_id, decisionMap.get(id))}
