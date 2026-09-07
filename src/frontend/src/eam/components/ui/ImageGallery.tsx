@@ -3,6 +3,8 @@ import { Camera, Plus, Trash2, X, ZoomIn, Loader2, Clock } from 'lucide-react';
 import { StorageImage } from './StorageImage';
 import { DatabaseService } from '../../services/DatabaseService';
 import { ImageCapture } from './ImageCapture';
+import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 
 interface GalleryImage {
     id: string;
@@ -25,6 +27,8 @@ interface ImageGalleryProps {
     readonly?: boolean;
     /** Max images allowed */
     maxImages?: number;
+    /** Fired once the file record is saved — lets the parent register the photo elsewhere (e.g. as RCA evidence). */
+    onImageAdded?: (img: { id: string; url: string; name: string }) => void | Promise<void>;
 }
 
 export const ImageGallery: React.FC<ImageGalleryProps> = ({
@@ -33,8 +37,16 @@ export const ImageGallery: React.FC<ImageGalleryProps> = ({
     bucket = 'assets',
     prefix = '',
     readonly = false,
-    maxImages = 20
+    maxImages = 20,
+    onImageAdded,
 }) => {
+    // entity_files.uploaded_by is a users.id with a foreign key. This used to send the
+    // literal 'current_user', which the database rejected — every photo uploaded through
+    // this gallery (work orders, requests, POs, PMs, RCAs) went to storage and was then
+    // silently lost. The failure is a toast now, not a console line.
+    const { user, profile } = useAuth() as any;
+    const uploaderId: string | null = user?.id || profile?.id || null;
+    const { showToast } = useToast();
     const [images, setImages] = useState<GalleryImage[]>([]);
     const [loading, setLoading] = useState(true);
     const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -70,26 +82,29 @@ export const ImageGallery: React.FC<ImageGalleryProps> = ({
 
     const handleImageCaptured = async (url: string) => {
         try {
-            await db.addEntityFile({
+            const name = url.split('/').pop() || `photo_${Date.now()}.jpg`;
+            const saved = await db.addEntityFile({
                 entityId,
                 entityType,
-                name: url.split('/').pop() || `photo_${Date.now()}.jpg`,
+                name,
                 url,
                 type: 'image/jpeg',
                 sizeBytes: 0,
-                uploadedBy: 'current_user'
+                uploadedBy: uploaderId,
             });
             // Log to audit trail
             try {
                 await db.addJournalEntry(entityId, entityType, {
                     type: 'PHOTO',
-                    description: `Photo uploaded: ${url.split('/').pop()}`,
-                    createdBy: 'current_user'
+                    description: `Photo uploaded: ${name}`,
+                    createdBy: uploaderId,
                 });
             } catch { /* journal is best-effort */ }
             await loadImages();
+            if (onImageAdded) await onImageAdded({ id: saved.id, url, name });
         } catch (err) {
             console.error('Failed to save image record:', err);
+            showToast('The photo was uploaded but could not be recorded — please try again.', 'error');
         }
         setShowCapture(false);
     };
@@ -106,7 +121,7 @@ export const ImageGallery: React.FC<ImageGalleryProps> = ({
                 await db.addJournalEntry(entityId, entityType, {
                     type: 'PHOTO',
                     description: `Photo deleted: ${img.name}`,
-                    createdBy: 'current_user'
+                    createdBy: uploaderId,
                 });
             } catch { /* best-effort */ }
             setImages(prev => prev.filter(i => i.id !== img.id));

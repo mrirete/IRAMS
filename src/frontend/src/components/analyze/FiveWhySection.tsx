@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Edit3, Trash2, X, Check, Plus, Target, Search,
     AlertCircle, AlertTriangle, RefreshCw,
@@ -153,6 +153,9 @@ interface FiveWhySectionProps {
     /** Take the user to the method gate. The escalation hint below told them to switch
      *  method and then gave them no way to do it — the gate is far up the page. */
     onEscalate?: () => void;
+    /** Step 1's problem statement. A 5-Why's problem node IS this statement, so an
+     *  empty chain is seeded from it rather than asking for it a second time. */
+    problemStatement?: string | null;
 }
 
 // ── Component ─────────────────────────────────────────────────
@@ -165,6 +168,7 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
     links,
     setLinks,
     onEscalate,
+    problemStatement,
 }) => {
     // Local editing / input state
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -182,6 +186,26 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
     const whyCount = whyNodes.length;
     const hasRootCause = nodes.some(n => n.is_root_cause);
     const hasProblem = nodes.some(n => n.node_type === 'problem');
+
+    // Seed the problem node from the statement the moment an empty chain opens.
+    const seededRef = useRef(false);
+    useEffect(() => {
+        if (seededRef.current || hasProblem || nodes.length > 0) return;
+        const stmt = (problemStatement || '').trim();
+        if (!stmt) return;
+        seededRef.current = true;
+        analyzeService.createRCANode({
+            investigation_id: selectedRca.id,
+            parent_id: null,
+            node_type: 'problem',
+            description: stmt,
+            depth: 0,
+            is_root_cause: false,
+            cause_category: null as any,
+            cause_code: null,
+            evidence_notes: null,
+        }).then(node => { if (node) setNodes(n => [...n, node]); });
+    }, [hasProblem, nodes.length, problemStatement, selectedRca.id, setNodes]);
     const nextDepth = whyCount + 1;
 
     const guidedPrompts: Record<number, string> = {

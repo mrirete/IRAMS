@@ -74,6 +74,9 @@ export const DefectEliminationDivision: React.FC<DefectEliminationDivisionProps>
                         </span>
                     </React.Fragment>
                 ))}
+                <span className="ml-2 text-[11px] text-slate-400 hidden lg:inline">
+                    — a DE task tracks the elimination of a chronic defect across all its work; an RCA explains one event.
+                </span>
             </div>
 
             {/* ── Bad Actor Hunter (AI) — ranks worst assets, drafts DE tasks ── */}

@@ -63,6 +63,37 @@ const RCA_CATEGORIES = [
 // Methods that have a dedicated editor; anything else falls back to the flat cause list.
 const VISUAL_DIAGRAM_METHODS = ['five_why', 'fishbone', 'fault_tree', 'logic_tree'];
 
+/**
+ * One "prevent the next one" hand-off: what it is for, whether it has been done,
+ * and the one button that does it or opens what it made.
+ */
+const Handoff: React.FC<{
+    icon: React.ReactNode; title: string; purpose: string;
+    done: { label: string; onOpen: () => void } | null;
+    blocked?: string | null; busy?: boolean; actLabel: string; onAct: () => void;
+}> = ({ icon, title, purpose, done, blocked, busy, actLabel, onAct }) => (
+    <div className={`rounded-xl border p-3.5 flex flex-col gap-2 ${done ? 'border-emerald-200 bg-emerald-50/40' : blocked ? 'border-slate-200 bg-slate-50/60' : 'border-slate-200 bg-white'}`}>
+        <div className="flex items-center gap-2 text-sm font-extrabold text-slate-800">
+            <span className={done ? 'text-emerald-600' : 'text-primary-600'}>{icon}</span> {title}
+            {done && <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700"><Check size={11} strokeWidth={3} /> done</span>}
+        </div>
+        <p className="text-xs text-slate-500 leading-relaxed flex-1">{purpose}</p>
+        {done ? (
+            <button type="button" onClick={done.onOpen}
+                className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+                {done.label} ↗
+            </button>
+        ) : blocked ? (
+            <span className="text-[11px] font-semibold text-slate-400">{blocked}</span>
+        ) : (
+            <button type="button" onClick={onAct} disabled={busy}
+                className="self-start inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-primary-50 border border-primary-200 text-primary-700 hover:bg-primary-100 disabled:opacity-50">
+                {busy ? 'Working…' : actLabel}
+            </button>
+        )}
+    </div>
+);
+
 const LABEL_CLS = 'block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5';
 const INPUT_CLS = 'w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm';
 
@@ -269,6 +300,43 @@ export function RCAInvestigationPage() {
             else showToast('Could not add the FMEA item', 'error');
         } finally { setAddingToFmea(false); }
     };
+
+    // ── "Prevent the next one" hand-off state (step 4) ──────────────────
+    // Done means THIS investigation's failure mode is on the study / worksheet,
+    // or a DE task was born from this RCA — not merely that a study exists.
+    const [handoffs, setHandoffs] = useState<{
+        rcm: { id: string; title: string } | null;
+        fmea: { id: string; title: string } | null;
+        de: { id: string; title: string } | null;
+    }>({ rcm: null, fmea: null, de: null });
+    const [handoffTick, setHandoffTick] = useState(0);
+    useEffect(() => {
+        if (activeStep !== 4 || !inv) return;
+        let cancelled = false;
+        (async () => {
+            const assetId = inv.asset_id;
+            const modeText = (inv.event_what || inv.problem_statement || inv.title || '').trim().toLowerCase();
+            const [studies, sheets, de] = await Promise.all([
+                assetId ? rcmService.getStudiesForAsset(assetId).catch(() => []) : Promise.resolve([]),
+                assetId ? analyzeService.getFMEAWorksheets(assetId).catch(() => []) : Promise.resolve([]),
+                analyzeService.getDETaskForRca(inv.id).catch(() => null),
+            ]);
+            let rcm: { id: string; title: string } | null = null;
+            for (const st of studies.filter(x => x.status !== 'closed')) {
+                const modes = await rcmService.getFailureModesByStudy(st.id).catch(() => []);
+                if (modes.some(m => (m.failure_mode_description || '').trim().toLowerCase() === modeText)) { rcm = { id: st.id, title: st.title }; break; }
+            }
+            let fmea: { id: string; title: string } | null = null;
+            for (const ws of sheets.filter(x => x.status !== 'closed')) {
+                const items = await analyzeService.getFMEAItems(ws.id).catch(() => []);
+                if (items.some(i => i.failure_mode.trim().toLowerCase().startsWith(modeText.split(' — ')[0]))) { fmea = { id: ws.id, title: ws.title }; break; }
+            }
+            if (!cancelled) setHandoffs({ rcm, fmea, de: de ? { id: de.id, title: de.title } : null });
+        })();
+        return () => { cancelled = true; };
+    }, [activeStep, inv?.id, inv?.asset_id, inv?.event_what, inv?.problem_statement, inv?.title, handoffTick]);
+    // A repeat failure is what a DE task is for; a one-off is not.
+    const isRepeatFailure = relatedRCAs.length > 0 || inv?.trigger_type === 'recurrence' || inv?.trigger_type === 'pareto';
 
     // Mobile viewport detector for indent dampening
     const [isMobile, setIsMobile] = useState(false);
@@ -745,6 +813,7 @@ export function RCAInvestigationPage() {
             }
 
             setDeCreated(true);
+            setHandoffTick(t => t + 1);
             setTimeout(() => { setShowDEModal(false); setDeCreated(false); }, 2000);
         } catch (e) {
             console.error('Failed to create DE task:', e);
@@ -1092,13 +1161,6 @@ export function RCAInvestigationPage() {
                                     </button>
                                     {invMenuOpen && (
                                         <div className="fixed left-2 right-2 top-16 sm:absolute sm:left-auto sm:right-0 sm:top-full sm:mt-1 sm:w-56 bg-white border border-slate-200 rounded-xl shadow-lg z-40 overflow-hidden py-1">
-                                            <button
-                                                onClick={() => { setInvMenuOpen(false); openDEModal(); }}
-                                                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-slate-50 text-left"
-                                            >
-                                                <Target size={15} className="text-slate-400 shrink-0" />
-                                                Create DE task
-                                            </button>
                                             {/* The printable ISO report has always existed at this route.
                                                 Nothing in the UI linked to it. */}
                                             <button
@@ -1589,6 +1651,15 @@ export function RCAInvestigationPage() {
                                     bucket="assets"
                                     prefix="rca_"
                                     readonly={inv.status === 'closed'}
+                                    onImageAdded={async img => {
+                                        // A photo of the scene is evidence — a fact — so it counts toward step 2.
+                                        const ev = await analyzeService.addRCAEvidence({
+                                            investigation_id: inv.id, evidence_type: 'photo',
+                                            title: img.name, content: img.url, linked_entity_id: img.id,
+                                            event_timestamp: null, uploaded_by: currentUsername, quality_grade: 'fact',
+                                        });
+                                        if (ev) setEvidence(e => [...e, ev]);
+                                    }}
                                 />
                             </div>
                         </div>
@@ -1998,33 +2069,12 @@ export function RCAInvestigationPage() {
                     <div className="space-y-6">
                         <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
                             <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-4 flex items-center gap-2">
-                                <Wrench className="w-4 h-4 text-primary-600" /> Corrective Actions & Recommendations
+                                <Wrench className="w-4 h-4 text-primary-600" /> Corrective actions
                             </div>
-                            <p className="text-xs text-slate-400 font-medium mb-3">
-                                Formulate corrective action plans. Group recommendations cleanly under cause categories (Physical, Human, Latent).
+                            <p className="text-xs text-slate-400 font-medium mb-4">
+                                <span className="font-bold text-slate-600">Fix this occurrence.</span>{' '}
+                                One action per root cause, with an owner and a date. Actions against latent causes are the ones that stop recurrence.
                             </p>
-                            {/* Diagnose → Decide: the established cause becomes a failure mode in the asset's RCM study */}
-                            <div className="mb-5 flex items-center gap-2 flex-wrap">
-                                <button
-                                    type="button"
-                                    onClick={() => void handleAddToRcmStudy()}
-                                    disabled={addingToRcm}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-primary-50 border border-primary-200 text-primary-700 hover:bg-primary-100 disabled:opacity-50"
-                                    title="Add this failure (and its established cause) to the asset's RCM study so a maintenance strategy is decided for it"
-                                >
-                                    <Wrench className="w-3.5 h-3.5" /> {addingToRcm ? 'Adding…' : 'Add to RCM study'}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => void handleAddToFmea()}
-                                    disabled={addingToFmea}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                                    title="Put this failure mode, its cause and effect on the asset's FMEA worksheet, scored from this investigation's facts"
-                                >
-                                    <ClipboardList className="w-3.5 h-3.5" /> {addingToFmea ? 'Adding…' : 'Add to FMEA'}
-                                </button>
-                                <span className="text-[11px] text-slate-400">A corrective action fixes this occurrence; RCM and FMEA decide what prevents the next one.</span>
-                            </div>
                             
                             {CAUSE_CATEGORIES.map(cat => {
                                 const catActions = actions.filter(a => a.cause_category === cat.value);
@@ -2091,6 +2141,49 @@ export function RCAInvestigationPage() {
                             >
                                 <Plus size={14} strokeWidth={2.5} /> Add corrective action
                             </button>
+                        </div>
+
+                        {/* Corrective actions fix this occurrence. These three change what stops the
+                            next one, and each says whether it has been done for THIS failure. */}
+                        <div className="bg-white border border-slate-200 rounded-xl p-5 md:p-6 shadow-sm">
+                            <div className="text-sm sm:text-base font-extrabold text-slate-900 border-b border-slate-100 pb-3.5 mb-3 flex items-center gap-2">
+                                <Shield className="w-4 h-4 text-primary-600" /> Prevent the next one
+                            </div>
+                            <p className="text-xs text-slate-400 font-medium mb-4">
+                                Hand the finding to the tools that decide what prevents recurrence. Each one opens the record it creates.
+                                {!inv.asset_id && <span className="text-amber-700"> RCM and FMEA need a register asset on this investigation.</span>}
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <Handoff
+                                    icon={<Wrench size={15} />}
+                                    title="RCM study"
+                                    purpose="Decide the maintenance task for this failure mode: on-condition, scheduled, redesign or run-to-failure."
+                                    done={handoffs.rcm ? { label: `Open “${handoffs.rcm.title}”`, onOpen: () => navigate(`/rcm/${handoffs.rcm!.id}`) } : null}
+                                    blocked={!inv.asset_id ? 'Needs a register asset' : null}
+                                    busy={addingToRcm}
+                                    actLabel="Add failure mode to RCM"
+                                    onAct={() => void handleAddToRcmStudy()}
+                                />
+                                <Handoff
+                                    icon={<ClipboardList size={15} />}
+                                    title="FMEA worksheet"
+                                    purpose="Record the risk: severity, occurrence and detection scored from this investigation's facts, with the actions as the recommendation."
+                                    done={handoffs.fmea ? { label: `Open “${handoffs.fmea.title}”`, onOpen: () => navigate(`/analyze/fmea/${handoffs.fmea!.id}`) } : null}
+                                    blocked={!inv.asset_id ? 'Needs a register asset' : null}
+                                    busy={addingToFmea}
+                                    actLabel="Add to FMEA"
+                                    onAct={() => void handleAddToFmea()}
+                                />
+                                <Handoff
+                                    icon={<Target size={15} />}
+                                    title="Defect Elimination task"
+                                    purpose="For a chronic defect only: track its elimination across every work order and RCA raised against it, with cost, savings and payback."
+                                    done={handoffs.de ? { label: 'Open DE task', onOpen: () => navigate(`/analyze?division=defect_elimination&task=${handoffs.de!.id}`) } : null}
+                                    blocked={!isRepeatFailure ? 'Not a repeat failure — no prior RCA or recurrence trigger on this asset' : null}
+                                    actLabel="Create DE task"
+                                    onAct={openDEModal}
+                                />
+                            </div>
                         </div>
                     </div>
                 )}
@@ -2619,6 +2712,7 @@ export function RCAInvestigationPage() {
                         {inv.method === 'five_why' && (
                             <FiveWhySection
                                 selectedRca={{ id: inv.id, method: inv.method, root_cause_summary: inv.root_cause_summary }}
+                                problemStatement={inv.problem_statement}
                                 nodes={scopedNodes}
                                 setNodes={setNodes}
                                 evidence={evidence}

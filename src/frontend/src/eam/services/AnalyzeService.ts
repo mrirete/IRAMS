@@ -1942,6 +1942,19 @@ class AnalyzeService {
         }
     }
 
+    /** The DE task born from an investigation, if any — step 4's hand-off state. */
+    async getDETaskForRca(rcaId: string): Promise<{ id: string; title: string; status: string } | null> {
+        const { data, error } = await supabase
+            .from('ers_defect_elimination_tasks')
+            .select('id, title, status')
+            .eq('rca_id', rcaId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        if (error) { console.error('AnalyzeService.getDETaskForRca:', error); return null; }
+        return data ?? null;
+    }
+
     /** What actually watches an asset: active reading points and scheduled PMs. Feeds FMEA detection. */
     async getAssetDetectionControls(assetId: string): Promise<{ readingPoints: number; activePms: number }> {
         const [rp, pm] = await Promise.all([
