@@ -424,7 +424,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                                     Global Settings
                                 </NavLink>
                                 <NavLink to="/admin/companies" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
-                                    Companies
+                                    Your Company
                                 </NavLink>
                                 <NavLink to="/admin/hierarchy" onClick={onClose} className={({ isActive }) => subLinkClass(isActive)} style={({ isActive }) => isActive ? activeBgStyle : undefined}>
                                     Hierarchy Config

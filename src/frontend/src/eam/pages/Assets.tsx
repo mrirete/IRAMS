@@ -19,7 +19,7 @@ import {
 import { Asset, AssetStatus, WorkOrder, ReadingDefinition, ReadingLogEntry, Contact, DictionaryEntry, BomItem, RecurringJob, Vendor, CustomField } from '../types';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, isValidChild, showsEquipmentFields, isoLevelName } from '../services/hierarchyModel';
+import { isFunctionalLocation, canHaveChildLocation, canHaveChildEquipment, resolveLevel, resolveLevelCode, getLevelConfig, allowedChildren, getLevels, registerRootLevel, isValidChild, showsEquipmentFields, isoLevelName } from '../services/hierarchyModel';
 import { OperatingContextCard } from '../components/OperatingContextCard';
 import { isOtherCode } from '../../lib/iso14224Taxonomy';
 import { errorLog } from '../services/ErrorLogService';
@@ -2723,21 +2723,32 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
         walk = walk.parentId ? assets.find(a => a.id === walk!.parentId) : undefined;
     }
 
-    // ISO 14224 level names by depth
-    const ISO_LEVELS: { label: string; tag: string; color: string }[] = [
-        { label: 'Enterprise', tag: 'L1', color: 'bg-blue-100 text-blue-700 border-blue-200' },
-        { label: 'Site', tag: 'L2', color: 'bg-sky-100 text-sky-700 border-sky-200' },
-        { label: 'Plant', tag: 'L3', color: 'bg-primary-100 text-primary-700 border-primary-200' },
-        { label: 'Unit', tag: 'L4', color: 'bg-primary-100 text-primary-700 border-primary-200' },
-        { label: 'System', tag: 'L5', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
-        { label: 'Equipment', tag: 'L6', color: 'bg-amber-100 text-amber-700 border-amber-200' },
-        { label: 'Subunit', tag: 'L7', color: 'bg-orange-100 text-orange-700 border-orange-200' },
-        { label: 'Component', tag: 'L8', color: 'bg-rose-100 text-rose-700 border-rose-200' },
-    ];
-
-    const getLevel = (depth: number) => ISO_LEVELS[Math.min(depth, ISO_LEVELS.length - 1)];
-    const currentDepth = breadcrumbs.length - 1;
-    const currentLevel = getLevel(currentDepth);
+    // Level tags come from the hierarchy model (the level each record was created
+    // at), not from tree depth. A register starts at the Installation (ISO 14224
+    // L3 · Site), so the root is L3 — the old depth table called it "L1 · Enterprise"
+    // while the create modal said L3, and the two never agreed.
+    type LevelTag = { label: string; tag: string; color: string };
+    const LEVEL_COLORS: Record<number, string> = {
+        3: 'bg-sky-100 text-sky-700 border-sky-200',
+        4: 'bg-primary-100 text-primary-700 border-primary-200',
+        5: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+        6: 'bg-amber-100 text-amber-700 border-amber-200',
+        7: 'bg-orange-100 text-orange-700 border-orange-200',
+        8: 'bg-rose-100 text-rose-700 border-rose-200',
+    };
+    const UNKNOWN_LEVEL: LevelTag = { label: 'Unclassified', tag: '—', color: 'bg-slate-100 text-slate-500 border-slate-200' };
+    const tagFor = (cfg: { isoLevel: number; label: string } | undefined): LevelTag =>
+        cfg ? { label: cfg.label, tag: `L${cfg.isoLevel}`, color: LEVEL_COLORS[cfg.isoLevel] ?? 'bg-slate-100 text-slate-600 border-slate-200' } : UNKNOWN_LEVEL;
+    const levelOf = (a: Asset | undefined): LevelTag =>
+        tagFor(a ? resolveLevel({ hierarchyLevel: (a as any).hierarchyLevel, assetType: a.assetType, category: a.category }) : undefined);
+    // What the model allows directly below a node (shallowest allowed child).
+    const childLevelOf = (a: Asset): LevelTag => {
+        const kids = allowedChildren({ hierarchyLevel: (a as any).hierarchyLevel, assetType: a.assetType, category: a.category });
+        return tagFor([...kids].sort((x, y) => x.isoLevel - y.isoLevel)[0]);
+    };
+    const currentLevel = levelOf(asset);
+    const parentLevel = levelOf(parent);
+    const childLevel = childLevelOf(asset);
 
     // Criticality styling
     const critColors: Record<string, { bg: string; text: string; ring: string; label: string }> = {
@@ -2768,7 +2779,7 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
             <div className="bg-gradient-to-r from-slate-50 to-white p-3 rounded-lg border border-slate-200">
                 <div className="flex items-center gap-1 flex-wrap text-xs">
                     {breadcrumbs.map((bc, i) => {
-                        const lvl = getLevel(i);
+                        const lvl = levelOf(bc);
                         const isCurrent = i === breadcrumbs.length - 1;
                         return (
                             <React.Fragment key={bc.id}>
@@ -2860,8 +2871,8 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                                <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${getLevel(Math.max(0, currentDepth - 1)).color}`}>
-                                    {getLevel(Math.max(0, currentDepth - 1)).tag}
+                                <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${parentLevel.color}`}>
+                                    {parentLevel.tag}
                                 </span>
                                 <span className="font-bold text-sm text-slate-900 truncate">{parent.tag}</span>
                                 {parent.criticality && (
@@ -2882,7 +2893,7 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
                 <div className="p-4 bg-gradient-to-r from-emerald-50 to-white border-b border-slate-200 flex justify-between items-center">
                     <h3 className="text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1.5">
                         <CornerDownRight size={12} className="text-emerald-500" />
-                        Children — {getLevel(currentDepth + 1).tag} {getLevel(currentDepth + 1).label}
+                        Children — {childLevel.tag} {childLevel.label}
                         <span className="ml-1 bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full text-[10px]">{children.length}</span>
                     </h3>
                     <button className="text-xs bg-white border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 transition-colors font-medium">
@@ -2927,8 +2938,8 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-1.5">
-                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${getLevel(currentDepth + 1).color}`}>
-                                            {getLevel(currentDepth + 1).tag}
+                                        <span className={`text-[9px] font-bold px-1 py-0.5 rounded border ${levelOf(child).color}`}>
+                                            {levelOf(child).tag}
                                         </span>
                                         <span className="font-bold text-sm text-slate-900 truncate">{child.tag}</span>
                                         <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${crit.bg} ${crit.text}`}>
@@ -2974,7 +2985,7 @@ function HierarchyTab({ asset, assets, onSelect }: { asset: Asset, assets: Asset
                     <div className="p-4 bg-gradient-to-r from-blue-50 to-white border-b border-slate-200">
                         <h3 className="text-[10px] font-bold text-slate-600 uppercase flex items-center gap-1.5">
                             <Network size={12} className="text-blue-500" />
-                            Siblings — Same {getLevel(currentDepth).label} Level
+                            Siblings — Same {currentLevel.label} Level
                             <span className="ml-1 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full text-[10px]">{siblings.length}</span>
                         </h3>
                     </div>
@@ -3315,7 +3326,12 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
             .catch(() => { setCompanies([]); setNumberingReady(false); });
     }, []);
 
-    const isLocation = type === 'Location';
+    // The button that opened the modal is only an intent. Once a level is chosen,
+    // that level's object class decides whether this is a location or an equipment
+    // record — title, tag label and numbering all follow the level, not the button.
+    const wantsLocation = type === 'Location';
+    const selLevel = getLevelConfig(formData.assetType);
+    const isLocation = selLevel ? selLevel.objectClass === 'FLOC' : wantsLocation;
 
     // Auto-resolve allowed child level/type based on mode and parent
     useEffect(() => {
@@ -3323,7 +3339,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
         let defaultType = '';
         if (parent) {
             const parentIso = resolveLevel({ hierarchyLevel: (parent as any).hierarchyLevel, assetType: parent.assetType, category: parent.category })?.isoLevel ?? 0;
-            const targetClass = isLocation ? 'FLOC' : 'EQUIPMENT';
+            const targetClass = wantsLocation ? 'FLOC' : 'EQUIPMENT';
             const allowed = allowedChildren({
                 hierarchyLevel: (parent as any).hierarchyLevel,
                 assetType: parent.assetType,
@@ -3333,7 +3349,11 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
             const deeper = allowed.filter(c => c.isoLevel > parentIso).sort((a, b) => a.isoLevel - b.isoLevel);
             defaultType = (deeper[0] || allowed[0])?.code || '';
         } else {
-            defaultType = isLocation ? 'SITE' : 'EQUIPMENT';
+            // No parent = the top of the register. A register starts at the
+            // Installation (ISO 14224 L3 · Site) whichever button opened the modal:
+            // an equipment record with nothing above it is not a hierarchy. The
+            // level stays editable for the rare deliberate exception.
+            defaultType = registerRootLevel()?.code || 'SITE';
         }
         // Inherit the parent's company by default (a sub-asset belongs to the
         // same company as its location unless explicitly changed).
@@ -3353,15 +3373,18 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
     // class, else every configured level of this class. Lets users target any
     // configured level — including custom ones added in Admin → Hierarchy Config.
     const availableLevels = useMemo(() => {
-        const wantClass = isLocation ? 'FLOC' : 'EQUIPMENT';
+        const wantClass = wantsLocation ? 'FLOC' : 'EQUIPMENT';
         if (parentAsset) {
             const kids = allowedChildren({ hierarchyLevel: (parentAsset as any).hierarchyLevel, assetType: parentAsset.assetType, category: parentAsset.category }).filter(c => c.objectClass === wantClass);
             if (kids.length) return kids;
+            const all = getLevels().filter(l => l.objectClass === wantClass);
+            return all.length ? all : getLevels();
         }
-        const all = getLevels().filter(l => l.objectClass === wantClass);
-        return all.length ? all : getLevels();
+        // Root: every configured level, locations first. The default is the
+        // register's root level; the rest stay reachable on purpose.
+        return [...getLevels()].sort((a, b) =>
+            a.objectClass === b.objectClass ? a.isoLevel - b.isoLevel : a.objectClass === 'FLOC' ? -1 : 1);
     }, [formData.parentId, type, existingAssets]);
-    const selLevel = getLevelConfig(formData.assetType);
     const parentLevelLabel = parentAsset ? resolveLevel({ hierarchyLevel: (parentAsset as any).hierarchyLevel, assetType: (parentAsset as any).assetType, category: (parentAsset as any).category })?.label : undefined;
 
     // Criticality is only mandatory from Level 4+ (SUBSYSTEM, EQUIPMENT, COMPONENT).
@@ -3503,7 +3526,9 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
 
                     {/* W-2: Company (legal entity) — drives per-company numbering. Gated on
                         0174 readiness so company_id is never sent before the column exists. */}
-                    {numberingReady && companies.length > 0 && (
+                    {/* Shown only when the workspace has more than one company code.
+                        Today one workspace is one company, so there is nothing to pick. */}
+                    {numberingReady && companies.length > 1 && (
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Company</label>
                             <select
@@ -3514,7 +3539,7 @@ function AddAssetModal({ isOpen, onClose, onSave, type, existingAssets, initialP
                                 <option value="">── Default / inherit from parent ──</option>
                                 {companies.map(c => <option key={c.id} value={c.id}>{c.code} · {c.name}</option>)}
                             </select>
-                            <p className="text-[10px] text-slate-400 mt-1">Sub-company this asset belongs to. Determines its number range if the company has one configured.</p>
+                            <p className="text-[10px] text-slate-400 mt-1">Company code this asset is booked to. Determines its number range if that company has one configured.</p>
                         </div>
                     )}
 

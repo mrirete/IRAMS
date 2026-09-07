@@ -1,22 +1,28 @@
 /**
- * CompaniesPage — Admin editor for Company Codes (SAP BUKRS / sub-companies).
+ * CompaniesPage — Admin editor for the workspace's own company record.
  *
- * The enterprise-structure tier (design T-0): one deployment can serve a parent
- * with multiple sub-companies / legal entities, each owning its own org units
- * (sites/areas) and — via the scope keys on numbering_config/hierarchy_config —
- * its own numbering framework and configuration, with group-level rollup.
+ * History, so the shape makes sense: 0173 built `companies` as SAP Company
+ * Codes (BUKRS) — several legal entities under one deployment. The shared-DB
+ * tenancy work (0258–0279) then made `companies.id` THE tenant key: a user's
+ * JWT carries one company_id and the select policy (0273) returns only that
+ * row. So today one workspace == one company, and this page edits that single
+ * record. There is deliberately no Add (no INSERT policy — tenants are created
+ * by provision_tenant()/signup), no Deactivate and no Active toggle (a tenant
+ * switching itself off would vanish from its own scope pickers). Sub-companies
+ * under one group need the reserved companies.tenant_id and a tenant-level
+ * claim; that is not built, and this page says so rather than pretending.
  *
  * Degrades gracefully before migration 0173 is applied: getCompanies() returns
  * [] on a missing table, and this page shows an "apply the migration" notice
  * instead of an error.
  */
 import React, { useEffect, useState } from 'react';
-import { Building2, Save, Loader2, Plus, Trash2, Info } from 'lucide-react';
+import { Building2, Save, Loader2, Info } from 'lucide-react';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { useToast } from '../eam/contexts/ToastContext';
 import type { Company } from '../eam/types';
 
-type Row = Company & { _new?: boolean };
+type Row = Company;
 
 export const CompaniesPage: React.FC = () => {
     const { showToast } = useToast();
@@ -49,20 +55,6 @@ export const CompaniesPage: React.FC = () => {
     const update = (idx: number, patch: Partial<Row>) =>
         setRows(prev => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
 
-    const addRow = () =>
-        setRows(prev => [...prev, { id: '', code: '', name: '', active: true, _new: true }]);
-
-    const removeRow = async (idx: number) => {
-        const row = rows[idx];
-        if (row._new || !row.id) { setRows(prev => prev.filter((_, i) => i !== idx)); return; }
-        if (!confirm(`Deactivate company ${row.code}? Org units referencing it are preserved.`)) return;
-        try {
-            await DatabaseService.getInstance().deleteCompany(row.id);
-            showToast(`${row.code} deactivated`, 'success');
-            load();
-        } catch (e: any) { showToast('Deactivate failed: ' + (e?.message || 'unknown'), 'error'); }
-    };
-
     const handleSave = async () => {
         const codes = rows.map(r => (r.code || '').trim().toUpperCase());
         if (codes.some(c => !c)) { showToast('Every company needs a code.', 'error'); return; }
@@ -82,7 +74,7 @@ export const CompaniesPage: React.FC = () => {
                     active: r.active !== false,
                 });
             }
-            showToast('Companies saved', 'success');
+            showToast('Company details saved', 'success');
             load();
         } catch (e: any) {
             showToast('Save failed: ' + (e?.message || 'unknown'), 'error');
@@ -102,15 +94,12 @@ export const CompaniesPage: React.FC = () => {
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h1 className="text-lg md:text-xl font-bold text-slate-900 flex items-center gap-2">
-                        <Building2 size={20} className="text-primary-600" /> Companies
+                        <Building2 size={20} className="text-primary-600" /> Your Company
                     </h1>
-                    <p className="text-xs text-slate-500">Sub-companies / legal entities. Org units, numbering, and configuration can be assigned per company, with group-level rollup across them.</p>
+                    <p className="text-xs text-slate-500">The legal entity this workspace belongs to. Its code, country and currency drive numbering and reporting. One workspace is one company; several company codes under one group are not supported yet.</p>
                 </div>
-                {tableReady && (
+                {tableReady && rows.length > 0 && (
                     <div className="flex items-center gap-2">
-                        <button onClick={addRow} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50">
-                            <Plus size={14} /> Add
-                        </button>
                         <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-white bg-primary-600 hover:bg-primary-500 disabled:opacity-60">
                             {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
                         </button>
@@ -138,10 +127,10 @@ export const CompaniesPage: React.FC = () => {
                      label every field and keep the row's delete on screen. */}
                 <div className="sm:hidden bg-white border border-slate-200 rounded-xl divide-y divide-slate-100">
                     {rows.length === 0 && (
-                        <p className="px-4 py-8 text-center text-slate-400 text-sm">No companies yet — tap Add.</p>
+                        <p className="px-4 py-8 text-center text-slate-400 text-sm">No company record is visible to your account. The workspace was provisioned without one, or your user has no tenant assigned — see Admin › Ops Health.</p>
                     )}
                     {rows.map((r, idx) => (
-                        <div key={r.id || `m-new-${idx}`} className="p-4 space-y-3">
+                        <div key={r.id} className="p-4 space-y-3">
                             <div className="flex items-start gap-2">
                                 <div className="w-24 shrink-0">
                                     <label className={mLabel}>Code</label>
@@ -153,10 +142,6 @@ export const CompaniesPage: React.FC = () => {
                                     <input className={mInput} value={r.name}
                                         onChange={e => update(idx, { name: e.target.value })} placeholder="Cainergy Nigeria Ltd" />
                                 </div>
-                                <button onClick={() => removeRow(idx)} title="Deactivate"
-                                    className="mt-5 h-11 w-9 shrink-0 inline-flex items-center justify-center text-slate-400 active:text-red-600">
-                                    <Trash2 size={16} />
-                                </button>
                             </div>
                             <div>
                                 <label className={mLabel}>Description</label>
@@ -175,12 +160,6 @@ export const CompaniesPage: React.FC = () => {
                                         onChange={e => update(idx, { currency: e.target.value })} placeholder="NGN" />
                                 </div>
                             </div>
-                            <label className="flex items-center gap-2 text-[13px] font-medium text-slate-600 pt-0.5">
-                                <input type="checkbox" checked={r.active !== false}
-                                    onChange={e => update(idx, { active: e.target.checked })}
-                                    className="w-4 h-4 rounded border-slate-300 text-primary-600 focus:ring-primary-400" />
-                                Active
-                            </label>
                         </div>
                     ))}
                 </div>
@@ -194,23 +173,19 @@ export const CompaniesPage: React.FC = () => {
                                 <th className="px-3 py-2.5">Description</th>
                                 <th className="px-3 py-2.5">Country</th>
                                 <th className="px-3 py-2.5">Currency</th>
-                                <th className="px-3 py-2.5 text-center">Active</th>
-                                <th className="px-3 py-2.5"></th>
                             </tr>
                         </thead>
                         <tbody>
                             {rows.length === 0 && (
-                                <tr><td colSpan={7} className="px-3 py-8 text-center text-slate-400">No companies yet — click Add.</td></tr>
+                                <tr><td colSpan={5} className="px-3 py-8 text-center text-slate-400">No company record is visible to your account. The workspace was provisioned without one, or your user has no tenant assigned — see Admin › Ops Health.</td></tr>
                             )}
                             {rows.map((r, idx) => (
-                                <tr key={r.id || `new-${idx}`} className="border-b border-slate-50 last:border-0">
+                                <tr key={r.id} className="border-b border-slate-50 last:border-0">
                                     <td className="px-3 py-2 w-32"><input className={inputCls + ' font-mono uppercase'} value={r.code} onChange={e => update(idx, { code: e.target.value })} placeholder="1000" /></td>
                                     <td className="px-3 py-2 min-w-[180px]"><input className={inputCls} value={r.name} onChange={e => update(idx, { name: e.target.value })} placeholder="Cainergy Nigeria Ltd" /></td>
                                     <td className="px-3 py-2 min-w-[180px]"><input className={inputCls} value={r.description || ''} onChange={e => update(idx, { description: e.target.value })} placeholder="Optional" /></td>
                                     <td className="px-3 py-2 w-24"><input className={inputCls} value={r.country || ''} onChange={e => update(idx, { country: e.target.value })} placeholder="NG" /></td>
                                     <td className="px-3 py-2 w-24"><input className={inputCls + ' font-mono uppercase'} maxLength={3} value={r.currency || ''} onChange={e => update(idx, { currency: e.target.value })} placeholder="NGN" /></td>
-                                    <td className="px-3 py-2 text-center"><input type="checkbox" checked={r.active !== false} onChange={e => update(idx, { active: e.target.checked })} className="rounded border-slate-300 text-primary-600 focus:ring-primary-400" /></td>
-                                    <td className="px-3 py-2 text-center"><button onClick={() => removeRow(idx)} className="text-slate-400 hover:text-red-600" title="Deactivate"><Trash2 size={15} /></button></td>
                                 </tr>
                             ))}
                         </tbody>

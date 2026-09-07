@@ -83,6 +83,12 @@ export function setLevelModel(levels: LevelConfig[] | null | undefined): void {
 
 export function getLevels(): LevelConfig[] { return ACTIVE_LEVELS; }
 
+/** Where a register starts: the shallowest configured location level (ISO 14224 L3 · Installation by default). */
+export function registerRootLevel(): LevelConfig | undefined {
+  const sorted = [...ACTIVE_LEVELS].sort((a, b) => a.isoLevel - b.isoLevel);
+  return sorted.find(l => l.objectClass === 'FLOC') ?? sorted[0];
+}
+
 /** The level code at which equipment numbering (EQ-) begins (lowest isoLevel that is Equipment). */
 export function equipmentStartLevel(): LevelConfig | undefined {
   return [...ACTIVE_LEVELS].sort((a, b) => a.isoLevel - b.isoLevel).find(l => l.objectClass === 'EQUIPMENT');
