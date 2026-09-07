@@ -140,6 +140,24 @@ const norm = (s: string | null | undefined) => String(s || '').trim().toLowerCas
  * and a failure mode never repeats it — so the whole-name match must ignore it.
  */
 const normName = (s: string | null | undefined) => norm(String(s || '').replace(/\s*\([^)]*\)\s*$/, ''));
+/**
+ * The ways a failure mode names a register component: the name itself, the
+ * name without a trailing collective word ("Combustion Liner Set" → "combustion
+ * liner"), and its singular ("HP Turbine Blades" → "hp turbine blade"). Longest
+ * first, so the fullest match wins and short fragments never pin alone.
+ */
+const nameKeys = (name: string | null | undefined): string[] => {
+  const base = normName(name);
+  if (!base) return [];
+  const out = new Set<string>([base]);
+  const noCollective = base.replace(/\s+(set|assembly|assy|unit|kit|pack|group|system|train|skid)$/, '');
+  if (noCollective !== base) out.add(noCollective);
+  for (const k of [...out]) {
+    if (/ies$/.test(k)) out.add(k.replace(/ies$/, 'y'));
+    else if (/[^s]s$/.test(k) && !/ss$/.test(k)) out.add(k.replace(/s$/, ''));
+  }
+  return [...out].sort((a, b) => b.length - a.length);
+};
 
 /**
  * Find the component the model meant. It is asked to echo a tag, but models
@@ -216,7 +234,7 @@ export function inferComponentLink(
 
   let best: { id: string; len: number } | null = null;
   for (const c of b!.components) {
-    for (const key of [normName(c.name), norm(c.tag)]) {
+    for (const key of [...nameKeys(c.name), norm(c.tag)]) {
       if (key.length < 4 || (best && key.length <= best.len)) continue;
       if (mentions(hay, key)) best = { id: c.id, len: key.length };
     }

@@ -195,6 +195,8 @@ export interface RCMMaintenancePlanProps {
   assetHasFeed?: boolean;
   /** Cited band suggestions for this asset's class (limitLibrary) — prefill the point sheet. */
   pointSuggestions?: SuggestedPoint[];
+  /** The register tag of the study's asset — prefixes new monitoring-point names. */
+  assetTag?: string | null;
   /** 0336 — the study team (offered first in the owner picker). */
   teamMembers?: StudyCollaborator[];
   /** 0336 — who carries this decision out, and by when. */

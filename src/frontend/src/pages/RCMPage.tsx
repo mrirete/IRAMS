@@ -46,7 +46,7 @@ import {
 } from '../eam/services/rcmReadiness';
 import { normalizeRecommendation, recommendationToDecisionUpdates, parseIntervalText, intervalDaysFor } from '../eam/services/rcmPlan';
 import { suggestPointsForAsset, type SuggestedPoint } from '../lib/predict/limitLibrary';
-import type { RCMAssetContext, RCMCoverageRow, RCMMonitoringReality } from '../eam/services/RCMService';
+import type { RCMAssetContext, RCMCoverageRow, RCMMonitoringReality, RCMEvidenceFlag } from '../eam/services/RCMService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
 import { matchComponent, matchPart, pinFailureMode, inferComponentLink, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
@@ -134,6 +134,8 @@ export const RCMPage: React.FC = () => {
   // What condition monitoring the asset really has — the plan offers a person
   // to read a point until a feed exists, and the point sheet prefills bands.
   const [monitoring, setMonitoring] = useState<RCMMonitoringReality | null>(null);
+  // Living-study flags (0337): raised by the daily sweep, cleared by Revise.
+  const [evidenceFlags, setEvidenceFlags] = useState<RCMEvidenceFlag[]>([]);
   const pointSuggestions = useMemo<SuggestedPoint[]>(() => liveAssetContext
     ? suggestPointsForAsset({ assetClass: liveAssetContext.asset_class, assetCategory: liveAssetContext.asset_category, operatingContext: liveAssetContext.operating_context as any })
     : [], [liveAssetContext]);
@@ -320,6 +322,7 @@ export const RCMPage: React.FC = () => {
     setLiveAssetContext(study.asset_id ? await rcmService.getAssetContext(study.asset_id) : null);
     setBreakdown(await rcmService.getAssetBreakdown(study.asset_id));
     setMonitoring(study.asset_id ? await rcmService.getMonitoringReality(study.asset_id) : null);
+    setEvidenceFlags(await rcmService.getEvidenceFlags(id));
 
     // Pull the asset's latest saved Weibull fit from Reliability Modelling.
     setLifeEvidence(null);
@@ -1238,6 +1241,7 @@ export const RCMPage: React.FC = () => {
     const r = await rcmService.setStudyStatus(selectedStudy.id, { status: 'in_progress', revision: (selectedStudy.revision ?? 1) + 1, approved_by: null, approved_at: null });
     if (r.ok) {
       setSelectedStudy(prev => (prev ? { ...prev, ...r.study } : r.study));
+      setEvidenceFlags([]); // the revise trigger resolves the living-study flags
       showToast(`Study reopened as revision ${r.study.revision ?? (selectedStudy.revision ?? 1) + 1} — decisions can be edited again`);
       void notifyTeam(studyCollaborators, () => ({
         title: '🔁 RCM study reopened for revision',
@@ -1464,6 +1468,9 @@ export const RCMPage: React.FC = () => {
           liveContext={liveAssetContext?.operating_context ?? null}
           onRefreshContext={selectedStudy.asset_id ? handleRefreshStudyContext : undefined}
           breakdown={breakdown}
+          evidenceFlags={evidenceFlags}
+          canRevise={canApprove && selectedStudy.status === 'approved'}
+          onRevise={() => void handleReviseStudy()}
         />
       )}
 
@@ -1565,6 +1572,7 @@ export const RCMPage: React.FC = () => {
           locked={selectedStudy.status === 'approved' || readOnly}
           assetHasFeed={monitoring?.hasLiveFeed}
           pointSuggestions={pointSuggestions}
+          assetTag={liveAssetContext?.tag ?? null}
           teamMembers={studyCollaborators}
           onAssignOwner={(id, patch) => void handleAssignOwner(id, patch)}
           searchPeople={async q => (await analyzeService.searchContacts(q)).map(c => ({ id: c.id, name: c.name, title: c.title }))}

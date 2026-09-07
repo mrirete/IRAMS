@@ -262,6 +262,22 @@ export interface RCMCoverageRow {
   overdue_count?: number;
   unassigned_count?: number;
   next_due_date?: string | null;
+  /** 0337 — unresolved living-study flags (failures the study did not predict, points in alarm). */
+  evidence_flag_count?: number;
+}
+
+/** 0337 — what the asset did after approval that the study did not foresee. Raised by the daily sweep, cleared by Revise. */
+export interface RCMEvidenceFlag {
+  id: string;
+  study_id: string;
+  kind: 'unanalysed_failure' | 'reading_alarm';
+  ref: string;
+  label: string | null;
+  count: number;
+  first_seen: string;
+  last_seen: string;
+  notified_at: string | null;
+  resolved_at: string | null;
 }
 
 // ─── AI Setup ────────────────────────────────────────────────
@@ -1127,25 +1143,15 @@ class RCMServiceImpl {
     try {
       const { data: asset } = await supabase.from('assets').select('tag').eq('id', study.asset_id).maybeSingle();
       const name = `RCM — ${(asset as { tag?: string } | null)?.tag || study.title}`;
-      let stratId: string | null = null;
-      const existing = await supabase.from('maintenance_strategies').select('id').eq('name', name).maybeSingle();
-      stratId = (existing.data as { id: string } | null)?.id ?? null;
-      if (!stratId) {
-        const ins = await supabase.from('maintenance_strategies')
-          .insert({ name, description: `Packages generated from RCM study "${study.title}" — same-day longer packages absorb shorter ones.`, active: true })
-          .select('id').single();
-        if (ins.error) return null;
-        stratId = (ins.data as { id: string }).id;
-      }
-      const pkg = await supabase.from('strategy_packages').select('id').eq('strategy_id', stratId).eq('label', label).maybeSingle();
-      if (!pkg.data) {
-        const insP = await supabase.from('strategy_packages')
-          .insert({ strategy_id: stratId, label, interval_days: intervalDays, task_count: 1, sort_order: intervalDays })
-          .select('id').single();
-        if (insP.error) return null;
-      }
-      const { error } = await supabase.from('recurring_work').update({ strategy_id: stratId, strategy_package: label }).eq('id', pmId);
-      return error ? null : label;
+      // 0337: strategies and packages are governance rows (admin-only under
+      // 0186); the RPC lets anyone with pm.edit attach an RCM package without
+      // opening those tables — the planner's 403 is gone.
+      const { data, error } = await supabase.rpc('rcm_attach_strategy_package', {
+        p_pm_id: pmId, p_strategy_name: name, p_label: label, p_interval_days: intervalDays,
+        p_description: `Packages generated from RCM study "${study.title}" — same-day longer packages absorb shorter ones.`,
+      });
+      if (error) { console.warn('[RCM] attachStrategyPackage refused:', error.message); return null; }
+      return (data as string | null) || label;
     } catch {
       return null;
     }
@@ -1239,6 +1245,14 @@ class RCMServiceImpl {
   }
 
   /** Get task recommendation summary for output tab */
+  /** 0337 — the study's unresolved living-study flags, newest first. */
+  async getEvidenceFlags(studyId: string): Promise<RCMEvidenceFlag[]> {
+    const { data, error } = await supabase.from('ers_rcm_evidence_flags')
+      .select('*').eq('study_id', studyId).is('resolved_at', null).order('last_seen', { ascending: false });
+    if (error) { if (!/ers_rcm_evidence_flags/.test(error.message || '')) console.warn('[RCM] getEvidenceFlags:', error.message); return []; }
+    return (data || []) as RCMEvidenceFlag[];
+  }
+
   /** Latest connector/collector write per point — the evidence a feed exists. */
   private async lastFeedByPoint(pointIds: string[]): Promise<Map<string, string>> {
     const out = new Map<string, string>();

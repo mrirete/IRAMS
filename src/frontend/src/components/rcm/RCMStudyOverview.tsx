@@ -10,7 +10,7 @@ import {
   AlertTriangle, FileText, Boxes, Gauge, RefreshCw,
 } from 'lucide-react';
 import { AvatarStack } from '../analyze/CollaboratorPicker';
-import { computeCompletionPct } from '../../eam/services/RCMService';
+import { computeCompletionPct, type RCMEvidenceFlag } from '../../eam/services/RCMService';
 import type {
   RCMStudy, RCMFunction, RCMFailureMode, RCMDecision, RCMTaskSummary, StudyCollaborator,
 } from './types';
@@ -28,6 +28,10 @@ interface RCMStudyOverviewProps {
   decisions: Map<string, RCMDecision>;
   taskSummaries: RCMTaskSummary[];
   collaborators: StudyCollaborator[];
+  /** 0337 — living-study flags raised by the daily sweep since approval. */
+  evidenceFlags?: RCMEvidenceFlag[];
+  canRevise?: boolean;
+  onRevise?: () => void;
   onNavigate: (tab: 'functions' | 'decisions' | 'tasks' | 'evidence') => void;
   onInviteTeam: () => void;
   onEditStudy: () => void;
@@ -68,6 +72,7 @@ const Chip: React.FC<{ tone?: 'muted' | 'warn' | 'danger'; children: React.React
 export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
   study, functions, failureModes, decisions, taskSummaries, collaborators,
   onNavigate, onInviteTeam, onEditStudy, liveContext, onRefreshContext, breakdown,
+  evidenceFlags = [], canRevise = false, onRevise,
 }) => {
   // Physical-breakdown coverage (0318): which registered components have a failure mode
   const coverage = useMemo(() => breakdownCoverage(breakdown, failureModes), [breakdown, failureModes]);
@@ -111,7 +116,8 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
       if (!d?.recommended_strategy_code) return;
       decided++;
       const t = byFm.get(fm.id);
-      const steps = implementationSteps(d, { sparesNamed: (t?.spares_requirements?.length ?? 0) > 0 || !!fm.bom_item_id });
+      // Same options the Maintenance Plan uses, so both screens count alike.
+      const steps = implementationSteps(d, { sparesNamed: (t?.spares_requirements?.length ?? 0) > 0 || !!fm.bom_item_id, hasFeed: t?.point ? t.point.has_feed : undefined });
       const state = implementationState(steps, true);
       if (state === 'done') { implemented++; return; }
       open++;
@@ -139,6 +145,38 @@ export const RCMStudyOverview: React.FC<RCMStudyOverviewProps> = ({
 
   return (
     <div className="space-y-4 animate-in fade-in duration-300">
+      {/* Living study (0337) — what the asset did after approval that the study did not foresee */}
+      {evidenceFlags.length > 0 && (
+        <div className="flex items-start gap-3 px-3.5 py-3 bg-red-50 border border-red-200 rounded-xl">
+          <AlertTriangle size={16} className="text-red-500 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-red-800">
+              {evidenceFlags.length === 1 ? 'The asset did something this study did not predict' : `${evidenceFlags.length} things the asset did that this study did not predict`}
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {evidenceFlags.slice(0, 4).map(f => (
+                <li key={f.id} className="text-[11px] text-red-700">
+                  {f.kind === 'unanalysed_failure'
+                    ? <>{f.count} work order{f.count !== 1 ? 's' : ''} coded <strong>{f.label || f.ref}</strong> since approval — not among the study's failure modes</>
+                    : <>{f.count} alarm reading{f.count !== 1 ? 's' : ''} on <strong>{f.label || 'a monitored point'}</strong> since approval</>}
+                </li>
+              ))}
+              {evidenceFlags.length > 4 && <li className="text-[11px] text-red-600">… and {evidenceFlags.length - 4} more on the Evidence tab</li>}
+            </ul>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => onNavigate('evidence')} className="px-3 py-2 text-[10px] font-bold text-red-700 bg-white border border-red-200 rounded-lg hover:bg-red-100">
+              Evidence
+            </button>
+            {canRevise && onRevise && (
+              <button onClick={onRevise} className="px-3 py-2 text-[10px] font-bold text-white bg-red-600 rounded-lg hover:bg-red-500" title="Reopen the study as a new revision — the flags clear once it is revised">
+                Revise the study
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* No-asset warning — Evidence + PM generation need a registered asset */}
       {!study.asset_id && (
         <button

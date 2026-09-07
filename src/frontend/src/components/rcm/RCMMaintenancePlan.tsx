@@ -259,7 +259,7 @@ export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
   study, functions, failureModes, decisions, taskSummaries, breakdown, aiLoading, aiReport, locked, initialFailureModeId,
   onCreatePM, pmGateFor, onSyncPM, onCreateReadingPoint, onCreateRedesignWO, onUpdateDecision,
   onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport, assetHasFeed, pointSuggestions,
-  teamMembers, onAssignOwner, searchPeople,
+  teamMembers, onAssignOwner, searchPeople, assetTag,
 }) => {
   const groups = useMemo(() => groupModesByFunction(functions, failureModes), [functions, failureModes]);
   const ordered = useMemo(() => groups.flatMap(g => g.modes), [groups]);
@@ -620,7 +620,7 @@ export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
               technology={technology}
               intervalText={decision?.task_interval || null}
               suggestion={suggestionFor(technology)}
-              assetTag={study.asset_tag || null}
+              assetTag={assetTag ?? study.asset_tag ?? null}
               onSave={setup => { setPointOpen(false); onCreateReadingPoint(fm.id, setup); }}
               onClose={() => setPointOpen(false)}
             />

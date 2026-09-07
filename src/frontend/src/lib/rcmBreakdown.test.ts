@@ -81,6 +81,20 @@ describe('matching the Specialist answer back', () => {
     expect(matchComponent('dry gas seal', K)?.id).toBe('dgs');
     expect(matchComponent('Thrust Bearing (K-601)', K)?.id).toBe('ax');
   });
+  it('reads a collective or plural register name the way a failure mode says it', () => {
+    // GT-301 walkthrough: "Combustion Liner Set" / "HP Turbine Blades" pinned none of 12 modes
+    const G: AssetBreakdown = {
+      components: [
+        { id: 'comb', tag: 'GT-301-COMB', name: 'Combustion Liner Set (GT-301)', level: 'COMPONENT', depth: 1 },
+        { id: 'hpt', tag: 'GT-301-HPT', name: 'HP Turbine Blades (GT-301)', level: 'COMPONENT', depth: 1 },
+      ],
+      parts: [],
+    };
+    expect(inferComponentLink(['Combustion liner cracking or distortion.'], G).component_asset_id).toBe('comb');
+    expect(inferComponentLink(['HP Turbine blade creep.'], G).component_asset_id).toBe('hpt');
+    expect(inferComponentLink(['HP turbine blades liberated'], G).component_asset_id).toBe('hpt');
+    expect(inferComponentLink(['Lube oil pump cavitation'], G).component_asset_id).toBeNull();
+  });
   it('labels a pinned mode', () => {
     expect(componentLabel({ component_asset_id: 'c2' }, B)).toBe('GT-301-LUBE — Lube oil system');
     expect(componentLabel({ bom_item_id: 'p2' }, B)).toBe('Synthetic turbine oil ISO VG 32');
