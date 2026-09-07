@@ -367,6 +367,8 @@ export interface RCACorrectiveAction {
     work_request_id?: string | null;
     /** users.id / contacts.id behind assigned_to, for notifications (0328). */
     assignee_id?: string | null;
+    /** Management-of-change request raised for this action (0330). */
+    moc_request_id?: string | null;
     created_at: string;
 }
 
@@ -1934,6 +1936,48 @@ class AnalyzeService {
             console.error('Error generating WO from DE task:', e);
             return null;
         }
+    }
+
+    /** Status of the MOC requests raised for RCA actions — step 5 gates "Raise work" on it. */
+    async getMocStatuses(ids: string[]): Promise<Record<string, { moc_number: string; status: string }>> {
+        const clean = Array.from(new Set(ids.filter(Boolean)));
+        if (clean.length === 0) return {};
+        const { data, error } = await supabase.from('moc_requests').select('id, moc_number, status').in('id', clean);
+        if (error) { console.error('AnalyzeService.getMocStatuses:', error); return {}; }
+        const out: Record<string, { moc_number: string; status: string }> = {};
+        for (const r of data || []) out[r.id] = { moc_number: r.moc_number, status: r.status };
+        return out;
+    }
+
+    /**
+     * Raise a management-of-change request for a corrective action. The MOC points
+     * back through its polymorphic entity link; the action stores the MOC id (0330).
+     * moc_number is stamped by the 0330 trigger.
+     */
+    async raiseMocForAction(input: {
+        action: RCACorrectiveAction; investigation: RCAInvestigation; requestedBy: string | null;
+        assetLabel?: string | null;
+    }): Promise<{ action: RCACorrectiveAction; mocId: string } | null> {
+        const { action, investigation, requestedBy, assetLabel } = input;
+        const { data: moc, error } = await supabase.from('moc_requests').insert({
+            moc_number: '',
+            title: `${action.action_description}`.slice(0, 140),
+            change_type: 'ASSET_STRATEGY',
+            entity_type: 'rca_corrective_action',
+            entity_id: action.id,
+            description: `Corrective action from RCA "${investigation.title}"${assetLabel ? ` on ${assetLabel}` : ''}.\n\n${action.action_description}`,
+            justification: investigation.root_cause_summary
+                ? `Root cause established by RCA: ${investigation.root_cause_summary}`
+                : `Corrective action arising from RCA "${investigation.title}" (${investigation.problem_statement || 'see investigation'}).`,
+            current_value: null, proposed_value: null,
+            risk_assessment: action.risk_of_not_acting || null,
+            status: 'DRAFT',
+            requested_by: requestedBy,
+        }).select('id').single();
+        if (error || !moc) { console.error('AnalyzeService.raiseMocForAction:', error); notifyError('Could not raise the MOC — please retry (details in the console).'); return null; }
+        const updated = await this.updateRCACorrectiveAction(action.id, { moc_request_id: moc.id, requires_moc: true } as any);
+        if (!updated) return null;
+        return { action: updated, mocId: moc.id };
     }
 
     /** Status of the work orders raised for RCA actions — what step 5 shows beside each action. */

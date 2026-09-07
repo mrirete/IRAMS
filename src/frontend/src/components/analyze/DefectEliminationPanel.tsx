@@ -121,7 +121,7 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
     badActors,
     tasks,
     onCreateTask,
-    onUpdateTaskStatus: _onUpdateTaskStatus,
+    onUpdateTaskStatus,
     onEditTask,
     onDeleteTask,
     onNavigateToRCA,
@@ -645,15 +645,30 @@ const DefectEliminationPanel: React.FC<DefectEliminationPanelProps> = ({
                                         {selectedTask.title}
                                     </h2>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                                        {/* Status moves here: forward along the loop, one step back allowed.
+                                            Work orders also move it (0328 trigger); this is the manual path. */}
                                         <span style={{
                                             display: 'inline-flex', alignItems: 'center', gap: 5,
-                                            padding: '5px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700,
+                                            padding: '3px 6px 3px 12px', borderRadius: 10, fontSize: 12, fontWeight: 700,
                                             background: STATUS_META[selectedTask.status].bg,
                                             color: STATUS_META[selectedTask.status].color,
                                             border: `1px solid ${STATUS_META[selectedTask.status].color}40`,
                                         }}>
                                             {STATUS_META[selectedTask.status].icon}
-                                            {STATUS_META[selectedTask.status].label}
+                                            {onUpdateTaskStatus ? (
+                                                <select
+                                                    value={selectedTask.status}
+                                                    onChange={e => onUpdateTaskStatus(selectedTask.id, e.target.value as DefectEliminationTask['status'])}
+                                                    aria-label="Task status"
+                                                    style={{ background: 'transparent', border: 'none', color: 'inherit', fontWeight: 700, fontSize: 12, cursor: 'pointer', outline: 'none' }}
+                                                >
+                                                    {(['identified', 'in_progress', 'resolved', 'verified'] as const).map((st, i) => {
+                                                        const cur = ['identified', 'in_progress', 'resolved', 'verified'].indexOf(selectedTask.status);
+                                                        const allowed = i === cur || i === cur + 1 || i === cur - 1;
+                                                        return <option key={st} value={st} disabled={!allowed}>{STATUS_META[st].label}</option>;
+                                                    })}
+                                                </select>
+                                            ) : STATUS_META[selectedTask.status].label}
                                         </span>
                                         <span style={{
                                             padding: '5px 14px', borderRadius: 10, fontSize: 12, fontWeight: 700,

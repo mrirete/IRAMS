@@ -18,6 +18,7 @@ import { rcmService } from '../eam/services/RCMService';
 import { pinFailureMode } from '../lib/rcmBreakdown';
 import { suggestRcaMethod } from '../lib/rcaMethodSuggest';
 import { classifyWoStatus } from '../lib/woState';
+import { actionsSettled as settleActions, mocGate, resolveAssignee, isAssigned, fmeaSeverity, fmeaOccurrence, type Person } from '../lib/rcaActions';
 import { EvidenceGradeBadge } from '../components/analyze/RCAEvidencePanel';
 import { nodeSupport } from '../components/analyze/NodeEvidenceChip';
 import { DatabaseService } from '../eam/services/DatabaseService';
@@ -198,6 +199,68 @@ export function RCAInvestigationPage() {
         } finally {
             setAddingToRcm(false);
         }
+    };
+
+    /**
+     * Diagnose → FMEA. The established failure mode, its cause and effect, scored
+     * from the investigation's own facts, become a row on the asset's FMEA worksheet.
+     * Corrective actions ride along as the recommended action.
+     */
+    const [addingToFmea, setAddingToFmea] = useState(false);
+    const handleAddToFmea = async () => {
+        const assetId = inv?.asset_id || draft.asset_id;
+        if (!assetId || !inv) { showToast('Link the investigation to a register asset first', 'error'); return; }
+        setAddingToFmea(true);
+        try {
+            const asset = allHierarchyAssets.find(a => a.id === assetId);
+            // A failure mode is "component + how it failed", not the component alone.
+            const modeText = (inv.event_what && inv.event_how
+                ? `${inv.event_what} — ${inv.event_how}`
+                : inv.event_how || inv.event_what || inv.problem_statement || inv.title || '').trim();
+            const rootCauses = nodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
+            const causeText = rootCauses.map(n => n.description).join('; ') || inv.root_cause_summary || '';
+            const sheets = await analyzeService.getFMEAWorksheets(assetId);
+            let ws = sheets.find(w => w.status !== 'closed') || null;
+            if (!ws) {
+                ws = await analyzeService.createFMEAWorksheet({
+                    asset_id: assetId, title: `FMEA — ${asset?.tag || 'asset'}`, fmea_type: 'equipment', status: 'draft',
+                    max_rpn: 0, avg_rpn: 0, high_risk_count: 0,
+                } as any);
+            }
+            if (!ws) { showToast('Could not open an FMEA worksheet for this asset', 'error'); return; }
+            const items = await analyzeService.getFMEAItems(ws.id);
+            if (items.some(i => i.failure_mode.trim().toLowerCase() === modeText.toLowerCase())) {
+                showToast('This failure mode is already on the worksheet'); navigate(`/analyze/fmea/${ws.id}`); return;
+            }
+            // Function text: the RCM primary function when a study exists, else a plain statement.
+            let fnText = `Primary function of ${asset?.tag || 'the asset'}`;
+            try {
+                const studies = await rcmService.getStudiesForAsset(assetId);
+                const st = studies.find(x => x.status !== 'closed');
+                if (st) {
+                    const fns = await rcmService.getFunctions(st.id);
+                    const primary = fns.find(f => f.function_type === 'primary') || fns[0];
+                    if (primary?.function_description) fnText = primary.function_description;
+                }
+            } catch { /* optional context */ }
+            const hm = (inv.event_how_much as any) || {};
+            const created = await analyzeService.createFMEAItem({
+                worksheet_id: ws.id,
+                component: inv.event_what || asset?.tag || 'Asset',
+                function: fnText,
+                failure_mode: modeText || `Failure investigated in RCA ${inv.id.slice(0, 8)}`,
+                failure_effect: inv.problem_statement || null,
+                failure_cause: causeText || null,
+                severity: fmeaSeverity({ safetyTier: hm.safety_tier, criticality: formAssetDetail?.criticality, envImpact: hm.env_impact }),
+                occurrence: fmeaOccurrence({ priorRcaCount: relatedRCAs.length, cmCount12mo: formAssetTrends?.totalCM }),
+                detection: 5,
+                current_controls: null,
+                recommended_action: actions.length ? actions.map(a => a.action_description).join('; ') : null,
+                action_status: 'open',
+            } as any);
+            if (created) { showToast(`Added to FMEA worksheet "${ws.title}"`); navigate(`/analyze/fmea/${ws.id}`); }
+            else showToast('Could not add the FMEA item', 'error');
+        } finally { setAddingToFmea(false); }
     };
 
     // Mobile viewport detector for indent dampening
@@ -735,13 +798,38 @@ export function RCAInvestigationPage() {
         if (ids.length === 0) { setWoStatuses({}); return; }
         analyzeService.getWorkOrderStatuses(ids).then(setWoStatuses);
     }, [actions]);
-    // People an action can be assigned to: the RCA team first, then every user.
-    const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
+    // People an action can be assigned to: the RCA team first, then every active user.
+    const [users, setUsers] = useState<Person[]>([]);
     useEffect(() => {
         DatabaseService.getInstance().getUsers()
-            .then(us => setPeople(us.filter(u => u.status === 'active').map(u => ({ id: u.id, name: u.username || u.email }))))
-            .catch(() => setPeople([]));
+            .then(us => setUsers(us.filter(u => u.status === 'active').map(u => ({ id: u.id, name: u.username || u.email, kind: 'user' as const }))))
+            .catch(() => setUsers([]));
     }, []);
+    const people = useMemo<Person[]>(() => {
+        const team = rcaCollaborators.filter(c => c.type === 'contact').map(c => ({ id: c.ref_id, name: c.name, kind: 'contact' as const }));
+        const seen = new Set(team.map(p => p.name.toLowerCase()));
+        return [...team, ...users.filter(u => !seen.has(u.name.toLowerCase()))];
+    }, [rcaCollaborators, users]);
+    // MOC status per action — a change-controlled action may not raise work until approved.
+    const [mocStatuses, setMocStatuses] = useState<Record<string, { moc_number: string; status: string }>>({});
+    useEffect(() => {
+        const ids = actions.map(a => a.moc_request_id).filter((x): x is string => !!x);
+        if (ids.length === 0) { setMocStatuses({}); return; }
+        analyzeService.getMocStatuses(ids).then(setMocStatuses);
+    }, [actions]);
+    const [raisingMoc, setRaisingMoc] = useState<string | null>(null);
+    const handleRaiseMoc = async (a: RCACorrectiveAction) => {
+        if (!inv) return;
+        setRaisingMoc(a.id);
+        try {
+            const sel = allHierarchyAssets.find(x => x.id === inv.asset_id);
+            const res = await analyzeService.raiseMocForAction({ action: a, investigation: inv, requestedBy: user?.id || null, assetLabel: sel ? `${sel.tag} — ${sel.name}` : inv.asset_ref });
+            if (res) {
+                setActions(acts => acts.map(x => x.id === a.id ? res.action : x));
+                showToast('MOC raised as a draft — submit it from Change Control');
+            }
+        } finally { setRaisingMoc(null); }
+    };
     // Fishbone has two views that each want the whole screen — the entry list, and the
     // diagram. One tap flips between them; state is shared so nothing is lost.
     const [fishboneView, setFishboneView] = useState<'causes' | 'diagram'>('causes');
@@ -786,25 +874,23 @@ export function RCAInvestigationPage() {
     const [newActionDesc, setNewActionDesc] = useState('');
     const [newActionType, setNewActionType] = useState<string>('short_term');
     const [newActionCategory, setNewActionCategory] = useState<string>('physical');
+    const [newActionMoc, setNewActionMoc] = useState(false);
     const [newActionAssignee, setNewActionAssignee] = useState('');
     const [newActionDue, setNewActionDue] = useState('');
 
     const addAction = async () => {
         if (!inv || !newActionDesc.trim()) return;
-        const who = newActionAssignee.trim().toLowerCase();
-        const assigneeId = who
-            ? (rcaCollaborators.find(c => c.type === 'contact' && c.name.toLowerCase() === who)?.ref_id
-                ?? people.find(p => p.name.toLowerCase() === who)?.id ?? null)
-            : null;
+        const owner = resolveAssignee(newActionAssignee, people);
+        const assigneeId = owner?.id ?? null;
         const act = await analyzeService.addRCACorrectiveAction({
             investigation_id: inv.id, cause_node_id: null,
             cause_category: newActionCategory as any,
             action_description: newActionDesc.trim(),
             action_type: newActionType as any,
-            assigned_to: newActionAssignee || null,
+            assigned_to: owner?.name || null,
             assignee_id: assigneeId,
             due_date: newActionDue || null, status: 'open',
-            requires_moc: false, completion_date: null,
+            requires_moc: newActionMoc, completion_date: null,
             completion_notes: null, risk_of_not_acting: null,
             work_order_id: null,
         } as any);
@@ -821,7 +907,7 @@ export function RCAInvestigationPage() {
                     actionLink: `/analyze/rca/${inv.id}`, actionRequired: true, createdBy: currentUserId,
                 }).catch(console.warn);
             }
-            setNewActionDesc(''); setNewActionAssignee(''); setNewActionDue('');
+            setNewActionDesc(''); setNewActionAssignee(''); setNewActionDue(''); setNewActionMoc(false);
             setAddActionOpen(false);
         }
     };
@@ -878,7 +964,7 @@ export function RCAInvestigationPage() {
     // NOTE: hook — must stay above the `if (loading)` early return.
 
     // Effectiveness can only be judged once the fixes are actually in place.
-    const actionsSettled = actions.length > 0 && actions.every(a => a.status === 'completed' || a.status === 'cancelled');
+    const actionsSettled = settleActions(actions);
 
     const stepDone = useMemo(() => getStepCompletion({
         hasProblemStatement: !!(inv?.problem_statement || draft.problem_statement || '').trim(),
@@ -893,7 +979,7 @@ export function RCAInvestigationPage() {
         hasRootCause: scopeNodesToMethod(nodes, inv?.method)
             .some(n => n.is_root_cause || n.node_type === 'root_cause'),
         actionCount: actions.length,
-        allActionsAssigned: actions.length > 0 && actions.every(a => !!a.assigned_to),
+        allActionsAssigned: actions.length > 0 && actions.every(isAssigned),
         effectivenessReviewed: !!inv?.effectiveness_status && inv.effectiveness_status !== 'pending',
     }), [inv, draft, evidence, nodes, actions]);
 
@@ -1921,7 +2007,16 @@ export function RCAInvestigationPage() {
                                 >
                                     <Wrench className="w-3.5 h-3.5" /> {addingToRcm ? 'Adding…' : 'Add to RCM study'}
                                 </button>
-                                <span className="text-[11px] text-slate-400">A corrective action fixes this occurrence; the RCM study decides what prevents the next one.</span>
+                                <button
+                                    type="button"
+                                    onClick={() => void handleAddToFmea()}
+                                    disabled={addingToFmea}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                    title="Put this failure mode, its cause and effect on the asset's FMEA worksheet, scored from this investigation's facts"
+                                >
+                                    <ClipboardList className="w-3.5 h-3.5" /> {addingToFmea ? 'Adding…' : 'Add to FMEA'}
+                                </button>
+                                <span className="text-[11px] text-slate-400">A corrective action fixes this occurrence; RCM and FMEA decide what prevents the next one.</span>
                             </div>
                             
                             {CAUSE_CATEGORIES.map(cat => {
@@ -2071,14 +2166,46 @@ export function RCAInvestigationPage() {
                                                 >
                                                     <ClipboardList size={10} /> Request raised ↗
                                                 </button>
-                                            ) : (
+                                            ) : (() => {
+                                                const gate = mocGate(a, a.moc_request_id ? mocStatuses[a.moc_request_id]?.status : null);
+                                                return (
+                                                    <button
+                                                        onClick={() => setRaiseAction(a)}
+                                                        disabled={!gate.canRaiseWork}
+                                                        className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-primary-50 text-primary-700 border border-primary-200 hover:bg-primary-100 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        title={gate.reason || 'Raise a corrective Work Order or Maintenance Request for this action'}
+                                                    >
+                                                        <Plus size={10} /> Raise work
+                                                    </button>
+                                                );
+                                            })()}
+                                            {/* Change control: a flagged action raises an MOC and waits for approval. */}
+                                            {a.requires_moc && (a.moc_request_id ? (() => {
+                                                const m = mocStatuses[a.moc_request_id];
+                                                const ok = m && ['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes((m.status || '').toUpperCase());
+                                                return (
+                                                    <button
+                                                        onClick={() => navigate(`/management-of-change?moc=${a.moc_request_id}`)}
+                                                        className={`px-2.5 py-1 text-[10px] font-extrabold rounded-md border transition-colors flex items-center gap-1 ${ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
+                                                        title="Open the change request"
+                                                    >
+                                                        <Shield size={10} /> {m?.moc_number || 'MOC'} · {m?.status || '…'} ↗
+                                                    </button>
+                                                );
+                                            })() : (
                                                 <button
-                                                    onClick={() => setRaiseAction(a)}
-                                                    className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-primary-50 text-primary-700 border border-primary-200 hover:bg-primary-100 transition-colors flex items-center gap-1"
-                                                    title="Raise a corrective Work Order or Maintenance Request for this action"
+                                                    onClick={() => void handleRaiseMoc(a)}
+                                                    disabled={raisingMoc === a.id}
+                                                    className="px-2.5 py-1 text-[10px] font-extrabold rounded-md bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100 transition-colors flex items-center gap-1 disabled:opacity-50"
+                                                    title="This action changes the asset or how it is run — raise a management-of-change request"
                                                 >
-                                                    <Plus size={10} /> Raise work
+                                                    <Shield size={10} /> {raisingMoc === a.id ? 'Raising…' : 'Raise MOC'}
                                                 </button>
+                                            ))}
+                                            {isAssigned(a) && (
+                                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded" title="Owner">
+                                                    <Users size={10} /> {a.assigned_to || 'assigned'}
+                                                </span>
                                             )}
                                             <select
                                                 className="w-full sm:w-36 px-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all cursor-pointer shadow-xs shrink-0"
@@ -2627,18 +2754,27 @@ export function RCAInvestigationPage() {
                             <Input type="date" value={newActionDue} onChange={e => setNewActionDue(e.target.value)} />
                         </Field>
                     </div>
-                    <Field label="Assignee" hint="An action with no owner is a wish. A named person is notified.">
-                        <Input
-                            placeholder="Who owns this?"
-                            list="rca-action-people"
-                            value={newActionAssignee}
-                            onChange={e => setNewActionAssignee(e.target.value)}
-                        />
-                        <datalist id="rca-action-people">
-                            {rcaCollaborators.filter(c => c.type === 'contact').map(c => <option key={`c-${c.ref_id}`} value={c.name} />)}
-                            {people.map(p => <option key={`u-${p.id}`} value={p.name} />)}
-                        </datalist>
+                    <Field label="Owner" hint="An action with no owner is a wish. The owner is notified.">
+                        <Select value={newActionAssignee} onChange={e => setNewActionAssignee(e.target.value)}>
+                            <option value="">— nobody yet —</option>
+                            {people.some(p => p.kind === 'contact') && (
+                                <optgroup label="Investigation team">
+                                    {people.filter(p => p.kind === 'contact').map(p => <option key={`contact:${p.id}`} value={`contact:${p.id}`}>{p.name}</option>)}
+                                </optgroup>
+                            )}
+                            <optgroup label="Users">
+                                {people.filter(p => p.kind === 'user').map(p => <option key={`user:${p.id}`} value={`user:${p.id}`}>{p.name}</option>)}
+                            </optgroup>
+                        </Select>
                     </Field>
+                    <label className="flex items-start gap-2.5 p-3 rounded-lg border border-slate-200 bg-slate-50 cursor-pointer">
+                        <input type="checkbox" className="mt-0.5" checked={newActionMoc} onChange={e => setNewActionMoc(e.target.checked)} />
+                        <span className="text-xs text-slate-700">
+                            <span className="font-bold">Requires management of change.</span>{' '}
+                            This action changes the asset, a set-point, a procedure or the maintenance strategy.
+                            Work cannot be raised for it until the change request is approved.
+                        </span>
+                    </label>
                 </div>
             </Drawer>
 
