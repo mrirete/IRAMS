@@ -724,7 +724,14 @@ const FMEAWorksheetDetail: React.FC = () => {
                                                     <span className={`inline-flex px-2 py-1 rounded text-xs font-bold border ${rpnColor(itemRpn)}`}>{itemRpn}</span>
                                                 </td>
                                                 <td className="px-3 py-3 text-slate-500 text-xs max-w-[120px] truncate">{item.current_controls || '—'}</td>
-                                                <td className="px-3 py-3 text-accent-cyan text-xs max-w-[120px] truncate">{item.recommended_action || '—'}</td>
+                                                <td className="px-3 py-3 text-accent-cyan text-xs max-w-[120px]">
+                                                    <div className="truncate">{item.recommended_action || '—'}</div>
+                                                    {(item.owner || item.due_date) && (
+                                                        <div className="text-[10px] text-slate-400 truncate" title="Owner · due">
+                                                            {item.owner || 'unassigned'}{item.due_date ? ` · ${item.due_date}` : ''}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-2 py-3 text-center">
                                                     <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${item.action_status === 'closed' ? 'bg-green-500/10 text-green-400'
                                                         : item.action_status === 'in_progress' ? 'bg-blue-500/10 text-blue-400'

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { actionsSettled, mocGate, resolveAssignee, isAssigned, fmeaSeverity, fmeaOccurrence, type Person } from './rcaActions';
+import { actionsSettled, mocGate, resolveAssignee, isAssigned, fmeaSeverity, fmeaOccurrence, fmeaDetection, type Person } from './rcaActions';
 
 describe('actionsSettled', () => {
     it('needs at least one action, all completed or cancelled', () => {
@@ -59,5 +59,15 @@ describe('FMEA scoring', () => {
         expect(fmeaOccurrence({ cmCount12mo: 3 })).toBe(7);
         expect(fmeaOccurrence({ priorRcaCount: 2 })).toBe(7);
         expect(fmeaOccurrence({ cmCount12mo: 6 })).toBe(8);
+    });
+});
+
+describe('fmeaDetection', () => {
+    it('scores from what watches the asset and says why', () => {
+        expect(fmeaDetection({})).toEqual({ detection: 8, controls: 'No detection controls recorded on the register' });
+        expect(fmeaDetection({ activePms: 2 }).detection).toBe(6);
+        expect(fmeaDetection({ readingPoints: 1 })).toEqual({ detection: 4, controls: 'Condition monitoring (1 reading point)' });
+        expect(fmeaDetection({ readingPoints: 3, activePms: 1 }).detection).toBe(3);
+        expect(fmeaDetection({ readingPoints: 3, activePms: 1 }).controls).toMatch(/3 reading points/);
     });
 });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -77,7 +77,9 @@ export const ManagementOfChange: React.FC = () => {
     const [selectedMoc, setSelectedMoc] = useState<MocRequest | null>(null);
     // A link from elsewhere (an RCA action, a notification) opens one request directly.
     const [searchParams, setSearchParams] = useSearchParams();
-    const mocFromUrl = searchParams.get('moc');
+    const { id: mocIdParam } = useParams<{ id: string }>();
+    const navigate = useNavigate();
+    const mocFromUrl = mocIdParam || searchParams.get('moc');
     const [filterStatus, setFilterStatus] = useState<string>('ALL');
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -106,9 +108,10 @@ export const ManagementOfChange: React.FC = () => {
         const hit = requests.find(r => r.id === mocFromUrl);
         if (hit) {
             setSelectedMoc(hit);
-            setSearchParams(prev => { const n = new URLSearchParams(prev); n.delete('moc'); return n; }, { replace: true });
+            if (mocIdParam) navigate('/management-of-change', { replace: true });
+            else setSearchParams(prev => { const n = new URLSearchParams(prev); n.delete('moc'); return n; }, { replace: true });
         }
-    }, [mocFromUrl, requests, setSearchParams]);
+    }, [mocFromUrl, mocIdParam, requests, setSearchParams, navigate]);
 
     const filteredRequests = requests.filter(r => {
         if (filterStatus !== 'ALL' && r.status !== filterStatus) return false;

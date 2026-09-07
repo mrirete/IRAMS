@@ -72,3 +72,17 @@ export function fmeaOccurrence(s: { priorRcaCount?: number; cmCount12mo?: number
     if (prior === 1 || cm >= 1) return 5;
     return 3;
 }
+
+/**
+ * Detection: how likely the failure is caught before it matters, from what
+ * actually watches the asset. Condition monitoring beats a scheduled PM beats
+ * nothing. Returns the score and the "current controls" text that justifies it.
+ */
+export function fmeaDetection(s: { readingPoints?: number | null; activePms?: number | null }): { detection: number; controls: string } {
+    const rp = s.readingPoints ?? 0;
+    const pm = s.activePms ?? 0;
+    if (rp > 0 && pm > 0) return { detection: 3, controls: `Condition monitoring (${rp} reading point${rp === 1 ? '' : 's'}) + ${pm} scheduled PM${pm === 1 ? '' : 's'}` };
+    if (rp > 0) return { detection: 4, controls: `Condition monitoring (${rp} reading point${rp === 1 ? '' : 's'})` };
+    if (pm > 0) return { detection: 6, controls: `${pm} scheduled PM${pm === 1 ? '' : 's'}; no condition monitoring` };
+    return { detection: 8, controls: 'No detection controls recorded on the register' };
+}

@@ -18,7 +18,7 @@ import { rcmService } from '../eam/services/RCMService';
 import { pinFailureMode } from '../lib/rcmBreakdown';
 import { suggestRcaMethod } from '../lib/rcaMethodSuggest';
 import { classifyWoStatus } from '../lib/woState';
-import { actionsSettled as settleActions, mocGate, resolveAssignee, isAssigned, fmeaSeverity, fmeaOccurrence, type Person } from '../lib/rcaActions';
+import { actionsSettled as settleActions, mocGate, resolveAssignee, isAssigned, fmeaSeverity, fmeaOccurrence, fmeaDetection, type Person } from '../lib/rcaActions';
 import { EvidenceGradeBadge } from '../components/analyze/RCAEvidencePanel';
 import { nodeSupport } from '../components/analyze/NodeEvidenceChip';
 import { DatabaseService } from '../eam/services/DatabaseService';
@@ -244,6 +244,10 @@ export function RCAInvestigationPage() {
                 }
             } catch { /* optional context */ }
             const hm = (inv.event_how_much as any) || {};
+            // Detection from what watches the asset; owner and date from the first owned action.
+            const det = fmeaDetection(await analyzeService.getAssetDetectionControls(assetId).catch(() => ({ readingPoints: 0, activePms: 0 })));
+            const owned = actions.find(a => isAssigned(a) && a.status !== 'cancelled');
+            const dueDates = actions.map(a => a.due_date).filter((d): d is string => !!d).sort();
             const created = await analyzeService.createFMEAItem({
                 worksheet_id: ws.id,
                 component: inv.event_what || asset?.tag || 'Asset',
@@ -253,10 +257,13 @@ export function RCAInvestigationPage() {
                 failure_cause: causeText || null,
                 severity: fmeaSeverity({ safetyTier: hm.safety_tier, criticality: formAssetDetail?.criticality, envImpact: hm.env_impact }),
                 occurrence: fmeaOccurrence({ priorRcaCount: relatedRCAs.length, cmCount12mo: formAssetTrends?.totalCM }),
-                detection: 5,
-                current_controls: null,
+                detection: det.detection,
+                current_controls: det.controls,
                 recommended_action: actions.length ? actions.map(a => a.action_description).join('; ') : null,
                 action_status: 'open',
+                owner: owned?.assigned_to || null,
+                owner_id: owned?.assignee_id || null,
+                due_date: dueDates[0] || null,
             } as any);
             if (created) { showToast(`Added to FMEA worksheet "${ws.title}"`); navigate(`/analyze/fmea/${ws.id}`); }
             else showToast('Could not add the FMEA item', 'error');
@@ -2185,7 +2192,7 @@ export function RCAInvestigationPage() {
                                                 const ok = m && ['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes((m.status || '').toUpperCase());
                                                 return (
                                                     <button
-                                                        onClick={() => navigate(`/management-of-change?moc=${a.moc_request_id}`)}
+                                                        onClick={() => navigate(`/management-of-change/${a.moc_request_id}`)}
                                                         className={`px-2.5 py-1 text-[10px] font-extrabold rounded-md border transition-colors flex items-center gap-1 ${ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
                                                         title="Open the change request"
                                                     >

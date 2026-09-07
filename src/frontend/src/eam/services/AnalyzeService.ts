@@ -74,6 +74,10 @@ export interface FMEAItem {
     current_controls: string | null;
     recommended_action: string | null;
     action_status: 'open' | 'in_progress' | 'closed' | 'deferred' | null;
+    /** Who owns the recommended action and by when (0331). */
+    owner?: string | null;
+    owner_id?: string | null;
+    due_date?: string | null;
     created_at: string;
 }
 
@@ -1936,6 +1940,15 @@ class AnalyzeService {
             console.error('Error generating WO from DE task:', e);
             return null;
         }
+    }
+
+    /** What actually watches an asset: active reading points and scheduled PMs. Feeds FMEA detection. */
+    async getAssetDetectionControls(assetId: string): Promise<{ readingPoints: number; activePms: number }> {
+        const [rp, pm] = await Promise.all([
+            supabase.from('reading_definitions').select('id', { count: 'exact', head: true }).eq('asset_id', assetId).eq('is_active', true),
+            supabase.from('recurring_work').select('id', { count: 'exact', head: true }).eq('asset_id', assetId).eq('active', true),
+        ]);
+        return { readingPoints: rp.count ?? 0, activePms: pm.count ?? 0 };
     }
 
     /** Status of the MOC requests raised for RCA actions — step 5 gates "Raise work" on it. */
