@@ -159,31 +159,53 @@ export interface RCMDecisionWizardProps {
   /** Apply / clear the Specialist's stored recommendation. */
   onAcceptRecommendation: (fm: RCMFailureMode) => void;
   onDismissRecommendation: (fm: RCMFailureMode) => void;
-  /** Per-decision PM creation — the gate says why it is locked; the page re-checks. */
-  onCreatePM: (fm: RCMFailureMode) => void;
-  pmGateFor: (fm: RCMFailureMode) => { ok: boolean; missing: string[]; reason: string };
   /** Task Library plans the decision can execute with (0319). */
   libraryTasks?: { id: string; code: string; title: string; estimatedDuration?: number }[];
-  /** Condition / predictive decisions create the measurement point they depend on. */
-  onCreateReadingPoint?: (fm: RCMFailureMode) => void;
+  /** Hand the decision to the Maintenance Plan, which implements it (PM, monitoring point, sensor, work order). */
+  onGoToPlan: (fm: RCMFailureMode) => void;
+  /** Which mode to open first (a hand-off back from the Plan). */
+  initialFailureModeId?: string | null;
   /** Approved studies are frozen (0319) — the wizard says so instead of failing saves. */
   locked?: boolean;
 }
 
-export interface RCMTaskMatrixProps {
+/** What "Create the monitoring point" collects (0324 point + bands + P-F). */
+export interface ReadingPointSetup {
+  name: string;
+  unit: string;
+  minWarning: number | null;
+  maxWarning: number | null;
+  minCritical: number | null;
+  maxCritical: number | null;
+  pfIntervalDays: number | null;
+}
+
+export interface RCMMaintenancePlanProps {
   study: RCMStudy;
-  taskSummaries: RCMTaskSummary[];
+  functions: RCMFunction[];
+  failureModes: RCMFailureMode[];
   decisions: Map<string, RCMDecision>;
+  taskSummaries: RCMTaskSummary[];
+  breakdown?: AssetBreakdown;
   aiLoading: string | null;
   aiReport: string | null;
-  /** Per-failure-mode PM creation — the plan is generated row by row, like a WO. */
+  locked?: boolean;
+  /** Which mode to open first (a hand-off from Strategy). */
+  initialFailureModeId?: string | null;
+  /** Per-failure-mode implementation — one decision at a time, like a WO. */
   onCreatePM: (failureModeId: string) => void;
   pmGateFor: (failureModeId: string) => { ok: boolean; missing: string[]; reason: string };
+  /** Rewrite the linked PM from the decision after the decision changed. */
+  onSyncPM: (failureModeId: string) => void;
+  onCreateReadingPoint: (failureModeId: string, setup: ReadingPointSetup) => void;
+  onCreateRedesignWO: (failureModeId: string) => void;
+  /** Fix an interval or task line where the problem shows, without leaving the plan. */
+  onUpdateDecision: (failureModeId: string, updates: Partial<RCMDecision>) => void;
   /** Specialist program review — fires only when optimizeGate.ok. */
   onAIOptimize: () => void;
   optimizeGate: { ok: boolean; missing: string[]; reason: string };
-  /** Back-link for the empty state: tasks are the output of Strategy (Q6–Q7). */
-  onGoToStrategy: () => void;
+  /** Back to Strategy, optionally on a given mode. */
+  onGoToStrategy: (failureModeId?: string) => void;
   onCloseReport: () => void;
 }
 

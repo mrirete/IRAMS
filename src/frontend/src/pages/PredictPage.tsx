@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Activity, AlertTriangle, HeartPulse, Clock, Search, Plus, X, CheckCircle, Cpu, Zap, BarChart2, Target, Filter, Check, LayoutGrid, Layers, BarChart3, FileWarning } from 'lucide-react';
 import { useIntelligence } from '../hooks/useIntelligence';
 import { useAssetLookup } from '../hooks/useAssetLookup';
@@ -106,6 +107,23 @@ export const PredictPage: React.FC = () => {
     }, [setup.loading, assetsLoading, setupSkipped, assetOptions, setup.connected]);
 
     const openSetup = (assetId?: string) => setSetupOpen({ assetId });
+
+    // Deep link from an RCM decision (?asset=<id>&point=<reading definition>):
+    // land on that asset, and if it has no feed yet open the setup journey on
+    // it — the on-condition task is a paper task until a sensor feeds its point.
+    const location = useLocation();
+    const deepLinkDone = useRef(false);
+    useEffect(() => {
+        if (deepLinkDone.current || setup.loading || assetsLoading) return;
+        const params = new URLSearchParams(location.search);
+        const asset = params.get('asset');
+        if (!asset) return;
+        deepLinkDone.current = true;
+        setSelectedAssetId(asset);
+        refetchPredict(asset);
+        if (params.get('point') && !setup.connected.has(asset)) setSetupOpen({ assetId: asset });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [setup.loading, assetsLoading, location.search]);
     const closeSetup = (focusAssetId?: string) => {
         setSetupOpen(null);
         setSetupSkipped(true);

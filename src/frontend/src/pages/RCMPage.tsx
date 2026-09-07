@@ -32,7 +32,8 @@ import { RCMStudyOverview } from '../components/rcm/RCMStudyOverview';
 import { RCMFMEATable } from '../components/rcm/RCMFMEATable';
 import { RCMAddFunctionModal } from '../components/rcm/RCMAddFunctionModal';
 import { RCMDecisionWizard } from '../components/rcm/RCMDecisionWizard';
-import { RCMTaskMatrix } from '../components/rcm/RCMTaskMatrix';
+import { RCMMaintenancePlan } from '../components/rcm/RCMMaintenancePlan';
+import type { ReadingPointSetup } from '../components/rcm/types';
 import { RCMEvidencePanel } from '../components/rcm/RCMEvidencePanel';
 import { CRIT_COLORS, CONSEQUENCE_OPTIONS } from '../components/rcm/types';
 import {
@@ -131,6 +132,9 @@ export const RCMPage: React.FC = () => {
   const [libraryTasks, setLibraryTasks] = useState<{ id: string; code: string; title: string; estimatedDuration?: number }[]>([]);
   const [coverage, setCoverage] = useState<RCMCoverageRow[]>([]);
   const [aiLoading, setAiLoading] = useState<string | null>(null);
+  // Hand-offs between Strategy and the Maintenance Plan open on the same failure mode.
+  const [planFocusId, setPlanFocusId] = useState<string | null>(null);
+  const [strategyFocusId, setStrategyFocusId] = useState<string | null>(null);
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -931,11 +935,6 @@ export const RCMPage: React.FC = () => {
     await handleUpdateDecision(fm.id, { ai_recommendation: null });
   };
 
-  const pmGateFor = useCallback(
-    (fm: RCMFailureMode) => canCreatePMForDecision(selectedStudy?.asset_id, decisionMap.get(fm.id)),
-    [selectedStudy?.asset_id, decisionMap],
-  );
-
   const handleCreatePMForMode = async (target: RCMFailureMode | string) => {
     if (!selectedStudy) return;
     const fm = typeof target === 'string' ? failureModes.find(f => f.id === target) : target;
@@ -983,38 +982,76 @@ export const RCMPage: React.FC = () => {
    * point exists behind it. Create the reading definition here, named after
    * the failure mode, with the bands left for the Condition Data page.
    */
-  const handleCreateReadingPoint = async (fm: RCMFailureMode) => {
+  const handleCreateReadingPoint = async (failureModeId: string, setup: ReadingPointSetup) => {
     if (!selectedStudy?.asset_id) return;
     // Wait for any queued autosave on this decision so the row exists server-side.
-    const pending = decisionChains.current.get(fm.id);
+    const pending = decisionChains.current.get(failureModeId);
     if (pending) await pending;
-    const decision = decisionMap.get(fm.id);
-    if (!decision) { showToast('Choose a strategy first — the reading point hangs off the decision', 'error'); return; }
-    if (decision.reading_definition_id) { showToast('This decision already has a reading point — open it from the Work Management row'); return; }
-    const tech = (decision.ai_recommendation as { suggested_technology?: string } | null)?.suggested_technology;
-    const name = `${tech ? `${tech} — ` : ''}${fm.failure_mode_description}`.slice(0, 80);
+    const decision = decisionMap.get(failureModeId);
+    if (!decision) { showToast('Choose a strategy first — the monitoring point hangs off the decision', 'error'); return; }
+    if (decision.reading_definition_id) { showToast('This decision already has a monitoring point — open it from the plan'); return; }
+    const name = setup.name.slice(0, 80);
     const slug = name.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'CONDITION';
-    setAiLoading(`point-${fm.id}`);
+    setAiLoading(`point-${failureModeId}`);
     try {
       const created = await DatabaseService.getInstance().addReadingDefinition({
         assetId: selectedStudy.asset_id,
         readingTypeCode: `${slug}_${Date.now().toString(36).toUpperCase()}`,
         name,
-        unit: '—',
+        unit: setup.unit || '—',
         category: 'CONDITION',
-        pfIntervalDays: null,
-        limitSource: null,
+        minWarning: setup.minWarning ?? undefined,
+        maxWarning: setup.maxWarning ?? undefined,
+        minCritical: setup.minCritical ?? undefined,
+        maxCritical: setup.maxCritical ?? undefined,
+        pfIntervalDays: setup.pfIntervalDays,
+        // Band provenance (0198): these limits came from the RCM decision, not a library.
+        limitSource: [setup.minWarning, setup.maxWarning, setup.minCritical, setup.maxCritical].some(v => v != null) ? 'rcm' : null,
       });
-      // 0324: the decision remembers its point — the button becomes a link and
+      // 0324: the decision remembers its point — the step becomes a link and
       // the Evidence tab reads live values against this failure mode.
       const linked = await rcmService.updateDecision(decision.id, { reading_definition_id: created.id });
       if (!linked) throw new Error('point created but the decision could not be linked to it (0324 applied?)');
       setDecisions(prev => prev.map(d => d.id === decision.id ? { ...d, reading_definition_id: created.id } : d));
-      showToast(`Reading point "${name}" created — set its unit and alarm bands under Condition Data`);
+      setTaskSummaries(await rcmService.getTaskSummaries(selectedStudy.id));
+      showToast(`Monitoring point "${name}" created in Condition Data`);
     } catch (e) {
-      showToast(`Reading point not created — ${e instanceof Error ? e.message : String(e)}`, 'error');
+      showToast(`Monitoring point not created — ${e instanceof Error ? e.message : String(e)}`, 'error');
     } finally {
       setAiLoading(null);
+    }
+  };
+
+  /** Rewrite the linked PM from a decision that changed after the PM was generated. */
+  const handleSyncPM = async (failureModeId: string) => {
+    if (!selectedStudy) return;
+    const pending = decisionChains.current.get(failureModeId);
+    if (pending) await pending;
+    setAiLoading(`sync-${failureModeId}`);
+    const res = await rcmService.syncPMForDecision(selectedStudy.id, failureModeId);
+    setAiLoading(null);
+    if (res.ok) {
+      showToast(`PM ${res.pmCode} brought back in step with the decision`);
+      setTaskSummaries(await rcmService.getTaskSummaries(selectedStudy.id));
+    } else {
+      showToast(`PM not synced — ${res.reason}`, 'error');
+    }
+  };
+
+  /** Redesign is a one-off change: raise the work order and remember it on the decision (0326). */
+  const handleCreateRedesignWO = async (failureModeId: string) => {
+    if (!selectedStudy) return;
+    const pending = decisionChains.current.get(failureModeId);
+    if (pending) await pending;
+    setAiLoading(`wo-${failureModeId}`);
+    const res = await rcmService.createRedesignWOForDecision(selectedStudy.id, failureModeId, user?.id || user?.email || 'rcm');
+    setAiLoading(null);
+    if (res.ok) {
+      setDecisions(prev => prev.map(d => d.failure_mode_id === failureModeId ? { ...d, work_order_id: res.id } : d));
+      setTaskSummaries(await rcmService.getTaskSummaries(selectedStudy.id));
+      showToast(`Work order ${res.woNumber || ''} raised for the redesign — plan and schedule it in Work Management`.replace(/\s+/g, ' '));
+    } else {
+      showToast(`Work order not raised — ${res.reason}`, 'error');
     }
   };
 
@@ -1291,27 +1328,35 @@ export const RCMPage: React.FC = () => {
           onAIRecommend={handleAIRecommend}
           onAcceptRecommendation={handleAcceptRecommendation}
           onDismissRecommendation={handleDismissRecommendation}
-          onCreatePM={handleCreatePMForMode}
-          pmGateFor={pmGateFor}
           libraryTasks={libraryTasks}
-          onCreateReadingPoint={handleCreateReadingPoint}
+          initialFailureModeId={strategyFocusId}
+          onGoToPlan={fm => { setPlanFocusId(fm.id); setActiveTab('tasks'); }}
           locked={selectedStudy.status === 'approved'}
         />
       )}
 
-      {/* Maintenance Plan — the output the decisions produce */}
+      {/* Maintenance Plan — make each decision real in the right module */}
       {activeTab === 'tasks' && selectedStudy && (
-        <RCMTaskMatrix
+        <RCMMaintenancePlan
           study={selectedStudy}
-          taskSummaries={taskSummaries}
+          functions={functions}
+          failureModes={failureModes}
           decisions={decisionMap}
+          taskSummaries={taskSummaries}
+          breakdown={breakdown}
           aiLoading={aiLoading}
           aiReport={aiReport}
+          locked={selectedStudy.status === 'approved'}
+          initialFailureModeId={planFocusId}
           onCreatePM={id => void handleCreatePMForMode(id)}
           pmGateFor={id => canCreatePMForDecision(selectedStudy.asset_id, decisionMap.get(id))}
+          onSyncPM={id => void handleSyncPM(id)}
+          onCreateReadingPoint={(id, setup) => void handleCreateReadingPoint(id, setup)}
+          onCreateRedesignWO={id => void handleCreateRedesignWO(id)}
+          onUpdateDecision={handleUpdateDecision}
           onAIOptimize={handleAIOptimize}
           optimizeGate={optimizeGate}
-          onGoToStrategy={() => setActiveTab('decisions')}
+          onGoToStrategy={id => { if (id) setStrategyFocusId(id); setActiveTab('decisions'); }}
           onCloseReport={() => setAiReport(null)}
         />
       )}

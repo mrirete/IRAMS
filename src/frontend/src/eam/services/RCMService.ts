@@ -12,8 +12,10 @@ import { supabase } from '../lib/supabase';
 import { RELANTERN_SYSTEM_INSTRUCTION } from '../constants';
 import { proxyAIAnalyze, isAIProxyEnabled } from './geminiService';
 import { buildPMStrategy } from '../lib/pmStrategy';
+import { buildWorkOrder } from '../lib/workOrder';
 import {
   buildPMFromDecision, normalizeRecommendation, pmCodeFor, strategyProducesPM,
+  canonicalStrategyCode, briefJustification, UUID_RE,
   type AIRecommendation, type JobPlanForPM, type SpareMatch,
 } from './rcmPlan';
 import {
@@ -155,6 +157,8 @@ export interface RCMDecision {
   task_library_item_id?: string | null;
   /** 0324 — the Condition Data measurement point an on-condition / predictive decision monitors. NULL = paper task. */
   reading_definition_id?: string | null;
+  /** 0326 — the work order raised to carry out a REDESIGN decision. */
+  work_order_id?: string | null;
   spares_requirements: SpareRequirement[];
   created_at: string;
   updated_at: string;
@@ -182,6 +186,17 @@ export interface RCMTaskSummary {
   /** For the "changed since its PM was generated" flag on the plan. */
   decision_updated_at?: string | null;
   pm_created_at?: string | null;
+  // ── What the Maintenance Plan implements with, and what already exists ──
+  justification?: string | null;
+  task_library_item_id?: string | null;
+  technology?: string | null;
+  reading_definition_id?: string | null;
+  work_order_id?: string | null;
+  /** the BOM line the failure mode is pinned to (a spare candidate for RTF) */
+  bom_item_id?: string | null;
+  pm?: { id: string; title: string; next_due_date: string | null; schedule_type: string | null; strategy_package: string | null; frequency_interval: number | null; frequency_unit: string | null; active: boolean } | null;
+  point?: { id: string; name: string; unit: string | null; has_bands: boolean; pf_interval_days: number | null; is_active: boolean } | null;
+  wo?: { id: string; wo_number: string | null; status: string | null } | null;
 }
 
 /** One row of sem_rcm_coverage (0319). */
@@ -1165,9 +1180,49 @@ class RCMServiceImpl {
       }
     }
 
+    // What already exists for each decision — the PM, the monitoring point,
+    // the redesign work order — so the plan can show the thing, not a flag.
+    const pmRows = new Map<string, NonNullable<RCMTaskSummary['pm']>>();
+    if (pmIds.length > 0) {
+      const { data } = await supabase.from('recurring_work')
+        .select('id, title, next_due_date, schedule_type, strategy_package, frequency_interval, frequency_unit, active')
+        .in('id', pmIds);
+      for (const r of (data || []) as Record<string, unknown>[]) {
+        pmRows.set(String(r.id), {
+          id: String(r.id), title: String(r.title || ''), next_due_date: (r.next_due_date as string) || null,
+          schedule_type: (r.schedule_type as string) || null, strategy_package: (r.strategy_package as string) || null,
+          frequency_interval: r.frequency_interval == null ? null : Number(r.frequency_interval), frequency_unit: (r.frequency_unit as string) || null,
+          active: r.active !== false,
+        });
+      }
+    }
+    const pointIds = decisions.map(d => d.reading_definition_id).filter((v): v is string => !!v);
+    const pointRows = new Map<string, NonNullable<RCMTaskSummary['point']>>();
+    if (pointIds.length > 0) {
+      const { data } = await supabase.from('reading_definitions')
+        .select('id, name, unit, min_warning, max_warning, min_critical, max_critical, pf_interval_days, is_active')
+        .in('id', pointIds);
+      for (const r of (data || []) as Record<string, unknown>[]) {
+        pointRows.set(String(r.id), {
+          id: String(r.id), name: String(r.name || ''), unit: (r.unit as string) || null,
+          has_bands: [r.min_warning, r.max_warning, r.min_critical, r.max_critical].some(x => x != null),
+          pf_interval_days: r.pf_interval_days == null ? null : Number(r.pf_interval_days), is_active: r.is_active !== false,
+        });
+      }
+    }
+    const woIds = decisions.map(d => d.work_order_id).filter((v): v is string => !!v);
+    const woRows = new Map<string, NonNullable<RCMTaskSummary['wo']>>();
+    if (woIds.length > 0) {
+      const { data } = await supabase.from('work_orders').select('id, wo_number, status').in('id', woIds);
+      for (const r of (data || []) as Record<string, unknown>[]) {
+        woRows.set(String(r.id), { id: String(r.id), wo_number: (r.wo_number as string) || null, status: (r.status as string) || null });
+      }
+    }
+
     return failureModes.map(fm => {
       const decision = decisionMap.get(fm.id);
       const fn = fnMap.get(fm.function_id);
+      const ai = decision?.ai_recommendation as { suggested_technology?: string | null } | null | undefined;
       return {
         failure_mode_id: fm.id,
         failure_mode_description: fm.failure_mode_description,
@@ -1182,8 +1237,103 @@ class RCMServiceImpl {
         recurring_work_id: decision?.recurring_work_id || null,
         decision_updated_at: decision?.updated_at || null,
         pm_created_at: decision?.recurring_work_id ? pmCreated.get(decision.recurring_work_id) || null : null,
+        justification: decision?.justification || null,
+        task_library_item_id: decision?.task_library_item_id || null,
+        technology: String(decision?.on_condition_technology || ai?.suggested_technology || '').trim() || null,
+        reading_definition_id: decision?.reading_definition_id || null,
+        work_order_id: decision?.work_order_id || null,
+        bom_item_id: fm.bom_item_id || null,
+        pm: decision?.recurring_work_id ? pmRows.get(decision.recurring_work_id) || null : null,
+        point: decision?.reading_definition_id ? pointRows.get(decision.reading_definition_id) || null : null,
+        wo: decision?.work_order_id ? woRows.get(decision.work_order_id) || null : null,
       };
     });
+  }
+
+  // ─── Implementing a decision (Maintenance Plan) ─────────────────────────
+
+  /**
+   * Rewrite the linked PM from the decision. A decision edited after its PM
+   * was generated is a plan the CMMS no longer matches; this brings the PM
+   * back in step — title, task, interval, priority, templates — and stamps
+   * origin.created_at so the "changed since" check clears. The PM's id, code,
+   * package and history stay.
+   */
+  async syncPMForDecision(studyId: string, failureModeId: string): Promise<{ ok: true; pmCode: string } | { ok: false; reason: string }> {
+    const study = await this.getStudy(studyId);
+    if (!study) return { ok: false, reason: 'study not found' };
+    const decisions = await this.getDecisions(studyId);
+    const d = decisions.find(x => x.failure_mode_id === failureModeId);
+    if (!d) return { ok: false, reason: 'decision not saved yet' };
+    if (!d.recurring_work_id) return { ok: false, reason: 'this decision has no PM to sync — create it first' };
+    const fms = await this.getFailureModesByStudy(studyId);
+    const name = fms.find(x => x.id === d.failure_mode_id)?.failure_mode_description || 'Failure mode';
+    const [jobPlan, spares] = await Promise.all([this.resolveJobPlan(d.task_library_item_id), this.matchSpares(d.spares_requirements)]);
+    // The builder refuses an already-generated decision; we are regenerating on purpose.
+    const built = buildPMFromDecision(study, { ...d, recurring_work_id: null }, name, { jobPlan, spares });
+    if (!built.ok) return built;
+    let row: Record<string, unknown>;
+    try { row = buildPMStrategy(built.input); } catch (e) { return { ok: false, reason: e instanceof Error ? e.message : String(e) }; }
+    const { data: existing } = await supabase.from('recurring_work').select('origin, next_due_date').eq('id', d.recurring_work_id).maybeSingle();
+    const origin = { ...((existing as { origin?: Record<string, unknown> } | null)?.origin || {}), ...((row.origin as Record<string, unknown>) || {}), created_at: new Date().toISOString(), synced_from_decision: d.id };
+    const patch: Record<string, unknown> = {
+      title: row.title, description: row.description, schedule_type: row.schedule_type,
+      frequency_interval: row.frequency_interval, frequency_unit: row.frequency_unit,
+      priority_code: row.priority_code, est_duration: row.est_duration, templates: row.templates ?? null,
+      origin, updated_at: new Date().toISOString(),
+    };
+    // Keep a due date the scheduler already set; only fill one in when there is none.
+    if (!(existing as { next_due_date?: string } | null)?.next_due_date && row.next_due_date) patch.next_due_date = row.next_due_date;
+    const { error } = await supabase.from('recurring_work').update(patch).eq('id', d.recurring_work_id);
+    if (error) {
+      console.error('[RCM] syncPMForDecision error:', error);
+      return { ok: false, reason: error.code === '42501' ? 'you do not have permission to change PMs' : error.message || 'update rejected' };
+    }
+    return { ok: true, pmCode: d.recurring_work_id };
+  }
+
+  /**
+   * Redesign is a one-off change: raise the work order that carries it out
+   * and remember it on the decision (0326), so the plan can show it.
+   */
+  async createRedesignWOForDecision(studyId: string, failureModeId: string, actor: string): Promise<{ ok: true; id: string; woNumber: string | null } | { ok: false; reason: string }> {
+    const study = await this.getStudy(studyId);
+    if (!study) return { ok: false, reason: 'study not found' };
+    if (!study.asset_id || !UUID_RE.test(study.asset_id)) return { ok: false, reason: 'the study is not linked to an asset in the register' };
+    const decisions = await this.getDecisions(studyId);
+    const d = decisions.find(x => x.failure_mode_id === failureModeId);
+    if (!d) return { ok: false, reason: 'decision not saved yet' };
+    if (d.work_order_id) return { ok: false, reason: 'a redesign work order is already raised for this decision' };
+    if (canonicalStrategyCode(d.recommended_strategy_code) !== 'REDESIGN') return { ok: false, reason: 'only a Redesign decision raises a work order here' };
+    const fms = await this.getFailureModesByStudy(studyId);
+    const name = fms.find(x => x.id === d.failure_mode_id)?.failure_mode_description || 'Failure mode';
+    const task = String(d.task_description || '').trim();
+    const brief = briefJustification(d.justification);
+    const description = [
+      task || `Redesign to remove the failure mode "${name}".`,
+      '',
+      `RCM study "${study.title}"${study.revision ? ` rev ${study.revision}` : ''} · Failure mode: ${name} · Consequence: ${d.consequence_code || 'unclassified'}`,
+      brief ? `\n${brief}` : '',
+    ].join('\n').trim();
+    const row = buildWorkOrder({
+      title: `Redesign — ${name}`.slice(0, 120),
+      description,
+      assetId: study.asset_id,
+      type: 'CM',
+      priorityCode: /SAFETY/i.test(d.consequence_code || '') ? 'HIGH' : 'MEDIUM',
+      status: 'OPEN',
+      createdBy: actor || null,
+      properties: { origin: { source: 'rcm_redesign', study_id: study.id, decision_id: d.id, failure_mode_id: d.failure_mode_id } },
+    });
+    const { data, error } = await supabase.from('work_orders').insert(row).select('id, wo_number').single();
+    if (error || !data) {
+      console.error('[RCM] createRedesignWOForDecision error:', error);
+      return { ok: false, reason: error?.code === '42501' ? 'you do not have permission to raise work orders' : error?.message || 'insert rejected' };
+    }
+    const wo = data as { id: string; wo_number: string | null };
+    const linked = await this.updateDecision(d.id, { work_order_id: wo.id });
+    if (!linked) console.warn('[RCM] redesign WO raised but decision link failed (0326 applied?)', wo.id);
+    return { ok: true, id: wo.id, woNumber: wo.wo_number ?? null };
   }
 
   /** Get dictionary codes for a given type */

@@ -7,5 +7,6 @@ export { RCMStudyOverview } from './RCMStudyOverview';
 export { RCMFMEATable } from './RCMFMEATable';
 export { RCMAddFunctionModal } from './RCMAddFunctionModal';
 export { RCMDecisionWizard } from './RCMDecisionWizard';
-export { RCMTaskMatrix } from './RCMTaskMatrix';
+export { RCMMaintenancePlan } from './RCMMaintenancePlan';
+export { RCMModeRail } from './RCMModeRail';
 export * from './types';

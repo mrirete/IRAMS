@@ -14,23 +14,24 @@
  * task and interval, then the PM. Job plan and spares fold away until wanted;
  * the justification lives in its pop-up.
  */
-import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
 import {
   GitBranch, Sparkles, RefreshCw, Lock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   Check, CheckCircle2, AlertTriangle, ShieldAlert, Clock, Activity,
-  Zap, Wrench, ArrowUpRight, X, Maximize2, Radio, BookOpen,
+  Zap, Wrench, ArrowRight, X, Maximize2, BookOpen,
 } from 'lucide-react';
-import type { RCMDecisionWizardProps, RCMFailureMode, RCMFunction } from './types';
+import type { RCMDecisionWizardProps, RCMFailureMode } from './types';
+import { RCMModeRail, groupModesByFunction, modeTitle, type RailTone } from './RCMModeRail';
+import { SyncedField, IntervalField } from './RCMFields';
 import {
   CONSEQUENCE_OPTIONS, STRATEGY_LABELS, STRATEGY_TONES, strategyLabel, parseConsequenceCodes, hasSafetyConsequence,
 } from './types';
 import { canSpecialistRecommendStrategy } from '../../eam/services/rcmReadiness';
 import {
-  INTERVAL_UNITS, parseIntervalText, canonicalInterval, strategyProducesPM, isLegacyStrategyCode,
-  taskTypesFor, TASK_TYPE_LABELS, UUID_RE, normalizeRecommendation, looksLikeReasoning, canonicalStrategyCode,
-  type IntervalUnit, type AIRecommendation,
+  parseIntervalText, strategyProducesPM, isLegacyStrategyCode,
+  taskTypesFor, TASK_TYPE_LABELS, normalizeRecommendation, looksLikeReasoning, canonicalStrategyCode,
+  type AIRecommendation,
 } from '../../eam/services/rcmPlan';
 import type { SpareRequirement } from '../../eam/services/RCMService';
 import type { BreakdownPart } from '../../lib/rcmBreakdown';
@@ -92,119 +93,6 @@ const STRATEGY_ICONS: Record<string, React.ReactNode> = {
   REDESIGN: <Wrench size={13} />,
 };
 
-// ── Synced task field ───────────────────────────────────────
-// Local state so the caret never jumps, debounced commit, and a re-sync when
-// the stored value changes underneath while the field isn't focused — which is
-// exactly what happens when the Specialist's recommendation (or "Use measured")
-// writes task_description/interval/justification.
-const SyncedField: React.FC<{
-  value: string | null | undefined;
-  onCommit: (v: string) => void;
-  placeholder?: string;
-  minRows?: number;
-  maxRows?: number;
-  label: string;
-  disabled?: boolean;
-  autoFocus?: boolean;
-  className?: string;
-}> = ({ value, onCommit, placeholder, minRows, maxRows = 14, label, disabled, autoFocus, className }) => {
-  const incoming = value ?? '';
-  const [local, setLocal] = useState(incoming);
-  const focused = useRef(false);
-  const committed = useRef(incoming);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const areaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (!focused.current && incoming !== committed.current) {
-      committed.current = incoming;
-      setLocal(incoming);
-    }
-  }, [incoming]);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-
-  // Auto-grow: measure after every render that changed the text.
-  useLayoutEffect(() => {
-    const el = areaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    const line = 22; // text-sm leading-relaxed ≈ 22px
-    const max = maxRows * line + 20;
-    el.style.height = `${Math.min(el.scrollHeight, max)}px`;
-    el.style.overflowY = el.scrollHeight > max ? 'auto' : 'hidden';
-  }, [local, maxRows]);
-
-  const commit = (v: string) => {
-    if (v === committed.current) return;
-    committed.current = v;
-    onCommit(v);
-  };
-  const handleChange = (v: string) => {
-    setLocal(v);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => commit(v), 700);
-  };
-  const shared = {
-    value: local,
-    placeholder,
-    disabled,
-    autoFocus,
-    'aria-label': label,
-    onFocus: () => { focused.current = true; },
-    onBlur: () => { focused.current = false; if (timer.current) clearTimeout(timer.current); commit(local); },
-    className: `w-full mt-1 px-3 py-2 text-sm leading-relaxed text-slate-800 bg-white border border-slate-200 rounded-lg focus:border-accent-cyan focus:ring-2 focus:ring-accent-cyan/20 focus:outline-none placeholder:text-slate-400 disabled:bg-slate-50 disabled:text-slate-500 ${className || ''}`,
-  };
-  return minRows
-    ? <textarea ref={areaRef} {...shared} rows={minRows} onChange={e => handleChange(e.target.value)} style={{ resize: 'none' }} />
-    : <input type="text" {...shared} onChange={e => handleChange(e.target.value)} />;
-};
-
-// ── Structured interval ─────────────────────────────────────
-// The interval is the program's executable output — free text like "when
-// needed" can't schedule anything. Value + unit compose a canonical string
-// ("1700 Hours") that the PM generator parses losslessly. Legacy free text
-// that doesn't parse is kept in the field's tooltip (amber border) rather
-// than as a sentence under it.
-const IntervalField: React.FC<{
-  value: string | null | undefined;
-  onCommit: (v: string | null) => void;
-  disabled?: boolean;
-}> = ({ value, onCommit, disabled }) => {
-  const parsed = parseIntervalText(value);
-  const unparseable = !!parsed.raw && parsed.n === null;
-  const isProse = parsed.n !== null && parsed.raw.length > 20;
-  const flagged = unparseable || isProse;
-
-  const commit = (n: number | null, unit: IntervalUnit) => onCommit(canonicalInterval(n, unit));
-  const tip = unparseable
-    ? `The draft said "${parsed.raw}" — set a value and unit so the PM can be scheduled.`
-    : isProse
-      ? `Stored as prose: "${parsed.raw}". Re-enter the value to keep just ${parsed.n} ${parsed.unit}.`
-      : parsed.unit === 'Hours' && parsed.n !== null
-        ? 'Running-hours cadence — the PM is served by meter readings, not the calendar.'
-        : undefined;
-
-  return (
-    <div className="flex items-center gap-1.5 mt-1" title={tip}>
-      <input
-        type="number" min={1} aria-label="Interval value" disabled={disabled}
-        value={parsed.n ?? ''}
-        placeholder="e.g. 3"
-        onChange={e => commit(e.target.value === '' ? null : Math.max(1, parseInt(e.target.value, 10) || 0), parsed.unit)}
-        className={`w-20 px-3 py-2 text-sm bg-white border rounded-lg focus:border-accent-cyan focus:outline-none text-center font-semibold tabular-nums disabled:bg-slate-50 ${flagged ? 'border-amber-300' : 'border-slate-200'}`}
-      />
-      <select
-        aria-label="Interval unit" disabled={disabled}
-        value={parsed.unit}
-        onChange={e => commit(parsed.n ?? 1, e.target.value as IntervalUnit)}
-        className={`flex-1 px-2 py-2 text-sm bg-white border rounded-lg focus:border-accent-cyan focus:outline-none cursor-pointer disabled:bg-slate-50 ${flagged ? 'border-amber-300' : 'border-slate-200'}`}
-      >
-        {INTERVAL_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-      </select>
-    </div>
-  );
-};
-
 // ── Justification pop-up ────────────────────────────────────
 // Rendered through a portal so it sits above the mobile bottom nav (z-50)
 // and every page overlay. The field itself is a large textarea: the
@@ -260,24 +148,17 @@ const JustificationModal: React.FC<{
 
 // ── Where a mode stands in the Q5→Q7 flow ───────────────────
 type Stage = 'needs_q5' | 'needs_strategy' | 'done';
-const STAGE_DOT: Record<Stage, string> = {
-  done: 'bg-emerald-500',
-  needs_strategy: 'bg-slate-300',
-  needs_q5: 'bg-amber-400',
-};
+const STAGE_TONE: Record<Stage, RailTone> = { done: 'emerald', needs_strategy: 'slate', needs_q5: 'amber' };
 const STAGE_TITLE: Record<Stage, string> = {
   done: 'Decided',
   needs_strategy: 'Strategy still to choose',
   needs_q5: 'Consequence not classified on the Worksheet',
 };
-const StageDot: React.FC<{ stage: Stage; className?: string }> = ({ stage, className }) => (
-  <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${STAGE_DOT[stage]} ${className || ''}`} aria-label={STAGE_TITLE[stage]} />
-);
 
 // ── Main Component ──────────────────────────────────────────
 export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
-  study, failureModes, functions, decisions, aiLoading, lifeEvidence, breakdown, libraryTasks, locked,
-  onUpdateDecision, onAIRecommend, onAcceptRecommendation, onDismissRecommendation, onCreatePM, pmGateFor, onCreateReadingPoint,
+  study, failureModes, functions, decisions, aiLoading, lifeEvidence, breakdown, libraryTasks, locked, initialFailureModeId,
+  onUpdateDecision, onAIRecommend, onAcceptRecommendation, onDismissRecommendation, onGoToPlan,
 }) => {
   const stageOf = (fmId: string): Stage => {
     const d = decisions.get(fmId);
@@ -286,27 +167,15 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
     return 'done';
   };
 
-  // The rail's order: every function in worksheet order with its modes under
-  // it, then any mode whose function is gone. This is also the walking order.
-  const groups = useMemo(() => {
-    const seen = new Set<string>();
-    const out: { fn: RCMFunction | null; modes: RCMFailureMode[] }[] = [];
-    for (const fn of functions) {
-      const modes = failureModes.filter(m => m.function_id === fn.id);
-      if (modes.length === 0) continue;
-      modes.forEach(m => seen.add(m.id));
-      out.push({ fn, modes });
-    }
-    const orphans = failureModes.filter(m => !seen.has(m.id));
-    if (orphans.length) out.push({ fn: null, modes: orphans });
-    return out;
-  }, [functions, failureModes]);
+  // The rail's order is the walking order: functions in worksheet order, their modes under them.
+  const groups = useMemo(() => groupModesByFunction(functions, failureModes), [functions, failureModes]);
   const ordered = useMemo(() => groups.flatMap(g => g.modes), [groups]);
   const fmNumber = (m: RCMFailureMode) => failureModes.indexOf(m) + 1;
   const decidedCount = ordered.filter(m => stageOf(m.id) === 'done').length;
 
   // One mode per page.
-  const [currentId, setCurrentId] = useState<string | null>(ordered[0]?.id ?? null);
+  const [currentId, setCurrentId] = useState<string | null>(initialFailureModeId ?? ordered[0]?.id ?? null);
+  useEffect(() => { if (initialFailureModeId) setCurrentId(initialFailureModeId); }, [initialFailureModeId]);
   const index = Math.max(0, ordered.findIndex(m => m.id === currentId));
   const fm = ordered[index] ?? null;
   useEffect(() => {
@@ -316,26 +185,10 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   const next = ordered[index + 1] ?? null;
   const prev = ordered[index - 1] ?? null;
 
-  // ← / → walk the rail when no field has focus.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
-      if (e.key === 'ArrowRight') { e.preventDefault(); goTo(index + 1); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); goTo(index - 1); }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, ordered]);
-
   const [justOpen, setJustOpen] = useState(false);
   // Job plan + spares fold away; a mode with either already set opens them.
   const [detailsOverride, setDetailsOverride] = useState<Record<string, boolean>>({});
   const fnMap = useMemo(() => new Map(functions.map(f => [f.id, f])), [functions]);
-  const hasRegisteredAsset = !!study.asset_id && UUID_RE.test(study.asset_id);
-  const raiseWOUrl = (desc: string) =>
-    `/work-orders?action=create&type=CM${hasRegisteredAsset ? `&asset=${study.asset_id}` : ''}&title=${encodeURIComponent(`Redesign — ${desc}`)}`;
 
   if (failureModes.length === 0) {
     return (
@@ -360,11 +213,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   // Normalised: old rows carry prose-only shapes and the retired "Combined" code.
   const rec: AIRecommendation | null = normalizeRecommendation(decision?.ai_recommendation);
   const recPending = !!rec && !rec.accepted_at;
-  const pmGate = fm ? pmGateFor(fm) : { ok: false, missing: [], reason: '' };
-  const pmBusy = !!fm && aiLoading === `pm-${fm.id}`;
   const linkedPM = decision?.recurring_work_id || null;
-  const linkedPoint = decision?.reading_definition_id || null;
-  const pointBusy = !!fm && aiLoading === `point-${fm.id}`;
   const taskTypes = taskTypesFor(stratCode, !!decision?.is_hidden_failure);
   const producesPM = !!stratCode && strategyProducesPM(stratCode);
   const showJobPlan = producesPM && (libraryTasks?.length ?? 0) > 0;
@@ -386,28 +235,6 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
     if (lead) bits.push(`${lead.label.toLowerCase()} at ${Math.round((Number(lead.operating) / Number(lead.design)) * 100)}% of design`);
     return bits.length ? `Measured under: ${bits.join(', ')} — re-fit if the duty changes.` : null;
   })();
-
-  const modeTitle = (m: RCMFailureMode) => m.failure_mode_description || 'Unnamed failure mode';
-  const railRow = (m: RCMFailureMode) => {
-    const current = m.id === fm?.id;
-    const stage = stageOf(m.id);
-    return (
-      <button
-        key={m.id}
-        type="button"
-        onClick={() => setCurrentId(m.id)}
-        aria-current={current ? 'true' : undefined}
-        title={`${STAGE_TITLE[stage]} — ${modeTitle(m)}`}
-        className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left transition-colors ${
-          current ? 'bg-primary-50 text-primary-800 ring-1 ring-primary-200' : 'text-slate-600 hover:bg-slate-50'
-        }`}
-      >
-        <StageDot stage={stage} />
-        <span className="text-[10px] font-bold text-slate-400 tabular-nums shrink-0 w-9">FM-{fmNumber(m)}</span>
-        <span className="text-xs truncate">{modeTitle(m)}</span>
-      </button>
-    );
-  };
 
   return (
     <div className="space-y-3 animate-in fade-in duration-300">
@@ -436,49 +263,15 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
 
       <div className="flex flex-col lg:flex-row lg:items-start gap-3">
 
-        {/* ═══ Mode rail — desktop: a column beside the card ═══ */}
-        <nav aria-label="Failure modes" className="hidden lg:block lg:w-60 xl:w-64 shrink-0 lg:sticky lg:top-3">
-          <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-2">
-            <div className="flex items-center justify-between px-2 py-1">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Failure modes</span>
-              <span className="text-[10px] font-semibold text-slate-500 tabular-nums" title={`${decidedCount} of ${ordered.length} decided`}>{decidedCount}/{ordered.length}</span>
-            </div>
-            <div className="space-y-2 mt-1">
-              {groups.map(g => (
-                <div key={g.fn?.id ?? 'orphans'}>
-                  <p className="px-2 pt-1 pb-0.5 text-[10px] font-bold text-slate-500 truncate" title={g.fn ? `${g.fn.function_number}: ${g.fn.function_description}` : 'Function removed'}>
-                    {g.fn ? <><span className="text-primary-600">{g.fn.function_number}</span> · {g.fn.function_description}</> : 'No function'}
-                  </p>
-                  <div className="space-y-0.5">{g.modes.map(railRow)}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </nav>
-
-        {/* ═══ Mode rail — phone: a strip above the card ═══ */}
-        <div className="lg:hidden flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1" role="tablist" aria-label="Failure modes">
-          {ordered.map(m => {
-            const current = m.id === fm?.id;
-            const stage = stageOf(m.id);
-            return (
-              <button
-                key={m.id}
-                type="button"
-                role="tab"
-                aria-selected={current}
-                onClick={() => setCurrentId(m.id)}
-                title={`${STAGE_TITLE[stage]} — ${modeTitle(m)}`}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold whitespace-nowrap shrink-0 ${
-                  current ? 'bg-primary-600 border-primary-600 text-white' : 'bg-white border-slate-200 text-slate-600'
-                }`}
-              >
-                <StageDot stage={stage} className={current ? 'ring-1 ring-white/70' : ''} />
-                FM-{fmNumber(m)}
-              </button>
-            );
-          })}
-        </div>
+        <RCMModeRail
+          groups={groups}
+          fmNumber={fmNumber}
+          currentId={fm?.id ?? null}
+          onSelect={setCurrentId}
+          statusOf={m => ({ tone: STAGE_TONE[stageOf(m.id)], title: STAGE_TITLE[stageOf(m.id)] })}
+          headerRight={`${decidedCount}/${ordered.length}`}
+          headerRightTitle={`${decidedCount} of ${ordered.length} decided`}
+        />
 
         {/* ═══ The one card ═══ */}
         {!fm ? (
@@ -753,64 +546,21 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                 </div>
               )}
 
-              {/* 3 · The PM this decision becomes — and the way to the next mode */}
+              {/* 3 · Implementation lives on the Maintenance Plan — one door to it, and the way to the next mode */}
               <div className="border-t border-slate-100 pt-4 flex items-center gap-2 flex-wrap">
-                {linkedPM ? (
-                  <Link
-                    to={`/recurring-work?q=${linkedPM}`}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                    title="Open this PM in Recurring Work"
-                  >
-                    <CheckCircle2 size={12} /> PM {linkedPM} <ArrowUpRight size={11} />
-                  </Link>
-                ) : stratCode === 'REDESIGN' ? (
-                  <Link
-                    to={raiseWOUrl(fm.failure_mode_description)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-red-50 border border-red-200 text-red-700 hover:bg-red-100"
-                    title="Redesign is a one-off change — raise a work order (or MOC) rather than a schedule"
-                  >
-                    <Wrench size={12} /> Raise redesign work order <ArrowUpRight size={11} />
-                  </Link>
-                ) : stratCode === 'RTF' ? (
-                  <span className="text-[11px] text-slate-500">Run-to-Failure schedules nothing — corrective work is raised when it fails.</span>
-                ) : stratCode ? (
+                {stratCode && (
                   <button
                     type="button"
-                    onClick={() => onCreatePM(fm)}
-                    aria-disabled={pmBusy}
-                    title={pmGate.ok ? pmGate.reason : `Still missing: ${pmGate.missing.join(', ')}`}
+                    onClick={() => onGoToPlan(fm)}
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors ${
-                      pmGate.ok
-                        ? 'bg-accent-cyan/10 border-accent-cyan/40 text-slate-800 hover:bg-accent-cyan/20'
-                        : 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200'
+                      linkedPM ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' : 'bg-accent-cyan/10 border-accent-cyan/40 text-slate-800 hover:bg-accent-cyan/20'
                     }`}
+                    title={linkedPM ? `Implemented as PM ${linkedPM} — open the Maintenance Plan for this mode` : 'Make this decision real on the Maintenance Plan: PM, monitoring point, sensor or work order'}
                   >
-                    {pmBusy ? <RefreshCw size={12} className="animate-spin" /> : pmGate.ok ? <Wrench size={12} /> : <Lock size={12} />}
-                    Create PM
+                    {linkedPM ? <CheckCircle2 size={12} /> : <Wrench size={12} />}
+                    {linkedPM ? `PM ${linkedPM}` : 'Implement on the Plan'} <ArrowRight size={12} />
                   </button>
-                ) : null}
-                {stratCode === 'PM_CONDITION' && hasRegisteredAsset && (
-                  linkedPoint ? (
-                    <Link
-                      to={`/readings?asset=${study.asset_id}&point=${linkedPoint}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                      title="Open the measurement point this decision monitors in Condition Data — trend, bands, cadence"
-                    >
-                      <Radio size={12} /> Open reading point <ArrowUpRight size={11} />
-                    </Link>
-                  ) : onCreateReadingPoint ? (
-                    <button
-                      type="button"
-                      onClick={() => { if (!pointBusy) onCreateReadingPoint(fm); }}
-                      aria-disabled={pointBusy}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white border border-slate-200 text-slate-700 hover:border-slate-300"
-                      title="An on-condition task needs a measurement point behind it — create the reading definition this decision monitors"
-                    >
-                      {pointBusy ? <RefreshCw size={12} className="animate-spin" /> : <Radio size={12} />} Create reading point
-                    </button>
-                  ) : null
                 )}
-
                 <div className="ml-auto flex items-center gap-1.5">
                   <button
                     type="button"
