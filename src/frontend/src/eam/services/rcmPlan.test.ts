@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   parseIntervalText, canonicalInterval, nextDueFrom, consequenceToPriority,
-  normalizeRecommendation, recommendationToDecisionUpdates, buildPMFromDecision,
+  normalizeRecommendation, recommendationToDecisionUpdates, buildPMFromDecision, looksLikeReasoning,
   strategyProducesPM, pmCodeFor, taskTypesFor, packageLabelFor, intervalDaysFor, briefJustification,
 } from './rcmPlan';
 import { canCreatePMForDecision, canGeneratePM } from './rcmReadiness';
@@ -125,6 +125,22 @@ describe('Specialist recommendation', () => {
     expect(upd.task_description).toBeUndefined();
     expect(upd.task_interval).toBeUndefined();
     expect(upd.justification).toContain('SAE JA1012');
+  });
+  it('files an essay written into the task line as justification and leaves the task blank', () => {
+    const essay = "Applying SAE JA1012 decision logic:\n\n1. **Consequence Analysis:** The failure mode 'Fuel Control Valve stuck closed' leads to a 'System Effect' of the gas turbine failing to start, and a plant effect of lost generation.";
+    const rec = normalizeRecommendation({ strategy: 'PM_TIME', task_description: essay, interval_value: 3, interval_unit: 'months', confidence: 0.95 })!;
+    expect(rec.task_description).toBeNull();
+    expect(rec.justification).toBe(essay);
+    const upd = recommendationToDecisionUpdates(rec);
+    expect(upd.task_description).toBeUndefined();
+    expect(upd.justification).toBe(essay);
+    // An explicit justification wins; the essay is simply dropped from the task.
+    const rec2 = normalizeRecommendation({ strategy: 'PM_TIME', task_description: essay, justification: 'Because.', confidence: 0.9 })!;
+    expect(rec2.task_description).toBeNull();
+    expect(rec2.justification).toBe('Because.');
+    // A real one-line task is untouched.
+    expect(looksLikeReasoning('Replace ignitor plug and verify spark gap 2.0 mm')).toBe(false);
+    expect(looksLikeReasoning('Inspect valve. Clean seat. Test stroke.')).toBe(false);
   });
   it('drops a retired Combined strategy and an unparseable interval instead of guessing', () => {
     const rec = normalizeRecommendation({ strategy: 'COMBINATION', reasoning: 'x', confidence: 0.5, suggested_interval: 'Continuous monitoring' })!;

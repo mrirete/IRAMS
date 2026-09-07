@@ -170,6 +170,20 @@ export interface AIRecommendation {
 const clean = (v: unknown): string => String(v ?? '').replace(/\s+/g, ' ').trim();
 
 /**
+ * Does this read as an argument rather than an instruction? Markdown bold,
+ * a numbered list, an "Applying …" preamble, or several sentences of length.
+ */
+export function looksLikeReasoning(text: string | null | undefined): boolean {
+  const t = String(text ?? '').trim();
+  if (!t) return false;
+  if (/\*\*/.test(t)) return true;
+  if (/^(applying|according to|based on|following)\b/i.test(t)) return true;
+  if (/(^|\n)\s*\d+\.\s/.test(t)) return true;
+  const sentences = t.split(/[.!?](\s|$)/).filter(s => s.trim().length > 0).length;
+  return t.length > 200 && sentences >= 3;
+}
+
+/**
  * Accept whatever shape the model (or an old row) produced and return one the
  * UI can rely on. Interval is canonicalised; an unparseable one becomes null
  * so the field asks for it instead of guessing. A legacy "COMBINATION"
@@ -197,8 +211,14 @@ export function normalizeRecommendation(raw: unknown): AIRecommendation | null {
     if (p.n !== null) { intervalValue = p.n; intervalUnit = p.unit; }
   }
 
-  const task = clean(r.task_description);
-  const justification = String(r.justification ?? '').trim();
+  // The task line is ONE instruction for the technician. Older drafts put the
+  // whole JA1012 argument there ("Applying SAE JA1012 decision logic: 1.
+  // **Consequence Analysis:** …"); that is a justification, so file it as one
+  // and leave the task blank for the real instruction.
+  const rawTask = String(r.task_description ?? '').trim();
+  const taskIsReasoning = looksLikeReasoning(rawTask);
+  const task = taskIsReasoning ? '' : clean(rawTask);
+  const justification = String(r.justification ?? '').trim() || (taskIsReasoning ? rawTask : '');
   const taskType = clean(r.task_type).toUpperCase();
 
   return {
