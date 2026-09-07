@@ -363,8 +363,6 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   const pmGate = fm ? pmGateFor(fm) : { ok: false, missing: [], reason: '' };
   const pmBusy = !!fm && aiLoading === `pm-${fm.id}`;
   const linkedPM = decision?.recurring_work_id || null;
-  const linkedPoint = decision?.reading_definition_id || null;
-  const pointBusy = !!fm && aiLoading === `point-${fm.id}`;
   const taskTypes = taskTypesFor(stratCode, !!decision?.is_hidden_failure);
   const producesPM = !!stratCode && strategyProducesPM(stratCode);
   const showJobPlan = producesPM && (libraryTasks?.length ?? 0) > 0;
@@ -789,26 +787,15 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                     Create PM
                   </button>
                 ) : null}
-                {(stratCode === 'PM_CONDITION' || stratCode === 'PM_PREDICTIVE') && hasRegisteredAsset && (
-                  linkedPoint ? (
-                    <Link
-                      to={`/readings?asset=${study.asset_id}&point=${linkedPoint}`}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100"
-                      title="Open the measurement point this decision monitors in Condition Data — trend, bands, cadence"
-                    >
-                      <Radio size={12} /> Open reading point <ArrowUpRight size={11} />
-                    </Link>
-                  ) : onCreateReadingPoint ? (
-                    <button
-                      type="button"
-                      onClick={() => { if (!pointBusy) onCreateReadingPoint(fm); }}
-                      aria-disabled={pointBusy}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white border border-slate-200 text-slate-700 hover:border-slate-300"
-                      title="An on-condition task needs a measurement point behind it — create the reading definition this decision monitors"
-                    >
-                      {pointBusy ? <RefreshCw size={12} className="animate-spin" /> : <Radio size={12} />} Create reading point
-                    </button>
-                  ) : null
+                {(stratCode === 'PM_CONDITION' || stratCode === 'PM_PREDICTIVE') && hasRegisteredAsset && onCreateReadingPoint && (
+                  <button
+                    type="button"
+                    onClick={() => onCreateReadingPoint(fm)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold bg-white border border-slate-200 text-slate-700 hover:border-slate-300"
+                    title="An on-condition task needs a measurement point behind it — create the reading definition this decision monitors"
+                  >
+                    <Radio size={12} /> Create reading point
+                  </button>
                 )}
 
                 <div className="ml-auto flex items-center gap-1.5">
