@@ -30,27 +30,29 @@ export const CRIT_COLORS: Record<string, string> = {
   C: 'bg-slate-100 text-slate-500 border-slate-300',
 };
 
-// One hue per strategy, used everywhere a strategy is shown. Time-based and
-// Predictive used to share blue, so two of the six choices looked identical.
+// One hue per strategy, used everywhere a strategy is shown. Listed in the
+// order SAE JA1012 evaluates them: on-condition first, then scheduled
+// restoration / discard, then the default actions. "Predictive" was folded
+// into Condition-Based on 2026-09-07 — one on-condition task type, whether a
+// person inspects or a sensor monitors; the technology is an attribute.
 export const STRATEGY_LABELS: Record<string, { label: string; color: string; icon: string; hint: string }> = {
+  PM_CONDITION: { label: 'Condition-Based', color: 'bg-cyan-100 text-cyan-700',      icon: '📊', hint: 'On-condition task: inspect, measure or monitor (gauge, vibration, thermography, oil, sensor) and act on the P-F warning' },
   PM_TIME:      { label: 'Time-Based PM',   color: 'bg-blue-100 text-blue-700',      icon: '🕐', hint: 'Scheduled restoration or discard at a fixed age/calendar interval' },
-  PM_CONDITION: { label: 'Condition-Based', color: 'bg-cyan-100 text-cyan-700',      icon: '📊', hint: 'On-condition task: inspect or measure, act on the P-F warning' },
-  PM_PREDICTIVE:{ label: 'Predictive',      color: 'bg-violet-100 text-violet-700',  icon: '🤖', hint: 'On-condition via monitoring technology (vibration, thermography, oil, sensors)' },
   RTF:          { label: 'Run-to-Failure',  color: 'bg-orange-100 text-orange-700',  icon: '⚡', hint: 'No scheduled task — repair on failure (never for safety/environmental consequences)' },
   REDESIGN:     { label: 'Redesign',        color: 'bg-red-100 text-red-700',        icon: '🔧', hint: 'Default action: change the design, procedure or operating context' },
 };
 
 /** Retired codes still on old rows — shown, never offered. */
 export const LEGACY_STRATEGY_LABELS: Record<string, { label: string; color: string; icon: string; hint: string }> = {
-  COMBINATION: { label: 'Combined (retired)', color: 'bg-slate-100 text-slate-500', icon: '🔀', hint: 'Retired 2026-09-05 — choose the one strategy that applies' },
+  COMBINATION:   { label: 'Combined (retired)', color: 'bg-slate-100 text-slate-500', icon: '🔀', hint: 'Retired 2026-09-05 — choose the one strategy that applies' },
+  PM_PREDICTIVE: { label: 'Condition-Based',    color: 'bg-cyan-100 text-cyan-700',   icon: '📊', hint: 'Recorded as Predictive before 2026-09-07 — the same on-condition strategy' },
 };
 export const strategyLabel = (code: string | null | undefined) => (code ? STRATEGY_LABELS[code] || LEGACY_STRATEGY_LABELS[code] || null : null);
 
 /** Selector pill styling per strategy: resting vs chosen. */
 export const STRATEGY_TONES: Record<string, { idle: string; selected: string; dot: string }> = {
-  PM_TIME:      { idle: 'border-blue-200 text-blue-700 hover:bg-blue-50',       selected: 'bg-blue-600 border-blue-600 text-white',       dot: 'bg-blue-500' },
   PM_CONDITION: { idle: 'border-cyan-200 text-cyan-700 hover:bg-cyan-50',       selected: 'bg-cyan-600 border-cyan-600 text-white',       dot: 'bg-cyan-500' },
-  PM_PREDICTIVE:{ idle: 'border-violet-200 text-violet-700 hover:bg-violet-50', selected: 'bg-violet-600 border-violet-600 text-white',   dot: 'bg-violet-500' },
+  PM_TIME:      { idle: 'border-blue-200 text-blue-700 hover:bg-blue-50',       selected: 'bg-blue-600 border-blue-600 text-white',       dot: 'bg-blue-500' },
   RTF:          { idle: 'border-orange-200 text-orange-700 hover:bg-orange-50', selected: 'bg-orange-500 border-orange-500 text-white',   dot: 'bg-orange-500' },
   REDESIGN:     { idle: 'border-red-200 text-red-700 hover:bg-red-50',          selected: 'bg-red-600 border-red-600 text-white',         dot: 'bg-red-500' },
 };

@@ -81,12 +81,18 @@ export function packageLabelFor(n: number, unit: IntervalUnit): string {
 // ── Strategy vocabulary ─────────────────────────────────────────────────────
 
 /**
- * The five JA1012 outcomes the Strategy tab offers. "Combined" was retired on
+ * The four JA1012 outcomes the Strategy tab offers, in the order the standard
+ * evaluates them: on-condition first, then scheduled restoration / discard
+ * (Time-Based), then the default actions. "Combined" was retired on
  * 2026-09-05: it named no task type, so it scheduled nothing specific.
+ * "Predictive" was folded into Condition-Based on 2026-09-07: JA1012 knows one
+ * on-condition task type, whether a person reads a gauge or a sensor streams
+ * it — the technology is an attribute of the task (suggested_technology,
+ * on_condition_technology), not a different strategy.
  */
-export const STRATEGY_CODES = ['PM_TIME', 'PM_CONDITION', 'PM_PREDICTIVE', 'RTF', 'REDESIGN'] as const;
+export const STRATEGY_CODES = ['PM_CONDITION', 'PM_TIME', 'RTF', 'REDESIGN'] as const;
 export type StrategyCode = typeof STRATEGY_CODES[number];
-export const LEGACY_STRATEGY_CODES = ['COMBINATION'] as const;
+export const LEGACY_STRATEGY_CODES = ['COMBINATION', 'PM_PREDICTIVE'] as const;
 
 export function isStrategyCode(v: unknown): v is StrategyCode {
   return typeof v === 'string' && (STRATEGY_CODES as readonly string[]).includes(v);
@@ -94,13 +100,22 @@ export function isStrategyCode(v: unknown): v is StrategyCode {
 export function isLegacyStrategyCode(v: unknown): boolean {
   return typeof v === 'string' && (LEGACY_STRATEGY_CODES as readonly string[]).includes(v);
 }
+/**
+ * Old rows and old model answers still say PM_PREDICTIVE; read them as the
+ * on-condition strategy they are. COMBINATION has no canonical form.
+ */
+export function canonicalStrategyCode(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return code === 'PM_PREDICTIVE' ? 'PM_CONDITION' : code;
+}
 
 /**
  * Which strategies become a recurring PM. Run-to-Failure schedules nothing by
  * definition; Redesign is a one-off change (a project or MOC), not a cadence.
  */
 export function strategyProducesPM(code: string | null | undefined): boolean {
-  return code === 'PM_TIME' || code === 'PM_CONDITION' || code === 'PM_PREDICTIVE';
+  const c = canonicalStrategyCode(code);
+  return c === 'PM_TIME' || c === 'PM_CONDITION';
 }
 
 /** SAE JA1012 §11 task types — the thing a strategy actually schedules. */
@@ -115,9 +130,9 @@ export const TASK_TYPE_LABELS: Record<TaskTypeCode, { label: string; hint: strin
 
 /** Task types that make sense for a strategy; the first is the default. */
 export function taskTypesFor(strategy: string | null | undefined, hidden = false): TaskTypeCode[] {
-  if (strategy === 'PM_TIME') return ['SCHEDULED_RESTORATION', 'SCHEDULED_DISCARD'];
-  if (strategy === 'PM_CONDITION') return hidden ? ['FAILURE_FINDING', 'ON_CONDITION'] : ['ON_CONDITION', 'FAILURE_FINDING'];
-  if (strategy === 'PM_PREDICTIVE') return ['ON_CONDITION'];
+  const s = canonicalStrategyCode(strategy);
+  if (s === 'PM_TIME') return ['SCHEDULED_RESTORATION', 'SCHEDULED_DISCARD'];
+  if (s === 'PM_CONDITION') return hidden ? ['FAILURE_FINDING', 'ON_CONDITION'] : ['ON_CONDITION', 'FAILURE_FINDING'];
   return [];
 }
 export function isTaskTypeCode(v: unknown): v is TaskTypeCode {
@@ -192,7 +207,7 @@ export function looksLikeReasoning(text: string | null | undefined): boolean {
 export function normalizeRecommendation(raw: unknown): AIRecommendation | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  const strategy = clean(r.strategy).toUpperCase();
+  const strategy = canonicalStrategyCode(clean(r.strategy).toUpperCase()) || '';
   const reasoning = String(r.reasoning ?? '').trim();
   if (!strategy && !reasoning) return null;
 

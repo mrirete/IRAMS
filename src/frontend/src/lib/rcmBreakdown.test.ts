@@ -103,9 +103,15 @@ describe('inferring the pin from the failure mode text', () => {
     expect(inferComponentLink(['FLT-0023 torn'], G).bom_item_id).toBe('p1');
     expect(inferComponentLink(['Fuel nozzle blocked by air inlet filter debris'], G)).toEqual({ component_asset_id: 'noz', bom_item_id: null });
   });
-  it('pinFailureMode keeps an explicit pin and only fills an empty one', () => {
-    expect(pinFailureMode({ failure_mode_description: 'Ignitor plug failure', component_asset_id: 'v' }, G).component_asset_id).toBe('v');
-    expect(pinFailureMode({ failure_mode_description: 'Ignitor plug failure' }, G).component_asset_id).toBe('ign');
+  it('pinFailureMode keeps an explicit pin and only fills an empty one, recording where the pin came from', () => {
+    const explicit = pinFailureMode({ failure_mode_description: 'Ignitor plug failure', component_asset_id: 'v' }, G);
+    expect(explicit.component_asset_id).toBe('v');
+    expect(explicit.component_link_source).toBe('specialist');
+    expect(pinFailureMode({ failure_mode_description: 'x', bom_item_id: 'p1' }, G, 'import').component_link_source).toBe('import');
+    expect(pinFailureMode({ failure_mode_description: 'x', bom_item_id: 'p1', component_link_source: 'manual' }, G).component_link_source).toBe('manual');
+    const inferred = pinFailureMode({ failure_mode_description: 'Ignitor plug failure' }, G);
+    expect(inferred.component_asset_id).toBe('ign');
+    expect(inferred.component_link_source).toBe('text');
     const untouched = { failure_mode_description: 'Shaft seal leaking' };
     expect(pinFailureMode(untouched, G)).toBe(untouched);
   });

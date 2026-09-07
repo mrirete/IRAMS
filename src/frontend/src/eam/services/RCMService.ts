@@ -116,6 +116,8 @@ export interface RCMFailureMode {
   component_asset_id?: string | null;
   /** 0318 — the asset_bom line (maintainable item / spare) this mode is about */
   bom_item_id?: string | null;
+  /** 0325 — how the pin was made; 'text' = inferred from the wording, not yet confirmed */
+  component_link_source?: 'manual' | 'specialist' | 'text' | 'import' | null;
   created_at: string;
   updated_at: string;
   // Nested
@@ -704,9 +706,9 @@ class RCMServiceImpl {
     if (error) {
       // Before 0318 the component/BOM link columns do not exist — keep the
       // worksheet working, just without the pin.
-      if (/component_asset_id|bom_item_id/i.test(error.message || '') && (fm.component_asset_id || fm.bom_item_id)) {
-        const { component_asset_id: _c, bom_item_id: _b, ...rest } = fm;
-        void _c; void _b;
+      if (/component_asset_id|bom_item_id|component_link_source/i.test(error.message || '') && (fm.component_asset_id || fm.bom_item_id || fm.component_link_source)) {
+        const { component_asset_id: _c, bom_item_id: _b, component_link_source: _s, ...rest } = fm;
+        void _c; void _b; void _s;
         const retry = await supabase.from('ers_rcm_failure_modes').insert(rest).select().single();
         if (retry.error) { console.error('[RCM] createFailureMode error:', retry.error); return null; }
         return retry.data as RCMFailureMode;
@@ -1320,8 +1322,8 @@ Severity: ${failureMode.severity || 'Not rated'}/10 - Occurrence: ${failureMode.
 
 Walk the decision logic (technically feasible? worth doing? on-condition -> scheduled restoration -> scheduled discard -> failure-finding -> default action) and return ONLY valid JSON with these keys:
 {
-  "strategy": "PM_TIME|PM_CONDITION|PM_PREDICTIVE|RTF|REDESIGN",
-  "task_type": "SCHEDULED_RESTORATION|SCHEDULED_DISCARD (for PM_TIME) | ON_CONDITION|FAILURE_FINDING (for PM_CONDITION) | ON_CONDITION (for PM_PREDICTIVE) | null",
+  "strategy": "PM_CONDITION|PM_TIME|RTF|REDESIGN",
+  "task_type": "ON_CONDITION|FAILURE_FINDING (for PM_CONDITION) | SCHEDULED_RESTORATION|SCHEDULED_DISCARD (for PM_TIME) | null",
   "task_description": "ONE imperative task statement for the technician, max 140 characters (e.g. 'Replace ignitor plug and verify spark gap 2.0 mm'). Never the reasoning, never a list.",
   "interval_value": 6,
   "interval_unit": "Hours|Days|Weeks|Months|Years",
@@ -1329,9 +1331,9 @@ Walk the decision logic (technically feasible? worth doing? on-condition -> sche
   "justification": "2-4 sentences: why this task type and interval (P-F interval, failure pattern, consequence, cost-benefit).",
   "reasoning": "The step-by-step JA1012 walk-through you followed.",
   "confidence": 0.85,
-  "suggested_technology": "PdM technology if on-condition, else empty"
+  "suggested_technology": "for PM_CONDITION: how the condition is read - visual/manual inspection, vibration, thermography, oil analysis, ultrasound, online sensor; else empty"
 }
-Rules: pick exactly ONE strategy (there is no combined option - if two tasks are needed, recommend the one that controls the dominant failure mechanism and mention the other in justification). interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value and task_type to null and describe the default action in task_description.`;
+Rules: pick exactly ONE strategy (there is no combined option - if two tasks are needed, recommend the one that controls the dominant failure mechanism and mention the other in justification). PM_CONDITION covers every on-condition task, inspected by a person or monitored by a sensor - say which in suggested_technology; there is no separate predictive strategy. interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value and task_type to null and describe the default action in task_description.`;
 
     try {
       const raw = await callRCMGemini(prompt, 0.2);

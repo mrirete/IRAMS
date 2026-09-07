@@ -557,7 +557,7 @@ export const RCMPage: React.FC = () => {
       const row = failureModesRef.current.find(fm => fm.id === id);
       if (row && !row.component_asset_id && !row.bom_item_id) {
         const link = inferComponentLink([updates.failure_mode_description, row.failure_cause_description], breakdown);
-        if (link.component_asset_id || link.bom_item_id) Object.assign(payload, link);
+        if (link.component_asset_id || link.bom_item_id) Object.assign(payload, link, { component_link_source: 'text' });
       }
     }
     failureModesRef.current = failureModesRef.current.map(fm => fm.id === id ? { ...fm, ...payload } : fm);

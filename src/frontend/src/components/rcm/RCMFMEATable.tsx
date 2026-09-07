@@ -437,7 +437,12 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
       .map(fm => ({ id: fm.id, link: inferComponentLink([fm.failure_mode_description, fm.failure_cause_description], breakdown) }))
       .filter(x => x.link.component_asset_id || x.link.bom_item_id);
   }, [failureModes, breakdown, hasBreakdown]);
-  const autoPinAll = () => { for (const { id, link } of autoPins) onUpdateFailureMode(id, link); };
+  // A pin inferred from the wording is marked 'text' (0325) until a person confirms it.
+  const autoPinAll = () => { for (const { id, link } of autoPins) onUpdateFailureMode(id, { ...link, component_link_source: 'text' }); };
+  const textPins = useMemo(() => failureModes.filter(fm => fm.component_link_source === 'text' && (fm.component_asset_id || fm.bom_item_id)), [failureModes]);
+  const [reviewPins, setReviewPins] = useState(false);
+  useEffect(() => { if (textPins.length === 0) setReviewPins(false); }, [textPins.length]);
+  const confirmPin = (fmId: string) => onUpdateFailureMode(fmId, { component_link_source: 'manual' });
 
   const toggleFn = (id: string) => setCollapsed(prev => {
     const next = new Set(prev);
@@ -568,6 +573,19 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
               : specialistLocked ? <Lock size={12} /> : <Sparkles size={12} />}
             {failureModes.length === 0 ? 'Draft the worksheet' : 'Draft more functions'}
           </button>
+          {textPins.length > 0 && (
+            <button
+              onClick={() => setReviewPins(v => !v)}
+              aria-pressed={reviewPins}
+              title="Rows whose component was inferred from the failure-mode wording and not yet confirmed — show only those, confirm or change each"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors ${
+                reviewPins ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+              }`}
+            >
+              <MapPin size={12} />
+              {reviewPins ? 'Showing' : 'Review'} {textPins.length} text pin{textPins.length !== 1 ? 's' : ''}
+            </button>
+          )}
           {autoPins.length > 0 && (
             <button
               onClick={autoPinAll}
@@ -675,7 +693,7 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
               </thead>
 
               {functions.map(fn => {
-                const fnFMs = modesByFn.get(fn.id) || [];
+                const fnFMs = (modesByFn.get(fn.id) || []).filter(fm => !reviewPins || fm.component_link_source === 'text');
                 const isOpen = !collapsed.has(fn.id);
                 const accent = FN_ACCENTS[fn.function_type] || FN_ACCENTS.primary;
                 const expandGate = canSpecialistExpandFunction(fn);
@@ -849,6 +867,8 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                     onUpdateFailureMode(fm.id, {
                                       component_asset_id: v.startsWith('c:') ? v.slice(2) : null,
                                       bom_item_id: v.startsWith('p:') ? v.slice(2) : null,
+                                      // A person chose it (or cleared it) — no longer a text guess.
+                                      component_link_source: v ? 'manual' : null,
                                     });
                                   }}
                                   onBlur={() => setPinEditing(prev => { if (!prev.has(fm.id)) return prev; const n = new Set(prev); n.delete(fm.id); return n; })}
@@ -873,6 +893,21 @@ export const RCMFMEATable: React.FC<RCMFMEATableProps> = ({
                                     </optgroup>
                                   )}
                                 </select>
+                              )}
+                              {/* 0325: a pin inferred from the wording stays flagged until a person confirms or changes it */}
+                              {hasBreakdown && fm.component_link_source === 'text' && (fm.component_asset_id || fm.bom_item_id) && (
+                                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-amber-700">
+                                  <span title="Pinned by matching the failure-mode text to a registered component — not yet confirmed">from text</span>
+                                  <span className="text-amber-300">·</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => confirmPin(fm.id)}
+                                    className="font-bold hover:underline"
+                                    title="This is the right component — keep the pin and clear the flag"
+                                  >
+                                    Confirm
+                                  </button>
+                                </div>
                               )}
                             </td>
                             <td className={td}>

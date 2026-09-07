@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   parseIntervalText, canonicalInterval, nextDueFrom, consequenceToPriority,
   normalizeRecommendation, recommendationToDecisionUpdates, buildPMFromDecision, looksLikeReasoning,
-  strategyProducesPM, pmCodeFor, taskTypesFor, packageLabelFor, intervalDaysFor, briefJustification,
+  strategyProducesPM, pmCodeFor, taskTypesFor, packageLabelFor, intervalDaysFor, briefJustification, canonicalStrategyCode, STRATEGY_CODES,
 } from './rcmPlan';
 import { canCreatePMForDecision, canGeneratePM } from './rcmReadiness';
 import type { RCMDecision } from './RCMService';
@@ -71,7 +71,13 @@ describe('vocabulary', () => {
   });
   it('only proactive strategies produce a PM; Combined is retired', () => {
     expect(strategyProducesPM('PM_TIME')).toBe(true);
-    expect(strategyProducesPM('PM_PREDICTIVE')).toBe(true);
+    expect(strategyProducesPM('PM_PREDICTIVE')).toBe(true); // legacy rows still schedule
+    expect(canonicalStrategyCode('PM_PREDICTIVE')).toBe('PM_CONDITION');
+    expect(canonicalStrategyCode('PM_TIME')).toBe('PM_TIME');
+    expect(STRATEGY_CODES[0]).toBe('PM_CONDITION'); // JA1012 evaluates on-condition first
+    expect(STRATEGY_CODES).not.toContain('PM_PREDICTIVE');
+    expect(taskTypesFor('PM_PREDICTIVE')).toEqual(['ON_CONDITION', 'FAILURE_FINDING']);
+    expect(normalizeRecommendation({ strategy: 'PM_PREDICTIVE', reasoning: 'x', confidence: 0.5 })!.strategy).toBe('PM_CONDITION');
     expect(strategyProducesPM('COMBINATION')).toBe(false);
     expect(strategyProducesPM('RTF')).toBe(false);
     expect(strategyProducesPM('REDESIGN')).toBe(false);

@@ -19,7 +19,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import {
   GitBranch, Sparkles, RefreshCw, Lock, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
-  Check, CheckCircle2, AlertTriangle, ShieldAlert, Clock, Activity, BrainCircuit,
+  Check, CheckCircle2, AlertTriangle, ShieldAlert, Clock, Activity,
   Zap, Wrench, ArrowUpRight, X, Maximize2, Radio, BookOpen,
 } from 'lucide-react';
 import type { RCMDecisionWizardProps, RCMFailureMode, RCMFunction } from './types';
@@ -29,7 +29,7 @@ import {
 import { canSpecialistRecommendStrategy } from '../../eam/services/rcmReadiness';
 import {
   INTERVAL_UNITS, parseIntervalText, canonicalInterval, strategyProducesPM, isLegacyStrategyCode,
-  taskTypesFor, TASK_TYPE_LABELS, UUID_RE, normalizeRecommendation, looksLikeReasoning,
+  taskTypesFor, TASK_TYPE_LABELS, UUID_RE, normalizeRecommendation, looksLikeReasoning, canonicalStrategyCode,
   type IntervalUnit, type AIRecommendation,
 } from '../../eam/services/rcmPlan';
 import type { SpareRequirement } from '../../eam/services/RCMService';
@@ -86,9 +86,8 @@ const SparesPicker: React.FC<{
 };
 
 const STRATEGY_ICONS: Record<string, React.ReactNode> = {
-  PM_TIME: <Clock size={13} />,
   PM_CONDITION: <Activity size={13} />,
-  PM_PREDICTIVE: <BrainCircuit size={13} />,
+  PM_TIME: <Clock size={13} />,
   RTF: <Zap size={13} />,
   REDESIGN: <Wrench size={13} />,
 };
@@ -355,7 +354,8 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
   const consOpts = parseConsequenceCodes(decision?.consequence_code)
     .map(code => CONSEQUENCE_OPTIONS.find(c => c.code === code))
     .filter(Boolean);
-  const stratCode = decision?.recommended_strategy_code || null;
+  // Old rows may still say PM_PREDICTIVE — shown and saved as Condition-Based (0325).
+  const stratCode = canonicalStrategyCode(decision?.recommended_strategy_code);
   const legacyStrategy = isLegacyStrategyCode(stratCode);
   // Normalised: old rows carry prose-only shapes and the retired "Combined" code.
   const rec: AIRecommendation | null = normalizeRecommendation(decision?.ai_recommendation);
@@ -789,7 +789,7 @@ export const RCMDecisionWizard: React.FC<RCMDecisionWizardProps> = ({
                     Create PM
                   </button>
                 ) : null}
-                {(stratCode === 'PM_CONDITION' || stratCode === 'PM_PREDICTIVE') && hasRegisteredAsset && (
+                {stratCode === 'PM_CONDITION' && hasRegisteredAsset && (
                   linkedPoint ? (
                     <Link
                       to={`/readings?asset=${study.asset_id}&point=${linkedPoint}`}

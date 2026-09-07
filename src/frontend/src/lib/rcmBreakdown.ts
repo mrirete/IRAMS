@@ -51,10 +51,18 @@ export function isEmptyBreakdown(b: AssetBreakdown | null | undefined): boolean 
   return !b || (b.components.length === 0 && b.parts.length === 0);
 }
 
-/** A failure mode's link to the breakdown (columns added by 0318). */
+/**
+ * How a failure mode came to be pinned (0325). 'text' means the pin was
+ * inferred from the mode's own words and has not been confirmed by a person —
+ * the worksheet marks those and offers them for review as a set.
+ */
+export type ComponentLinkSource = 'manual' | 'specialist' | 'text' | 'import';
+
+/** A failure mode's link to the breakdown (columns added by 0318 / 0325). */
 export interface ComponentLinkLike {
   component_asset_id?: string | null;
   bom_item_id?: string | null;
+  component_link_source?: ComponentLinkSource | null;
 }
 
 // ── Rendering for the Specialist prompts ────────────────────────────────────
@@ -226,9 +234,13 @@ export function inferComponentLink(
 export function pinFailureMode<T extends ComponentLinkLike & { failure_mode_description?: string | null; failure_cause_description?: string | null }>(
   fm: T,
   b: AssetBreakdown | null | undefined,
+  explicitSource: ComponentLinkSource = 'specialist',
 ): T & ComponentLinkLike {
-  if (fm.component_asset_id || fm.bom_item_id) return fm;
+  if (fm.component_asset_id || fm.bom_item_id) {
+    return fm.component_link_source ? fm : { ...fm, component_link_source: explicitSource };
+  }
   const link = inferComponentLink([fm.failure_mode_description, fm.failure_cause_description], b);
   if (!link.component_asset_id && !link.bom_item_id) return fm;
-  return { ...fm, ...link };
+  // Inferred from the wording, not chosen — marked so the worksheet can offer it for review.
+  return { ...fm, ...link, component_link_source: 'text' };
 }
