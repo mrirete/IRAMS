@@ -80,7 +80,7 @@ export interface FMEAItem {
 // RCA — Full 6-step model (ISO 55000, SAE JA1011, PROACT, Apollo)
 export interface RCAInvestigation {
     id: string;
-    asset_id: string;
+    asset_id: string | null; // nullable since 0117 — an RCA may start before an asset is linked
     title: string;
     /** The committed analysis method. One investigation, one method, one editor. */
     method: RCAMethod | null;

@@ -297,7 +297,7 @@ export function RCAInvestigationPage() {
                 setRcaCollaborators(invData.collaborators || []);
                 setActiveStep(invData.current_step || 1);
                 setDraft(d => ({
-                    ...d, title: invData.title, asset_id: invData.asset_id,
+                    ...d, title: invData.title, asset_id: invData.asset_id || '',
                     rca_category: invData.rca_category || 'asset_failure',
                     investigation_type: invData.investigation_type || 'reactive',
                     problem_statement: invData.problem_statement || '',
