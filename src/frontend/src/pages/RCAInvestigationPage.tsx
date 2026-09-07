@@ -224,7 +224,7 @@ export function RCAInvestigationPage() {
 
     // Draft state for new investigations
     const [draft, setDraft] = useState({
-        title: '', asset_id: '',
+        title: '', asset_id: '', asset_ref: '',
         rca_category: 'asset_failure' as string,
         investigation_type: 'reactive' as string,
         problem_statement: '', event_what: '', event_how: '',
@@ -298,6 +298,7 @@ export function RCAInvestigationPage() {
                 setActiveStep(invData.current_step || 1);
                 setDraft(d => ({
                     ...d, title: invData.title, asset_id: invData.asset_id || '',
+                    asset_ref: invData.asset_ref || '',
                     rca_category: invData.rca_category || 'asset_failure',
                     investigation_type: invData.investigation_type || 'reactive',
                     problem_statement: invData.problem_statement || '',
@@ -506,6 +507,7 @@ export function RCAInvestigationPage() {
                     // all-zero placeholder matched no asset row, so every unlinked
                     // investigation was rejected with a 23503 and never saved.
                     asset_id: draft.asset_id || null,
+                    asset_ref: draft.asset_id ? null : (draft.asset_ref.trim() || null),
                     title: draft.title || 'Untitled Investigation',
                     // No method at creation. It is chosen at the step-3 gate, once the
                     // evidence is in — picking one here would be picking before looking.
@@ -534,6 +536,8 @@ export function RCAInvestigationPage() {
             } else if (inv) {
                 await analyzeService.updateRCAInvestigation(inv.id, {
                     title: draft.title, problem_statement: draft.problem_statement,
+                    asset_id: draft.asset_id || null,
+                    asset_ref: draft.asset_id ? null : (draft.asset_ref.trim() || null),
                     // `method` is deliberately absent: it is owned by the step-3 gate.
                     // Writing it from this draft reverted a committed method back to the
                     // stale value the draft was loaded with every time step 1 was saved.
@@ -740,6 +744,19 @@ export function RCAInvestigationPage() {
 
     // Header overflow menu (team / DE task / report)
     const [invMenuOpen, setInvMenuOpen] = useState(false);
+    // The asset picker closes like any menu: click outside, Escape, or clear the text.
+    const assetPickerRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (!showNewAssetDropdown) return;
+        const onDown = (e: MouseEvent) => {
+            if (assetPickerRef.current && !assetPickerRef.current.contains(e.target as Node)) setShowNewAssetDropdown(false);
+        };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowNewAssetDropdown(false); };
+        document.addEventListener('mousedown', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+    }, [showNewAssetDropdown]);
+
     const invMenuRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         if (!invMenuOpen) return;
@@ -818,7 +835,7 @@ export function RCAInvestigationPage() {
         hasProblemStatement: !!(inv?.problem_statement || draft.problem_statement || '').trim(),
         // Step 1 is defined when the statement exists and the event is anchored to
         // an asset or a named component.
-        has5W2H: !!(draft.asset_id || draft.event_what.trim()),
+        has5W2H: !!(draft.asset_id || draft.asset_ref.trim() || draft.event_what.trim()),
         evidenceCount: evidence.length,
         // "Target for FACTS": a pile of opinions/hearsay doesn't complete Collect.
         // Ungraded legacy items still pass, so old investigations don't regress.
@@ -1040,76 +1057,118 @@ export function RCAInvestigationPage() {
                                 />
                             </div>
 
-                            {hasEAMAssets && (
-                                <div>
-                                    <label className={LABEL_CLS}>Asset</label>
-                                    {draft.asset_id ? (
-                                        <div className="flex items-center gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                                            <Database size={16} className="text-primary-600 shrink-0" />
-                                            {(() => {
-                                                const sel = allHierarchyAssets.find(a => a.id === draft.asset_id);
-                                                return sel ? (
-                                                    <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-                                                        <span className="text-sm text-slate-900 font-bold">{sel.tag}</span>
-                                                        <span className="text-xs text-slate-500 truncate">— {sel.name}</span>
-                                                    </div>
-                                                ) : <span className="text-sm text-slate-400">Unknown asset</span>;
-                                            })()}
-                                            <button
-                                                onClick={() => {
-                                                    setDraft(d => ({ ...d, asset_id: '', event_location: '' }));
-                                                    setFormAssetDetail(null);
-                                                    setFormAssetTrends(null);
-                                                    setShowNewAssetDropdown(true);
-                                                }}
-                                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer shrink-0 ml-auto"
-                                                aria-label="Unlink asset"
-                                            >
-                                                <X size={15} />
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="relative">
-                                            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                                            <input
-                                                value={newAssetSearch}
-                                                onChange={e => { setNewAssetSearch(e.target.value); setShowNewAssetDropdown(true); }}
-                                                onFocus={() => setShowNewAssetDropdown(true)}
-                                                placeholder="Search the register by tag or name…"
-                                                className={`${INPUT_CLS} pl-9 py-2.5`}
-                                            />
-                                            {showNewAssetDropdown && (
-                                                <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
-                                                    {filteredHierarchyAssets.length === 0 && (
-                                                        <div className="p-4 text-center text-xs text-slate-400 font-medium">No assets found</div>
-                                                    )}
-                                                    {filteredHierarchyAssets.map(a => {
-                                                        const badge = TAXONOMY_BADGES[a.taxonomy_level] || TAXONOMY_BADGES.equipment;
-                                                        return (
-                                                            <button
-                                                                key={a.id}
-                                                                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left cursor-pointer border-b border-slate-100/60 last:border-0"
-                                                                onClick={() => {
-                                                                    // The asset is the asset; the failed component is a
-                                                                    // separate question, so its tag is NOT copied there.
-                                                                    setDraft(d => ({ ...d, asset_id: a.id }));
-                                                                    setShowNewAssetDropdown(false);
-                                                                    setNewAssetSearch('');
-                                                                }}
-                                                            >
-                                                                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border shrink-0 ${badge.bg} ${badge.color} ${badge.border}`}>{badge.label}</span>
-                                                                <span className="text-xs text-slate-900 font-bold shrink-0">{a.tag}</span>
-                                                                <span className="text-xs text-slate-500 truncate">— {a.name}</span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                    {filteredHierarchyAssets.length >= 30 && (
-                                                        <div className="p-2.5 text-center text-[10px] text-slate-400 border-t border-slate-100 bg-slate-50 font-semibold">Showing first 30 — type to narrow search</div>
-                                                    )}
+                            <div>
+                                <label className={LABEL_CLS}>Asset</label>
+                                {draft.asset_id ? (
+                                    <div className="flex items-center gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                                        <Database size={16} className="text-primary-600 shrink-0" />
+                                        {(() => {
+                                            const sel = allHierarchyAssets.find(a => a.id === draft.asset_id);
+                                            return sel ? (
+                                                <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                                                    <span className="text-sm text-slate-900 font-bold">{sel.tag}</span>
+                                                    <span className="text-xs text-slate-500 truncate">— {sel.name}</span>
                                                 </div>
-                                            )}
-                                        </div>
-                                    )}
+                                            ) : <span className="text-sm text-slate-400">Unknown asset</span>;
+                                        })()}
+                                        <button
+                                            onClick={() => {
+                                                setDraft(d => ({ ...d, asset_id: '', event_location: '' }));
+                                                setFormAssetDetail(null);
+                                                setFormAssetTrends(null);
+                                            }}
+                                            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer shrink-0 ml-auto"
+                                            aria-label="Unlink asset"
+                                        >
+                                            <X size={15} />
+                                        </button>
+                                    </div>
+                                ) : draft.asset_ref ? (
+                                    <div className="flex items-center gap-2.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                                        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded border shrink-0 bg-slate-100 text-slate-600 border-slate-200">MANUAL</span>
+                                        <span className="text-sm text-slate-900 font-bold truncate">{draft.asset_ref}</span>
+                                        <span className="text-xs text-slate-400 hidden sm:inline">not in the register</span>
+                                        <button
+                                            onClick={() => { setDraft(d => ({ ...d, asset_ref: '' })); setNewAssetSearch(''); }}
+                                            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer shrink-0 ml-auto"
+                                            aria-label="Clear asset"
+                                        >
+                                            <X size={15} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="relative" ref={assetPickerRef}>
+                                        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <input
+                                            value={newAssetSearch}
+                                            onChange={e => { setNewAssetSearch(e.target.value); setShowNewAssetDropdown(true); }}
+                                            onFocus={() => setShowNewAssetDropdown(true)}
+                                            onKeyDown={e => {
+                                                // Enter keeps what was typed when nothing in the register matches it.
+                                                if (e.key === 'Enter' && newAssetSearch.trim()) {
+                                                    e.preventDefault();
+                                                    setDraft(d => ({ ...d, asset_ref: newAssetSearch.trim() }));
+                                                    setShowNewAssetDropdown(false);
+                                                }
+                                            }}
+                                            placeholder={hasEAMAssets ? 'Search the register, or type the asset and press Enter' : 'Type the asset tag or name'}
+                                            className={`${INPUT_CLS} pl-9 pr-9 py-2.5`}
+                                        />
+                                        {(newAssetSearch || showNewAssetDropdown) && (
+                                            <button
+                                                type="button"
+                                                onClick={() => { setNewAssetSearch(''); setShowNewAssetDropdown(false); }}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 rounded-md cursor-pointer"
+                                                aria-label="Close"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        )}
+                                        {showNewAssetDropdown && (hasEAMAssets || newAssetSearch.trim()) && (
+                                            <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                                                {newAssetSearch.trim() && (
+                                                    <button
+                                                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-primary-50/60 transition-colors text-left cursor-pointer border-b border-slate-100"
+                                                        onClick={() => {
+                                                            setDraft(d => ({ ...d, asset_ref: newAssetSearch.trim() }));
+                                                            setShowNewAssetDropdown(false);
+                                                        }}
+                                                    >
+                                                        <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded border shrink-0 bg-slate-100 text-slate-600 border-slate-200">MANUAL</span>
+                                                        <span className="text-xs text-slate-900 font-bold truncate">Use “{newAssetSearch.trim()}” as typed</span>
+                                                        <span className="text-[10px] text-slate-400 shrink-0 ml-auto">not in the register</span>
+                                                    </button>
+                                                )}
+                                                {hasEAMAssets && filteredHierarchyAssets.length === 0 && (
+                                                    <div className="p-4 text-center text-xs text-slate-400 font-medium">No register match</div>
+                                                )}
+                                                {filteredHierarchyAssets.map(a => {
+                                                    const badge = TAXONOMY_BADGES[a.taxonomy_level] || TAXONOMY_BADGES.equipment;
+                                                    return (
+                                                        <button
+                                                            key={a.id}
+                                                            className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left cursor-pointer border-b border-slate-100/60 last:border-0"
+                                                            onClick={() => {
+                                                                // The asset is the asset; the failed component is a
+                                                                // separate question, so its tag is NOT copied there.
+                                                                setDraft(d => ({ ...d, asset_id: a.id, asset_ref: '' }));
+                                                                setShowNewAssetDropdown(false);
+                                                                setNewAssetSearch('');
+                                                            }}
+                                                        >
+                                                            <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border shrink-0 ${badge.bg} ${badge.color} ${badge.border}`}>{badge.label}</span>
+                                                            <span className="text-xs text-slate-900 font-bold shrink-0">{a.tag}</span>
+                                                            <span className="text-xs text-slate-500 truncate">— {a.name}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                                {filteredHierarchyAssets.length >= 30 && (
+                                                    <div className="p-2.5 text-center text-[10px] text-slate-400 border-t border-slate-100 bg-slate-50 font-semibold">Showing first 30 — type to narrow search</div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
 
                                     {/* Asset context: location, criticality, recent work. This is where the
                                         functional location lives now — it is not asked for a second time. */}
@@ -1163,8 +1222,7 @@ export function RCAInvestigationPage() {
                                             </div>
                                         </div>
                                     ) : null}
-                                </div>
-                            )}
+                            </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
@@ -1211,7 +1269,7 @@ export function RCAInvestigationPage() {
                             </div>
 
                             {/* Location is asked only when there is no asset to derive it from. */}
-                            {(!hasEAMAssets || !draft.asset_id) && (
+                            {!draft.asset_id && (
                                 <div>
                                     <label className={LABEL_CLS}>Location</label>
                                     <input

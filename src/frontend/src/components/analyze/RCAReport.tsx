@@ -173,7 +173,7 @@ const RCAReport: React.FC = () => {
                     <div style={{ fontSize: 13, lineHeight: 1.7, color: '#cbd5e1' }}>
                         <p>
                             This Root Cause Analysis was initiated for <strong>{investigation.title}</strong> affecting
-                            asset <strong>{investigation.asset_id || 'N/A'}</strong> categorized as
+                            asset <strong>{investigation.asset_ref || investigation.asset_id || 'N/A'}</strong> categorized as
                             <strong> {investigation.rca_category || 'asset_failure'}</strong>. The investigation identified{' '}
                             <strong>{rootCauses.length} root cause(s)</strong> ({physicalCauses.length} physical,{' '}
                             {humanCauses.length} human, {latentCauses.length} latent) and{' '}

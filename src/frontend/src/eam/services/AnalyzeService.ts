@@ -81,6 +81,8 @@ export interface FMEAItem {
 export interface RCAInvestigation {
     id: string;
     asset_id: string | null; // nullable since 0117 — an RCA may start before an asset is linked
+    /** The asset as typed when it is not in the register (0327). Set only when asset_id is null. */
+    asset_ref: string | null;
     title: string;
     /** The committed analysis method. One investigation, one method, one editor. */
     method: RCAMethod | null;

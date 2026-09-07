@@ -254,7 +254,7 @@ export const RCATab: React.FC<RCATabProps> = ({
             rows.push([
                 i + 1,
                 q(r.title || 'Untitled Investigation'),
-                q(ai ? (ai.tag || ai.name) : (r.event_what || '')),
+                q(ai ? (ai.tag || ai.name) : (r.asset_ref || r.event_what || '')),
                 q(ai?.criticality || ''),
                 q(METHODS[r.method]?.label || r.method),
                 q(statusChip(r.status).label),
@@ -455,10 +455,10 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                         {ai.tag || ai.name}
                                                     </span>
                                                 </>
-                                            ) : rca.event_what ? (
+                                            ) : (rca.asset_ref || rca.event_what) ? (
                                                 <>
                                                     <span style={{ display: 'inline-flex', padding: '2px 6px', borderRadius: 6, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', fontSize: 10, fontWeight: 800, flexShrink: 0 }}>MANUAL</span>
-                                                    <span style={{ fontSize: 12, color: '#475569', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rca.event_what}</span>
+                                                    <span style={{ fontSize: 12, color: '#475569', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{rca.asset_ref || rca.event_what}</span>
                                                 </>
                                             ) : (
                                                 <span style={{ color: '#cbd5e1', fontSize: 11 }}>No asset linked</span>
@@ -602,11 +602,11 @@ export const RCATab: React.FC<RCATabProps> = ({
                                                     {(() => {
                                                         const ai = assetTagMap[rca.asset_id];
                                                         if (!ai) {
-                                                            if (!rca.event_what) return <span style={{ color: '#cbd5e1', fontSize: 11 }}>â€”</span>;
+                                                            if (!(rca.asset_ref || rca.event_what)) return <span style={{ color: '#cbd5e1', fontSize: 11 }}>â€”</span>;
                                                             return (
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                                                     <span style={{ display: 'inline-flex', padding: '2px 6px', borderRadius: 6, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', fontSize: 10, fontWeight: 800 }}>MANUAL</span>
-                                                                    <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>{rca.event_what}</span>
+                                                                    <span style={{ fontSize: 12, color: '#475569', fontWeight: 500 }}>{rca.asset_ref || rca.event_what}</span>
                                                                 </div>
                                                             );
                                                         }
