@@ -29,6 +29,8 @@ interface ImageGalleryProps {
     maxImages?: number;
     /** Fired once the file record is saved — lets the parent register the photo elsewhere (e.g. as RCA evidence). */
     onImageAdded?: (img: { id: string; url: string; name: string }) => void | Promise<void>;
+    /** Bump to reload — when the parent adds files through another path. */
+    reloadKey?: number;
 }
 
 export const ImageGallery: React.FC<ImageGalleryProps> = ({
@@ -39,6 +41,7 @@ export const ImageGallery: React.FC<ImageGalleryProps> = ({
     readonly = false,
     maxImages = 20,
     onImageAdded,
+    reloadKey = 0,
 }) => {
     // entity_files.uploaded_by is a users.id with a foreign key. This used to send the
     // literal 'current_user', which the database rejected — every photo uploaded through
@@ -78,7 +81,7 @@ export const ImageGallery: React.FC<ImageGalleryProps> = ({
         }
     }, [entityId, entityType]);
 
-    useEffect(() => { loadImages(); }, [loadImages]);
+    useEffect(() => { loadImages(); }, [loadImages, reloadKey]);
 
     const handleImageCaptured = async (url: string) => {
         try {

@@ -6,10 +6,10 @@ import {
     AlertTriangle, FileText, Search, Shield, Wrench, BarChart3,
     Plus, Trash2, Users, ClipboardList, Clock, Flag, Bot,
     Target, Zap, DollarSign, X, Database, MapPin, Loader2, Check, MoreHorizontal,
-    Maximize2, Minimize2
+    Maximize2, Minimize2, Paperclip, Upload
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
-import { Drawer, Button, Field, Input, Select, Textarea } from '../eam/components/ui';
+import { Drawer, Modal, Button, Field, Input, Select, Textarea } from '../eam/components/ui';
 import RCAStepGuide from '../components/analyze/RCAStepGuide';
 import { getStepCompletion } from '../components/analyze/RCAStepIndicator';
 import { friendlyAIError } from '../eam/lib/aiError';
@@ -846,15 +846,63 @@ export function RCAInvestigationPage() {
     const [newEvType, setNewEvType] = useState<string>('note');
     const [newEvGrade, setNewEvGrade] = useState<EvidenceQualityGrade | null>(null);
 
+    // Files attached from the Add evidence dialog: photos, PDFs, logs, spreadsheets.
+    const [newEvFiles, setNewEvFiles] = useState<File[]>([]);
+    const [evSaving, setEvSaving] = useState(false);
+    const [galleryReload, setGalleryReload] = useState(0);
+    const evFileInputRef = useRef<HTMLInputElement>(null);
+    const isImage = (f: File) => f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(f.name);
+
     const addEvidence = async () => {
-        if (!inv || !newEvTitle.trim()) return;
-        const ev = await analyzeService.addRCAEvidence({
-            investigation_id: inv.id, evidence_type: newEvType as any,
-            title: newEvTitle.trim(), content: newEvContent || null,
-            linked_entity_id: null, event_timestamp: null, uploaded_by: null,
-            quality_grade: newEvGrade,
-        });
-        if (ev) { setEvidence(e => [...e, ev]); setNewEvTitle(''); setNewEvContent(''); setNewEvGrade(null); setAddEvidenceOpen(false); }
+        if (!inv) return;
+        const title = newEvTitle.trim() || newEvFiles[0]?.name || '';
+        if (!title) return;
+        setEvSaving(true);
+        try {
+            const db = DatabaseService.getInstance();
+            const uploaderId = user?.id || profile?.id || null;
+            // Every attachment becomes a file record (the gallery reads these) …
+            const stored: { id: string; url: string; name: string; image: boolean }[] = [];
+            for (const f of newEvFiles) {
+                const url = await db.uploadImage(f, 'assets', 'rca_');
+                const rec = await db.addEntityFile({
+                    entityId: inv.id, entityType: 'RCA_INVESTIGATION', name: f.name, url,
+                    type: f.type || 'application/octet-stream', sizeBytes: f.size, uploadedBy: uploaderId,
+                });
+                stored.push({ id: rec.id, url, name: f.name, image: isImage(f) });
+            }
+            // … each row's type follows its own attachment unless the user chose a specific type.
+            const typeFor = (f?: { image: boolean }) =>
+                f && newEvType === 'note' ? (f.image ? 'photo' : 'document') : newEvType;
+            // One evidence row per attachment so each can be cited on its own; one row when nothing is attached.
+            const rows = stored.length
+                ? stored.map((f, i) => ({
+                    title: stored.length > 1 ? `${title} (${i + 1}) — ${f.name}` : title,
+                    content: [newEvContent.trim(), `Attached: ${f.name}`].filter(Boolean).join('\n'),
+                    linked_entity_id: f.id,
+                    type: typeFor(f),
+                }))
+                : [{ title, content: newEvContent || null, linked_entity_id: null, type: typeFor() }];
+            const created: RCAEvidence[] = [];
+            for (const r of rows) {
+                const ev = await analyzeService.addRCAEvidence({
+                    investigation_id: inv.id, evidence_type: r.type as any,
+                    title: r.title, content: r.content,
+                    linked_entity_id: r.linked_entity_id, event_timestamp: null, uploaded_by: currentUsername,
+                    quality_grade: newEvGrade ?? (stored.length ? 'fact' : null),
+                });
+                if (ev) created.push(ev);
+            }
+            if (created.length) {
+                setEvidence(e => [...e, ...created]);
+                if (stored.some(x => x.image)) setGalleryReload(k => k + 1);
+                setNewEvTitle(''); setNewEvContent(''); setNewEvGrade(null); setNewEvFiles([]);
+                setAddEvidenceOpen(false);
+            }
+        } catch (e) {
+            console.error('addEvidence:', e);
+            showToast('Could not save the evidence — please try again.', 'error');
+        } finally { setEvSaving(false); }
     };
 
     // ── Corrective Action management ─────────────────────────
@@ -1651,6 +1699,7 @@ export function RCAInvestigationPage() {
                                     bucket="assets"
                                     prefix="rca_"
                                     readonly={inv.status === 'closed'}
+                                    reloadKey={galleryReload}
                                     onImageAdded={async img => {
                                         // A photo of the scene is evidence — a fact — so it counts toward step 2.
                                         const ev = await analyzeService.addRCAEvidence({
@@ -2747,72 +2796,113 @@ export function RCAInvestigationPage() {
             )}
 
             {/* ── Add evidence (step 2) ───────────────────────────────────────── */}
-            <Drawer
+            <Modal
                 open={addEvidenceOpen}
-                onClose={() => setAddEvidenceOpen(false)}
-                title="Add evidence"
-                subtitle="What you found, and where it came from"
-                width="md"
+                onClose={() => { if (!evSaving) setAddEvidenceOpen(false); }}
+                title={<div><div>Add evidence</div><div className="text-xs font-normal text-slate-500">What you found, where it came from, and the file that shows it</div></div>}
+                size="xl"
                 footer={
-                    <div className="flex gap-2">
-                        <Button variant="secondary" className="flex-1" onClick={() => setAddEvidenceOpen(false)}>Cancel</Button>
-                        <Button className="flex-1" onClick={addEvidence} disabled={!newEvTitle.trim()}>Add evidence</Button>
+                    <div className="flex gap-2 justify-end">
+                        <Button variant="secondary" onClick={() => setAddEvidenceOpen(false)} disabled={evSaving}>Cancel</Button>
+                        <Button onClick={addEvidence} disabled={evSaving || (!newEvTitle.trim() && newEvFiles.length === 0)}>
+                            {evSaving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : newEvFiles.length ? `Add ${newEvFiles.length} attachment${newEvFiles.length === 1 ? '' : 's'} as evidence` : 'Add evidence'}
+                        </Button>
                     </div>
                 }
             >
-                <div className="p-4 space-y-4">
-                    <Field label="Evidence type">
-                        <Select value={newEvType} onChange={e => setNewEvType(e.target.value)}>
-                            <option value="note">Note</option>
-                            <option value="photo">Photo</option>
-                            <option value="document">Document</option>
-                            <option value="work_order">Work Order</option>
-                            <option value="fmea">FMEA</option>
-                            <option value="sensor_data">Sensor Data</option>
-                            <option value="timeline_event">Timeline Event</option>
-                        </Select>
-                    </Field>
-                    <Field label="Title">
-                        <Input
-                            placeholder="Title / reference tag"
-                            value={newEvTitle}
-                            onChange={e => setNewEvTitle(e.target.value)}
-                            autoFocus
-                        />
-                    </Field>
-                    <Field label="Details" hint="Content, URL, or a note about what this shows">
-                        <Textarea
-                            rows={4}
-                            placeholder="e.g. Seal face scored circumferentially; photo taken before disassembly"
-                            value={newEvContent}
-                            onChange={e => setNewEvContent(e.target.value)}
-                        />
-                    </Field>
-                    <Field label="Data quality" hint="Grade what this datum actually is — target for facts, verify opinions with higher-quality data">
-                        <div className="space-y-1.5">
-                            {EVIDENCE_GRADES.map(g => {
-                                const selected = newEvGrade === g.value;
-                                return (
-                                    <button
-                                        key={g.value}
-                                        type="button"
-                                        onClick={() => setNewEvGrade(selected ? null : g.value)}
-                                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-all"
-                                        style={{
-                                            background: selected ? g.bg : '#fff',
-                                            borderColor: selected ? `${g.color}60` : '#e2e8f0',
-                                        }}
-                                    >
-                                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: g.color, opacity: selected ? 1 : 0.4 }} />
-                                        <span className="text-xs font-bold min-w-[96px]" style={{ color: selected ? g.color : '#475569' }}>{g.label}</span>
-                                        <span className="text-[11px] leading-snug" style={{ color: selected ? g.color : '#94a3b8' }}>{g.caption}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </Field>
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                        <Field label="Evidence type">
+                            <Select value={newEvType} onChange={e => setNewEvType(e.target.value)}>
+                                <option value="note">Note</option>
+                                <option value="photo">Photo</option>
+                                <option value="document">Document</option>
+                                <option value="work_order">Work Order</option>
+                                <option value="fmea">FMEA</option>
+                                <option value="sensor_data">Sensor Data</option>
+                                <option value="timeline_event">Timeline Event</option>
+                                <option value="interview">Interview</option>
+                            </Select>
+                        </Field>
+                        <Field label="Title" hint={newEvFiles.length && !newEvTitle.trim() ? `Defaults to “${newEvFiles[0].name}”` : undefined}>
+                            <Input
+                                placeholder="Title / reference tag"
+                                value={newEvTitle}
+                                onChange={e => setNewEvTitle(e.target.value)}
+                                autoFocus
+                            />
+                        </Field>
+                        <Field label="Details" hint="What it shows, or a URL to the source">
+                            <Textarea
+                                rows={5}
+                                placeholder="e.g. Seal face scored circumferentially; photo taken before disassembly"
+                                value={newEvContent}
+                                onChange={e => setNewEvContent(e.target.value)}
+                            />
+                        </Field>
+                    </div>
+                    <div className="space-y-4">
+                        <Field label="Attach photo, media or file" hint="Images land in the photo gallery too. Each attachment becomes its own evidence item.">
+                            <input
+                                ref={evFileInputRef}
+                                type="file"
+                                multiple
+                                accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.json,.log"
+                                className="hidden"
+                                onChange={e => { const fs = Array.from(e.target.files || []); if (fs.length) setNewEvFiles(cur => [...cur, ...fs]); e.target.value = ''; }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => evFileInputRef.current?.click()}
+                                onDragOver={e => e.preventDefault()}
+                                onDrop={e => { e.preventDefault(); const fs = Array.from(e.dataTransfer.files || []); if (fs.length) setNewEvFiles(cur => [...cur, ...fs]); }}
+                                className="w-full flex flex-col items-center justify-center gap-1.5 px-4 py-5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 text-slate-500 hover:border-primary-300 hover:bg-primary-50/40 hover:text-primary-700 transition-colors cursor-pointer"
+                            >
+                                <Upload size={18} />
+                                <span className="text-xs font-bold">Choose files or drop them here</span>
+                                <span className="text-[11px] text-slate-400">Photos, video, audio, PDF, spreadsheets, logs</span>
+                            </button>
+                            {newEvFiles.length > 0 && (
+                                <ul className="mt-2 space-y-1">
+                                    {newEvFiles.map((f, i) => (
+                                        <li key={`${f.name}-${i}`} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-xs">
+                                            {isImage(f) ? <img src={URL.createObjectURL(f)} alt="" className="w-7 h-7 rounded object-cover shrink-0" /> : <Paperclip size={13} className="text-slate-400 shrink-0" />}
+                                            <span className="font-semibold text-slate-700 truncate flex-1">{f.name}</span>
+                                            <span className="text-slate-400 shrink-0">{f.size >= 1e6 ? `${(f.size / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(f.size / 1e3))} KB`}</span>
+                                            <button type="button" onClick={() => setNewEvFiles(cur => cur.filter((_, j) => j !== i))} className="p-0.5 text-slate-400 hover:text-rose-600" aria-label="Remove">
+                                                <X size={13} />
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </Field>
+                        <Field label="Data quality" hint={newEvFiles.length ? 'Attachments default to Fact — direct evidence' : 'Grade what this datum actually is — target for facts, verify opinions with higher-quality data'}>
+                            <div className="space-y-1.5">
+                                {EVIDENCE_GRADES.map(g => {
+                                    const selected = (newEvGrade ?? (newEvFiles.length ? 'fact' : null)) === g.value;
+                                    return (
+                                        <button
+                                            key={g.value}
+                                            type="button"
+                                            onClick={() => setNewEvGrade(newEvGrade === g.value ? null : g.value)}
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-left transition-all"
+                                            style={{
+                                                background: selected ? g.bg : '#fff',
+                                                borderColor: selected ? `${g.color}60` : '#e2e8f0',
+                                            }}
+                                        >
+                                            <span className="w-2 h-2 rounded-full shrink-0" style={{ background: g.color, opacity: selected ? 1 : 0.4 }} />
+                                            <span className="text-xs font-bold min-w-[96px]" style={{ color: selected ? g.color : '#475569' }}>{g.label}</span>
+                                            <span className="text-[11px] leading-snug" style={{ color: selected ? g.color : '#94a3b8' }}>{g.caption}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </Field>
+                    </div>
                 </div>
-            </Drawer>
+            </Modal>
 
             {/* ── Add corrective action (step 4) ──────────────────────────────── */}
             <Drawer

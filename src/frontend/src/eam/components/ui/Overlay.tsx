@@ -42,11 +42,11 @@ export interface ModalProps {
     title?: React.ReactNode;
     /** Footer actions, right-aligned */
     footer?: React.ReactNode;
-    size?: 'sm' | 'md' | 'lg';
+    size?: 'sm' | 'md' | 'lg' | 'xl';
     children: React.ReactNode;
 }
 
-const MODAL_SIZE = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl' };
+const MODAL_SIZE = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' };
 
 export const Modal: React.FC<ModalProps> = ({ open, onClose, title, footer, size = 'md', children }) => {
     useOverlayBehavior(open, onClose);
