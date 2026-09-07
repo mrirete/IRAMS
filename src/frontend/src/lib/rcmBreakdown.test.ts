@@ -64,6 +64,23 @@ describe('matching the Specialist answer back', () => {
     expect(matchPart('replace synthetic turbine oil iso vg 32', B)?.id).toBe('p2');
     expect(matchPart('coupling', B)).toBeNull();
   });
+  it('ignores the "(parent tag)" suffix the register puts on child names', () => {
+    // K-601 walkthrough: "Dry Gas Seal (K-601)" never matched "Dry Gas Seal failure …"
+    const K: AssetBreakdown = {
+      components: [
+        { id: 'dgs', tag: 'K-601-DGS', name: 'Dry Gas Seal (K-601)', level: 'COMPONENT', depth: 1 },
+        { id: 'rad', tag: 'K-601-RADBRG', name: 'Radial Bearing (K-601)', level: 'COMPONENT', depth: 1 },
+        { id: 'ax', tag: 'K-601-AXBRG', name: 'Thrust Bearing (K-601)', level: 'COMPONENT', depth: 1 },
+      ],
+      parts: [],
+    };
+    expect(inferComponentLink(['Dry Gas Seal failure leading to complete gas leakage', 'Seal face wear'], K).component_asset_id).toBe('dgs');
+    expect(inferComponentLink(['Degraded thrust bearing performance leading to axial movement'], K).component_asset_id).toBe('ax');
+    expect(inferComponentLink(['Radial bearing wear/damage leading to excessive vibration'], K).component_asset_id).toBe('rad');
+    expect(inferComponentLink(['Rotor seizes due to bearing failure'], K).component_asset_id).toBeNull(); // which bearing? no guess
+    expect(matchComponent('dry gas seal', K)?.id).toBe('dgs');
+    expect(matchComponent('Thrust Bearing (K-601)', K)?.id).toBe('ax');
+  });
   it('labels a pinned mode', () => {
     expect(componentLabel({ component_asset_id: 'c2' }, B)).toBe('GT-301-LUBE — Lube oil system');
     expect(componentLabel({ bom_item_id: 'p2' }, B)).toBe('Synthetic turbine oil ISO VG 32');

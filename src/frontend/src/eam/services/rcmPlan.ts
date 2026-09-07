@@ -338,7 +338,16 @@ export function buildPMFromDecision(
   study: StudyForPM,
   d: DecisionForPM,
   failureModeDescription: string,
-  opts: { now?: Date; jobPlan?: JobPlanForPM | null; spares?: SpareMatch[] } = {},
+  opts: {
+    now?: Date; jobPlan?: JobPlanForPM | null; spares?: SpareMatch[];
+    /**
+     * A person takes the reading (a round), rather than an instrument feed
+     * raising the work order: the PM is then a calendar schedule with a due
+     * date, so a work order actually reaches someone. Default false keeps
+     * sensor-served condition tasks as READING schedules.
+     */
+    readByPerson?: boolean;
+  } = {},
 ): PMBuildResult {
   const now = opts.now ?? new Date();
   if (!study.asset_id || !UUID_RE.test(study.asset_id)) {
@@ -364,7 +373,12 @@ export function buildPMFromDecision(
 
   const title = task.length > 120 ? `${task.slice(0, 117).trimEnd()}…` : task;
   const meterCadence = !CALENDAR_UNITS.has(iv.unit);
-  const scheduleType = (meterCadence || d.recommended_strategy_code === 'PM_CONDITION') ? 'READING' : 'TIME';
+  // READING = a reading (meter or instrument feed) triggers the work; TIME = the
+  // calendar does. A person's round on a calendar interval is TIME even when the
+  // strategy is condition-based — otherwise the PM waits for a reading nobody takes.
+  const scheduleType = meterCadence ? 'READING'
+    : d.recommended_strategy_code === 'PM_CONDITION' && !opts.readByPerson ? 'READING'
+      : 'TIME';
   const consequence = d.consequence_code || 'unclassified';
   const taskType = isTaskTypeCode(d.task_type_code) ? TASK_TYPE_LABELS[d.task_type_code].label : null;
   const brief = briefJustification(d.justification);

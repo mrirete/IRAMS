@@ -134,6 +134,12 @@ export function breakdownCoverage(b: AssetBreakdown | null | undefined, failureM
 // ── Mapping the Specialist's answer back onto the register ──────────────────
 
 const norm = (s: string | null | undefined) => String(s || '').trim().toLowerCase();
+/**
+ * A register name as a person would say it: "Dry Gas Seal (K-601)" → "dry gas
+ * seal". Child assets carry the parent tag in parentheses (import convention),
+ * and a failure mode never repeats it — so the whole-name match must ignore it.
+ */
+const normName = (s: string | null | undefined) => norm(String(s || '').replace(/\s*\([^)]*\)\s*$/, ''));
 
 /**
  * Find the component the model meant. It is asked to echo a tag, but models
@@ -142,11 +148,11 @@ const norm = (s: string | null | undefined) => String(s || '').trim().toLowerCas
 export function matchComponent(text: string | null | undefined, b: AssetBreakdown | null | undefined): BreakdownComponent | null {
   const t = norm(text);
   if (!t || !b) return null;
-  const exact = b.components.find(c => norm(c.tag) === t || norm(c.name) === t);
+  const exact = b.components.find(c => norm(c.tag) === t || norm(c.name) === t || normName(c.name) === normName(t));
   if (exact) return exact;
   const byTag = b.components.find(c => norm(c.tag) && t.includes(norm(c.tag)));
   if (byTag) return byTag;
-  const byName = b.components.find(c => norm(c.name) && (t.includes(norm(c.name)) || norm(c.name).includes(t)));
+  const byName = b.components.find(c => normName(c.name) && (t.includes(normName(c.name)) || normName(c.name).includes(normName(t))));
   return byName || null;
 }
 
@@ -210,7 +216,7 @@ export function inferComponentLink(
 
   let best: { id: string; len: number } | null = null;
   for (const c of b!.components) {
-    for (const key of [norm(c.name), norm(c.tag)]) {
+    for (const key of [normName(c.name), norm(c.tag)]) {
       if (key.length < 4 || (best && key.length <= best.len)) continue;
       if (mentions(hay, key)) best = { id: c.id, len: key.length };
     }

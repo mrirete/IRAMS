@@ -1,3 +1,4 @@
+import type { SuggestedPoint } from '../../lib/predict/limitLibrary';
 /**
  * RCM Sub-Component Shared Types & Props
  * ═══════════════════════════════════════
@@ -190,6 +191,10 @@ export interface RCMMaintenancePlanProps {
   aiLoading: string | null;
   aiReport: string | null;
   locked?: boolean;
+  /** Does the asset have a live instrument feed (sensor tag or connector writes)? Undefined = unknown. */
+  assetHasFeed?: boolean;
+  /** Cited band suggestions for this asset's class (limitLibrary) — prefill the point sheet. */
+  pointSuggestions?: SuggestedPoint[];
   /** Which mode to open first (a hand-off from Strategy). */
   initialFailureModeId?: string | null;
   /** Per-failure-mode implementation — one decision at a time, like a WO. */

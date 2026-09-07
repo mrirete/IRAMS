@@ -216,9 +216,17 @@ describe('decision → PM', () => {
     expect(r.ok && r.meterCadence).toBe(true);
     if (r.ok) { expect(r.input.scheduleType).toBe('READING'); expect(r.input.nextDueDate).toBeUndefined(); expect(r.packageLabel).toBeNull(); }
   });
-  it('condition-based decisions are READING schedules even on calendar units', () => {
+  it('condition-based decisions are READING schedules even on calendar units — unless a person takes the reading', () => {
     const r = buildPMFromDecision(STUDY, decision({ recommended_strategy_code: 'PM_CONDITION', task_type_code: 'ON_CONDITION' }), 'x');
     expect(r.ok && r.input.scheduleType).toBe('READING');
+    // K-601 walkthrough: a daily seal-panel check on an asset with no feed was a
+    // READING PM with no due date — a work order nobody would ever receive.
+    const p = buildPMFromDecision(STUDY, decision({ recommended_strategy_code: 'PM_CONDITION', task_type_code: 'ON_CONDITION', task_interval: '1 Days' }), 'x', { readByPerson: true });
+    expect(p.ok && p.input.scheduleType).toBe('TIME');
+    if (p.ok) expect(p.input.nextDueDate).toBeTruthy();
+    // a meter cadence stays reading-served whoever reads it
+    const m = buildPMFromDecision(STUDY, decision({ recommended_strategy_code: 'PM_CONDITION', task_type_code: 'ON_CONDITION', task_interval: '500 h' }), 'x', { readByPerson: true });
+    expect(m.ok && m.input.scheduleType).toBe('READING');
   });
   it('explains every refusal', () => {
     expect(buildPMFromDecision({ ...STUDY, asset_id: 'GT-301' }, decision(), 'x')).toMatchObject({ ok: false, reason: expect.stringContaining('register') });

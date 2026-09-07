@@ -27,6 +27,7 @@ import {
   ChevronLeft, ChevronRight, Radio, Cpu, Package, ClipboardList, GitBranch, Check,
 } from 'lucide-react';
 import type { RCMMaintenancePlanProps, RCMFailureMode, ReadingPointSetup } from './types';
+import type { SuggestedPoint } from '../../lib/predict/limitLibrary';
 import { CONSEQUENCE_OPTIONS, strategyLabel, parseConsequenceCodes } from './types';
 import { RCMModeRail, groupModesByFunction, modeTitle, type RailTone } from './RCMModeRail';
 import { IntervalField, SyncedField } from './RCMFields';
@@ -64,7 +65,10 @@ const ReadingPointModal: React.FC<{
   intervalText: string | null;
   onSave: (setup: ReadingPointSetup) => void;
   onClose: () => void;
-}> = ({ open, fmTitle, technology, intervalText, onSave, onClose }) => {
+  /** Cited bands for the asset's class (ISO 20816, …) — prefilled, editable. */
+  suggestion?: SuggestedPoint | null;
+  assetTag?: string | null;
+}> = ({ open, fmTitle, technology, intervalText, onSave, onClose, suggestion, assetTag }) => {
   const [name, setName] = useState('');
   const [unit, setUnit] = useState('');
   const [minW, setMinW] = useState('');
@@ -74,12 +78,21 @@ const ReadingPointModal: React.FC<{
   const [pf, setPf] = useState('');
   useEffect(() => {
     if (!open) return;
-    setName(`${technology ? `${technology} — ` : ''}${fmTitle}`.slice(0, 80));
-    setUnit(''); setMinW(''); setMaxW(''); setMinC(''); setMaxC(''); setPf('');
+    // Name the parameter, not the sentence: "K-601 · Bearing vibration (DE)",
+    // never "online sensor (pressure, flow) — Dry Gas Seal failure leading to…".
+    const inParens = technology?.match(/\(([^)]+)\)/)?.[1]?.trim() || '';
+    const stripped = technology ? technology.replace(/\(.*?\)/g, '').replace(/\b(online|on-line|sensor|sensors|monitoring|analysis|continuous|periodic)\b/gi, '').replace(/[,;]+\s*$/, '').replace(/\s+/g, ' ').trim() : '';
+    const param = suggestion?.name || stripped || inParens;
+    setName(`${assetTag ? `${assetTag} · ` : ''}${param || fmTitle}`.slice(0, 80));
+    const s = (v: number | null | undefined) => (v == null ? '' : String(v));
+    setUnit(suggestion?.unit || '');
+    setMinW(s(suggestion?.bands.minWarning)); setMaxW(s(suggestion?.bands.maxWarning));
+    setMinC(s(suggestion?.bands.minCritical)); setMaxC(s(suggestion?.bands.maxCritical));
+    setPf('');
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, fmTitle, technology, onClose]);
+  }, [open, fmTitle, technology, onClose, suggestion, assetTag]);
   if (!open || typeof document === 'undefined') return null;
   const num = (s: string) => (s.trim() === '' ? null : Number(s));
   const iv = parseIntervalText(intervalText);
@@ -120,7 +133,10 @@ const ReadingPointModal: React.FC<{
               <input type="number" className={inp} value={maxW} onChange={e => setMaxW(e.target.value)} placeholder="max warn" title="Warning above" />
               <input type="number" className={inp} value={maxC} onChange={e => setMaxC(e.target.value)} placeholder="max crit" title="Critical above" />
             </div>
-            <p className="text-[11px] text-slate-400 mt-1">Leave a band empty if it does not apply. Bands can be refined later under Condition Data.</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {suggestion ? <>Prefilled from <strong>{suggestion.bands.label}</strong> ({suggestion.derivedFrom}). Edit freely — </> : null}
+              Leave a band empty if it does not apply. Bands can be refined later under Condition Data.
+            </p>
           </div>
           {iv.n !== null && (
             <p className="text-[11px] text-slate-500">The task reads this point every <strong>{iv.n} {iv.unit}</strong>.</p>
@@ -175,7 +191,7 @@ const ReportModal: React.FC<{ report: string | null; onClose: () => void }> = ({
 export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
   study, functions, failureModes, decisions, taskSummaries, breakdown, aiLoading, aiReport, locked, initialFailureModeId,
   onCreatePM, pmGateFor, onSyncPM, onCreateReadingPoint, onCreateRedesignWO, onUpdateDecision,
-  onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport,
+  onAIOptimize, optimizeGate, onGoToStrategy, onCloseReport, assetHasFeed, pointSuggestions,
 }) => {
   const groups = useMemo(() => groupModesByFunction(functions, failureModes), [functions, failureModes]);
   const ordered = useMemo(() => groups.flatMap(g => g.modes), [groups]);
@@ -197,7 +213,22 @@ export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
   const stepsFor = (m: RCMFailureMode): ImplStep[] => {
     const d = decisions.get(m.id);
     if (!d) return [];
-    return implementationSteps(d, { sparesNamed: sparesNamed(m, summaryByFm.get(m.id)) });
+    const t = summaryByFm.get(m.id);
+    // The point's own feed when it exists, else what the asset has at all.
+    const hasFeed = t?.point ? t.point.has_feed : assetHasFeed;
+    return implementationSteps(d, { sparesNamed: sparesNamed(m, t), hasFeed });
+  };
+  /** The cited band suggestion that fits this decision's technology, if the asset's class has one. */
+  const suggestionFor = (technology: string | null): SuggestedPoint | null => {
+    const list = pointSuggestions || [];
+    if (list.length === 0) return null;
+    const t = String(technology || '').toLowerCase();
+    const pick = (re: RegExp) => list.find(s => re.test(`${s.name} ${s.unit}`.toLowerCase())) || null;
+    if (/vibrat/.test(t)) return pick(/vibration|mm\/s/);
+    if (/temperat|thermo/.test(t)) return pick(/temperature|°c/);
+    if (/pressure/.test(t)) return pick(/pressure|bar/);
+    if (/current|amp/.test(t)) return pick(/current|\ba\b/);
+    return null;
   };
   const staleFor = (t?: RCMTaskSummary) => !!t?.recurring_work_id && !!t.pm_created_at && !!t.decision_updated_at
     && new Date(t.decision_updated_at).getTime() > new Date(t.pm_created_at).getTime() + 5000;
@@ -509,6 +540,8 @@ export const RCMMaintenancePlan: React.FC<RCMMaintenancePlanProps> = ({
               fmTitle={modeTitle(fm)}
               technology={technology}
               intervalText={decision?.task_interval || null}
+              suggestion={suggestionFor(technology)}
+              assetTag={study.asset_tag || null}
               onSave={setup => { setPointOpen(false); onCreateReadingPoint(fm.id, setup); }}
               onClose={() => setPointOpen(false)}
             />

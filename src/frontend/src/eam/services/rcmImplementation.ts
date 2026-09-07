@@ -52,8 +52,32 @@ export function readsBySensor(technology: string | null | undefined): boolean {
   return /\b(online|on-line|continuous|permanent|installed|fixed|wireless|iot|telemetry|scada|dcs|plc|transmitter|sensor|sensors|probe|streaming|real[- ]?time)\b/.test(t);
 }
 
+/**
+ * Does the technology also name a person's work — a sample, a lab, a
+ * handheld tool, a visual check? "Vibration analysis and oil sampling
+ * (online sensors …, periodic lab analysis)" is BOTH a sensor and a round;
+ * the round half must not be dropped because the sentence says "online".
+ */
+export function readsByPerson(technology: string | null | undefined): boolean {
+  const t = String(technology || '').toLowerCase();
+  if (!t) return false;
+  return /\b(oil\s+(sampl\w*|analys\w*)|lab(oratory)?\s+analys\w*|sampl(e|es|ing)|thermograph\w*|infrared|handheld|hand-held|portable|visual|inspect\w*|manual(ly)?|round|route|walk-?down|ultrason\w*|borescope|dye\s+penetrant|spot\s+check|gauge\s+read\w*|log\s+the\s+reading)\b/.test(t);
+}
+
+export interface ImplOptions {
+  sparesNamed?: boolean;
+  /**
+   * Does the asset actually have a live feed for this point (a sensor tag on
+   * the definition, or non-manual readings arriving)? Undefined = unknown.
+   * Without a feed a sensor-read decision is a paper task: the plan then
+   * also offers the inspection PM that has a person take the reading until
+   * the feed is connected.
+   */
+  hasFeed?: boolean;
+}
+
 /** The steps that implement a decision, in order, with what is already done. */
-export function implementationSteps(d: ImplDecisionLike, opts: { sparesNamed?: boolean } = {}): ImplStep[] {
+export function implementationSteps(d: ImplDecisionLike, opts: ImplOptions = {}): ImplStep[] {
   const code = canonicalStrategyCode(d.recommended_strategy_code);
   if (!code || isLegacyStrategyCode(code)) return [];
   const pmDone = !!d.recurring_work_id;
@@ -69,10 +93,20 @@ export function implementationSteps(d: ImplDecisionLike, opts: { sparesNamed?: b
     const steps: ImplStep[] = [
       { kind: 'POINT', module: 'readings', label: 'Create the monitoring point', hint: 'The measured parameter, its unit, alarm bands and P-F interval: what the task actually reads.', done: pointDone },
     ];
-    if (readsBySensor(tech)) {
-      steps.push({ kind: 'SENSOR', module: 'predict', label: 'Connect the sensor in Predict', hint: `${tech} feeds the point; an alert on its band raises the work order.`, done: false });
-    } else {
-      steps.push({ kind: 'PM', module: 'work', label: 'Create the inspection PM', hint: 'The round that reads the point at the interval and acts on the P-F warning.', done: pmDone });
+    const sensor = readsBySensor(tech);
+    const person = readsByPerson(tech);
+    if (sensor) {
+      steps.push({ kind: 'SENSOR', module: 'predict', label: 'Connect the sensor in Predict', hint: `${tech} feeds the point; an alert on its band raises the work order.`, done: opts.hasFeed === true });
+    }
+    // A person reads the point when the technology says so, when nothing
+    // streams it, or — for a sensor-read decision — while no feed exists yet.
+    if (!sensor || person || opts.hasFeed === false) {
+      const why = !sensor
+        ? 'The round that reads the point at the interval and acts on the P-F warning.'
+        : person
+          ? 'The sample or inspection half of this task is a person on a round; the sensor covers the rest.'
+          : 'No feed reaches this point yet — a person logs the reading at the interval until the sensor is connected.';
+      steps.push({ kind: 'PM', module: 'work', label: 'Create the inspection PM', hint: why, done: pmDone });
     }
     return steps;
   }

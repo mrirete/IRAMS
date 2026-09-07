@@ -18,6 +18,7 @@ import {
   canonicalStrategyCode, briefJustification, UUID_RE,
   type AIRecommendation, type JobPlanForPM, type SpareMatch,
 } from './rcmPlan';
+import type { StudyCollaborator } from './AnalyzeService';
 import {
   normalizeContext, composeOperatingContext, takeSnapshot,
   type AssetOperatingContext, type ContextSnapshot, type ContextAssetLike,
@@ -26,10 +27,30 @@ import { getCategory, getClass, getType } from '../../lib/iso14224Taxonomy';
 import { renderBreakdownForPrompt, pinFailureMode, EMPTY_BREAKDOWN, type AssetBreakdown, type BreakdownComponent, type BreakdownPart } from '../../lib/rcmBreakdown';
 
 export type { AIRecommendation } from './rcmPlan';
+import { readsBySensor, readsByPerson, decisionTechnology } from './rcmImplementation';
 export type { ContextSnapshot, AssetOperatingContext } from '../../lib/operatingContext';
 export type { AssetBreakdown, BreakdownComponent, BreakdownPart } from '../../lib/rcmBreakdown';
 
 /** The register asset as the RCM module reads it — classification + operating context. */
+/** Written by a connector / collector (sensor-sync, ingest-readings), not by a person. */
+const FEED_WRITERS = ['connector:%', 'collector:%', 'sensor:%', 'predict:%'];
+const FEED_WINDOW_DAYS = 30;
+const isRecent = (iso: string | null | undefined, days = FEED_WINDOW_DAYS): boolean => {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return Number.isFinite(t) && Date.now() - t < days * 86400000;
+};
+
+/** What condition monitoring the asset really has — the Specialist and the plan read this before assuming a sensor. */
+export interface RCMMonitoringReality {
+  points: number;
+  pointsWithSensorTag: number;
+  lastReadingAt: string | null;
+  lastFeedAt: string | null;
+  /** A connector wrote to one of the asset's points in the last 30 days, or a point carries a sensor tag. */
+  hasLiveFeed: boolean;
+}
+
 export interface RCMAssetContext extends ContextAssetLike {
   id: string;
   tag: string;
@@ -67,6 +88,12 @@ export interface RCMStudy {
   context_snapshot?: ContextSnapshot | null;
   /** 0319 — bumped by Revise on an approved study; PMs stamp origin.study_revision. */
   revision?: number;
+  /** 0335 — the study team: an access list (owner/editor may edit, owner/reviewer may approve). */
+  collaborators?: StudyCollaborator[];
+  /** 0335 — auth.uid() of the facilitator who created the study (trigger-stamped). */
+  created_by?: string | null;
+  /** 0335 — auth.uid() of the approver (trigger-stamped); approved_by keeps the display name. */
+  approved_by_user_id?: string | null;
   created_at: string;
   updated_at: string;
   // Joined fields (not in DB)
@@ -195,7 +222,7 @@ export interface RCMTaskSummary {
   /** the BOM line the failure mode is pinned to (a spare candidate for RTF) */
   bom_item_id?: string | null;
   pm?: { id: string; title: string; next_due_date: string | null; schedule_type: string | null; strategy_package: string | null; frequency_interval: number | null; frequency_unit: string | null; active: boolean } | null;
-  point?: { id: string; name: string; unit: string | null; has_bands: boolean; pf_interval_days: number | null; is_active: boolean } | null;
+  point?: { id: string; name: string; unit: string | null; has_bands: boolean; pf_interval_days: number | null; is_active: boolean; sensor_tag: string | null; has_feed: boolean; last_feed_at: string | null } | null;
   wo?: { id: string; wo_number: string | null; status: string | null } | null;
 }
 
@@ -524,6 +551,22 @@ class RCMServiceImpl {
       .single();
     if (error) { console.error('[RCM] updateStudy error:', error); return null; }
     return data as RCMStudy;
+  }
+
+  /**
+   * A status change the database may refuse (0335: who may approve or reopen,
+   * and whether every mode is classified and decided). The refusal text is the
+   * reason the page shows — the trigger's message is written for people.
+   */
+  async setStudyStatus(id: string, updates: Partial<RCMStudy>): Promise<{ ok: true; study: RCMStudy } | { ok: false; reason: string }> {
+    const { data, error } = await supabase.from('ers_rcm_studies').update(updates).eq('id', id).select().single();
+    if (error) {
+      const msg = String(error.message || '');
+      const reason = msg.replace(/^RCM_[A-Z_]+_DENIED:\s*/, '') || 'The database refused the change';
+      // PostgREST hides a policy refusal as "0 rows": no row came back.
+      return { ok: false, reason: /PGRST116|0 rows|multiple \(or no\) rows/i.test(msg) ? 'You are not allowed to change this study — ask its facilitator, a reviewer on its team, or an administrator' : reason };
+    }
+    return { ok: true, study: data as RCMStudy };
   }
 
   /**
@@ -1093,6 +1136,25 @@ class RCMServiceImpl {
     }
   }
 
+  /**
+   * Does a person take this reading? Yes when the technology names a round,
+   * when nothing streams it, or when the asset has no live feed for it yet —
+   * then the PM must be a calendar schedule so a work order reaches someone.
+   */
+  private async readByPersonFor(study: RCMStudy, d: RCMDecision): Promise<boolean> {
+    if (canonicalStrategyCode(d.recommended_strategy_code) !== 'PM_CONDITION') return false;
+    const tech = decisionTechnology(d);
+    if (!readsBySensor(tech) || readsByPerson(tech)) return true;
+    if (d.reading_definition_id) {
+      const feeds = await this.lastFeedByPoint([d.reading_definition_id]);
+      if (feeds.has(d.reading_definition_id)) return false;
+      const { data } = await supabase.from('reading_definitions').select('sensor_tag').eq('id', d.reading_definition_id).maybeSingle();
+      if ((data as { sensor_tag?: string | null } | null)?.sensor_tag) return false;
+    }
+    const reality = await this.getMonitoringReality(study.asset_id);
+    return !reality.hasLiveFeed;
+  }
+
   private async insertPMForDecision(
     study: RCMStudy, d: RCMDecision, failureModeDescription: string,
   ): Promise<{ ok: true; pmCode: string; meterCadence: boolean; packageLabel: string | null } | { ok: false; reason: string }> {
@@ -1100,7 +1162,8 @@ class RCMServiceImpl {
       this.resolveJobPlan(d.task_library_item_id),
       this.matchSpares(d.spares_requirements),
     ]);
-    const built = buildPMFromDecision(study, d, failureModeDescription, { jobPlan, spares });
+    const readByPerson = await this.readByPersonFor(study, d);
+    const built = buildPMFromDecision(study, d, failureModeDescription, { jobPlan, spares, readByPerson });
     if (!built.ok) return built;
     let row: Record<string, unknown>;
     try {
@@ -1161,6 +1224,54 @@ class RCMServiceImpl {
   }
 
   /** Get task recommendation summary for output tab */
+  /** Latest connector/collector write per point — the evidence a feed exists. */
+  private async lastFeedByPoint(pointIds: string[]): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (pointIds.length === 0) return out;
+    const { data } = await supabase.from('reading_logs')
+      .select('definition_id, created_at, entered_by')
+      .in('definition_id', pointIds)
+      .or(FEED_WRITERS.map(w => `entered_by.ilike.${w}`).join(','))
+      .order('created_at', { ascending: false })
+      .limit(500);
+    for (const r of (data || []) as { definition_id: string; created_at: string }[]) {
+      if (!out.has(r.definition_id)) out.set(r.definition_id, r.created_at);
+    }
+    return out;
+  }
+
+  /**
+   * The asset's condition-monitoring reality: how many points it has, whether
+   * any is fed by an instrument, when data last arrived. The K-601 walkthrough
+   * approved five "online sensor" decisions on an asset with no points and no
+   * feed — a plan nobody could act on.
+   */
+  async getMonitoringReality(assetId: string | null | undefined): Promise<RCMMonitoringReality> {
+    const none: RCMMonitoringReality = { points: 0, pointsWithSensorTag: 0, lastReadingAt: null, lastFeedAt: null, hasLiveFeed: false };
+    if (!assetId || !UUID_RE.test(assetId)) return none;
+    const { data: defs } = await supabase.from('reading_definitions').select('id, sensor_tag, is_active').eq('asset_id', assetId);
+    const points = ((defs || []) as { id: string; sensor_tag: string | null; is_active: boolean | null }[]).filter(d => d.is_active !== false);
+    const tagged = points.filter(d => !!d.sensor_tag).length;
+    const { data: last } = await supabase.from('reading_logs').select('created_at').eq('asset_id', assetId).order('created_at', { ascending: false }).limit(1);
+    const lastReadingAt = (last?.[0] as { created_at?: string } | undefined)?.created_at || null;
+    const feeds = await this.lastFeedByPoint(points.map(p => p.id));
+    const lastFeedAt = [...feeds.values()].sort().pop() || null;
+    return { points: points.length, pointsWithSensorTag: tagged, lastReadingAt, lastFeedAt, hasLiveFeed: tagged > 0 || isRecent(lastFeedAt) };
+  }
+
+  /** One prompt paragraph the strategy Specialist reads before naming a technology. */
+  private async monitoringRealityFor(assetId: string | null | undefined): Promise<string> {
+    const r = await this.getMonitoringReality(assetId);
+    if (!assetId) return '';
+    const age = (iso: string | null) => iso ? `${Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 86400000))} days ago` : 'never';
+    return [
+      'Condition monitoring in place on this asset (from the register, not an assumption):',
+      `- Monitoring points: ${r.points}${r.points ? ` (${r.pointsWithSensorTag} fed by an instrument)` : ''}`,
+      `- Last reading of any kind: ${age(r.lastReadingAt)}; last instrument feed: ${age(r.lastFeedAt)}`,
+      `- Live sensor feed: ${r.hasLiveFeed ? 'YES' : 'NO'}`,
+    ].join('\n');
+  }
+
   async getTaskSummaries(studyId: string): Promise<RCMTaskSummary[]> {
     const functions = await this.getFunctions(studyId);
     const failureModes = await this.getFailureModesByStudy(studyId);
@@ -1200,13 +1311,20 @@ class RCMServiceImpl {
     const pointRows = new Map<string, NonNullable<RCMTaskSummary['point']>>();
     if (pointIds.length > 0) {
       const { data } = await supabase.from('reading_definitions')
-        .select('id, name, unit, min_warning, max_warning, min_critical, max_critical, pf_interval_days, is_active')
+        .select('id, name, unit, min_warning, max_warning, min_critical, max_critical, pf_interval_days, is_active, sensor_tag')
         .in('id', pointIds);
+      // A feed is real when a connector or collector has written to the point
+      // recently — a person's manual entry is not a feed.
+      const lastFeed = await this.lastFeedByPoint(pointIds);
       for (const r of (data || []) as Record<string, unknown>[]) {
+        const feedAt = lastFeed.get(String(r.id)) || null;
         pointRows.set(String(r.id), {
           id: String(r.id), name: String(r.name || ''), unit: (r.unit as string) || null,
           has_bands: [r.min_warning, r.max_warning, r.min_critical, r.max_critical].some(x => x != null),
           pf_interval_days: r.pf_interval_days == null ? null : Number(r.pf_interval_days), is_active: r.is_active !== false,
+          sensor_tag: (r.sensor_tag as string) || null,
+          has_feed: !!r.sensor_tag || isRecent(feedAt),
+          last_feed_at: feedAt,
         });
       }
     }
@@ -1270,7 +1388,8 @@ class RCMServiceImpl {
     const name = fms.find(x => x.id === d.failure_mode_id)?.failure_mode_description || 'Failure mode';
     const [jobPlan, spares] = await Promise.all([this.resolveJobPlan(d.task_library_item_id), this.matchSpares(d.spares_requirements)]);
     // The builder refuses an already-generated decision; we are regenerating on purpose.
-    const built = buildPMFromDecision(study, { ...d, recurring_work_id: null }, name, { jobPlan, spares });
+    const readByPerson = await this.readByPersonFor(study, d);
+    const built = buildPMFromDecision(study, { ...d, recurring_work_id: null }, name, { jobPlan, spares, readByPerson });
     if (!built.ok) return built;
     let row: Record<string, unknown>;
     try { row = buildPMStrategy(built.input); } catch (e) { return { ok: false, reason: e instanceof Error ? e.message : String(e) }; }
@@ -1457,8 +1576,9 @@ Return ONLY valid JSON with this structure:
     if (!isAIAvailable()) return null;
 
     const assetCtx = opts.study ? await this.assetContextFor(opts.study) : '';
+    const monitoring = opts.study?.asset_id ? await this.monitoringRealityFor(opts.study.asset_id) : '';
     const prompt = `Recommend the maintenance strategy for this failure mode using the SAE JA1012 decision logic.
-${assetCtx ? `\n${assetCtx}\n` : ''}${opts.study?.operating_context ? `Operating context: ${opts.study.operating_context}\n` : ''}
+${assetCtx ? `\n${assetCtx}\n` : ''}${monitoring ? `\n${monitoring}\n` : ''}${opts.study?.operating_context ? `Operating context: ${opts.study.operating_context}\n` : ''}
 Function: ${opts.functionDescription || 'Not specified'}
 Failure Mode: ${failureMode.failure_mode_description}
 Cause: ${failureMode.failure_cause_description || 'Not specified'}
@@ -1483,7 +1603,7 @@ Walk the decision logic (technically feasible? worth doing? on-condition -> sche
   "confidence": 0.85,
   "suggested_technology": "for PM_CONDITION: how the condition is read - visual/manual inspection, vibration, thermography, oil analysis, ultrasound, online sensor; else empty"
 }
-Rules: pick exactly ONE strategy (there is no combined option - if two tasks are needed, recommend the one that controls the dominant failure mechanism and mention the other in justification). PM_CONDITION covers every on-condition task, inspected by a person or monitored by a sensor - say which in suggested_technology; there is no separate predictive strategy. interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value and task_type to null and describe the default action in task_description.`;
+Rules: pick exactly ONE strategy (there is no combined option - if two tasks are needed, recommend the one that controls the dominant failure mechanism and mention the other in justification). PM_CONDITION covers every on-condition task, inspected by a person or monitored by a sensor - say which in suggested_technology; there is no separate predictive strategy. suggested_technology must match the monitoring actually in place: when the asset has NO live sensor feed, name the method a person performs on a round (visual inspection, handheld vibration meter, oil sample to the lab, gauge reading, thermography) and only add 'online sensor' as a future step; write the task so a technician can do it with what exists today. interval_value must be a single integer with a unit - never a range or 'per OEM'. For RTF or REDESIGN set interval_value and task_type to null and describe the default action in task_description.`;
 
     try {
       const raw = await callRCMGemini(prompt, 0.2);

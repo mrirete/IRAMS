@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { implementationSteps, implementationState, readsBySensor, decisionTechnology } from './rcmImplementation';
+import { implementationSteps, implementationState, readsBySensor, readsByPerson, decisionTechnology } from './rcmImplementation';
 
 describe('implementation steps (Maintenance Plan)', () => {
   const base = { recommended_strategy_code: null as string | null, task_type_code: null as string | null };
@@ -26,6 +26,20 @@ describe('implementation steps (Maintenance Plan)', () => {
     expect(decisionTechnology({ recommended_strategy_code: 'PM_CONDITION', on_condition_technology: ' Oil analysis ' })).toBe('Oil analysis');
     expect(decisionTechnology({ recommended_strategy_code: 'PM_CONDITION', ai_recommendation: { suggested_technology: 'Ultrasound' } })).toBe('Ultrasound');
     expect(decisionTechnology({ recommended_strategy_code: 'PM_CONDITION' })).toBeNull();
+  });
+  it('gives a sensor-read decision a person until the feed exists, and keeps the round half of a mixed technology', () => {
+    const cbm = { ...base, recommended_strategy_code: 'PM_CONDITION', task_type_code: 'ON_CONDITION' };
+    // K-601 walkthrough: "online sensor" on an asset with no feed ended in Predict with no work for anyone.
+    expect(implementationSteps({ ...cbm, ai_recommendation: { suggested_technology: 'online sensor (pressure, flow)' } }, { hasFeed: false }).map(s => s.kind)).toEqual(['POINT', 'SENSOR', 'PM']);
+    expect(implementationSteps({ ...cbm, ai_recommendation: { suggested_technology: 'online sensor (pressure, flow)' } }, { hasFeed: true }).map(s => `${s.kind}:${s.done}`)).toEqual(['POINT:false', 'SENSOR:true']);
+    // unknown feed state keeps the old shape
+    expect(implementationSteps({ ...cbm, ai_recommendation: { suggested_technology: 'online sensor' } }).map(s => s.kind)).toEqual(['POINT', 'SENSOR']);
+    // vibration online + oil sampling in the lab = sensor AND a round
+    expect(implementationSteps({ ...cbm, ai_recommendation: { suggested_technology: 'Vibration analysis, oil analysis (online sensors for vibration/temperature, periodic lab analysis for oil)' } }, { hasFeed: true }).map(s => s.kind)).toEqual(['POINT', 'SENSOR', 'PM']);
+    expect(readsByPerson('online sensor')).toBe(false);
+    expect(readsByPerson('periodic lab analysis for oil')).toBe(true);
+    expect(readsByPerson('Visual inspection of seal vent')).toBe(true);
+    expect(readsByPerson(null)).toBe(false);
   });
   it('marks done steps and summarises the state', () => {
     const s = implementationSteps({ ...base, recommended_strategy_code: 'PM_CONDITION', task_type_code: 'ON_CONDITION', reading_definition_id: 'rd1' });

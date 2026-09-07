@@ -10,7 +10,7 @@ import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Shield, Plus, Search, ArrowLeft, LayoutList, Layers, GitBranch, Wrench,
-  Users, Edit3, Trash2, Save, X, RefreshCw, CheckCircle, AlertTriangle, Unlock,
+  Users, Edit3, Trash2, Save, X, RefreshCw, CheckCircle, AlertTriangle, Unlock, Lock,
 } from 'lucide-react';
 import { ScrollTabStrip } from '../eam/components/ui';
 import { rcmService } from '../eam/services/RCMService';
@@ -23,6 +23,8 @@ import analyzeService from '../eam/services/AnalyzeService';
 import type { StudyCollaborator } from '../eam/services/AnalyzeService';
 import type { RCMLifeEvidence } from '../components/rcm/types';
 import { useAuth } from '../contexts/AuthContext';
+import { NotificationService } from '../eam/services/NotificationService';
+import { supabase } from '../eam/lib/supabase';
 import { useAssetLookup } from '../hooks/useAssetLookup';
 import { usePageRelanternContext, type SpecialistAction } from '../eam/contexts/RelanternContext';
 
@@ -42,8 +44,9 @@ import {
   canSpecialistReviewProgram, canApproveStudy, canCreatePMForDecision,
   completableRows, isRowComplete, MIN_CONTEXT_CHARS,
 } from '../eam/services/rcmReadiness';
-import { normalizeRecommendation, recommendationToDecisionUpdates } from '../eam/services/rcmPlan';
-import type { RCMAssetContext, RCMCoverageRow } from '../eam/services/RCMService';
+import { normalizeRecommendation, recommendationToDecisionUpdates, parseIntervalText, intervalDaysFor } from '../eam/services/rcmPlan';
+import { suggestPointsForAsset, type SuggestedPoint } from '../lib/predict/limitLibrary';
+import type { RCMAssetContext, RCMCoverageRow, RCMMonitoringReality } from '../eam/services/RCMService';
 import { DatabaseService } from '../eam/services/DatabaseService';
 import { takeSnapshot, composeOperatingContext, type ContextSnapshot } from '../lib/operatingContext';
 import { matchComponent, matchPart, pinFailureMode, inferComponentLink, EMPTY_BREAKDOWN, type AssetBreakdown } from '../lib/rcmBreakdown';
@@ -81,7 +84,7 @@ export const RCMPage: React.FC = () => {
   const rcmSeedAppliedRef = useRef(false);
 
   // ── Auth & Asset Lookup ────────────────────────────────
-  const { permissions, user } = useAuth();
+  const { permissions, user, profile, role } = useAuth() as any;
   const hasAssetAccess = useMemo(() => permissions?.assets?.view ?? false, [permissions]);
   const { assetOptions } = useAssetLookup();
   const [assetInputMode, setAssetInputMode] = useState<'search' | 'manual'>('search');
@@ -128,6 +131,12 @@ export const RCMPage: React.FC = () => {
   const [liveAssetContext, setLiveAssetContext] = useState<RCMAssetContext | null>(null);
   // 0318 — the asset's registered components + BOM: what modes are pinned to.
   const [breakdown, setBreakdown] = useState<AssetBreakdown>(EMPTY_BREAKDOWN);
+  // What condition monitoring the asset really has — the plan offers a person
+  // to read a point until a feed exists, and the point sheet prefills bands.
+  const [monitoring, setMonitoring] = useState<RCMMonitoringReality | null>(null);
+  const pointSuggestions = useMemo<SuggestedPoint[]>(() => liveAssetContext
+    ? suggestPointsForAsset({ assetClass: liveAssetContext.asset_class, assetCategory: liveAssetContext.asset_category, operatingContext: liveAssetContext.operating_context as any })
+    : [], [liveAssetContext]);
   // 0319 — job plans a decision can execute with, and the coverage strip's rows.
   const [libraryTasks, setLibraryTasks] = useState<{ id: string; code: string; title: string; estimatedDuration?: number }[]>([]);
   const [coverage, setCoverage] = useState<RCMCoverageRow[]>([]);
@@ -169,6 +178,68 @@ export const RCMPage: React.FC = () => {
   // Measured life data — latest saved Weibull fit for the study's asset, so the
   // Decision Wizard suggests intervals from evidence, not guesswork.
   const [lifeEvidence, setLifeEvidence] = useState<RCMLifeEvidence | null>(null);
+
+  // ── Who may do what on this study (0335) ──────────────────
+  // Mirrors the database: edit = admin | reliability.edit | creator | team
+  // owner/editor; approve or reopen = admin | creator | team owner/reviewer.
+  // The page disables what the database would refuse, so nobody learns the
+  // rule from a failed save.
+  const isAdminRole = ['SUPER_ADMIN', 'SYS_ADMIN'].includes(String(role || '').toUpperCase());
+  const myTeamRole = useMemo(() => {
+    // This page reads the ERS auth wrapper, whose `user` IS the EAM profile
+    // (contactId spread in); `profile` is only there on the EAM hook.
+    const cid = profile?.contactId || profile?.contact_id || user?.contactId || user?.contact_id;
+    if (!cid) return null;
+    const mine = studyCollaborators.filter(c => c.type === 'contact' && c.ref_id === cid).map(c => c.role);
+    const order: StudyCollaborator['role'][] = ['owner', 'editor', 'reviewer', 'viewer'];
+    return order.find(r => mine.includes(r)) ?? null;
+  }, [studyCollaborators, profile]);
+  const isCreator = !!selectedStudy && !!user?.id && selectedStudy.created_by === user.id;
+  const canCreateStudy = isAdminRole || permissions?.reliability?.create === true || permissions?.reliability?.edit === true;
+  const canEdit = !!selectedStudy && (isAdminRole || permissions?.reliability?.edit === true || isCreator || myTeamRole === 'owner' || myTeamRole === 'editor');
+  const canApprove = !!selectedStudy && (isAdminRole || isCreator || myTeamRole === 'owner' || myTeamRole === 'reviewer');
+  const readOnly = !!selectedStudy && !canEdit;
+  const approveWho = isAdminRole ? 'administrator' : isCreator ? 'study facilitator' : myTeamRole ? `team ${myTeamRole}` : null;
+
+  /** Tell every person on the team (org units have no inbox). */
+  const notifyTeam = useCallback(async (
+    people: StudyCollaborator[],
+    build: (c: StudyCollaborator) => { title: string; message: string; actionRequired: boolean; severity?: 'INFO' | 'SUCCESS' | 'WARNING' | 'CRITICAL' },
+  ) => {
+    if (!selectedStudy) return 0;
+    let sent = 0;
+    for (const c of people) {
+      if (c.type !== 'contact' || !c.ref_id) continue;
+      try {
+        const { data: contact } = await supabase.from('contacts').select('user_id').eq('id', c.ref_id).maybeSingle();
+        let recipient: string | null = contact?.user_id || null;
+        if (!recipient) {
+          const { data: u } = await supabase.from('users').select('id').eq('contact_id', c.ref_id).maybeSingle();
+          recipient = u?.id || null;
+        }
+        if (!recipient || recipient === user?.id) continue;
+        const n = build(c);
+        await NotificationService.notify({
+          recipientId: recipient,
+          title: n.title,
+          message: n.message,
+          severity: n.severity || 'INFO',
+          notificationType: 'ASSIGNMENT',
+          module: 'rcm',
+          entityId: selectedStudy.id,
+          entityType: 'RCM_STUDY',
+          entityNumber: selectedStudy.title,
+          actionLink: `/rcm/${selectedStudy.id}`,
+          actionRequired: n.actionRequired,
+          createdBy: user?.id,
+        });
+        sent++;
+      } catch (e) {
+        console.warn('[RCM] Non-critical: notification dispatch failed', e);
+      }
+    }
+    return sent;
+  }, [selectedStudy, user?.id]);
 
   // ── Decision Map (memoized) ────────────────────────────
   const decisionMap = useMemo(() => new Map(decisions.map(d => [d.failure_mode_id, d])), [decisions]);
@@ -248,6 +319,7 @@ export const RCMPage: React.FC = () => {
     // the study's snapshot and offers a refresh when the register moved on.
     setLiveAssetContext(study.asset_id ? await rcmService.getAssetContext(study.asset_id) : null);
     setBreakdown(await rcmService.getAssetBreakdown(study.asset_id));
+    setMonitoring(study.asset_id ? await rcmService.getMonitoringReality(study.asset_id) : null);
 
     // Pull the asset's latest saved Weibull fit from Reliability Modelling.
     setLifeEvidence(null);
@@ -334,6 +406,9 @@ export const RCMPage: React.FC = () => {
       asset_id: newStudyForm.asset_id || null,
       operating_context: newStudyForm.operating_context || null,
       study_type: newStudyForm.study_type,
+      // The facilitator is whoever opens the study (created_by is stamped by
+      // the 0335 trigger); the display name is what the header and report show.
+      facilitator: user?.full_name || user?.fullName || user?.username || user?.email || null,
       ...(snapshot ? { context_snapshot: snapshot } : {}),
     });
     setSaving(false);
@@ -350,20 +425,38 @@ export const RCMPage: React.FC = () => {
   };
 
   // Collaboration handlers
-  const handleAddCollaborator = async (collab: StudyCollaborator) => {
-    const updated = [...studyCollaborators, collab];
+  // The team is an access list (0335): the save must land before the drawer
+  // says "saved", and the invitee must hear about it — the old handler wrote a
+  // column that did not exist and told nobody.
+  const saveTeam = async (updated: StudyCollaborator[], previous: StudyCollaborator[]): Promise<boolean> => {
+    if (!selectedStudy) return false;
+    if (!canEdit) { showToast('Only the study facilitator, a team owner/editor or an administrator can change the team', 'error'); return false; }
     setStudyCollaborators(updated);
-    if (selectedStudy) await rcmService.updateStudy(selectedStudy.id, { collaborators: updated } as any);
+    const saved = await rcmService.updateStudy(selectedStudy.id, { collaborators: updated });
+    if (!saved) {
+      setStudyCollaborators(previous);
+      showToast('The team could not be saved', 'error');
+      return false;
+    }
+    setSelectedStudy(prev => (prev ? { ...prev, collaborators: updated } : prev));
+    return true;
+  };
+  const handleAddCollaborator = async (collab: StudyCollaborator) => {
+    const previous = studyCollaborators;
+    const ok = await saveTeam([...studyCollaborators, { ...collab, added_by: user?.email || user?.id } as StudyCollaborator], previous);
+    if (!ok) throw new Error('team not saved');
+    const sent = await notifyTeam([collab], c => ({
+      title: '🤝 RCM Study Invitation',
+      message: `You have been invited to the RCM study "${selectedStudy?.title}" as ${c.role}. Open it to see the worksheet and what is asked of you.`,
+      actionRequired: c.role === 'editor' || c.role === 'owner' || c.role === 'reviewer',
+    }));
+    showToast(`${collab.name} added as ${collab.role}${sent ? ' — notified' : ''}`);
   };
   const handleRemoveCollaborator = async (id: string) => {
-    const updated = studyCollaborators.filter(c => c.id !== id);
-    setStudyCollaborators(updated);
-    if (selectedStudy) await rcmService.updateStudy(selectedStudy.id, { collaborators: updated } as any);
+    await saveTeam(studyCollaborators.filter(c => c.id !== id), studyCollaborators);
   };
-  const handleUpdateCollabRole = async (id: string, role: StudyCollaborator['role']) => {
-    const updated = studyCollaborators.map(c => c.id === id ? { ...c, role } : c);
-    setStudyCollaborators(updated);
-    if (selectedStudy) await rcmService.updateStudy(selectedStudy.id, { collaborators: updated } as any);
+  const handleUpdateCollabRole = async (id: string, newRole: StudyCollaborator['role']) => {
+    await saveTeam(studyCollaborators.map(c => c.id === id ? { ...c, role: newRole } : c), studyCollaborators);
   };
 
   const handleSelectStudy = (study: RCMStudy) => { navigate(`/rcm/${study.id}`); setActiveTab('functions'); };
@@ -388,12 +481,37 @@ export const RCMPage: React.FC = () => {
       if (value === 'approved') {
         // JA1012: sign-off asserts all seven questions answered per mode.
         if (!approveGate.ok) { showToast(approveGate.reason, 'error'); return; }
-        updates.approved_by = user?.full_name || user?.email || 'Unknown';
+        if (!canApprove) { showToast('Approval needs the study facilitator, a reviewer on its team, or an administrator', 'error'); return; }
+        updates.approved_by = user?.full_name || user?.fullName || user?.username || user?.email || 'Unknown';
         updates.approved_at = new Date().toISOString();
       } else if (selectedStudy.status === 'approved') {
         updates.approved_by = null;
         updates.approved_at = null;
       }
+      // A status is a record the database may refuse (0335) — save it now,
+      // not on the debounce, and show the reason when it does.
+      void (async () => {
+        const r = await trackSave(rcmService.setStudyStatus(selectedStudy.id, updates));
+        if (!r.ok) { showToast(r.reason, 'error'); return; }
+        setSelectedStudy(prev => (prev ? { ...prev, ...r.study } : r.study));
+        if (value === 'approved') {
+          const n = await notifyTeam(studyCollaborators, c => ({
+            title: '✅ RCM study approved — implement the plan',
+            message: `"${selectedStudy.title}" was approved by ${updates.approved_by}. ${c.role === 'editor' || c.role === 'owner' ? 'The Maintenance Plan lists what to create: PMs, monitoring points, sensors, spares.' : 'The plan is on the Maintenance Plan tab.'}`,
+            actionRequired: c.role === 'editor' || c.role === 'owner',
+            severity: 'SUCCESS',
+          }));
+          showToast(`Study approved${n ? ` — ${n} team member${n !== 1 ? 's' : ''} notified` : ''}`);
+        } else if (value === 'review') {
+          const n = await notifyTeam(studyCollaborators.filter(c => c.role === 'reviewer' || c.role === 'owner'), () => ({
+            title: '👀 RCM study ready for review',
+            message: `"${selectedStudy.title}" is ready for your review and approval.`,
+            actionRequired: true,
+          }));
+          if (n) showToast(`${n} reviewer${n !== 1 ? 's' : ''} notified`);
+        }
+      })();
+      return;
     }
     setSelectedStudy(prev => prev ? { ...prev, ...updates } : null);
     debouncedSave(`study-${field}`, () => trackSave(rcmService.updateStudy(selectedStudy.id, updates)));
@@ -840,15 +958,29 @@ export const RCMPage: React.FC = () => {
     let wroteFns = 0, wroteModes = 0;
     const result = await rcmService.aiSuggestFunctions(selectedStudy);
     if (result?.functions) {
+      // The model repeats itself (the K-601 draft returned F1 twice, and one
+      // mode twice under it) — write each function and mode once, and number
+      // them after what the worksheet already has.
+      const key = (s: string | null | undefined) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      const seenFns = new Set(functions.flatMap(f => [key(f.function_number), key(f.function_description)]).filter(Boolean));
+      const existingModes = new Set(failureModes.map(m => `${m.function_id}|${key(m.failure_mode_description)}`));
+      let position = functions.length;
       for (const fn of result.functions) {
+        const fnKeys = [key(fn.number), key(fn.description)].filter(Boolean);
+        if (fnKeys.some(k => seenFns.has(k))) continue;
+        fnKeys.forEach(k => seenFns.add(k));
+        position++;
         const created = await rcmService.createFunction({
-          study_id: selectedStudy.id, function_number: fn.number, function_description: fn.description,
+          study_id: selectedStudy.id, function_number: fn.number || `F${position}`, function_description: fn.description,
           performance_standard: fn.performance_standard, function_type: fn.type as any || 'primary',
-          functional_failure: fn.functional_failure, sort_order: functions.length + 1,
+          functional_failure: fn.functional_failure, sort_order: position,
         });
         if (created) {
           wroteFns++;
           for (const fm of fn.failure_modes || []) {
+            const modeKey = `${created.id}|${key(fm.description)}`;
+            if (!key(fm.description) || existingModes.has(modeKey)) continue;
+            existingModes.add(modeKey);
             wroteModes++;
             await rcmService.createFailureMode(pinFailureMode({
               function_id: created.id, failure_mode_description: fm.description, failure_cause_description: fm.cause,
@@ -1005,6 +1137,9 @@ export const RCMPage: React.FC = () => {
         minCritical: setup.minCritical ?? undefined,
         maxCritical: setup.maxCritical ?? undefined,
         pfIntervalDays: setup.pfIntervalDays,
+        // The decision's interval IS the reading cadence — "every 1 Days" was
+        // stored nowhere before, so no round ever asked for the reading.
+        monitoringFrequencyDays: (() => { const iv = parseIntervalText(decision.task_interval); return iv.n ? intervalDaysFor(iv.n, iv.unit) ?? undefined : undefined; })(),
         // Band provenance (0198): these limits came from the RCM decision, not a library.
         limitSource: [setup.minWarning, setup.maxWarning, setup.minCritical, setup.maxCritical].some(v => v != null) ? 'rcm' : null,
       });
@@ -1058,12 +1193,18 @@ export const RCMPage: React.FC = () => {
   /** Reopen an approved study: revision + 1, back to in progress. The 0319 trigger refuses every other edit while approved. */
   const handleReviseStudy = async () => {
     if (!selectedStudy) return;
-    const updated = await rcmService.reviseStudy(selectedStudy);
-    if (updated) {
-      setSelectedStudy(prev => (prev ? { ...prev, ...updated } : updated));
-      showToast(`Study reopened as revision ${updated.revision ?? (selectedStudy.revision ?? 1) + 1} — decisions can be edited again`);
+    if (!canApprove) { showToast('Reopening an approved study needs the study facilitator, a reviewer on its team, or an administrator', 'error'); return; }
+    const r = await rcmService.setStudyStatus(selectedStudy.id, { status: 'in_progress', revision: (selectedStudy.revision ?? 1) + 1, approved_by: null, approved_at: null });
+    if (r.ok) {
+      setSelectedStudy(prev => (prev ? { ...prev, ...r.study } : r.study));
+      showToast(`Study reopened as revision ${r.study.revision ?? (selectedStudy.revision ?? 1) + 1} — decisions can be edited again`);
+      void notifyTeam(studyCollaborators, () => ({
+        title: '🔁 RCM study reopened for revision',
+        message: `"${selectedStudy.title}" is back in progress as revision ${r.study.revision ?? ''} — decisions may change; PMs created from it stay until synced.`,
+        actionRequired: false,
+      }));
     } else {
-      showToast('Could not reopen the study', 'error');
+      showToast(r.reason, 'error');
     }
   };
 
@@ -1110,9 +1251,11 @@ export const RCMPage: React.FC = () => {
                   className="pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-accent-cyan/40 focus:border-accent-cyan placeholder:text-slate-400 w-full md:w-64"
                 />
               </div>
-              <button onClick={() => setShowNewStudy(true)} className="flex items-center gap-2 px-3 md:px-4 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] shrink-0">
-                <Plus size={16} /> <span className="hidden sm:inline">New RCM Study</span><span className="sm:hidden">New Study</span>
-              </button>
+              {canCreateStudy && (
+                <button onClick={() => setShowNewStudy(true)} className="flex items-center gap-2 px-3 md:px-4 py-2.5 bg-accent-cyan hover:bg-primary-400 text-brand-900 font-semibold rounded-lg text-sm transition-colors shadow-[0_0_15px_rgba(6,182,212,0.2)] shrink-0">
+                  <Plus size={16} /> <span className="hidden sm:inline">New RCM Study</span><span className="sm:hidden">New Study</span>
+                </button>
+              )}
             </div>
           )}
           {selectedStudy && (
@@ -1123,7 +1266,7 @@ export const RCMPage: React.FC = () => {
               {(selectedStudy.revision ?? 1) > 1 && (
                 <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-slate-100 text-slate-500 border border-slate-200" title="Study revision (0319)">rev {selectedStudy.revision}</span>
               )}
-              {selectedStudy.status === 'approved' && (
+              {selectedStudy.status === 'approved' && canApprove && (
                 <button
                   onClick={() => void handleReviseStudy()}
                   className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100"
@@ -1132,20 +1275,41 @@ export const RCMPage: React.FC = () => {
                   <Unlock size={13} /> Revise
                 </button>
               )}
-              <select value={selectedStudy.status} onChange={e => handleInlineStudyUpdate('status', e.target.value)}
-                className="text-xs font-medium bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-600 focus:outline-none focus:border-accent-cyan appearance-none cursor-pointer">
-                <option value="draft">Draft</option>
-                <option value="in_progress">In Progress</option>
-                <option value="review">Review</option>
-                <option value="approved">Approved</option>
-                <option value="closed">Closed</option>
-              </select>
-              <button onClick={() => handleOpenEditStudy(selectedStudy)} className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" title="Edit study">
-                <Edit3 size={16} />
-              </button>
-              <button onClick={() => setConfirmDelete({ type: 'study', id: selectedStudy.id, name: selectedStudy.title })} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete study">
-                <Trash2 size={16} />
-              </button>
+              {canEdit ? (
+                <select value={selectedStudy.status} onChange={e => handleInlineStudyUpdate('status', e.target.value)}
+                  className="text-xs font-medium bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-600 focus:outline-none focus:border-accent-cyan appearance-none cursor-pointer">
+                  <option value="draft">Draft</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="review">Review</option>
+                  <option value="approved" disabled={!canApprove}>Approved{canApprove ? '' : ' (reviewer / facilitator)'}</option>
+                  <option value="closed">Closed</option>
+                </select>
+              ) : (
+                <span className="text-xs font-medium bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-600 capitalize" title="Study status">
+                  {selectedStudy.status.replace('_', ' ')}
+                </span>
+              )}
+              {/* A reviewer who is not an editor signs off here — the one write the database lets them make. */}
+              {!canEdit && canApprove && selectedStudy.status !== 'approved' && selectedStudy.status !== 'closed' && (
+                <button
+                  onClick={() => handleInlineStudyUpdate('status', 'approved')}
+                  disabled={!approveGate.ok}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={approveGate.ok ? `Approve the study as ${approveWho} — asserts every failure mode is classified and has a strategy (SAE JA1012)` : approveGate.reason}
+                >
+                  <CheckCircle size={13} /> Approve as {approveWho}
+                </button>
+              )}
+              {canEdit && (
+                <button onClick={() => handleOpenEditStudy(selectedStudy)} className="p-2 text-slate-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors" title="Edit study">
+                  <Edit3 size={16} />
+                </button>
+              )}
+              {isAdminRole && (
+                <button onClick={() => setConfirmDelete({ type: 'study', id: selectedStudy.id, name: selectedStudy.title })} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Delete study (administrators)">
+                  <Trash2 size={16} />
+                </button>
+              )}
             </>
           )}
         </div>
@@ -1154,12 +1318,19 @@ export const RCMPage: React.FC = () => {
       {/* ═══ Frozen Action Bar — pinned to the top while the study scrolls ═══ */}
       {selectedStudy && (
         <div className="sticky -top-4 md:-top-6 z-30 -mx-4 md:-mx-6 px-4 md:px-6 py-2 bg-slate-50/95 backdrop-blur-sm border-b border-slate-200/70 flex items-center gap-2">
-          <button
-            onClick={handleStickyAddFunction}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:border-accent-cyan hover:text-accent-cyan transition-colors shadow-sm shrink-0"
-          >
-            <Plus size={14} /> Add Function
-          </button>
+          {canEdit && selectedStudy.status !== 'approved' && (
+            <button
+              onClick={handleStickyAddFunction}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 hover:border-accent-cyan hover:text-accent-cyan transition-colors shadow-sm shrink-0"
+            >
+              <Plus size={14} /> Add Function
+            </button>
+          )}
+          {readOnly && (
+            <span className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-amber-800 shrink-0" title={`You are ${myTeamRole ? `a team ${myTeamRole}` : 'not on the study team'} — edits need the facilitator, a team owner/editor or an administrator`}>
+              <Lock size={12} /> View only{myTeamRole ? ` · team ${myTeamRole}` : ''}{canApprove ? ' · you may approve' : ''}
+            </span>
+          )}
           <button
             onClick={() => setShowTeamPanel(true)}
             className="relative flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-primary-500 to-primary-500 hover:from-primary-600 hover:to-primary-600 text-white font-semibold rounded-lg text-xs transition-all shadow-md shadow-primary-500/25 shrink-0"
@@ -1288,6 +1459,9 @@ export const RCMPage: React.FC = () => {
 
       {/* Functions & Failures (Q1-Q5) — the FMEA worksheet */}
       {activeTab === 'functions' && selectedStudy && studyReadiness && draftGate && (
+        // View-only readers get the worksheet as a document: the database
+        // refuses their writes anyway (0335), this keeps the page from offering them.
+        <div className={readOnly ? 'pointer-events-none select-text opacity-95' : undefined} aria-readonly={readOnly || undefined}>
         <RCMFMEATable
           study={selectedStudy}
           functions={functions}
@@ -1312,6 +1486,7 @@ export const RCMPage: React.FC = () => {
           specialistLocked={!draftGate.ok}
           specialistBlockedReason={draftGate.reason}
         />
+        </div>
       )}
 
       {/* Decision Logic (Q6-Q7) */}
@@ -1331,7 +1506,7 @@ export const RCMPage: React.FC = () => {
           libraryTasks={libraryTasks}
           initialFailureModeId={strategyFocusId}
           onGoToPlan={fm => { setPlanFocusId(fm.id); setActiveTab('tasks'); }}
-          locked={selectedStudy.status === 'approved'}
+          locked={selectedStudy.status === 'approved' || readOnly}
         />
       )}
 
@@ -1346,7 +1521,9 @@ export const RCMPage: React.FC = () => {
           breakdown={breakdown}
           aiLoading={aiLoading}
           aiReport={aiReport}
-          locked={selectedStudy.status === 'approved'}
+          locked={selectedStudy.status === 'approved' || readOnly}
+          assetHasFeed={monitoring?.hasLiveFeed}
+          pointSuggestions={pointSuggestions}
           initialFailureModeId={planFocusId}
           onCreatePM={id => void handleCreatePMForMode(id)}
           pmGateFor={id => canCreatePMForDecision(selectedStudy.asset_id, decisionMap.get(id))}
