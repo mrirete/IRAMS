@@ -1004,6 +1004,7 @@ export function RCAInvestigationPage() {
     const [newActionType, setNewActionType] = useState<string>('short_term');
     const [newActionCategory, setNewActionCategory] = useState<string>('physical');
     const [newActionMoc, setNewActionMoc] = useState(false);
+    const [newActionCause, setNewActionCause] = useState<string>('');
     const [newActionAssignee, setNewActionAssignee] = useState('');
     const [newActionDue, setNewActionDue] = useState('');
 
@@ -1012,7 +1013,8 @@ export function RCAInvestigationPage() {
         const owner = resolveAssignee(newActionAssignee, people);
         const assigneeId = owner?.id ?? null;
         const act = await analyzeService.addRCACorrectiveAction({
-            investigation_id: inv.id, cause_node_id: null,
+            investigation_id: inv.id,
+            cause_node_id: newActionCause || (rootCauseNodes.length === 1 ? rootCauseNodes[0].id : null),
             cause_category: newActionCategory as any,
             action_description: newActionDesc.trim(),
             action_type: newActionType as any,
@@ -1036,7 +1038,7 @@ export function RCAInvestigationPage() {
                     actionLink: `/analyze/rca/${inv.id}`, actionRequired: true, createdBy: currentUserId,
                 }).catch(console.warn);
             }
-            setNewActionDesc(''); setNewActionAssignee(''); setNewActionDue(''); setNewActionMoc(false);
+            setNewActionDesc(''); setNewActionAssignee(''); setNewActionDue(''); setNewActionMoc(false); setNewActionCause('');
             setAddActionOpen(false);
         }
     };
@@ -1146,6 +1148,13 @@ export function RCAInvestigationPage() {
     // rows resurface inside the fault tree as intermediate gate events.
     const methodCommitted = !!inv?.method_locked_at && !!inv?.method;
     const scopedNodes = scopeNodesToMethod(nodes, inv?.method);
+    // Root causes the committed method established — what a corrective action must point at.
+    const rootCauseNodes = scopedNodes.filter(n => n.is_root_cause || n.node_type === 'root_cause');
+    // Causal steps (whys, causes, root causes) that cite no supporting evidence. The
+    // 5-Why "therefore" test shows this inside the workspace; the sign-off must see it too.
+    const assumedSteps = scopedNodes.filter(n => n.node_type !== 'problem' && n.node_type !== 'category'
+        && nodeSupport(n.id, evidence, evLinks).supports.length === 0);
+    const rootCauseUncited = rootCauseNodes.some(n => nodeSupport(n.id, evidence, evLinks).supports.length === 0);
 
     // ── Render ───────────────────────────────────────────────
     return (
@@ -2182,6 +2191,18 @@ export function RCAInvestigationPage() {
                                 <span className="font-bold text-slate-600">Fix this occurrence.</span>{' '}
                                 One action per root cause, with an owner and a date. Actions against latent causes are the ones that stop recurrence.
                             </p>
+                            {(() => {
+                                const unaddressed = rootCauseNodes.filter(rc => !actions.some(a => a.cause_node_id === rc.id));
+                                if (rootCauseNodes.length === 0) return (
+                                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-4">No root cause has been established in step 3 yet — actions recorded now cannot be tied to one.</p>
+                                );
+                                if (unaddressed.length === 0) return null;
+                                return (
+                                    <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-4">
+                                        {unaddressed.length} root cause{unaddressed.length === 1 ? ' has' : 's have'} no corrective action yet: {unaddressed.map(n => `“${n.description.slice(0, 60)}${n.description.length > 60 ? '…' : ''}”`).join(', ')}
+                                    </p>
+                                );
+                            })()}
                             
                             {CAUSE_CATEGORIES.map(cat => {
                                 const catActions = actions.filter(a => a.cause_category === cat.value);
@@ -2205,7 +2226,32 @@ export function RCAInvestigationPage() {
                                                     }`}>
                                                         {a.action_type?.replace('_', ' ').toUpperCase()}
                                                     </span>
-                                                    <span className="text-sm font-bold text-slate-800 flex-1">{a.action_description}</span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-sm font-bold text-slate-800">{a.action_description}</span>
+                                                        {(() => {
+                                                            const rc = a.cause_node_id ? nodes.find(n => n.id === a.cause_node_id) : null;
+                                                            return rc
+                                                                ? <div className="text-[11px] text-slate-500 mt-0.5 truncate" title={rc.description}>fixes: <span className="text-rose-700 font-semibold">{rc.description}</span></div>
+                                                                : rootCauseNodes.length
+                                                                    ? (
+                                                                        <select
+                                                                            className="mt-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 max-w-full cursor-pointer"
+                                                                            value=""
+                                                                            disabled={readOnly}
+                                                                            title="Link this action to the root cause it fixes"
+                                                                            onChange={async e => {
+                                                                                const val = e.target.value; if (!val) return;
+                                                                                const updated = await analyzeService.updateRCACorrectiveAction(a.id, { cause_node_id: val } as any);
+                                                                                if (updated) setActions(acts => acts.map(x => x.id === a.id ? updated : x));
+                                                                            }}
+                                                                        >
+                                                                            <option value="">not linked to a root cause — link it…</option>
+                                                                            {rootCauseNodes.map(n => <option key={n.id} value={n.id}>{n.description.slice(0, 90)}</option>)}
+                                                                        </select>
+                                                                    )
+                                                                    : <div className="text-[11px] text-amber-700 mt-0.5">not linked to a root cause</div>;
+                                                        })()}
+                                                    </div>
                                                     <div className="flex items-center gap-2 flex-wrap shrink-0">
                                                         {a.assigned_to && (
                                                             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded">
@@ -2465,6 +2511,18 @@ export function RCAInvestigationPage() {
                                 </div>
                                 <div>
                                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Effectiveness Verification Status</label>
+                                    {(assumedSteps.length > 0 || rootCauseUncited) && (
+                                        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-1.5">
+                                            <span className="font-bold">Before signing off:</span>{' '}
+                                            {rootCauseUncited ? 'the root cause cites no evidence' : `${assumedSteps.length} causal step${assumedSteps.length === 1 ? '' : 's'} cite no evidence`}
+                                            {' '}— the chain reads as assumption. Open the step 3 workspace and cite what proves each step, or record why it was accepted in the summary below.
+                                        </p>
+                                    )}
+                                    {rootCauseNodes.some(rc => !actions.some(a => a.cause_node_id === rc.id)) && (
+                                        <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-1.5">
+                                            A root cause has no corrective action linked to it (step 4).
+                                        </p>
+                                    )}
                                     {!actionsSettled && (
                                         <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mb-1.5">
                                             Verification opens once every corrective action is complete
@@ -3004,6 +3062,12 @@ export function RCAInvestigationPage() {
                             onChange={e => setNewActionDesc(e.target.value)}
                             autoFocus
                         />
+                    </Field>
+                    <Field label="Which root cause does this fix?" hint={rootCauseNodes.length ? 'One action per root cause — this is how the link is kept.' : 'No root cause established yet (step 3). The action can still be recorded and linked later.'}>
+                        <Select value={newActionCause || (rootCauseNodes.length === 1 ? rootCauseNodes[0].id : '')} onChange={e => setNewActionCause(e.target.value)} disabled={rootCauseNodes.length === 0}>
+                            {rootCauseNodes.length !== 1 && <option value="">{rootCauseNodes.length ? '— choose a root cause —' : 'No root cause yet'}</option>}
+                            {rootCauseNodes.map(n => <option key={n.id} value={n.id}>{n.description.length > 110 ? n.description.slice(0, 107) + '…' : n.description}</option>)}
+                        </Select>
                     </Field>
                     <Field label="Targets which cause layer?" hint="The physical cause is never the root — actions against latent causes are the ones that stop recurrence.">
                         <Select value={newActionCategory} onChange={e => setNewActionCategory(e.target.value)}>
