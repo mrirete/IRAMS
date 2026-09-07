@@ -38,6 +38,23 @@
 
 Still open: #7 (committed method survives a rewrite without a prompt), #8 (invite row-click affordance), #9 (username typo), and one new observation: the Bad-actors Pareto counted 1 of P-101-A's 4 corrective work orders "by cost" — only work orders with frozen costs contribute, so the ranking under-reads assets whose orders were never settled.
 
+
+## The 5-Why itself (run as the team editor, J.tech)
+
+Problem node seeded from the step-1 statement; four whys with escalating prompts (immediate → contributing → systemic → organisational); the "have you reached the root cause?" nudge at why 4; root cause declared through the soft evidence gate; the operator statement cited as a supporting fact on the root cause; step 3 ticked; the chain reads:
+
+1. Seal faces ran dry after the discharge set-point was raised from 8 to 10 bar (suction fell below the NPSH margin, flush starved).
+2. The set-point was changed at the panel without an engineering check or a change request.
+3. Nothing requires a change request for an operating-parameter change on a criticality-A pump.
+4. The change-control procedure covers physical modifications only.
+- **Root cause:** change control excludes operating-parameter changes on critical assets.
+
+| # | Sev | Area | Finding | Status |
+|---|-----|------|---------|--------|
+| 10 | P2 | Step 4 ↔ step 3 | Corrective actions are never linked to the root-cause node they address: `cause_node_id` is always null and the add-action drawer asks only for a cause *layer*. "One action per root cause" cannot be checked, and the RCM / FMEA hand-offs carry every action regardless of cause. | Open — proposed: a "Which root cause does this fix?" picker over the committed method's root causes. |
+| 11 | P3 | 5-Why summary | The workspace wrote the new root-cause summary to the database but showed the previous one ("Seal grade not rated…") with a VERIFIED 90% badge until the page reloaded — the workspace updates the investigation directly and the page's copy went stale. | Fixed (onSummaryChange hook). |
+| 12 | P3 | Evidence discipline | The root-cause gate is soft ("Mark anyway — I'll cite it") and each Why is a separate claim, yet nothing asks for evidence while whys are typed; the "therefore" reverse test correctly flags all four as ASSUMED afterwards. Nothing downstream (step 4, sign-off) reacts to an uncited chain. | Open — consider a sign-off warning when the chain still has assumed steps. |
+
 ## Recommended order (as executed)
 
 1. Enforce roles in the database, not only in templates: reliability `edit` for writes on `ers_rca_*`, `admin`/owner for delete and close, and a `caller_can('reliability','edit')` conjunct on the policies — the same mechanism work orders already use.

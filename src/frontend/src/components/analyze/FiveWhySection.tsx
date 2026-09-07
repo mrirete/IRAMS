@@ -156,6 +156,9 @@ interface FiveWhySectionProps {
     /** Step 1's problem statement. A 5-Why's problem node IS this statement, so an
      *  empty chain is seeded from it rather than asking for it a second time. */
     problemStatement?: string | null;
+    /** The workspace writes root_cause_summary itself; tell the page so its copy
+     *  (and the summary box here, which reads the page's copy) does not go stale. */
+    onSummaryChange?: (summary: string | null) => void;
 }
 
 // ── Component ─────────────────────────────────────────────────
@@ -169,6 +172,7 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
     setLinks,
     onEscalate,
     problemStatement,
+    onSummaryChange,
 }) => {
     // Local editing / input state
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -258,6 +262,7 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
                 root_cause_summary: desc,
                 status: 'in_progress',
             });
+            onSummaryChange?.(desc);
         }
     };
 
@@ -276,6 +281,7 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
                 root_cause_summary: node.description,
                 status: 'in_progress',
             });
+            onSummaryChange?.(node.description);
         }
     };
 
@@ -673,6 +679,7 @@ const FiveWhySection: React.FC<FiveWhySectionProps> = ({
                                                     await analyzeService.updateRCAInvestigation(selectedRca.id, {
                                                         root_cause_summary: null,
                                                     });
+            onSummaryChange?.(null);
                                                 }
                                             }}
                                             style={{

@@ -2838,6 +2838,7 @@ export function RCAInvestigationPage() {
                             <FiveWhySection
                                 selectedRca={{ id: inv.id, method: inv.method, root_cause_summary: inv.root_cause_summary }}
                                 problemStatement={inv.problem_statement}
+                                onSummaryChange={summary => setInv(i => i ? { ...i, root_cause_summary: summary } : i)}
                                 nodes={scopedNodes}
                                 setNodes={setNodes}
                                 evidence={evidence}
