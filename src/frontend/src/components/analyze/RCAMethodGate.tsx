@@ -38,9 +38,11 @@ interface Props {
     suggestion?: MethodSuggestion | null;
     /** Optional AI method-advisor UI, rendered inside the chooser header. */
     advisorSlot?: React.ReactNode;
+    /** Viewer: show the choice, allow none of it. */
+    readOnly?: boolean;
 }
 
-const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, onOpenWorkspace, suggestion, advisorSlot }) => {
+const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, onOpenWorkspace, suggestion, advisorSlot, readOnly = false }) => {
     const committed = !!investigation.method_locked_at && !!investigation.method;
 
     const [switching, setSwitching] = useState(false);
@@ -66,7 +68,7 @@ const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, onO
 
     /** Card click: commit now, unless we would strand recorded causes — then ask first. */
     const pick = (method: RCAMethod) => {
-        if (busy) return;
+        if (busy || readOnly) return;
         if (committed && method === investigation.method) { setSwitching(false); onOpenWorkspace?.(); return; }
         const orphaned = committed
             ? scopeNodesToMethod(nodes, investigation.method).filter(n => n.node_type !== 'category').length
@@ -95,12 +97,14 @@ const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, onO
                 <span className="text-xs text-slate-500">
                     Analysis method for this investigation · {causeCount} cause{causeCount === 1 ? '' : 's'} recorded
                 </span>
-                <button
-                    onClick={() => setSwitching(true)}
-                    className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
-                >
-                    <Repeat size={12} /> Change method
-                </button>
+                {!readOnly && (
+                    <button
+                        onClick={() => setSwitching(true)}
+                        className="ml-auto flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-bold text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                    >
+                        <Repeat size={12} /> Change method
+                    </button>
+                )}
             </div>
         );
     }
@@ -164,8 +168,8 @@ const RCAMethodGate: React.FC<Props> = ({ investigation, nodes, onCommitted, onO
                     return (
                         <button
                             key={m.value}
-                            disabled={busy}
-                            title={`${m.label} — ${m.bestFor}. ${m.why}`}
+                            disabled={busy || readOnly}
+                            title={readOnly ? 'View only' : `${m.label} — ${m.bestFor}. ${m.why}`}
                             onClick={() => pick(m.value)}
                             className={`min-w-[150px] flex-1 cursor-pointer rounded-lg bg-white px-3 py-2.5 text-left transition-all disabled:opacity-60 ${
                                 isHighlighted ? 'border-2 shadow-sm' : 'border border-slate-200 hover:border-slate-300'

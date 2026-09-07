@@ -47,6 +47,8 @@ interface NewAssessmentModalProps {
     initialTitle?: string;
     initialTargetLevel?: string;
     initialDescription?: string;
+    /** How the investigation came about (pareto, recurrence, …); lands on the RCA as trigger_type. */
+    initialTrigger?: string;
     onClose: () => void;
     onCreated: () => void;
 }
@@ -59,6 +61,7 @@ export const NewAssessmentModal: React.FC<NewAssessmentModalProps> = ({
     initialTitle,
     initialTargetLevel,
     initialDescription,
+    initialTrigger,
     onClose,
     onCreated,
 }) => {
@@ -166,7 +169,7 @@ export const NewAssessmentModal: React.FC<NewAssessmentModalProps> = ({
             const { title, type, asset_id, description, maintenanceData } = assessmentForm;
             if (type === 'rca') {
                 onClose();
-                navigate('/analyze/rca/new', { state: { title, asset_id, description, maintenanceData } });
+                navigate('/analyze/rca/new', { state: { title, asset_id, description, maintenanceData, trigger: initialTrigger || 'manual' } });
                 return;
             } else if (type === 'fmea') {
                 const ws = await analyzeService.createFMEAWorksheet({

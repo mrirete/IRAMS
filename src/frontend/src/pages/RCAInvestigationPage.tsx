@@ -135,7 +135,7 @@ const TAXONOMY_BADGES: Record<string, { label: string; color: string; bg: string
 export function RCAInvestigationPage() {
     const { investigationId } = useParams<{ investigationId: string }>();
     const navigate = useNavigate();
-    const { user, profile } = useAuth() as any;
+    const { user, profile, permissions, role } = useAuth() as any;
     const currentUserId = user?.id || profile?.id || 'system';
     const currentUsername = profile?.username || user?.email || 'system';
     const isNew = !investigationId || investigationId === 'new';
@@ -367,6 +367,7 @@ export function RCAInvestigationPage() {
         title: '', asset_id: '', asset_ref: '',
         rca_category: 'asset_failure' as string,
         investigation_type: 'reactive' as string,
+        trigger_type: 'manual' as string,
         problem_statement: '', event_what: '', event_how: '',
         event_location: '', event_date: new Date().toISOString().split('T')[0],
         event_how_much: { cost: 0, downtime_hrs: 0, safety_tier: '', env_impact: '' },
@@ -441,6 +442,7 @@ export function RCAInvestigationPage() {
                     asset_ref: invData.asset_ref || '',
                     rca_category: invData.rca_category || 'asset_failure',
                     investigation_type: invData.investigation_type || 'reactive',
+                    trigger_type: invData.trigger_type || 'manual',
                     problem_statement: invData.problem_statement || '',
                     event_what: invData.event_what || '', event_how: invData.event_how || '',
                     event_location: invData.event_location || '',
@@ -563,6 +565,7 @@ export function RCAInvestigationPage() {
                 asset_id?: string;
                 description?: string;
                 maintenanceData?: any;
+                trigger?: string;
             } | null;
             if (state) {
                 setDraft(d => {
@@ -576,6 +579,7 @@ export function RCAInvestigationPage() {
                         title: state.title || d.title,
                         asset_id: state.asset_id || d.asset_id,
                         problem_statement: state.description || d.problem_statement,
+                        trigger_type: state.trigger || d.trigger_type,
                         event_how_much: newHowMuch,
                         event_date: new Date().toISOString().split('T')[0],
                     };
@@ -656,7 +660,7 @@ export function RCAInvestigationPage() {
                     root_cause_summary: null,
                     rca_category: draft.rca_category as any,
                     investigation_type: draft.investigation_type as any,
-                    trigger_type: 'manual', trigger_reference_id: null,
+                    trigger_type: draft.trigger_type as any, trigger_reference_id: null,
                     event_date: draft.event_date || null,
                     event_location: draft.event_location || null,
                     event_what: draft.event_what || null,
@@ -683,6 +687,7 @@ export function RCAInvestigationPage() {
                     // stale value the draft was loaded with every time step 1 was saved.
                     rca_category: draft.rca_category as any,
                     investigation_type: draft.investigation_type as any,
+                    trigger_type: draft.trigger_type as any,
                     event_date: draft.event_date || null,
                     event_location: draft.event_location || null,
                     event_what: draft.event_what || null,
@@ -1090,6 +1095,23 @@ export function RCAInvestigationPage() {
     // Effectiveness can only be judged once the fixes are actually in place.
     const actionsSettled = settleActions(actions);
 
+    // ── Who am I on this investigation? Mirrors rca_can_edit / rca_can_close (0332). ──
+    const isAdminRole = ['SUPER_ADMIN', 'SYS_ADMIN'].includes(String(role || '').toUpperCase());
+    const myTeamRole = useMemo(() => {
+        const cid = profile?.contactId || profile?.contact_id;
+        if (!cid) return null;
+        const mine = rcaCollaborators.filter(c => c.type === 'contact' && c.ref_id === cid).map(c => c.role);
+        const order = ['owner', 'editor', 'reviewer', 'viewer'];
+        return mine.sort((a, b) => order.indexOf(a) - order.indexOf(b))[0] || null;
+    }, [rcaCollaborators, profile]);
+    const isCreator = !!inv && !!user?.id && (inv as any).created_by === user.id;
+    const canEdit = isNew
+        ? (isAdminRole || permissions?.reliability?.create === true || permissions?.reliability?.edit === true)
+        : (isAdminRole || permissions?.reliability?.edit === true || isCreator || myTeamRole === 'owner' || myTeamRole === 'editor');
+    const canClose = isAdminRole || isCreator || myTeamRole === 'owner' || myTeamRole === 'reviewer';
+    const closeWho = isAdminRole ? 'administrator' : isCreator ? 'investigation owner' : myTeamRole ? `team ${myTeamRole}` : null;
+    const readOnly = !canEdit || inv?.status === 'closed';
+
     const stepDone = useMemo(() => getStepCompletion({
         hasProblemStatement: !!(inv?.problem_statement || draft.problem_statement || '').trim(),
         // Step 1 is defined when the statement exists and the event is anchored to
@@ -1223,10 +1245,11 @@ export function RCAInvestigationPage() {
                                 </div>
                             </>
                         )}
-                        <button 
+                        <button
                             className="px-4.5 py-2 text-xs font-bold text-white bg-primary-600 hover:bg-primary-500 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer disabled:opacity-60 flex items-center gap-1.5"
-                            onClick={handleSave} 
-                            disabled={saving}
+                            onClick={handleSave}
+                            disabled={saving || readOnly}
+                            title={readOnly ? 'View only' : undefined}
                         >
                             {saving ? (
                                 <>
@@ -1236,6 +1259,22 @@ export function RCAInvestigationPage() {
                         </button>
                     </div>
                 </div>
+
+                {/* Role banner: what this person may do here (0332 enforces it in the database too). */}
+                {!canEdit && (
+                    <div className="bg-slate-50 border border-slate-200 text-slate-600 px-4 py-3 rounded-xl flex items-start gap-3 text-xs">
+                        <Lock size={15} className="text-slate-400 shrink-0 mt-0.5" />
+                        <div>
+                            <span className="font-bold text-slate-700">View only.</span>{' '}
+                            {isNew
+                                ? 'Your role can read investigations but not open one — ask a reliability engineer or an administrator.'
+                                : myTeamRole
+                                    ? `You are on this team as ${myTeamRole}. Editing needs the owner or editor role, or reliability edit rights.`
+                                    : 'You are not on this investigation\'s team. Ask the owner to add you as an editor.'}
+                            {canClose && !canEdit && ' You may still record the effectiveness verdict and close it.'}
+                        </div>
+                    </div>
+                )}
 
                 {/* Re-occurrence Alert Banner */}
                 {relatedRCAs.length > 0 && (
@@ -1476,7 +1515,7 @@ export function RCAInvestigationPage() {
                                     ) : null}
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                 <div>
                                     <label className={LABEL_CLS}>Event date</label>
                                     <input
@@ -1516,6 +1555,24 @@ export function RCAInvestigationPage() {
                                         onChange={e => setDraft(d => ({ ...d, rca_category: e.target.value }))}
                                     >
                                         {RCA_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label.replace('-based', '')}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className={LABEL_CLS}>Trigger</label>
+                                    <select
+                                        className={`${INPUT_CLS} cursor-pointer`}
+                                        value={draft.trigger_type}
+                                        onChange={e => setDraft(d => ({ ...d, trigger_type: e.target.value }))}
+                                        title="What started this investigation — a repeat, a bad-actor ranking, a cost or safety threshold, or a decision"
+                                    >
+                                        <option value="manual">Decision</option>
+                                        <option value="pareto">Pareto / bad actor</option>
+                                        <option value="recurrence">Repeat failure</option>
+                                        <option value="downtime">Downtime threshold</option>
+                                        <option value="cost">Cost threshold</option>
+                                        <option value="safety">Safety event</option>
+                                        <option value="near_miss">Near miss</option>
+                                        <option value="criticality">Criticality review</option>
                                     </select>
                                 </div>
                             </div>
@@ -1679,7 +1736,7 @@ export function RCAInvestigationPage() {
                                 that stacked into a full column on mobile, so you scrolled past every
                                 record you already had to reach it. It's a sheet now. */}
                             <button
-                                onClick={() => setAddEvidenceOpen(true)}
+                                disabled={readOnly} onClick={() => setAddEvidenceOpen(true)}
                                 className="mt-4 w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-dashed border-primary-200 text-primary-700 bg-primary-50/50 hover:bg-primary-50 font-bold text-xs transition-colors"
                             >
                                 <Plus size={14} strokeWidth={2.5} /> Add evidence
@@ -1698,7 +1755,7 @@ export function RCAInvestigationPage() {
                                     entityType="RCA_INVESTIGATION"
                                     bucket="assets"
                                     prefix="rca_"
-                                    readonly={inv.status === 'closed'}
+                                    readonly={readOnly}
                                     reloadKey={galleryReload}
                                     onImageAdded={async img => {
                                         // A photo of the scene is evidence — a fact — so it counts toward step 2.
@@ -1729,6 +1786,7 @@ export function RCAInvestigationPage() {
                             onCommitted={setInv}
                             onOpenWorkspace={() => setCauseFullscreen(true)}
                             suggestion={methodSuggestion}
+                            readOnly={readOnly}
                             advisorSlot={
                                 <button
                                     onClick={runMethodAdvisor}
@@ -2185,7 +2243,7 @@ export function RCAInvestigationPage() {
                             {/* Was a 6-field row inline: on a phone it stacked into a column you had
                                 to scroll the whole action list to reach. Sheet. */}
                             <button
-                                onClick={() => setAddActionOpen(true)}
+                                disabled={readOnly} onClick={() => setAddActionOpen(true)}
                                 className="mt-4 w-full flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg border border-dashed border-primary-200 text-primary-700 bg-primary-50/50 hover:bg-primary-50 font-bold text-xs transition-colors"
                             >
                                 <Plus size={14} strokeWidth={2.5} /> Add corrective action
@@ -2397,8 +2455,11 @@ export function RCAInvestigationPage() {
                                         type="date" 
                                         value={inv.effectiveness_due?.split('T')[0] || ''} 
                                         onChange={async e => {
-                                            await analyzeService.updateRCAInvestigation(inv.id, { effectiveness_due: e.target.value } as any);
-                                            setInv(i => i ? { ...i, effectiveness_due: e.target.value } : i);
+                                            // Read the value BEFORE awaiting: a controlled select snaps back to state
+                                            // on the re-render the await allows, so e.target.value is stale afterwards.
+                                            const val = e.target.value;
+                                            await analyzeService.updateRCAInvestigation(inv.id, { effectiveness_due: val } as any);
+                                            setInv(i => i ? { ...i, effectiveness_due: val } : i);
                                         }} 
                                     />
                                 </div>
@@ -2412,12 +2473,13 @@ export function RCAInvestigationPage() {
                                         </p>
                                     )}
                                     <select
-                                        disabled={!actionsSettled}
+                                        disabled={!actionsSettled || !canClose}
                                         className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all shadow-sm cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                                         value={inv.effectiveness_status || 'pending'} 
                                         onChange={async e => {
-                                            await analyzeService.updateRCAInvestigation(inv.id, { effectiveness_status: e.target.value } as any);
-                                            setInv(i => i ? { ...i, effectiveness_status: e.target.value as any } : i);
+                                            const val = e.target.value;
+                                            const ok = await analyzeService.updateRCAInvestigation(inv.id, { effectiveness_status: val } as any);
+                                            if (ok) setInv(i => i ? { ...i, effectiveness_status: val as any } : i);
                                         }}
                                     >
                                         <option value="pending">Pending Verification</option>
@@ -2683,18 +2745,32 @@ export function RCAInvestigationPage() {
                             Next <ChevronRight size={15} strokeWidth={2.5} />
                         </button>
                     ) : (
-                        <button 
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow"
-                            onClick={async () => {
-                                if (inv) {
-                                    await analyzeService.updateRCAInvestigation(inv.id, { status: 'closed', closed_at: new Date().toISOString() } as any);
-                                    await analyzeService.logRCAAudit({ investigation_id: inv.id, action: 'closed', changed_by: 'system', details: {} });
-                                    navigate('/analyze');
-                                }
-                            }}
-                        >
-                            <CheckCircle2 size={15} strokeWidth={2.5} /> Close Investigation
-                        </button>
+                        (() => {
+                            const verdictIn = !!inv?.effectiveness_status && inv.effectiveness_status !== 'pending';
+                            const closed = inv?.status === 'closed';
+                            const why = closed ? 'Already closed'
+                                : !canClose ? 'Closing needs the investigation owner, a reviewer on its team, or an administrator'
+                                : !verdictIn ? 'Record the effectiveness verdict first'
+                                : `Sign off and close as ${closeWho}`;
+                            return (
+                                <div className="flex items-center gap-3">
+                                    {!closed && <span className="text-[11px] text-slate-400 hidden sm:inline">{why}</span>}
+                                    <button
+                                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
+                                        disabled={closed || !canClose || !verdictIn}
+                                        title={why}
+                                        onClick={async () => {
+                                            if (!inv) return;
+                                            // The 0332 trigger enforces sign-off + verdict and writes the audit row.
+                                            const ok = await analyzeService.updateRCAInvestigation(inv.id, { status: 'closed', closed_at: new Date().toISOString() } as any);
+                                            if (ok) navigate('/analyze');
+                                        }}
+                                    >
+                                        <CheckCircle2 size={15} strokeWidth={2.5} /> {closed ? 'Closed' : 'Sign off & close'}
+                                    </button>
+                                </div>
+                            );
+                        })()
                     )}
                 </div>
             </div>

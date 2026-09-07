@@ -459,9 +459,11 @@ export const AnalyzePage: React.FC = () => {
         a.click(); URL.revokeObjectURL(url);
     }, [exportTarget]);
 
+    const [modalInitialTrigger, setModalInitialTrigger] = useState<string>('manual');
     const openNewAnalysis = useCallback((type: AssessmentType, opts?: {
-        assetId?: string; title?: string; targetLevel?: string; description?: string;
+        assetId?: string; title?: string; targetLevel?: string; description?: string; trigger?: string;
     }) => {
+        setModalInitialTrigger(opts?.trigger || 'manual');
         setModalInitialType(type);
         setModalInitialAssetId(opts?.assetId || '');
         setModalInitialTitle(opts?.title || '');
@@ -476,6 +478,7 @@ export const AnalyzePage: React.FC = () => {
             title: `RCA: ${asset.asset_tag} Bad Actor`,
             targetLevel: asset.hierarchy_level || 'equipment',
             description: `Initiated from Pareto analysis — #${asset.rank} bad actor by ${paretoCriteria}`,
+            trigger: 'pareto',
         });
     }, [paretoCriteria, openNewAnalysis]);
 
@@ -834,6 +837,7 @@ export const AnalyzePage: React.FC = () => {
                 initialTitle={modalInitialTitle}
                 initialTargetLevel={modalInitialTargetLevel}
                 initialDescription={modalInitialDescription}
+                initialTrigger={modalInitialTrigger}
                 onClose={() => setShowNewAssessment(false)}
                 onCreated={refetchAnalyze}
             />

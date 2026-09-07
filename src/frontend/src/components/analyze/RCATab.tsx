@@ -188,6 +188,7 @@ export const RCATab: React.FC<RCATabProps> = ({
                 title: `RCA: ${asset.asset_name} â€” Bad Actor Analysis`,
                 asset_id: asset.asset_id || '',
                 description: problem_statement,
+                trigger: 'pareto',
                 maintenanceData: {
                     source: 'pareto',
                     targetLevel: asset.hierarchy_level || 'equipment',

@@ -6082,12 +6082,17 @@ export class DatabaseService {
             created_by: notification.createdBy || 'SYSTEM',
         };
 
-        const { data, error } = await supabase.from('notifications').insert(row).select().single();
+        // No `.select()` after the insert: only the recipient or an admin may READ a
+        // notification, so reading the new row back failed (42501) for every non-admin
+        // sender and rolled the insert back — assignments and invites from technicians
+        // and supervisors never arrived. Generate the id here and return the row as sent.
+        const id = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        const { error } = await supabase.from('notifications').insert({ id, ...row });
         if (error) {
             console.error('[DatabaseService] Error creating notification:', error);
             return null;
         }
-        return data;
+        return { id, ...row, created_at: new Date().toISOString() };
     }
 
     public async getNotifications(userId: string, options?: {
