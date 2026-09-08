@@ -95,6 +95,11 @@ export const MyWork: React.FC = () => {
     const canHaveHistory = !!contactId || authorKeys.length > 0;
 
     const [segment, setSegment] = useState<Segment>('open');
+    // Quick filter chips (Overdue / Due today / In progress): one at a time,
+    // click again to clear. Replaces the three big number tiles.
+    type Quick = 'overdue' | 'today' | 'wip' | null;
+    const [quick, setQuick] = useState<Quick>(null);
+    const [doneMonthOnly, setDoneMonthOnly] = useState(false);
     const [rows, setRows] = useState<MyWO[]>([]);
     const [loading, setLoading] = useState(true);
     const [offlineCopy, setOfflineCopy] = useState<string | null>(null); // savedAt when serving cache
@@ -191,10 +196,47 @@ export const MyWork: React.FC = () => {
         inProgress: rows.filter(r => r.status === 'WIP').length,
     }), [grouped, rows]);
 
+    // What the list shows under the active chip.
+    const shown = useMemo(() => {
+        if (!quick) return grouped;
+        const empty: Record<Bucket, MyWO[]> = { overdue: [], today: [], week: [], later: [] };
+        if (quick === 'overdue') return { ...empty, overdue: grouped.overdue };
+        if (quick === 'today') return { ...empty, today: grouped.today };
+        return (Object.keys(grouped) as Bucket[]).reduce((acc, b) => { acc[b] = grouped[b].filter(r => r.status === 'WIP'); return acc; }, { ...empty });
+    }, [grouped, quick]);
+    const shownCount = (Object.keys(shown) as Bucket[]).reduce((n, b) => n + shown[b].length, 0);
+
+    const Chip = ({ id, n, label, tone }: { id: Quick; n: number; label: string; tone: 'red' | 'amber' | 'blue' }) => {
+        const active = quick === id;
+        const tones = {
+            red: active ? 'bg-red-600 text-white border-red-600' : n ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' : 'bg-white text-slate-500 border-slate-200',
+            amber: active ? 'bg-amber-500 text-white border-amber-500' : n ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : 'bg-white text-slate-500 border-slate-200',
+            blue: active ? 'bg-primary-600 text-white border-primary-600' : n ? 'bg-primary-50 text-primary-700 border-primary-200 hover:bg-primary-100' : 'bg-white text-slate-500 border-slate-200',
+        };
+        return (
+            <button
+                type="button"
+                aria-pressed={active}
+                onClick={() => setQuick(active ? null : id)}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${tones[tone]}`}
+                title={active ? 'Show all' : `Show only ${label.toLowerCase()}`}
+            >
+                <span className="tabular-nums text-sm">{n}</span>
+                <span className="uppercase tracking-wide text-[10px]">{label}</span>
+            </button>
+        );
+    };
+
     // Finished work: dated at completion, newest first, by month.
     const doneDated = useMemo(() => (done || []).map(wo => ({ wo, at: completionDateOf(wo, journals[wo.id]) }))
         .sort((a, b) => Date.parse(b.at || '1970') - Date.parse(a.at || '1970')), [done, journals]);
-    const doneGroups = useMemo(() => groupByMonth(doneDated, d => d.at), [doneDated]);
+    const doneGroups = useMemo(() => {
+        const now = new Date();
+        const rowsToGroup = doneMonthOnly
+            ? doneDated.filter(d => d.at && new Date(d.at).getFullYear() === now.getFullYear() && new Date(d.at).getMonth() === now.getMonth())
+            : doneDated;
+        return groupByMonth(rowsToGroup, d => d.at);
+    }, [doneDated, doneMonthOnly]);
     const doneStats = useMemo(() => {
         const now = new Date();
         const thisMonth = doneDated.filter(d => {
@@ -347,21 +389,18 @@ export const MyWork: React.FC = () => {
                         </div>
                     )}
 
-                    {/* ── Summary strip ── */}
+                    {/* ── Quick filters ── */}
                     {rows.length > 0 && (
-                        <div className="grid grid-cols-3 gap-2">
-                            <div className={`rounded-card border p-3 text-center ${counts.overdue ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
-                                <div className={`text-2xl font-bold tabular-nums ${counts.overdue ? 'text-red-600' : 'text-slate-800'}`}>{counts.overdue}</div>
-                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Overdue</div>
-                            </div>
-                            <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
-                                <div className="text-2xl font-bold tabular-nums text-slate-800">{counts.today}</div>
-                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Due today</div>
-                            </div>
-                            <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
-                                <div className="text-2xl font-bold tabular-nums text-slate-800">{counts.inProgress}</div>
-                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">In progress</div>
-                            </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <Chip id="overdue" n={counts.overdue} label="Overdue" tone="red" />
+                            <Chip id="today" n={counts.today} label="Due today" tone="amber" />
+                            <Chip id="wip" n={counts.inProgress} label="In progress" tone="blue" />
+                            {quick && <button type="button" onClick={() => setQuick(null)} className="text-xs text-slate-500 hover:text-slate-800 underline underline-offset-2">Show all</button>}
+                        </div>
+                    )}
+                    {!loading && !error && rows.length > 0 && quick && shownCount === 0 && (
+                        <div className="bg-white border border-slate-200 rounded-card p-6 text-center text-sm text-slate-500">
+                            {quick === 'overdue' ? 'Nothing overdue.' : quick === 'today' ? 'Nothing due today.' : 'Nothing in progress.'}
                         </div>
                     )}
 
@@ -392,13 +431,13 @@ export const MyWork: React.FC = () => {
                     )}
 
                     {/* ── Buckets ── */}
-                    {(Object.keys(BUCKET_META) as Bucket[]).map(b => grouped[b].length > 0 && (
+                    {(Object.keys(BUCKET_META) as Bucket[]).map(b => shown[b].length > 0 && (
                         <div key={b} className="flex flex-col gap-2">
                             <div className="flex items-baseline gap-2 mt-1">
                                 <h2 className={`text-[12px] uppercase font-bold tracking-wider ${BUCKET_META[b].accent}`}>{BUCKET_META[b].label}</h2>
-                                <span className="text-[12px] text-slate-400 tabular-nums">{grouped[b].length}</span>
+                                <span className="text-[12px] text-slate-400 tabular-nums">{shown[b].length}</span>
                             </div>
-                            {grouped[b].map(wo => <Card key={wo.id} wo={wo} />)}
+                            {shown[b].map(wo => <Card key={wo.id} wo={wo} />)}
                         </div>
                     ))}
                 </>
@@ -409,19 +448,10 @@ export const MyWork: React.FC = () => {
                     {!canHaveHistory && noPerson}
 
                     {done !== null && done.length > 0 && (
-                        <div className="grid grid-cols-3 gap-2">
-                            <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
-                                <div className="text-2xl font-bold tabular-nums text-slate-800">{doneStats.completedMonth}</div>
-                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Done this month</div>
-                            </div>
-                            <div className="rounded-card border border-slate-200 bg-white p-3 text-center">
-                                <div className="text-2xl font-bold tabular-nums text-slate-800">{fmtHours(doneStats.hoursMonth)}</div>
-                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Hours this month</div>
-                            </div>
-                            <button onClick={() => setSegment('open')} className="rounded-card border border-slate-200 bg-white p-3 text-center hover:bg-slate-50 transition-colors">
-                                <div className="text-2xl font-bold tabular-nums text-slate-800">{rows.length}</div>
-                                <div className="text-[11px] uppercase font-semibold tracking-wide text-slate-500">Open now</div>
-                            </button>
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <button type="button" aria-pressed={doneMonthOnly} onClick={() => setDoneMonthOnly(v => !v)} title={doneMonthOnly ? 'Show all months' : 'Show this month only'} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-semibold transition-colors ${doneMonthOnly ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}><span className="tabular-nums text-sm">{doneStats.completedMonth}</span><span className="uppercase tracking-wide text-[10px]">Done this month</span></button>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700"><span className="tabular-nums text-sm">{fmtHours(doneStats.hoursMonth)} h</span><span className="uppercase tracking-wide text-[10px] text-slate-500">this month</span></span>
+                            <button type="button" onClick={() => setSegment('open')} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700 hover:bg-slate-50" title="Back to open work"><span className="tabular-nums text-sm">{rows.length}</span><span className="uppercase tracking-wide text-[10px] text-slate-500">Open now</span></button>
                         </div>
                     )}
 
