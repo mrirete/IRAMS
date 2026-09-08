@@ -55,7 +55,7 @@ Work through the rows in order. Each row names the account, the action, and what
 | 4.3 | My Work | Both work orders from step 3 are listed, assignee shows **J.tech's name** (not blank — that was the contacts gap). |
 | 4.4 | Open the corrective WO → **Start** | Status → WIP. |
 | 4.5 | Tasks → Resources → post a time confirmation for yourself | "Worked by" defaults to J.tech; posts; labour actuals show a value. |
-| 4.6 | Tasks → Resources → try to tick another person | Checkbox **disabled** with the "assign yourself only" tooltip. Own row stays enabled. |
+| 4.6 | Tasks → Resources → try to tick anyone, yourself included | Every checkbox **disabled** with "Assignments are made by your supervisor or planner". Assignment at step level needs Assign, like the order-level responsible person (0346, 2026-09-08). |
 | 4.7 | Details → status dropdown | **No** CANC / CLOSED options (edit only, no approve). |
 | 4.8 | Instructions → tick steps, add an observation with a photo | Saves; observation visible inline. |
 | 4.9 | **Complete** → fill failure coding (failure mode, cause, remedy) → tick *defect found* → complete | Status → TECO. A **follow-up corrective WO** is created and linked (parent) — this failed at the database before 0323. |

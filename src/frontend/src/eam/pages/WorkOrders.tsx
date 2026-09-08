@@ -5940,11 +5940,11 @@ const TaskEditor: React.FC<{
     const [confFinal, setConfFinal] = useState(false);
     const [posting, setPosting] = useState(false);
     const { user, permissions: taskPerms } = useAuth();
-    // Assigning people is `assign`, not `edit`. A technician may still put
-    // themselves on a task they are executing (self-assignment), nobody else.
+    // Assigning people is `assign`, not `edit` — at step level as at order
+    // level (0346). No self-pickup and no self-removal: a supervisor's plan is
+    // changed by people who hold Assign; technicians confirm time against the
+    // steps they are on (decision 2026-09-08, the SAP PM position).
     const canAssignOthers = taskPerms?.workOrders?.assign === true || taskPerms?.scheduling?.assign === true;
-    const authUserId = (user as any)?.id;
-    const authUsername = (user as any)?.email?.split('@')[0]?.toLowerCase();
 
     // State for Picker
     const [isPartPickerOpen, setIsPartPickerOpen] = useState(false);
@@ -6966,8 +6966,8 @@ const TaskEditor: React.FC<{
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={isAssigned}
-                                                                    disabled={!canAssignOthers && !(user.id === authUserId || String(user.username || '').toLowerCase() === authUsername)}
-                                                                    title={!canAssignOthers ? 'Your role can assign yourself only — assigning others needs the Assign permission' : undefined}
+                                                                    disabled={!canAssignOthers}
+                                                                    title={!canAssignOthers ? 'Assignments are made by your supervisor or planner (needs the Assign permission)' : undefined}
                                                                     onChange={() => {
                                                                         if (!isAssigned && outsideCrew) {
                                                                             const wcLabel = [crewWorkCenter?.code, crewWorkCenter?.name].filter(Boolean).join(' ') || 'work center';
