@@ -146,7 +146,7 @@ export const FunctionalFailureSelector: React.FC<{
                 </label>
                 {value ? (
                     <div className="text-sm text-slate-800 font-medium">
-                        <div className="font-mono text-xs text-slate-500">{value}</div>
+                        <div className="font-mono text-xs text-slate-500">{selectedEntry?.code || (value.startsWith('MANUAL:') ? 'MANUAL' : value)}</div>
                         {selectedEntry?.description || (value.startsWith('MANUAL:') ? value.replace('MANUAL:', '') : value)}
                     </div>
                 ) : (

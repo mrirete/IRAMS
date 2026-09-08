@@ -3134,9 +3134,12 @@ export class DatabaseService {
 
         // Handle Relational Updates
         let taskSemaphores: Record<string, string> = {}; // Map TempID -> RealID
+        let staleTaskIds: string[] = [];
 
         if (tasks) {
-            taskSemaphores = await this.updateJobTasks(id, tasks);
+            const synced = await this.updateJobTasks(id, tasks);
+            taskSemaphores = synced.idMap;
+            staleTaskIds = synced.staleIds;
             console.log('[updateWorkOrder] Task Semaphores:', taskSemaphores);
         }
 
@@ -3170,6 +3173,17 @@ export class DatabaseService {
                 return i;
             });
             await this.updateJobInventory(id, fixedInventory);
+        }
+
+        // Steps the user removed are deleted LAST, after labour and parts have
+        // been re-synced, and any posted confirmation that still points at them
+        // is detached rather than lost. Deleting first failed on the FK from
+        // work_order_labor and left the old rows behind (P0-A, 2026-09-08).
+        if (staleTaskIds.length > 0) {
+            await supabase.from('work_order_labor').update({ job_task_id: null }).in('job_task_id', staleTaskIds);
+            await supabase.from('work_order_parts').update({ job_task_id: null }).in('job_task_id', staleTaskIds);
+            const { error: delErr } = await supabase.from('job_tasks').delete().in('id', staleTaskIds);
+            if (delErr) console.error('[updateWorkOrder] Could not delete removed steps:', delErr.message);
         }
 
         if (jsa) {
@@ -3234,46 +3248,62 @@ export class DatabaseService {
         if (error) throw error;
     }
 
+    /**
+     * "Yes, Notify & Schedule": tell everyone on the job that it is on the
+     * schedule — every task-step assignee (users.id) and the responsible
+     * person (assigned_to, a contacts.id → users.id). Returns how many people
+     * were actually written to, 0 when nobody is assigned yet. Until 2026-09-08
+     * this only logged to the console and reported "1 recipient".
+     */
     public async sendJobNotifications(jobId: string): Promise<number> {
-        console.log(`[DatabaseService] Sending notifications for Job ${jobId}`);
         const job = await this.getWorkOrder(jobId);
         if (!job) return 0;
-
-        let sentCount = 0;
-
-        // 1. Notify Assigned Labor (People)
-        // Check both top-level labor and task assignments
-        const laborIds = new Set<string>();
-
-        // From Task Assignments
-        if (job.job_tasks) {
-            job.job_tasks.forEach((t: any) => {
-                if (t.assigned_user_ids) {
-                    t.assigned_user_ids.forEach((uid: string) => laborIds.add(uid));
-                }
+        const userIds = new Set<string>();
+        for (const t of (job.job_tasks || [])) for (const uid of (t.assigned_user_ids || [])) if (uid) userIds.add(uid);
+        if (job.assigned_to) {
+            const { data: u } = await supabase.from('users').select('id').eq('contact_id', job.assigned_to).maybeSingle();
+            if (u?.id) userIds.add(u.id);
+        }
+        if (userIds.size === 0) return 0;
+        const due = job.due_date ? new Date(job.due_date).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+        let sent = 0;
+        await Promise.all(Array.from(userIds).map(async uid => {
+            const row = await this.createNotification({
+                recipientId: uid,
+                title: `📅 ${job.wo_number || 'Work order'} is scheduled${due ? ` for ${due}` : ''}`,
+                message: `"${job.title}" is on the schedule. Open it to see your steps and the plan.`,
+                severity: 'INFO',
+                notificationType: 'SCHEDULE_ALERT',
+                module: 'workOrders',
+                entityId: job.id,
+                entityType: 'WORK_ORDER',
+                entityNumber: job.wo_number || '',
+                actionLink: `/work-orders/${job.id}`,
+                actionRequired: false,
             });
-        }
+            if (row) sent++;
+        }));
+        return sent;
+    }
 
-        // From Labor Tab
-        if (job.work_order_labor) {
-            job.work_order_labor.forEach((l: any) => {
-                // Assuming labor entries might link to a user or contact. 
-                // Creating a simplified notification flow for now based on direct User ID assign.
-                // In real app, we'd map Contact -> User or directly use User ID.
-            });
-        }
-
-        // Send to each unique user
-        for (const userId of Array.from(laborIds)) {
-            console.log(`[Notification] Sending to User ${userId}: Job ${job.wo_number} is Scheduled.`);
-
-            // Log to DB (Simulated)
-            // Schema might not have notification_logs table ready, skipping insert to avoid error if table missing.
-            // Just return success count for UI feedback.
-            sentCount++;
-        }
-
-        return sentCount > 0 ? sentCount : 1; // Return at least 1 to confirm "Sent" action processed if logic runs
+    /**
+     * The order-level assignee changed somewhere other than the work order page
+     * (Scheduling drag, Backlog assign) — write the same system journal line the
+     * page writes, so the record and My Work can say who assigned it and when.
+     */
+    public async journalAssignment(woId: string, previous: string | null | undefined, next: string | null | undefined, actorName: string): Promise<void> {
+        if ((previous || null) === (next || null)) return;
+        const { error } = await supabase.from('journal_entries').insert({
+            entity_id: woId,
+            entity_type: 'WORK_ORDER',
+            entry_type: 'SYSTEM',
+            entry: `Assignment changed: ${previous || 'unassigned'} → ${next || 'unassigned'}`,
+            is_system: true,
+            client_id: (globalThis.crypto?.randomUUID?.() ?? `sys-${Date.now()}`),
+            author_name: actorName,
+            created_at: new Date().toISOString(),
+        });
+        if (error) console.warn('[journalAssignment] not written:', error.message);
     }
 
     // --- REQUEST LOGIC ---
@@ -4592,16 +4622,30 @@ export class DatabaseService {
         return (data || []).map(DataMapper.toUIJobTask);
     }
 
-    public async updateJobTasks(woId: string, tasks: JobTask[]): Promise<Record<string, string>> {
+    public async updateJobTasks(woId: string, tasks: JobTask[]): Promise<{ idMap: Record<string, string>; staleIds: string[] }> {
         console.log(`[updateJobTasks] Starting update for WO: ${woId}`, tasks);
         // Track all IDs that should be kept (both existing and newly created)
         const activeIds: string[] = [];
         const idMap: Record<string, string> = {}; // Temp -> Real
 
+        // What the DB already holds — the confirmation roll-up (postConfirmation)
+        // owns status / actual_hours once time has been posted; a client copy
+        // taken before the posting must not write them back.
+        const { data: existingRows } = await supabase.from('job_tasks')
+            .select('id, status, actual_hours, actual_finish_date').eq('wo_id', woId);
+        const existingById = new Map<string, any>((existingRows || []).map((r: any) => [r.id, r]));
+
         // 1. Upsert provided tasks
         for (const task of tasks) {
             // Map to DB Record
             const dbRecord = DataMapper.toDBJobTask(task, woId);
+            const prior = dbRecord.id ? existingById.get(dbRecord.id) : undefined;
+            if (prior && prior.status === 'COMPLETED' && Number(prior.actual_hours) > 0
+                && (dbRecord.actual_hours == null || Number(dbRecord.actual_hours) === 0)) {
+                dbRecord.status = prior.status;
+                dbRecord.actual_hours = prior.actual_hours;
+                dbRecord.actual_finish_date = prior.actual_finish_date;
+            }
             // console.log('[updateJobTasks] Upserting task:', dbRecord); // Reducing log noise
 
             // We MUST select the returned ID to know what the DB generated for new tasks
@@ -4620,28 +4664,13 @@ export class DatabaseService {
             }
         }
 
-        // 2. Handle Deletions (Tasks present in DB but not in the list of active/upserted IDs)
-        const { data: existing, error: fetchError } = await supabase.from('job_tasks').select('id').eq('wo_id', woId);
-
-        if (fetchError) {
-            console.error("[updateJobTasks] Error fetching existing tasks:", fetchError);
-        }
-
-        if (existing) {
-            // Delete any task currently in DB that wasn't just Upserted/Inserted
-            const toDelete = existing.map((r: any) => r.id).filter(id => !activeIds.includes(id));
-
-            console.log('[updateJobTasks] IDs to delete:', toDelete);
-
-            if (toDelete.length > 0) {
-                const { error: deleteError } = await supabase.from('job_tasks').delete().in('id', toDelete);
-                if (deleteError) {
-                    console.error("[updateJobTasks] Error deleting tasks:", deleteError);
-                }
-            }
-        }
+        // 2. Steps present in the DB but absent from the list were removed by the
+        // user. They are returned, not deleted here: the caller deletes them
+        // after labour and parts have been re-synced (FK order).
+        const staleIds = Array.from(existingById.keys()).filter(id => !activeIds.includes(id));
+        if (staleIds.length > 0) console.log('[updateJobTasks] steps removed by the user:', staleIds);
         console.log(`[updateJobTasks] Completed update for WO: ${woId}`);
-        return idMap;
+        return { idMap, staleIds };
     }
 
     public async updateJobLabor(woId: string, labor: JobLabor[]): Promise<void> {
@@ -4715,9 +4744,12 @@ export class DatabaseService {
                 .select('id, operation_no, work_center_id, planned_rate, work_centers(activity_rate, cost_center_id)')
                 .eq('wo_id', woId)
                 .order('sequence', { ascending: true }),
+            // Posted confirmations only — planned craft lines share the table
+            // (mirror of sem_wo_actual_lines since 0341).
             supabase.from('work_order_labor')
                 .select('job_task_id, hours_worked, rate_per_hour')
-                .eq('wo_id', woId),
+                .eq('wo_id', woId)
+                .not('confirmation_no', 'is', null),
         ]);
 
         if (tasksRes.error) { console.error('getOperationActuals(tasks):', tasksRes.error); return []; }
@@ -4777,7 +4809,8 @@ export class DatabaseService {
         const { data: unlinked } = await supabase.from('work_order_labor')
             .select('hours_worked, rate_per_hour')
             .eq('wo_id', woId)
-            .is('job_task_id', null);
+            .is('job_task_id', null)
+            .not('confirmation_no', 'is', null);
         const orderLevelLabour = (unlinked || []).reduce(
             (s: number, l: any) => s + (Number(l.hours_worked) || 0) * (Number(l.rate_per_hour) || 0), 0);
 
@@ -4838,10 +4871,14 @@ export class DatabaseService {
         const { woId, operationId, hours } = params;
 
         // Next confirmation number for this operation.
+        // One sequence per order (P2-15: three postings by one person all got #2).
+        const { data: maxRow } = await supabase.from('work_order_labor')
+            .select('confirmation_no').eq('wo_id', params.woId).not('confirmation_no', 'is', null)
+            .order('confirmation_no', { ascending: false }).limit(1).maybeSingle();
         const { count } = await supabase.from('work_order_labor')
             .select('id', { count: 'exact', head: true })
             .eq('job_task_id', operationId);
-        const confirmationNo = (count || 0) + 1;
+        const confirmationNo = Math.max(Number(maxRow?.confirmation_no) || 0, count || 0) + 1;
 
         const { error: insErr } = await supabase.from('work_order_labor').insert({
             wo_id: woId,
@@ -4860,9 +4897,13 @@ export class DatabaseService {
 
         // Final confirmation closes the operation and rolls up its confirmed hours.
         if (params.isFinal) {
+            // Posted confirmations only — the planned craft line shares this
+            // table and was being rolled into "actual" (P1-2: 1 h planned + 1 h
+            // posted read as 2.00 h actual).
             const { data: confs } = await supabase.from('work_order_labor')
                 .select('hours_worked')
-                .eq('job_task_id', operationId);
+                .eq('job_task_id', operationId)
+                .not('confirmation_no', 'is', null);
             const totalHours = (confs || []).reduce((s: number, c: any) => s + (Number(c.hours_worked) || 0), 0);
             const { error: updErr } = await supabase.from('job_tasks').update({
                 actual_hours: Number(totalHours.toFixed(2)),
@@ -6229,6 +6270,14 @@ export class DatabaseService {
             ? new Date(Date.now() + notification.escalationTimeoutMinutes * 60 * 1000).toISOString()
             : null;
 
+        // created_by is the session's user, whatever the caller passed: the 0342
+        // insert policy refuses rows that claim to be from someone else.
+        let actor = notification.createdBy || 'SYSTEM';
+        try {
+            const { data: sess } = await supabase.auth.getSession();
+            if (sess?.session?.user?.id) actor = sess.session.user.id;
+        } catch { /* no session — service context keeps the given value */ }
+
         const row = {
             recipient_id: notification.recipientId,
             recipient_role: notification.recipientRole || null,
@@ -6245,7 +6294,7 @@ export class DatabaseService {
             escalation_deadline: escalationDeadline,
             escalation_recipient_role: notification.escalationRecipientRole || null,
             vendor_recipient_id: notification.vendorRecipientId || null,
-            created_by: notification.createdBy || 'SYSTEM',
+            created_by: actor,
         };
 
         // No `.select()` after the insert: only the recipient or an admin may READ a

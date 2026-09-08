@@ -608,13 +608,9 @@ export const Scheduling: React.FC = () => {
                 table_name: 'work_orders',
                 record_id: woId,
                 action: 'UPDATE',
-                changed_by: profile?.username || 'scheduler',
+                changed_by: (profile as any)?.id || null,            // uuid column — a username here failed the insert
                 timestamp: new Date().toISOString(),
-                changes: JSON.stringify({
-                    override_type: action,
-                    reason,
-                    ...details,
-                }),
+                changes: { override_type: action, reason, actor: profile?.username || 'scheduler', ...details },  // jsonb, not a string
             });
         } catch (err) {
             console.error('[Scheduling] Audit log failed (non-blocking):', err);
@@ -1087,12 +1083,14 @@ export const Scheduling: React.FC = () => {
                                 // Optimistic UI update
                                 setJobs(prev => prev.map(j => j.id === woId ? { ...j, assignedTo: contactId, dateDueStart: date, dueDate: date, status: (j.status === 'OPEN' || j.status === 'PLAN') ? 'SCHED' as any : j.status } : j));
                                 try {
+                                    const before = jobs.find(j => j.id === woId)?.assignedTo;
                                     await db.scheduleWorkOrder(woId, {
                                         assigned_to: contactId,
                                         date_due_start: date,
                                         due_date: date,
                                         status: 'SCHED',
                                     }, (profile?.username || 'scheduler') as string);
+                                    db.journalAssignment(woId, before, contactId, profile?.username || 'scheduler').catch(() => {});
                                     showToast('Job assigned and scheduled', 'success');
 
                                     // GAP-G: Notify assigned technician
@@ -1156,6 +1154,7 @@ export const Scheduling: React.FC = () => {
                     // Persist each assignment, then notify the assignee (GAP-G parity with MRS drag-drop)
                     const db = DatabaseService.getInstance();
                     assignTargetIds.forEach(woId => {
+                        db.journalAssignment(woId, jobs.find(j => j.id === woId)?.assignedTo, contactId, profile?.username || 'scheduler').catch(() => {});
                         db.updateWorkOrder(woId, { assigned_to: contactId } as any, 'scheduler')
                             .then(() => {
                                 const wo = jobs.find(j => j.id === woId);

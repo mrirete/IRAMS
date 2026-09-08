@@ -713,6 +713,7 @@ export interface WorkOrder {
   breakdown?: boolean;       // SAP MSAUS-style breakdown indicator; undefined = not recorded
   actualCost?: number; // Total Actual Cost (Snapshot)
   closedAt?: string;            // work_orders.closed_at — stamps at first TECO (0284); status-timeline fallback
+  persistedTaskIds?: string[];  // task ids known to exist in job_tasks (time can be confirmed against them); UI-only
   costFrozen?: boolean;         // 0284 — snapshot taken at financial close (CLOSED), immutable after
   frozenLaborCost?: number;     // ledger basis at close; undefined until frozen
   frozenMaterialCost?: number;  // ledger basis at close (material + service); undefined until frozen
@@ -1310,6 +1311,7 @@ export interface ServiceRequest {
   linkedWOId?: string; // WO created from this request
   linkedWONumber?: string;
   authorizedBy?: string;
+  authorizedByName?: string; // resolved for display; authorizedBy stays the users.id
   authorizedAt?: string;
   rejectionReason?: string;
 }

@@ -192,8 +192,15 @@ export const ServiceRequests: React.FC = () => {
         try {
             const db = DatabaseService.getInstance();
             if (newStatus === RequestStatus.CONVERTED) {
-                // Trigger Conversion Transaction
-                const wo = await db.approveRequestAndConvert(id, user?.id || 'unknown');
+                // Convert once. The Approve button converts first and then
+                // reports CONVERTED here; a second conversion threw "Workflow
+                // Violation", which skipped the refresh and the requester's
+                // notice and left the panel stale (P1-6, 2026-09-08).
+                // The list in state is stale right after Approve, so ask the DB.
+                const fresh = (await db.getRequests()).find((r: any) => r.id === id);
+                if (!fresh || String(fresh.status).toUpperCase() !== 'CONVERTED') {
+                    await db.approveRequestAndConvert(id, user?.id || 'unknown');
+                }
             } else {
                 // Standard Status Update
                 // Need to map UI Status to DB Status
@@ -215,6 +222,28 @@ export const ServiceRequests: React.FC = () => {
                 }
                 // Trigger Rules Engine
                 await NotificationService.checkRules('requests', 'SR_STATUS_CHANGE', uiRequest, { currentUserId: user?.id });
+                // No rule covers Review / Authorize — the requester heard nothing
+                // between raising and conversion. Tell them directly.
+                const requesterId = uiRequest.requesterId || (updated as any).requester_id;
+                if (requesterId && requesterId !== user?.id && (newStatus === RequestStatus.REVIEW || newStatus === RequestStatus.AUTHORIZED)) {
+                    const num = uiRequest.requestNumber || (updated as any).request_number || 'Your request';
+                    NotificationService.notify({
+                        recipientId: requesterId,
+                        title: newStatus === RequestStatus.REVIEW ? `${num} is being reviewed` : `${num} has been authorized`,
+                        message: newStatus === RequestStatus.REVIEW
+                            ? 'A supervisor has picked up your request and is reviewing it.'
+                            : 'Your request was authorized and is with planning to become a work order.',
+                        severity: 'INFO',
+                        notificationType: 'STATUS_CHANGE',
+                        module: 'requests',
+                        entityId: id,
+                        entityType: 'WORK_REQUEST',
+                        entityNumber: num,
+                        actionLink: `/requests?id=${id}`,
+                        actionRequired: false,
+                        createdBy: user?.id || 'SYSTEM',
+                    }).catch(console.error);
+                }
             }
         } catch (e: any) {
             console.error('Action Failed:', e.message);
@@ -472,7 +501,10 @@ const RequestColumn: React.FC<{
                         className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition cursor-pointer group"
                     >
                         <div className="flex justify-between items-start mb-2">
-                            <PriorityPill priority={req.priority} />
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-mono text-[10px] text-slate-400 truncate" title="Request number">{req.requestNumber}</span>
+                                <PriorityPill priority={req.priority} />
+                            </div>
                             <div className="flex items-center gap-1">
                                 {req.isBreakdown && (
                                     <div className="text-[10px] flex items-center gap-1 text-red-700 bg-red-50 font-bold border border-red-100 px-1 py-0.5 rounded" title="Equipment Breakdown">
@@ -1175,7 +1207,7 @@ const RequestDetail: React.FC<{
                                     <hr className="border-slate-100" />
                                     <div>
                                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Authorized By</label>
-                                        <div className="text-sm text-slate-700">{request.authorizedBy}</div>
+                                        <div className="text-sm text-slate-700">{request.authorizedByName || request.authorizedBy}</div>
                                     </div>
                                     {request.authorizedAt && (
                                         <div>

@@ -264,52 +264,19 @@ export class NotificationService {
         const wantEmail = activeChannels.includes('EMAIL');
         const emailRecipientIds: string[] = [];
 
-        for (const recipientId of recipients) {
-            if (!recipientId) continue;
+        const vendorIds = recipients.filter(r => r && r.startsWith('VENDOR::'));
+        const userTargets = recipients.filter(r => r && !r.startsWith('VENDOR::'));
 
+        for (const recipientId of vendorIds) {
             try {
-                // Check if this is a vendor recipient (external)
-                if (recipientId.startsWith('VENDOR::')) {
-                    const vendorId = recipientId.replace('VENDOR::', '');
-                    console.log(`%c[NOTIFICATION] External vendor dispatch: ${vendorId}`, 'color: #f59e0b; font-weight: bold;');
-
-                    // Log for external delivery (email/webhook) — future integration point
-                    await db.logNotificationAudit(
-                        `VENDOR:${vendorId}`,
-                        'EMAIL',
-                        rule.name,
-                        `[VENDOR] ${rule.description || rule.name} | Entity: ${entityNumber}`
-                    );
-
-                    // Also create an in-app record for admin visibility
-                    if (activeChannels.includes('IN_APP')) {
-                        await db.createNotification({
-                            recipientId: 'SYSTEM', // Visible to admins
-                            title: `📤 Vendor Notified: ${rule.name}`,
-                            message: `External vendor notification dispatched. ${rule.description || rule.name} — Entity: ${entityNumber}`,
-                            severity: rule.severity,
-                            notificationType: this.mapEventToType(rule.eventTrigger),
-                            module: rule.module,
-                            entityId: entity.id,
-                            entityType,
-                            entityNumber,
-                            actionLink: this.buildActionLink(rule.module, entity.id),
-                            actionRequired: false,
-                            vendorRecipientId: vendorId,
-                            createdBy: context?.currentUserId || 'SYSTEM',
-                        });
-                    }
-                    continue;
-                }
-
-                // Standard internal user
-                const resolvedUserId = await this.resolveRecipientUserId(recipientId);
-                if (wantEmail) emailRecipientIds.push(resolvedUserId);
+                const vendorId = recipientId.replace('VENDOR::', '');
+                console.log(`%c[NOTIFICATION] External vendor dispatch: ${vendorId}`, 'color: #f59e0b; font-weight: bold;');
+                await db.logNotificationAudit(`VENDOR:${vendorId}`, 'EMAIL', rule.name, `[VENDOR] ${rule.description || rule.name} | Entity: ${entityNumber}`);
                 if (activeChannels.includes('IN_APP')) {
                     await db.createNotification({
-                        recipientId: resolvedUserId,
-                        title: rule.name,
-                        message: rule.description || `${rule.name} triggered for ${entityNumber}`,
+                        recipientId: 'SYSTEM', // Visible to admins
+                        title: `📤 Vendor Notified: ${rule.name}`,
+                        message: `External vendor notification dispatched. ${rule.description || rule.name} — Entity: ${entityNumber}`,
                         severity: rule.severity,
                         notificationType: this.mapEventToType(rule.eventTrigger),
                         module: rule.module,
@@ -317,15 +284,41 @@ export class NotificationService {
                         entityType,
                         entityNumber,
                         actionLink: this.buildActionLink(rule.module, entity.id),
-                        actionRequired: ['APPROVAL_NEEDED', 'ASSIGNED', 'TECO_BLOCKED'].includes(rule.eventTrigger),
-                        escalationTimeoutMinutes: rule.escalationTimeoutMinutes || 0,
-                        escalationRecipientRole: rule.escalationRecipientRole || '',
+                        actionRequired: false,
+                        vendorRecipientId: vendorId,
                         createdBy: context?.currentUserId || 'SYSTEM',
                     });
                 }
             } catch (e) {
                 console.error(`[NotificationService] Failed to notify ${recipientId}:`, e);
             }
+        }
+
+        // Internal users: resolve every contact→user mapping at once, then
+        // write every row at once. The whole fan-out now takes one round of
+        // requests instead of one per recipient.
+        const resolvedUsers = (await Promise.all(userTargets.map(r => this.resolveRecipientUserId(r).catch(() => r))))
+            .filter((u): u is string => !!u);
+        const uniqueUsers = [...new Set(resolvedUsers)];
+        if (wantEmail) emailRecipientIds.push(...uniqueUsers);
+        if (activeChannels.includes('IN_APP') && uniqueUsers.length > 0) {
+            const results = await Promise.allSettled(uniqueUsers.map(resolvedUserId => db.createNotification({
+                recipientId: resolvedUserId,
+                title: rule.name,
+                message: rule.description || `${rule.name} triggered for ${entityNumber}`,
+                severity: rule.severity,
+                notificationType: this.mapEventToType(rule.eventTrigger),
+                module: rule.module,
+                entityId: entity.id,
+                entityType,
+                entityNumber,
+                actionLink: this.buildActionLink(rule.module, entity.id),
+                actionRequired: ['APPROVAL_NEEDED', 'ASSIGNED', 'TECO_BLOCKED'].includes(rule.eventTrigger),
+                escalationTimeoutMinutes: rule.escalationTimeoutMinutes || 0,
+                escalationRecipientRole: rule.escalationRecipientRole || '',
+                createdBy: context?.currentUserId || 'SYSTEM',
+            })));
+            results.forEach((res, idx) => { if (res.status === 'rejected') console.error(`[NotificationService] Failed to notify ${uniqueUsers[idx]}:`, res.reason); });
         }
 
         // Queue email deliveries in one batch insert (rule must carry EMAIL
@@ -370,60 +363,40 @@ export class NotificationService {
         const resolved: string[] = [];
         const scope = escalationScope || 'ORG_UNIT';
 
-        for (const r of recipients || []) {
+        // Every recipient entry resolves independently, so they resolve at the
+        // same time. Sequential resolution took ~20 s for nine recipients and
+        // was lost whenever the sender left the page first (2026-09-08).
+        const groups = await Promise.all((recipients || []).map(async (r: any): Promise<string[]> => {
             switch (r.type) {
                 case 'USER':
-                    resolved.push(r.targetId);
-                    break;
+                    return r.targetId ? [r.targetId] : [];
                 case 'DYNAMIC': {
-                    // Resolve dynamic targets from entity fields (case-insensitive)
                     const targetKey = (r.targetId || '').toLowerCase();
-                    if (targetKey === 'assignee' && entity.assignedTo) {
-                        resolved.push(entity.assignedTo);
-                    } else if (targetKey === 'requester' && (entity.requestedBy || entity.requesterId)) {
-                        resolved.push(entity.requestedBy || entity.requesterId);
-                    } else if (targetKey === 'permitholder' && entity.requestedBy) {
-                        resolved.push(entity.requestedBy);
-                    } else if (targetKey === 'createdby' && entity.createdBy) {
-                        resolved.push(entity.createdBy);
-                    } else if (targetKey === 'workcentercrew' || targetKey === 'workcentersupervisor') {
-                        // Route to the entity's (responsible) work centre crew — 0191 roster.
+                    if (targetKey === 'assignee' && entity.assignedTo) return [entity.assignedTo];
+                    if (targetKey === 'requester' && (entity.requestedBy || entity.requesterId)) return [entity.requestedBy || entity.requesterId];
+                    if (targetKey === 'permitholder' && entity.requestedBy) return [entity.requestedBy];
+                    if (targetKey === 'createdby' && entity.createdBy) return [entity.createdBy];
+                    if (targetKey === 'workcentercrew' || targetKey === 'workcentersupervisor') {
                         const wcId = entity.workCenterId || entity.work_center_id;
-                        if (wcId) {
-                            const crew = await this.resolveWorkCenterRecipients(wcId, targetKey === 'workcentersupervisor');
-                            crew.forEach(uid => resolved.push(uid));
-                        }
+                        if (wcId) return this.resolveWorkCenterRecipients(wcId, targetKey === 'workcentersupervisor');
                     }
-                    break;
+                    return [];
                 }
                 case 'ROLE':
-                    // Resolve ROLE using scoped strategy
                     try {
-                        const roleUsers = await this.resolveRoleRecipientsScoped(
-                            r.targetId,
-                            scope,
-                            context?.currentUserId,
-                            entity.siteId || entity.site_id
-                        );
-                        if (roleUsers.length > 0) {
-                            roleUsers.forEach(uid => resolved.push(uid));
-                        } else if (context?.currentUserId) {
-                            resolved.push(context.currentUserId);
-                        }
+                        const roleUsers = await this.resolveRoleRecipientsScoped(r.targetId, scope, context?.currentUserId, entity.siteId || entity.site_id);
+                        if (roleUsers.length > 0) return roleUsers;
+                        return context?.currentUserId ? [context.currentUserId] : [];
                     } catch {
-                        if (context?.currentUserId) {
-                            resolved.push(context.currentUserId);
-                        }
+                        return context?.currentUserId ? [context.currentUserId] : [];
                     }
-                    break;
                 case 'VENDOR':
-                    // External vendor — use special prefix so dispatch can handle separately
-                    if (r.targetId) {
-                        resolved.push(`VENDOR::${r.targetId}`);
-                    }
-                    break;
+                    return r.targetId ? [`VENDOR::${r.targetId}`] : [];
+                default:
+                    return [];
             }
-        }
+        }));
+        for (const g of groups) for (const id of g) resolved.push(id);
 
         // Deduplicate
         return [...new Set(resolved)];
@@ -802,7 +775,7 @@ export class NotificationService {
                             entityNumber: notif.entityNumber,
                             actionLink: notif.actionLink,
                             actionRequired: true,
-                            createdBy: 'SYSTEM_ESCALATION',
+                            createdBy: currentUserId, // the sweep runs in the recipient's own session (0342 insert policy)
                         });
                         escalated++;
                     } catch (e) {

@@ -21,7 +21,8 @@ export interface PriorityResult {
 
 // Criticality scores per ISO 14224 / RPN convention (default 3 if unknown).
 const CRIT_SCORES: Record<string, number> = { A: 10, B: 5, C: 2 };
-const RPN_EMERGENCY_THRESHOLD = 40; // Crit A + breakdown (10×10=100) → EMERGENCY
+import { priorityFromRpn } from './requestPriority';
+export { priorityFromRpn };
 
 /**
  * RPN auto-escalation: Priority = Asset Criticality × Failure Severity.
@@ -43,11 +44,9 @@ export function computeRequestPriority(
     else if (/(noise|alarm|grinding)/.test(d)) severity = 5;
 
     const rpn = critScore * severity;
-    const priority: ServiceRequest['priority'] =
-        rpn >= RPN_EMERGENCY_THRESHOLD ? 'EMERGENCY' : rpn >= 25 ? 'HIGH' : rpn >= 10 ? 'MEDIUM' : 'LOW';
-
-    return { rpn, priority };
+    return { rpn, priority: priorityFromRpn(rpn) };
 }
+
 
 export interface BuildRequestInput {
     description: string;

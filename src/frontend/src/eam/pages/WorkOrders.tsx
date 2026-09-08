@@ -437,7 +437,17 @@ export const WorkOrders: React.FC = () => {
                         setSelectedJob(job);
                         setViewMode('DETAIL');
                     }}
-                    onUpdateJob={(() => {}) as any}
+                    onUpdateJob={(async (u: any) => {
+                        // Start Job / quick-complete were wired to a no-op — the
+                        // button "worked" and wrote nothing (2026-09-08).
+                        if (!u?.id) return;
+                        await DatabaseService.getInstance().updateWorkOrder(u.id, {
+                            status: u.status,
+                            ...(u.failureData ? { failureData: u.failureData } : {}),
+                            ...(u.tasks ? { tasks: u.tasks } : {}),
+                        } as any, woProfile?.id || 'unknown');
+                        await loadOrders();
+                    }) as any}
                     dictionaries={dictionaries}
                     assets={assets}
                 />
@@ -1078,11 +1088,20 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
 
 const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: DictionaryEntry[]; users: any[]; contacts: any[]; orgUnits: OrganizationUnit[]; setDeleteModal: React.Dispatch<React.SetStateAction<{ isOpen: boolean; jobId: string | null; jobNo: string | null }>>; canEdit?: boolean; canDelete?: boolean }> = ({ job, onBack, dictionaries, users, contacts, orgUnits, setDeleteModal, canEdit = true, canDelete = true }) => {
     const { showToast } = useToast();
-    const { user } = useAuth();
+    const { user, permissions: jdPerms } = useAuth();
+    // Financial close is a ledger decision (FinOps · Edit): admins and asset
+    // managers. 0340 enforces the same at the database; the button was
+    // visible to every role before (P1-8).
+    const canFinancialClose = jdPerms?.finops?.edit === true;
     const navigate = useNavigate();
     const promptModal = usePrompt();
     // Local state to manage edits during the session (e.g. adding failure data before completion)
-    const [localJob, setLocalJob] = useState<WorkOrder>(job);
+    const [localJob, setLocalJob] = useState<WorkOrder>(() => ({ ...job, persistedTaskIds: (job.tasks || []).map(t => t.id) }));
+    // The order as the DB last saw it. Side-effects (rule dispatch, goods
+    // issue, assignment notices) diff against THIS, not against the snapshot
+    // taken at the latest keystroke — inside one debounce window that
+    // snapshot already carries the change and nothing looks new.
+    const lastPersistedRef = useRef<WorkOrder>(job);
     const [activeTab, setActiveTab] = useState<TabId>('details');
     const [costRefreshKey, setCostRefreshKey] = useState(0); // bumped after a time confirmation to re-roll the Cost tab
     const [showCompleteModal, setShowCompleteModal] = useState(false);
@@ -1260,6 +1279,99 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
     ];
 
     // ── Core DB persist function (called after debounce or immediately) ──
+    // Everything that must follow a persisted status or assignee change —
+    // the rule dispatch, the goods issue at TECO, the assignment notice.
+    // One function, called by the ordinary save AND by the Complete modal
+    // and the financial close, which write directly (2026-09-08: those two
+    // paths reached TECO/CLOSED with no journal, no goods issue and no
+    // review notification because the effects lived only in persistToDb).
+    const runStatusSideEffects = useCallback((originalJob: WorkOrder, updatedJob: WorkOrder, updates: Partial<WorkOrder>) => {
+        try {
+            // ── Notification Hook-Ins (fire-and-forget) ──────────────
+            const previousStatus = originalJob.status;
+            const newStatus = updatedJob.status;
+            const previousAssignee = originalJob.assignedTo;
+            const newAssignee = updatedJob.assignedTo;
+
+            if (updates.status && previousStatus !== newStatus) {
+                NotificationService.checkRules('workOrders', 'WO_STATUS_CHANGE', updatedJob, {
+                    currentUserId: user?.id || 'SYSTEM',
+                    previousEntity: { ...originalJob },
+                }).catch(console.error);
+            }
+
+            // ── Goods issue on completion (B2) ────────────────────────
+            // Reaching TECO consumes the planned parts: stock decrements per
+            // location (ISSUE transactions), part rows flip planned→issued,
+            // and the 0201 trigger releases their reservations. Idempotent —
+            // already-issued rows are skipped on any repeat transition.
+            const finishedStatuses = ['TECO', 'CLOSED', 'CANC', 'CANCELLED'];
+            if (updates.status && newStatus === WorkOrderStatus.TECO && !finishedStatuses.includes(previousStatus as string)) {
+                issueWorkOrderParts(updatedJob.id, (user as any)?.username || user?.id || 'SYSTEM')
+                    .then(r => {
+                        if (r.issuedParts > 0) {
+                            showToast(`Goods issue: ${r.issuedParts} part line${r.issuedParts === 1 ? '' : 's'} consumed from stores.`, 'success');
+                        }
+                        // Stock-low / stock-out from the REAL depletion event (0311) —
+                        // this used to fire only when someone re-saved the item form.
+                        for (const low of r.lowStock || []) {
+                            NotificationService.checkRules('inventory', low.onHand <= 0 ? 'STOCK_OUT' : 'STOCK_LOW', {
+                                id: low.itemId, code: low.code, itemCode: low.code, itemDescription: low.description,
+                                description: low.description, qtyOnHand: low.onHand, qtyAvailable: low.onHand,
+                                reorderPoint: low.minLevel, minLevel: low.minLevel, woNumber: updatedJob.woNumber,
+                            }, { currentUserId: (user as any)?.id || 'SYSTEM' });
+                        }
+                        if (r.shortfalls.length > 0) {
+                            showToast(`Stores records short on ${r.shortfalls.map(s => `${s.description} (−${s.short})`).join(', ')} — reconcile stock.`, 'warning');
+                        }
+                    })
+                    .catch(e => console.warn('[GoodsIssue] failed (parts stay planned, retry by re-saving TECO):', e));
+            }
+
+            if (updates.assignedTo && previousAssignee !== newAssignee && newAssignee) {
+                NotificationService.notify({
+                    recipientId: newAssignee,
+                    title: `📋 You've been assigned ${updatedJob.woNumber || 'a Work Order'}`,
+                    message: `Work Order "${updatedJob.title}" has been assigned to you. ${updatedJob.priority === 'emergency' ? 'EMERGENCY priority — respond immediately.' : 'Review scope and plan execution.'}`,
+                    severity: updatedJob.priority === 'emergency' ? 'CRITICAL' : 'INFO',
+                    notificationType: 'ASSIGNMENT',
+                    module: 'workOrders',
+                    entityId: updatedJob.id,
+                    entityType: 'WORK_ORDER',
+                    entityNumber: updatedJob.woNumber || '',
+                    actionLink: '/work-orders',
+                    actionRequired: true,
+                    createdBy: user?.id || 'SYSTEM',
+                }).catch(console.error);
+            }
+
+            // People ticked on a task step are assigned to the job too — the
+            // way planners actually assign. They were never told (P1-5).
+            if (updates.tasks) {
+                const before = new Set((originalJob.tasks || []).flatMap(t => t.assignedUserIds || []));
+                const added = [...new Set((updatedJob.tasks || []).flatMap(t => t.assignedUserIds || []))].filter(uid => uid && !before.has(uid) && uid !== user?.id);
+                for (const uid of added) {
+                    NotificationService.notify({
+                        recipientId: uid,
+                        title: `📋 You're on ${updatedJob.woNumber || 'a work order'}`,
+                        message: `You've been assigned to a step on "${updatedJob.title}". Open it to see your part of the job.`,
+                        severity: updatedJob.priority === 'emergency' ? 'CRITICAL' : 'INFO',
+                        notificationType: 'ASSIGNMENT',
+                        module: 'workOrders',
+                        entityId: updatedJob.id,
+                        entityType: 'WORK_ORDER',
+                        entityNumber: updatedJob.woNumber || '',
+                        actionLink: `/work-orders/${updatedJob.id}`,
+                        actionRequired: true,
+                        createdBy: user?.id || 'SYSTEM',
+                    }).catch(console.error);
+                }
+            }
+        } catch (e) {
+            console.warn('[WorkOrders] status side-effects failed (non-blocking):', e);
+        }
+    }, [user, showToast]);
+
     const persistToDb = useCallback(async (updatedJob: WorkOrder, originalJob: WorkOrder, updates: Partial<WorkOrder>) => {
         if (!updatedJob.id) return;
         const versionAtSaveStart = editVersionRef.current;
@@ -1366,6 +1478,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                     labor: mappedLabor,
                     inventory: mappedInventory,
                     tasks: mappedTasks.length > 0 ? mappedTasks : updatedJob.tasks,
+                    persistedTaskIds: mappedTasks.map((t: any) => t.id),
                     jsa: mappedJSA,
                     properties: raw.properties || {},
                     enforceJobCostCenter: (raw.properties as any)?.enforceJobCostCenter,
@@ -1398,68 +1511,18 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 // save began — otherwise we'd clobber in-flight keystrokes.
                 if (editVersionRef.current === versionAtSaveStart) {
                     setLocalJob(refreshedJob);
+                } else {
+                    // Keystrokes arrived during the save: keep them, but the
+                    // steps that now exist in the DB are persisted either way.
+                    const ids = mappedTasks.map((t: any) => t.id);
+                    setLocalJob(prev => ({ ...prev, persistedTaskIds: ids }));
                 }
             }
 
             showToast('Work Order saved', 'success');
 
-            // ── Notification Hook-Ins (fire-and-forget) ──────────────
-            const previousStatus = originalJob.status;
-            const newStatus = updatedJob.status;
-            const previousAssignee = originalJob.assignedTo;
-            const newAssignee = updatedJob.assignedTo;
-
-            if (updates.status && previousStatus !== newStatus) {
-                NotificationService.checkRules('workOrders', 'WO_STATUS_CHANGE', updatedJob, {
-                    currentUserId: user?.id || 'SYSTEM',
-                    previousEntity: { ...originalJob },
-                }).catch(console.error);
-            }
-
-            // ── Goods issue on completion (B2) ────────────────────────
-            // Reaching TECO consumes the planned parts: stock decrements per
-            // location (ISSUE transactions), part rows flip planned→issued,
-            // and the 0201 trigger releases their reservations. Idempotent —
-            // already-issued rows are skipped on any repeat transition.
-            const finishedStatuses = ['TECO', 'CLOSED', 'CANC', 'CANCELLED'];
-            if (updates.status && newStatus === WorkOrderStatus.TECO && !finishedStatuses.includes(previousStatus as string)) {
-                issueWorkOrderParts(updatedJob.id, (user as any)?.username || user?.id || 'SYSTEM')
-                    .then(r => {
-                        if (r.issuedParts > 0) {
-                            showToast(`Goods issue: ${r.issuedParts} part line${r.issuedParts === 1 ? '' : 's'} consumed from stores.`, 'success');
-                        }
-                        // Stock-low / stock-out from the REAL depletion event (0311) —
-                        // this used to fire only when someone re-saved the item form.
-                        for (const low of r.lowStock || []) {
-                            NotificationService.checkRules('inventory', low.onHand <= 0 ? 'STOCK_OUT' : 'STOCK_LOW', {
-                                id: low.itemId, code: low.code, itemCode: low.code, itemDescription: low.description,
-                                description: low.description, qtyOnHand: low.onHand, qtyAvailable: low.onHand,
-                                reorderPoint: low.minLevel, minLevel: low.minLevel, woNumber: updatedJob.woNumber,
-                            }, { currentUserId: (user as any)?.id || 'SYSTEM' });
-                        }
-                        if (r.shortfalls.length > 0) {
-                            showToast(`Stores records short on ${r.shortfalls.map(s => `${s.description} (−${s.short})`).join(', ')} — reconcile stock.`, 'warning');
-                        }
-                    })
-                    .catch(e => console.warn('[GoodsIssue] failed (parts stay planned, retry by re-saving TECO):', e));
-            }
-
-            if (updates.assignedTo && previousAssignee !== newAssignee && newAssignee) {
-                NotificationService.notify({
-                    recipientId: newAssignee,
-                    title: `📋 You've been assigned ${updatedJob.woNumber || 'a Work Order'}`,
-                    message: `Work Order "${updatedJob.title}" has been assigned to you. ${updatedJob.priority === 'emergency' ? 'EMERGENCY priority — respond immediately.' : 'Review scope and plan execution.'}`,
-                    severity: updatedJob.priority === 'emergency' ? 'CRITICAL' : 'INFO',
-                    notificationType: 'ASSIGNMENT',
-                    module: 'workOrders',
-                    entityId: updatedJob.id,
-                    entityType: 'WORK_ORDER',
-                    entityNumber: updatedJob.woNumber || '',
-                    actionLink: '/work-orders',
-                    actionRequired: true,
-                    createdBy: user?.id || 'SYSTEM',
-                }).catch(console.error);
-            }
+            runStatusSideEffects(lastPersistedRef.current || originalJob, updatedJob, updates);
+            lastPersistedRef.current = updatedJob;
         } catch (e: any) {
             console.error("Update Job Failed:", e);
             const msg = e.message || 'Unknown error';
@@ -1468,7 +1531,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         } finally {
             setIsSaving(false);
         }
-    }, [dictionaries, user, showToast]);
+    }, [dictionaries, user, showToast, runStatusSideEffects]);
 
     // ── Scoped JSA persist: safety-tab edits only touch the jsa tables.
     // The full-WO path rewrites the whole order (and delete-reinserts child
@@ -1598,7 +1661,13 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
         if (!raw) return;
         const mappedLabor = ((raw as any).work_order_labor || []).map((l: any) => DataMapper.toUIJobLabor(l));
         const mappedTasks = ((raw as any).job_tasks || []).map((t: any) => DataMapper.toUIJobTask(t)).sort((a: any, b: any) => a.sequence - b.sequence);
-        setLocalJob(prev => ({ ...prev, labor: mappedLabor, tasks: mappedTasks.length ? mappedTasks : prev.tasks }));
+        setLocalJob(prev => ({ ...prev, labor: mappedLabor, tasks: mappedTasks.length ? mappedTasks : prev.tasks, persistedTaskIds: mappedTasks.map((t: any) => t.id) }));
+        // The next debounced save must carry the rolled-up rows, not the
+        // pre-posting copy — otherwise "Save & close" right after a final
+        // confirmation wrote PENDING / null hours back over COMPLETED (P1-3).
+        if (mappedTasks.length && pendingUpdatesRef.current.tasks) {
+            pendingUpdatesRef.current = { ...pendingUpdatesRef.current, tasks: mappedTasks, labor: mappedLabor };
+        }
         setCostRefreshKey(k => k + 1); // re-roll the Cost tab's actuals after a confirmation
     };
 
@@ -1611,8 +1680,12 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
             return;
         }
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        // Carry the accumulated changes so the side-effects know what changed
+        // (a manual Save used to cancel the debounced save and pass nothing —
+        // the assignment notices for people ticked just before it never fired).
+        const pending = pendingUpdatesRef.current;
         pendingUpdatesRef.current = {};
-        persistToDb(localJob, job, {});
+        persistToDb(localJob, job, pending);
     };
 
     const handleConfirmCompletion = async (followUp: boolean) => {
@@ -1629,6 +1702,15 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 isSystem: false
               }, ...(localJob.journals || [])]
             : (localJob.journals || []);
+        // The transition itself belongs in the record. The direct write below
+        // bypasses updateJob's auto-journal, so the stamp is added here.
+        const tecoStamp = {
+            id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `sys-${Date.now()}`,
+            type: 'SYSTEM', createdBy: (user as any)?.username || user?.email || 'system',
+            createdAt: new Date().toISOString(), isSystem: true,
+            entry: `Status changed: ${localJob.status || '—'} → TECO`,
+        };
+        const journalsForClose = [tecoStamp, ...finalJournals];
 
         const modalBom = modalFailedBomId ? bomItems.find((b: any) => b.id === modalFailedBomId) : undefined;
         let finalFailureData = requiresFailureCoding && !hasFailureMode && modalFailureMode
@@ -1696,10 +1778,13 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 failureData: finalFailureData,
                 properties: {
                     ...((localJob as any).properties || {}),
-                    journals: finalJournals,
+                    journals: journalsForClose,
                 },
             } as any, user?.id || 'unknown');
-            updateJob({
+            // Written already — reflect it locally without arming another
+            // debounced save, then run the effects every status change gets.
+            const completedJob: WorkOrder = {
+                ...localJob,
                 status: updatedStatus,
                 ...(Number.isFinite(actualHrs) && actualHrs > 0 ? { actualDuration: actualHrs } : {}),
                 ...(Number.isFinite(downtimeHrs) && downtimeHrs > 0 ? { actualDowntime: downtimeHrs } : {}),
@@ -1707,8 +1792,11 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 ...(malfEndIso ? { malfunctionEnd: malfEndIso } : {}),
                 ...(!isPreventiveType ? { breakdown: modalBreakdown } : {}),
                 failureData: finalFailureData,
-                journals: finalJournals as any
-            });
+                journals: journalsForClose as any,
+            };
+            setLocalJob(completedJob);
+            runStatusSideEffects(lastPersistedRef.current || localJob, completedJob, { status: updatedStatus });
+            lastPersistedRef.current = completedJob;
 
             // Enhancement 3: Lock any library templates referenced by this WO's tasks (MoC compliance)
             try {
@@ -1960,7 +2048,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         variant: 'secondary' as const,
                         isPrimary: true,
                     }] : []),
-                    ...(localJob.status === WorkOrderStatus.TECO ? [{
+                    ...(localJob.status === WorkOrderStatus.TECO && canFinancialClose ? [{
                         label: 'Close (Financial)',
                         icon: <Lock size={14} />,
                         onClick: async () => {
@@ -2136,7 +2224,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                         Complete
                     </Button>
                 )}
-                {localJob.status === WorkOrderStatus.TECO && (
+                {localJob.status === WorkOrderStatus.TECO && canFinancialClose && (
                     <Button
                         onClick={() => setShowFinancialCloseModal(true)}
                         variant="secondary"
@@ -2474,7 +2562,7 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                                         await updateJob({ status: pendingStatus as any }, true);
                                         if (localJob.id) {
                                             const count = await DatabaseService.getInstance().sendJobNotifications(localJob.id);
-                                            showToast(`Notifications sent to ${count} recipient(s)`, 'success');
+                                            showToast(count > 0 ? `Scheduling notice sent to ${count} ${count === 1 ? 'person' : 'people'} on the job.` : 'Scheduled. Nobody is assigned to this job yet, so there was no one to notify.', count > 0 ? 'success' : 'info');
                                         }
                                     }
                                     setShowNotificationModal(false);
@@ -2663,8 +2751,21 @@ const JobDetail: React.FC<{ job: WorkOrder; onBack: () => void; dictionaries: Di
                 onClose={() => setShowFinancialCloseModal(false)}
                 onConfirm={async () => {
                     try {
-                        await DatabaseService.getInstance().updateWorkOrder(localJob.id, { status: WorkOrderStatus.CLOSED } as any, user?.id || 'unknown');
-                        updateJob({ status: WorkOrderStatus.CLOSED });
+                        const closeStamp = {
+                            id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `sys-${Date.now()}`,
+                            type: 'SYSTEM', createdBy: (user as any)?.username || user?.email || 'system',
+                            createdAt: new Date().toISOString(), isSystem: true,
+                            entry: `Status changed: ${localJob.status || '—'} → CLOSED`,
+                        };
+                        const journalsAtClose = [closeStamp, ...(localJob.journals || [])];
+                        await DatabaseService.getInstance().updateWorkOrder(localJob.id, {
+                            status: WorkOrderStatus.CLOSED,
+                            properties: { ...((localJob as any).properties || {}), journals: journalsAtClose },
+                        } as any, user?.id || 'unknown');
+                        const closedJob: WorkOrder = { ...localJob, status: WorkOrderStatus.CLOSED, journals: journalsAtClose as any };
+                        setLocalJob(closedJob);
+                        runStatusSideEffects(lastPersistedRef.current || localJob, closedJob, { status: WorkOrderStatus.CLOSED });
+                        lastPersistedRef.current = closedJob;
                         showToast(`Work Order ${localJob.woNumber || localJob.id} has been Financially Closed. All costs are frozen.`, 'success');
                         setShowFinancialCloseModal(false);
                         onBack();
@@ -5421,8 +5522,13 @@ const TasksTab: React.FC<{
 
     const addTask = () => {
         const nextSeq = tasks.length > 0 ? Math.max(...tasks.map(t => t.sequence)) + 10 : 10;
+        // The id is minted here, once. Saves upsert by id, so a step that was
+        // added while an earlier save was still in flight can no longer come
+        // back as a second row (3 steps became 10 rows on 2026-09-08 when the
+        // temp id survived a skipped refresh). "Not yet saved" is tracked in
+        // job.persistedTaskIds instead of an id prefix.
         const newTask: JobTask = {
-            id: `new-${Date.now()}`,
+            id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `new-${Date.now()}`,
             sequence: nextSeq,
             description: 'New Task Step',
             estHours: 0,
@@ -6064,10 +6170,14 @@ const TaskEditor: React.FC<{
         return { rate, source, roleCode, userId: confUser?.id as string | undefined };
     }, [confUserId, availableUsers, contacts, dictionaries, taskLabor, effectiveRate]);
 
+    // A step exists in the DB once a save has returned its id (or it was loaded
+    // from the DB). Time can only be confirmed against a step that exists.
+    const taskIsPersisted = !task.id.startsWith('new-') && (!jobContext.persistedTaskIds || jobContext.persistedTaskIds.includes(task.id));
+
     const postTimeConfirmation = async () => {
         const hrs = parseFloat(confHours);
         if (!hrs || hrs <= 0) { showToast('Enter the hours worked.', 'warning'); return; }
-        if (task.id.startsWith('new-')) { showToast('Save the work order before confirming time.', 'warning'); return; }
+        if (!taskIsPersisted) { showToast('Save the work order before confirming time.', 'warning'); return; }
         setPosting(true);
         try {
             await DatabaseService.getInstance().postConfirmation({
@@ -6394,7 +6504,7 @@ const TaskEditor: React.FC<{
             </div>
 
             {/* WM-2c: time confirmation (shown in Do-work mode) */}
-            {execMode && !task.id.startsWith('new-') && (
+            {execMode && taskIsPersisted && (
                 <div className="px-3 sm:px-4 py-2 border-b border-slate-200 bg-blue-50/40 flex flex-wrap items-center gap-2">
                     <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide flex items-center gap-1">
                         <Clock size={12} /> Confirm time

@@ -1,3 +1,4 @@
+import { priorityFromRpn } from '../lib/requestPriority';
 import {
     ServiceRequestRecord,
     WorkOrderRecord,
@@ -57,7 +58,9 @@ export class DataMapper {
             title: record.description.length > 40 ? record.description.substring(0, 40) + '...' : record.description,
             description: record.description,
             status: DataMapper.mapRequestStatus(record.status),
-            priority: 'MEDIUM',
+            // Read back from the stored score — the card said MEDIUM while the
+            // form and the work order said EMERGENCY (2026-09-08).
+            priority: priorityFromRpn(record.risk_score),
             category: record.category || 'General',
             assetId: record.asset_id,
             assetName: foundAsset ? foundAsset.tag : 'Asset ' + record.asset_id.substring(0, 8) + '...', // Show Tag if found
@@ -72,6 +75,7 @@ export class DataMapper {
             rejectionReason: record.rejection_reason,
             isBreakdown: record.is_breakdown,
             authorizedBy: record.authorized_by,
+            authorizedByName: (() => { const u = users?.find(x => x.id === record.authorized_by || x.contact_id === record.authorized_by); return u ? (u.fullName || u.full_name || u.username || u.name || u.email) : undefined; })(),
             authorizedAt: record.authorized_at,
             linkedWOId: (record as any).work_orders?.[0]?.id,
             linkedWONumber: (record as any).work_orders?.[0]?.wo_number

@@ -42,9 +42,15 @@ export function useCreateServiceRequest(onCreated?: (req: ServiceRequest, queued
             );
             onCreated?.(req, queued);
             return req;
-        } catch (e) {
+        } catch (e: any) {
             console.error('[useCreateServiceRequest] submit failed:', e);
-            showToast('Could not submit request. Try again.', 'error');
+            const code = e?.code || '';
+            const msg: string = e?.message || '';
+            const why = code === '23502' && /asset_id/.test(msg) ? 'Pick the equipment or location the problem is at.'
+                : /Functional Failure classification is mandatory/i.test(msg) ? 'This is a criticality-A asset: open "Add details" and choose the fault type.'
+                : /permission|42501|row-level security/i.test(msg) ? 'Your account is not allowed to raise requests.'
+                : msg ? msg.replace(/^Validation Error:\s*/i, '').slice(0, 160) : 'Check your connection and try again.';
+            showToast(`Could not submit the request. ${why}`, 'error');
             return null;
         } finally {
             setSubmitting(false);

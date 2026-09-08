@@ -272,12 +272,16 @@ export const ReportRequestForm: React.FC<{
     }, [SpeechRecognition, listening, showToast]);
 
     const handleSubmit = () => {
+        // A location / system row is an asset too. Picking one without a piece
+        // of equipment used to submit asset_id = null and fail with a generic
+        // toast (2026-09-08, SYS-500-WI).
+        const pickedLocation = !selectedAsset && selectedLocationId ? (locations.find(l => l.id === selectedLocationId) as any) : undefined;
         create({
             description: desc,
             isBreakdown,
-            criticality: selectedAsset?.criticality,
-            assetId: selectedAsset?.id,
-            assetName: selectedAsset?.tag,
+            criticality: selectedAsset?.criticality || pickedLocation?.criticality,
+            assetId: selectedAsset?.id || pickedLocation?.id,
+            assetName: selectedAsset?.tag || pickedLocation?.tag,
             location: getResolvedLocation(),
             category,
             functionalFailureType: funcFailure || undefined,
