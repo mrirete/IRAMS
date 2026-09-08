@@ -59,7 +59,7 @@ export async function loadSapSource(): Promise<SapLoadSource> {
         fetchOptional<SapLoadSource['costCenters'][number]>('cost_centers', 'id, code, company_code, controlling_area', 'code'),
         fetchOptional<SapLoadSource['companies'][number]>('companies', 'id, code, name', 'code'),
         fetchOptional<SapLoadSource['workCenters'][number]>('work_centers', 'id, code', 'code'),
-        supabase.from('work_orders').select('id', { count: 'exact', head: true }).then(r => r.count ?? 0).catch(() => 0),
+        Promise.resolve(supabase.from('work_orders').select('id', { count: 'exact', head: true })).then(r => r.count ?? 0).catch(() => 0),
     ]);
 
     return {

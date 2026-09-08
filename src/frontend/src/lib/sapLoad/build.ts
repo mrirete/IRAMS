@@ -357,8 +357,10 @@ export function buildSapLoad(src: SapLoadSource, p: SapTargetParams): SapLoadRes
     const financialByAsset = new Map<string, SrcAssetFinancial>();
     for (const f of src.assetFinancials) if (!financialByAsset.has(f.asset_id)) financialByAsset.set(f.asset_id, f);
 
-    const isFloc = (a: SrcAsset) => objectClassOf(a) === 'FLOC';
-    const isEquip = (a: SrcAsset | null | undefined): a is SrcAsset => !!a && objectClassOf(a) === 'EQUIPMENT';
+    const isFloc = (a: SrcAsset): boolean => objectClassOf(a) === 'FLOC';
+    // Plain booleans, not type predicates: a predicate on an already-typed
+    // SrcAsset narrows the false branch to `never` under tsc -b.
+    const isEq = (a: SrcAsset): boolean => objectClassOf(a) === 'EQUIPMENT';
 
     const parentOf = (a: SrcAsset): SrcAsset | undefined => (a.parent_id ? assetById.get(a.parent_id) : undefined);
     const depthOf = (a: SrcAsset): number => {
@@ -379,7 +381,7 @@ export function buildSapLoad(src: SapLoadSource, p: SapTargetParams): SapLoadRes
     const workCenterCode = (id: string | null | undefined): string => (id ? s(workCenterCodeById.get(id)) : '');
     const locationOf = (a: SrcAsset): string => s((a.properties as Record<string, unknown> | null)?.location);
 
-    const unknownLevel = src.assets.filter(a => !isFloc(a) && !isEquip(a));
+    const unknownLevel = src.assets.filter(a => !isFloc(a) && !isEq(a));
     if (unknownLevel.length) {
         issues.add('general', 'warn', `${unknownLevel.length} asset(s) have a hierarchy level that is neither a functional location nor equipment — not exported. Fix the level in the Asset Register.`, false);
     }
@@ -426,7 +428,7 @@ export function buildSapLoad(src: SapLoadSource, p: SapTargetParams): SapLoadRes
     {
         const spec = SAP_OBJECT_BY_KEY.equipment;
         const clip = clipper(issues, spec.key);
-        const eq = src.assets.filter(a => isEquip(a)).sort((a, b) => depthOf(a) - depthOf(b) || a.tag.localeCompare(b.tag));
+        const eq = src.assets.filter(isEq).sort((a, b) => depthOf(a) - depthOf(b) || a.tag.localeCompare(b.tag));
         let noPosition = 0, noCriticality = 0, legacyMissing = 0;
         for (const a of eq) {
             if (!s(a.name) && !s(a.tag)) { skipped[spec.key] += 1; continue; }
@@ -445,7 +447,7 @@ export function buildSapLoad(src: SapLoadSource, p: SapTargetParams): SapLoadRes
                 p.equipmentCategory,
                 clip(s(a.asset_class || a.asset_type_code).toUpperCase(), 'EQART', 10),
                 floc ? clip(s(floc.tag), 'TPLNR', 30) : '',
-                isEquip(parent) ? clip(eqRef(parent), 'HEQUI', 18) : '',
+                parent && isEq(parent) ? clip(eqRef(parent), 'HEQUI', 18) : '',
                 clip(s(a.manufacturer), 'HERST', 30),
                 clip(s(a.model), 'TYPBZ', 20),
                 clip(s(a.serial_number), 'SERGE', 30),
@@ -539,7 +541,7 @@ export function buildSapLoad(src: SapLoadSource, p: SapTargetParams): SapLoadRes
         const assetsWithBom = [...byAsset.keys()].map(id => assetById.get(id)).filter((a): a is SrcAsset => !!a)
             .sort((a, b) => a.tag.localeCompare(b.tag));
         for (const a of assetsWithBom) {
-            if (!isEquip(a)) { onFloc += byAsset.get(a.id)!.length; continue; }
+            if (!isEq(a)) { onFloc += byAsset.get(a.id)!.length; continue; }
             const lines = [...byAsset.get(a.id)!].sort((x, y) => s(x.created_at).localeCompare(s(y.created_at)) || x.id.localeCompare(y.id));
             let pos = 0;
             lines.forEach((l, idx) => {
@@ -588,7 +590,7 @@ export function buildSapLoad(src: SapLoadSource, p: SapTargetParams): SapLoadRes
             if (d.is_active === false) continue;
             const a = assetById.get(d.asset_id);
             if (!a) { orphan += 1; skipped[spec.key] += 1; continue; }
-            const ref = isEquip(a) ? eqRef(a) : s(a.tag);
+            const ref = isEq(a) ? eqRef(a) : s(a.tag);
             let psort = psortOf(d);
             let n = 2;
             while (seen.has(`${ref}|${psort}`)) { psort = `${psortOf(d).slice(0, 17)}-${n}`; n += 1; }
@@ -635,7 +637,7 @@ export function buildSapLoad(src: SapLoadSource, p: SapTargetParams): SapLoadRes
             const value = num(l.reading_value);
             objects[spec.key].push([
                 '',
-                isEquip(a) ? eqRef(a) : s(a.tag),
+                isEq(a) ? eqRef(a) : s(a.tag),
                 psortOf(d),
                 toSapDate(l.reading_date),
                 toSapTime(l.reading_time),
