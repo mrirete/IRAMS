@@ -85,6 +85,8 @@ const fmtHours = (h: number) => (h >= 10 ? Math.round(h).toString() : (Math.roun
 export const MyWork: React.FC = () => {
     const { profile } = useAuth();
     const navigate = useNavigate();
+    // Work can be recorded against either id: assigned_to holds the contact,
+    // task assignees hold the user (see woInvolvesPerson in lib/workOrder.ts).
     const contactId = profile?.contactId || '';
     const userId = profile?.id || '';
     // Names the status-change journal may carry for this person (author_name
@@ -116,16 +118,16 @@ export const MyWork: React.FC = () => {
     }, []);
 
     const load = useCallback(async () => {
-        if (!contactId) { setLoading(false); return; }
+        if (!contactId && !userId) { setLoading(false); return; }
         try {
-            const data = await DatabaseService.getInstance().getMyWorkOrders(contactId);
+            const data = await DatabaseService.getInstance().getMyWorkOrders(contactId, userId);
             setRows(data);
             setOfflineCopy(null);
             setError(null);
-            writeCache(contactId, data);
+            writeCache(contactId || userId, data);
             loadJournals(data.map(r => r.id));
         } catch (e) {
-            const cached = readCache(contactId);
+            const cached = readCache(contactId || userId);
             if (cached) {
                 setRows(cached.rows);
                 setOfflineCopy(cached.savedAt);
@@ -137,7 +139,7 @@ export const MyWork: React.FC = () => {
         } finally {
             setLoading(false);
         }
-    }, [contactId, loadJournals]);
+    }, [contactId, userId, loadJournals]);
 
     const loadDone = useCallback(async () => {
         if (!canHaveHistory) return;
@@ -372,8 +374,8 @@ export const MyWork: React.FC = () => {
                     {!loading && error && (
                         <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-card p-4">{error}</div>
                     )}
-                    {!loading && !error && rows.length === 0 && !contactId && noPerson}
-                    {!loading && !error && rows.length === 0 && contactId && (
+                    {!loading && !error && rows.length === 0 && !contactId && !userId && noPerson}
+                    {!loading && !error && rows.length === 0 && (contactId || userId) && (
                         <div className="bg-white border border-slate-200 rounded-card p-8 text-center flex flex-col items-center gap-3">
                             <CheckCircle2 size={36} className="text-emerald-500" />
                             <div className="font-semibold text-slate-800">You're all caught up</div>

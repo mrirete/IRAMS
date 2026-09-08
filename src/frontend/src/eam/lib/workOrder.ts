@@ -91,3 +91,35 @@ export function buildWorkOrder(i: WorkOrderInput): Record<string, unknown> {
     if (i.properties !== undefined) row.properties = i.properties;
     return row;
 }
+
+/**
+ * Does this work order involve this person? THE one definition, used by
+ * My Work, the "Assigned to me" preset and My Work Today.
+ *
+ * A job is "mine" when I am the order's assignee (work_orders.assigned_to,
+ * a contacts.id), OR I am ticked on any of its task steps (job_tasks.
+ * assigned_user_ids — the Resources-tab checkbox, which stores users.id),
+ * OR I have a labour line on it. Planners assign at the task level far
+ * more often than at the order level, so reading only assigned_to left a
+ * technician's real work invisible on My Work (WO-2026-01000, 2026-09-08).
+ * `ids` should hold every id the person may be recorded under: contact id,
+ * user id, and legacy username / email.
+ */
+export function woInvolvesPerson(
+    wo: {
+        assignedTo?: string | null;
+        tasks?: { assignedUserIds?: string[] | null }[] | null;
+        labor?: { contactId?: string | null }[] | null;
+    },
+    ids: Iterable<string | null | undefined>,
+): boolean {
+    const mine = new Set<string>();
+    for (const id of ids) if (id) mine.add(id);
+    if (mine.size === 0) return false;
+    if (wo.assignedTo && mine.has(wo.assignedTo)) return true;
+    for (const t of wo.tasks || []) {
+        for (const uid of t.assignedUserIds || []) if (mine.has(uid)) return true;
+    }
+    for (const l of wo.labor || []) if (l.contactId && mine.has(l.contactId)) return true;
+    return false;
+}

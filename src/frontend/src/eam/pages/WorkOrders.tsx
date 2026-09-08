@@ -45,7 +45,7 @@ import { useConfirm, usePrompt } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 
 import { DatabaseService } from '../services/DatabaseService';
-import { buildWorkOrder, isPreventiveWoType } from '../lib/workOrder';
+import { buildWorkOrder, isPreventiveWoType, woInvolvesPerson } from '../lib/workOrder';
 import { isOpenWo } from '../../lib/woState';
 import { resolveLabourRate, labourRateSourceLabel } from '../lib/labourRate';
 import { issueWorkOrderParts } from '../lib/goodsIssue';
@@ -396,6 +396,7 @@ export const WorkOrders: React.FC = () => {
                         canCreate={canCreate}
                         canDelete={canDelete}
                         myContactId={woProfile?.contactId || ''}
+                        myUserId={woProfile?.id || ''}
                         onBulkDelete={async (ids: string[]) => {
                             // ═══ RBAC Layer 2: Submit-level guard ═══
                             if (!canDelete) {
@@ -529,7 +530,7 @@ const WorkClassPill: React.FC<{ c: string }> = ({ c }) => {
     return <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full border ${m.cls}`}>{m.label}</span>;
 };
 
-const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => void, onCreate: () => void, dictionaries: DictionaryEntry[], assets?: any[], onBulkDelete?: (ids: string[]) => Promise<void>, initialSearch?: string, canCreate?: boolean, canDelete?: boolean, myContactId?: string }> = ({ jobs, onSelect, onCreate, dictionaries, assets = [], onBulkDelete, initialSearch = '', canCreate = true, canDelete = true, myContactId = '' }) => {
+const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => void, onCreate: () => void, dictionaries: DictionaryEntry[], assets?: any[], onBulkDelete?: (ids: string[]) => Promise<void>, initialSearch?: string, canCreate?: boolean, canDelete?: boolean, myContactId?: string, myUserId?: string }> = ({ jobs, onSelect, onCreate, dictionaries, assets = [], onBulkDelete, initialSearch = '', canCreate = true, canDelete = true, myContactId = '', myUserId = '' }) => {
     const promptModal = usePrompt();
     const [density, setDensity] = useState<Density>('compact');
     const [statusFilter, setStatusFilter] = useState<WorkOrderStatus | 'ALL'>('ALL');
@@ -570,10 +571,21 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
     // contact), every state, so the desktop list can answer "where are my jobs
     // and what happened to them" the way My Work does on mobile.
     const [mineOnly, setMineOnly] = useState(false);
+    // The list query does not embed task rows, so the ids where I am a task
+    // assignee or have a labour line come from the DB once (same rule as My Work).
+    const [mineIds, setMineIds] = useState<Set<string>>(() => new Set());
+    useEffect(() => {
+        let active = true;
+        if (!myContactId && !myUserId) { setMineIds(new Set()); return; }
+        DatabaseService.getInstance().workOrderIdsInvolving(myContactId, myUserId)
+            .then(ids => { if (active) setMineIds(new Set(ids)); })
+            .catch(() => { /* preset falls back to the order-level assignee */ });
+        return () => { active = false; };
+    }, [myContactId, myUserId]);
     type WOView = { id: string; name: string; builtin?: boolean; statusFilter: WorkOrderStatus | 'ALL'; classFilter: 'ALL' | 'PROACTIVE' | 'REACTIVE'; backlogOnly?: boolean; mineOnly?: boolean; sortField: SortField; sortAsc: boolean };
     const BUILTIN_VIEWS: WOView[] = [
         { id: 'all', name: 'All Work Orders', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: false, sortField: 'priority', sortAsc: false },
-        ...(myContactId ? [{ id: 'mine', name: 'Assigned to me', builtin: true, statusFilter: 'ALL' as const, classFilter: 'ALL' as const, backlogOnly: false, mineOnly: true, sortField: 'status' as SortField, sortAsc: false }] : []),
+        ...((myContactId || myUserId) ? [{ id: 'mine', name: 'Assigned to me', builtin: true, statusFilter: 'ALL' as const, classFilter: 'ALL' as const, backlogOnly: false, mineOnly: true, sortField: 'status' as SortField, sortAsc: false }] : []),
         { id: 'backlog', name: 'Backlog · oldest first', builtin: true, statusFilter: 'ALL', classFilter: 'ALL', backlogOnly: true, sortField: 'created', sortAsc: true },
         { id: 'reactive-backlog', name: 'Reactive backlog', builtin: true, statusFilter: 'ALL', classFilter: 'REACTIVE', backlogOnly: true, sortField: 'priority', sortAsc: false },
     ];
@@ -625,7 +637,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
             const matchesStatus = statusFilter === 'ALL' || job.status === statusFilter;
             const matchesClass = classFilter === 'ALL' || classifyWork(job) === classFilter;
             const matchesBacklog = !backlogOnly || !BACKLOG_FINISHED.has((job.status || '').toUpperCase());
-            const matchesMine = !mineOnly || (!!myContactId && job.assignedTo === myContactId);
+            const matchesMine = !mineOnly || mineIds.has(job.id) || woInvolvesPerson(job, [myContactId, myUserId]);
             const matchesSearch = (job.title || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.id || '').toLowerCase().includes(search.toLowerCase()) ||
                 (job.woNumber || '').toLowerCase().includes(search.toLowerCase()) ||
@@ -652,7 +664,7 @@ const JobListing: React.FC<{ jobs: WorkOrder[], onSelect: (job: WorkOrder) => vo
             }
             return sortAsc ? cmp : -cmp;
         });
-    }, [jobs, statusFilter, classFilter, backlogOnly, mineOnly, myContactId, search, sortField, sortAsc, BACKLOG_FINISHED]);
+    }, [jobs, statusFilter, classFilter, backlogOnly, mineOnly, mineIds, myContactId, myUserId, search, sortField, sortAsc, BACKLOG_FINISHED]);
 
     // Planned-vs-Reactive ratio (governance KPI) — over classified work only.
     const classRatio = useMemo(() => {
@@ -7585,8 +7597,8 @@ const MyWorkTodayView: React.FC<MyWorkTodayViewProps> = ({
     // No fallback: an empty list means nothing is assigned. Showing other
     // people's jobs here misled users into thinking the work was theirs.
     const assignedJobs = useMemo(() => {
-        const mine = new Set([currentUser?.contactId, currentUser?.id, currentUser?.username, currentUser?.email].filter(Boolean));
-        return workOrders.filter(job => mine.has(job.assignedTo) && ['SCHED', 'WIP'].includes(job.status));
+        const ids = [currentUser?.contactId, currentUser?.id, currentUser?.username, currentUser?.email];
+        return workOrders.filter(job => woInvolvesPerson(job, ids) && ['SCHED', 'WIP'].includes(job.status));
     }, [workOrders, currentUser]);
 
     // Handle Quick Start Job

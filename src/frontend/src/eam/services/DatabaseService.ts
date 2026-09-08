@@ -2677,15 +2677,65 @@ export class DatabaseService {
      * Active work orders assigned to one technician (contact), with the asset
      * name embedded — powers the "My Work" home. Excludes finished/cancelled.
      */
-    public async getMyWorkOrders(contactId: string): Promise<(WorkOrderRecord & { assets?: { name?: string } | null })[]> {
-        const { data, error } = await supabase
-            .from('work_orders')
-            .select('*, assets(name)')
-            .eq('assigned_to', contactId)
-            .not('status', 'in', '(TECO,CLOSED,CANC,CANCELLED)')
-            .order('due_date', { ascending: true, nullsFirst: false });
-        if (error) throw error;
-        return data || [];
+    /**
+     * Open work that involves this person: order assignee (contacts.id), OR
+     * ticked on any task step (job_tasks.assigned_user_ids holds users.id —
+     * the Resources-tab checkbox, which is how planners actually assign), OR
+     * a labour line. See woInvolvesPerson() in lib/workOrder.ts for the rule.
+     */
+    public async getMyWorkOrders(contactId: string, userId?: string): Promise<(WorkOrderRecord & { assets?: { name?: string } | null })[]> {
+        const ids = await this.workOrderIdsInvolving(contactId, userId);
+        const OPEN_FILTER = '(TECO,CLOSED,CANC,CANCELLED)';
+        const rows = new Map<string, WorkOrderRecord & { assets?: { name?: string } | null }>();
+        if (contactId) {
+            const { data, error } = await supabase
+                .from('work_orders')
+                .select('*, assets(name)')
+                .eq('assigned_to', contactId)
+                .not('status', 'in', OPEN_FILTER);
+            if (error) throw error;
+            for (const r of data || []) rows.set(r.id, r);
+        }
+        const missing = ids.filter(id => !rows.has(id));
+        for (let i = 0; i < missing.length; i += 150) {
+            const { data, error } = await supabase
+                .from('work_orders')
+                .select('*, assets(name)')
+                .in('id', missing.slice(i, i + 150))
+                .not('status', 'in', OPEN_FILTER);
+            if (error) throw error;
+            for (const r of data || []) rows.set(r.id, r);
+        }
+        return Array.from(rows.values()).sort((a, b) =>
+            new Date(a.due_date || '2999-01-01').getTime() - new Date(b.due_date || '2999-01-01').getTime());
+    }
+
+    /**
+     * Work order ids where the person is a task assignee or has a labour
+     * line (any state). Both the contacts.id and the users.id are matched:
+     * task assignees store users.id, labour has carried either over time.
+     */
+    public async workOrderIdsInvolving(contactId?: string, userId?: string): Promise<string[]> {
+        const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const ids = Array.from(new Set([contactId, userId].filter((x): x is string => !!x && UUID.test(x))));
+        if (ids.length === 0) return [];
+        const out = new Set<string>();
+        const [tasksRes, labourRes] = await Promise.all([
+            supabase
+                .from('job_tasks')
+                .select('wo_id')
+                .or(ids.map(id => `assigned_user_ids.cs.["${id}"]`).join(',')),
+            supabase
+                .from('work_order_labor')
+                .select('wo_id')
+                .in('contact_id', ids),
+        ]);
+        // Either signal failing must not blank the list — log and carry on.
+        if (tasksRes.error) console.warn('[getMyWorkOrders] task assignees unavailable:', tasksRes.error.message);
+        if (labourRes.error) console.warn('[getMyWorkOrders] labour lines unavailable:', labourRes.error.message);
+        for (const r of tasksRes.data || []) if (r.wo_id) out.add(r.wo_id);
+        for (const r of labourRes.data || []) if (r.wo_id) out.add(r.wo_id);
+        return Array.from(out);
     }
 
     /**
@@ -2780,7 +2830,7 @@ export class DatabaseService {
         for (const r of assignedRes.data || []) {
             rows.set(r.id, { ...(r as any), my_hours: hoursByWo.get(r.id) || 0, via: 'assigned' });
         }
-        const fetchExtra = async (ids: string[], via: 'labour' | 'completed') => {
+        const fetchExtra = async (ids: string[], via: 'assigned' | 'labour' | 'completed') => {
             const missing = ids.filter(id => !rows.has(id));
             for (let i = 0; i < missing.length; i += 150) {
                 const { data: extra } = await supabase
@@ -2793,6 +2843,12 @@ export class DatabaseService {
                 }
             }
         };
+        // Ticked on a task step = assigned, for history as for open work.
+        const taskIds = personIds.length
+            ? await supabase.from('job_tasks').select('wo_id').or(personIds.map(id => `assigned_user_ids.cs.["${id}"]`).join(','))
+                .then(r => (r.data || []).map((t: any) => t.wo_id as string).filter(Boolean))
+            : [];
+        await fetchExtra(taskIds, 'assigned');
         await fetchExtra(Array.from(hoursByWo.keys()), 'labour');
         await fetchExtra(Array.from(completedIds), 'completed');
         return Array.from(rows.values());
