@@ -23,6 +23,34 @@ import analyzeService from '../../eam/services/AnalyzeService';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 import { pdfToImageBlob } from '../../utils/pdfToImage';
 import { supabase } from '../../eam/lib/supabase';
+import { NotificationService } from '../../eam/services/NotificationService';
+
+/**
+ * 0338: a person added to a study team is told. The team was saved silently
+ * before — the only surface in the app where an add produced no notification.
+ */
+async function tellAddedMember(c: StudyCollaborator, kind: 'reliability study' | 'P&ID study', title: string, link: string) {
+    if (c.type !== 'contact' || !c.ref_id) return;
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        const recipient = await NotificationService.resolveRecipientUserId(c.ref_id);
+        if (!recipient || recipient === user?.id) return;
+        await NotificationService.notify({
+            recipientId: recipient,
+            title: `🤝 Added to a ${kind} team`,
+            message: `You were added to the ${kind} "${title}" as ${c.role}. Open Analyze › Reliability Modeling to see it; you can leave from the Team drawer.`,
+            severity: 'INFO',
+            notificationType: 'ASSIGNMENT',
+            module: 'analyze',
+            entityType: kind === 'P&ID study' ? 'PID_STUDY' : 'RELIABILITY_STUDY',
+            actionLink: link,
+            actionRequired: false,
+            createdBy: user?.id || 'SYSTEM',
+        });
+    } catch (e) {
+        console.warn('[ReliabilityModelingTab] Non-critical: team notification failed', e);
+    }
+}
 import { assetFailureBasis, FAILURE_QUERY_COLUMNS } from '../../eam/services/reliabilityMetrics';
 
 // ── Composite state for undo/redo ────────────────────────────
@@ -1088,11 +1116,12 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                     {showRbdTeam && (
                         <TeamPanel
                             collaborators={(activeStudy as any).collaborators || []}
-                            onAdd={(c) => {
+                            onAdd={async (c) => {
                                 const updated = [...((activeStudy as any).collaborators || []), c];
                                 setActiveStudy(prev => prev ? { ...prev, collaborators: updated } as any : null);
                                 setStudies(prev => prev.map(s => s.id === activeStudy.id ? { ...s, collaborators: updated } as any : s));
-                                analyzeService.updateRBDModel(activeStudy.id, { collaborators: updated } as any);
+                                await analyzeService.updateRBDModel(activeStudy.id, { collaborators: updated } as any);
+                                void tellAddedMember(c, 'reliability study', activeStudy.title, '/analyze');
                             }}
                             onRemove={(id) => {
                                 const updated = ((activeStudy as any).collaborators || []).filter((c: any) => c.id !== id);
@@ -1382,11 +1411,12 @@ export const ReliabilityModelingTab: React.FC<ModelingTabProps> = ({ onStateChan
                     {showPidTeam && (
                         <TeamPanel
                             collaborators={(activePidStudy as any).collaborators || []}
-                            onAdd={(c) => {
+                            onAdd={async (c) => {
                                 const updated = [...((activePidStudy as any).collaborators || []), c];
                                 setActivePidStudy(prev => prev ? { ...prev, collaborators: updated } as any : null);
                                 setPidStudies(prev => prev.map(s => s.id === activePidStudy.id ? { ...s, collaborators: updated } as any : s));
-                                analyzeService.updatePIDConfig(activePidStudy.id, { collaborators: updated } as any);
+                                await analyzeService.updatePIDConfig(activePidStudy.id, { collaborators: updated } as any);
+                                void tellAddedMember(c, 'P&ID study', activePidStudy.title, '/analyze');
                             }}
                             onRemove={(id) => {
                                 const updated = ((activePidStudy as any).collaborators || []).filter((c: any) => c.id !== id);

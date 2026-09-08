@@ -22,6 +22,12 @@ interface AuthContextType {
      */
     tenantMissing: boolean;
     signOut: () => Promise<void>;
+    /**
+     * Re-resolve profile + permissions from the users row without a reload.
+     * Used after a server-side grant (e.g. accepting an assessment invitation,
+     * 0338) so the new module access takes effect in this session.
+     */
+    refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -33,6 +39,7 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     tenantMissing: false,
     signOut: async () => { },
+    refreshProfile: async () => { },
 });
 
 /** Does this JWT carry a tenant claim? Decoded locally — no network. */
@@ -358,8 +365,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setTenantMissing(false);
     };
 
+    const refreshProfile = async () => {
+        if (!user) return;
+        clearProfileCache();
+        await fetchProfile(user);
+    };
+
     return (
-        <AuthContext.Provider value={{ user, profile, permissions, role, dataScope, loading, tenantMissing, signOut }}>
+        <AuthContext.Provider value={{ user, profile, permissions, role, dataScope, loading, tenantMissing, signOut, refreshProfile }}>
             {children}
         </AuthContext.Provider>
     );

@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { ArrowLeft, Check, Loader2, CheckCircle, AlertTriangle, Users } from 'lucide-react';
+import { ArrowLeft, Check, Loader2, CheckCircle, AlertTriangle, Users, Eye, X } from 'lucide-react';
 import { ASSESSMENT_STEPS } from '../../eam/services/AuditTypes';
 import type { AuditAssessmentState, AuditIntakeData, ScoredFinding } from '../../eam/services/AuditTypes';
 import type { MaturityAnswer } from '../../eam/services/MaturityQuestionBank';
@@ -30,6 +30,8 @@ import { MaturityChecklist } from './MaturityChecklist';
 import { AuditScoredFindings } from './AuditScoredFindings';
 import { AuditReportView } from './AuditReportView';
 import { AssessmentInvite } from './AssessmentInvite';
+import { getMyInvite, respondToAssessmentInvite } from '../../eam/services/assessmentInvites';
+import { useToast } from '../../eam/contexts/ToastContext';
 
 interface Props {
     existingState?: AuditAssessmentState;
@@ -86,16 +88,61 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
     const stateRef = useRef<AuditAssessmentState>(state);
     const isSavingRef = useRef(false);
 
-    const { user } = useAuth();
+    const { user, profile, refreshProfile } = useAuth();
+    const { showToast } = useToast();
     const currentStep = state.currentStep;
+    const myEmail = (user?.email || '').toLowerCase();
+
+    // ─── 0338: my invitation on this assessment ─────────────────
+    // The assessor works freely. An invitee reads only until they accept, and a
+    // viewer reads only after that too; a contributor edits once accepted.
+    const [myInvite, setMyInvite] = useState<{ id: string; role: 'viewer' | 'contributor'; status: 'pending' | 'accepted' | 'declined'; invitedBy: string | null } | null>(null);
+    const [answering, setAnswering] = useState(false);
+    const assessmentIdForInvite = state.id || recordIdRef.current;
+    useEffect(() => {
+        if (!assessmentIdForInvite || !myEmail) { setMyInvite(null); return; }
+        getMyInvite(assessmentIdForInvite, myEmail).then(setMyInvite).catch(() => setMyInvite(null));
+    }, [assessmentIdForInvite, myEmail]);
+    const isAssessor = !myInvite || (state.intake.email || '').toLowerCase() === myEmail;
+    const readOnly = !!myInvite && !isAssessor && (myInvite.role === 'viewer' || myInvite.status !== 'accepted');
+
+    const answerInvite = async (accept: boolean) => {
+        if (!assessmentIdForInvite) return;
+        setAnswering(true);
+        try {
+            const answer = await respondToAssessmentInvite({
+                accept, assessmentId: assessmentIdForInvite,
+                responder: { id: profile?.id, name: profile?.fullName || profile?.username },
+            });
+            if (!answer.ok) {
+                showToast('The invitation is no longer open — it may have been withdrawn.', 'error');
+                setMyInvite(null);
+                return;
+            }
+            if (accept) {
+                await refreshProfile();
+                setMyInvite(prev => prev ? { ...prev, status: 'accepted' } : prev);
+                showToast(`You joined this assessment as ${answer.role}.`, 'success');
+            } else {
+                showToast('Invitation declined.', 'success');
+                onExit();
+            }
+        } catch (e: any) {
+            showToast('Could not answer the invitation: ' + (e?.message || 'unknown'), 'error');
+        } finally { setAnswering(false); }
+    };
 
     // Keep stateRef in sync
     useEffect(() => { stateRef.current = state; }, [state]);
 
     // ─── Auto-save on state change ──────────────────────────────
+    const readOnlyRef = useRef(false);
+    useEffect(() => { readOnlyRef.current = readOnly; }, [readOnly]);
+
     const persistState = useCallback(async (s: AuditAssessmentState) => {
         if (!s.intake.firstName && !recordIdRef.current) return;
         if (isSavingRef.current) return;
+        if (readOnlyRef.current) return;   // a viewer / unanswered invitee never writes
         isSavingRef.current = true;
 
         setSaveStatus('saving');
@@ -295,13 +342,20 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                             </span>
                         )}
 
-                        {/* Invite Colleagues Button */}
-                        <button
-                            onClick={() => setInviteOpen(true)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors"
-                        >
-                            <Users size={14} /> Invite
-                        </button>
+                        {/* Invite Colleagues Button — not for a viewer or an unanswered invitee */}
+                        {readOnly ? (
+                            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs font-semibold"
+                                title={myInvite?.status === 'accepted' ? 'You were invited as a viewer' : 'Accept the invitation below to contribute'}>
+                                <Eye size={13} /> View only
+                            </span>
+                        ) : (
+                            <button
+                                onClick={() => setInviteOpen(true)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors"
+                            >
+                                <Users size={14} /> Invite
+                            </button>
+                        )}
 
                         {/* Auto-save indicator */}
                         <div className="flex items-center gap-1.5">
@@ -353,8 +407,34 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                 </div>
             </div>
 
+            {/* ─── 0338: the invitation, answered where the work is ─────── */}
+            {myInvite && !isAssessor && myInvite.status === 'pending' && (
+                <div className="bg-blue-50 border-b border-blue-200 px-6 py-3">
+                    <div className="ers-page-narrow flex flex-wrap items-center gap-3">
+                        <Users size={16} className="text-blue-600 shrink-0" />
+                        <p className="text-sm text-slate-700 flex-1 min-w-[16rem]">
+                            <span className="font-semibold">{myInvite.invitedBy || 'A colleague'}</span> invited you to this assessment as a{' '}
+                            <span className="font-semibold">{myInvite.role}</span>.
+                            {myInvite.role === 'contributor' ? ' Accept to answer questions and record findings.' : ' Accept to follow it as it progresses.'}
+                        </p>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => answerInvite(true)} disabled={answering}
+                                className="inline-flex items-center gap-1 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 px-3 py-1.5 rounded-lg">
+                                {answering ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Accept
+                            </button>
+                            <button onClick={() => answerInvite(false)} disabled={answering}
+                                className="inline-flex items-center gap-1 text-xs font-bold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-60 px-3 py-1.5 rounded-lg">
+                                <X size={12} /> Decline
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* ─── Step Content ────────────────────────────────── */}
+            {/* Read-only = the same screens, inert: nothing to relearn, nothing saved. */}
             <div className="flex-1 overflow-y-auto">
+            <div className={readOnly ? 'pointer-events-none select-text opacity-90' : undefined} aria-readonly={readOnly || undefined}>
                 {currentStep === 1 && !showAnalysis && (
                     <AuditIntake
                         initialData={state.intake}
@@ -406,6 +486,7 @@ export const AuditWizard: React.FC<Props> = ({ existingState, onExit, onSaved })
                         onSaved={onSaved}
                     />
                 )}
+            </div>
             </div>
 
             {/* ─── Invite Panel ────────────────────────────────── */}

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import analyzeService from '../../eam/services/AnalyzeService';
 import type { StudyCollaborator } from '../../eam/services/AnalyzeService';
+import { useAuth } from '../../contexts/AuthContext';
 
 type CollabRole = StudyCollaborator['role'];
 
@@ -79,6 +80,12 @@ interface TeamPanelProps {
     onRemove: (id: string) => void;
     onUpdateRole: (id: string, role: CollabRole) => void;
     onClose: () => void;
+    /**
+     * 0338: a member may always leave, even when they may not edit the team.
+     * Owners wire this to a server-side "leave" (rcm_leave_study /
+     * rca_leave_investigation); when absent, leaving is a plain remove.
+     */
+    onLeave?: () => void | Promise<void>;
 }
 
 export const TeamPanel: React.FC<TeamPanelProps> = ({
@@ -87,7 +94,19 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
     onRemove,
     onUpdateRole,
     onClose,
+    onLeave,
 }) => {
+    const { user: me } = useAuth() as any;
+    const myContactId: string | undefined = me?.contactId || me?.contact_id || undefined;
+    const isMe = (c: StudyCollaborator) => c.type === 'contact' && !!myContactId && c.ref_id === myContactId;
+    const [leaving, setLeaving] = useState(false);
+    const leave = async (c: StudyCollaborator) => {
+        if (!window.confirm('Leave this team? You can be added again by the facilitator.')) return;
+        setLeaving(true);
+        try {
+            if (onLeave) await onLeave(); else onRemove(c.id);
+        } finally { setLeaving(false); }
+    };
     const [showPicker, setShowPicker] = useState(false);
     const [tab, setTab] = useState<'people' | 'teams'>('people');
     const [query, setQuery] = useState('');
@@ -171,7 +190,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                     {!showPicker ? (
                         <button onClick={() => setShowPicker(true)}
                             className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 ${accent.btn} text-white text-sm font-medium rounded-lg shadow-sm transition-all`}>
-                            <UserPlus size={14} /> Invite People or Teams
+                            <UserPlus size={14} /> Add People or Teams
                         </button>
                     ) : (
                         <div className="space-y-2.5">
@@ -256,7 +275,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                         <div className="text-center py-12">
                             <Users size={28} className="mx-auto text-slate-200 mb-2" />
                             <p className="text-sm text-slate-400 font-medium">No team members yet</p>
-                            <p className="text-xs text-slate-300 mt-1 max-w-xs mx-auto">Invite people, teams, or departments to collaborate on this study.</p>
+                            <p className="text-xs text-slate-300 mt-1 max-w-xs mx-auto">Add people, teams, or departments to work on this study. They are told, and can leave.</p>
                         </div>
                     ) : (
                         <div className="space-y-1">
@@ -296,12 +315,20 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                                             </button>
                                         )}
                                     </div>
-                                    {/* Remove */}
-                                    <button onClick={() => onRemove(c.id)}
-                                        className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
-                                        title="Remove from study">
-                                        <Trash2 size={13} />
-                                    </button>
+                                    {/* Leave (my own row) / Remove (others) */}
+                                    {isMe(c) ? (
+                                        <button onClick={() => leave(c)} disabled={leaving}
+                                            className="px-2 py-1 rounded-md text-[10px] font-semibold text-slate-500 border border-slate-200 hover:text-red-600 hover:border-red-200 hover:bg-red-50 disabled:opacity-50 transition-all"
+                                            title="Leave this team">
+                                            Leave
+                                        </button>
+                                    ) : (
+                                        <button onClick={() => onRemove(c.id)}
+                                            className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                                            title="Remove from study">
+                                            <Trash2 size={13} />
+                                        </button>
+                                    )}
                                 </div>
                             ))}
                         </div>
@@ -318,7 +345,7 @@ export const TeamPanel: React.FC<TeamPanelProps> = ({
                             </span>
                         ) : savedFlash ? (
                             <span className="flex items-center gap-1 text-emerald-600 font-semibold">
-                                <Check size={10} /> {savedFlash} saved · ⚡ Notification sent
+                                <Check size={10} /> {savedFlash} saved · told
                             </span>
                         ) : (
                             <span>Changes auto-saved</span>

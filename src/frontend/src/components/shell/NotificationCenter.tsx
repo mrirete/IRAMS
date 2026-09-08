@@ -5,7 +5,9 @@ import { DatabaseService } from '../../eam/services/DatabaseService';
 import { NotificationService } from '../../eam/services/NotificationService';
 import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from '../../eam/contexts/ToastContext';
-import { notificationRoute, isApprovableRequest } from '../../lib/notificationNav';
+import { notificationRoute, isApprovableRequest, isAssessmentInvite } from '../../lib/notificationNav';
+import { useAuth as useEamAuth } from '../../eam/contexts/AuthContext';
+import { respondToAssessmentInvite, assessmentRoute } from '../../eam/services/assessmentInvites';
 import { useUnreadNotifications } from '../../hooks/useUnreadNotifications';
 
 // ─────────────────────────────────────────────────────────
@@ -149,6 +151,40 @@ export const NotificationCenter: React.FC = () => {
     };
 
     const actorName = (user as any)?.username || (user as any)?.full_name || 'user';
+    const { refreshProfile } = useEamAuth();
+
+    // ── 0338: an assessment invitation is answered here, not just read ──
+    // The invitee may have no audits access yet (the grant follows acceptance),
+    // so the answer cannot depend on reaching the assessment page first.
+    const answerInvite = async (n: any, accept: boolean, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setActing(accept ? n.id : n.id + ':decline');   // the spinner sits on the button that was pressed
+        try {
+            const answer = await respondToAssessmentInvite({
+                accept, assessmentId: n.entityId,
+                responder: { id: userId || undefined, name: actorName },
+            });
+            if (!answer.ok) {
+                showToast(answer.reason === 'not_yours'
+                    ? 'This invitation is addressed to a different email address.'
+                    : 'The invitation is no longer open — it may have been withdrawn.', 'error');
+                return;
+            }
+            if (userId) await DatabaseService.getInstance().acknowledgeNotification(n.id, actorName);
+            setNotifications(prev => prev.map(x => x.id === n.id ? { ...x, isRead: true, isAcknowledged: true } : x));
+            setUnreadCount(c => Math.max(0, c - (n.isRead ? 0 : 1)));
+            if (accept) {
+                await refreshProfile();   // the audits grant lands server-side; pick it up now
+                showToast(`You joined the assessment as ${answer.role || 'a collaborator'}.`, 'success');
+                setOpen(false);
+                navigate(assessmentRoute(n.entityId));
+            } else {
+                showToast('Invitation declined.', 'success');
+            }
+        } catch (err: any) {
+            showToast('Could not answer the invitation: ' + (err?.message || 'unknown'), 'error');
+        } finally { setActing(null); }
+    };
 
     const approveRequest = async (n: any, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -280,6 +316,25 @@ export const NotificationCenter: React.FC = () => {
                                                     <Clock size={9} />{relativeTime(n.createdAt)}
                                                 </span>
                                             </div>
+                                            {/* 0338: accept / decline an assessment invitation in place */}
+                                            {isAssessmentInvite(n) && (
+                                                <div className="flex items-center gap-2 mt-2">
+                                                    <button
+                                                        onClick={e => answerInvite(n, true, e)}
+                                                        disabled={acting === n.id || acting === n.id + ':decline'}
+                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 px-2.5 py-1 rounded-md"
+                                                    >
+                                                        {acting === n.id ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />} Accept
+                                                    </button>
+                                                    <button
+                                                        onClick={e => answerInvite(n, false, e)}
+                                                        disabled={acting === n.id || acting === n.id + ':decline'}
+                                                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-60 px-2.5 py-1 rounded-md"
+                                                    >
+                                                        {acting === n.id + ':decline' ? <Loader2 size={11} className="animate-spin" /> : <X size={11} />} Decline
+                                                    </button>
+                                                </div>
+                                            )}
                                             {/* U-5: inline approve/reject for approval-required requests */}
                                             {isApprovableRequest(n) && (
                                                 <div className="flex items-center gap-2 mt-2">

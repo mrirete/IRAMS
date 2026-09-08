@@ -29,6 +29,11 @@ export function notificationRoute(n: NotificationLike): string | null {
             case 'PREVENTIVE_MAINTENANCE': return `/recurring-work?id=${encodeURIComponent(id)}`;
             case 'READING': return `/readings`;
             case 'PERMIT_TO_WORK': return `/work-orders/${id}`;
+            // Studies and assessments open by their own deep-link convention (0338):
+            // the invite / "added to team" notifications used to land on the list.
+            case 'ASSESSMENT': return `/audits?open=${encodeURIComponent(id)}`;
+            case 'RCM_STUDY': return `/rcm/${id}`;
+            case 'RCA_INVESTIGATION': return `/analyze/rca/${id}`;
             default: break;
         }
     }
@@ -42,4 +47,14 @@ export function isApprovableRequest(n: { notificationType?: string | null; entit
     const isRequest = type === 'WORK_REQUEST' || type === 'SERVICE_REQUEST' || type === 'REQUEST';
     const nt = (n.notificationType || '').toUpperCase();
     return !!n.entityId && isRequest && !n.isAcknowledged && (nt === 'APPROVAL_REQUIRED' || !!n.actionRequired);
+}
+
+/**
+ * True when a notification is an unanswered assessment invitation (0338):
+ * the invitee accepts or declines inline, without needing audits access first.
+ */
+export function isAssessmentInvite(n: { notificationType?: string | null; entityType?: string | null; entityId?: string | null; actionRequired?: boolean; isAcknowledged?: boolean }): boolean {
+    const type = (n.entityType || '').toUpperCase();
+    const nt = (n.notificationType || '').toUpperCase();
+    return !!n.entityId && type === 'ASSESSMENT' && nt === 'ASSIGNMENT' && !!n.actionRequired && !n.isAcknowledged;
 }

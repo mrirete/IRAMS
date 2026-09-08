@@ -448,15 +448,28 @@ export const RCMPage: React.FC = () => {
     const previous = studyCollaborators;
     const ok = await saveTeam([...studyCollaborators, { ...collab, added_by: user?.email || user?.id } as StudyCollaborator], previous);
     if (!ok) throw new Error('team not saved');
+    // The team is an access list (0335): being added IS the membership, so the
+    // message says so and asks for nothing — an "invitation" with no way to
+    // answer sat in the Action tab forever (0338). Leaving is in the drawer.
     const sent = await notifyTeam([collab], c => ({
-      title: '🤝 RCM Study Invitation',
-      message: `You have been invited to the RCM study "${selectedStudy?.title}" as ${c.role}. Open it to see the worksheet and what is asked of you.`,
-      actionRequired: c.role === 'editor' || c.role === 'owner' || c.role === 'reviewer',
+      title: '🤝 Added to an RCM study team',
+      message: `${user?.fullName || user?.username || 'The facilitator'} added you to the RCM study "${selectedStudy?.title}" as ${c.role}. Open it to see the worksheet and what is asked of you; you can leave from the Team drawer.`,
+      actionRequired: false,
     }));
     showToast(`${collab.name} added as ${collab.role}${sent ? ' — notified' : ''}`);
   };
   const handleRemoveCollaborator = async (id: string) => {
     await saveTeam(studyCollaborators.filter(c => c.id !== id), studyCollaborators);
+  };
+  // 0338: leaving is the member's own write — the RPC strips only their entries
+  // and the approval guard lets that one team change through.
+  const handleLeaveStudy = async () => {
+    if (!selectedStudy) return;
+    const { data, error } = await supabase.rpc('rcm_leave_study', { p_study: selectedStudy.id });
+    if (error || !data) { showToast(error?.message || 'You are not on this team', 'error'); return; }
+    showToast('You left the study team');
+    setShowTeamPanel(false);
+    await loadStudyDetail(selectedStudy.id);
   };
   const handleUpdateCollabRole = async (id: string, newRole: StudyCollaborator['role']) => {
     await saveTeam(studyCollaborators.map(c => c.id === id ? { ...c, role: newRole } : c), studyCollaborators);
@@ -1938,6 +1951,7 @@ export const RCMPage: React.FC = () => {
           onAdd={handleAddCollaborator}
           onRemove={handleRemoveCollaborator}
           onUpdateRole={handleUpdateCollabRole}
+          onLeave={handleLeaveStudy}
           onClose={() => setShowTeamPanel(false)}
         />
       )}

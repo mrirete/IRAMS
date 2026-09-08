@@ -8,6 +8,11 @@
  *  - Viewer and Contributor roles
  *  - Notification dispatch via NotificationService on invite
  *  - Copy-to-clipboard invite link
+ *
+ * 0338: an invitation is answered by the invitee (Accept / Decline on the
+ * notification or on the assessment itself) and access follows the answer.
+ * Nothing is granted here any more; this panel only records the invitation
+ * and tells the person. External addresses get a tokenised link to share.
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -16,6 +21,7 @@ import { supabase } from '../../eam/lib/supabase';
 import { DatabaseService } from '../../eam/services/DatabaseService';
 import { NotificationService } from '../../eam/services/NotificationService';
 import type { AssessmentCollaborator } from '../../eam/services/AuditTypes';
+import { assessmentRoute, assessmentInviteLink } from '../../eam/services/assessmentInvites';
 
 /** Lightweight shape for the system-user picker */
 interface SystemUser {
@@ -41,6 +47,9 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
     const [sending, setSending] = useState(false);
     const [copied, setCopied] = useState(false);
     const [error, setError] = useState('');
+    /** Row id of the last external invite — its link is surfaced for sharing. */
+    const [lastExternalId, setLastExternalId] = useState<string | null>(null);
+    const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
     // ─── System Users (preloaded from Users Module) ───────
     const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
@@ -69,7 +78,7 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                 ]);
 
                 const mapped: SystemUser[] = (users || [])
-                    .filter((u: any) => u.status !== 'SUSPENDED' && u.id !== currentUser)
+                    .filter((u: any) => u.status !== 'SUSPENDED' && (u.email || '').toLowerCase() !== (currentUser || '').toLowerCase())
                     .map((u: any) => {
                         const linkedContact = contacts.find((c: any) => c.id === u.contact_id || c.id === u.contactId);
                         return {
@@ -183,63 +192,31 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
             setSelectedUser(null);
 
             // ─── Notification dispatch ─────────────────────
-            // If the invited person is a system user, send them an in-app notification
+            // A system user hears about it in-app and answers from the bell
+            // (Accept / Decline) or from the assessment banner. Access is granted
+            // by respond_to_assessment_invite() on acceptance — not here (0338).
             const systemUserId = selectedUser?.id || systemUsers.find(u => u.email.toLowerCase() === inviteEmail.toLowerCase())?.id;
             if (systemUserId) {
                 try {
                     await NotificationService.notify({
                         recipientId: systemUserId,
                         title: '📋 Assessment Team Invitation',
-                        message: `You have been invited to collaborate on a maturity assessment as a ${role}. Click to open it.`,
+                        message: `${currentUser || 'A colleague'} invited you to collaborate on a maturity assessment as a ${role}. Accept or decline here, or open the assessment to see it first.`,
                         severity: 'INFO',
                         notificationType: 'ASSIGNMENT',
                         module: 'audits',
                         entityId: assessmentId,
                         entityType: 'ASSESSMENT',
-                        actionLink: '/audits',
-                        actionRequired: role === 'contributor',
+                        actionLink: assessmentRoute(assessmentId),
+                        actionRequired: true,
                         createdBy: currentUser,
                     });
-                    console.log(`[AssessmentInvite] Notification sent to user ${systemUserId}`);
                 } catch (notifErr) {
                     console.warn('[AssessmentInvite] Non-critical: notification dispatch failed', notifErr);
                 }
-
-                // ─── Auto-grant audits module access ──────────
-                // Ensures the invited user can access /audits even if their role
-                // template has audits: NO_ACCESS. Uses JSONB merge to preserve
-                // existing overrides while adding full audits access.
-                try {
-                    const fullAuditsAccess = {
-                        view: true, create: true, edit: true, delete: true,
-                        approve: true, authorize: false, viewCosts: true, assign: false,
-                    };
-                    // Merge into existing permission_overrides — does not overwrite other module overrides
-                    await supabase.rpc('jsonb_deep_merge_permissions', {
-                        p_user_id: systemUserId,
-                        p_module: 'audits',
-                        p_permissions: fullAuditsAccess,
-                    }).then(async (rpcResult) => {
-                        // If the RPC doesn't exist, fall back to a direct update
-                        if (rpcResult.error) {
-                            console.warn('[AssessmentInvite] RPC not found, using direct JSONB merge');
-                            const { data: userData } = await supabase
-                                .from('users')
-                                .select('permission_overrides')
-                                .eq('id', systemUserId)
-                                .single();
-                            const existing = (userData?.permission_overrides || {}) as Record<string, any>;
-                            existing.audits = fullAuditsAccess;
-                            await supabase
-                                .from('users')
-                                .update({ permission_overrides: existing })
-                                .eq('id', systemUserId);
-                        }
-                    });
-                    console.log(`[AssessmentInvite] ✅ Auto-granted audits access to user ${systemUserId}`);
-                } catch (permErr) {
-                    console.warn('[AssessmentInvite] Non-critical: permission auto-grant failed', permErr);
-                }
+            } else {
+                // No account behind this address: the inviter shares the link.
+                setLastExternalId(data.id);
             }
         }
         setSending(false);
@@ -258,6 +235,20 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
         await navigator.clipboard.writeText(link);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+    };
+
+    const copyInviteLink = async (c: AssessmentCollaborator) => {
+        await navigator.clipboard.writeText(assessmentInviteLink(c.inviteToken));
+        setCopiedInviteId(c.id);
+        setTimeout(() => setCopiedInviteId(null), 2000);
+    };
+
+    const mailtoFor = (c: AssessmentCollaborator) => {
+        const subject = encodeURIComponent('Invitation to collaborate on a maturity assessment');
+        const body = encodeURIComponent(
+            `You have been invited to collaborate on an asset management maturity assessment as a ${c.role}.\n\n`
+            + `Sign in to IREAMS with this email address, then open the link to accept:\n${assessmentInviteLink(c.inviteToken)}\n`);
+        return `mailto:${c.email}?subject=${subject}&body=${body}`;
     };
 
     const removeInvite = async (id: string) => {
@@ -393,7 +384,7 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                                     >
                                         {sending ? '...' : <><Bell size={10} /> Invite</>}
                                     </button>
-                                    <span className="text-[9px] text-slate-400 ml-auto">⚡ System users receive an in-app notification automatically</span>
+                                    <span className="text-[9px] text-slate-400 ml-auto">⚡ They get an in-app invitation to accept or decline</span>
                                 </div>
 
                                 {/* Dropdown — full width, outside the compressed flex row */}
@@ -488,12 +479,17 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
 
                                 <p className="text-[10px] text-slate-400 flex items-center gap-1">
                                     <Bell size={9} className="text-blue-400" />
-                                    System users receive an in-app notification automatically
+                                    They get an in-app invitation and answer it — access follows their acceptance
                                 </p>
                             </div>
                         )}
 
                         {/* ─── Email Fallback Mode ─────────── */}
+                        {inviteMode === 'email' && lastExternalId && (
+                            <p className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mb-2">
+                                Invitation recorded. IREAMS delivers in-app only, so copy the link (or use the mail button) on the row below and send it yourself — they sign in with that address, then accept.
+                            </p>
+                        )}
                         {inviteMode === 'email' && (
                             <div className="flex items-end gap-2">
                                 <div className="flex-1">
@@ -557,7 +553,7 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                                                 </p>
                                                 <div className="flex items-center gap-2 text-[10px] text-slate-400">
                                                     {statusIcon(c.status)}
-                                                    <span className="capitalize">{c.status}</span>
+                                                    <span className="capitalize">{c.status === 'pending' ? 'Awaiting answer' : c.status}</span>
                                                     <span>·</span>
                                                     <span className="capitalize">{c.role}</span>
                                                     {sysUser && (
@@ -568,8 +564,27 @@ export const AssessmentInvite: React.FC<Props> = ({ assessmentId, currentUser, i
                                                     )}
                                                 </div>
                                             </div>
+                                            {!sysUser && c.status === 'pending' && (
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => copyInviteLink(c)}
+                                                        title="Copy the invitation link"
+                                                        className={`p-1.5 rounded-lg transition-colors ${copiedInviteId === c.id ? 'text-green-600 bg-green-50' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                                                    >
+                                                        {copiedInviteId === c.id ? <Check size={13} /> : <Link2 size={13} />}
+                                                    </button>
+                                                    <a
+                                                        href={mailtoFor(c)}
+                                                        title="Send the invitation from your mail client"
+                                                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                                                    >
+                                                        <Mail size={13} />
+                                                    </a>
+                                                </div>
+                                            )}
                                             <button
                                                 onClick={() => removeInvite(c.id)}
+                                                title={c.status === 'pending' ? 'Withdraw invitation' : 'Remove from assessment'}
                                                 className="text-slate-400 hover:text-red-500 transition-colors"
                                             >
                                                 <X size={14} />

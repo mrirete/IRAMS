@@ -12,6 +12,8 @@ import { supabase } from '../eam/lib/supabase';
 import type { AssessmentListItem, AssessmentSummary, MaturitySnapshot } from '../eam/services/AssessmentService';
 import type { AuditAssessmentState } from '../eam/services/AuditTypes';
 import { MaturityGapCard } from '../components/specialist/MaturityGapCard';
+import { getAssessmentInvite } from '../eam/services/assessmentInvites';
+import { useToast } from '../eam/contexts/ToastContext';
 
 type Phase = 'list' | 'wizard';
 type AuditScope = 'all' | 'mine';
@@ -23,6 +25,7 @@ export const AuditsPage: React.FC = () => {
     const currentUserId = profile?.id || '';
     const currentUsername = profile?.username || '';
     const currentEmail = profile?.email || '';
+    const { showToast } = useToast();
 
     const [phase, setPhase] = useState<Phase>('list');
     const [editingState, setEditingState] = useState<AuditAssessmentState | undefined>();
@@ -89,11 +92,31 @@ export const AuditsPage: React.FC = () => {
     }, [location.state, location.pathname, navigate]);
 
     // ─── Deep link: /audits?open=<id> (shared link from the invite panel, notifications) ──
+    // ─── Shared invite: /audits?invite=<token> (0338) — resolve, then open the
+    //     assessment; the wizard's banner takes the answer.
     useEffect(() => {
-        const id = new URLSearchParams(location.search).get('open');
-        if (!id) return;
+        const params = new URLSearchParams(location.search);
+        const id = params.get('open');
+        const token = params.get('invite');
+        if (!id && !token) return;
         navigate(location.pathname, { replace: true });
-        void handleEdit(id);
+        if (id) { void handleEdit(id); return; }
+        (async () => {
+            try {
+                const inv = await getAssessmentInvite(token!);
+                if (!inv.found || !inv.assessment_id) {
+                    showToast('That invitation link is no longer valid — it may have been withdrawn.', 'error');
+                    return;
+                }
+                if (inv.mine === false) {
+                    showToast(`This invitation is addressed to ${inv.email}. Sign in with that email to accept it.`, 'error');
+                    return;
+                }
+                await handleEdit(inv.assessment_id);
+            } catch (e: any) {
+                showToast('Could not open the invitation: ' + (e?.message || 'unknown'), 'error');
+            }
+        })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [location.search]);
 
@@ -120,10 +143,14 @@ export const AuditsPage: React.FC = () => {
         if (!currentEmail && !currentUsername) return;
         const loadCollabs = async () => {
             try {
+                // invited_by holds the inviter's EMAIL (it was matched against the
+                // username before, so the inviter's own scope never matched). A
+                // declined invitation is not "mine".
                 const { data } = await supabase
                     .from('audit_assessment_collaborators')
-                    .select('assessment_id')
-                    .or(`email.ilike.%${currentEmail}%${currentUsername ? `,invited_by.eq.${currentUsername}` : ''}`);
+                    .select('assessment_id, status, email')
+                    .or(`email.ilike.${currentEmail},invited_by.ilike.${currentEmail}`)
+                    .neq('status', 'declined');
                 if (data) {
                     setMyCollaborations(new Set(data.map((d: any) => d.assessment_id)));
                 }

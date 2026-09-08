@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useIntelligence } from '../hooks/useIntelligence';
 import { supabase } from '../eam/lib/supabase';
+import { NotificationService } from '../eam/services/NotificationService';
 import type { Asset, CriticalityRank } from '../types/assets';
 
 // ── Division wrappers ────────────────────────────────────────
@@ -571,7 +572,12 @@ export const AnalyzePage: React.FC = () => {
         }
     }, [deTasks]);
 
+    const deTasksRef = useRef<DefectEliminationTask[]>([]);
+    useEffect(() => { deTasksRef.current = deTasks; }, [deTasks]);
     const handleDEUpdateCollaborators = useCallback(async (taskId: string, collaborators: StudyCollaborator[]) => {
+        const before = deTasksRef.current.find(t => t.id === taskId);
+        const had = new Set((before?.collaborators || []).map(c => c.id));
+        const added = collaborators.filter(c => !had.has(c.id) && c.type === 'contact' && c.ref_id);
         // Optimistic update
         setDeTasks(prev => prev.map(t => t.id === taskId ? { ...t, collaborators } : t));
         // Persist to Supabase
@@ -579,6 +585,30 @@ export const AnalyzePage: React.FC = () => {
             await analyzeService.updateDETask(taskId, { collaborators } as any);
         } catch (e) {
             console.error('Failed to update DE task collaborators:', e);
+            return;
+        }
+        // 0338: a person added to a task team is told (they were not before).
+        for (const c of added) {
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                const recipient = await NotificationService.resolveRecipientUserId(c.ref_id);
+                if (!recipient || recipient === user?.id) continue;
+                await NotificationService.notify({
+                    recipientId: recipient,
+                    title: '🤝 Added to a defect-elimination task',
+                    message: `You were added to the defect-elimination task "${before?.title || ''}" as ${c.role}. Open it to see what is asked of you; you can leave from the Team drawer.`,
+                    severity: 'INFO',
+                    notificationType: 'ASSIGNMENT',
+                    module: 'analyze',
+                    entityId: taskId,
+                    entityType: 'DE_TASK',
+                    actionLink: `/analyze?tab=defect_elimination&task=${taskId}`,
+                    actionRequired: false,
+                    createdBy: user?.id || 'SYSTEM',
+                });
+            } catch (e) {
+                console.warn('[AnalyzePage] Non-critical: DE team notification failed', e);
+            }
         }
     }, []);
 

@@ -495,10 +495,12 @@ export function RCAInvestigationPage() {
                         }
 
                         if (recipientUserId) {
+                            // Being added IS the membership (0332 access list) — say so,
+                            // ask for nothing (0338). Leaving is in the Team drawer.
                             await NotificationService.notify({
                                 recipientId: recipientUserId,
-                                title: '🤝 RCA Team Invitation',
-                                message: `You have been invited to collaborate on RCA: "${inv.title}" as ${collab.role}. Click to view the investigation.`,
+                                title: '🤝 Added to an RCA team',
+                                message: `${currentUsername || 'The lead'} added you to the RCA "${inv.title}" as ${collab.role}. Open it to see the investigation; you can leave from the Team drawer.`,
                                 severity: 'INFO',
                                 notificationType: 'ASSIGNMENT',
                                 module: 'analyze',
@@ -506,7 +508,7 @@ export function RCAInvestigationPage() {
                                 entityType: 'RCA_INVESTIGATION',
                                 entityNumber: inv.title,
                                 actionLink: `/analyze/rca/${inv.id}`,
-                                actionRequired: collab.role === 'editor' || collab.role === 'owner',
+                                actionRequired: false,
                                 createdBy: currentUserId,
                             });
                             console.log(`[RCA] Notification sent to user ${recipientUserId} for RCA collaboration`);
@@ -540,6 +542,16 @@ export function RCAInvestigationPage() {
                 setRcaCollaborators(previous);
             }
         }
+    };
+
+    // 0338: a member leaves through the RPC — their own entries only, past the edit gate.
+    const handleLeaveInvestigation = async () => {
+        if (!inv?.id) return;
+        const { data, error } = await supabase.rpc('rca_leave_investigation', { p_inv: inv.id });
+        if (error || !data) { showToast(error?.message || 'You are not on this team', 'error'); return; }
+        showToast('You left the investigation team');
+        setShowTeamPanel(false);
+        await fetchAll(inv.id);
     };
 
     const handleUpdateCollaboratorRole = async (id: string, role: any) => {
@@ -3121,6 +3133,7 @@ export function RCAInvestigationPage() {
                     onAdd={handleAddCollaborator}
                     onRemove={handleRemoveCollaborator}
                     onUpdateRole={handleUpdateCollaboratorRole}
+                    onLeave={handleLeaveInvestigation}
                     onClose={() => setShowTeamPanel(false)}
                 />
             )}
